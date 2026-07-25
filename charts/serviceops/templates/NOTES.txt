@@ -1,0 +1,15 @@
+ServiceOps has been installed.
+
+1. Wait for the rollout:
+   kubectl rollout status deployment/{{ include "serviceops.fullname" . }} -n {{ .Release.Namespace }} --timeout=5m
+
+2. Run the packaged health test:
+   helm test {{ .Release.Name }} -n {{ .Release.Namespace }} --logs
+
+3. Review security and workload status:
+   kubectl get pods,pdb,networkpolicy,pvc -n {{ .Release.Namespace }}
+
+{{- if not .Values.ingress.enabled }}
+4. Access locally:
+   kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "serviceops.fullname" . }} 8080:{{ .Values.service.port }}
+{{- end }}

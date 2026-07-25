@@ -12,11 +12,12 @@ from reportlab.platypus import (
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "docs" / "ServiceOps_Platform_User_Interface_Guide.pdf"
-GREEN = colors.HexColor("#16A085")
-DARK = colors.HexColor("#101923")
-INK = colors.HexColor("#17212B")
-MUTED = colors.HexColor("#667582")
-PALE = colors.HexColor("#E8F5F2")
+GREEN = colors.HexColor("#003E4C")
+DARK = colors.HexColor("#002F3A")
+AMBER = colors.HexColor("#F9AA3C")
+INK = colors.HexColor("#13252B")
+MUTED = colors.HexColor("#63767D")
+PALE = colors.HexColor("#E8F1F3")
 LINE = colors.HexColor("#DDE5E8")
 
 styles = getSampleStyleSheet()
@@ -237,11 +238,16 @@ chapters = [
                                   "health checks", "external HTTPS proxy recommendation"]),
      ]),
     ("23. Docker deployment and operations",
-     "The production stack uses a Gunicorn application service and PostgreSQL 16 with separate persistent data and upload volumes.",
+     "The production stack uses a hardened Gunicorn application service with either bundled PostgreSQL 16 or a separately managed PostgreSQL server. The first-install menu generates secrets, validates the host, starts the selected architecture, and waits for readiness.",
      [
-         ("Resources", ["serviceops-app image", "serviceops-app-1 and serviceops-db-1 containers",
-                        "serviceops_postgres_data", "serviceops_uploads"]),
-         ("Verification", ["docker compose ps", "GET /health", "application logs", "automated pytest suite"]),
+         ("Installation modes", ["Bundled database for a simple single-server deployment",
+                                 "External database for managed PostgreSQL and separated infrastructure ownership"]),
+         ("Operations CLI", ["Health and diagnostics", "Logs and restart", "Bundled database and upload backups",
+                             "Guarded restore", "Health-gated updates"]),
+         ("Resources", ["serviceops-app image", "serviceops-app-1 and optional serviceops-db-1 containers",
+                        "serviceops_postgres_data in bundled mode", "serviceops_uploads"]),
+         ("Verification", ["Preflight and Compose validation", "GET /health", "database query",
+                           "upload-volume write test", "application logs", "automated pytest suite"]),
      ]),
     ("24. Source-guide mapping and boundaries",
      "The Australia UI guide was reviewed as a feature reference. ServiceOps implements independent equivalents where they map to this product and classifies vendor-specific runtimes honestly.",
@@ -251,6 +257,31 @@ chapters = [
          ("Vendor-specific or external", ["UI Builder and proprietary widget runtime", "Jelly and vendor scripting APIs",
                                           "native mobile publishing", "telephony and chat routing", "voice guidance",
                                           "predictive and generative AI services"]),
+     ]),
+    ("25. Kubernetes deployment",
+     "ServiceOps includes a production-oriented Helm chart. Enterprise Production uses replicated application pods, an external highly available PostgreSQL service, shared upload storage, TLS ingress, and cluster observability.",
+     [
+         ("Workload safeguards", ["Restricted Pod Security", "non-root process", "read-only root filesystem",
+                                  "startup, readiness, and liveness probes", "rolling update", "PodDisruptionBudget",
+                                  "topology spread", "resource controls", "NetworkPolicy", "optional HPA"]),
+         ("Installation", ["Immutable registry image", "production values file", "Kubernetes preflight",
+                           "atomic Helm upgrade", "rollout wait", "packaged Helm health test"]),
+     ]),
+    ("26. Production operations",
+     "The complete operations manual covers deployment decisions, identity, backups, recovery, upgrades, rollback, monitoring, incident response, and production acceptance.",
+     [
+         ("Recovery", ["PostgreSQL point-in-time recovery", "matching upload recovery set",
+                       "off-cluster encrypted retention", "quarterly restore evidence"]),
+         ("Release assurance", ["staging regression", "manifest lint and render", "load and soak testing",
+                                "database failover", "node drain", "atomic rollout", "tested data rollback"]),
+     ]),
+    ("27. JNX visual system",
+     "The interface retains the unified enterprise patterns documented in the source UI guide while applying the company palette consistently.",
+     [
+         ("Palette", ["Deep teal #003E4C for navigation, identity, links, and focus context",
+                      "Warm amber #F9AA3C for selected emphasis, workflow cues, and warnings"]),
+         ("Interaction", ["persistent application navigator", "unified search bar", "dense operational tables",
+                          "workspaces and panels", "visible keyboard focus", "responsive and accessible themes"]),
      ]),
 ]
 

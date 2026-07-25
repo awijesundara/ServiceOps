@@ -1,0 +1,111 @@
+{{- if and (eq .Values.deploymentProfile "production") (lt (int .Values.replicaCount) 2) (not .Values.autoscaling.enabled) }}
+{{- fail "Production requires at least two application replicas" }}
+{{- end }}
+{{- if and (eq .Values.deploymentProfile "production") (eq .Values.image.tag "latest") }}
+{{- fail "Production must use an immutable image tag or digest, not latest" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "serviceops.fullname" . }}
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels: {{- include "serviceops.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "serviceops.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
+    spec:
+      serviceAccountName: {{ include "serviceops.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: serviceops
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - {name: http, containerPort: 8080, protocol: TCP}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          env:
+            - {name: DEPLOYMENT_PROFILE, value: {{ .Values.deploymentProfile | quote }}}
+            - {name: UPLOAD_FOLDER, value: /app/uploads}
+            - {name: LOCAL_AUTH_ENABLED, value: {{ .Values.auth.localEnabled | quote }}}
+            - {name: LDAP_ENABLED, value: {{ .Values.auth.ldap.enabled | quote }}}
+            - {name: LDAP_SERVER_URI, value: {{ .Values.auth.ldap.serverUri | quote }}}
+            - {name: LDAP_BIND_DN, value: {{ .Values.auth.ldap.bindDn | quote }}}
+            - {name: LDAP_BASE_DN, value: {{ .Values.auth.ldap.baseDn | quote }}}
+            - {name: LDAP_USER_FILTER, value: {{ .Values.auth.ldap.userFilter | quote }}}
+            - {name: LDAP_START_TLS, value: {{ .Values.auth.ldap.startTls | quote }}}
+            - {name: LDAP_VALIDATE_CERT, value: {{ .Values.auth.ldap.validateCertificate | quote }}}
+            - {name: LDAP_ROLE_MAPPINGS, value: {{ .Values.auth.ldap.roleMappings | quote }}}
+            - {name: KEYCLOAK_ENABLED, value: {{ .Values.auth.keycloak.enabled | quote }}}
+            - {name: KEYCLOAK_DISCOVERY_URL, value: {{ .Values.auth.keycloak.discoveryUrl | quote }}}
+            - {name: KEYCLOAK_CLIENT_ID, value: {{ .Values.auth.keycloak.clientId | quote }}}
+            - {name: KEYCLOAK_ROLE_MAPPINGS, value: {{ .Values.auth.keycloak.roleMappings | quote }}}
+            - {name: TRUST_PROXY_HEADERS, value: {{ .Values.proxy.trustHeaders | quote }}}
+            - {name: ENABLE_HSTS, value: {{ .Values.proxy.enableHsts | quote }}}
+          envFrom:
+            - secretRef: {name: {{ include "serviceops.secretName" . }}}
+          volumeMounts:
+            - {name: uploads, mountPath: /app/uploads}
+            - {name: tmp, mountPath: /tmp}
+            {{- if .Values.auth.ldap.caCertificate }}
+            - {name: ldap-ca, mountPath: /etc/serviceops/ldap, readOnly: true}
+            {{- end }}
+          startupProbe:
+            httpGet: {path: /live, port: http}
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet: {path: /ready, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /live, port: http}
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 5
+          lifecycle:
+            preStop: {exec: {command: ["/bin/sh", "-c", "sleep 10"]}}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 128Mi}
+        - name: uploads
+          {{- if .Values.uploads.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-uploads" (include "serviceops.fullname" .)) .Values.uploads.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if .Values.auth.ldap.caCertificate }}
+        - name: ldap-ca
+          configMap: {name: {{ include "serviceops.fullname" . }}-ldap-ca}
+        {{- end }}
+      imagePullSecrets: {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      topologySpreadConstraints: {{- toYaml .Values.topologySpreadConstraints | nindent 8 }}
+      nodeSelector: {{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations: {{- toYaml .Values.tolerations | nindent 8 }}
+      affinity: {{- toYaml .Values.affinity | nindent 8 }}

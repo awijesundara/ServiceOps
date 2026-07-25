@@ -1,5 +1,6 @@
 import json
 import os
+import ssl
 import uuid
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -7,17 +8,26 @@ from functools import wraps
 from flask import Flask, abort, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_sqlalchemy import SQLAlchemy
+from authlib.integrations.flask_client import OAuth
+from ldap3 import ALL, SUBTREE, Connection, Server, Tls
+from ldap3.utils.conv import escape_filter_chars
 from sqlalchemy import func
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 db = SQLAlchemy()
 login_manager = LoginManager()
 login_manager.login_view = "login"
+oauth = OAuth()
 
 
 def now():
     return datetime.now(timezone.utc)
+
+
+def env_bool(name, default=False):
+    return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
 
 class User(UserMixin, db.Model):
@@ -29,6 +39,16 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(30), nullable=False, default="requester")
     active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+
+
+class ExternalIdentity(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    provider = db.Column(db.String(20), nullable=False)
+    subject = db.Column(db.String(255), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    user = db.relationship("User")
+    __table_args__ = (db.UniqueConstraint("provider", "subject", name="uq_external_identity"),)
 
 
 class Ticket(db.Model):
@@ -565,7 +585,7 @@ def create_catalog_task(ritm):
     return task
 
 
-def seed_itil(admin, agent):
+def seed_itil(admin, agent, demo_mode=True):
     if not SupportGroup.query.filter_by(name="Service Desk").first():
         service_desk = SupportGroup(name="Service Desk", group_type="Fulfillment", manager_id=agent.id)
         security = SupportGroup(name="Security Operations", group_type="Fulfillment", manager_id=admin.id)
@@ -584,7 +604,9 @@ def seed_itil(admin, agent):
         if not manager:
             manager = User(username=f"{slug}.manager", name=f"{team_name} Manager",
                            email=f"{slug}.manager@example.local",
-                           password_hash=generate_password_hash(manager_password), role="manager")
+                           password_hash=generate_password_hash(
+                               manager_password if demo_mode else uuid.uuid4().hex),
+                           role="manager", active=demo_mode)
             db.session.add(manager)
             db.session.flush()
         managers.append(manager)
@@ -598,6 +620,18 @@ def seed_itil(admin, agent):
             group.group_type = "IT Fulfillment"
         if not GroupMember.query.filter_by(group_id=group.id, user_id=manager.id).first():
             db.session.add(GroupMember(group_id=group.id, user_id=manager.id, role="manager"))
+        if demo_mode:
+            demo_password = os.getenv("DEMO_USER_PASSWORD", "ServiceOpsDemo123!")
+            team_user = User.query.filter_by(username=f"{slug}.agent").first()
+            if not team_user:
+                team_user = User(
+                    username=f"{slug}.agent", name=f"{team_name} Demo Agent",
+                    email=f"{slug}.agent@demo.serviceops.local",
+                    password_hash=generate_password_hash(demo_password), role="agent")
+                db.session.add(team_user)
+                db.session.flush()
+            if not GroupMember.query.filter_by(group_id=group.id, user_id=team_user.id).first():
+                db.session.add(GroupMember(group_id=group.id, user_id=team_user.id, role="member"))
     ccb = SupportGroup.query.filter_by(name="Change Control Board").first()
     if not ccb:
         ccb = SupportGroup(name="Change Control Board", group_type="CCB Approval",
@@ -628,10 +662,19 @@ def seed_itil(admin, agent):
 
 
 def seed():
+    demo_mode = os.getenv("DEPLOYMENT_PROFILE", "demo").lower() == "demo"
     if User.query.first():
         admin = User.query.filter_by(role="admin").first()
         agent = User.query.filter_by(role="agent").first() or admin
-        seed_itil(admin, agent)
+        seed_itil(admin, agent, demo_mode)
+        demo_names = ["agent", "employee"] + [
+            f"{team}.{kind}"
+            for team in ("coreapps", "database", "network", "windows", "unix", "ssd")
+            for kind in ("agent", "manager")
+        ]
+        for demo_user in User.query.filter(User.username.in_(demo_names)).all():
+            if demo_user.email.endswith(("@example.local", "@demo.serviceops.local")):
+                demo_user.active = demo_mode
         if not CatalogItem.query.first():
             db.session.add_all([
                 CatalogItem(name="Laptop computer", category="Hardware", description="Request a standard business laptop with approved software.", delivery_days=5, approval_required=True),
@@ -653,18 +696,25 @@ def seed():
         return
     admin = User(username="admin", name="System Administrator", email="admin@example.local",
                  password_hash=generate_password_hash(os.getenv("ADMIN_PASSWORD", "Admin123!")), role="admin")
-    agent = User(username="agent", name="IT Support Agent", email="agent@example.local",
-                 password_hash=generate_password_hash("Agent123!"), role="agent")
-    requester = User(username="employee", name="Example Employee", email="employee@example.local",
-                     password_hash=generate_password_hash("Employee123!"), role="requester")
-    db.session.add_all([admin, agent, requester])
+    users = [admin]
+    if demo_mode:
+        agent = User(username="agent", name="IT Support Agent", email="agent@example.local",
+                     password_hash=generate_password_hash("Agent123!"), role="agent")
+        requester = User(username="employee", name="Example Employee", email="employee@example.local",
+                         password_hash=generate_password_hash("Employee123!"), role="requester")
+        users.extend([agent, requester])
+    else:
+        agent = admin
+        requester = admin
+    db.session.add_all(users)
     db.session.flush()
-    seed_itil(admin, agent)
-    db.session.add(Knowledge(title="Reset your password", category="Access",
-                             body="Use the company identity portal. Select Forgot password, verify your identity, and choose a new password.",
-                             author_id=admin.id))
-    db.session.add(Asset(asset_tag="LAP-0001", name="Demo laptop", asset_type="Laptop",
-                         status="In use", owner_id=requester.id, serial_number="DEMO-001"))
+    seed_itil(admin, agent, demo_mode)
+    if demo_mode:
+        db.session.add(Knowledge(title="Reset your password", category="Access",
+                                 body="Use the company identity portal. Select Forgot password, verify your identity, and choose a new password.",
+                                 author_id=admin.id))
+        db.session.add(Asset(asset_tag="LAP-0001", name="Demo laptop", asset_type="Laptop",
+                             status="In use", owner_id=requester.id, serial_number="DEMO-001"))
     db.session.add_all([
         CatalogItem(name="Laptop computer", category="Hardware", description="Request a standard business laptop with approved software.", delivery_days=5, approval_required=True),
         CatalogItem(name="Software access", category="Access", description="Request access to an approved business application.", delivery_days=2, approval_required=True),
@@ -683,6 +733,95 @@ def seed():
     db.session.commit()
 
 
+def mapped_role(groups, mapping_name, default="requester"):
+    """Map directory/realm groups to a ServiceOps role without trusting user input."""
+    allowed = {"requester", "agent", "manager", "admin"}
+    try:
+        mappings = json.loads(os.getenv(mapping_name, "{}"))
+    except json.JSONDecodeError:
+        mappings = {}
+    normalized = {str(group).lower() for group in groups}
+    for group, role in mappings.items():
+        if str(group).lower() in normalized and role in allowed:
+            return role
+    configured = os.getenv(f"{mapping_name}_DEFAULT", default)
+    return configured if configured in allowed else default
+
+
+def provision_external_user(provider, subject, username, name, email, role):
+    identity = ExternalIdentity.query.filter_by(provider=provider, subject=subject).first()
+    if identity:
+        user = identity.user
+        user.name, user.email, user.role = name, email, role
+        user.active = True
+        return user
+    base = (username or f"{provider}-{uuid.uuid4().hex[:8]}").strip().lower()[:70]
+    candidate, suffix = base, 1
+    while User.query.filter_by(username=candidate).first():
+        suffix += 1
+        candidate = f"{base[:70]}-{suffix}"
+    unique_email = (email or f"{candidate}@external.serviceops.local").lower()
+    existing = User.query.filter_by(email=unique_email).first()
+    if existing:
+        unique_email = f"{provider}-{uuid.uuid4().hex[:8]}@external.serviceops.local"
+    user = User(username=candidate, name=name or candidate, email=unique_email,
+                password_hash=generate_password_hash(uuid.uuid4().hex), role=role)
+    db.session.add(user)
+    db.session.flush()
+    db.session.add(ExternalIdentity(provider=provider, subject=subject, user_id=user.id))
+    return user
+
+
+def ldap_authenticate(username, password):
+    if not password or not env_bool("LDAP_ENABLED"):
+        return None
+    uri = os.getenv("LDAP_SERVER_URI", "")
+    use_ssl = uri.lower().startswith("ldaps://")
+    host = uri.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+    port = int(os.getenv("LDAP_PORT", "636" if use_ssl else "389"))
+    validate = ssl.CERT_REQUIRED if env_bool("LDAP_VALIDATE_CERT", True) else ssl.CERT_NONE
+    tls = Tls(validate=validate, ca_certs_file=os.getenv("LDAP_CA_CERT") or None)
+    server = Server(host, port=port, use_ssl=use_ssl, tls=tls, get_info=ALL,
+                    connect_timeout=int(os.getenv("LDAP_TIMEOUT", "8")))
+    service = Connection(server, user=os.getenv("LDAP_BIND_DN") or None,
+                         password=os.getenv("LDAP_BIND_PASSWORD") or None,
+                         auto_bind=False, receive_timeout=int(os.getenv("LDAP_TIMEOUT", "8")))
+    service.open()
+    if not use_ssl and env_bool("LDAP_START_TLS", True):
+        if not service.start_tls():
+            return None
+    if not service.bind():
+        return None
+    safe_username = escape_filter_chars(username)
+    search_filter = os.getenv(
+        "LDAP_USER_FILTER", "(&(objectClass=user)(sAMAccountName={username}))"
+    ).replace("{username}", safe_username)
+    attrs = ["distinguishedName", "cn", "displayName", "mail", "memberOf", "userPrincipalName"]
+    if not service.search(os.getenv("LDAP_BASE_DN", ""), search_filter,
+                          search_scope=SUBTREE, attributes=attrs, size_limit=2):
+        service.unbind()
+        return None
+    entries = list(service.entries)
+    service.unbind()
+    if len(entries) != 1:
+        return None
+    entry = entries[0]
+    user_conn = Connection(server, user=entry.entry_dn, password=password, auto_bind=False)
+    user_conn.open()
+    if not use_ssl and env_bool("LDAP_START_TLS", True) and not user_conn.start_tls():
+        return None
+    if not user_conn.bind():
+        return None
+    user_conn.unbind()
+    values = entry.entry_attributes_as_dict
+    first = lambda key, fallback="": (values.get(key) or [fallback])[0]
+    groups = values.get("memberOf", [])
+    role = mapped_role(groups, "LDAP_ROLE_MAPPINGS")
+    return provision_external_user(
+        "ldap", entry.entry_dn, username, first("displayName", first("cn", username)),
+        first("mail", first("userPrincipalName", "")), role)
+
+
 def create_app(test_config=None):
     app = Flask(__name__)
     app.config.update(
@@ -691,11 +830,32 @@ def create_app(test_config=None):
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         UPLOAD_FOLDER=os.getenv("UPLOAD_FOLDER", os.path.join(app.instance_path, "uploads")),
         MAX_CONTENT_LENGTH=20 * 1024 * 1024,
+        DEPLOYMENT_PROFILE=os.getenv("DEPLOYMENT_PROFILE", "demo").lower(),
+        LDAP_ENABLED=env_bool("LDAP_ENABLED"),
+        KEYCLOAK_ENABLED=env_bool("KEYCLOAK_ENABLED"),
+        LOCAL_AUTH_ENABLED=env_bool("LOCAL_AUTH_ENABLED", True),
     )
     if test_config:
         app.config.update(test_config)
+    if env_bool("TRUST_PROXY_HEADERS"):
+        app.wsgi_app = ProxyFix(
+            app.wsgi_app,
+            x_for=int(os.getenv("PROXY_FIX_X_FOR", "1")),
+            x_proto=int(os.getenv("PROXY_FIX_X_PROTO", "1")),
+            x_host=int(os.getenv("PROXY_FIX_X_HOST", "1")),
+            x_prefix=int(os.getenv("PROXY_FIX_X_PREFIX", "0")),
+        )
     db.init_app(app)
     login_manager.init_app(app)
+    oauth.init_app(app)
+    if app.config["KEYCLOAK_ENABLED"]:
+        oauth.register(
+            name="keycloak",
+            client_id=os.getenv("KEYCLOAK_CLIENT_ID"),
+            client_secret=os.getenv("KEYCLOAK_CLIENT_SECRET"),
+            server_metadata_url=os.getenv("KEYCLOAK_DISCOVERY_URL"),
+            client_kwargs={"scope": "openid profile email"},
+        )
 
     with app.app_context():
         db.create_all()
@@ -726,18 +886,77 @@ def create_app(test_config=None):
         db.session.execute(db.select(func.count(User.id))).scalar()
         return jsonify(status="ok")
 
+    @app.get("/live")
+    def live():
+        return jsonify(status="alive")
+
+    @app.get("/ready")
+    def ready():
+        db.session.execute(db.select(func.count(User.id))).scalar()
+        return jsonify(status="ready")
+
+    @app.after_request
+    def security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if env_bool("ENABLE_HSTS"):
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
+
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "POST":
-            user = User.query.filter_by(username=request.form.get("username", "").strip()).first()
-            if user and user.active and check_password_hash(user.password_hash, request.form.get("password", "")):
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
+            provider = request.form.get("provider", "local")
+            user = None
+            if provider == "ldap" and app.config["LDAP_ENABLED"]:
+                try:
+                    user = ldap_authenticate(username, password)
+                except Exception:
+                    app.logger.exception("LDAP authentication failed")
+            elif app.config["LOCAL_AUTH_ENABLED"]:
+                candidate = User.query.filter_by(username=username).first()
+                if candidate and check_password_hash(candidate.password_hash, password):
+                    user = candidate
+            if user and user.active:
                 login_user(user)
-                audit("login", user.username)
+                audit("login", user.username, f"provider={provider}")
                 db.session.commit()
                 preference = UserPreference.query.filter_by(user_id=user.id).first()
                 return redirect(preference.start_page if preference else url_for("dashboard"))
             flash("Invalid username or password.", "error")
-        return render_template("login.html")
+        return render_template("login.html", ldap_enabled=app.config["LDAP_ENABLED"],
+                               keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
+                               local_enabled=app.config["LOCAL_AUTH_ENABLED"],
+                               deployment_profile=app.config["DEPLOYMENT_PROFILE"])
+
+    @app.get("/auth/keycloak/login")
+    def keycloak_login():
+        if not app.config["KEYCLOAK_ENABLED"]:
+            abort(404)
+        return oauth.keycloak.authorize_redirect(url_for("keycloak_callback", _external=True))
+
+    @app.get("/auth/keycloak/callback")
+    def keycloak_callback():
+        if not app.config["KEYCLOAK_ENABLED"]:
+            abort(404)
+        token = oauth.keycloak.authorize_access_token()
+        claims = token.get("userinfo") or {}
+        subject = claims.get("sub")
+        if not subject:
+            abort(401)
+        realm_roles = claims.get("realm_access", {}).get("roles", [])
+        role = mapped_role(realm_roles, "KEYCLOAK_ROLE_MAPPINGS")
+        user = provision_external_user(
+            "keycloak", subject, claims.get("preferred_username", ""),
+            claims.get("name", ""), claims.get("email", ""), role)
+        login_user(user)
+        audit("login", user.username, "provider=keycloak")
+        db.session.commit()
+        return redirect(url_for("dashboard"))
 
     @app.post("/logout")
     @login_required

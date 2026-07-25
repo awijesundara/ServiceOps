@@ -1,0 +1,7 @@
+:root{--teal:#003e4c;--teal-dark:#002f3a;--amber:#f9aa3c;background:#eef3f4;color:#13252b}
+.mark{width:68px;height:48px;border-radius:8px;background:var(--teal);font-size:19px;font-weight:900;letter-spacing:-.06em}
+.steps{background:var(--teal);border-bottom:4px solid var(--amber);border-radius:8px}
+section{border-radius:8px;box-shadow:0 4px 18px rgba(0,62,76,.07)}
+input:focus,select:focus{outline:3px solid rgba(249,170,60,.4);border-color:var(--teal)}
+button{background:var(--teal)}button:hover:not(:disabled){background:var(--teal-dark)}
+.ok{border-color:var(--teal)}.checks article.ok b{color:var(--teal)}

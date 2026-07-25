@@ -1,0 +1,72 @@
+{{- if eq .Values.database.mode "bundled" }}
+{{- if eq .Values.deploymentProfile "production" }}
+{{- fail "Bundled PostgreSQL is single-instance and is not allowed in Production; use an external HA PostgreSQL service" }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "serviceops.fullname" . }}-postgresql
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: {{ include "serviceops.name" . }}-postgresql
+  ports:
+    - {name: postgresql, port: 5432, targetPort: postgresql}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "serviceops.fullname" . }}-postgresql
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "serviceops.fullname" . }}-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "serviceops.name" . }}-postgresql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "serviceops.name" . }}-postgresql
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: postgresql
+          image: {{ .Values.database.bundled.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          ports:
+            - {name: postgresql, containerPort: 5432}
+          env:
+            - {name: POSTGRES_DB, value: {{ .Values.database.bundled.database | quote }}}
+            - {name: POSTGRES_USER, value: {{ .Values.database.bundled.username | quote }}}
+            - name: POSTGRES_PASSWORD
+              value: {{ required "database.bundled.password is required" .Values.database.bundled.password | quote }}
+          readinessProbe:
+            exec: {command: ["pg_isready", "-U", {{ .Values.database.bundled.username | quote }}, "-d", {{ .Values.database.bundled.database | quote }}]}
+            periodSeconds: 10
+          livenessProbe:
+            exec: {command: ["pg_isready", "-U", {{ .Values.database.bundled.username | quote }}, "-d", {{ .Values.database.bundled.database | quote }}]}
+            periodSeconds: 20
+            failureThreshold: 5
+          resources: {{- toYaml .Values.database.bundled.resources | nindent 12 }}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.database.bundled.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests: {storage: {{ .Values.database.bundled.size }}}
+{{- end }}

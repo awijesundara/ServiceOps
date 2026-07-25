@@ -1,0 +1,19 @@
+name: serviceops-installer
+services:
+  installer:
+    build: .
+    command: ["gunicorn", "--bind", "0.0.0.0:8090", "--workers", "1", "--threads", "4", "installer.app:create_app()"]
+    environment:
+      INSTALLER_STATE_DIR: /config
+      INSTALLER_SECRET: ${INSTALLER_SECRET}
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    volumes:
+      - ./.installer-state:/config
+    ports:
+      - "${INSTALLER_BIND_ADDRESS:-127.0.0.1}:${INSTALLER_PORT:-8090}:8090"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
