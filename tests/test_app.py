@@ -7,7 +7,8 @@ import pytest
 from app import (Approval, ApprovalChain, CatalogRequest, CatalogTask, EnterpriseRecord,
                  CatalogItem, DirectoryGroupMapping, DirectoryManagedMembership,
                  ExternalIdentity, Favorite, FileAttachment, GroupMember, RequestedItem,
-                 PlatformSetting, SupportGroup, TaskSLA, Ticket, User, UserPreference,
+                 PlatformSetting, SupportGroup, TaskSLA, Ticket, TicketAssignmentGroup,
+                 User, UserPreference,
                  create_app, db, provision_external_user)
 from werkzeug.security import generate_password_hash
 
@@ -29,9 +30,11 @@ def app():
         )
         db.session.add_all([employee, manager])
         db.session.flush()
+        admin = User.query.filter_by(username="admin").one()
         for group in SupportGroup.query.filter_by(group_type="IT Fulfillment").all():
             group.manager_id = manager.id
             db.session.add(GroupMember(group_id=group.id, user_id=manager.id, role="manager"))
+            db.session.add(GroupMember(group_id=group.id, user_id=admin.id, role="member"))
         ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
         db.session.add(GroupMember(group_id=ccb.id, user_id=manager.id, role="CCB approver"))
         service_desk = SupportGroup.query.filter_by(name="Service Desk").one()
@@ -52,6 +55,11 @@ def client(app):
 
 def login(client, username="admin", password="Admin123!"):
     return client.post("/login", data={"username": username, "password": password}, follow_redirects=True)
+
+
+def group_id(app, name="CoreApps"):
+    with app.app_context():
+        return SupportGroup.query.filter_by(name=name).one().id
 
 
 def test_health(client):
@@ -75,16 +83,91 @@ def test_incident_lifecycle(client, app):
         "description": "Connection fails from the remote office.",
         "category": "Network",
         "priority": "P2",
+        "group_id": group_id(app, "Network"),
     }, follow_redirects=True)
     assert created.status_code == 200
     assert b"INC0000001" in created.data
     with app.app_context():
         ticket = Ticket.query.one()
         ticket_id = ticket.id
+        assert ticket.assignment_group_record.group.name == "Network"
     updated = client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": "In Progress", "priority": "P1", "assignee_id": ""
     }, follow_redirects=True)
     assert b"In Progress" in updated.data
+
+
+def test_only_owning_team_can_operationally_update_ticket(client, app):
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        ssd = SupportGroup.query.filter_by(name="SSD").one()
+        unix_agent = User(
+            username="unix.agent", name="Unix Agent", email="unix.agent@test.invalid",
+            password_hash=generate_password_hash("Unix123!"), role="agent",
+        )
+        ssd_agent = User(
+            username="ssd.agent", name="SSD Agent", email="ssd.agent@test.invalid",
+            password_hash=generate_password_hash("Ssd12345!"), role="agent",
+        )
+        db.session.add_all([unix_agent, ssd_agent])
+        db.session.flush()
+        db.session.add_all([
+            GroupMember(group_id=unix.id, user_id=unix_agent.id, role="member"),
+            GroupMember(group_id=ssd.id, user_id=ssd_agent.id, role="member"),
+        ])
+        db.session.commit()
+        unix_id, ssd_agent_id = unix.id, ssd_agent.id
+
+    login(client)
+    response = client.post("/tickets/new/change", data={
+        "title": "Unix-owned protected change",
+        "description": "Operational control belongs to Unix.",
+        "category": "Software", "priority": "P3", "change_type": "Normal",
+        "risk_score": "50", "impact": "Medium", "group_id": unix_id,
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Unix-owned protected change").one()
+        ticket_id, current_state = ticket.id, ticket.state
+
+    client.post("/logout")
+    login(client, "ssd.agent", "Ssd12345!")
+    detail = client.get(f"/ticket/{ticket_id}")
+    assert detail.status_code == 200
+    assert b"Read only: operational updates are restricted to active members of Unix" in detail.data
+    assert b"Save changes" not in detail.data
+    assert client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": current_state, "priority": "P1",
+        "assignee_id": "",
+    }).status_code == 403
+    assert client.post(
+        f"/task-board/{ticket_id}/move", data={"state": current_state}
+    ).status_code == 403
+    assert client.post(
+        f"/ticket/{ticket_id}/checklist", data={"text": "Unauthorized"}
+    ).status_code == 403
+    assert client.post(f"/change/{ticket_id}/conflicts").status_code == 403
+
+    client.post("/logout")
+    login(client, "unix.agent", "Unix123!")
+    owner_detail = client.get(f"/ticket/{ticket_id}")
+    assert b"Save changes" in owner_detail.data
+    assert b"Unix Agent" in owner_detail.data
+    assert b"SSD Agent" not in owner_detail.data
+    assert client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": current_state, "priority": "P2",
+        "assignee_id": ssd_agent_id,
+    }).status_code == 400
+    assert client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": current_state, "priority": "P2",
+        "assignee_id": "",
+    }).status_code == 302
+    with app.app_context():
+        ticket = db.session.get(Ticket, ticket_id)
+        assert ticket.priority == "P2"
+        assert ticket.state == current_state
 
 
 def test_requester_cannot_create_change(client):
@@ -148,6 +231,8 @@ def test_catalog_approval_chain_creates_fulfillment_task(client, app):
         chain = ApprovalChain.query.filter_by(target_type="ritm", target_id=ritm_id).one()
         second_vote = chain.gates[1].votes[0]
         second_vote_id = second_vote.id
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
     client.post(f"/approval-votes/{second_vote_id}/decide",
                 data={"decision": "Approved", "comments": "Fulfillment approved."})
     with app.app_context():
@@ -155,6 +240,31 @@ def test_catalog_approval_chain_creates_fulfillment_task(client, app):
         assert ritm.state == "Approved"
         assert CatalogTask.query.filter_by(requested_item_id=ritm.id).count() == 1
         assert TaskSLA.query.filter_by(target_type="ritm", target_id=ritm.id).count() == 1
+
+
+def test_catalog_task_requires_valid_fulfillment_lifecycle(client, app):
+    login(client)
+    item = None
+    with app.app_context():
+        item = CatalogItem(
+            name="No approval test item", category="Testing",
+            description="Workflow transition test", approval_required=False,
+        )
+        db.session.add(item)
+        db.session.commit()
+        item_id = item.id
+    client.post(f"/catalog/{item_id}/order", data={"details": "Test lifecycle"})
+    with app.app_context():
+        task_id = CatalogTask.query.one().id
+    assert client.post(f"/catalog-task/{task_id}", data={
+        "state": "Closed Complete", "work_notes": "Attempted bypass",
+    }).status_code == 409
+    assert client.post(f"/catalog-task/{task_id}", data={
+        "state": "Work in Progress", "work_notes": "Started",
+    }).status_code == 302
+    assert client.post(f"/catalog-task/{task_id}", data={
+        "state": "Closed Complete", "work_notes": "Completed",
+    }).status_code == 302
 
 
 def test_change_has_governance_approval_chain_and_sla(client, app):
@@ -167,6 +277,7 @@ def test_change_has_governance_approval_chain_and_sla(client, app):
         "implementation_plan": "Upgrade replicas, then primary.",
         "test_plan": "Run health and transaction tests.",
         "backout_plan": "Restore the previous release.",
+        "group_id": group_id(app),
     })
     with app.app_context():
         ticket = Ticket.query.filter_by(kind="change").one()
@@ -175,6 +286,82 @@ def test_change_has_governance_approval_chain_and_sla(client, app):
         assert [gate.name for gate in chain.gates] == ["CoreApps manager assessment", "CCB weekly authorization"]
         assert chain.gates[1].mode == "majority"
         assert TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).count() == 1
+
+
+def test_change_cannot_bypass_approval_from_detail_or_board(client, app):
+    login(client)
+    client.post("/tickets/new/change", data={
+        "title": "Protected database change",
+        "description": "Must complete manager and CCB authorization.",
+        "category": "Software", "priority": "P2", "change_type": "Normal",
+        "risk_score": "70", "impact": "High",
+        "implementation_plan": "Implement safely.", "test_plan": "Validate safely.",
+        "backout_plan": "Back out safely.",
+        "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket = Ticket.query.filter_by(kind="change").one()
+        ticket_id = ticket.id
+        first_vote_id = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket.id
+        ).one().gates[0].votes[0].id
+    bypass = client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "In Progress", "priority": "P2",
+        "assignee_id": "",
+    })
+    assert bypass.status_code == 409
+    assert client.post(
+        f"/task-board/{ticket_id}/move", data={"state": "In Progress"}
+    ).status_code == 409
+    with app.app_context():
+        assert db.session.get(Ticket, ticket_id).state == "Awaiting Approval"
+
+    # Platform administrators cannot cast another named approver's vote.
+    assert client.post(f"/approval-votes/{first_vote_id}/decide", data={
+        "decision": "Approved", "comments": "Unauthorized override",
+    }).status_code == 403
+
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+    assert client.post(f"/approval-votes/{first_vote_id}/decide", data={
+        "decision": "Approved", "comments": "Manager authorization",
+    }).status_code == 302
+    with app.app_context():
+        chain = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id
+        ).one()
+        ccb_vote_id = chain.gates[1].votes[0].id
+    assert client.post(f"/approval-votes/{ccb_vote_id}/decide", data={
+        "decision": "Approved", "comments": "CCB authorization",
+    }).status_code == 302
+    allowed = client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "In Progress", "priority": "P2",
+        "assignee_id": "",
+    })
+    assert allowed.status_code == 302
+    with app.app_context():
+        assert db.session.get(Ticket, ticket_id).state == "In Progress"
+
+
+def test_enterprise_record_cannot_bypass_requested_approval(client, app):
+    login(client)
+    client.post("/module/problem/new", data={
+        "record_type": "Root cause analysis",
+        "title": "Approval protected problem",
+        "description": "Do not start before authorization.",
+        "priority": "P2", "risk": "High", "approval_required": "1",
+    })
+    with app.app_context():
+        record_id = EnterpriseRecord.query.filter_by(
+            title="Approval protected problem"
+        ).one().id
+    bypass = client.post(f"/enterprise/{record_id}", data={
+        "action": "update", "state": "In Progress", "priority": "P2",
+        "risk": "High", "assignee_id": "",
+    })
+    assert bypass.status_code == 409
+    with app.app_context():
+        assert db.session.get(EnterpriseRecord, record_id).state == "Awaiting Approval"
 
 
 def test_it_teams_managers_and_ccb_membership(client, app):
@@ -204,6 +391,7 @@ def test_unified_search_favorites_and_preferences(client, app):
     client.post("/tickets/new/incident", data={
         "title": "Global search verification", "description": "Searchable record",
         "category": "Software", "priority": "P3",
+        "group_id": group_id(app),
     })
     result = client.get("/ui/search?q=Global+search")
     assert b"Global search verification" in result.data
@@ -224,6 +412,7 @@ def test_visual_board_checklist_and_attachment(client, app):
     client.post("/tickets/new/incident", data={
         "title": "Workspace interaction test", "description": "Board, checklist, and files",
         "category": "Software", "priority": "P3",
+        "group_id": group_id(app),
     })
     with app.app_context():
         ticket_id = Ticket.query.one().id
@@ -236,6 +425,22 @@ def test_visual_board_checklist_and_attachment(client, app):
     assert b"evidence.txt" in uploaded.data
     with app.app_context():
         assert FileAttachment.query.filter_by(ticket_id=ticket_id).one().size_bytes == 8
+
+
+def test_visual_board_rejects_invalid_lifecycle_jump(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Strict lifecycle test", "description": "Cannot close from New",
+        "category": "Software", "priority": "P3",
+        "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.one().id
+    assert client.post(
+        f"/task-board/{ticket_id}/move", data={"state": "Closed"}
+    ).status_code == 409
+    with app.app_context():
+        assert db.session.get(Ticket, ticket_id).state == "New"
 
 
 def test_fresh_install_has_no_reserved_demo_personas(monkeypatch):
