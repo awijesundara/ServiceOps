@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">SERVICE OPERATIONS</p><h1>Good day, {{ current_user.name.split()[0] }}</h1><p>Here’s what’s happening across your service desk.</p></div>
+<a class="primary button" href="{{ url_for('ticket_new', kind='incident') }}">+ Report an incident</a></header>
+<section class="stats">
+  <a href="{{ url_for('tickets', kind='incident') }}"><span>Incidents</span><strong>{{ counts.incident }}</strong><small>View queue →</small></a>
+  <a href="{{ url_for('tickets', kind='request') }}"><span>Requests</span><strong>{{ counts.request }}</strong><small>View catalog →</small></a>
+  <a href="{{ url_for('tickets', kind='change') }}"><span>Changes</span><strong>{{ counts.change }}</strong><small>View schedule →</small></a>
+  <div><span>Open work</span><strong>{{ open_count }}</strong><small>Needs attention</small></div>
+</section>
+<section class="panel">
+  <div class="panel-head"><div><h2>Recently updated</h2><p>Your latest service activity</p></div></div>
+  {% if recent %}
+  <table><thead><tr><th>Number</th><th>Summary</th><th>State</th><th>Priority</th><th>Updated</th></tr></thead>
+  <tbody>{% for t in recent %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td><span class="badge">{{ t.state }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td><td>{{ t.updated_at.strftime('%b %d, %H:%M') }}</td></tr>{% endfor %}</tbody></table>
+  {% else %}<div class="empty"><h3>No activity yet</h3><p>Create an incident or service request to get started.</p></div>{% endif %}
+</section>
+{% endblock %}
+

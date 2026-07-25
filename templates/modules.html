@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">ENTERPRISE WORKFLOWS</p><h1>All workspaces</h1><p>Connected operations across technology, employees, customers, security, and the business.</p></div></header>
+<section class="module-grid">
+{% for key, module in modules.items() %}
+  {% if current_user.role != 'requester' or key in ['customer','hr'] %}
+  <a class="panel module-card" href="{{ url_for('module_records', domain=key) }}">
+    <span class="module-icon">{{ module.prefix[:2] }}</span><div><h2>{{ module.name }}</h2><p>{{ module.types|join(' · ') }}</p><strong>{{ counts[key] }} records →</strong></div>
+  </a>
+  {% endif %}
+{% endfor %}
+</section>
+{% endblock %}
+

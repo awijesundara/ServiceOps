@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">{{ config.name|upper }}</p><h1>New record</h1><p>Create governed work in the {{ config.name }} workspace.</p></div></header>
+<form method="post" class="panel form-grid">
+  <label>Record type<select name="record_type">{% for type in config.types %}<option>{{ type }}</option>{% endfor %}</select></label>
+  <label>Priority<select name="priority"><option>P4</option><option selected>P3</option><option>P2</option><option>P1</option></select></label>
+  <label class="wide">Summary<input name="title" required autofocus></label>
+  <label>Risk<select name="risk"><option>Low</option><option selected>Medium</option><option>High</option><option>Critical</option></select></label>
+  <label>Due date<input type="datetime-local" name="due_at"></label>
+  <label class="wide">Description<textarea name="description" rows="9" required></textarea></label>
+  {% if current_user.role in ['agent','manager','admin'] %}<label class="check wide"><input type="checkbox" name="approval_required" value="1"> Require approval before fulfillment</label>{% endif %}
+  <div class="wide actions"><a class="button" href="{{ url_for('module_records', domain=domain) }}">Cancel</a><button class="primary">Create record</button></div>
+</form>
+{% endblock %}

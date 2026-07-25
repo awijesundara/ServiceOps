@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">WORK QUEUE</p><h1>{{ kind|title }}s</h1><p>Track and manage {{ kind }} records.</p></div>
+<a class="primary button" href="{{ url_for('ticket_new', kind=kind) }}">+ New {{ kind }}</a></header>
+<form class="filters"><input name="q" value="{{ q }}" placeholder="Search number or summary…"><select name="state"><option value="">All states</option>{% for s in ['New','In Progress','Pending','Resolved','Closed','Cancelled'] %}<option {% if state==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select><button>Filter</button></form>
+<section class="panel table-panel">
+<table><thead><tr><th>Number</th><th>Summary</th><th>Requester</th><th>State</th><th>Priority</th><th>Assigned to</th></tr></thead>
+<tbody>{% for t in tickets %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td>{{ t.requester.name }}</td><td><span class="badge">{{ t.state }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td><td>{{ t.assignee.name if t.assignee else 'Unassigned' }}</td></tr>{% else %}<tr><td colspan="6" class="empty">No matching records.</td></tr>{% endfor %}</tbody></table>
+</section>
+{% endblock %}
+

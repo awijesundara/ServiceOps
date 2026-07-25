@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}ServiceOps{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css') }}">
+  <script src="{{ url_for('static', filename='platform.js') }}" defer></script>
+</head>
+<body class="{% if current_user.is_authenticated %}theme-{{ ui_preference.theme }} density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
+{% if current_user.is_authenticated %}
+<aside class="sidebar">
+  <a class="brand" href="{{ url_for('dashboard') }}"><span>S</span> ServiceOps</a>
+  <nav>
+    <small>WORKSPACE</small>
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('task_board') }}">Visual task board</a>
+    <a href="{{ url_for('tickets', kind='incident') }}">Incidents</a>
+    <a href="{{ url_for('tickets', kind='request') }}">Service requests</a>
+    {% if current_user.role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}">Changes</a>{% endif %}
+    <a href="{{ url_for('catalog') }}">Service catalog</a>
+    <a href="{{ url_for('knowledge') }}">Knowledge</a>
+    <a href="{{ url_for('modules') }}">All workspaces</a>
+    <a href="{{ url_for('approval_chains') }}">My approvals</a>
+    <a href="{{ url_for('requests_list') }}">Requests / RITMs</a>
+    <a href="{{ url_for('notifications') }}">Notifications</a>
+    {% if current_user.role in ['agent','manager','admin'] %}
+    <small>OPERATIONS</small>
+    <a href="{{ url_for('module_records', domain='problem') }}">Problems</a>
+    <a href="{{ url_for('module_records', domain='event') }}">IT operations</a>
+    <a href="{{ url_for('cmdb') }}">CMDB & service map</a>
+    <a href="{{ url_for('assets') }}">Assets</a>
+    <a href="{{ url_for('analytics') }}">Analytics</a>
+    {% endif %}
+    {% if current_user.role == 'admin' %}
+    <small>ADMINISTRATION</small>
+    <a href="{{ url_for('itil_admin') }}">ITIL configuration</a>
+    <a href="{{ url_for('users') }}">Users & roles</a>
+    <a href="{{ url_for('audit_log') }}">Audit log</a>
+    {% endif %}
+  </nav>
+  <div class="profile">
+    <div class="avatar">{{ current_user.name[0] }}</div>
+    <div><strong>{{ current_user.name }}</strong><small>{{ current_user.role }}</small></div>
+    <form action="{{ url_for('logout') }}" method="post"><button class="link-button" aria-label="Sign out">↗</button></form>
+  </div>
+</aside>
+<header class="unified-nav">
+  <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation">☰</button>
+  <form action="{{ url_for('global_search') }}" class="global-search"><span>⌕</span><input name="q" placeholder="Search ServiceOps" aria-label="Search ServiceOps"></form>
+  <div class="nav-menus">
+    <details><summary>★</summary><div class="nav-popover"><h3>Favorites</h3>{% for favorite in ui_favorites %}<a href="{{ favorite.url }}">{{ favorite.label }}</a>{% else %}<p>No favorites yet.</p>{% endfor %}</div></details>
+    <details><summary>◷</summary><div class="nav-popover"><h3>History</h3>{% for row in ui_history %}<a href="{{ row.url }}">{{ row.label }}</a>{% else %}<p>No recent pages.</p>{% endfor %}</div></details>
+    <a class="nav-icon" href="{{ url_for('notifications') }}" aria-label="Notifications">♢{% if unread_notifications %}<b>{{ unread_notifications }}</b>{% endif %}</a>
+    <button class="nav-icon" type="button" data-favorite aria-label="Favorite this page">☆</button>
+    <a class="nav-icon" href="{{ url_for('help_center') }}" aria-label="Help">?</a>
+    <a class="nav-icon" href="{{ url_for('preferences') }}" aria-label="Preferences">⚙</a>
+  </div>
+</header>
+{% endif %}
+<main class="{% if not current_user.is_authenticated %}auth-main{% endif %}">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>
