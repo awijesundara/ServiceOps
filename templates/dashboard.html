@@ -4,7 +4,7 @@
 <a class="primary button" href="{{ url_for('ticket_new', kind='incident') }}">+ Report an incident</a></header>
 <section class="stats">
   <a href="{{ url_for('tickets', kind='incident') }}"><span>Incidents</span><strong>{{ counts.incident }}</strong><small>View queue →</small></a>
-  <a href="{{ url_for('tickets', kind='request') }}"><span>Requests</span><strong>{{ counts.request }}</strong><small>View catalog →</small></a>
+  <a href="{{ url_for('requests_list') }}"><span>Requests</span><strong>{{ counts.request }}</strong><small>View REQ / RITM →</small></a>
   <a href="{{ url_for('tickets', kind='change') }}"><span>Changes</span><strong>{{ counts.change }}</strong><small>View schedule →</small></a>
   <div><span>Open work</span><strong>{{ open_count }}</strong><small>Needs attention</small></div>
 </section>
@@ -16,4 +16,3 @@
   {% else %}<div class="empty"><h3>No activity yet</h3><p>Create an incident or service request to get started.</p></div>{% endif %}
 </section>
 {% endblock %}
-

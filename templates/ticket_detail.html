@@ -1,38 +1,154 @@
 {% extends "base.html" %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">{{ ticket.kind|upper }} · {{ ticket.number }}</p><h1>{{ ticket.title }}</h1><p>Opened by {{ ticket.requester.name }} on {{ ticket.created_at.strftime('%B %d, %Y') }}</p></div><span class="badge big">{{ ticket.state }}</span></header>
+<header class="page-head">
+  <div><p class="eyebrow">{{ ticket.kind|upper }} · {{ ticket.number }}</p><h1>{{ ticket.title }}</h1>
+    <p>Opened by {{ ticket.requester.name }} on {{ ticket.created_at.strftime('%B %d, %Y') }}</p></div>
+  <span class="badge big">{{ ticket.state }}</span>
+</header>
 <div class="detail-grid">
 <section class="panel">
   <h2>Description</h2><p class="pre">{{ ticket.description }}</p>
-  <dl class="governance-grid"><dt>Owning team</dt><dd>{{ owning_group.name if owning_group else 'Not assigned' }}</dd>{% if owning_group %}<dt>Team manager</dt><dd>{{ owning_group.manager.name if owning_group.manager else 'Not assigned' }}</dd>{% endif %}</dl>
+  <dl class="governance-grid">
+    <dt>Owning team</dt><dd>{{ owning_group.name if owning_group else 'Not assigned' }}</dd>
+    {% if owning_group %}<dt>Team manager</dt><dd>{{ owning_group.manager.name if owning_group.manager else 'Not assigned' }}</dd>{% endif %}
+  </dl>
+
+  {% if ticket.kind == 'incident' %}
+  <hr><h2>Major incident coordination</h2>
+  {% set major = ticket.major_incident_profile %}
+  {% if major %}<dl class="governance-grid"><dt>Status</dt><dd>{{ major.status }}</dd><dt>Coordinator</dt><dd>{{ major.coordinator.name if major.coordinator else 'Not assigned' }}</dd><dt>Business impact</dt><dd>{{ major.business_impact or 'Not documented' }}</dd><dt>Communications</dt><dd>{{ major.communications or 'Not documented' }}</dd></dl>{% else %}<p class="muted">This remains a standard INC. Major incident status has not been proposed.</p>{% endif %}
+  {% if can_manage_ticket %}<details><summary>{{ 'Update' if major else 'Propose' }} major incident</summary><form method="post" action="{{ url_for('major_incident_update', ticket_id=ticket.id) }}" class="form-grid"><label>Status<select name="status">{% for value in ['Proposed','Accepted','Rejected','Resolved'] %}<option {% if major and major.status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label><label class="wide">Business impact<textarea name="business_impact" rows="3">{{ major.business_impact if major else '' }}</textarea></label><label class="wide">Coordination and communications<textarea name="communications" rows="3">{{ major.communications if major else '' }}</textarea></label><div class="wide actions"><button>Save major incident status</button></div></form></details>{% endif %}
+  {% endif %}
+
   {% if ticket.change_governance %}
   <hr><h2>Change governance</h2>
-  <dl class="governance-grid"><dt>Type</dt><dd>{{ ticket.change_governance.change_type }}</dd><dt>Risk score</dt><dd>{{ ticket.change_governance.risk_score }}</dd><dt>Impact</dt><dd>{{ ticket.change_governance.impact }}</dd><dt>Configuration item</dt><dd>{{ ticket.change_governance.ci.name if ticket.change_governance.ci else 'Not selected' }}</dd><dt>Schedule</dt><dd>{{ ticket.change_governance.planned_start.strftime('%b %d %H:%M') if ticket.change_governance.planned_start else 'Not scheduled' }} → {{ ticket.change_governance.planned_end.strftime('%b %d %H:%M') if ticket.change_governance.planned_end else '—' }}</dd><dt>Conflicts</dt><dd>{{ ticket.change_governance.conflict_status }}</dd></dl>
-  <h3>Implementation plan</h3><p class="pre">{{ ticket.change_governance.implementation_plan }}</p><h3>Test plan</h3><p class="pre">{{ ticket.change_governance.test_plan }}</p><h3>Backout plan</h3><p class="pre">{{ ticket.change_governance.backout_plan }}</p>
-  {% if can_manage_ticket %}<form method="post" action="{{ url_for('detect_change_conflicts', ticket_id=ticket.id) }}"><button>Run conflict detection</button></form>{% endif %}
+  <dl class="governance-grid">
+    <dt>Revision</dt><dd>v{{ ticket.change_revision.revision if ticket.change_revision else 1 }}</dd>
+    <dt>Type</dt><dd>{{ ticket.change_governance.change_type }}</dd>
+    <dt>Risk score</dt><dd>{{ ticket.change_governance.risk_score }}</dd>
+    <dt>Impact</dt><dd>{{ ticket.change_governance.impact }}</dd>
+    <dt>Primary CI</dt><dd>{{ ticket.change_governance.ci.name if ticket.change_governance.ci else 'Not selected' }}</dd>
+    <dt>Schedule</dt><dd>{{ ticket.change_governance.planned_start.strftime('%b %d %H:%M') if ticket.change_governance.planned_start else 'Not scheduled' }} → {{ ticket.change_governance.planned_end.strftime('%b %d %H:%M') if ticket.change_governance.planned_end else '—' }}</dd>
+    <dt>Conflicts</dt><dd>{{ ticket.change_governance.conflict_status }}</dd>
+  </dl>
+  <h3>Implementation plan</h3><p class="pre">{{ ticket.change_governance.implementation_plan }}</p>
+  <h3>Test plan</h3><p class="pre">{{ ticket.change_governance.test_plan }}</p>
+  <h3>Backout plan</h3><p class="pre">{{ ticket.change_governance.backout_plan }}</p>
+  {% if can_manage_ticket %}
+  <form method="post" action="{{ url_for('detect_change_conflicts', ticket_id=ticket.id) }}"><button>Run conflict detection</button></form>
+  <details><summary>Edit material change plan</summary>
+    <p class="muted">Changing purpose, risk, schedule, CI, implementation, testing, or backout information supersedes prior decisions and starts a new approval revision.</p>
+    <form method="post" action="{{ url_for('change_plan_update', ticket_id=ticket.id) }}" class="form-grid">
+      <label class="wide">Short description<input name="title" value="{{ ticket.title }}" required></label>
+      <label class="wide">Description<textarea name="description" rows="5" required>{{ ticket.description }}</textarea></label>
+      <label>Change type<select name="change_type">{% for value in ['Standard','Normal','Emergency'] %}<option {% if ticket.change_governance.change_type==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label>Impact<select name="impact">{% for value in ['Low','Medium','High'] %}<option {% if ticket.change_governance.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label>Risk score<input type="number" min="0" max="100" name="risk_score" value="{{ ticket.change_governance.risk_score }}"></label>
+      <label>Primary CI<select name="ci_id"><option value="">Not selected</option>{% for ci in cis %}<option value="{{ ci.id }}" {% if ticket.change_governance.ci_id==ci.id %}selected{% endif %}>{{ ci.name }}</option>{% endfor %}</select></label>
+      <label>Planned start<input type="datetime-local" name="planned_start" value="{{ ticket.change_governance.planned_start.strftime('%Y-%m-%dT%H:%M') if ticket.change_governance.planned_start else '' }}"></label>
+      <label>Planned end<input type="datetime-local" name="planned_end" value="{{ ticket.change_governance.planned_end.strftime('%Y-%m-%dT%H:%M') if ticket.change_governance.planned_end else '' }}"></label>
+      <label class="wide">Implementation plan<textarea name="implementation_plan" rows="4" required>{{ ticket.change_governance.implementation_plan }}</textarea></label>
+      <label class="wide">Test plan<textarea name="test_plan" rows="4" required>{{ ticket.change_governance.test_plan }}</textarea></label>
+      <label class="wide">Backout plan<textarea name="backout_plan" rows="4" required>{{ ticket.change_governance.backout_plan }}</textarea></label>
+      <div class="wide actions"><button class="primary">Save plan and request reapproval</button></div>
+    </form>
+  </details>
   {% endif %}
-  {% if chains %}<hr><h2>Approval chain</h2>{% for chain in chains %}<div class="chain"><strong>{{ chain.name }}</strong><span class="badge">{{ chain.state }}</span>{% for gate in chain.gates %}<div class="gate"><b>{{ gate.sequence }}. {{ gate.name }}</b><span>{{ gate.mode|upper }} · {{ gate.state }}</span>{% for vote in gate.votes %}<div class="vote">{{ vote.approver.name }} — {{ vote.state }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}"><input name="comments" placeholder="Decision comments"><button name="decision" value="Rejected">Reject</button><button class="primary" name="decision" value="Approved">Approve</button></form>{% endif %}</div>{% endfor %}</div>{% endfor %}</div>{% endfor %}{% endif %}
+  {% endif %}
+
+  {% if ticket.kind == 'change' %}
+  <hr><h2>Change tasks (CTASK)</h2>
+  {% for task in work_tasks %}
+  <article class="timeline">
+    <strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · Required{% endif %}</strong>
+    <span class="badge">{{ task.state }}</span><p>{{ task.title }}</p>
+    <small>{{ task.assignment_group.name }} · {{ task.assignee.name if task.assignee else 'Unassigned' }}</small>
+    {% if task_permissions[task.id] %}
+    <form method="post" action="{{ url_for('operational_task_update', task_id=task.id) }}" class="form-grid">
+      <label>State<select name="state">{% for state in work_task_states[task.state] %}<option {% if task.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
+      <label>Assigned to<select name="assignee_id"><option value="">Unassigned</option>{% for user in task_agents[task.id] %}<option value="{{ user.id }}" {% if task.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+      <label class="wide">Work notes<textarea name="work_notes" rows="2">{{ task.work_notes }}</textarea></label>
+      <div class="wide actions"><button>Update {{ task.number }}</button></div>
+    </form>
+    {% endif %}
+  </article>
+  {% else %}<p class="muted">No change tasks yet.</p>{% endfor %}
+  {% if can_manage_ticket %}
+  <details><summary>Add change task</summary>
+    <form method="post" action="{{ url_for('change_task_add', ticket_id=ticket.id) }}" class="form-grid">
+      <label class="wide">Task summary<input name="title" required></label>
+      <label>Type<select name="task_type"><option>Planning</option><option>Implementation</option><option>Testing</option><option>Review</option></select></label>
+      <label>Assignment group<select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label>
+      <label>Planned start<input type="datetime-local" name="planned_start"></label>
+      <label>Planned end<input type="datetime-local" name="planned_end"></label>
+      <label class="check wide"><input type="checkbox" name="required" value="1" checked> Required before the parent change can complete</label>
+      <div class="wide actions"><button>Add CTASK</button></div>
+    </form>
+  </details>
+  {% endif %}
+  {% endif %}
+
+  <hr><h2>Related records</h2>
+  {% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ item.label }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>
+  {% else %}<p class="muted">No related records.</p>{% endfor %}
+  {% if can_manage_ticket and ticket.kind in ['incident','change'] %}
+  <form method="post" action="{{ url_for('record_link_add', source_type='ticket', source_id=ticket.id) }}" class="inline-form">
+    <select name="link_type">
+      {% if ticket.kind == 'incident' %}
+      <option value="parent_incident">Parent incident</option><option value="underlying_problem">Problem</option>
+      <option value="resolution_change">Change request</option><option value="caused_by_change">Caused by change</option>
+      <option value="converted_request">Service request</option>
+      {% else %}
+      <option value="related_incident">Related incident</option><option value="problem_change">Related problem</option>
+      <option value="requested_item_change">Requested item</option>
+      {% endif %}
+    </select>
+    <input name="target_number" placeholder="INC, PRB, CHG, REQ or RITM number" required><button>Link record</button>
+  </form>
+  {% endif %}
+
+  <hr><h2>Affected CIs and impacted services</h2>
+  {% for link in ci_links %}<div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div><span class="badge">{{ link.relationship_role }}</span></div>
+  {% else %}<p class="muted">No additional CI or service relationships.</p>{% endfor %}
+  {% if can_manage_ticket %}
+  <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
+    <select name="relationship_role"><option>Primary CI</option><option>Affected CI</option><option>Impacted service</option></select>
+    <select name="ci_id">{% for ci in cis %}<option value="{{ ci.id }}">{{ ci.name }} · {{ ci.ci_class }}</option>{% endfor %}</select><button>Link CI</button>
+  </form>
+  {% endif %}
+
+  {% if chains %}<hr><h2>Approval history</h2>{% for chain in chains %}<div class="chain"><strong>{{ chain.name }}</strong><span class="badge">{{ chain.state }}</span>{% for gate in chain.gates %}<div class="gate"><b>{{ gate.sequence }}. {{ gate.name }}</b><span>{{ gate.mode|upper }} · {{ gate.state }}</span>{% for vote in gate.votes %}<div class="vote">{{ vote.approver.name }} — {{ vote.state }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}"><input name="comments" placeholder="Decision comments"><button name="decision" value="Rejected">Reject</button><button class="primary" name="decision" value="Approved">Approve</button></form>{% endif %}</div>{% endfor %}</div>{% endfor %}</div>{% endfor %}{% endif %}
+
   {% if slas %}<hr><h2>Service level commitments</h2>{% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ sla.stage }}{% if sla.breached %} · BREACHED{% endif %}</small></div><div><span>Breach target</span><strong>{{ sla.breach_at.strftime('%b %d, %H:%M') }}</strong></div></div>{% endfor %}{% endif %}
+
   <hr><h2>Checklist</h2>{% for item in ticket.checklist|sort(attribute='position') %}{% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_toggle', item_id=item.id) }}" class="checklist-row"><button aria-label="Toggle checklist item">{{ '✓' if item.completed else '○' }}</button><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></form>{% else %}<div class="checklist-row"><span>{{ '✓' if item.completed else '○' }}</span><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></div>{% endif %}{% else %}<p class="muted">No checklist items.</p>{% endfor %}
   {% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_add', ticket_id=ticket.id) }}" class="inline-form"><input name="text" placeholder="Add checklist item" required><button>Add</button></form>{% endif %}
+
   <hr><h2>Attachments</h2>{% for attachment in ticket.attachments %}<a class="attachment" href="{{ url_for('attachment_download', attachment_id=attachment.id) }}"><strong>{{ attachment.original_name }}</strong><span>{{ (attachment.size_bytes / 1024)|round(1) }} KB · {{ attachment.uploaded_by.name }}</span></a>{% else %}<p class="muted">No attachments.</p>{% endfor %}
   <form method="post" action="{{ url_for('attachment_upload', ticket_id=ticket.id) }}" enctype="multipart/form-data" class="inline-form"><input type="file" name="file" required><button>Upload</button></form>
-  <hr><h2>Activity</h2>
+
+  <hr><h2>Activity and work notes</h2>
   {% for c in ticket.comments|sort(attribute='created_at', reverse=true) %}<article class="comment"><div class="avatar">{{ c.author.name[0] }}</div><div><strong>{{ c.author.name }}</strong><small>{{ c.created_at.strftime('%b %d, %H:%M') }}</small><p>{{ c.body }}</p></div></article>{% else %}<p class="muted">No comments yet.</p>{% endfor %}
   <form method="post" class="comment-box"><input type="hidden" name="action" value="comment"><textarea name="body" rows="3" placeholder="Add a comment…" required></textarea><button class="primary">Post comment</button></form>
+
+  <hr><h2>Ticket history</h2>
+  {% for event in history %}<article class="timeline"><strong>{{ event.event }}</strong><span>{{ event.actor.name if event.actor else 'System' }} · {{ event.created_at.strftime('%b %d, %H:%M:%S') }}</span>{% if event.field_name %}<p><b>{{ event.field_name }}</b>: {{ event.old_value or '—' }} → {{ event.new_value or '—' }}</p>{% endif %}{% if event.details %}<p>{{ event.details }}</p>{% endif %}</article>
+  {% else %}<p class="muted">No recorded history.</p>{% endfor %}
 </section>
+
 <aside class="panel facts">
   <h2>Record details</h2>
   {% if can_manage_ticket %}
   <form method="post" class="stack"><input type="hidden" name="action" value="update">
-    <label>State<select name="state">{% for s in ticket_state_options %}<option {% if ticket.state==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
-    <label>Priority<select name="priority">{% for p in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==p %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
-    <label>Assigned to<select name="assignee_id"><option value="">Unassigned</option>{% for a in agents %}<option value="{{ a.id }}" {% if ticket.assignee_id==a.id %}selected{% endif %}>{{ a.name }}</option>{% endfor %}</select></label>
+    <label>State<select name="state">{% for state in ticket_state_options %}<option {% if ticket.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
+    <label>Priority<select name="priority">{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
+    <label>Assigned to<select name="assignee_id"><option value="">Unassigned</option>{% for user in agents %}<option value="{{ user.id }}" {% if ticket.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
     <button class="primary">Save changes</button>
   </form>
   {% else %}
   {% if current_user.role in ['agent','manager','admin'] %}<p class="muted">Read only: operational updates are restricted to active members of {{ owning_group.name if owning_group else 'the owning team' }}.</p>{% endif %}
   <dl><dt>State</dt><dd>{{ ticket.state }}</dd><dt>Priority</dt><dd>{{ ticket.priority }}</dd><dt>Category</dt><dd>{{ ticket.category }}</dd><dt>Assigned to</dt><dd>{{ ticket.assignee.name if ticket.assignee else 'Unassigned' }}</dd></dl>
   {% endif %}
-</aside></div>
+</aside>
+</div>
 {% endblock %}

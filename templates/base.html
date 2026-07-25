@@ -21,7 +21,7 @@
     <a href="{{ url_for('dashboard') }}">Dashboard</a>
     <a href="{{ url_for('task_board') }}">Visual task board</a>
     <a href="{{ url_for('tickets', kind='incident') }}">Incidents</a>
-    <a href="{{ url_for('tickets', kind='request') }}">Service requests</a>
+    <a href="{{ url_for('requests_list') }}">Service requests</a>
     {% if current_user.role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}">Changes</a>{% endif %}
     <a href="{{ url_for('catalog') }}">Service catalog</a>
     <a href="{{ url_for('knowledge') }}">Knowledge</a>
