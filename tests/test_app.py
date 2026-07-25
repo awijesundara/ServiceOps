@@ -4,11 +4,12 @@ from io import BytesIO
 
 import pytest
 
-from app import (Approval, ApprovalChain, CatalogRequest, CatalogTask, EnterpriseRecord,
-                 CatalogItem, DirectoryGroupMapping, DirectoryManagedMembership,
-                 ExternalIdentity, Favorite, FileAttachment, GroupMember, RequestedItem,
-                 PlatformSetting, SupportGroup, TaskSLA, Ticket, TicketAssignmentGroup,
-                 User, UserPreference,
+from app import (Approval, ApprovalChain, CatalogRequest, CatalogTask, ChangeRevision,
+                 EnterpriseRecord, CatalogItem, DirectoryGroupMapping,
+                 DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
+                 GroupMember, Notification, OperationalTask, ProblemProfile, RecordLink,
+                 RequestedItem, PlatformSetting, SupportGroup, TaskHistory, TaskSLA,
+                 Ticket, TicketAssignmentGroup, User, UserPreference,
                  create_app, db, provision_external_user)
 from werkzeug.security import generate_password_hash
 
@@ -256,6 +257,8 @@ def test_catalog_task_requires_valid_fulfillment_lifecycle(client, app):
     client.post(f"/catalog/{item_id}/order", data={"details": "Test lifecycle"})
     with app.app_context():
         task_id = CatalogTask.query.one().id
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
     assert client.post(f"/catalog-task/{task_id}", data={
         "state": "Closed Complete", "work_notes": "Attempted bypass",
     }).status_code == 409
@@ -341,6 +344,298 @@ def test_change_cannot_bypass_approval_from_detail_or_board(client, app):
     assert allowed.status_code == 302
     with app.app_context():
         assert db.session.get(Ticket, ticket_id).state == "In Progress"
+
+
+def test_incident_problem_change_and_parent_relationship_network(client, app):
+    login(client)
+    coreapps_id = group_id(app)
+    for title in ("Parent application outage", "Child user report"):
+        assert client.post("/tickets/new/incident", data={
+            "title": title, "description": "Relationship verification.",
+            "category": "Software", "priority": "P2", "group_id": coreapps_id,
+        }).status_code == 302
+    assert client.post("/module/problem/new", data={
+        "record_type": "Root cause analysis",
+        "title": "Application outage root cause",
+        "description": "Investigate the common cause.",
+        "priority": "P2", "risk": "High",
+    }).status_code == 302
+    assert client.post("/tickets/new/change", data={
+        "title": "Permanent application fix",
+        "description": "Deploy the permanent correction.",
+        "category": "Software", "priority": "P2", "change_type": "Normal",
+        "risk_score": "70", "impact": "High", "group_id": coreapps_id,
+        "implementation_plan": "Deploy safely.", "test_plan": "Validate service.",
+        "backout_plan": "Restore prior release.",
+    }).status_code == 302
+    with app.app_context():
+        incidents = Ticket.query.filter_by(kind="incident").order_by(Ticket.id).all()
+        parent, child = incidents
+        problem = EnterpriseRecord.query.filter_by(domain="problem").one()
+        change = Ticket.query.filter_by(kind="change").one()
+        parent_id, child_id = parent.id, child.id
+        problem_number, change_number, parent_number = (
+            problem.number, change.number, parent.number
+        )
+    assert client.post(f"/record/ticket/{child_id}/relationships", data={
+        "link_type": "parent_incident", "target_number": parent_number,
+    }).status_code == 302
+    assert client.post(f"/record/ticket/{parent_id}/relationships", data={
+        "link_type": "underlying_problem", "target_number": problem_number,
+    }).status_code == 302
+    assert client.post(f"/record/ticket/{parent_id}/relationships", data={
+        "link_type": "resolution_change", "target_number": change_number,
+    }).status_code == 302
+    assert client.post(f"/record/ticket/{parent_id}/relationships", data={
+        "link_type": "caused_by_change", "target_number": change_number,
+    }).status_code == 302
+    page = client.get(f"/ticket/{parent_id}")
+    assert b"Problem" in page.data
+    assert b"Change request" in page.data
+    assert b"Caused by change" in page.data
+    with app.app_context():
+        assert RecordLink.query.count() == 4
+        history = TaskHistory.query.filter_by(
+            target_type="ticket", target_id=parent_id,
+            event="Related record linked",
+        ).all()
+        assert len(history) == 4
+
+
+def test_material_change_edit_supersedes_approvals_and_notifies_approvers(client, app):
+    login(client)
+    assert client.post("/tickets/new/change", data={
+        "title": "Approved production deployment",
+        "description": "Original approved purpose.",
+        "category": "Software", "priority": "P2", "change_type": "Normal",
+        "risk_score": "50", "impact": "Medium", "group_id": group_id(app),
+        "implementation_plan": "Deploy version one.",
+        "test_plan": "Test version one.",
+        "backout_plan": "Restore version zero.",
+    }).status_code == 302
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Approved production deployment").one()
+        ticket_id = ticket.id
+        chain = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).one()
+        manager_vote_id = chain.gates[0].votes[0].id
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+    assert client.post(f"/approval-votes/{manager_vote_id}/decide", data={
+        "decision": "Approved", "comments": "Manager approved v1.",
+    }).status_code == 302
+    with app.app_context():
+        chain = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id
+        ).order_by(ApprovalChain.id.desc()).first()
+        ccb_vote_id = chain.gates[1].votes[0].id
+    assert client.post(f"/approval-votes/{ccb_vote_id}/decide", data={
+        "decision": "Approved", "comments": "CCB approved v1.",
+    }).status_code == 302
+    with app.app_context():
+        assert db.session.get(Ticket, ticket_id).state == "Approved"
+        old_chain_id = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id
+        ).one().id
+        notifications_before = Notification.query.count()
+    revised = client.post(f"/change/{ticket_id}/plan", data={
+        "title": "Approved production deployment",
+        "description": "Revised production purpose.",
+        "change_type": "Normal", "risk_score": "85", "impact": "High",
+        "implementation_plan": "Deploy version two with a new sequence.",
+        "test_plan": "Run expanded regression.",
+        "backout_plan": "Restore version one.",
+        "planned_start": "", "planned_end": "", "ci_id": "",
+    })
+    assert revised.status_code == 302
+    with app.app_context():
+        ticket = db.session.get(Ticket, ticket_id)
+        chains = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id
+        ).order_by(ApprovalChain.id).all()
+        assert ticket.state == "Awaiting Approval"
+        assert db.session.get(ApprovalChain, old_chain_id).state == "Superseded"
+        assert chains[-1].state == "Running"
+        assert ticket.change_revision.revision == 2
+        assert Notification.query.count() > notifications_before
+        assert TaskHistory.query.filter_by(
+            target_type="ticket", target_id=ticket_id,
+            event="Approval restarted",
+        ).one()
+
+
+def test_required_change_tasks_block_parent_completion(client, app):
+    login(client)
+    assert client.post("/tickets/new/change", data={
+        "title": "Task-controlled change",
+        "description": "Completion requires its implementation task.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+    }).status_code == 302
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Task-controlled change").one()
+        ticket_id = ticket.id
+        vote_id = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket.id
+        ).one().gates[0].votes[0].id
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+    assert client.post(f"/approval-votes/{vote_id}/decide", data={
+        "decision": "Approved",
+    }).status_code == 302
+    assert client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "In Progress", "priority": "P3",
+        "assignee_id": "",
+    }).status_code == 302
+    assert client.post(f"/change/{ticket_id}/tasks", data={
+        "title": "Deploy application package", "task_type": "Implementation",
+        "group_id": group_id(app), "required": "1",
+        "planned_start": "", "planned_end": "",
+    }).status_code == 302
+    assert client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "Resolved", "priority": "P3",
+        "assignee_id": "",
+    }).status_code == 409
+    with app.app_context():
+        task = OperationalTask.query.filter_by(parent_id=ticket_id).one()
+        task_id = task.id
+    assert client.post(f"/operational-task/{task_id}", data={
+        "state": "Closed Complete", "assignee_id": "",
+        "work_notes": "Deployment and validation completed.",
+    }).status_code == 302
+    assert client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "Resolved", "priority": "P3",
+        "assignee_id": "",
+    }).status_code == 302
+
+
+def test_problem_profile_ptask_and_multiple_fix_changes(client, app):
+    login(client)
+    assert client.post("/module/problem/new", data={
+        "record_type": "Root cause analysis", "title": "Recurring capacity failure",
+        "description": "Investigate recurring failures.", "priority": "P2", "risk": "High",
+    }).status_code == 302
+    with app.app_context():
+        problem = EnterpriseRecord.query.filter_by(title="Recurring capacity failure").one()
+        problem_id = problem.id
+    assert client.post(f"/problem/{problem_id}/analysis", data={
+        "known_error": "1", "root_cause": "Version 4.2 leaks connections.",
+        "workaround": "Restart at 900 sessions.",
+        "fix_notes": "Upgrade to version 4.3.", "primary_ci_id": "",
+    }).status_code == 302
+    assert client.post(f"/problem/{problem_id}/tasks", data={
+        "title": "Analyse active sessions", "task_type": "Investigation",
+        "group_id": group_id(app, "Database"), "required": "1",
+    }).status_code == 302
+    with app.app_context():
+        profile = ProblemProfile.query.filter_by(enterprise_record_id=problem_id).one()
+        assert profile.known_error
+        assert "900 sessions" in profile.workaround
+        assert OperationalTask.query.filter_by(
+            parent_type="enterprise", parent_id=problem_id,
+            task_kind="problem",
+        ).one().number.startswith("PTASK")
+
+
+def test_request_supports_multiple_ritms_and_sctasks(client, app):
+    login(client)
+    with app.app_context():
+        primary_item = CatalogItem(
+            name="Standard workstation", category="Hardware",
+            description="Primary requested item.", approval_required=False,
+        )
+        second_item = CatalogItem(
+            name="VPN access", category="Access",
+            description="Additional requested item.", approval_required=False,
+        )
+        db.session.add_all([primary_item, second_item])
+        db.session.commit()
+        primary_item_id, second_item_id = primary_item.id, second_item.id
+    assert client.post(f"/catalog/{primary_item_id}/order", data={
+        "details": "Primary laptop item",
+    }).status_code == 302
+    with app.app_context():
+        req = CatalogRequest.query.one()
+        req_id = req.id
+    assert client.post(f"/request/{req_id}/items", data={
+        "catalog_item_id": second_item_id, "details": "Also provide VPN.",
+    }).status_code == 302
+    with app.app_context():
+        req = db.session.get(CatalogRequest, req_id)
+        assert len(req.items) == 2
+        first_ritm = req.items[0]
+        first_ritm_id = first_ritm.id
+    assert client.post(f"/ritm/{first_ritm_id}/tasks", data={
+        "title": "Configure endpoint security", "group_id": group_id(app),
+        "execution_mode": "Sequential",
+    }).status_code == 302
+    with app.app_context():
+        tasks = CatalogTask.query.filter_by(
+            requested_item_id=first_ritm_id
+        ).order_by(CatalogTask.id).all()
+        assert len(tasks) == 2
+        first_task_id, second_task_id = tasks[0].id, tasks[1].id
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+    assert client.post(f"/catalog-task/{second_task_id}", data={
+        "state": "Work in Progress", "work_notes": "Premature start.",
+    }).status_code == 409
+    assert client.post(f"/catalog-task/{first_task_id}", data={
+        "state": "Work in Progress", "work_notes": "Started.",
+    }).status_code == 302
+    assert client.post(f"/catalog-task/{first_task_id}", data={
+        "state": "Closed Complete", "work_notes": "Completed.",
+    }).status_code == 302
+    with app.app_context():
+        assert db.session.get(RequestedItem, first_ritm_id).state != "Closed Complete"
+    assert client.post(f"/catalog-task/{second_task_id}", data={
+        "state": "Work in Progress", "work_notes": "Started.",
+    }).status_code == 302
+    assert client.post(f"/catalog-task/{second_task_id}", data={
+        "state": "Closed Complete", "work_notes": "Completed.",
+    }).status_code == 302
+    with app.app_context():
+        assert db.session.get(RequestedItem, first_ritm_id).state == "Closed Complete"
+
+
+def test_major_incident_remains_inc_and_parent_state_sync_is_audited(client, app):
+    login(client)
+    coreapps_id = group_id(app)
+    for title in ("Major parent outage", "Major child report"):
+        assert client.post("/tickets/new/incident", data={
+            "title": title, "description": "Major incident verification.",
+            "category": "Software", "priority": "P1", "group_id": coreapps_id,
+        }).status_code == 302
+    with app.app_context():
+        parent, child = Ticket.query.filter_by(kind="incident").order_by(Ticket.id).all()
+        parent_id, child_id, parent_number = parent.id, child.id, parent.number
+        db.session.add(PlatformSetting(
+            key="SYNC_CHILD_INCIDENT_STATES", value="true", encrypted=False,
+        ))
+        db.session.commit()
+    assert client.post(f"/record/ticket/{child_id}/relationships", data={
+        "link_type": "parent_incident", "target_number": parent_number,
+    }).status_code == 302
+    assert client.post(f"/incident/{parent_id}/major-incident", data={
+        "status": "Accepted",
+        "business_impact": "All production customers are affected.",
+        "communications": "Updates every 30 minutes.",
+    }).status_code == 302
+    assert client.post(f"/ticket/{parent_id}", data={
+        "action": "update", "state": "Pending", "priority": "P1",
+        "assignee_id": "",
+    }).status_code == 302
+    with app.app_context():
+        parent = db.session.get(Ticket, parent_id)
+        child = db.session.get(Ticket, child_id)
+        assert parent.number.startswith("INC")
+        assert parent.major_incident_profile.status == "Accepted"
+        assert child.state == "Pending"
+        assert TaskHistory.query.filter_by(
+            target_type="ticket", target_id=child_id,
+            event="State synchronized from parent incident",
+        ).one()
 
 
 def test_enterprise_record_cannot_bypass_requested_approval(client, app):

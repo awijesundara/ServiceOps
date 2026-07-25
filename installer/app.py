@@ -164,7 +164,7 @@ def write_environment(config):
         env_line("SETTINGS_ENCRYPTION_KEY",
                  config.get("settings_encryption_key") or Fernet.generate_key().decode()),
         env_line("ADMIN_PASSWORD", config.get("admin_password", "")),
-        env_line("SERVICEOPS_IMAGE", config.get("serviceops_image", "serviceops-app:1.2.3")),
+        env_line("SERVICEOPS_IMAGE", config.get("serviceops_image", "serviceops-app:1.3.0")),
         'LOCAL_AUTH_ENABLED="true"',
         env_line("LDAP_ENABLED", str(bool(config.get("ldap_enabled"))).lower()),
         env_line("LDAP_SERVER_URI", config.get("ldap_uri", "")),

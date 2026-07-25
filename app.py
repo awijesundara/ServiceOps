@@ -352,6 +352,19 @@ class CatalogTask(db.Model):
     assignee = db.relationship("User")
 
 
+class CatalogTaskControl(db.Model):
+    """Optional sequential dependency metadata for SCTASK fulfillment flows."""
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey("catalog_task.id"), unique=True, nullable=False)
+    execution_mode = db.Column(db.String(20), nullable=False, default="Parallel")
+    predecessor_task_id = db.Column(db.Integer, db.ForeignKey("catalog_task.id"))
+    task = db.relationship(
+        "CatalogTask", foreign_keys=[task_id],
+        backref=db.backref("flow_control", uselist=False),
+    )
+    predecessor = db.relationship("CatalogTask", foreign_keys=[predecessor_task_id])
+
+
 class ChangeGovernance(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), unique=True, nullable=False)
@@ -482,6 +495,21 @@ class ChangeRevision(db.Model):
     )
 
 
+class MajorIncidentProfile(db.Model):
+    """Major-incident coordination remains an extension of the parent INC."""
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), unique=True, nullable=False)
+    status = db.Column(db.String(30), nullable=False, default="Proposed")
+    business_impact = db.Column(db.Text, default="")
+    communications = db.Column(db.Text, default="")
+    coordinator_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    declared_at = db.Column(db.DateTime(timezone=True))
+    ticket = db.relationship(
+        "Ticket", backref=db.backref("major_incident_profile", uselist=False)
+    )
+    coordinator = db.relationship("User")
+
+
 class Favorite(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -561,14 +589,13 @@ def audit(action, target, details=""):
 
 
 def next_number(kind):
-    prefix = {"incident": "INC", "request": "REQ", "change": "CHG"}[kind]
+    prefix = {"incident": "INC", "change": "CHG"}[kind]
     maximum = db.session.query(func.max(Ticket.id)).scalar() or 0
     return f"{prefix}{maximum + 1:07d}"
 
 
 DOMAIN_CONFIG = {
     "problem": {"name": "Problems", "prefix": "PRB", "types": ["Root cause analysis", "Known error"]},
-    "major_incident": {"name": "Major incidents", "prefix": "MIM", "types": ["Critical outage", "Service degradation"]},
     "customer": {"name": "Customer service", "prefix": "CS", "types": ["Support case", "Complaint", "Return / RMA", "Onboarding"]},
     "hr": {"name": "HR service delivery", "prefix": "HRC", "types": ["Benefits", "Payroll", "Employee relations", "HR systems", "Onboarding"]},
     "security": {"name": "Security operations", "prefix": "SIR", "types": ["Security incident", "Vulnerability", "Data loss", "Threat intelligence"]},
@@ -616,6 +643,7 @@ SETTING_DEFINITIONS = {
     "workflow": [
         {"key": "DEFAULT_TICKET_PRIORITY", "label": "Default ticket priority", "type": "choice", "choices": ["P1", "P2", "P3", "P4"], "default": "P3", "live": True},
         {"key": "CHANGE_FREEZE_MESSAGE", "label": "Change freeze message", "type": "text", "default": "", "live": True},
+        {"key": "SYNC_CHILD_INCIDENT_STATES", "label": "Synchronize parent incident state to children", "type": "bool", "default": "false", "live": True},
     ],
 }
 
@@ -666,6 +694,166 @@ def sequence_number(model, prefix):
     return f"{prefix}{((latest.id if latest else 0) + 1):07d}"
 
 
+def next_operational_task_number(task_kind):
+    prefix = "CTASK" if task_kind == "change" else "PTASK"
+    latest = OperationalTask.query.filter_by(task_kind=task_kind).order_by(
+        OperationalTask.id.desc()
+    ).first()
+    sequence = (latest.id + 1) if latest else 1
+    return f"{prefix}{sequence:07d}"
+
+
+def log_history(target_type, target_id, event, field_name=None, old_value=None,
+                new_value=None, details="", actor_id=None):
+    if actor_id is None and current_user and current_user.is_authenticated:
+        actor_id = current_user.id
+    row = TaskHistory(
+        target_type=target_type, target_id=target_id, actor_id=actor_id,
+        event=event, field_name=field_name,
+        old_value="" if old_value is None else str(old_value),
+        new_value="" if new_value is None else str(new_value),
+        details=details,
+    )
+    db.session.add(row)
+    return row
+
+
+def log_field_changes(target_type, target_id, before, after, event="Field changed"):
+    changed = []
+    for field_name, old_value in before.items():
+        new_value = after[field_name]
+        if old_value != new_value:
+            log_history(
+                target_type, target_id, event, field_name,
+                old_value, new_value,
+            )
+            changed.append(field_name)
+    return changed
+
+
+def record_reference(record_type, record_id):
+    model_map = {
+        "ticket": Ticket,
+        "enterprise": EnterpriseRecord,
+        "request": CatalogRequest,
+        "ritm": RequestedItem,
+        "sctask": CatalogTask,
+        "work_task": OperationalTask,
+        "knowledge": Knowledge,
+    }
+    model = model_map.get(record_type)
+    return db.session.get(model, record_id) if model else None
+
+
+def record_type_for(record):
+    if isinstance(record, Ticket):
+        return "ticket"
+    if isinstance(record, EnterpriseRecord):
+        return "enterprise"
+    if isinstance(record, CatalogRequest):
+        return "request"
+    if isinstance(record, RequestedItem):
+        return "ritm"
+    if isinstance(record, CatalogTask):
+        return "sctask"
+    if isinstance(record, OperationalTask):
+        return "work_task"
+    if isinstance(record, Knowledge):
+        return "knowledge"
+    return None
+
+
+def record_number(record):
+    if isinstance(record, Knowledge):
+        return f"KB{record.id:07d}"
+    return getattr(record, "number", "")
+
+
+def record_title(record):
+    if isinstance(record, CatalogRequest):
+        return f"Request for {record.requested_for.name}"
+    if isinstance(record, RequestedItem):
+        return record.item.name
+    return getattr(record, "title", getattr(record, "name", "Related record"))
+
+
+def record_url(record):
+    if isinstance(record, Ticket):
+        return url_for("ticket_detail", ticket_id=record.id)
+    if isinstance(record, EnterpriseRecord):
+        return url_for("enterprise_detail", record_id=record.id)
+    if isinstance(record, (CatalogRequest, RequestedItem, CatalogTask)):
+        request_id = (
+            record.id if isinstance(record, CatalogRequest)
+            else record.request_id if isinstance(record, RequestedItem)
+            else record.requested_item.request_id
+        )
+        return url_for("request_detail", request_id=request_id)
+    if isinstance(record, Knowledge):
+        return url_for("knowledge")
+    if isinstance(record, OperationalTask):
+        parent = record_reference(record.parent_type, record.parent_id)
+        return record_url(parent) if parent else "#"
+    return "#"
+
+
+def find_record_by_number(number):
+    normalized = (number or "").strip().upper()
+    if normalized.startswith(("INC", "CHG")):
+        return Ticket.query.filter(func.upper(Ticket.number) == normalized).first()
+    if normalized.startswith("PRB"):
+        return EnterpriseRecord.query.filter(
+            EnterpriseRecord.domain == "problem",
+            func.upper(EnterpriseRecord.number) == normalized,
+        ).first()
+    if normalized.startswith("REQ"):
+        return CatalogRequest.query.filter(func.upper(CatalogRequest.number) == normalized).first()
+    if normalized.startswith("RITM"):
+        return RequestedItem.query.filter(func.upper(RequestedItem.number) == normalized).first()
+    if normalized.startswith("SCTASK"):
+        return CatalogTask.query.filter(func.upper(CatalogTask.number) == normalized).first()
+    if normalized.startswith(("CTASK", "PTASK")):
+        return OperationalTask.query.filter(func.upper(OperationalTask.number) == normalized).first()
+    if normalized.startswith("KB") and normalized[2:].isdigit():
+        return db.session.get(Knowledge, int(normalized[2:]))
+    return None
+
+
+RELATION_LABELS = {
+    "parent_incident": "Parent incident",
+    "underlying_problem": "Problem",
+    "resolution_change": "Change request",
+    "caused_by_change": "Caused by change",
+    "converted_request": "Service request",
+    "related_incident": "Related incident",
+    "problem_change": "Problem fix change",
+    "requested_item_change": "Requested item change",
+    "knowledge_article": "Knowledge article",
+}
+
+
+def related_records(target_type, target_id):
+    rows = RecordLink.query.filter(db.or_(
+        db.and_(RecordLink.source_type == target_type, RecordLink.source_id == target_id),
+        db.and_(RecordLink.target_type == target_type, RecordLink.target_id == target_id),
+    )).order_by(RecordLink.created_at).all()
+    result = []
+    for link in rows:
+        outgoing = link.source_type == target_type and link.source_id == target_id
+        other_type = link.target_type if outgoing else link.source_type
+        other_id = link.target_id if outgoing else link.source_id
+        other = record_reference(other_type, other_id)
+        if other:
+            result.append({
+                "link": link, "record": other,
+                "label": RELATION_LABELS.get(link.link_type, link.link_type.replace("_", " ").title()),
+                "direction": "outgoing" if outgoing else "incoming",
+                "number": record_number(other), "title": record_title(other),
+                "url": record_url(other),
+            })
+    return result
+
+
 def target_record(target_type, target_id):
     models = {"ticket": Ticket, "ritm": RequestedItem, "enterprise": EnterpriseRecord}
     model = models.get(target_type)
@@ -709,6 +897,14 @@ CATALOG_TASK_TRANSITIONS = {
     "Closed Incomplete": ("Closed Incomplete",),
     "Closed Skipped": ("Closed Skipped",),
 }
+OPERATIONAL_TASK_TRANSITIONS = {
+    "Open": ("Open", "Work in Progress", "Pending", "Closed Complete", "Closed Incomplete", "Cancelled"),
+    "Work in Progress": ("Work in Progress", "Pending", "Closed Complete", "Closed Incomplete", "Cancelled"),
+    "Pending": ("Pending", "Work in Progress", "Closed Complete", "Closed Incomplete", "Cancelled"),
+    "Closed Complete": ("Closed Complete",),
+    "Closed Incomplete": ("Closed Incomplete",),
+    "Cancelled": ("Cancelled",),
+}
 
 
 def approval_chain_for(target_type, target_id):
@@ -750,8 +946,42 @@ def transition_ticket(ticket, new_state):
         ))
     if new_state == "Cancelled" and ticket.kind == "change":
         cancel_approval_chain(approval_chain_for("ticket", ticket.id))
+    if ticket.kind == "change" and new_state in ("Resolved", "Closed"):
+        incomplete = OperationalTask.query.filter_by(
+            parent_type="ticket", parent_id=ticket.id, task_kind="change", required=True
+        ).filter(
+            OperationalTask.state.notin_(["Closed Complete", "Cancelled"])
+        ).first()
+        if incomplete:
+            abort(409, description=(
+                f"{ticket.number} cannot complete while required task "
+                f"{incomplete.number} remains {incomplete.state}."
+            ))
     ticket.state = new_state
     sync_slas("ticket", ticket.id, new_state)
+    if (
+        ticket.kind == "incident"
+        and setting_bool("SYNC_CHILD_INCIDENT_STATES", False)
+        and new_state in ("Pending", "Resolved", "Closed", "Cancelled")
+    ):
+        child_links = RecordLink.query.filter_by(
+            target_type="ticket", target_id=ticket.id, link_type="parent_incident"
+        ).all()
+        for link in child_links:
+            child = db.session.get(Ticket, link.source_id)
+            if (
+                child and child.kind == "incident"
+                and new_state in TICKET_TRANSITIONS.get(child.state, ())
+                and child.state != new_state
+            ):
+                old_state = child.state
+                child.state = new_state
+                sync_slas("ticket", child.id, new_state)
+                log_history(
+                    "ticket", child.id, "State synchronized from parent incident",
+                    "state", old_state, new_state,
+                    f"Parent {ticket.number} moved to {new_state}.",
+                )
 
 
 def allowed_enterprise_states(record):
@@ -771,6 +1001,18 @@ def transition_enterprise(record, new_state):
             f"{record.number} cannot move from {record.state} to {new_state} "
             "while its approval or lifecycle prerequisites are incomplete."
         ))
+    if record.domain == "problem" and new_state in ("Resolved", "Completed", "Closed"):
+        incomplete = OperationalTask.query.filter_by(
+            parent_type="enterprise", parent_id=record.id,
+            task_kind="problem", required=True,
+        ).filter(
+            OperationalTask.state.notin_(["Closed Complete", "Cancelled"])
+        ).first()
+        if incomplete:
+            abort(409, description=(
+                f"{record.number} cannot complete while required task "
+                f"{incomplete.number} remains {incomplete.state}."
+            ))
     record.state = new_state
 
 
@@ -778,7 +1020,25 @@ def transition_catalog_task(task, new_state):
     chain = approval_chain_for("ritm", task.requested_item_id)
     if chain and chain.state != "Approved":
         abort(409, description="Fulfillment cannot start until the requested item is approved.")
+    control = task.flow_control
+    if (
+        control and control.execution_mode == "Sequential"
+        and control.predecessor
+        and control.predecessor.state != "Closed Complete"
+        and new_state not in ("Open", "Closed Skipped")
+    ):
+        abort(409, description=(
+            f"{task.number} cannot start until predecessor "
+            f"{control.predecessor.number} is Closed Complete."
+        ))
     allowed = CATALOG_TASK_TRANSITIONS.get(task.state, (task.state,))
+    if new_state not in allowed:
+        abort(409, description=f"{task.number} cannot move from {task.state} to {new_state}.")
+    task.state = new_state
+
+
+def transition_operational_task(task, new_state):
+    allowed = OPERATIONAL_TASK_TRANSITIONS.get(task.state, (task.state,))
     if new_state not in allowed:
         abort(409, description=f"{task.number} cannot move from {task.state} to {new_state}.")
     task.state = new_state
@@ -826,6 +1086,83 @@ def ticket_team_agents(ticket):
     ).order_by(User.name).all()
 
 
+def change_approval_stages(ticket):
+    ownership = ticket.change_ownership
+    governance = ticket.change_governance
+    if not ownership or not ownership.group.manager or not ownership.group.manager.active:
+        abort(409, description="The owning team requires an active manager.")
+    stages = [{
+        "name": f"{ownership.group.name} manager assessment",
+        "mode": "all",
+        "approver_ids": [ownership.group.manager_id],
+    }]
+    if governance.change_type != "Standard":
+        ccb = SupportGroup.query.filter_by(name="Change Control Board").first()
+        ccb_ids = [
+            member.user_id for member in (ccb.members if ccb else [])
+            if member.role == "CCB approver" and member.user.active
+        ]
+        if not ccb_ids:
+            abort(409, description=(
+                "CCB membership must be configured before a non-standard change can be submitted."
+            ))
+        stages.append({
+            "name": "CCB weekly authorization", "mode": "majority",
+            "approver_ids": ccb_ids,
+        })
+    return stages
+
+
+def supersede_change_approval(ticket, changed_fields):
+    previous = approval_chain_for("ticket", ticket.id)
+    if previous:
+        previous.state = "Superseded"
+        previous.completed_at = now()
+        for gate in previous.gates:
+            if gate.state in ("Pending", "Requested"):
+                gate.state = "Superseded"
+            for vote in gate.votes:
+                if vote.state in ("Not Requested", "Requested"):
+                    vote.state = "No Longer Required"
+    revision = ticket.change_revision
+    if not revision:
+        revision = ChangeRevision(ticket_id=ticket.id, revision=1)
+        db.session.add(revision)
+    revision.revision += 1
+    revision.last_material_change_at = now()
+    stages = change_approval_stages(ticket)
+    chain = create_approval_chain(
+        f"{ticket.number} change authorization v{revision.revision}",
+        "ticket", ticket.id, stages,
+    )
+    approver_ids = {
+        approver_id for stage in stages for approver_id in stage["approver_ids"]
+    }
+    summary = ", ".join(changed_fields)
+    for approver_id in approver_ids:
+        db.session.add(Notification(
+            user_id=approver_id,
+            title=f"Reapproval required: {ticket.number} v{revision.revision}",
+            body=f"Material change fields were revised: {summary}. Review the new plan before implementation.",
+        ))
+    log_history(
+        "ticket", ticket.id, "Approval restarted",
+        "approval revision",
+        revision.revision - 1, revision.revision,
+        f"Material fields changed: {summary}",
+    )
+    return chain
+
+
+def user_in_group(user, group):
+    if not user.is_authenticated or not user.active or not group:
+        return False
+    return (
+        group.manager_id == user.id
+        or GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first() is not None
+    )
+
+
 def activate_gate(gate):
     gate.state = "Requested"
     for vote in gate.votes:
@@ -852,6 +1189,10 @@ def create_approval_chain(name, target_type, target_id, stages):
     first_gate = ApprovalGate.query.filter_by(chain_id=chain.id, sequence=1).one()
     activate_gate(first_gate)
     set_target_state(target_type, target_id, "Awaiting Approval")
+    log_history(
+        target_type, target_id, "Approval requested",
+        details=f"{name} started with {len(stages)} stage(s).",
+    )
     return chain
 
 
@@ -940,6 +1281,10 @@ def create_catalog_task(ritm):
                        title=f"Fulfill {ritm.item.name}", assignment_group_id=group.id if group else None,
                        due_at=ritm.due_at)
     db.session.add(task)
+    log_history(
+        "ritm", ritm.id, "Catalog task created",
+        details=f"{task.number}: {task.title}",
+    )
     return task
 
 
@@ -1302,8 +1647,17 @@ def create_app(test_config=None):
     @app.get("/")
     @login_required
     def dashboard():
-        counts = {kind: Ticket.query.filter_by(kind=kind).count() for kind in ("incident", "request", "change")}
-        open_count = Ticket.query.filter(Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])).count()
+        counts = {
+            "incident": Ticket.query.filter_by(kind="incident").count(),
+            "request": CatalogRequest.query.count(),
+            "change": Ticket.query.filter_by(kind="change").count(),
+        }
+        open_count = (
+            Ticket.query.filter(Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])).count()
+            + CatalogRequest.query.filter(
+                CatalogRequest.state.notin_(["Closed Complete", "Closed Incomplete", "Cancelled"])
+            ).count()
+        )
         recent = visible_tickets().order_by(Ticket.updated_at.desc()).limit(8).all()
         return render_template("dashboard.html", counts=counts, open_count=open_count, recent=recent)
 
@@ -1316,7 +1670,7 @@ def create_app(test_config=None):
     @app.get("/tickets/<kind>")
     @login_required
     def tickets(kind):
-        if kind not in ("incident", "request", "change"):
+        if kind not in ("incident", "change"):
             abort(404)
         query = visible_tickets().filter_by(kind=kind)
         q = request.args.get("q", "").strip()
@@ -1331,7 +1685,7 @@ def create_app(test_config=None):
     @app.route("/tickets/new/<kind>", methods=["GET", "POST"])
     @login_required
     def ticket_new(kind):
-        if kind not in ("incident", "request", "change"):
+        if kind not in ("incident", "change"):
             abort(404)
         if kind == "change" and current_user.role == "requester":
             abort(403)
@@ -1374,25 +1728,19 @@ def create_app(test_config=None):
                 db.session.add(governance)
                 db.session.flush()
                 db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=owning_group.id))
-                ccb = SupportGroup.query.filter_by(name="Change Control Board").first()
-                ccb_ids = [
-                    member.user_id
-                    for member in GroupMember.query.filter_by(
-                        group_id=ccb.id, role="CCB approver"
-                    ).all()
-                    if member.user.active
-                ]
-                if governance.change_type != "Standard" and not ccb_ids:
-                    db.session.rollback()
-                    abort(409, "CCB membership must be configured before a non-standard change can be submitted.")
-                stages = [{"name": f"{owning_group.name} manager assessment", "mode": "all",
-                           "approver_ids": [owning_group.manager_id]}]
-                if governance.change_type != "Standard":
-                    stages.append({"name": "CCB weekly authorization", "mode": "majority",
-                                   "approver_ids": ccb_ids})
-                create_approval_chain(f"{ticket.number} change authorization", "ticket", ticket.id, stages)
+                db.session.add(ChangeRevision(ticket_id=ticket.id, revision=1))
+                db.session.flush()
+                create_approval_chain(
+                    f"{ticket.number} change authorization v1",
+                    "ticket", ticket.id, change_approval_stages(ticket),
+                )
             else:
                 db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=owning_group.id))
+            log_history(
+                "ticket", ticket.id, "Record created", details=(
+                    f"{ticket.number} created and assigned to {owning_group.name}."
+                ),
+            )
             audit("create", ticket.number, ticket.title)
             db.session.commit()
             flash(f"{ticket.number} created.", "success")
@@ -1414,6 +1762,7 @@ def create_app(test_config=None):
                 body = request.form.get("body", "").strip()
                 if body:
                     db.session.add(Comment(ticket_id=ticket.id, user_id=current_user.id, body=body))
+                    log_history("ticket", ticket.id, "Comment added", details=body[:500])
                     audit("comment", ticket.number)
             elif action == "update":
                 require_ticket_team_access(ticket)
@@ -1421,9 +1770,20 @@ def create_app(test_config=None):
                 eligible_ids = {agent.id for agent in ticket_team_agents(ticket)}
                 if assignee_id is not None and assignee_id not in eligible_ids:
                     abort(400, description="The assignee must be an active member of the owning team.")
+                before = {
+                    "state": ticket.state,
+                    "priority": ticket.priority,
+                    "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
+                }
                 transition_ticket(ticket, request.form["state"])
                 ticket.priority = request.form["priority"]
                 ticket.assignee_id = assignee_id
+                assignee = db.session.get(User, assignee_id) if assignee_id else None
+                log_field_changes("ticket", ticket.id, before, {
+                    "state": ticket.state,
+                    "priority": ticket.priority,
+                    "assigned to": assignee.name if assignee else "Unassigned",
+                })
                 audit("update", ticket.number, f"{ticket.state}, {ticket.priority}")
             db.session.commit()
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
@@ -1432,11 +1792,347 @@ def create_app(test_config=None):
         can_manage_ticket = user_can_manage_ticket(current_user, ticket)
         chains = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         slas = TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).all()
+        work_tasks = OperationalTask.query.filter_by(
+            parent_type="ticket", parent_id=ticket.id
+        ).order_by(OperationalTask.sequence, OperationalTask.id).all()
+        task_agents = {}
+        task_permissions = {}
+        for task in work_tasks:
+            member_ids = {member.user_id for member in task.assignment_group.members}
+            if task.assignment_group.manager_id:
+                member_ids.add(task.assignment_group.manager_id)
+            task_agents[task.id] = User.query.filter(
+                User.id.in_(member_ids), User.active.is_(True),
+                User.role.in_(["agent", "manager", "admin"]),
+            ).order_by(User.name).all() if member_ids else []
+            task_permissions[task.id] = user_in_group(current_user, task.assignment_group)
+        history = TaskHistory.query.filter_by(
+            target_type="ticket", target_id=ticket.id
+        ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).all()
+        ci_links = TaskCI.query.filter_by(
+            target_type="ticket", target_id=ticket.id
+        ).order_by(TaskCI.relationship_role).all()
         return render_template(
             "ticket_detail.html", ticket=ticket, agents=agents, chains=chains, slas=slas,
             ticket_state_options=allowed_ticket_states(ticket), owning_group=owning_group,
-            can_manage_ticket=can_manage_ticket,
+            can_manage_ticket=can_manage_ticket, related=related_records("ticket", ticket.id),
+            relation_labels=RELATION_LABELS, work_tasks=work_tasks,
+            work_task_states=OPERATIONAL_TASK_TRANSITIONS, history=history,
+            ci_links=ci_links, cis=ConfigurationItem.query.order_by(ConfigurationItem.name).all(),
+            teams=SupportGroup.query.filter_by(group_type="IT Fulfillment", active=True).order_by(SupportGroup.name).all(),
+            task_agents=task_agents, task_permissions=task_permissions,
         )
+
+    @app.post("/change/<int:ticket_id>/plan")
+    @roles("agent", "manager", "admin")
+    def change_plan_update(ticket_id):
+        ticket = db.get_or_404(Ticket, ticket_id)
+        if ticket.kind != "change" or not ticket.change_governance:
+            abort(404)
+        require_ticket_team_access(ticket)
+        governance = ticket.change_governance
+        try:
+            risk_score = max(0, min(100, int(request.form.get("risk_score", "50"))))
+            planned_start = (
+                datetime.fromisoformat(request.form["planned_start"])
+                if request.form.get("planned_start") else None
+            )
+            planned_end = (
+                datetime.fromisoformat(request.form["planned_end"])
+                if request.form.get("planned_end") else None
+            )
+            ci_id = int(request.form["ci_id"]) if request.form.get("ci_id") else None
+        except (TypeError, ValueError):
+            abort(400, description="Change plan dates, risk, or CI are invalid.")
+        if planned_start and planned_end and planned_end <= planned_start:
+            abort(400, description="Planned end must be later than planned start.")
+        if ci_id and not db.session.get(ConfigurationItem, ci_id):
+            abort(400, description="The selected configuration item does not exist.")
+        required_text = {
+            "Short description": request.form.get("title", "").strip(),
+            "Description": request.form.get("description", "").strip(),
+            "Implementation plan": request.form.get("implementation_plan", "").strip(),
+            "Test plan": request.form.get("test_plan", "").strip(),
+            "Backout plan": request.form.get("backout_plan", "").strip(),
+        }
+        missing = [label for label, value in required_text.items() if not value]
+        if missing:
+            abort(400, description=f"Required change-plan fields are missing: {', '.join(missing)}.")
+        before = {
+            "short description": ticket.title,
+            "description": ticket.description,
+            "change type": governance.change_type,
+            "risk score": governance.risk_score,
+            "impact": governance.impact,
+            "implementation plan": governance.implementation_plan,
+            "test plan": governance.test_plan,
+            "backout plan": governance.backout_plan,
+            "planned start": governance.planned_start.isoformat() if governance.planned_start else "",
+            "planned end": governance.planned_end.isoformat() if governance.planned_end else "",
+            "primary CI": governance.ci.name if governance.ci else "",
+        }
+        ticket.title = request.form.get("title", "").strip()
+        ticket.description = request.form.get("description", "").strip()
+        governance.change_type = request.form.get("change_type", "Normal")
+        governance.risk_score = risk_score
+        governance.impact = request.form.get("impact", "Medium")
+        governance.implementation_plan = request.form.get("implementation_plan", "").strip()
+        governance.test_plan = request.form.get("test_plan", "").strip()
+        governance.backout_plan = request.form.get("backout_plan", "").strip()
+        governance.planned_start = planned_start
+        governance.planned_end = planned_end
+        governance.ci_id = ci_id
+        governance.conflict_status = "Not Run"
+        after = {
+            "short description": ticket.title,
+            "description": ticket.description,
+            "change type": governance.change_type,
+            "risk score": governance.risk_score,
+            "impact": governance.impact,
+            "implementation plan": governance.implementation_plan,
+            "test plan": governance.test_plan,
+            "backout plan": governance.backout_plan,
+            "planned start": governance.planned_start.isoformat() if governance.planned_start else "",
+            "planned end": governance.planned_end.isoformat() if governance.planned_end else "",
+            "primary CI": db.session.get(ConfigurationItem, ci_id).name if ci_id else "",
+        }
+        changed_fields = log_field_changes(
+            "ticket", ticket.id, before, after, event="Material change plan updated"
+        )
+        if not changed_fields:
+            flash("No change-plan values changed.", "success")
+            return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+        supersede_change_approval(ticket, changed_fields)
+        audit("revise change plan", ticket.number, ", ".join(changed_fields))
+        db.session.commit()
+        flash(
+            f"Change plan revised. {ticket.number} returned to Awaiting Approval and approvers were notified.",
+            "success",
+        )
+        return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+
+    @app.post("/incident/<int:ticket_id>/major-incident")
+    @roles("agent", "manager", "admin")
+    def major_incident_update(ticket_id):
+        ticket = db.get_or_404(Ticket, ticket_id)
+        if ticket.kind != "incident":
+            abort(404)
+        require_ticket_team_access(ticket)
+        profile = ticket.major_incident_profile
+        if not profile:
+            profile = MajorIncidentProfile(ticket_id=ticket.id)
+            db.session.add(profile)
+        status = request.form.get("status", "Proposed")
+        if status not in ("Proposed", "Accepted", "Rejected", "Resolved"):
+            abort(400)
+        before = {
+            "major incident status": profile.status,
+            "business impact": profile.business_impact,
+            "communications": profile.communications,
+        }
+        profile.status = status
+        profile.business_impact = request.form.get("business_impact", "").strip()
+        profile.communications = request.form.get("communications", "").strip()
+        profile.coordinator_id = current_user.id
+        if status == "Accepted" and not profile.declared_at:
+            profile.declared_at = now()
+        log_field_changes("ticket", ticket.id, before, {
+            "major incident status": profile.status,
+            "business impact": profile.business_impact,
+            "communications": profile.communications,
+        }, event="Major incident coordination updated")
+        audit("major incident", ticket.number, status)
+        db.session.commit()
+        return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+
+    @app.post("/record/<source_type>/<int:source_id>/relationships")
+    @roles("agent", "manager", "admin")
+    def record_link_add(source_type, source_id):
+        source = record_reference(source_type, source_id)
+        if not source:
+            abort(404)
+        if isinstance(source, Ticket):
+            require_ticket_team_access(source)
+        target = find_record_by_number(request.form.get("target_number"))
+        if not target:
+            abort(404, description="No record matches the supplied number.")
+        target_type = record_type_for(target)
+        relation_type = request.form.get("link_type", "")
+        source_kind = (
+            source.kind if isinstance(source, Ticket)
+            else "problem" if isinstance(source, EnterpriseRecord) and source.domain == "problem"
+            else source_type
+        )
+        target_kind = (
+            target.kind if isinstance(target, Ticket)
+            else "problem" if isinstance(target, EnterpriseRecord) and target.domain == "problem"
+            else target_type
+        )
+        allowed = {
+            ("incident", "incident"): {"parent_incident"},
+            ("incident", "problem"): {"underlying_problem"},
+            ("incident", "change"): {"resolution_change", "caused_by_change"},
+            ("incident", "request"): {"converted_request"},
+            ("problem", "incident"): {"related_incident"},
+            ("problem", "change"): {"problem_change"},
+            ("problem", "knowledge"): {"knowledge_article"},
+            ("change", "incident"): {"related_incident"},
+            ("change", "problem"): {"problem_change"},
+            ("change", "ritm"): {"requested_item_change"},
+            ("ritm", "change"): {"requested_item_change"},
+        }
+        if relation_type not in allowed.get((source_kind, target_kind), set()):
+            abort(400, description=(
+                f"{RELATION_LABELS.get(relation_type, 'This relationship')} is not valid "
+                f"between {source_kind} and {target_kind}."
+            ))
+        if source_type == target_type and source_id == target.id:
+            abort(400, description="A record cannot be related to itself.")
+        exists = RecordLink.query.filter_by(
+            source_type=source_type, source_id=source_id,
+            target_type=target_type, target_id=target.id, link_type=relation_type,
+        ).first()
+        if not exists:
+            db.session.add(RecordLink(
+                source_type=source_type, source_id=source_id,
+                target_type=target_type, target_id=target.id, link_type=relation_type,
+            ))
+            description = (
+                f"{RELATION_LABELS[relation_type]} linked to "
+                f"{record_number(target)}: {record_title(target)}"
+            )
+            log_history(source_type, source_id, "Related record linked", details=description)
+            if target_type == "ticket":
+                log_history(
+                    "ticket", target.id, "Related record linked",
+                    details=f"{record_number(source)} linked as {RELATION_LABELS[relation_type]}.",
+                )
+            audit("link", record_number(source), description)
+            db.session.commit()
+        return redirect(record_url(source))
+
+    @app.post("/record/<target_type>/<int:target_id>/configuration-items")
+    @roles("agent", "manager", "admin")
+    def task_ci_add(target_type, target_id):
+        target = record_reference(target_type, target_id)
+        if not target or target_type not in ("ticket", "enterprise"):
+            abort(404)
+        if isinstance(target, Ticket):
+            require_ticket_team_access(target)
+        ci = db.get_or_404(ConfigurationItem, int(request.form["ci_id"]))
+        role = request.form.get("relationship_role")
+        if role not in ("Primary CI", "Affected CI", "Impacted service"):
+            abort(400)
+        if role == "Primary CI":
+            TaskCI.query.filter_by(
+                target_type=target_type, target_id=target_id,
+                relationship_role="Primary CI",
+            ).delete()
+        exists = TaskCI.query.filter_by(
+            target_type=target_type, target_id=target_id, ci_id=ci.id,
+            relationship_role=role,
+        ).first()
+        if not exists:
+            db.session.add(TaskCI(
+                target_type=target_type, target_id=target_id,
+                ci_id=ci.id, relationship_role=role,
+            ))
+            log_history(
+                target_type, target_id, "Configuration item linked",
+                details=f"{role}: {ci.name}",
+            )
+            audit("link CI", record_number(target), f"{role}: {ci.name}")
+            db.session.commit()
+        return redirect(record_url(target))
+
+    @app.post("/change/<int:ticket_id>/tasks")
+    @roles("agent", "manager", "admin")
+    def change_task_add(ticket_id):
+        ticket = db.get_or_404(Ticket, ticket_id)
+        if ticket.kind != "change":
+            abort(404)
+        require_ticket_team_access(ticket)
+        group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
+        if not group.active or group.group_type != "IT Fulfillment":
+            abort(400, description="Change tasks require an active IT fulfillment team.")
+        task_type = request.form.get("task_type")
+        if task_type not in ("Planning", "Implementation", "Testing", "Review"):
+            abort(400)
+        planned_start = (
+            datetime.fromisoformat(request.form["planned_start"])
+            if request.form.get("planned_start") else None
+        )
+        planned_end = (
+            datetime.fromisoformat(request.form["planned_end"])
+            if request.form.get("planned_end") else None
+        )
+        governance = ticket.change_governance
+        if planned_start and planned_end and planned_end <= planned_start:
+            abort(400, description="Task end must be later than task start.")
+        if task_type == "Implementation" and governance:
+            if (
+                governance.planned_start and planned_start
+                and planned_start < governance.planned_start
+            ) or (
+                governance.planned_end and planned_end
+                and planned_end > governance.planned_end
+            ):
+                abort(409, description=(
+                    "Implementation task dates must fall within the parent change window."
+                ))
+        task = OperationalTask(
+            number=next_operational_task_number("change"),
+            task_kind="change", parent_type="ticket", parent_id=ticket.id,
+            title=request.form["title"].strip(), task_type=task_type,
+            sequence=OperationalTask.query.filter_by(
+                parent_type="ticket", parent_id=ticket.id
+            ).count() + 1,
+            assignment_group_id=group.id,
+            planned_start=planned_start, planned_end=planned_end,
+            required=bool(request.form.get("required")),
+        )
+        db.session.add(task)
+        db.session.flush()
+        log_history(
+            "ticket", ticket.id, "Change task created",
+            details=f"{task.number} {task.task_type}: {task.title} → {group.name}",
+        )
+        audit("create", task.number, f"{ticket.number}: {task.title}")
+        db.session.commit()
+        return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+
+    @app.post("/operational-task/<int:task_id>")
+    @roles("agent", "manager", "admin")
+    def operational_task_update(task_id):
+        task = db.get_or_404(OperationalTask, task_id)
+        if not user_in_group(current_user, task.assignment_group):
+            abort(403, description=(
+                f"Only active members of {task.assignment_group.name} can update {task.number}."
+            ))
+        before = {
+            "state": task.state,
+            "assigned to": task.assignee.name if task.assignee else "Unassigned",
+            "work notes": task.work_notes,
+        }
+        assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
+        if assignee_id:
+            assignee = db.session.get(User, assignee_id)
+            if not assignee or not user_in_group(assignee, task.assignment_group):
+                abort(400, description="The assignee must belong to the task assignment group.")
+        else:
+            assignee = None
+        transition_operational_task(task, request.form["state"])
+        task.assignee_id = assignee_id
+        task.work_notes = request.form.get("work_notes", "").strip()
+        parent = record_reference(task.parent_type, task.parent_id)
+        log_field_changes(task.parent_type, task.parent_id, before, {
+            "state": task.state,
+            "assigned to": assignee.name if assignee else "Unassigned",
+            "work notes": task.work_notes,
+        }, event=f"{task.number} updated")
+        audit("update", task.number, task.state)
+        db.session.commit()
+        return redirect(record_url(parent))
 
     @app.get("/knowledge")
     @login_required
@@ -1652,12 +2348,18 @@ def create_app(test_config=None):
             )
             db.session.add(record)
             db.session.flush()
+            if domain == "problem":
+                db.session.add(ProblemProfile(enterprise_record_id=record.id))
             if request.form.get("approval_required") and current_user.role != "requester":
                 admin = User.query.filter_by(role="admin", active=True).first()
                 db.session.add(Approval(enterprise_record_id=record.id, approver_id=admin.id))
                 db.session.add(Notification(user_id=admin.id, title=f"Approval requested: {record.number}",
                                             body=record.title))
                 record.state = "Awaiting Approval"
+            log_history(
+                "enterprise", record.id, "Record created",
+                details=f"{record.number}: {record.title}",
+            )
             audit("create", record.number, f"{config['name']}: {record.title}")
             db.session.commit()
             return redirect(url_for("enterprise_detail", record_id=record.id))
@@ -1672,10 +2374,23 @@ def create_app(test_config=None):
         if request.method == "POST":
             action = request.form.get("action")
             if action == "update" and current_user.role in ("agent", "manager", "admin"):
+                before = {
+                    "state": record.state,
+                    "priority": record.priority,
+                    "risk": record.risk,
+                    "assigned to": record.assignee.name if record.assignee else "Unassigned",
+                }
                 transition_enterprise(record, request.form["state"])
                 record.priority = request.form["priority"]
                 record.risk = request.form["risk"]
                 record.assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
+                assignee = db.session.get(User, record.assignee_id) if record.assignee_id else None
+                log_field_changes("enterprise", record.id, before, {
+                    "state": record.state,
+                    "priority": record.priority,
+                    "risk": record.risk,
+                    "assigned to": assignee.name if assignee else "Unassigned",
+                })
                 audit("update", record.number, f"{record.state}, {record.priority}, risk {record.risk}")
             elif action in ("approve", "reject"):
                 approval = Approval.query.filter_by(id=int(request.form["approval_id"]),
@@ -1686,14 +2401,114 @@ def create_app(test_config=None):
                 record.state = "Approved" if action == "approve" else "Rejected"
                 db.session.add(Notification(user_id=record.requester_id, title=f"{record.number} {record.state.lower()}",
                                             body=approval.comments or f"Your record was {record.state.lower()}."))
+                log_history(
+                    "enterprise", record.id, f"Approval {approval.state.lower()}",
+                    details=approval.comments,
+                )
                 audit(action, record.number)
             db.session.commit()
             return redirect(url_for("enterprise_detail", record_id=record.id))
         agents = User.query.filter(User.role.in_(["agent", "manager", "admin"]), User.active.is_(True)).all()
+        work_tasks = OperationalTask.query.filter_by(
+            parent_type="enterprise", parent_id=record.id
+        ).order_by(OperationalTask.sequence, OperationalTask.id).all()
+        task_agents = {}
+        task_permissions = {}
+        for task in work_tasks:
+            member_ids = {member.user_id for member in task.assignment_group.members}
+            if task.assignment_group.manager_id:
+                member_ids.add(task.assignment_group.manager_id)
+            task_agents[task.id] = User.query.filter(
+                User.id.in_(member_ids), User.active.is_(True),
+                User.role.in_(["agent", "manager", "admin"]),
+            ).order_by(User.name).all() if member_ids else []
+            task_permissions[task.id] = user_in_group(current_user, task.assignment_group)
         return render_template(
             "enterprise_detail.html", record=record, config=DOMAIN_CONFIG[record.domain],
             agents=agents, record_state_options=allowed_enterprise_states(record),
+            related=related_records("enterprise", record.id), relation_labels=RELATION_LABELS,
+            work_tasks=work_tasks, work_task_states=OPERATIONAL_TASK_TRANSITIONS,
+            history=TaskHistory.query.filter_by(
+                target_type="enterprise", target_id=record.id
+            ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).all(),
+            ci_links=TaskCI.query.filter_by(
+                target_type="enterprise", target_id=record.id
+            ).order_by(TaskCI.relationship_role).all(),
+            cis=ConfigurationItem.query.order_by(ConfigurationItem.name).all(),
+            teams=SupportGroup.query.filter_by(
+                group_type="IT Fulfillment", active=True
+            ).order_by(SupportGroup.name).all(),
+            task_agents=task_agents, task_permissions=task_permissions,
         )
+
+    @app.post("/problem/<int:record_id>/analysis")
+    @roles("agent", "manager", "admin")
+    def problem_analysis_update(record_id):
+        record = db.get_or_404(EnterpriseRecord, record_id)
+        if record.domain != "problem":
+            abort(404)
+        profile = record.problem_profile
+        if not profile:
+            profile = ProblemProfile(enterprise_record_id=record.id)
+            db.session.add(profile)
+        before = {
+            "known error": profile.known_error,
+            "root cause": profile.root_cause,
+            "workaround": profile.workaround,
+            "permanent fix": profile.fix_notes,
+            "primary CI": profile.primary_ci.name if profile.primary_ci else "",
+        }
+        ci_id = int(request.form["primary_ci_id"]) if request.form.get("primary_ci_id") else None
+        if ci_id and not db.session.get(ConfigurationItem, ci_id):
+            abort(400)
+        profile.known_error = bool(request.form.get("known_error"))
+        profile.root_cause = request.form.get("root_cause", "").strip()
+        profile.workaround = request.form.get("workaround", "").strip()
+        profile.fix_notes = request.form.get("fix_notes", "").strip()
+        profile.primary_ci_id = ci_id
+        after = {
+            "known error": profile.known_error,
+            "root cause": profile.root_cause,
+            "workaround": profile.workaround,
+            "permanent fix": profile.fix_notes,
+            "primary CI": db.session.get(ConfigurationItem, ci_id).name if ci_id else "",
+        }
+        changed = log_field_changes(
+            "enterprise", record.id, before, after, event="Problem analysis updated"
+        )
+        audit("update problem analysis", record.number, ", ".join(changed))
+        db.session.commit()
+        return redirect(url_for("enterprise_detail", record_id=record.id))
+
+    @app.post("/problem/<int:record_id>/tasks")
+    @roles("agent", "manager", "admin")
+    def problem_task_add(record_id):
+        record = db.get_or_404(EnterpriseRecord, record_id)
+        if record.domain != "problem":
+            abort(404)
+        group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
+        if not group.active or group.group_type != "IT Fulfillment":
+            abort(400, description="Problem tasks require an active IT fulfillment team.")
+        task = OperationalTask(
+            number=next_operational_task_number("problem"),
+            task_kind="problem", parent_type="enterprise", parent_id=record.id,
+            title=request.form["title"].strip(),
+            task_type=request.form.get("task_type", "Investigation"),
+            sequence=OperationalTask.query.filter_by(
+                parent_type="enterprise", parent_id=record.id
+            ).count() + 1,
+            assignment_group_id=group.id,
+            required=bool(request.form.get("required")),
+        )
+        db.session.add(task)
+        db.session.flush()
+        log_history(
+            "enterprise", record.id, "Problem task created",
+            details=f"{task.number}: {task.title} → {group.name}",
+        )
+        audit("create", task.number, f"{record.number}: {task.title}")
+        db.session.commit()
+        return redirect(url_for("enterprise_detail", record_id=record.id))
 
     @app.get("/catalog")
     @login_required
@@ -1727,6 +2542,11 @@ def create_app(test_config=None):
             create_approval_chain(f"{ritm.number} service fulfillment", "ritm", ritm.id, stages)
         else:
             create_catalog_task(ritm)
+        log_history("request", req.id, "Request created", details=f"{req.number} created.")
+        log_history(
+            "ritm", ritm.id, "Requested item created",
+            details=f"{ritm.number}: {item.name}",
+        )
         audit("order", req.number, f"{ritm.number}: {item.name}")
         db.session.commit()
         flash(f"{item.name} requested as {req.number} / {ritm.number}.", "success")
@@ -1769,6 +2589,14 @@ def create_app(test_config=None):
         if decision not in ("Approved", "Rejected"):
             abort(400)
         decide_vote(vote, decision, request.form.get("comments", "").strip())
+        log_history(
+            vote.gate.chain.target_type, vote.gate.chain.target_id,
+            f"Approval {decision.lower()}",
+            details=(
+                f"{vote.gate.name} · {current_user.name}: "
+                f"{request.form.get('comments', '').strip() or 'No decision comments'}"
+            ),
+        )
         audit(decision.lower(), vote.gate.chain.name, vote.gate.name)
         db.session.commit()
         return redirect(request.referrer or url_for("approval_chains"))
@@ -1797,6 +2625,7 @@ def create_app(test_config=None):
         chains = {}
         slas = {}
         task_state_options = {}
+        catalog_task_permissions = {}
         for ritm in req.items:
             chains[ritm.id] = ApprovalChain.query.filter_by(target_type="ritm", target_id=ritm.id).all()
             slas[ritm.id] = TaskSLA.query.filter_by(target_type="ritm", target_id=ritm.id).all()
@@ -1804,30 +2633,151 @@ def create_app(test_config=None):
                 task_state_options[task.id] = CATALOG_TASK_TRANSITIONS.get(
                     task.state, (task.state,)
                 )
+                catalog_task_permissions[task.id] = user_in_group(
+                    current_user, task.assignment_group
+                )
         return render_template(
             "request_detail.html", req=req, chains=chains, slas=slas,
             task_state_options=task_state_options,
+            teams=SupportGroup.query.filter_by(
+                group_type="IT Fulfillment", active=True
+            ).order_by(SupportGroup.name).all(),
+            catalog_items=CatalogItem.query.filter_by(active=True).order_by(
+                CatalogItem.category, CatalogItem.name
+            ).all(),
+            related_by_ritm={
+                ritm.id: related_records("ritm", ritm.id) for ritm in req.items
+            },
+            history_by_ritm={
+                ritm.id: TaskHistory.query.filter_by(
+                    target_type="ritm", target_id=ritm.id
+                ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).all()
+                for ritm in req.items
+            },
+            catalog_task_permissions=catalog_task_permissions,
         )
+
+    @app.post("/request/<int:request_id>/items")
+    @login_required
+    def request_item_add(request_id):
+        req = db.get_or_404(CatalogRequest, request_id)
+        if req.state not in ("Open", "Awaiting Approval"):
+            abort(409, description="Items cannot be added to a completed request.")
+        if current_user.role == "requester" and req.requested_for_id != current_user.id:
+            abort(403)
+        item = db.get_or_404(CatalogItem, int(request.form["catalog_item_id"]))
+        ritm = RequestedItem(
+            number=sequence_number(RequestedItem, "RITM"), request_id=req.id,
+            catalog_item_id=item.id,
+            state="Awaiting Approval" if item.approval_required else "Open",
+            stage="Approval" if item.approval_required else "Fulfillment",
+            variables_json=json.dumps({"details": request.form.get("details", "")}),
+            due_at=now() + timedelta(days=item.delivery_days),
+        )
+        db.session.add(ritm)
+        db.session.flush()
+        attach_slas("ritm", ritm.id, None)
+        if item.approval_required:
+            manager = User.query.filter_by(role="admin", active=True).first()
+            fulfillment = SupportGroup.query.filter_by(name="Service Desk").first()
+            approvers = [member.user_id for member in fulfillment.members if member.user.active]
+            if not manager or not approvers:
+                abort(409, description="Request approval and fulfillment approvers must be configured.")
+            create_approval_chain(
+                f"{ritm.number} service fulfillment", "ritm", ritm.id, [
+                    {"name": "Manager approval", "mode": "all", "approver_ids": [manager.id]},
+                    {"name": "Fulfillment authorization", "mode": "any", "approver_ids": approvers},
+                ],
+            )
+        else:
+            create_catalog_task(ritm)
+        log_history(
+            "request", req.id, "Requested item added",
+            details=f"{ritm.number}: {item.name}",
+        )
+        log_history(
+            "ritm", ritm.id, "Requested item created",
+            details=f"Added to {req.number}: {item.name}",
+        )
+        audit("add requested item", req.number, f"{ritm.number}: {item.name}")
+        db.session.commit()
+        return redirect(url_for("request_detail", request_id=req.id))
+
+    @app.post("/ritm/<int:ritm_id>/tasks")
+    @roles("agent", "manager", "admin")
+    def catalog_task_add(ritm_id):
+        ritm = db.get_or_404(RequestedItem, ritm_id)
+        chain = approval_chain_for("ritm", ritm.id)
+        if chain and chain.state != "Approved":
+            abort(409, description="Catalog tasks cannot be added until the RITM is approved.")
+        group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
+        if not group.active:
+            abort(400)
+        task = CatalogTask(
+            number=sequence_number(CatalogTask, "SCTASK"),
+            requested_item_id=ritm.id,
+            title=request.form["title"].strip(),
+            sequence=len(ritm.tasks) + 1,
+            assignment_group_id=group.id,
+            due_at=ritm.due_at,
+        )
+        db.session.add(task)
+        db.session.flush()
+        execution_mode = request.form.get("execution_mode", "Parallel")
+        predecessor = (
+            CatalogTask.query.filter_by(requested_item_id=ritm.id)
+            .filter(CatalogTask.id != task.id)
+            .order_by(CatalogTask.sequence.desc(), CatalogTask.id.desc()).first()
+        )
+        if execution_mode not in ("Parallel", "Sequential"):
+            abort(400)
+        db.session.add(CatalogTaskControl(
+            task_id=task.id, execution_mode=execution_mode,
+            predecessor_task_id=(
+                predecessor.id if execution_mode == "Sequential" and predecessor else None
+            ),
+        ))
+        log_history(
+            "ritm", ritm.id, "Catalog task created",
+            details=(
+                f"{task.number}: {task.title} → {group.name} · {execution_mode}"
+                + (f" after {predecessor.number}" if execution_mode == "Sequential" and predecessor else "")
+            ),
+        )
+        audit("create", task.number, f"{ritm.number}: {task.title}")
+        db.session.commit()
+        return redirect(url_for("request_detail", request_id=ritm.request_id))
 
     @app.post("/catalog-task/<int:task_id>")
     @roles("agent", "manager", "admin")
     def catalog_task_update(task_id):
         task = db.get_or_404(CatalogTask, task_id)
+        if not user_in_group(current_user, task.assignment_group):
+            abort(403, description=(
+                f"Only active members of {task.assignment_group.name if task.assignment_group else 'the assignment group'} "
+                f"can update {task.number}."
+            ))
+        before = {"state": task.state, "work notes": task.work_notes}
         transition_catalog_task(task, request.form["state"])
         task.work_notes = request.form.get("work_notes", "")
         task.assignee_id = current_user.id
         ritm = task.requested_item
-        if task.state == "Closed Complete":
+        terminal_states = {"Closed Complete", "Closed Incomplete", "Closed Skipped"}
+        all_terminal = all(item.state in terminal_states for item in ritm.tasks)
+        if all_terminal and all(item.state == "Closed Complete" for item in ritm.tasks):
             ritm.state = "Closed Complete"
             ritm.stage = "Completed"
             sync_slas("ritm", ritm.id, ritm.state)
             if all(item.state == "Closed Complete" for item in ritm.request.items):
                 ritm.request.state = "Closed Complete"
                 ritm.request.closed_at = now()
-        elif task.state == "Closed Incomplete":
+        elif all_terminal and any(item.state == "Closed Incomplete" for item in ritm.tasks):
             ritm.state = "Closed Incomplete"
             ritm.stage = "Completed"
             ritm.request.state = "Closed Incomplete"
+        log_field_changes("ritm", ritm.id, before, {
+            "state": task.state, "work notes": task.work_notes,
+        }, event=f"{task.number} updated")
         audit("update", task.number, task.state)
         db.session.commit()
         return redirect(url_for("request_detail", request_id=ritm.request_id))
@@ -1955,10 +2905,28 @@ def create_app(test_config=None):
                 ChangeGovernance.planned_start < governance.planned_end,
                 ChangeGovernance.planned_end > governance.planned_start,
             ).all()
+            current_ci_ids = {
+                link.ci_id for link in TaskCI.query.filter_by(
+                    target_type="ticket", target_id=ticket.id
+                ).all()
+            }
+            if governance.ci_id:
+                current_ci_ids.add(governance.ci_id)
             for other in overlapping:
-                if governance.ci_id and other.ci_id == governance.ci_id:
+                other_ci_ids = {
+                    link.ci_id for link in TaskCI.query.filter_by(
+                        target_type="ticket", target_id=other.ticket_id
+                    ).all()
+                }
+                if other.ci_id:
+                    other_ci_ids.add(other.ci_id)
+                if current_ci_ids.intersection(other_ci_ids):
                     conflicts.append(other.ticket.number)
         governance.conflict_status = f"Conflict: {', '.join(conflicts)}" if conflicts else "No conflict"
+        log_history(
+            "ticket", ticket.id, "Conflict detection completed",
+            details=governance.conflict_status,
+        )
         audit("conflict check", ticket.number, governance.conflict_status)
         db.session.commit()
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
@@ -2003,6 +2971,33 @@ def create_app(test_config=None):
             for row in ConfigurationItem.query.filter(ConfigurationItem.name.ilike(pattern)).limit(20):
                 results.append({"type": "Configuration item", "label": row.name, "url": url_for("cmdb"),
                                 "meta": row.ci_class})
+            for row in CatalogRequest.query.filter(CatalogRequest.number.ilike(pattern)).limit(20):
+                results.append({
+                    "type": "Request", "label": row.number,
+                    "url": url_for("request_detail", request_id=row.id), "meta": row.state,
+                })
+            for row in RequestedItem.query.filter(RequestedItem.number.ilike(pattern)).limit(20):
+                results.append({
+                    "type": "Requested item", "label": f"{row.number} · {row.item.name}",
+                    "url": url_for("request_detail", request_id=row.request_id), "meta": row.state,
+                })
+            for row in CatalogTask.query.filter(db.or_(
+                CatalogTask.number.ilike(pattern), CatalogTask.title.ilike(pattern)
+            )).limit(20):
+                results.append({
+                    "type": "Catalog task", "label": f"{row.number} · {row.title}",
+                    "url": url_for("request_detail", request_id=row.requested_item.request_id),
+                    "meta": row.state,
+                })
+            for row in OperationalTask.query.filter(db.or_(
+                OperationalTask.number.ilike(pattern), OperationalTask.title.ilike(pattern)
+            )).limit(20):
+                parent = record_reference(row.parent_type, row.parent_id)
+                results.append({
+                    "type": "Change task" if row.task_kind == "change" else "Problem task",
+                    "label": f"{row.number} · {row.title}",
+                    "url": record_url(parent), "meta": row.state,
+                })
         if request.accept_mimetypes.best == "application/json":
             return jsonify(results=results[:30])
         return render_template("search.html", q=q, results=results[:60])
@@ -2083,7 +3078,13 @@ def create_app(test_config=None):
         state = request.form.get("state")
         if state not in ("New", "In Progress", "Pending", "Resolved", "Closed"):
             abort(400)
+        previous_state = ticket.state
         transition_ticket(ticket, state)
+        if previous_state != ticket.state:
+            log_history(
+                "ticket", ticket.id, "Board state changed",
+                "state", previous_state, ticket.state,
+            )
         audit("board move", ticket.number, state)
         db.session.commit()
         return jsonify(state=state)
@@ -2097,6 +3098,10 @@ def create_app(test_config=None):
         if text:
             position = ChecklistItem.query.filter_by(ticket_id=ticket_id).count()
             db.session.add(ChecklistItem(ticket_id=ticket_id, text=text[:300], position=position))
+            log_history(
+                "ticket", ticket.id, "Checklist item added",
+                details=text[:300],
+            )
             db.session.commit()
         return redirect(url_for("ticket_detail", ticket_id=ticket_id))
 
@@ -2107,6 +3112,10 @@ def create_app(test_config=None):
         ticket = db.get_or_404(Ticket, item.ticket_id)
         require_ticket_team_access(ticket)
         item.completed = not item.completed
+        log_history(
+            "ticket", ticket.id, "Checklist item updated",
+            item.text, not item.completed, item.completed,
+        )
         db.session.commit()
         return redirect(url_for("ticket_detail", ticket_id=item.ticket_id))
 
@@ -2127,6 +3136,10 @@ def create_app(test_config=None):
         db.session.add(FileAttachment(ticket_id=ticket_id, uploaded_by_id=current_user.id,
                                       original_name=original, stored_name=stored,
                                       mime_type=upload.mimetype, size_bytes=os.path.getsize(path)))
+        log_history(
+            "ticket", ticket.id, "Attachment uploaded",
+            details=f"{original} ({os.path.getsize(path)} bytes)",
+        )
         audit("attach", ticket.number, original)
         db.session.commit()
         return redirect(url_for("ticket_detail", ticket_id=ticket_id))
