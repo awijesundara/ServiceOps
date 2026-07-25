@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">IT OPERATIONS</p><h1>CMDB & service map</h1><p>Configuration items and the dependencies that connect business services.</p></div>{% if current_user.role=='admin' %}<a class="primary button" href="{{ url_for('ci_new') }}">+ New CI</a>{% endif %}</header>
+<section class="stats"><div><span>Configuration items</span><strong>{{ cis|length }}</strong><small>Across all classes</small></div><div><span>Relationships</span><strong>{{ relationships|length }}</strong><small>Mapped dependencies</small></div><div><span>Operational</span><strong>{{ cis|selectattr('operational_status','equalto','Operational')|list|length }}</strong><small>Healthy CIs</small></div></section>
+<section class="panel"><h2>Configuration items</h2><table><thead><tr><th>Name</th><th>Class</th><th>Environment</th><th>Status</th><th>IP address</th><th>Owner</th></tr></thead><tbody>{% for ci in cis %}<tr><td><strong>{{ ci.name }}</strong></td><td>{{ ci.ci_class }}</td><td>{{ ci.environment }}</td><td><span class="badge">{{ ci.operational_status }}</span></td><td>{{ ci.ip_address or '—' }}</td><td>{{ ci.owner.name if ci.owner else 'Unassigned' }}</td></tr>{% endfor %}</tbody></table><hr><h2>Service relationships</h2>{% for rel in relationships %}<div class="relation"><strong>{{ rel.parent.name }}</strong><span>— {{ rel.relationship_type }} →</span><strong>{{ rel.child.name }}</strong></div>{% endfor %}</section>
+{% endblock %}
+

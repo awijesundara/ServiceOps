@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">WORKSPACE</p><h1>{{ config.name }}</h1><p>{{ config.types|join(' · ') }}</p></div><a class="primary button" href="{{ url_for('enterprise_new', domain=domain) }}">+ New record</a></header>
+<form class="filters"><input name="q" value="{{ q }}" placeholder="Search number or summary…"><select name="state"><option value="">All states</option>{% for s in ['New','Open','In Progress','Awaiting Approval','Approved','Pending','Resolved','Closed','Rejected'] %}<option {% if state==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select><button>Filter</button></form>
+<section class="panel"><table><thead><tr><th>Number</th><th>Type</th><th>Summary</th><th>State</th><th>Priority</th><th>Risk</th><th>Assignee</th></tr></thead><tbody>
+{% for r in records %}<tr><td><a href="{{ url_for('enterprise_detail', record_id=r.id) }}">{{ r.number }}</a></td><td>{{ r.record_type }}</td><td>{{ r.title }}</td><td><span class="badge">{{ r.state }}</span></td><td><span class="priority {{ r.priority|lower }}">{{ r.priority }}</span></td><td>{{ r.risk }}</td><td>{{ r.assignee.name if r.assignee else 'Unassigned' }}</td></tr>{% else %}<tr><td colspan="7" class="empty">No records yet.</td></tr>{% endfor %}
+</tbody></table></section>
+{% endblock %}
+

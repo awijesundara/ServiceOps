@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Sign in · ServiceOps{% endblock %}
+{% block content %}
+<section class="login-card">
+  <div class="logo">S</div>
+  <h1>Welcome to ServiceOps</h1>
+  <p>One place for IT services, support, and operations.</p>
+  <form method="post" class="stack">
+    <label>Username<input name="username" autocomplete="username" required autofocus></label>
+    <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="primary">Sign in</button>
+  </form>
+  <details><summary>Demo accounts</summary><p><code>admin / Admin123!</code><br><code>agent / Agent123!</code><br><code>employee / Employee123!</code></p></details>
+</section>
+{% endblock %}
+

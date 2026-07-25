@@ -1,0 +1,55 @@
+name: serviceops
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-serviceops}
+      POSTGRES_USER: ${POSTGRES_USER:-serviceops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
+    volumes:
+      - serviceops_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-serviceops} -d ${POSTGRES_DB:-serviceops}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    stop_grace_period: 30s
+    shm_size: 256mb
+
+  app:
+    image: ${SERVICEOPS_IMAGE:-serviceops-app:latest}
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-serviceops}:${POSTGRES_PASSWORD:-change-me-in-production}@db:5432/${POSTGRES_DB:-serviceops}
+      SECRET_KEY: ${SECRET_KEY:-replace-this-secret-before-production}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123!}
+      TEAM_MANAGER_PASSWORD: ${TEAM_MANAGER_PASSWORD:-Manager123!}
+      UPLOAD_FOLDER: /app/uploads
+    volumes:
+      - serviceops_uploads:/app/uploads
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+
+volumes:
+  serviceops_data:
+    name: serviceops_postgres_data
+  serviceops_uploads:
+    name: serviceops_uploads

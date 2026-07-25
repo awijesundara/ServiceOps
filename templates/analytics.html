@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">PLATFORM ANALYTICS</p><h1>Operational performance</h1><p>Live measures across service and enterprise workflows.</p></div></header>
+<section class="stats"><div><span>Overdue work</span><strong>{{ overdue }}</strong><small>Past due and still open</small></div>{% for p,count in priority_counts.items() %}<div><span>{{ p }} tickets</span><strong>{{ count }}</strong><small>Current volume</small></div>{% endfor %}</section>
+<div class="analytics-grid"><section class="panel"><h2>Ticket state distribution</h2>{% for label,value in ticket_states.items() %}<div class="metric"><span>{{ label }}</span><div><i style="width:{{ [value*12,100]|min }}%"></i></div><strong>{{ value }}</strong></div>{% else %}<p class="muted">No ticket data yet.</p>{% endfor %}</section>
+<section class="panel"><h2>Enterprise workload</h2>{% for key,module in modules.items() %}<div class="metric"><span>{{ module.name }}</span><div><i style="width:{{ [domain_counts.get(key,0)*12,100]|min }}%"></i></div><strong>{{ domain_counts.get(key,0) }}</strong></div>{% endfor %}</section></div>
+{% endblock %}

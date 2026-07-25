@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">NEW RECORD</p><h1>Create {{ kind }}</h1><p>Provide the details needed to route and resolve this work.</p></div></header>
+<form method="post" class="panel form-grid">
+  <label class="wide">Short description<input name="title" maxlength="180" required autofocus></label>
+  <label>Category<select name="category"><option>General</option><option>Access</option><option>Hardware</option><option>Software</option><option>Network</option><option>Security</option></select></label>
+  <label>Priority<select name="priority"><option>P4</option><option selected>P3</option><option>P2</option><option>P1</option></select></label>
+  <label class="wide">Description<textarea name="description" rows="8" required></textarea></label>
+  {% if kind == 'change' %}
+  <label>Owning IT team<select name="group_id" required>{% for team in teams %}<option value="{{ team.id }}">{{ team.name }} — {{ team.manager.name }}</option>{% endfor %}</select></label>
+  <label>Change type<select name="change_type"><option>Normal</option><option>Standard</option><option>Emergency</option></select></label>
+  <label>Impact<select name="impact"><option>Low</option><option selected>Medium</option><option>High</option></select></label>
+  <label>Risk score<input type="number" min="0" max="100" name="risk_score" value="50"></label>
+  <label>Configuration item<select name="ci_id"><option value="">Not selected</option>{% for ci in cis %}<option value="{{ ci.id }}">{{ ci.name }}</option>{% endfor %}</select></label>
+  <label>Planned start<input type="datetime-local" name="planned_start"></label>
+  <label>Planned end<input type="datetime-local" name="planned_end"></label>
+  <label class="wide">Implementation plan<textarea name="implementation_plan" rows="4" required></textarea></label>
+  <label class="wide">Test plan<textarea name="test_plan" rows="4" required></textarea></label>
+  <label class="wide">Backout plan<textarea name="backout_plan" rows="4" required></textarea></label>
+  {% endif %}
+  <div class="wide actions"><a class="button" href="{{ url_for('tickets', kind=kind) }}">Cancel</a><button class="primary">Create {{ kind }}</button></div>
+</form>
+{% endblock %}
