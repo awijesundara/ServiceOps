@@ -45,7 +45,7 @@ def footer(canvas, doc):
     canvas.line(18 * mm, 14 * mm, 192 * mm, 14 * mm)
     canvas.setFillColor(MUTED)
     canvas.setFont("Helvetica", 7.5)
-    canvas.drawString(18 * mm, 9 * mm, "JNX · ServiceOps Complete Platform Manual")
+    canvas.drawString(18 * mm, 9 * mm, "ServiceOps Complete Platform Manual")
     canvas.drawRightString(192 * mm, 9 * mm, f"Page {doc.page}")
     canvas.restoreState()
 
@@ -106,7 +106,7 @@ def build():
     flush_paragraph()
     doc = SimpleDocTemplate(str(OUTPUT), pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm,
                             topMargin=16 * mm, bottomMargin=20 * mm,
-                            title="ServiceOps Complete Platform Manual", author="JNX ServiceOps")
+                            title="ServiceOps Complete Platform Manual", author="ServiceOps")
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     print(OUTPUT)
 

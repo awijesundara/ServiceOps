@@ -275,7 +275,7 @@ chapters = [
          ("Release assurance", ["staging regression", "manifest lint and render", "load and soak testing",
                                 "database failover", "node drain", "atomic rollout", "tested data rollback"]),
      ]),
-    ("27. JNX visual system",
+    ("27. Custom visual system",
      "The interface retains the unified enterprise patterns documented in the source UI guide while applying the company palette consistently.",
      [
          ("Palette", ["Deep teal #003E4C for navigation, identity, links, and focus context",

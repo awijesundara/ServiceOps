@@ -6,7 +6,7 @@ import pytest
 
 from app import (Approval, ApprovalChain, CatalogRequest, CatalogTask, EnterpriseRecord,
                  ExternalIdentity, Favorite, FileAttachment, GroupMember, RequestedItem,
-                 SupportGroup, TaskSLA, Ticket, User, UserPreference, create_app, db,
+                 PlatformSetting, SupportGroup, TaskSLA, Ticket, User, UserPreference, create_app, db,
                  provision_external_user)
 
 
@@ -192,7 +192,7 @@ def test_unified_search_favorites_and_preferences(client, app):
     with app.app_context():
         assert Favorite.query.filter_by(url="/task-board").one()
         pref = UserPreference.query.one()
-        assert (pref.theme, pref.density, pref.font_scale, pref.start_page) == ("dark", "compact", 115, "/task-board")
+        assert (pref.theme, pref.density, pref.font_scale, pref.start_page) == ("light", "compact", 115, "/task-board")
 
 
 def test_visual_board_checklist_and_attachment(client, app):
@@ -244,3 +244,39 @@ def test_external_identity_is_stable_and_does_not_enable_local_password(app):
         assert second.id == first_id
         assert second.role == "manager"
         assert ExternalIdentity.query.filter_by(provider="keycloak", subject="subject-123").count() == 1
+
+
+def test_admin_can_update_live_platform_branding(client, app):
+    login(client)
+    response = client.post("/admin/settings", data={
+        "INSTANCE_NAME": "Operations Hub",
+        "COMPANY_NAME": "Example Corporation",
+        "SUPPORT_EMAIL": "support@example.test",
+        "INSTANCE_TIMEZONE": "Australia/Sydney",
+        "BRAND_TEAL": "#124c5a",
+        "BRAND_AMBER": "#f4a340",
+        "DEFAULT_DENSITY": "comfortable",
+        "LOCAL_AUTH_ENABLED": "on",
+        "LDAP_USER_FILTER": "(&(objectClass=user)(sAMAccountName={username}))",
+        "LDAP_START_TLS": "on",
+        "LDAP_VALIDATE_CERT": "on",
+        "LDAP_ROLE_MAPPINGS": "{}",
+        "KEYCLOAK_ROLE_MAPPINGS": "{}",
+        "SESSION_HOURS": "8",
+        "MAX_UPLOAD_MB": "20",
+        "DEFAULT_TICKET_PRIORITY": "P3",
+        "NOTIFICATION_FROM_NAME": "Operations Hub",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"System settings saved" in response.data
+    assert b"Operations Hub" in response.data
+    with app.app_context():
+        assert db.session.get(PlatformSetting, "COMPANY_NAME").value == "Example Corporation"
+
+
+def test_dark_theme_is_removed(client, app):
+    login(client)
+    response = client.get("/preferences")
+    assert b'value="dark"' not in response.data
+    with app.app_context():
+        assert all(pref.theme == "light" for pref in UserPreference.query.all())

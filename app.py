@@ -2,13 +2,17 @@ import json
 import os
 import ssl
 import uuid
+import base64
+import hashlib
+import re
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
-from flask import Flask, abort, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
+from flask import Flask, abort, current_app, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_sqlalchemy import SQLAlchemy
 from authlib.integrations.flask_client import OAuth
+from cryptography.fernet import Fernet, InvalidToken
 from ldap3 import ALL, SUBTREE, Connection, Server, Tls
 from ldap3.utils.conv import escape_filter_chars
 from sqlalchemy import func
@@ -40,6 +44,10 @@ class User(UserMixin, db.Model):
     active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
 
+    @property
+    def is_active(self):
+        return bool(self.active)
+
 
 class ExternalIdentity(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -49,6 +57,15 @@ class ExternalIdentity(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     user = db.relationship("User")
     __table_args__ = (db.UniqueConstraint("provider", "subject", name="uq_external_identity"),)
+
+
+class PlatformSetting(db.Model):
+    key = db.Column(db.String(100), primary_key=True)
+    value = db.Column(db.Text, nullable=False, default="")
+    encrypted = db.Column(db.Boolean, nullable=False, default=False)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    updated_by = db.relationship("User")
 
 
 class Ticket(db.Model):
@@ -373,7 +390,7 @@ class RecentView(db.Model):
 class UserPreference(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
-    theme = db.Column(db.String(30), nullable=False, default="system")
+    theme = db.Column(db.String(30), nullable=False, default="light")
     density = db.Column(db.String(30), nullable=False, default="comfortable")
     font_scale = db.Column(db.Integer, nullable=False, default=100)
     high_contrast = db.Column(db.Boolean, nullable=False, default=False)
@@ -445,6 +462,80 @@ DOMAIN_CONFIG = {
     "event": {"name": "IT operations events", "prefix": "EVT", "types": ["Alert", "Infrastructure event", "Service degradation"]},
     "release": {"name": "Releases", "prefix": "REL", "types": ["Release", "Deployment", "Readiness review"]},
 }
+
+
+SETTING_DEFINITIONS = {
+    "general": [
+        {"key": "INSTANCE_NAME", "label": "Instance name", "type": "text", "default": "ServiceOps", "live": True},
+        {"key": "COMPANY_NAME", "label": "Company name", "type": "text", "default": "Your Company", "live": True},
+        {"key": "SUPPORT_EMAIL", "label": "Support email", "type": "email", "default": "", "live": True},
+    ],
+    "appearance": [
+        {"key": "BRAND_TEAL", "label": "Primary brand color", "type": "color", "default": "#003e4c", "live": True},
+        {"key": "BRAND_AMBER", "label": "Accent brand color", "type": "color", "default": "#f9aa3c", "live": True},
+        {"key": "DEFAULT_DENSITY", "label": "Default density", "type": "choice", "choices": ["comfortable", "compact"], "default": "comfortable", "live": True},
+    ],
+    "authentication": [
+        {"key": "LOCAL_AUTH_ENABLED", "label": "Enable local authentication", "type": "bool", "default": "true", "live": True},
+        {"key": "LDAP_ENABLED", "label": "Enable AD/LDAP", "type": "bool", "default": "false", "live": True},
+        {"key": "LDAP_SERVER_URI", "label": "LDAP server URI", "type": "text", "default": "", "live": True},
+        {"key": "LDAP_BIND_DN", "label": "LDAP bind DN", "type": "text", "default": "", "live": True},
+        {"key": "LDAP_BIND_PASSWORD", "label": "LDAP bind password", "type": "secret", "default": "", "live": True},
+        {"key": "LDAP_BASE_DN", "label": "LDAP base DN", "type": "text", "default": "", "live": True},
+        {"key": "LDAP_USER_FILTER", "label": "LDAP user filter", "type": "text", "default": "(&(objectClass=user)(sAMAccountName={username}))", "live": True},
+        {"key": "LDAP_START_TLS", "label": "Use LDAP StartTLS", "type": "bool", "default": "true", "live": True},
+        {"key": "LDAP_VALIDATE_CERT", "label": "Validate LDAP certificate", "type": "bool", "default": "true", "live": True},
+        {"key": "LDAP_ROLE_MAPPINGS", "label": "LDAP group role mappings", "type": "json", "default": "{}", "live": True},
+        {"key": "KEYCLOAK_ENABLED", "label": "Enable Keycloak", "type": "bool", "default": "false", "live": False},
+        {"key": "KEYCLOAK_DISCOVERY_URL", "label": "Keycloak discovery URL", "type": "url", "default": "", "live": False},
+        {"key": "KEYCLOAK_CLIENT_ID", "label": "Keycloak client ID", "type": "text", "default": "", "live": False},
+        {"key": "KEYCLOAK_CLIENT_SECRET", "label": "Keycloak client secret", "type": "secret", "default": "", "live": False},
+        {"key": "KEYCLOAK_ROLE_MAPPINGS", "label": "Keycloak realm-role mappings", "type": "json", "default": "{}", "live": True},
+    ],
+    "security": [
+        {"key": "ENABLE_HSTS", "label": "Enable HSTS", "type": "bool", "default": "false", "live": True},
+        {"key": "SESSION_HOURS", "label": "Session lifetime in hours", "type": "int", "default": "8", "min": 1, "max": 168, "live": False},
+        {"key": "MAX_UPLOAD_MB", "label": "Maximum upload size (MB)", "type": "int", "default": "20", "min": 1, "max": 500, "live": True},
+    ],
+    "workflow": [
+        {"key": "DEFAULT_TICKET_PRIORITY", "label": "Default ticket priority", "type": "choice", "choices": ["P1", "P2", "P3", "P4"], "default": "P3", "live": True},
+        {"key": "CHANGE_FREEZE_MESSAGE", "label": "Change freeze message", "type": "text", "default": "", "live": True},
+    ],
+}
+
+
+def settings_cipher():
+    configured = os.getenv("SETTINGS_ENCRYPTION_KEY", "")
+    if configured:
+        key = configured.encode()
+    else:
+        digest = hashlib.sha256(current_app.config["SECRET_KEY"].encode()).digest()
+        key = base64.urlsafe_b64encode(digest)
+    return Fernet(key)
+
+
+def setting_value(key, default=None):
+    definition = next((item for group in SETTING_DEFINITIONS.values()
+                       for item in group if item["key"] == key), None)
+    fallback = default if default is not None else (
+        os.getenv(key) if os.getenv(key) is not None else (definition or {}).get("default", ""))
+    try:
+        row = db.session.get(PlatformSetting, key)
+    except Exception:
+        return fallback
+    if not row:
+        return fallback
+    if row.encrypted:
+        try:
+            return settings_cipher().decrypt(row.value.encode()).decode()
+        except (InvalidToken, ValueError):
+            current_app.logger.error("Unable to decrypt platform setting %s", key)
+            return fallback
+    return row.value
+
+
+def setting_bool(key, default=False):
+    return str(setting_value(key, str(default))).lower() in {"1", "true", "yes", "on"}
 
 
 def next_enterprise_number(domain):
@@ -585,72 +676,23 @@ def create_catalog_task(ritm):
     return task
 
 
-def seed_itil(admin, agent, demo_mode=True):
+def seed_itil(admin):
     if not SupportGroup.query.filter_by(name="Service Desk").first():
-        service_desk = SupportGroup(name="Service Desk", group_type="Fulfillment", manager_id=agent.id)
-        security = SupportGroup(name="Security Operations", group_type="Fulfillment", manager_id=admin.id)
+        service_desk = SupportGroup(name="Service Desk", group_type="Fulfillment")
+        security = SupportGroup(name="Security Operations", group_type="Fulfillment")
         db.session.add_all([service_desk, security])
-        db.session.flush()
-        db.session.add_all([
-            GroupMember(group_id=service_desk.id, user_id=agent.id, role="member"),
-            GroupMember(group_id=security.id, user_id=admin.id, role="manager"),
-        ])
     team_names = ["CoreApps", "Database", "Network", "Windows", "Unix", "SSD"]
-    manager_password = os.getenv("TEAM_MANAGER_PASSWORD", "Manager123!")
-    managers = []
     for team_name in team_names:
-        slug = team_name.lower()
-        manager = User.query.filter_by(username=f"{slug}.manager").first()
-        if not manager:
-            manager = User(username=f"{slug}.manager", name=f"{team_name} Manager",
-                           email=f"{slug}.manager@example.local",
-                           password_hash=generate_password_hash(
-                               manager_password if demo_mode else uuid.uuid4().hex),
-                           role="manager", active=demo_mode)
-            db.session.add(manager)
-            db.session.flush()
-        managers.append(manager)
         group = SupportGroup.query.filter_by(name=team_name).first()
         if not group:
-            group = SupportGroup(name=team_name, group_type="IT Fulfillment", manager_id=manager.id)
+            group = SupportGroup(name=team_name, group_type="IT Fulfillment")
             db.session.add(group)
-            db.session.flush()
         else:
-            group.manager_id = manager.id
             group.group_type = "IT Fulfillment"
-        if not GroupMember.query.filter_by(group_id=group.id, user_id=manager.id).first():
-            db.session.add(GroupMember(group_id=group.id, user_id=manager.id, role="manager"))
-        if demo_mode:
-            demo_password = os.getenv("DEMO_USER_PASSWORD", "ServiceOpsDemo123!")
-            team_user = User.query.filter_by(username=f"{slug}.agent").first()
-            if not team_user:
-                team_user = User(
-                    username=f"{slug}.agent", name=f"{team_name} Demo Agent",
-                    email=f"{slug}.agent@demo.serviceops.local",
-                    password_hash=generate_password_hash(demo_password), role="agent")
-                db.session.add(team_user)
-                db.session.flush()
-            if not GroupMember.query.filter_by(group_id=group.id, user_id=team_user.id).first():
-                db.session.add(GroupMember(group_id=group.id, user_id=team_user.id, role="member"))
     ccb = SupportGroup.query.filter_by(name="Change Control Board").first()
     if not ccb:
-        ccb = SupportGroup(name="Change Control Board", group_type="CCB Approval",
-                           manager_id=managers[0].id)
+        ccb = SupportGroup(name="Change Control Board", group_type="CCB Approval")
         db.session.add(ccb)
-        db.session.flush()
-    ccb.manager_id = managers[0].id
-    for membership in list(ccb.members):
-        if membership.user.role != "manager":
-            db.session.delete(membership)
-    for manager in managers:
-        if not GroupMember.query.filter_by(group_id=ccb.id, user_id=manager.id).first():
-            db.session.add(GroupMember(group_id=ccb.id, user_id=manager.id, role="CCB member"))
-    if not ServiceOffering.query.first():
-        group = SupportGroup.query.filter_by(name="Service Desk").first()
-        db.session.add_all([
-            ServiceOffering(name="Employee Technology Service", owner_id=admin.id, support_group_id=group.id, criticality="High"),
-            ServiceOffering(name="Customer Digital Service", owner_id=admin.id, support_group_id=group.id, criticality="Critical"),
-        ])
     if not SLADefinition.query.first():
         db.session.add_all([
             SLADefinition(name="P1 incident response", target_type="ticket", priority="P1", duration_minutes=15),
@@ -662,74 +704,23 @@ def seed_itil(admin, agent, demo_mode=True):
 
 
 def seed():
-    demo_mode = os.getenv("DEPLOYMENT_PROFILE", "demo").lower() == "demo"
     if User.query.first():
         admin = User.query.filter_by(role="admin").first()
-        agent = User.query.filter_by(role="agent").first() or admin
-        seed_itil(admin, agent, demo_mode)
-        demo_names = ["agent", "employee"] + [
-            f"{team}.{kind}"
-            for team in ("coreapps", "database", "network", "windows", "unix", "ssd")
-            for kind in ("agent", "manager")
-        ]
-        for demo_user in User.query.filter(User.username.in_(demo_names)).all():
-            if demo_user.email.endswith(("@example.local", "@demo.serviceops.local")):
-                demo_user.active = demo_mode
-        if not CatalogItem.query.first():
-            db.session.add_all([
-                CatalogItem(name="Laptop computer", category="Hardware", description="Request a standard business laptop with approved software.", delivery_days=5, approval_required=True),
-                CatalogItem(name="Software access", category="Access", description="Request access to an approved business application.", delivery_days=2, approval_required=True),
-                CatalogItem(name="Password reset", category="Access", description="Get help restoring access to your corporate account.", delivery_days=1),
-                CatalogItem(name="New employee onboarding", category="People", description="Coordinate accounts, equipment, workspace, and orientation.", delivery_days=7, approval_required=True),
-            ])
-        if not ConfigurationItem.query.first():
-            web = ConfigurationItem(name="Customer Portal", ci_class="Business Application", owner_id=admin.id)
-            api = ConfigurationItem(name="Portal API", ci_class="Application Service", owner_id=agent.id, ip_address="10.10.1.20")
-            database = ConfigurationItem(name="Customer Database", ci_class="Database", owner_id=agent.id, ip_address="10.10.1.30")
-            db.session.add_all([web, api, database])
-            db.session.flush()
-            db.session.add_all([
-                CIRelationship(parent_id=web.id, child_id=api.id, relationship_type="Depends on"),
-                CIRelationship(parent_id=api.id, child_id=database.id, relationship_type="Depends on"),
-            ])
+        if not admin:
+            raise RuntimeError("The database has users but no administrator account.")
+        seed_itil(admin)
         db.session.commit()
         return
+    admin_password = current_app.config.get("BOOTSTRAP_ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD")
+    if not admin_password:
+        raise RuntimeError("ADMIN_PASSWORD is required to bootstrap the first administrator.")
+    if not current_app.config.get("TESTING") and len(admin_password) < 14:
+        raise RuntimeError("ADMIN_PASSWORD must contain at least 14 characters.")
     admin = User(username="admin", name="System Administrator", email="admin@example.local",
-                 password_hash=generate_password_hash(os.getenv("ADMIN_PASSWORD", "Admin123!")), role="admin")
-    users = [admin]
-    if demo_mode:
-        agent = User(username="agent", name="IT Support Agent", email="agent@example.local",
-                     password_hash=generate_password_hash("Agent123!"), role="agent")
-        requester = User(username="employee", name="Example Employee", email="employee@example.local",
-                         password_hash=generate_password_hash("Employee123!"), role="requester")
-        users.extend([agent, requester])
-    else:
-        agent = admin
-        requester = admin
-    db.session.add_all(users)
+                 password_hash=generate_password_hash(admin_password), role="admin")
+    db.session.add(admin)
     db.session.flush()
-    seed_itil(admin, agent, demo_mode)
-    if demo_mode:
-        db.session.add(Knowledge(title="Reset your password", category="Access",
-                                 body="Use the company identity portal. Select Forgot password, verify your identity, and choose a new password.",
-                                 author_id=admin.id))
-        db.session.add(Asset(asset_tag="LAP-0001", name="Demo laptop", asset_type="Laptop",
-                             status="In use", owner_id=requester.id, serial_number="DEMO-001"))
-    db.session.add_all([
-        CatalogItem(name="Laptop computer", category="Hardware", description="Request a standard business laptop with approved software.", delivery_days=5, approval_required=True),
-        CatalogItem(name="Software access", category="Access", description="Request access to an approved business application.", delivery_days=2, approval_required=True),
-        CatalogItem(name="Password reset", category="Access", description="Get help restoring access to your corporate account.", delivery_days=1),
-        CatalogItem(name="New employee onboarding", category="People", description="Coordinate accounts, equipment, workspace, and orientation.", delivery_days=7, approval_required=True),
-    ])
-    web = ConfigurationItem(name="Customer Portal", ci_class="Business Application", owner_id=admin.id)
-    api = ConfigurationItem(name="Portal API", ci_class="Application Service", owner_id=agent.id, ip_address="10.10.1.20")
-    database = ConfigurationItem(name="Customer Database", ci_class="Database", owner_id=agent.id, ip_address="10.10.1.30")
-    db.session.add_all([web, api, database])
-    db.session.flush()
-    db.session.add_all([
-        CIRelationship(parent_id=web.id, child_id=api.id, relationship_type="Depends on"),
-        CIRelationship(parent_id=api.id, child_id=database.id, relationship_type="Depends on"),
-    ])
+    seed_itil(admin)
     db.session.commit()
 
 
@@ -737,14 +728,14 @@ def mapped_role(groups, mapping_name, default="requester"):
     """Map directory/realm groups to a ServiceOps role without trusting user input."""
     allowed = {"requester", "agent", "manager", "admin"}
     try:
-        mappings = json.loads(os.getenv(mapping_name, "{}"))
+        mappings = json.loads(setting_value(mapping_name, "{}"))
     except json.JSONDecodeError:
         mappings = {}
     normalized = {str(group).lower() for group in groups}
     for group, role in mappings.items():
         if str(group).lower() in normalized and role in allowed:
             return role
-    configured = os.getenv(f"{mapping_name}_DEFAULT", default)
+    configured = setting_value(f"{mapping_name}_DEFAULT", default)
     return configured if configured in allowed else default
 
 
@@ -773,31 +764,31 @@ def provision_external_user(provider, subject, username, name, email, role):
 
 
 def ldap_authenticate(username, password):
-    if not password or not env_bool("LDAP_ENABLED"):
+    if not password or not setting_bool("LDAP_ENABLED"):
         return None
-    uri = os.getenv("LDAP_SERVER_URI", "")
+    uri = setting_value("LDAP_SERVER_URI", "")
     use_ssl = uri.lower().startswith("ldaps://")
     host = uri.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
     port = int(os.getenv("LDAP_PORT", "636" if use_ssl else "389"))
-    validate = ssl.CERT_REQUIRED if env_bool("LDAP_VALIDATE_CERT", True) else ssl.CERT_NONE
+    validate = ssl.CERT_REQUIRED if setting_bool("LDAP_VALIDATE_CERT", True) else ssl.CERT_NONE
     tls = Tls(validate=validate, ca_certs_file=os.getenv("LDAP_CA_CERT") or None)
     server = Server(host, port=port, use_ssl=use_ssl, tls=tls, get_info=ALL,
                     connect_timeout=int(os.getenv("LDAP_TIMEOUT", "8")))
-    service = Connection(server, user=os.getenv("LDAP_BIND_DN") or None,
-                         password=os.getenv("LDAP_BIND_PASSWORD") or None,
+    service = Connection(server, user=setting_value("LDAP_BIND_DN") or None,
+                         password=setting_value("LDAP_BIND_PASSWORD") or None,
                          auto_bind=False, receive_timeout=int(os.getenv("LDAP_TIMEOUT", "8")))
     service.open()
-    if not use_ssl and env_bool("LDAP_START_TLS", True):
+    if not use_ssl and setting_bool("LDAP_START_TLS", True):
         if not service.start_tls():
             return None
     if not service.bind():
         return None
     safe_username = escape_filter_chars(username)
-    search_filter = os.getenv(
+    search_filter = setting_value(
         "LDAP_USER_FILTER", "(&(objectClass=user)(sAMAccountName={username}))"
     ).replace("{username}", safe_username)
     attrs = ["distinguishedName", "cn", "displayName", "mail", "memberOf", "userPrincipalName"]
-    if not service.search(os.getenv("LDAP_BASE_DN", ""), search_filter,
+    if not service.search(setting_value("LDAP_BASE_DN", ""), search_filter,
                           search_scope=SUBTREE, attributes=attrs, size_limit=2):
         service.unbind()
         return None
@@ -808,7 +799,7 @@ def ldap_authenticate(username, password):
     entry = entries[0]
     user_conn = Connection(server, user=entry.entry_dn, password=password, auto_bind=False)
     user_conn.open()
-    if not use_ssl and env_bool("LDAP_START_TLS", True) and not user_conn.start_tls():
+    if not use_ssl and setting_bool("LDAP_START_TLS", True) and not user_conn.start_tls():
         return None
     if not user_conn.bind():
         return None
@@ -825,18 +816,25 @@ def ldap_authenticate(username, password):
 def create_app(test_config=None):
     app = Flask(__name__)
     app.config.update(
-        SECRET_KEY=os.getenv("SECRET_KEY", "development-only-secret"),
+        SECRET_KEY=os.getenv("SECRET_KEY"),
         SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", "sqlite:///serviceops.db"),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         UPLOAD_FOLDER=os.getenv("UPLOAD_FOLDER", os.path.join(app.instance_path, "uploads")),
         MAX_CONTENT_LENGTH=20 * 1024 * 1024,
-        DEPLOYMENT_PROFILE=os.getenv("DEPLOYMENT_PROFILE", "demo").lower(),
+        DEPLOYMENT_PROFILE="production",
         LDAP_ENABLED=env_bool("LDAP_ENABLED"),
         KEYCLOAK_ENABLED=env_bool("KEYCLOAK_ENABLED"),
         LOCAL_AUTH_ENABLED=env_bool("LOCAL_AUTH_ENABLED", True),
     )
     if test_config:
         app.config.update(test_config)
+    if app.config["TESTING"]:
+        app.config["SECRET_KEY"] = app.config.get("SECRET_KEY") or "test-only-secret"
+        app.config["BOOTSTRAP_ADMIN_PASSWORD"] = app.config.get(
+            "BOOTSTRAP_ADMIN_PASSWORD", "Admin123!"
+        )
+    elif not app.config["SECRET_KEY"] or len(app.config["SECRET_KEY"]) < 32:
+        raise RuntimeError("SECRET_KEY is required and must contain at least 32 characters.")
     if env_bool("TRUST_PROXY_HEADERS"):
         app.wsgi_app = ProxyFix(
             app.wsgi_app,
@@ -848,18 +846,24 @@ def create_app(test_config=None):
     db.init_app(app)
     login_manager.init_app(app)
     oauth.init_app(app)
-    if app.config["KEYCLOAK_ENABLED"]:
-        oauth.register(
-            name="keycloak",
-            client_id=os.getenv("KEYCLOAK_CLIENT_ID"),
-            client_secret=os.getenv("KEYCLOAK_CLIENT_SECRET"),
-            server_metadata_url=os.getenv("KEYCLOAK_DISCOVERY_URL"),
-            client_kwargs={"scope": "openid profile email"},
-        )
 
     with app.app_context():
         db.create_all()
         seed()
+        UserPreference.query.filter(UserPreference.theme != "light").update({"theme": "light"})
+        db.session.commit()
+        app.config["LOCAL_AUTH_ENABLED"] = setting_bool("LOCAL_AUTH_ENABLED", True)
+        app.config["LDAP_ENABLED"] = setting_bool("LDAP_ENABLED")
+        app.config["KEYCLOAK_ENABLED"] = setting_bool("KEYCLOAK_ENABLED")
+        app.config["MAX_CONTENT_LENGTH"] = int(setting_value("MAX_UPLOAD_MB", "20")) * 1024 * 1024
+        if app.config["KEYCLOAK_ENABLED"]:
+            oauth.register(
+                name="keycloak",
+                client_id=setting_value("KEYCLOAK_CLIENT_ID"),
+                client_secret=setting_value("KEYCLOAK_CLIENT_SECRET"),
+                server_metadata_url=setting_value("KEYCLOAK_DISCOVERY_URL"),
+                client_kwargs={"scope": "openid profile email"},
+            )
         os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
         # Gunicorn preloads the application before forking workers. Do not let
         # workers inherit PostgreSQL connections or prepared-statement state.
@@ -867,14 +871,22 @@ def create_app(test_config=None):
 
     @app.context_processor
     def ui_context():
+        platform_context = {
+            "instance_name": setting_value("INSTANCE_NAME", "ServiceOps"),
+            "company_name": setting_value("COMPANY_NAME", "Your Company"),
+            "brand_teal": setting_value("BRAND_TEAL", "#003e4c"),
+            "brand_amber": setting_value("BRAND_AMBER", "#f9aa3c"),
+            "support_email": setting_value("SUPPORT_EMAIL", ""),
+            "has_company_logo": os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png")),
+        }
         if not current_user.is_authenticated:
-            return {}
+            return platform_context
         preference = UserPreference.query.filter_by(user_id=current_user.id).first()
         if not preference:
             preference = UserPreference(user_id=current_user.id)
             db.session.add(preference)
             db.session.commit()
-        return {
+        return platform_context | {
             "ui_preference": preference,
             "ui_favorites": Favorite.query.filter_by(user_id=current_user.id).order_by(Favorite.folder, Favorite.label).all(),
             "ui_history": RecentView.query.filter_by(user_id=current_user.id).order_by(RecentView.viewed_at.desc()).limit(12).all(),
@@ -901,7 +913,7 @@ def create_app(test_config=None):
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-        if env_bool("ENABLE_HSTS"):
+        if setting_bool("ENABLE_HSTS"):
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
 
@@ -912,12 +924,12 @@ def create_app(test_config=None):
             password = request.form.get("password", "")
             provider = request.form.get("provider", "local")
             user = None
-            if provider == "ldap" and app.config["LDAP_ENABLED"]:
+            if provider == "ldap" and setting_bool("LDAP_ENABLED"):
                 try:
                     user = ldap_authenticate(username, password)
                 except Exception:
                     app.logger.exception("LDAP authentication failed")
-            elif app.config["LOCAL_AUTH_ENABLED"]:
+            elif setting_bool("LOCAL_AUTH_ENABLED", True):
                 candidate = User.query.filter_by(username=username).first()
                 if candidate and check_password_hash(candidate.password_hash, password):
                     user = candidate
@@ -928,9 +940,9 @@ def create_app(test_config=None):
                 preference = UserPreference.query.filter_by(user_id=user.id).first()
                 return redirect(preference.start_page if preference else url_for("dashboard"))
             flash("Invalid username or password.", "error")
-        return render_template("login.html", ldap_enabled=app.config["LDAP_ENABLED"],
+        return render_template("login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
                                keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
-                               local_enabled=app.config["LOCAL_AUTH_ENABLED"],
+                               local_enabled=setting_bool("LOCAL_AUTH_ENABLED", True),
                                deployment_profile=app.config["DEPLOYMENT_PROFILE"])
 
     @app.get("/auth/keycloak/login")
@@ -1037,7 +1049,8 @@ def create_app(test_config=None):
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
         teams = SupportGroup.query.filter_by(group_type="IT Fulfillment", active=True).order_by(SupportGroup.name).all()
         return render_template("ticket_form.html", kind=kind, cis=ConfigurationItem.query.order_by(ConfigurationItem.name).all(),
-                               teams=teams)
+                               teams=teams, default_priority=setting_value("DEFAULT_TICKET_PRIORITY", "P3"),
+                               change_freeze_message=setting_value("CHANGE_FREEZE_MESSAGE", ""))
 
     @app.route("/ticket/<int:ticket_id>", methods=["GET", "POST"])
     @login_required
@@ -1121,6 +1134,108 @@ def create_app(test_config=None):
             db.session.commit()
             return redirect(url_for("users"))
         return render_template("user_form.html")
+
+    @app.get("/branding/company-logo.png")
+    def company_logo():
+        path = os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png")
+        if not os.path.exists(path):
+            abort(404)
+        return send_from_directory(app.config["UPLOAD_FOLDER"], "company-logo.png",
+                                   mimetype="image/png", max_age=300)
+
+    @app.route("/admin/settings", methods=["GET", "POST"])
+    @roles("admin")
+    def system_settings():
+        definitions = [item for group in SETTING_DEFINITIONS.values() for item in group]
+        if request.method == "POST":
+            errors, restart_required, changed = [], False, []
+            for definition in definitions:
+                key, field_type = definition["key"], definition["type"]
+                submitted = request.form.get(key)
+                if field_type == "bool":
+                    submitted = "true" if submitted else "false"
+                elif field_type == "secret" and not submitted:
+                    continue
+                else:
+                    submitted = (submitted or "").strip()
+                if field_type == "color" and not re.fullmatch(r"#[0-9a-fA-F]{6}", submitted):
+                    errors.append(f"{definition['label']} must be a six-digit hex color.")
+                    continue
+                if field_type == "json":
+                    try:
+                        parsed = json.loads(submitted)
+                        if not isinstance(parsed, dict):
+                            raise ValueError
+                        submitted = json.dumps(parsed, separators=(",", ":"))
+                    except (json.JSONDecodeError, ValueError):
+                        errors.append(f"{definition['label']} must be a JSON object.")
+                        continue
+                if field_type == "int":
+                    try:
+                        number = int(submitted)
+                        if number < definition["min"] or number > definition["max"]:
+                            raise ValueError
+                        submitted = str(number)
+                    except ValueError:
+                        errors.append(
+                            f"{definition['label']} must be between {definition['min']} and {definition['max']}.")
+                        continue
+                if field_type == "choice" and submitted not in definition["choices"]:
+                    errors.append(f"{definition['label']} has an invalid value.")
+                    continue
+                old_value = setting_value(key, definition.get("default", ""))
+                if old_value == submitted:
+                    continue
+                encrypted = field_type == "secret"
+                stored = settings_cipher().encrypt(submitted.encode()).decode() if encrypted else submitted
+                row = db.session.get(PlatformSetting, key)
+                if not row:
+                    row = PlatformSetting(key=key)
+                    db.session.add(row)
+                row.value, row.encrypted, row.updated_by_id = stored, encrypted, current_user.id
+                changed.append(key)
+                restart_required = restart_required or not definition["live"]
+            logo = request.files.get("company_logo")
+            if logo and logo.filename:
+                header = logo.stream.read(8)
+                logo.stream.seek(0)
+                if header != b"\x89PNG\r\n\x1a\n":
+                    errors.append("Company logo must be a valid PNG file.")
+                elif request.content_length and request.content_length > 5 * 1024 * 1024:
+                    errors.append("Company logo must be smaller than 5 MB.")
+                else:
+                    logo.save(os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png"))
+                    changed.append("COMPANY_LOGO")
+            effective_local = request.form.get("LOCAL_AUTH_ENABLED")
+            effective_ldap = request.form.get("LDAP_ENABLED")
+            effective_keycloak = request.form.get("KEYCLOAK_ENABLED")
+            if not any((effective_local, effective_ldap, effective_keycloak)):
+                errors.append("At least one authentication method must remain enabled.")
+            if errors:
+                db.session.rollback()
+                for message in errors:
+                    flash(message, "error")
+            else:
+                audit("update", "System settings", ", ".join(changed) or "No value changes")
+                db.session.commit()
+                flash("System settings saved." + (
+                    " Restart or roll out all application instances to apply marked settings."
+                    if restart_required else ""), "success")
+                return redirect(url_for("system_settings"))
+        values = {}
+        for definition in definitions:
+            value = setting_value(definition["key"], definition.get("default", ""))
+            values[definition["key"]] = "" if definition["type"] == "secret" else value
+            definition["configured"] = bool(value) if definition["type"] == "secret" else False
+        infrastructure = [
+            ("Deployment profile", app.config["DEPLOYMENT_PROFILE"], "Docker environment / Helm values"),
+            ("Database", app.config["SQLALCHEMY_DATABASE_URI"].split("@")[-1], "DATABASE_URL / Kubernetes Secret"),
+            ("Upload storage", app.config["UPLOAD_FOLDER"], "Docker volume / Kubernetes PVC"),
+            ("Application replicas", os.getenv("REPLICA_COUNT", "Controlled externally"), "Docker Compose / Helm"),
+            ("Ingress and TLS", "Controlled externally", "Reverse proxy / Kubernetes Ingress"),
+        ]
+        return render_template("system_settings.html", groups=SETTING_DEFINITIONS,
+                               values=values, infrastructure=infrastructure)
 
     @app.get("/admin/audit")
     @roles("admin")
@@ -1450,7 +1565,7 @@ def create_app(test_config=None):
             pref = UserPreference(user_id=current_user.id)
             db.session.add(pref)
         if request.method == "POST":
-            pref.theme = request.form.get("theme", "system")
+            pref.theme = "light"
             pref.density = request.form.get("density", "comfortable")
             pref.font_scale = max(80, min(140, int(request.form.get("font_scale", 100))))
             pref.high_contrast = bool(request.form.get("high_contrast"))

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{% block title %}ServiceOps{% endblock %}</title>
+  <title>{% block title %}{{ instance_name|default('ServiceOps') }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='itil.css') }}">
@@ -11,10 +11,10 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='brand.css') }}">
   <script src="{{ url_for('static', filename='platform.js') }}" defer></script>
 </head>
-<body class="{% if current_user.is_authenticated %}theme-{{ ui_preference.theme }} density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
+<body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
 {% if current_user.is_authenticated %}
 <aside class="sidebar">
-  <a class="brand" href="{{ url_for('dashboard') }}"><span class="jnx-mark">JNX</span><span class="brand-product">ServiceOps<small>Enterprise service management</small></span></a>
+  <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo">{% else %}<span class="company-mark">{{ company_name[:2]|upper }}</span>{% endif %}<span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span></a>
   <nav>
     <small>WORKSPACE</small>
     <a href="{{ url_for('dashboard') }}">Dashboard</a>
@@ -39,6 +39,7 @@
     {% if current_user.role == 'admin' %}
     <small>ADMINISTRATION</small>
     <a href="{{ url_for('itil_admin') }}">ITIL configuration</a>
+    <a href="{{ url_for('system_settings') }}">System settings</a>
     <a href="{{ url_for('users') }}">Users & roles</a>
     <a href="{{ url_for('audit_log') }}">Audit log</a>
     {% endif %}
