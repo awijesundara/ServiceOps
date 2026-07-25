@@ -1,1 +1,140 @@
-{% extends "base.html" %}{% block content %}<header class="page-head"><div><p class="eyebrow">ITIL CONFIGURATION</p><h1>Service management foundation</h1><p>IT teams, management authority, CCB membership, services, and SLA definitions.</p></div></header><div class="analytics-grid"><section class="panel"><h2>Teams and governance groups</h2>{% for group in groups %}<article class="config-row"><div><strong>{{ group.name }}</strong><small>{{ group.group_type }} · manager {{ group.manager.name if group.manager else 'Unassigned' }}</small>{% if group.name=='Change Control Board' %}<small>CCB members: {{ group.members|map(attribute='user.name')|join(', ') }}</small>{% endif %}</div><span>{{ group.members|length }} members</span></article>{% endfor %}</section><section class="panel"><h2>Service offerings</h2>{% for service in services %}<article class="config-row"><div><strong>{{ service.name }}</strong><small>{{ service.criticality }} criticality · {{ service.status }}</small></div><span>{{ service.owner.name }}</span></article>{% endfor %}</section></div><section class="panel admin-section"><h2>SLA definitions</h2><table><thead><tr><th>Name</th><th>Target</th><th>Priority</th><th>Duration</th><th>Pause states</th></tr></thead><tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td>{{ sla.target_type }}</td><td>{{ sla.priority or 'All' }}</td><td>{{ sla.duration_minutes }} minutes</td><td>{{ sla.pause_states }}</td></tr>{% endfor %}</tbody></table></section>{% endblock %}
+{% extends "base.html" %}
+{% block title %}ITIL administration · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <p class="eyebrow">ITIL CONFIGURATION</p>
+    <h1>Teams and approval authority</h1>
+    <p>Map Active Directory groups to teams, appoint accountable managers, and control CCB voting authority.</p>
+  </div>
+</header>
+
+<section class="panel admin-section">
+  <div class="panel-head">
+    <div>
+      <h2>AD group → ServiceOps team</h2>
+      <p>Enter a short AD group such as <code>gg_unix</code> or its complete distinguished name. Membership synchronizes whenever the user signs in through AD/LDAP.</p>
+    </div>
+  </div>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="action" value="add_directory_mapping">
+    <label>AD group name or DN
+      <input name="directory_group" placeholder="gg_unix" maxlength="500" required>
+    </label>
+    <label>ServiceOps team
+      <select name="group_id" required>
+        {% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <div class="wide actions"><button class="primary">Save mapping</button></div>
+  </form>
+  <table>
+    <thead><tr><th>AD group</th><th>Assigned team</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for mapping in directory_mappings %}
+      <tr>
+        <td><code>{{ mapping.directory_group }}</code></td>
+        <td>{{ mapping.support_group.name }}</td>
+        <td>{{ "Active" if mapping.active else "Disabled" }}</td>
+        <td>
+          {% if mapping.active %}
+          <form method="post">
+            <input type="hidden" name="action" value="delete_directory_mapping">
+            <input type="hidden" name="mapping_id" value="{{ mapping.id }}">
+            <button class="button">Disable</button>
+          </form>
+          {% else %}<span class="muted">Retained for audit</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No AD team mappings configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel admin-section">
+  <div class="panel-head"><div><h2>Team managers</h2><p>The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.</p></div></div>
+  <table>
+    <thead><tr><th>Team</th><th>Current manager</th><th>Manager assignment</th><th>Members</th></tr></thead>
+    <tbody>
+      {% for team in teams %}
+      <tr>
+        <td><strong>{{ team.name }}</strong></td>
+        <td>{{ team.manager.name if team.manager else "Unassigned" }}</td>
+        <td>
+          <form method="post" class="inline-form">
+            <input type="hidden" name="action" value="set_manager">
+            <input type="hidden" name="group_id" value="{{ team.id }}">
+            <select name="manager_id">
+              <option value="">Unassigned</option>
+              {% for user in candidates %}
+              <option value="{{ user.id }}" {% if team.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
+              {% endfor %}
+            </select>
+            <button class="button">Save</button>
+          </form>
+        </td>
+        <td>{{ team.members|length }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel admin-section">
+  <div class="panel-head"><div><h2>Change Control Board approvers</h2><p>Only users explicitly granted CCB approval authority are selected as voters for new non-standard changes. Removing authority does not rewrite historical decisions.</p></div></div>
+  <table>
+    <thead><tr><th>User</th><th>Platform role</th><th>Team memberships</th><th>CCB authority</th></tr></thead>
+    <tbody>
+      {% for user in candidates %}
+      <tr>
+        <td><strong>{{ user.name }}</strong><small>{{ user.username }}</small></td>
+        <td><span class="tag">{{ user.role }}</span></td>
+        <td>
+          {% set ns = namespace(names=[]) %}
+          {% for group in groups %}{% for member in group.members %}{% if member.user_id == user.id and group.id != ccb.id %}{% set ns.names = ns.names + [group.name] %}{% endif %}{% endfor %}{% endfor %}
+          {{ ns.names|join(", ") or "None" }}
+        </td>
+        <td>
+          <form method="post">
+            <input type="hidden" name="action" value="set_ccb_authority">
+            <input type="hidden" name="user_id" value="{{ user.id }}">
+            {% if user.id in ccb_approver_ids %}
+            <input type="hidden" name="enabled" value="false"><button class="button">Revoke</button>
+            {% else %}
+            <input type="hidden" name="enabled" value="true"><button class="primary">Grant</button>
+            {% endif %}
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<div class="analytics-grid">
+  <section class="panel">
+    <h2>All governance groups</h2>
+    {% for group in groups %}
+    <article class="config-row">
+      <div><strong>{{ group.name }}</strong><small>{{ group.group_type }} · manager {{ group.manager.name if group.manager else "Unassigned" }}</small></div>
+      <span>{{ group.members|length }} members</span>
+    </article>
+    {% endfor %}
+  </section>
+  <section class="panel">
+    <h2>Service offerings</h2>
+    {% for service in services %}
+    <article class="config-row"><div><strong>{{ service.name }}</strong><small>{{ service.criticality }} criticality · {{ service.status }}</small></div><span>{{ service.owner.name }}</span></article>
+    {% else %}<p>No service offerings configured.</p>{% endfor %}
+  </section>
+</div>
+
+<section class="panel admin-section">
+  <h2>SLA definitions</h2>
+  <table><thead><tr><th>Name</th><th>Target</th><th>Priority</th><th>Duration</th><th>Pause states</th></tr></thead>
+    <tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td>{{ sla.target_type }}</td><td>{{ sla.priority or "All" }}</td><td>{{ sla.duration_minutes }} minutes</td><td>{{ sla.pause_states }}</td></tr>{% endfor %}</tbody>
+  </table>
+</section>
+{% endblock %}

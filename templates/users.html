@@ -1,2 +1,31 @@
-{% extends "base.html" %}{% block content %}<header class="page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Users & roles</h1></div><a class="primary button" href="{{ url_for('user_new') }}">+ New user</a></header><section class="panel"><table><thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th></tr></thead><tbody>{% for u in users %}<tr><td><strong>{{ u.name }}</strong></td><td>{{ u.username }}</td><td>{{ u.email }}</td><td><span class="tag">{{ u.role }}</span></td><td>{{ 'Active' if u.active else 'Disabled' }}</td></tr>{% endfor %}</tbody></table></section>{% endblock %}
-
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div><p class="eyebrow">ADMINISTRATION</p><h1>Users, roles, and teams</h1><p>Directory users are created at first login and their mapped team memberships synchronize at every AD login.</p></div>
+  <a class="primary button" href="{{ url_for('user_new') }}">+ New local user</a>
+</header>
+<section class="panel">
+  <table>
+    <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Team memberships</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for user in users %}
+      <tr>
+        <td><strong>{{ user.name }}</strong></td>
+        <td>{{ user.username }}</td>
+        <td>{{ user.email }}</td>
+        <td><span class="tag">{{ user.role }}</span></td>
+        <td>
+          {% set ns = namespace(items=[]) %}
+          {% for membership in memberships %}{% if membership.user_id == user.id %}
+            {% set source = "AD" if (user.id, membership.group_id) in directory_managed else "Manual" %}
+            {% set ns.items = ns.items + [membership.group.name ~ " (" ~ membership.role ~ ", " ~ source ~ ")"] %}
+          {% endif %}{% endfor %}
+          {{ ns.items|join(", ") or "None" }}
+        </td>
+        <td>{{ "Active" if user.active else "Disabled" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

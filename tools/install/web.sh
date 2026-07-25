@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STATE_DIR="$ROOT_DIR/.installer-state"
 INSTALLER_PORT="${INSTALLER_PORT:-8090}"
 INSTALLER_BIND_ADDRESS="${INSTALLER_BIND_ADDRESS:-127.0.0.1}"
@@ -75,7 +75,7 @@ if docker compose --env-file "$ROOT_DIR/.env" -f "$compose_file" up --build -d; 
     printf '{"status":"success","url":"http://%s:%s","message":"ServiceOps is healthy"}\n' \
       "$health_host" "$app_port" > "$STATE_DIR/deployment-result.json"
   else
-    printf '{"status":"failed","message":"Containers started, but the health check did not pass. Run ./serviceopsctl logs."}\n' \
+    printf '{"status":"failed","message":"Containers started, but the health check did not pass. Run ./serviceops logs."}\n' \
       > "$STATE_DIR/deployment-result.json"
   fi
 else

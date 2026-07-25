@@ -18,7 +18,7 @@
     "database": {
       "type": "object",
       "required": ["mode"],
-      "properties": {"mode": {"type": "string", "enum": ["external", "bundled"]}}
+      "properties": {"mode": {"type": "string", "const": "external"}}
     }
   }
 }
