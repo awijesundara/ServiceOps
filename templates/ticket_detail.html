@@ -4,16 +4,17 @@
 <div class="detail-grid">
 <section class="panel">
   <h2>Description</h2><p class="pre">{{ ticket.description }}</p>
+  <dl class="governance-grid"><dt>Owning team</dt><dd>{{ owning_group.name if owning_group else 'Not assigned' }}</dd>{% if owning_group %}<dt>Team manager</dt><dd>{{ owning_group.manager.name if owning_group.manager else 'Not assigned' }}</dd>{% endif %}</dl>
   {% if ticket.change_governance %}
   <hr><h2>Change governance</h2>
-  <dl class="governance-grid"><dt>Type</dt><dd>{{ ticket.change_governance.change_type }}</dd><dt>Owning team</dt><dd>{{ ticket.change_ownership.group.name if ticket.change_ownership else 'Not assigned' }}</dd><dt>Team manager</dt><dd>{{ ticket.change_ownership.group.manager.name if ticket.change_ownership else 'Not assigned' }}</dd><dt>Risk score</dt><dd>{{ ticket.change_governance.risk_score }}</dd><dt>Impact</dt><dd>{{ ticket.change_governance.impact }}</dd><dt>Configuration item</dt><dd>{{ ticket.change_governance.ci.name if ticket.change_governance.ci else 'Not selected' }}</dd><dt>Schedule</dt><dd>{{ ticket.change_governance.planned_start.strftime('%b %d %H:%M') if ticket.change_governance.planned_start else 'Not scheduled' }} → {{ ticket.change_governance.planned_end.strftime('%b %d %H:%M') if ticket.change_governance.planned_end else '—' }}</dd><dt>Conflicts</dt><dd>{{ ticket.change_governance.conflict_status }}</dd></dl>
+  <dl class="governance-grid"><dt>Type</dt><dd>{{ ticket.change_governance.change_type }}</dd><dt>Risk score</dt><dd>{{ ticket.change_governance.risk_score }}</dd><dt>Impact</dt><dd>{{ ticket.change_governance.impact }}</dd><dt>Configuration item</dt><dd>{{ ticket.change_governance.ci.name if ticket.change_governance.ci else 'Not selected' }}</dd><dt>Schedule</dt><dd>{{ ticket.change_governance.planned_start.strftime('%b %d %H:%M') if ticket.change_governance.planned_start else 'Not scheduled' }} → {{ ticket.change_governance.planned_end.strftime('%b %d %H:%M') if ticket.change_governance.planned_end else '—' }}</dd><dt>Conflicts</dt><dd>{{ ticket.change_governance.conflict_status }}</dd></dl>
   <h3>Implementation plan</h3><p class="pre">{{ ticket.change_governance.implementation_plan }}</p><h3>Test plan</h3><p class="pre">{{ ticket.change_governance.test_plan }}</p><h3>Backout plan</h3><p class="pre">{{ ticket.change_governance.backout_plan }}</p>
-  {% if current_user.role in ['agent','manager','admin'] %}<form method="post" action="{{ url_for('detect_change_conflicts', ticket_id=ticket.id) }}"><button>Run conflict detection</button></form>{% endif %}
+  {% if can_manage_ticket %}<form method="post" action="{{ url_for('detect_change_conflicts', ticket_id=ticket.id) }}"><button>Run conflict detection</button></form>{% endif %}
   {% endif %}
   {% if chains %}<hr><h2>Approval chain</h2>{% for chain in chains %}<div class="chain"><strong>{{ chain.name }}</strong><span class="badge">{{ chain.state }}</span>{% for gate in chain.gates %}<div class="gate"><b>{{ gate.sequence }}. {{ gate.name }}</b><span>{{ gate.mode|upper }} · {{ gate.state }}</span>{% for vote in gate.votes %}<div class="vote">{{ vote.approver.name }} — {{ vote.state }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}"><input name="comments" placeholder="Decision comments"><button name="decision" value="Rejected">Reject</button><button class="primary" name="decision" value="Approved">Approve</button></form>{% endif %}</div>{% endfor %}</div>{% endfor %}</div>{% endfor %}{% endif %}
   {% if slas %}<hr><h2>Service level commitments</h2>{% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ sla.stage }}{% if sla.breached %} · BREACHED{% endif %}</small></div><div><span>Breach target</span><strong>{{ sla.breach_at.strftime('%b %d, %H:%M') }}</strong></div></div>{% endfor %}{% endif %}
-  <hr><h2>Checklist</h2>{% for item in ticket.checklist|sort(attribute='position') %}<form method="post" action="{{ url_for('checklist_toggle', item_id=item.id) }}" class="checklist-row"><button aria-label="Toggle checklist item">{{ '✓' if item.completed else '○' }}</button><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></form>{% else %}<p class="muted">No checklist items.</p>{% endfor %}
-  {% if current_user.role in ['agent','manager','admin'] %}<form method="post" action="{{ url_for('checklist_add', ticket_id=ticket.id) }}" class="inline-form"><input name="text" placeholder="Add checklist item" required><button>Add</button></form>{% endif %}
+  <hr><h2>Checklist</h2>{% for item in ticket.checklist|sort(attribute='position') %}{% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_toggle', item_id=item.id) }}" class="checklist-row"><button aria-label="Toggle checklist item">{{ '✓' if item.completed else '○' }}</button><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></form>{% else %}<div class="checklist-row"><span>{{ '✓' if item.completed else '○' }}</span><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></div>{% endif %}{% else %}<p class="muted">No checklist items.</p>{% endfor %}
+  {% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_add', ticket_id=ticket.id) }}" class="inline-form"><input name="text" placeholder="Add checklist item" required><button>Add</button></form>{% endif %}
   <hr><h2>Attachments</h2>{% for attachment in ticket.attachments %}<a class="attachment" href="{{ url_for('attachment_download', attachment_id=attachment.id) }}"><strong>{{ attachment.original_name }}</strong><span>{{ (attachment.size_bytes / 1024)|round(1) }} KB · {{ attachment.uploaded_by.name }}</span></a>{% else %}<p class="muted">No attachments.</p>{% endfor %}
   <form method="post" action="{{ url_for('attachment_upload', ticket_id=ticket.id) }}" enctype="multipart/form-data" class="inline-form"><input type="file" name="file" required><button>Upload</button></form>
   <hr><h2>Activity</h2>
@@ -22,7 +23,7 @@
 </section>
 <aside class="panel facts">
   <h2>Record details</h2>
-  {% if current_user.role in ['agent','manager','admin'] %}
+  {% if can_manage_ticket %}
   <form method="post" class="stack"><input type="hidden" name="action" value="update">
     <label>State<select name="state">{% for s in ticket_state_options %}<option {% if ticket.state==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
     <label>Priority<select name="priority">{% for p in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==p %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
@@ -30,6 +31,7 @@
     <button class="primary">Save changes</button>
   </form>
   {% else %}
+  {% if current_user.role in ['agent','manager','admin'] %}<p class="muted">Read only: operational updates are restricted to active members of {{ owning_group.name if owning_group else 'the owning team' }}.</p>{% endif %}
   <dl><dt>State</dt><dd>{{ ticket.state }}</dd><dt>Priority</dt><dd>{{ ticket.priority }}</dd><dt>Category</dt><dd>{{ ticket.category }}</dd><dt>Assigned to</dt><dd>{{ ticket.assignee.name if ticket.assignee else 'Unassigned' }}</dd></dl>
   {% endif %}
 </aside></div>

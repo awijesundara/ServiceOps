@@ -378,6 +378,17 @@ class ChangeOwnership(db.Model):
     group = db.relationship("SupportGroup")
 
 
+class TicketAssignmentGroup(db.Model):
+    """Assignment-group ownership for incidents and service-request tickets."""
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), unique=True, nullable=False)
+    group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False)
+    ticket = db.relationship(
+        "Ticket", backref=db.backref("assignment_group_record", uselist=False)
+    )
+    group = db.relationship("SupportGroup")
+
+
 class RecordLink(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     source_type = db.Column(db.String(30), nullable=False)
@@ -386,6 +397,89 @@ class RecordLink(db.Model):
     target_id = db.Column(db.Integer, nullable=False)
     link_type = db.Column(db.String(50), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+
+
+class TaskHistory(db.Model):
+    """Append-only activity history rendered on the related operational record."""
+    id = db.Column(db.Integer, primary_key=True)
+    target_type = db.Column(db.String(30), nullable=False, index=True)
+    target_id = db.Column(db.Integer, nullable=False, index=True)
+    actor_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    event = db.Column(db.String(60), nullable=False)
+    field_name = db.Column(db.String(80))
+    old_value = db.Column(db.Text, default="")
+    new_value = db.Column(db.Text, default="")
+    details = db.Column(db.Text, default="")
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    actor = db.relationship("User")
+
+
+class OperationalTask(db.Model):
+    """PTASK and CTASK work packages with independent team ownership."""
+    id = db.Column(db.Integer, primary_key=True)
+    number = db.Column(db.String(24), unique=True, nullable=False, index=True)
+    task_kind = db.Column(db.String(20), nullable=False, index=True)
+    parent_type = db.Column(db.String(30), nullable=False, index=True)
+    parent_id = db.Column(db.Integer, nullable=False, index=True)
+    title = db.Column(db.String(180), nullable=False)
+    task_type = db.Column(db.String(30), nullable=False)
+    state = db.Column(db.String(30), nullable=False, default="Open")
+    required = db.Column(db.Boolean, nullable=False, default=True)
+    sequence = db.Column(db.Integer, nullable=False, default=1)
+    assignment_group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False)
+    assignee_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    planned_start = db.Column(db.DateTime(timezone=True))
+    planned_end = db.Column(db.DateTime(timezone=True))
+    work_notes = db.Column(db.Text, default="")
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    assignment_group = db.relationship("SupportGroup")
+    assignee = db.relationship("User")
+
+
+class TaskCI(db.Model):
+    """Many-to-many affected and impacted CI/service relationships."""
+    id = db.Column(db.Integer, primary_key=True)
+    target_type = db.Column(db.String(30), nullable=False, index=True)
+    target_id = db.Column(db.Integer, nullable=False, index=True)
+    ci_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False)
+    relationship_role = db.Column(db.String(30), nullable=False, default="Affected CI")
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    ci = db.relationship("ConfigurationItem")
+    __table_args__ = (
+        db.UniqueConstraint(
+            "target_type", "target_id", "ci_id", "relationship_role",
+            name="uq_task_ci_relationship",
+        ),
+    )
+
+
+class ProblemProfile(db.Model):
+    """Problem-specific root cause, known-error, workaround, and fix information."""
+    id = db.Column(db.Integer, primary_key=True)
+    enterprise_record_id = db.Column(
+        db.Integer, db.ForeignKey("enterprise_record.id"), unique=True, nullable=False
+    )
+    known_error = db.Column(db.Boolean, nullable=False, default=False)
+    root_cause = db.Column(db.Text, default="")
+    workaround = db.Column(db.Text, default="")
+    fix_notes = db.Column(db.Text, default="")
+    primary_ci_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"))
+    record = db.relationship(
+        "EnterpriseRecord", backref=db.backref("problem_profile", uselist=False)
+    )
+    primary_ci = db.relationship("ConfigurationItem")
+
+
+class ChangeRevision(db.Model):
+    """Tracks approval-relevant plan revisions without overwriting prior decisions."""
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), unique=True, nullable=False)
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    last_material_change_at = db.Column(db.DateTime(timezone=True))
+    ticket = db.relationship(
+        "Ticket", backref=db.backref("change_revision", uselist=False)
+    )
 
 
 class Favorite(db.Model):
@@ -688,6 +782,48 @@ def transition_catalog_task(task, new_state):
     if new_state not in allowed:
         abort(409, description=f"{task.number} cannot move from {task.state} to {new_state}.")
     task.state = new_state
+
+
+def ticket_owning_group(ticket):
+    if ticket.kind == "change" and ticket.change_ownership:
+        return ticket.change_ownership.group
+    assignment = TicketAssignmentGroup.query.filter_by(ticket_id=ticket.id).first()
+    return assignment.group if assignment else None
+
+
+def user_can_manage_ticket(user, ticket):
+    if not user.is_authenticated or not user.active:
+        return False
+    group = ticket_owning_group(ticket)
+    if not group:
+        return False
+    if group.manager_id == user.id:
+        return True
+    return GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first() is not None
+
+
+def require_ticket_team_access(ticket):
+    if not user_can_manage_ticket(current_user, ticket):
+        group = ticket_owning_group(ticket)
+        abort(403, description=(
+            f"Only active members of {group.name if group else 'the owning team'} "
+            f"can update {ticket.number}."
+        ))
+
+
+def ticket_team_agents(ticket):
+    group = ticket_owning_group(ticket)
+    if not group:
+        return []
+    user_ids = {member.user_id for member in group.members}
+    if group.manager_id:
+        user_ids.add(group.manager_id)
+    if not user_ids:
+        return []
+    return User.query.filter(
+        User.id.in_(user_ids), User.active.is_(True),
+        User.role.in_(["agent", "manager", "admin"]),
+    ).order_by(User.name).all()
 
 
 def activate_gate(gate):
@@ -1200,6 +1336,24 @@ def create_app(test_config=None):
         if kind == "change" and current_user.role == "requester":
             abort(403)
         if request.method == "POST":
+            try:
+                group_id = int(request.form.get("group_id", ""))
+            except (TypeError, ValueError):
+                abort(400, description="Select a valid owning IT team.")
+            owning_group = db.session.get(SupportGroup, group_id)
+            if (
+                not owning_group
+                or not owning_group.active
+                or owning_group.group_type != "IT Fulfillment"
+            ):
+                abort(400, description="Select an active IT fulfillment team.")
+            if kind == "change" and (
+                not owning_group.manager
+                or not owning_group.manager.active
+            ):
+                abort(409, description=(
+                    "The selected team must have an active manager before a change can be submitted."
+                ))
             ticket = Ticket(number=next_number(kind), kind=kind,
                             title=request.form["title"].strip(), description=request.form["description"].strip(),
                             category=request.form.get("category", "General"), priority=request.form.get("priority", "P3"),
@@ -1219,10 +1373,6 @@ def create_app(test_config=None):
                                               ci_id=int(request.form["ci_id"]) if request.form.get("ci_id") else None)
                 db.session.add(governance)
                 db.session.flush()
-                owning_group = db.session.get(SupportGroup, int(request.form["group_id"])) if request.form.get("group_id") else SupportGroup.query.filter_by(name="CoreApps").first()
-                if not owning_group or not owning_group.manager_id:
-                    db.session.rollback()
-                    abort(409, "The selected team must have an active manager before a change can be submitted.")
                 db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=owning_group.id))
                 ccb = SupportGroup.query.filter_by(name="Change Control Board").first()
                 ccb_ids = [
@@ -1241,6 +1391,8 @@ def create_app(test_config=None):
                     stages.append({"name": "CCB weekly authorization", "mode": "majority",
                                    "approver_ids": ccb_ids})
                 create_approval_chain(f"{ticket.number} change authorization", "ticket", ticket.id, stages)
+            else:
+                db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=owning_group.id))
             audit("create", ticket.number, ticket.title)
             db.session.commit()
             flash(f"{ticket.number} created.", "success")
@@ -1263,19 +1415,27 @@ def create_app(test_config=None):
                 if body:
                     db.session.add(Comment(ticket_id=ticket.id, user_id=current_user.id, body=body))
                     audit("comment", ticket.number)
-            elif action == "update" and current_user.role in ("agent", "manager", "admin"):
+            elif action == "update":
+                require_ticket_team_access(ticket)
+                assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
+                eligible_ids = {agent.id for agent in ticket_team_agents(ticket)}
+                if assignee_id is not None and assignee_id not in eligible_ids:
+                    abort(400, description="The assignee must be an active member of the owning team.")
                 transition_ticket(ticket, request.form["state"])
                 ticket.priority = request.form["priority"]
-                ticket.assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
+                ticket.assignee_id = assignee_id
                 audit("update", ticket.number, f"{ticket.state}, {ticket.priority}")
             db.session.commit()
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
-        agents = User.query.filter(User.role.in_(["agent", "manager", "admin"]), User.active.is_(True)).all()
+        agents = ticket_team_agents(ticket)
+        owning_group = ticket_owning_group(ticket)
+        can_manage_ticket = user_can_manage_ticket(current_user, ticket)
         chains = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         slas = TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         return render_template(
             "ticket_detail.html", ticket=ticket, agents=agents, chains=chains, slas=slas,
-            ticket_state_options=allowed_ticket_states(ticket),
+            ticket_state_options=allowed_ticket_states(ticket), owning_group=owning_group,
+            can_manage_ticket=can_manage_ticket,
         )
 
     @app.get("/knowledge")
@@ -1784,6 +1944,7 @@ def create_app(test_config=None):
     @roles("agent", "manager", "admin")
     def detect_change_conflicts(ticket_id):
         ticket = db.get_or_404(Ticket, ticket_id)
+        require_ticket_team_access(ticket)
         governance = ticket.change_governance
         if not governance:
             abort(404)
@@ -1905,12 +2066,20 @@ def create_app(test_config=None):
         query = visible_tickets()
         tickets_by_state = {state: query.filter_by(state=state).order_by(Ticket.priority, Ticket.updated_at.desc()).all()
                             for state in ["New", "In Progress", "Pending", "Resolved", "Closed"]}
-        return render_template("task_board.html", tickets_by_state=tickets_by_state)
+        manageable_ticket_ids = {
+            ticket.id for tickets in tickets_by_state.values() for ticket in tickets
+            if user_can_manage_ticket(current_user, ticket)
+        }
+        return render_template(
+            "task_board.html", tickets_by_state=tickets_by_state,
+            manageable_ticket_ids=manageable_ticket_ids,
+        )
 
     @app.post("/task-board/<int:ticket_id>/move")
     @roles("agent", "manager", "admin")
     def task_board_move(ticket_id):
         ticket = db.get_or_404(Ticket, ticket_id)
+        require_ticket_team_access(ticket)
         state = request.form.get("state")
         if state not in ("New", "In Progress", "Pending", "Resolved", "Closed"):
             abort(400)
@@ -1922,7 +2091,8 @@ def create_app(test_config=None):
     @app.post("/ticket/<int:ticket_id>/checklist")
     @roles("agent", "manager", "admin")
     def checklist_add(ticket_id):
-        db.get_or_404(Ticket, ticket_id)
+        ticket = db.get_or_404(Ticket, ticket_id)
+        require_ticket_team_access(ticket)
         text = request.form.get("text", "").strip()
         if text:
             position = ChecklistItem.query.filter_by(ticket_id=ticket_id).count()
@@ -1934,6 +2104,8 @@ def create_app(test_config=None):
     @roles("agent", "manager", "admin")
     def checklist_toggle(item_id):
         item = db.get_or_404(ChecklistItem, item_id)
+        ticket = db.get_or_404(Ticket, item.ticket_id)
+        require_ticket_team_access(ticket)
         item.completed = not item.completed
         db.session.commit()
         return redirect(url_for("ticket_detail", ticket_id=item.ticket_id))
@@ -1974,8 +2146,11 @@ def create_app(test_config=None):
         return render_template("help.html")
 
     @app.errorhandler(403)
-    def forbidden(_):
-        return render_template("error.html", code=403, message="You do not have permission to access this page."), 403
+    def forbidden(error):
+        return render_template(
+            "error.html", code=403,
+            message=error.description or "You do not have permission to access this page.",
+        ), 403
 
     @app.errorhandler(404)
     def not_found(_):
