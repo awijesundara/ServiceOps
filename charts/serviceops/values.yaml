@@ -1,0 +1,121 @@
+replicaCount: 2
+
+image:
+  repository: serviceops
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+deploymentProfile: production
+revisionHistoryLimit: 5
+terminationGracePeriodSeconds: 45
+
+serviceAccount:
+  create: true
+  automountServiceAccountToken: false
+  annotations: {}
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: serviceops.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+existingSecret: serviceops-secrets
+secret:
+  create: false
+  secretKey: ""
+  adminPassword: ""
+  databaseUrl: ""
+  ldapBindPassword: ""
+  keycloakClientSecret: ""
+
+database:
+  mode: external
+  bundled:
+    image: postgres:16-alpine
+    database: serviceops
+    username: serviceops
+    password: ""
+    storageClass: ""
+    size: 20Gi
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: "1", memory: 1Gi}
+
+uploads:
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClass: ""
+    accessModes: [ReadWriteMany]
+    size: 20Gi
+
+auth:
+  localEnabled: true
+  ldap:
+    enabled: false
+    serverUri: ""
+    bindDn: ""
+    baseDn: ""
+    userFilter: "(&(objectClass=user)(sAMAccountName={username}))"
+    startTls: true
+    validateCertificate: true
+    caCertificate: ""
+    roleMappings: "{}"
+  keycloak:
+    enabled: false
+    discoveryUrl: ""
+    clientId: ""
+    roleMappings: "{}"
+
+proxy:
+  trustHeaders: true
+  enableHsts: true
+
+resources:
+  requests: {cpu: 250m, memory: 384Mi}
+  limits: {cpu: "2", memory: 2Gi}
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+  ingressNamespaceSelector: {}
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: serviceops
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: serviceops

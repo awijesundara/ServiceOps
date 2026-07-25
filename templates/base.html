@@ -8,12 +8,13 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='itil.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='platform.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css') }}">
   <script src="{{ url_for('static', filename='platform.js') }}" defer></script>
 </head>
 <body class="{% if current_user.is_authenticated %}theme-{{ ui_preference.theme }} density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
 {% if current_user.is_authenticated %}
 <aside class="sidebar">
-  <a class="brand" href="{{ url_for('dashboard') }}"><span>S</span> ServiceOps</a>
+  <a class="brand" href="{{ url_for('dashboard') }}"><span class="jnx-mark">JNX</span><span class="brand-product">ServiceOps<small>Enterprise service management</small></span></a>
   <nav>
     <small>WORKSPACE</small>
     <a href="{{ url_for('dashboard') }}">Dashboard</a>

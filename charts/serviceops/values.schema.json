@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["replicaCount", "image", "deploymentProfile", "database", "existingSecret"],
+  "properties": {
+    "replicaCount": {"type": "integer", "minimum": 1},
+    "deploymentProfile": {"type": "string", "enum": ["demo", "production"]},
+    "existingSecret": {"type": "string", "minLength": 1},
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {"type": "string", "minLength": 1},
+        "pullPolicy": {"type": "string", "enum": ["Always", "IfNotPresent", "Never"]}
+      }
+    },
+    "database": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {"mode": {"type": "string", "enum": ["external", "bundled"]}}
+    }
+  }
+}

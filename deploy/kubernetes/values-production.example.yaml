@@ -1,0 +1,62 @@
+replicaCount: 3
+deploymentProfile: production
+
+image:
+  repository: registry.example.com/serviceops
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+existingSecret: serviceops-secrets
+
+database:
+  mode: external
+
+uploads:
+  persistence:
+    enabled: true
+    storageClass: enterprise-rwx
+    accessModes: [ReadWriteMany]
+    size: 100Gi
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    nginx.ingress.kubernetes.io/proxy-body-size: 20m
+  hosts:
+    - host: serviceops.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: serviceops-tls
+      hosts: [serviceops.example.com]
+
+auth:
+  localEnabled: true
+  ldap:
+    enabled: true
+    serverUri: ldaps://dc01.example.com:636
+    bindDn: CN=svc-serviceops,OU=Service Accounts,DC=example,DC=com
+    baseDn: DC=example,DC=com
+    validateCertificate: true
+    roleMappings: '{"CN=ServiceOps Admins,OU=Groups,DC=example,DC=com":"admin"}'
+  keycloak:
+    enabled: false
+    discoveryUrl: https://sso.example.com/realms/company/.well-known/openid-configuration
+    clientId: serviceops
+    roleMappings: '{"serviceops-admin":"admin","serviceops-agent":"agent"}'
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+networkPolicy:
+  enabled: true

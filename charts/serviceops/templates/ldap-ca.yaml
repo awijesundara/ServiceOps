@@ -1,0 +1,10 @@
+{{- if .Values.auth.ldap.caCertificate }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "serviceops.fullname" . }}-ldap-ca
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+data:
+  ca.crt: |
+{{ .Values.auth.ldap.caCertificate | indent 4 }}
+{{- end }}

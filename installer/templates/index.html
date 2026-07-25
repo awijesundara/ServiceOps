@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ServiceOps Installation Center</title>
+  <link rel="stylesheet" href="/static/installer.css">
+  <link rel="stylesheet" href="/static/installer-brand.css">
+</head>
+<body>
+<main>
+  <header><div class="mark">JNX</div><div><h1>ServiceOps Installation Center</h1>
+    <p>Configure, verify, and deploy your platform from one guided workspace.</p></div></header>
+  <div class="steps"><span>1 Environment</span><span>2 Data</span><span>3 Identity</span><span>4 Verify & deploy</span></div>
+  <form id="config">
+    <section><h2>Environment</h2>
+      <div class="grid">
+        <label>Operating profile<select name="profile"><option value="demo">Demo</option><option value="production">Production</option></select><small>Demo adds temporary team personas. Production applies strict security checks.</small></label>
+        <label>Database deployment<select name="db_mode"><option value="bundled">Bundled PostgreSQL</option><option value="external">External PostgreSQL</option></select></label>
+        <label>Application bind address<input name="bind_address" value="127.0.0.1"></label>
+        <label>Application port<input name="app_port" type="number" value="8080"></label>
+      </div>
+    </section>
+    <section><h2>Database and platform administrator</h2>
+      <div class="grid">
+        <label>PostgreSQL database<input name="postgres_db" value="serviceops"></label>
+        <label>PostgreSQL user<input name="postgres_user" value="serviceops"></label>
+        <label>PostgreSQL password<input name="postgres_password" type="password"></label>
+        <label class="wide">External database URL<input name="database_url" placeholder="postgresql+psycopg://user:password@host:5432/serviceops?sslmode=verify-full"></label>
+        <label>Local admin password<input name="admin_password" type="password"></label>
+        <label>Demo persona password<input name="demo_password" type="password"></label>
+        <input name="secret_key" type="hidden">
+      </div>
+    </section>
+    <section><h2>AD / LDAP</h2>
+      <label class="toggle"><input name="ldap_enabled" type="checkbox"> Enable corporate directory authentication</label>
+      <div class="grid">
+        <label>Server URI<input name="ldap_uri" placeholder="ldaps://dc01.example.com:636"></label>
+        <label>Base DN<input name="ldap_base_dn" placeholder="DC=example,DC=com"></label>
+        <label>Service bind DN<input name="ldap_bind_dn" placeholder="CN=svc-serviceops,OU=Service Accounts,DC=example,DC=com"></label>
+        <label>Service bind password<input name="ldap_bind_password" type="password"></label>
+        <label class="wide">User filter<input name="ldap_user_filter" value="(&(objectClass=user)(sAMAccountName={username}))"></label>
+        <label class="toggle"><input name="ldap_start_tls" type="checkbox" checked> Use StartTLS for ldap://</label>
+        <label class="toggle"><input name="ldap_validate_cert" type="checkbox" checked> Validate server certificate</label>
+        <label class="wide">Role mappings (JSON)<input name="ldap_role_mappings" value='{"CN=ServiceOps Admins,OU=Groups,DC=example,DC=com":"admin"}'></label>
+      </div>
+    </section>
+    <section><h2>Keycloak OpenID Connect</h2>
+      <label class="toggle"><input name="keycloak_enabled" type="checkbox"> Enable Keycloak single sign-on</label>
+      <div class="grid">
+        <label class="wide">Discovery URL<input name="keycloak_discovery_url" placeholder="https://sso.example.com/realms/company/.well-known/openid-configuration"></label>
+        <label>Client ID<input name="keycloak_client_id" placeholder="serviceops"></label>
+        <label>Client secret<input name="keycloak_client_secret" type="password"></label>
+        <label class="wide">Realm-role mappings (JSON)<input name="keycloak_role_mappings" value='{"serviceops-admin":"admin","serviceops-agent":"agent"}'></label>
+      </div>
+    </section>
+    <section><h2>Verification</h2><div id="checks" class="checks"><p>Run validation to test every configured dependency.</p></div>
+      <label class="confirm"><input id="confirm" type="checkbox"> I confirm these settings and understand that Production will not create demo users.</label>
+      <div class="actions"><button type="button" id="validate">Validate all connections</button><button type="button" id="deploy" disabled>Deploy ServiceOps</button></div>
+      <div id="deployment"></div>
+    </section>
+  </form>
+</main>
+<script>
+const form=document.querySelector('#config'), checks=document.querySelector('#checks'), deploy=document.querySelector('#deploy');
+const bools=['ldap_enabled','ldap_start_tls','ldap_validate_cert','keycloak_enabled'];
+function data(){const o=Object.fromEntries(new FormData(form)); for(const k of bools)o[k]=form.elements[k].checked; return o}
+function render(payload){checks.innerHTML=Object.entries(payload.checks).map(([k,v])=>`<article class="${v.ok?'ok':'bad'}"><b>${v.ok?'✓':'×'} ${k}</b><span>${v.message}</span><small>${v.details||''}</small></article>`).join(''); deploy.dataset.ready=payload.ready; deploy.disabled=!(payload.ready&&confirm.checked)}
+document.querySelector('#validate').onclick=async()=>render(await (await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data())})).json());
+confirm.onchange=()=>deploy.disabled=!(deploy.dataset.ready==='true'&&confirm.checked);
+deploy.onclick=async()=>{deploy.disabled=true; const r=await fetch('/api/deploy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data())}); if(!r.ok){render(await r.json());return} document.querySelector('#deployment').innerHTML='<p class="working">Deployment started. The installer is building and checking ServiceOps…</p>'; poll()};
+async function poll(){const x=await (await fetch('/api/deployment')).json(); if(x.status==='success'){document.querySelector('#deployment').innerHTML=`<p class="success">ServiceOps is healthy. <a href="${x.url}">Open ServiceOps</a></p>`}else if(x.status==='failed'){document.querySelector('#deployment').innerHTML=`<p class="error">Deployment failed: ${x.message}</p>`}else setTimeout(poll,2000)}
+function random(n=32){const a=new Uint8Array(n);crypto.getRandomValues(a);return Array.from(a,x=>x.toString(16).padStart(2,'0')).join('')}
+form.secret_key.value=random(); form.postgres_password.value=random(18); form.admin_password.value=random(10)+'Aa!'; form.demo_password.value='ServiceOpsDemo123!';
+</script>
+</body></html>

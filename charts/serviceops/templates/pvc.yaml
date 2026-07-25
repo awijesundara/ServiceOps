@@ -1,0 +1,15 @@
+{{- if and .Values.uploads.persistence.enabled (not .Values.uploads.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "serviceops.fullname" . }}-uploads
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+spec:
+  accessModes: {{- toYaml .Values.uploads.persistence.accessModes | nindent 4 }}
+  {{- with .Values.uploads.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.uploads.persistence.size }}
+{{- end }}

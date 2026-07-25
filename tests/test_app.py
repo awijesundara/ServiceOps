@@ -5,8 +5,9 @@ from io import BytesIO
 import pytest
 
 from app import (Approval, ApprovalChain, CatalogRequest, CatalogTask, EnterpriseRecord,
-                 Favorite, FileAttachment, GroupMember, RequestedItem, SupportGroup,
-                 TaskSLA, Ticket, UserPreference, create_app, db)
+                 ExternalIdentity, Favorite, FileAttachment, GroupMember, RequestedItem,
+                 SupportGroup, TaskSLA, Ticket, User, UserPreference, create_app, db,
+                 provision_external_user)
 
 
 @pytest.fixture()
@@ -31,6 +32,8 @@ def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json == {"status": "ok"}
+    assert client.get("/live").json == {"status": "alive"}
+    assert client.get("/ready").json == {"status": "ready"}
 
 
 def test_login_and_dashboard(client):
@@ -209,3 +212,35 @@ def test_visual_board_checklist_and_attachment(client, app):
     assert b"evidence.txt" in uploaded.data
     with app.app_context():
         assert FileAttachment.query.filter_by(ticket_id=ticket_id).one().size_bytes == 8
+
+
+def test_production_profile_disables_reserved_demo_personas(monkeypatch):
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    monkeypatch.setenv("DEPLOYMENT_PROFILE", "production")
+    production = create_app({
+        "TESTING": True,
+        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}",
+        "DEPLOYMENT_PROFILE": "production",
+    })
+    with production.app_context():
+        assert User.query.filter_by(username="admin", active=True).one()
+        assert User.query.filter_by(username="employee", active=True).count() == 0
+        assert User.query.filter(User.username.like("%.agent"), User.active.is_(True)).count() == 0
+        managers = User.query.filter(User.username.like("%.manager")).all()
+        assert len(managers) == 6
+        assert all(not manager.active for manager in managers)
+    os.unlink(path)
+
+
+def test_external_identity_is_stable_and_does_not_enable_local_password(app):
+    with app.app_context():
+        first = provision_external_user("keycloak", "subject-123", "alice", "Alice", "alice@example.test", "agent")
+        db.session.commit()
+        first_id = first.id
+        second = provision_external_user("keycloak", "subject-123", "alice", "Alice Updated",
+                                         "alice@example.test", "manager")
+        db.session.commit()
+        assert second.id == first_id
+        assert second.role == "manager"
+        assert ExternalIdentity.query.filter_by(provider="keycloak", subject="subject-123").count() == 1

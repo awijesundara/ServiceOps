@@ -2,15 +2,34 @@
 {% block title %}Sign in · ServiceOps{% endblock %}
 {% block content %}
 <section class="login-card">
-  <div class="logo">S</div>
+  <div class="logo jnx-login-mark">JNX</div>
   <h1>Welcome to ServiceOps</h1>
   <p>One place for IT services, support, and operations.</p>
+  {% if keycloak_enabled %}
+  <a class="button primary" href="{{ url_for('keycloak_login') }}">Continue with Keycloak</a>
+  <div class="muted">or use a directory/local account</div>
+  {% endif %}
+  {% if local_enabled or ldap_enabled %}
   <form method="post" class="stack">
+    {% if local_enabled and ldap_enabled %}
+    <label>Authentication source
+      <select name="provider">
+        <option value="ldap">Corporate directory (AD/LDAP)</option>
+        <option value="local">Local administrator</option>
+      </select>
+    </label>
+    {% elif ldap_enabled %}
+    <input type="hidden" name="provider" value="ldap">
+    {% else %}
+    <input type="hidden" name="provider" value="local">
+    {% endif %}
     <label>Username<input name="username" autocomplete="username" required autofocus></label>
     <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
     <button class="primary">Sign in</button>
   </form>
-  <details><summary>Demo accounts</summary><p><code>admin / Admin123!</code><br><code>agent / Agent123!</code><br><code>employee / Employee123!</code></p></details>
+  {% endif %}
+  {% if deployment_profile == "demo" %}
+  <details><summary>Demo accounts</summary><p><code>admin</code>, <code>agent</code>, <code>employee</code>, and each <code>&lt;team&gt;.agent</code>. Passwords are shown by the installer.</p></details>
+  {% endif %}
 </section>
 {% endblock %}
-

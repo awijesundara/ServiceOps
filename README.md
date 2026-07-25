@@ -2,6 +2,34 @@
 
 A self-contained, Docker-deployable enterprise service management platform. ServiceOps is an independent project and has no dependency on the Ollama project.
 
+## Recommended web installation
+
+```bash
+chmod +x web-install.sh
+./web-install.sh
+```
+
+Open `http://127.0.0.1:8090`. The Installation Center checks the Docker host,
+application port, PostgreSQL, AD/LDAP, Keycloak OIDC metadata, and production
+security policy before enabling deployment. It supports bundled or external
+PostgreSQL, a local break-glass administrator, enterprise identity, and
+separate Demo and Production profiles.
+
+## Kubernetes and Helm
+
+ServiceOps includes a hardened Helm chart for Kubernetes 1.27+:
+
+```bash
+cp deploy/kubernetes/values-production.example.yaml \
+   deploy/kubernetes/values-production.yaml
+./kubernetes-install.sh --preflight
+./kubernetes-install.sh
+```
+
+Production requires an immutable image, multiple application replicas,
+external HA PostgreSQL, and shared RWX upload storage. See the
+[complete platform manual](docs/OPERATIONS_MANUAL.md) before deployment.
+
 ## Included workflows
 
 - Incident management with priority, state, assignment, comments, search, and filtering
@@ -30,7 +58,18 @@ See [docs/CAPABILITY_MATRIX.md](docs/CAPABILITY_MATRIX.md) for the detailed impl
 See [docs/ITIL_IMPLEMENTATION.md](docs/ITIL_IMPLEMENTATION.md) for approval-chain, request hierarchy, change-governance, and SLA behavior.
 See [docs/UI_CAPABILITY_MAPPING.md](docs/UI_CAPABILITY_MAPPING.md) for the platform user-interface feature mapping.
 
-## Run with Docker
+## Install on a server
+
+The recommended installer supports either bundled PostgreSQL or an external PostgreSQL server:
+
+```bash
+chmod +x install.sh serviceopsctl
+./install.sh
+```
+
+For complete server architecture, HTTPS, backup, external-database, recovery, upgrade, and security instructions, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## Manual Docker installation
 
 1. Create your environment file:
 
@@ -40,10 +79,10 @@ See [docs/UI_CAPABILITY_MAPPING.md](docs/UI_CAPABILITY_MAPPING.md) for the platf
 
 2. Replace every password and secret in `.env`.
 
-3. Build and start:
+3. For bundled PostgreSQL, build and start:
 
    ```bash
-   docker compose up --build -d
+   docker compose --env-file .env -f compose.yaml up --build -d
    ```
 
 4. Open <http://localhost:8080>.
@@ -55,7 +94,13 @@ See [docs/UI_CAPABILITY_MAPPING.md](docs/UI_CAPABILITY_MAPPING.md) for the platf
    curl -fsS http://localhost:8080/health
    ```
 
-The database is stored in the `serviceops_postgres_data` Docker volume and survives container restarts.
+The bundled database is stored in the `serviceops_postgres_data` Docker volume. Attachments are stored in `serviceops_uploads`; both survive container restarts.
+
+For external PostgreSQL:
+
+```bash
+docker compose --env-file .env -f compose.external-db.yaml up --build -d
+```
 
 ## First sign-in
 
@@ -72,18 +117,7 @@ Change or remove demo credentials before exposing the application to a network.
 
 ## Operations
 
-```bash
-# View logs
-docker compose logs -f app
-
-# Stop
-docker compose down
-
-# Stop and permanently delete the database
-docker compose down -v
-```
-
-Do not use the final command unless you intend to erase all application data.
+Use `./serviceopsctl status`, `health`, `doctor`, `logs`, `backup`, `restore`, `restart`, and `update`.
 
 ## Local tests
 

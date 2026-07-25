@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$ROOT_DIR/.env"
+STATE_FILE="$ROOT_DIR/.serviceops-install"
+[[ -f "$ENV_FILE" ]] || { echo "ServiceOps is not installed. Run ./install.sh"; exit 1; }
+MODE="$(sed -n 's/^DEPLOYMENT_MODE=//p' "$ENV_FILE" | tail -1)"
+if [[ "$MODE" == "external" ]]; then FILE="$ROOT_DIR/compose.external-db.yaml"; else FILE="$ROOT_DIR/compose.yaml"; fi
+COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$FILE")
+BACKUP_DIR="$ROOT_DIR/backups"
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+
+usage() {
+  cat <<'EOF'
+Usage: ./serviceopsctl COMMAND
+  start | stop | restart | status | health | logs | doctor
+  backup [NAME]              Bundled database and uploads
+  restore DATABASE_DUMP      Bundled database restore (explicit confirmation)
+  update                     Rebuild and health-check
+  config                     Show resolved Compose config
+EOF
+}
+
+command="${1:-}"
+case "$command" in
+  start) "${COMPOSE[@]}" up -d ;;
+  stop) "${COMPOSE[@]}" stop ;;
+  restart) "${COMPOSE[@]}" restart; "$0" health ;;
+  status) "${COMPOSE[@]}" ps ;;
+  logs) "${COMPOSE[@]}" logs -f --tail=200 app ;;
+  health)
+    port="$(sed -n 's/^APP_PORT=//p' "$ENV_FILE" | tail -1)"
+    curl -fsS "http://127.0.0.1:${port:-8080}/health" && printf "\nhealthy\n"
+    ;;
+  config) "${COMPOSE[@]}" config ;;
+  doctor)
+    failures=0
+    echo "ServiceOps diagnostics"
+    docker info >/dev/null 2>&1 && echo "✓ Docker daemon" || { echo "✗ Docker daemon"; failures=$((failures+1)); }
+    "${COMPOSE[@]}" config --quiet && echo "✓ Compose configuration" || { echo "✗ Compose configuration"; failures=$((failures+1)); }
+    "${COMPOSE[@]}" ps
+    "$0" health >/dev/null 2>&1 && echo "✓ Application health" || { echo "✗ Application health"; failures=$((failures+1)); }
+    "${COMPOSE[@]}" exec -T app python -c "from app import create_app,db; from sqlalchemy import text; a=create_app(); c=a.app_context(); c.push(); db.session.execute(text('SELECT 1')); print('✓ Database query')" 2>/dev/null || { echo "✗ Database query"; failures=$((failures+1)); }
+    "${COMPOSE[@]}" exec -T app sh -c 'test -w /app/uploads' && echo "✓ Upload persistence" || { echo "✗ Upload persistence"; failures=$((failures+1)); }
+    exit "$failures"
+    ;;
+  backup)
+    [[ "$MODE" == "bundled" ]] || { echo "External database mode: use your database provider's snapshot/backup service."; exit 2; }
+    stamp="${2:-$(date -u +%Y%m%dT%H%M%SZ)}"
+    dump="$BACKUP_DIR/serviceops-$stamp.dump"
+    uploads="$BACKUP_DIR/serviceops-uploads-$stamp.tar.gz"
+    set -a; source "$ENV_FILE"; set +a
+    "${COMPOSE[@]}" exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom >"$dump"
+    docker run --rm -v serviceops_uploads:/data:ro -v "$BACKUP_DIR":/backup alpine:3.21 \
+      tar -czf "/backup/$(basename "$uploads")" -C /data .
+    chmod 600 "$dump" "$uploads"
+    echo "Database: $dump"
+    echo "Uploads:  $uploads"
+    ;;
+  restore)
+    [[ "$MODE" == "bundled" ]] || { echo "Restore is managed by the external database provider."; exit 2; }
+    dump="${2:-}"; [[ -f "$dump" ]] || { echo "Provide a valid database dump."; exit 2; }
+    read -r -p "This replaces the ServiceOps database. Type RESTORE: " answer
+    [[ "$answer" == "RESTORE" ]] || { echo "Cancelled."; exit 1; }
+    set -a; source "$ENV_FILE"; set +a
+    "${COMPOSE[@]}" stop app
+    "${COMPOSE[@]}" exec -T db pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner <"$dump"
+    "${COMPOSE[@]}" start app
+    "$0" health
+    ;;
+  update)
+    "$0" backup || true
+    "${COMPOSE[@]}" up --build -d
+    "$0" health
+    ;;
+  *) usage; exit 2 ;;
+esac
