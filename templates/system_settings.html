@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}System settings · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">PLATFORM ADMINISTRATION</p><h1>System settings</h1><p>Configure the deployed platform. Every change is validated and audited.</p></div></header>
+<form method="post" enctype="multipart/form-data" class="settings-workspace">
+  <nav class="settings-nav">
+    {% for category in groups %}<a href="#settings-{{ category }}">{{ category|replace('_',' ')|title }}</a>{% endfor %}
+    <a href="#settings-infrastructure">Infrastructure</a>
+  </nav>
+  <div class="settings-content">
+    <section class="panel settings-section" id="settings-branding">
+      <div class="panel-head"><div><h2>Company logo</h2><p>PNG only, maximum 5 MB. Recommended transparent canvas, up to 600 × 200 px.</p></div>{% if has_company_logo %}<img class="settings-logo-preview" src="{{ url_for('company_logo') }}" alt="Current company logo">{% endif %}</div>
+      <label>Upload replacement PNG<input type="file" name="company_logo" accept="image/png"></label>
+    </section>
+    {% for category, definitions in groups.items() %}
+    <section class="panel settings-section" id="settings-{{ category }}">
+      <div class="panel-head"><div><h2>{{ category|replace('_',' ')|title }}</h2><p>Settings marked “Live” apply without a restart. Others require a full application rollout.</p></div></div>
+      <div class="settings-grid">
+      {% for setting in definitions %}
+        <label class="setting-field {% if setting.type in ['json','text'] and setting.key|length > 20 %}wide{% endif %}">
+          <span>{{ setting.label }} <small class="apply-badge {{ 'live' if setting.live else 'restart' }}">{{ 'Live' if setting.live else 'Restart required' }}</small></span>
+          {% if setting.type == 'bool' %}
+            <span class="switch-row"><input type="checkbox" name="{{ setting.key }}" {% if values[setting.key]|lower in ['true','1','yes','on'] %}checked{% endif %}> Enabled</span>
+          {% elif setting.type == 'choice' %}
+            <select name="{{ setting.key }}">{% for choice in setting.choices %}<option value="{{ choice }}" {% if values[setting.key] == choice %}selected{% endif %}>{{ choice|title }}</option>{% endfor %}</select>
+          {% elif setting.type == 'secret' %}
+            <input type="password" name="{{ setting.key }}" value="" placeholder="{{ 'Configured — leave blank to retain' if setting.configured else 'Not configured' }}" autocomplete="new-password">
+          {% elif setting.type == 'color' %}
+            <span class="color-field"><input type="color" name="{{ setting.key }}" value="{{ values[setting.key] }}"><code>{{ values[setting.key] }}</code></span>
+          {% else %}
+            <input type="{{ setting.type if setting.type in ['email','url','number'] else 'text' }}" name="{{ setting.key }}" value="{{ values[setting.key] }}">
+          {% endif %}
+        </label>
+      {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+    <section class="panel settings-section" id="settings-infrastructure">
+      <div class="panel-head"><div><h2>Infrastructure-owned configuration</h2><p>Displayed here for visibility. Change these through Compose or Helm so every instance remains consistent.</p></div></div>
+      <table><thead><tr><th>Setting</th><th>Effective value</th><th>Source of control</th></tr></thead><tbody>{% for name,value,source in infrastructure %}<tr><td><strong>{{ name }}</strong></td><td>{{ value }}</td><td><span class="apply-badge external">{{ source }}</span></td></tr>{% endfor %}</tbody></table>
+    </section>
+    <div class="settings-save"><div><strong>Audited change</strong><small>Review authentication carefully before saving.</small></div><button class="primary">Validate and save settings</button></div>
+  </div>
+</form>
+{% endblock %}

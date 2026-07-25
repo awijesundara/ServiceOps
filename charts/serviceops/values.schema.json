@@ -4,7 +4,7 @@
   "required": ["replicaCount", "image", "deploymentProfile", "database", "existingSecret"],
   "properties": {
     "replicaCount": {"type": "integer", "minimum": 1},
-    "deploymentProfile": {"type": "string", "enum": ["demo", "production"]},
+    "deploymentProfile": {"type": "string", "const": "production"},
     "existingSecret": {"type": "string", "minLength": 1},
     "image": {
       "type": "object",

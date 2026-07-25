@@ -2,7 +2,7 @@
 {% block title %}Sign in · ServiceOps{% endblock %}
 {% block content %}
 <section class="login-card">
-  <div class="logo jnx-login-mark">JNX</div>
+  <div class="logo brand-login-mark">{{ company_name[:2]|upper }}</div>
   <h1>Welcome to ServiceOps</h1>
   <p>One place for IT services, support, and operations.</p>
   {% if keycloak_enabled %}
@@ -27,9 +27,6 @@
     <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
     <button class="primary">Sign in</button>
   </form>
-  {% endif %}
-  {% if deployment_profile == "demo" %}
-  <details><summary>Demo accounts</summary><p><code>admin</code>, <code>agent</code>, <code>employee</code>, and each <code>&lt;team&gt;.agent</code>. Passwords are shown by the installer.</p></details>
   {% endif %}
 </section>
 {% endblock %}

@@ -68,6 +68,10 @@ if docker compose --env-file "$ROOT_DIR/.env" -f "$compose_file" up --build -d; 
     sleep 2
   done
   if [[ "$healthy" == true ]]; then
+    if [[ -f "$STATE_DIR/company-logo.png" ]]; then
+      docker compose --env-file "$ROOT_DIR/.env" -f "$compose_file" cp \
+        "$STATE_DIR/company-logo.png" app:/app/uploads/company-logo.png >/dev/null
+    fi
     printf '{"status":"success","url":"http://%s:%s","message":"ServiceOps is healthy"}\n' \
       "$health_host" "$app_port" > "$STATE_DIR/deployment-result.json"
   else

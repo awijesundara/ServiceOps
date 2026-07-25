@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import psycopg
+from cryptography.fernet import Fernet
 from flask import Flask, jsonify, render_template, request
 from ldap3 import ALL, Connection, Server, Tls
 
@@ -124,20 +125,18 @@ def validate(config):
         "ldap": test_ldap(config),
         "keycloak": test_keycloak(config),
     }
-    production = config.get("profile") == "production"
-    if production:
-        if len(config.get("admin_password", "")) < 14:
-            checks["security"] = result(False, "Production administrator password must be at least 14 characters")
-        elif config.get("ldap_enabled") and not (
+    if len(config.get("admin_password", "")) < 14:
+        checks["security"] = result(False, "Administrator password must be at least 14 characters")
+    elif config.get("ldap_enabled") and not (
             clean(config.get("ldap_uri")).startswith("ldaps://") or config.get("ldap_start_tls")
         ):
-            checks["security"] = result(False, "Production LDAP must use LDAPS or StartTLS")
-        elif config.get("keycloak_enabled") and not clean(
+        checks["security"] = result(False, "LDAP must use LDAPS or StartTLS")
+    elif config.get("keycloak_enabled") and not clean(
             config.get("keycloak_discovery_url")
         ).startswith("https://"):
-            checks["security"] = result(False, "Production Keycloak discovery must use HTTPS")
-        else:
-            checks["security"] = result(True, "Production security policy passed")
+        checks["security"] = result(False, "Keycloak discovery must use HTTPS")
+    else:
+        checks["security"] = result(True, "Production security policy passed")
     return checks
 
 
@@ -150,7 +149,11 @@ def write_environment(config):
     db_mode = config.get("db_mode", "bundled")
     lines = [
         env_line("DEPLOYMENT_MODE", db_mode),
-        env_line("DEPLOYMENT_PROFILE", config.get("profile", "demo")),
+        env_line("DEPLOYMENT_PROFILE", "production"),
+        env_line("INSTANCE_NAME", config.get("instance_name", "ServiceOps")),
+        env_line("COMPANY_NAME", config.get("company_name", "Your Company")),
+        env_line("BRAND_TEAL", config.get("brand_teal", "#003e4c")),
+        env_line("BRAND_AMBER", config.get("brand_amber", "#f9aa3c")),
         env_line("APP_PORT", config.get("app_port", "8080")),
         env_line("BIND_ADDRESS", config.get("bind_address", "127.0.0.1")),
         env_line("POSTGRES_DB", config.get("postgres_db", "serviceops")),
@@ -158,10 +161,10 @@ def write_environment(config):
         env_line("POSTGRES_PASSWORD", config.get("postgres_password", "")),
         env_line("DATABASE_URL", config.get("database_url", "")),
         env_line("SECRET_KEY", config.get("secret_key", "")),
+        env_line("SETTINGS_ENCRYPTION_KEY",
+                 config.get("settings_encryption_key") or Fernet.generate_key().decode()),
         env_line("ADMIN_PASSWORD", config.get("admin_password", "")),
-        env_line("TEAM_MANAGER_PASSWORD", config.get("demo_password", "")),
-        env_line("DEMO_USER_PASSWORD", config.get("demo_password", "")),
-        'SERVICEOPS_IMAGE="serviceops-app:latest"',
+        env_line("SERVICEOPS_IMAGE", config.get("serviceops_image", "serviceops-app:1.0.0")),
         'LOCAL_AUTH_ENABLED="true"',
         env_line("LDAP_ENABLED", str(bool(config.get("ldap_enabled"))).lower()),
         env_line("LDAP_SERVER_URI", config.get("ldap_uri", "")),
@@ -211,6 +214,20 @@ def create_app():
         write_environment(config)
         save_json("deploy-request.json", {"requested": True})
         return jsonify(status="requested")
+
+    @app.post("/api/logo")
+    def api_logo():
+        logo = request.files.get("company_logo")
+        if not logo or not logo.filename:
+            return jsonify(status="none")
+        header = logo.stream.read(8)
+        logo.stream.seek(0)
+        if header != b"\x89PNG\r\n\x1a\n":
+            return jsonify(error="Company logo must be a valid PNG file."), 400
+        target = STATE / "company-logo.png"
+        logo.save(target)
+        target.chmod(0o600)
+        return jsonify(status="saved")
 
     @app.get("/api/deployment")
     def api_deployment():
