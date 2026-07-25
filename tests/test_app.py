@@ -5,9 +5,11 @@ from io import BytesIO
 import pytest
 
 from app import (Approval, ApprovalChain, CatalogRequest, CatalogTask, EnterpriseRecord,
+                 CatalogItem, DirectoryGroupMapping, DirectoryManagedMembership,
                  ExternalIdentity, Favorite, FileAttachment, GroupMember, RequestedItem,
-                 PlatformSetting, SupportGroup, TaskSLA, Ticket, User, UserPreference, create_app, db,
-                 provision_external_user)
+                 PlatformSetting, SupportGroup, TaskSLA, Ticket, User, UserPreference,
+                 create_app, db, provision_external_user)
+from werkzeug.security import generate_password_hash
 
 
 @pytest.fixture()
@@ -15,6 +17,30 @@ def app():
     fd, path = tempfile.mkstemp()
     os.close(fd)
     app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}"})
+    with app.app_context():
+        employee = User(
+            username="employee", name="Test Employee", email="employee@test.invalid",
+            password_hash=generate_password_hash("Employee123!"), role="requester",
+        )
+        manager = User(
+            username="database.manager", name="Database Manager",
+            email="database.manager@test.invalid",
+            password_hash=generate_password_hash("Manager123!"), role="manager",
+        )
+        db.session.add_all([employee, manager])
+        db.session.flush()
+        for group in SupportGroup.query.filter_by(group_type="IT Fulfillment").all():
+            group.manager_id = manager.id
+            db.session.add(GroupMember(group_id=group.id, user_id=manager.id, role="manager"))
+        ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
+        db.session.add(GroupMember(group_id=ccb.id, user_id=manager.id, role="CCB approver"))
+        service_desk = SupportGroup.query.filter_by(name="Service Desk").one()
+        db.session.add(GroupMember(group_id=service_desk.id, user_id=manager.id, role="member"))
+        db.session.add(CatalogItem(
+            name="Laptop computer", category="Hardware", description="Test catalog item.",
+            delivery_days=5, approval_required=True,
+        ))
+        db.session.commit()
     yield app
     os.unlink(path)
 
@@ -105,9 +131,7 @@ def test_catalog_request_and_cmdb(client, app):
     assert b"Manager approval" in ordered.data
     client.post("/logout")
     login(client)
-    cmdb = client.get("/cmdb")
-    assert b"Customer Portal" in cmdb.data
-    assert b"Depends on" in cmdb.data
+    assert client.get("/cmdb").status_code == 200
 
 
 def test_catalog_approval_chain_creates_fulfillment_task(client, app):
@@ -164,7 +188,7 @@ def test_it_teams_managers_and_ccb_membership(client, app):
         ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
         ccb_user_ids = {member.user_id for member in ccb.members}
         assert ccb_user_ids == {team.manager_id for team in teams}
-        assert {member.role for member in ccb.members} == {"CCB member"}
+        assert {member.role for member in ccb.members} == {"CCB approver"}
 
 
 def test_team_manager_can_access_management_work(client):
@@ -214,7 +238,7 @@ def test_visual_board_checklist_and_attachment(client, app):
         assert FileAttachment.query.filter_by(ticket_id=ticket_id).one().size_bytes == 8
 
 
-def test_production_profile_disables_reserved_demo_personas(monkeypatch):
+def test_fresh_install_has_no_reserved_demo_personas(monkeypatch):
     fd, path = tempfile.mkstemp()
     os.close(fd)
     monkeypatch.setenv("DEPLOYMENT_PROFILE", "production")
@@ -225,11 +249,10 @@ def test_production_profile_disables_reserved_demo_personas(monkeypatch):
     })
     with production.app_context():
         assert User.query.filter_by(username="admin", active=True).one()
-        assert User.query.filter_by(username="employee", active=True).count() == 0
+        assert User.query.filter_by(username="employee").count() == 0
         assert User.query.filter(User.username.like("%.agent"), User.active.is_(True)).count() == 0
-        managers = User.query.filter(User.username.like("%.manager")).all()
-        assert len(managers) == 6
-        assert all(not manager.active for manager in managers)
+        assert User.query.filter(User.username.like("%.manager")).count() == 0
+        assert CatalogItem.query.count() == 0
     os.unlink(path)
 
 
@@ -244,6 +267,66 @@ def test_external_identity_is_stable_and_does_not_enable_local_password(app):
         assert second.id == first_id
         assert second.role == "manager"
         assert ExternalIdentity.query.filter_by(provider="keycloak", subject="subject-123").count() == 1
+
+
+def test_ldap_group_mapping_synchronizes_team_membership(app):
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        db.session.add(DirectoryGroupMapping(
+            directory_group="gg_unix", support_group_id=unix.id
+        ))
+        db.session.commit()
+        user = provision_external_user(
+            "ldap", "CN=Alice,OU=Users,DC=example,DC=com", "alice", "Alice",
+            "alice@example.test", "agent",
+            groups=["CN=gg_unix,OU=Groups,DC=example,DC=com"],
+        )
+        db.session.commit()
+        user_id = user.id
+        assert GroupMember.query.filter_by(
+            user_id=user_id, group_id=unix.id, role="member"
+        ).one()
+        assert DirectoryManagedMembership.query.filter_by(
+            user_id=user_id, group_id=unix.id
+        ).one()
+
+        provision_external_user(
+            "ldap", "CN=Alice,OU=Users,DC=example,DC=com", "alice", "Alice",
+            "alice@example.test", "agent", groups=[],
+        )
+        db.session.commit()
+        assert GroupMember.query.filter_by(user_id=user_id, group_id=unix.id).count() == 0
+        assert DirectoryManagedMembership.query.filter_by(
+            user_id=user_id, group_id=unix.id
+        ).count() == 0
+
+
+def test_admin_configures_ad_mapping_manager_and_ccb_authority(client, app):
+    login(client)
+    with app.app_context():
+        unix_id = SupportGroup.query.filter_by(name="Unix").one().id
+        manager = User.query.filter_by(username="database.manager").one()
+        manager_id = manager.id
+    assert client.post("/itil/administration", data={
+        "action": "add_directory_mapping", "directory_group": "gg_unix",
+        "group_id": unix_id,
+    }).status_code == 302
+    assert client.post("/itil/administration", data={
+        "action": "set_manager", "group_id": unix_id, "manager_id": manager_id,
+    }).status_code == 302
+    assert client.post("/itil/administration", data={
+        "action": "set_ccb_authority", "user_id": manager_id, "enabled": "true",
+    }).status_code == 302
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
+        assert DirectoryGroupMapping.query.filter_by(
+            directory_group="gg_unix", support_group_id=unix.id, active=True
+        ).one()
+        assert unix.manager_id == manager_id
+        assert GroupMember.query.filter_by(
+            group_id=ccb.id, user_id=manager_id, role="CCB approver"
+        ).one()
 
 
 def test_admin_can_update_live_platform_branding(client, app):

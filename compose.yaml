@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-serviceops}
       POSTGRES_USER: ${POSTGRES_USER:-serviceops}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - serviceops_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,20 +19,18 @@ services:
     shm_size: 256mb
 
   app:
-    image: ${SERVICEOPS_IMAGE:-serviceops-app:latest}
+    image: ${SERVICEOPS_IMAGE:?Set an immutable SERVICEOPS_IMAGE tag in .env}
     build: .
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-serviceops}:${POSTGRES_PASSWORD:-change-me-in-production}@db:5432/${POSTGRES_DB:-serviceops}
-      SECRET_KEY: ${SECRET_KEY:-replace-this-secret-before-production}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123!}
-      TEAM_MANAGER_PASSWORD: ${TEAM_MANAGER_PASSWORD:-Manager123!}
-      DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-production}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-serviceops}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-serviceops}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      DEPLOYMENT_PROFILE: production
       INSTANCE_NAME: ${INSTANCE_NAME:-ServiceOps}
       COMPANY_NAME: ${COMPANY_NAME:-Your Company}
       BRAND_TEAL: ${BRAND_TEAL:-#003e4c}
       BRAND_AMBER: ${BRAND_AMBER:-#f9aa3c}
-      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
-      DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD:-ServiceOpsDemo123!}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?Set SETTINGS_ENCRYPTION_KEY in .env}
       LOCAL_AUTH_ENABLED: ${LOCAL_AUTH_ENABLED:-true}
       LDAP_ENABLED: ${LDAP_ENABLED:-false}
       LDAP_SERVER_URI: ${LDAP_SERVER_URI:-}

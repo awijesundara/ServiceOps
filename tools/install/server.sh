@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
 STATE_FILE="$ROOT_DIR/.serviceops-install"
 MODE=""
@@ -16,7 +16,7 @@ info() { printf "${CYAN}ℹ${RESET} %s\n" "$*"; }
 ok() { printf "${GREEN}✓${RESET} %s\n" "$*"; }
 warn() { printf "${YELLOW}!${RESET} %s\n" "$*"; }
 die() { printf "${RED}✗ %s${RESET}\n" "$*" >&2; exit 1; }
-on_error() { printf "${RED}Installation stopped at line %s.${RESET}\n" "$1" >&2; printf "Run: ./serviceopsctl doctor\n" >&2; }
+on_error() { printf "${RED}Installation stopped at line %s.${RESET}\n" "$1" >&2; printf "Run: ./serviceops doctor\n" >&2; }
 trap 'on_error "$LINENO"' ERR
 
 banner() {
@@ -30,7 +30,7 @@ banner() {
 
 usage() {
   cat <<'EOF'
-Usage: ./install.sh [options]
+Usage: ./serviceops install server [options]
   --mode bundled|external
   --port PORT
   --bind 127.0.0.1|0.0.0.0|IP
@@ -54,6 +54,7 @@ done
 
 command -v docker >/dev/null || die "Docker is not installed. Install Docker Engine 24+ and the Compose plugin."
 command -v curl >/dev/null || die "curl is required for health verification."
+command -v openssl >/dev/null || die "OpenSSL is required for secure key generation."
 docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required."
 docker info >/dev/null 2>&1 || die "Docker daemon is not running or your user cannot access it."
 ((APP_PORT >= 1 && APP_PORT <= 65535)) || die "Port must be between 1 and 65535."
@@ -104,7 +105,7 @@ random_hex() {
 SECRET_KEY="$(random_hex 48)"
 POSTGRES_PASSWORD="$(random_hex 24)"
 ADMIN_PASSWORD="$(random_hex 12)"
-TEAM_MANAGER_PASSWORD="$(random_hex 12)"
+SETTINGS_ENCRYPTION_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')"
 
 if [[ -f "$ENV_FILE" ]]; then
   backup="$ENV_FILE.backup.$(date -u +%Y%m%dT%H%M%SZ)"
@@ -119,8 +120,8 @@ umask 077
   printf "BIND_ADDRESS=%s\n" "$BIND_ADDRESS"
   printf "SECRET_KEY=%s\n" "$SECRET_KEY"
   printf "ADMIN_PASSWORD=%s\n" "$ADMIN_PASSWORD"
-  printf "TEAM_MANAGER_PASSWORD=%s\n" "$TEAM_MANAGER_PASSWORD"
-  printf "SERVICEOPS_IMAGE=serviceops-app:latest\n"
+  printf "SETTINGS_ENCRYPTION_KEY=%s\n" "$SETTINGS_ENCRYPTION_KEY"
+  printf "SERVICEOPS_IMAGE=serviceops-app:1.2.1\n"
   if [[ "$MODE" == "bundled" ]]; then
     printf "POSTGRES_DB=serviceops\nPOSTGRES_USER=serviceops\nPOSTGRES_PASSWORD=%s\n" "$POSTGRES_PASSWORD"
   else
@@ -166,8 +167,7 @@ printf "\n${GREEN}${BOLD}Installation complete${RESET}\n\n"
 printf "  URL:            http://%s:%s\n" "$([[ "$BIND_ADDRESS" == "0.0.0.0" ]] && printf SERVER_IP || printf "$BIND_ADDRESS")" "$APP_PORT"
 printf "  Admin username: admin\n"
 printf "  Admin password: ${BOLD}%s${RESET}\n" "$ADMIN_PASSWORD"
-printf "  Manager password: ${BOLD}%s${RESET}\n" "$TEAM_MANAGER_PASSWORD"
 printf "  Database mode:  %s\n\n" "$MODE"
 printf "${YELLOW}Store these credentials now. They are intentionally shown only by this installer.${RESET}\n"
 printf "Next: configure HTTPS, sign in, and change bootstrap passwords.\n"
-printf "Operations: ./serviceopsctl status | logs | backup | doctor\n"
+printf "Operations: ./serviceops status | logs | backup | doctor\n"

@@ -218,6 +218,28 @@ class GroupMember(db.Model):
     __table_args__ = (db.UniqueConstraint("group_id", "user_id"),)
 
 
+class DirectoryGroupMapping(db.Model):
+    """Map an AD group name or full DN to a ServiceOps support group."""
+    id = db.Column(db.Integer, primary_key=True)
+    directory_group = db.Column(db.String(500), unique=True, nullable=False)
+    support_group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    support_group = db.relationship("SupportGroup")
+
+
+class DirectoryManagedMembership(db.Model):
+    """Tracks memberships ServiceOps may safely remove during AD resynchronization."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False)
+    directory_group = db.Column(db.String(500), nullable=False)
+    synchronized_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    user = db.relationship("User")
+    group = db.relationship("SupportGroup")
+    __table_args__ = (db.UniqueConstraint("user_id", "group_id", name="uq_directory_membership"),)
+
+
 class ApprovalChain(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(180), nullable=False)
@@ -562,6 +584,112 @@ def set_target_state(target_type, target_id, state):
         target.state = state
 
 
+TICKET_TRANSITIONS = {
+    "New": ("New", "In Progress", "Pending", "Resolved", "Cancelled"),
+    "In Progress": ("In Progress", "Pending", "Resolved", "Cancelled"),
+    "Pending": ("Pending", "In Progress", "Resolved", "Cancelled"),
+    "Resolved": ("Resolved", "In Progress", "Closed"),
+    "Closed": ("Closed",),
+    "Cancelled": ("Cancelled",),
+    "Approved": ("Approved", "In Progress", "Cancelled"),
+    "Awaiting Approval": ("Awaiting Approval", "Cancelled"),
+    "Rejected": ("Rejected",),
+}
+ENTERPRISE_TRANSITIONS = {
+    "New": ("New", "Open", "In Progress", "Pending", "Resolved", "Completed", "Closed"),
+    "Open": ("Open", "In Progress", "Pending", "Resolved", "Completed", "Closed"),
+    "In Progress": ("In Progress", "Pending", "Resolved", "Completed", "Closed"),
+    "Pending": ("Pending", "In Progress", "Resolved", "Completed", "Closed"),
+    "Resolved": ("Resolved", "In Progress", "Closed"),
+    "Completed": ("Completed", "Closed"),
+    "Closed": ("Closed",),
+    "Approved": ("Approved", "In Progress", "Pending", "Completed", "Closed"),
+    "Awaiting Approval": ("Awaiting Approval",),
+    "Rejected": ("Rejected",),
+}
+CATALOG_TASK_TRANSITIONS = {
+    "Open": ("Open", "Work in Progress", "Pending", "Closed Incomplete", "Closed Skipped"),
+    "Work in Progress": ("Work in Progress", "Pending", "Closed Complete", "Closed Incomplete", "Closed Skipped"),
+    "Pending": ("Pending", "Work in Progress", "Closed Complete", "Closed Incomplete", "Closed Skipped"),
+    "Closed Complete": ("Closed Complete",),
+    "Closed Incomplete": ("Closed Incomplete",),
+    "Closed Skipped": ("Closed Skipped",),
+}
+
+
+def approval_chain_for(target_type, target_id):
+    return ApprovalChain.query.filter_by(
+        target_type=target_type, target_id=target_id
+    ).order_by(ApprovalChain.id.desc()).first()
+
+
+def cancel_approval_chain(chain):
+    if not chain or chain.state != "Running":
+        return
+    chain.state = "Cancelled"
+    chain.completed_at = now()
+    for gate in chain.gates:
+        if gate.state in ("Pending", "Requested"):
+            gate.state = "Cancelled"
+        for vote in gate.votes:
+            if vote.state in ("Not Requested", "Requested"):
+                vote.state = "No Longer Required"
+
+
+def allowed_ticket_states(ticket):
+    chain = approval_chain_for("ticket", ticket.id)
+    if ticket.kind == "change" and chain:
+        if chain.state == "Running":
+            return (ticket.state, "Cancelled")
+        if chain.state == "Rejected":
+            return ("Rejected",)
+        if chain.state == "Cancelled":
+            return ("Cancelled",)
+    return TICKET_TRANSITIONS.get(ticket.state, (ticket.state,))
+
+
+def transition_ticket(ticket, new_state):
+    if new_state not in allowed_ticket_states(ticket):
+        abort(409, description=(
+            f"{ticket.number} cannot move from {ticket.state} to {new_state}. "
+            "Complete the required approval chain and follow the permitted lifecycle."
+        ))
+    if new_state == "Cancelled" and ticket.kind == "change":
+        cancel_approval_chain(approval_chain_for("ticket", ticket.id))
+    ticket.state = new_state
+    sync_slas("ticket", ticket.id, new_state)
+
+
+def allowed_enterprise_states(record):
+    approvals = list(record.approvals)
+    if any(item.state == "Requested" for item in approvals):
+        return (record.state,)
+    if any(item.state == "Rejected" for item in approvals):
+        return ("Rejected",)
+    return ENTERPRISE_TRANSITIONS.get(record.state, (record.state,))
+
+
+def transition_enterprise(record, new_state):
+    if new_state in ("Awaiting Approval", "Approved", "Rejected") and new_state != record.state:
+        abort(409, description="Approval-derived states can be changed only by an approval decision.")
+    if new_state not in allowed_enterprise_states(record):
+        abort(409, description=(
+            f"{record.number} cannot move from {record.state} to {new_state} "
+            "while its approval or lifecycle prerequisites are incomplete."
+        ))
+    record.state = new_state
+
+
+def transition_catalog_task(task, new_state):
+    chain = approval_chain_for("ritm", task.requested_item_id)
+    if chain and chain.state != "Approved":
+        abort(409, description="Fulfillment cannot start until the requested item is approved.")
+    allowed = CATALOG_TASK_TRANSITIONS.get(task.state, (task.state,))
+    if new_state not in allowed:
+        abort(409, description=f"{task.number} cannot move from {task.state} to {new_state}.")
+    task.state = new_state
+
+
 def activate_gate(gate):
     gate.state = "Requested"
     for vote in gate.votes:
@@ -571,6 +699,9 @@ def activate_gate(gate):
 
 
 def create_approval_chain(name, target_type, target_id, stages):
+    if not stages or any(not [item for item in stage["approver_ids"] if item]
+                         for stage in stages):
+        raise ValueError("Every approval stage must have at least one configured approver.")
     chain = ApprovalChain(name=name, target_type=target_type, target_id=target_id)
     db.session.add(chain)
     db.session.flush()
@@ -589,8 +720,8 @@ def create_approval_chain(name, target_type, target_id, stages):
 
 
 def decide_vote(vote, decision, comments):
-    if vote.state != "Requested":
-        abort(409)
+    if vote.state != "Requested" or vote.gate.state != "Requested" or vote.gate.chain.state != "Running":
+        abort(409, description="This approval is no longer active.")
     vote.state = decision
     vote.comments = comments
     vote.decided_at = now()
@@ -739,12 +870,65 @@ def mapped_role(groups, mapping_name, default="requester"):
     return configured if configured in allowed else default
 
 
-def provision_external_user(provider, subject, username, name, email, role):
+def normalized_directory_groups(groups):
+    """Return case-insensitive full-DN and first-CN aliases for AD memberships."""
+    normalized = set()
+    for value in groups or []:
+        group = str(value).strip()
+        if not group:
+            continue
+        normalized.add(group.casefold())
+        first_rdn = group.split(",", 1)[0].strip()
+        if first_rdn.casefold().startswith("cn="):
+            normalized.add(first_rdn[3:].strip().casefold())
+    return normalized
+
+
+def sync_directory_team_memberships(user, groups):
+    """Synchronize only memberships owned by AD mapping automation."""
+    aliases = normalized_directory_groups(groups)
+    mappings = DirectoryGroupMapping.query.filter_by(active=True).all()
+    desired = {
+        mapping.support_group_id: mapping
+        for mapping in mappings
+        if mapping.directory_group.strip().casefold() in aliases
+    }
+    existing = {
+        membership.group_id: membership
+        for membership in DirectoryManagedMembership.query.filter_by(user_id=user.id).all()
+    }
+    for group_id, managed in existing.items():
+        if group_id in desired:
+            managed.directory_group = desired[group_id].directory_group
+            managed.synchronized_at = now()
+            continue
+        membership = GroupMember.query.filter_by(group_id=group_id, user_id=user.id).first()
+        if membership and membership.role == "member":
+            db.session.delete(membership)
+        db.session.delete(managed)
+    for group_id, mapping in desired.items():
+        membership = GroupMember.query.filter_by(group_id=group_id, user_id=user.id).first()
+        if not membership:
+            db.session.add(GroupMember(group_id=group_id, user_id=user.id, role="member"))
+        if group_id not in existing:
+            db.session.add(DirectoryManagedMembership(
+                user_id=user.id, group_id=group_id, directory_group=mapping.directory_group
+            ))
+    db.session.add(Audit(
+        user_id=user.id, action="directory group sync", target=user.username,
+        details=", ".join(sorted(mapping.support_group.name for mapping in desired.values()))
+                or "No mapped teams",
+    ))
+
+
+def provision_external_user(provider, subject, username, name, email, role, groups=None):
     identity = ExternalIdentity.query.filter_by(provider=provider, subject=subject).first()
     if identity:
         user = identity.user
         user.name, user.email, user.role = name, email, role
         user.active = True
+        if provider == "ldap":
+            sync_directory_team_memberships(user, groups)
         return user
     base = (username or f"{provider}-{uuid.uuid4().hex[:8]}").strip().lower()[:70]
     candidate, suffix = base, 1
@@ -760,6 +944,8 @@ def provision_external_user(provider, subject, username, name, email, role):
     db.session.add(user)
     db.session.flush()
     db.session.add(ExternalIdentity(provider=provider, subject=subject, user_id=user.id))
+    if provider == "ldap":
+        sync_directory_team_memberships(user, groups)
     return user
 
 
@@ -810,7 +996,7 @@ def ldap_authenticate(username, password):
     role = mapped_role(groups, "LDAP_ROLE_MAPPINGS")
     return provision_external_user(
         "ldap", entry.entry_dn, username, first("displayName", first("cn", username)),
-        first("mail", first("userPrincipalName", "")), role)
+        first("mail", first("userPrincipalName", "")), role, groups=groups)
 
 
 def create_app(test_config=None):
@@ -878,6 +1064,7 @@ def create_app(test_config=None):
             "brand_amber": setting_value("BRAND_AMBER", "#f9aa3c"),
             "support_email": setting_value("SUPPORT_EMAIL", ""),
             "has_company_logo": os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png")),
+            "test_fixture_active": setting_bool("TEST_FIXTURE_ACTIVE"),
         }
         if not current_user.is_authenticated:
             return platform_context
@@ -1033,10 +1220,21 @@ def create_app(test_config=None):
                 db.session.add(governance)
                 db.session.flush()
                 owning_group = db.session.get(SupportGroup, int(request.form["group_id"])) if request.form.get("group_id") else SupportGroup.query.filter_by(name="CoreApps").first()
+                if not owning_group or not owning_group.manager_id:
+                    db.session.rollback()
+                    abort(409, "The selected team must have an active manager before a change can be submitted.")
                 db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=owning_group.id))
                 ccb = SupportGroup.query.filter_by(name="Change Control Board").first()
-                ccb_ids = [member.user_id for member in GroupMember.query.filter_by(group_id=ccb.id).all()
-                           if member.user.role == "manager"]
+                ccb_ids = [
+                    member.user_id
+                    for member in GroupMember.query.filter_by(
+                        group_id=ccb.id, role="CCB approver"
+                    ).all()
+                    if member.user.active
+                ]
+                if governance.change_type != "Standard" and not ccb_ids:
+                    db.session.rollback()
+                    abort(409, "CCB membership must be configured before a non-standard change can be submitted.")
                 stages = [{"name": f"{owning_group.name} manager assessment", "mode": "all",
                            "approver_ids": [owning_group.manager_id]}]
                 if governance.change_type != "Standard":
@@ -1066,17 +1264,19 @@ def create_app(test_config=None):
                     db.session.add(Comment(ticket_id=ticket.id, user_id=current_user.id, body=body))
                     audit("comment", ticket.number)
             elif action == "update" and current_user.role in ("agent", "manager", "admin"):
-                ticket.state = request.form["state"]
+                transition_ticket(ticket, request.form["state"])
                 ticket.priority = request.form["priority"]
                 ticket.assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
-                sync_slas("ticket", ticket.id, ticket.state)
                 audit("update", ticket.number, f"{ticket.state}, {ticket.priority}")
             db.session.commit()
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
         agents = User.query.filter(User.role.in_(["agent", "manager", "admin"]), User.active.is_(True)).all()
         chains = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         slas = TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).all()
-        return render_template("ticket_detail.html", ticket=ticket, agents=agents, chains=chains, slas=slas)
+        return render_template(
+            "ticket_detail.html", ticket=ticket, agents=agents, chains=chains, slas=slas,
+            ticket_state_options=allowed_ticket_states(ticket),
+        )
 
     @app.get("/knowledge")
     @login_required
@@ -1121,7 +1321,15 @@ def create_app(test_config=None):
     @app.get("/admin/users")
     @roles("admin")
     def users():
-        return render_template("users.html", users=User.query.order_by(User.name).all())
+        memberships = GroupMember.query.all()
+        directory_managed = {
+            (item.user_id, item.group_id)
+            for item in DirectoryManagedMembership.query.all()
+        }
+        return render_template(
+            "users.html", users=User.query.order_by(User.name).all(),
+            memberships=memberships, directory_managed=directory_managed,
+        )
 
     @app.route("/admin/users/new", methods=["GET", "POST"])
     @roles("admin")
@@ -1304,7 +1512,7 @@ def create_app(test_config=None):
         if request.method == "POST":
             action = request.form.get("action")
             if action == "update" and current_user.role in ("agent", "manager", "admin"):
-                record.state = request.form["state"]
+                transition_enterprise(record, request.form["state"])
                 record.priority = request.form["priority"]
                 record.risk = request.form["risk"]
                 record.assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
@@ -1322,7 +1530,10 @@ def create_app(test_config=None):
             db.session.commit()
             return redirect(url_for("enterprise_detail", record_id=record.id))
         agents = User.query.filter(User.role.in_(["agent", "manager", "admin"]), User.active.is_(True)).all()
-        return render_template("enterprise_detail.html", record=record, config=DOMAIN_CONFIG[record.domain], agents=agents)
+        return render_template(
+            "enterprise_detail.html", record=record, config=DOMAIN_CONFIG[record.domain],
+            agents=agents, record_state_options=allowed_enterprise_states(record),
+        )
 
     @app.get("/catalog")
     @login_required
@@ -1392,7 +1603,7 @@ def create_app(test_config=None):
     @login_required
     def approval_vote_decide(vote_id):
         vote = db.get_or_404(ApprovalVote, vote_id)
-        if vote.approver_id != current_user.id and current_user.role != "admin":
+        if vote.approver_id != current_user.id:
             abort(403)
         decision = request.form.get("decision")
         if decision not in ("Approved", "Rejected"):
@@ -1425,16 +1636,24 @@ def create_app(test_config=None):
             abort(403)
         chains = {}
         slas = {}
+        task_state_options = {}
         for ritm in req.items:
             chains[ritm.id] = ApprovalChain.query.filter_by(target_type="ritm", target_id=ritm.id).all()
             slas[ritm.id] = TaskSLA.query.filter_by(target_type="ritm", target_id=ritm.id).all()
-        return render_template("request_detail.html", req=req, chains=chains, slas=slas)
+            for task in ritm.tasks:
+                task_state_options[task.id] = CATALOG_TASK_TRANSITIONS.get(
+                    task.state, (task.state,)
+                )
+        return render_template(
+            "request_detail.html", req=req, chains=chains, slas=slas,
+            task_state_options=task_state_options,
+        )
 
     @app.post("/catalog-task/<int:task_id>")
     @roles("agent", "manager", "admin")
     def catalog_task_update(task_id):
         task = db.get_or_404(CatalogTask, task_id)
-        task.state = request.form["state"]
+        transition_catalog_task(task, request.form["state"])
         task.work_notes = request.form.get("work_notes", "")
         task.assignee_id = current_user.id
         ritm = task.requested_item
@@ -1453,11 +1672,113 @@ def create_app(test_config=None):
         db.session.commit()
         return redirect(url_for("request_detail", request_id=ritm.request_id))
 
-    @app.get("/itil/administration")
+    @app.route("/itil/administration", methods=["GET", "POST"])
     @roles("admin")
     def itil_admin():
-        return render_template("itil_admin.html", groups=SupportGroup.query.all(),
-                               services=ServiceOffering.query.all(), sla_definitions=SLADefinition.query.all())
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "add_directory_mapping":
+                directory_group = request.form.get("directory_group", "").strip()
+                group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
+                if not directory_group or len(directory_group) > 500:
+                    abort(400)
+                existing = DirectoryGroupMapping.query.filter(
+                    func.lower(DirectoryGroupMapping.directory_group)
+                    == directory_group.casefold()
+                ).first()
+                if existing:
+                    existing.support_group_id = group.id
+                    existing.active = True
+                else:
+                    db.session.add(DirectoryGroupMapping(
+                        directory_group=directory_group, support_group_id=group.id
+                    ))
+                audit("configure", "AD team mapping", f"{directory_group} -> {group.name}")
+                flash("AD group mapping saved. It applies at each user's next login.", "success")
+            elif action == "delete_directory_mapping":
+                mapping = db.get_or_404(DirectoryGroupMapping, int(request.form["mapping_id"]))
+                mapping.active = False
+                audit("disable", "AD team mapping", mapping.directory_group)
+                flash("AD group mapping disabled. Memberships reconcile at next login.", "success")
+            elif action == "set_manager":
+                group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
+                if group.group_type != "IT Fulfillment":
+                    abort(400)
+                old_manager_id = group.manager_id
+                manager_id = int(request.form["manager_id"]) if request.form.get("manager_id") else None
+                manager = db.session.get(User, manager_id) if manager_id else None
+                if manager and (not manager.active or manager.role not in ("agent", "manager", "admin")):
+                    abort(400)
+                if old_manager_id and old_manager_id != manager_id:
+                    old_membership = GroupMember.query.filter_by(
+                        group_id=group.id, user_id=old_manager_id, role="manager"
+                    ).first()
+                    if old_membership:
+                        managed = DirectoryManagedMembership.query.filter_by(
+                            group_id=group.id, user_id=old_manager_id
+                        ).first()
+                        if managed:
+                            old_membership.role = "member"
+                        else:
+                            db.session.delete(old_membership)
+                group.manager_id = manager_id
+                if manager:
+                    membership = GroupMember.query.filter_by(
+                        group_id=group.id, user_id=manager.id
+                    ).first()
+                    if membership:
+                        membership.role = "manager"
+                    else:
+                        db.session.add(GroupMember(
+                            group_id=group.id, user_id=manager.id, role="manager"
+                        ))
+                    if manager.role != "admin":
+                        manager.role = "manager"
+                audit("configure", f"{group.name} manager",
+                      manager.username if manager else "Unassigned")
+                flash(f"{group.name} manager updated.", "success")
+            elif action == "set_ccb_authority":
+                user = db.get_or_404(User, int(request.form["user_id"]))
+                ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
+                membership = GroupMember.query.filter_by(
+                    group_id=ccb.id, user_id=user.id
+                ).first()
+                enabled = request.form.get("enabled") == "true"
+                if enabled and not user.active:
+                    abort(400)
+                if enabled:
+                    if membership:
+                        membership.role = "CCB approver"
+                    else:
+                        db.session.add(GroupMember(
+                            group_id=ccb.id, user_id=user.id, role="CCB approver"
+                        ))
+                elif membership:
+                    db.session.delete(membership)
+                audit("configure", "CCB approval authority",
+                      f"{user.username}: {'granted' if enabled else 'revoked'}")
+                flash("CCB approval authority updated.", "success")
+            else:
+                abort(400)
+            db.session.commit()
+            return redirect(url_for("itil_admin"))
+        groups = SupportGroup.query.order_by(SupportGroup.name).all()
+        teams = [group for group in groups if group.group_type == "IT Fulfillment"]
+        candidates = User.query.filter(
+            User.active.is_(True), User.role.in_(["agent", "manager", "admin"])
+        ).order_by(User.name).all()
+        ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
+        ccb_approver_ids = {
+            member.user_id for member in ccb.members if member.role == "CCB approver"
+        }
+        return render_template(
+            "itil_admin.html", groups=groups, teams=teams, candidates=candidates,
+            ccb=ccb, ccb_approver_ids=ccb_approver_ids,
+            directory_mappings=DirectoryGroupMapping.query.order_by(
+                DirectoryGroupMapping.directory_group
+            ).all(),
+            services=ServiceOffering.query.all(), sla_definitions=SLADefinition.query.all(),
+        )
 
     @app.post("/change/<int:ticket_id>/conflicts")
     @roles("agent", "manager", "admin")
@@ -1593,8 +1914,7 @@ def create_app(test_config=None):
         state = request.form.get("state")
         if state not in ("New", "In Progress", "Pending", "Resolved", "Closed"):
             abort(400)
-        ticket.state = state
-        sync_slas("ticket", ticket.id, state)
+        transition_ticket(ticket, state)
         audit("board move", ticket.number, state)
         db.session.commit()
         return jsonify(state=state)
@@ -1660,6 +1980,13 @@ def create_app(test_config=None):
     @app.errorhandler(404)
     def not_found(_):
         return render_template("error.html", code=404, message="The requested record was not found."), 404
+
+    @app.errorhandler(409)
+    def workflow_conflict(error):
+        return render_template(
+            "error.html", code=409,
+            message=error.description or "The requested workflow transition is not allowed.",
+        ), 409
 
     return app
 

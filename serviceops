@@ -1,28 +1,57 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat <<'EOF'
+ServiceOps lifecycle command
+
+Installation:
+  ./serviceops install web
+  ./serviceops install server [--mode bundled|external ...]
+  ./serviceops install kubernetes [--preflight]
+
+Operations:
+  ./serviceops start | stop | restart | status | health | logs | doctor
+  ./serviceops backup [NAME]
+  ./serviceops restore DATABASE_DUMP
+  ./serviceops update | config
+EOF
+}
+
+command="${1:-}"
+if [[ "$command" == "install" ]]; then
+  target="${2:-web}"
+  shift 2 || true
+  case "$target" in
+    web) exec "$ROOT_DIR/tools/install/web.sh" "$@" ;;
+    server) exec "$ROOT_DIR/tools/install/server.sh" "$@" ;;
+    kubernetes|k8s) exec "$ROOT_DIR/tools/install/kubernetes.sh" "$@" ;;
+    *) echo "Unknown installation target: $target" >&2; usage; exit 2 ;;
+  esac
+fi
+[[ "$command" == "help" || "$command" == "--help" || "$command" == "-h" || -z "$command" ]] && {
+  usage
+  exit 0
+}
+
 ENV_FILE="$ROOT_DIR/.env"
-STATE_FILE="$ROOT_DIR/.serviceops-install"
-[[ -f "$ENV_FILE" ]] || { echo "ServiceOps is not installed. Run ./install.sh"; exit 1; }
-MODE="$(sed -n 's/^DEPLOYMENT_MODE=//p' "$ENV_FILE" | tail -1)"
-if [[ "$MODE" == "external" ]]; then FILE="$ROOT_DIR/compose.external-db.yaml"; else FILE="$ROOT_DIR/compose.yaml"; fi
+[[ -f "$ENV_FILE" ]] || {
+  echo "ServiceOps is not installed. Run ./serviceops install web" >&2
+  exit 1
+}
+MODE="$(sed -n 's/^DEPLOYMENT_MODE=\"\\{0,1\\}\\([^\"[:space:]]*\\).*/\\1/p' "$ENV_FILE" | tail -1)"
+if [[ "$MODE" == "external" ]]; then
+  FILE="$ROOT_DIR/compose.external-db.yaml"
+else
+  FILE="$ROOT_DIR/compose.yaml"
+fi
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$FILE")
 BACKUP_DIR="$ROOT_DIR/backups"
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 
-usage() {
-  cat <<'EOF'
-Usage: ./serviceopsctl COMMAND
-  start | stop | restart | status | health | logs | doctor
-  backup [NAME]              Bundled database and uploads
-  restore DATABASE_DUMP      Bundled database restore (explicit confirmation)
-  update                     Rebuild and health-check
-  config                     Show resolved Compose config
-EOF
-}
-
-command="${1:-}"
 case "$command" in
   start) "${COMPOSE[@]}" up -d ;;
   stop) "${COMPOSE[@]}" stop ;;
@@ -30,8 +59,9 @@ case "$command" in
   status) "${COMPOSE[@]}" ps ;;
   logs) "${COMPOSE[@]}" logs -f --tail=200 app ;;
   health)
-    port="$(sed -n 's/^APP_PORT=//p' "$ENV_FILE" | tail -1)"
-    curl -fsS "http://127.0.0.1:${port:-8080}/health" && printf "\nhealthy\n"
+    port="$(sed -n 's/^APP_PORT=\"\\{0,1\\}\\([^\"[:space:]]*\\).*/\\1/p' "$ENV_FILE" | tail -1)"
+    curl -fsS "http://127.0.0.1:${port:-8080}/health"
+    printf "\nhealthy\n"
     ;;
   config) "${COMPOSE[@]}" config ;;
   doctor)
@@ -46,7 +76,7 @@ case "$command" in
     exit "$failures"
     ;;
   backup)
-    [[ "$MODE" == "bundled" ]] || { echo "External database mode: use your database provider's snapshot/backup service."; exit 2; }
+    [[ "$MODE" == "bundled" ]] || { echo "External database mode: use the database provider backup service."; exit 2; }
     stamp="${2:-$(date -u +%Y%m%dT%H%M%SZ)}"
     dump="$BACKUP_DIR/serviceops-$stamp.dump"
     uploads="$BACKUP_DIR/serviceops-uploads-$stamp.tar.gz"

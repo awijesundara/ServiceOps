@@ -8,7 +8,7 @@
   <label class="wide">Description<textarea name="description" rows="8" required></textarea></label>
   {% if kind == 'change' %}
   {% if change_freeze_message %}<div class="wide flash">{{ change_freeze_message }}</div>{% endif %}
-  <label>Owning IT team<select name="group_id" required>{% for team in teams %}<option value="{{ team.id }}">{{ team.name }} — {{ team.manager.name }}</option>{% endfor %}</select></label>
+  <label>Owning IT team<select name="group_id" required>{% for team in teams %}<option value="{{ team.id }}" {% if not team.manager %}disabled{% endif %}>{{ team.name }} — {{ team.manager.name if team.manager else "manager not configured" }}</option>{% endfor %}</select></label>
   <label>Change type<select name="change_type"><option>Normal</option><option>Standard</option><option>Emergency</option></select></label>
   <label>Impact<select name="impact"><option>Low</option><option selected>Medium</option><option>High</option></select></label>
   <label>Risk score<input type="number" min="0" max="100" name="risk_score" value="50"></label>
