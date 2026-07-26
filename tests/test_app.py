@@ -1,17 +1,28 @@
 import os
+import re
 import tempfile
 from io import BytesIO
 
 import pytest
+from alembic import command
+from alembic.config import Config as AlembicConfig
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import DBAPIError
 
-from app import (Approval, ApprovalChain, CatalogRequest, CatalogTask, ChangeRevision,
-                 EnterpriseRecord, CatalogItem, CatalogItemRouting, DirectoryGroupMapping,
+from app import (APIClient, APIIdempotencyRecord, Approval, ApprovalChain, Asset, Audit, CatalogRequest, CatalogTask, ChangeRevision,
+                 ConfigurationItem, EnterpriseRecord, CatalogItem, CatalogItemRouting, DirectoryGroupMapping,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
-                 GroupMember, Notification, OperationalTask, ProblemProfile, RecordLink,
+                 GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
+                 MonitoringEvent, MonitoringSource, Notification, OperationalTask,
+                 OutboxEvent, ProblemProfile, RecordLink,
                  RequestedItem, PlatformSetting, SupportGroup, TaskHistory, TaskSLA,
-                 Ticket, TicketAssignmentGroup, User, UserPreference,
-                 create_app, db, provision_external_user)
+                 Tenant, Ticket, TicketAssignmentGroup, User, UserPreference,
+                 create_api_token, create_app, create_notification, db,
+                 integration_endpoint_valid, process_outbox,
+                 provision_external_user, settings_cipher,
+                 verify_audit_chain)
 from werkzeug.security import generate_password_hash
+from serviceops_core.security import role_has_action, validate_policy
 
 
 @pytest.fixture()
@@ -78,10 +89,504 @@ def test_health(client):
     assert client.get("/ready").json == {"status": "ready"}
 
 
+def test_csrf_protects_login_and_authenticated_mutations():
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    csrf_app = create_app({
+        "TESTING": True,
+        "CSRF_ENABLED": True,
+        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}",
+    })
+    csrf_client = csrf_app.test_client()
+    login_page = csrf_client.get("/login")
+    token = re.search(
+        rb'name="_csrf_token" value="([^"]+)"', login_page.data
+    ).group(1).decode()
+    assert csrf_client.post("/login", data={
+        "username": "admin", "password": "Admin123!",
+    }).status_code == 400
+    logged_in = csrf_client.post("/login", data={
+        "username": "admin", "password": "Admin123!", "_csrf_token": token,
+    })
+    assert logged_in.status_code == 302
+    assert "HttpOnly" in logged_in.headers["Set-Cookie"]
+    assert "SameSite=Lax" in logged_in.headers["Set-Cookie"]
+    dashboard = csrf_client.get("/")
+    authenticated_token = re.search(
+        rb'<meta name="csrf-token" content="([^"]+)">', dashboard.data
+    ).group(1).decode()
+    assert authenticated_token != token
+    assert csrf_client.post("/ui/favorite", data={
+        "url": "/", "label": "Dashboard",
+    }).status_code == 400
+    accepted = csrf_client.post(
+        "/ui/favorite",
+        data={"url": "/", "label": "Dashboard"},
+        headers={"X-CSRF-Token": authenticated_token},
+    )
+    assert accepted.status_code == 200
+    os.unlink(path)
+
+
+def test_migration_baseline_creates_fresh_schema_and_records_revision():
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    migrated_app = create_app({
+        "TESTING": True,
+        "AUTO_MIGRATE_IN_TESTS": True,
+        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}",
+    })
+    with migrated_app.app_context():
+        revision = db.session.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+        assert revision == "20260726_0005"
+        assert User.query.filter_by(username="admin").one()
+    os.unlink(path)
+
+
+def test_migration_baseline_adopts_existing_schema_without_data_loss():
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    database_uri = f"sqlite:///{path}"
+    legacy_app = create_app({
+        "TESTING": True,
+        "SQLALCHEMY_DATABASE_URI": database_uri,
+    })
+    with legacy_app.app_context():
+        db.session.add(Knowledge(
+            title="Preserve during adoption", category="Migration",
+            body="Existing operational data must survive.", author_id=1,
+        ))
+        db.session.commit()
+    adopted_app = create_app({
+        "TESTING": True,
+        "AUTO_MIGRATE_IN_TESTS": True,
+        "SQLALCHEMY_DATABASE_URI": database_uri,
+    })
+    with adopted_app.app_context():
+        assert Knowledge.query.filter_by(title="Preserve during adoption").one()
+        assert db.session.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one() == "20260726_0005"
+    os.unlink(path)
+
+
+def test_tenant_migration_is_reversible_and_preserves_records():
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    database_uri = f"sqlite:///{path}"
+    migrated_app = create_app({
+        "TESTING": True,
+        "AUTO_MIGRATE_IN_TESTS": True,
+        "SQLALCHEMY_DATABASE_URI": database_uri,
+    })
+    migration_config = AlembicConfig(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "alembic.ini")
+    )
+    migration_config.set_main_option(
+        "script_location",
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "migrations"),
+    )
+    with migrated_app.app_context():
+        before = db.session.execute(text("SELECT COUNT(*) FROM user")).scalar_one()
+        db.session.remove()
+        command.downgrade(migration_config, "20260726_0001")
+        downgraded = inspect(db.engine)
+        assert "tenant" not in downgraded.get_table_names()
+        assert "tenant_id" not in {
+            column["name"] for column in downgraded.get_columns("user")
+        }
+        assert db.session.execute(text("SELECT COUNT(*) FROM user")).scalar_one() == before
+        db.session.remove()
+        command.upgrade(migration_config, "head")
+        upgraded = inspect(db.engine)
+        assert "tenant" in upgraded.get_table_names()
+        assert "tenant_id" in {
+            column["name"] for column in upgraded.get_columns("user")
+        }
+        assert db.session.execute(text(
+            "SELECT COUNT(*) FROM user WHERE tenant_id = 1"
+        )).scalar_one() == before
+        assert db.session.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one() == "20260726_0005"
+    os.unlink(path)
+
+
+def test_audit_chain_is_correlated_verified_exportable_and_append_only():
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    protected_app = create_app({
+        "TESTING": True,
+        "AUTO_MIGRATE_IN_TESTS": True,
+        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}",
+    })
+    protected_client = protected_app.test_client()
+    request_id = "05f1bf47-c849-4e7e-aa77-d1697f9fc71c"
+    response = protected_client.post(
+        "/login",
+        data={"username": "admin", "password": "Admin123!"},
+        headers={"X-Request-ID": request_id},
+    )
+    assert response.status_code == 302
+    assert response.headers["X-Request-ID"] == request_id
+    with protected_app.app_context():
+        row = Audit.query.one()
+        assert row.request_id == request_id
+        assert row.event_hash
+        assert verify_audit_chain(1)["valid"]
+        with pytest.raises(DBAPIError, match="append-only"):
+            db.session.execute(text(
+                "UPDATE audit SET details = 'tampered' WHERE id = :id"
+            ), {"id": row.id})
+            db.session.commit()
+        db.session.rollback()
+        with pytest.raises(DBAPIError, match="append-only"):
+            db.session.execute(text("DELETE FROM audit WHERE id = :id"), {"id": row.id})
+            db.session.commit()
+        db.session.rollback()
+        assert verify_audit_chain(1)["valid"]
+    exported = protected_client.get("/admin/audit/export")
+    assert exported.status_code == 200
+    assert exported.headers["X-ServiceOps-Audit-Signature"]
+    assert exported.json["integrity"]["valid"]
+    assert exported.json["events"][0]["request_id"] == request_id
+    os.unlink(path)
+
+
+def test_rest_api_scopes_idempotency_projection_and_pagination(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        token, prefix, token_hash = create_api_token()
+        db.session.add(APIClient(
+            name="Automation test", token_prefix=prefix, token_hash=token_hash,
+            scopes_json='["incidents:create","tickets:read","tickets:update"]',
+            acting_user_id=admin.id, created_by_id=admin.id,
+        ))
+        db.session.commit()
+        coreapps = SupportGroup.query.filter_by(name="CoreApps").one()
+        coreapps_id = coreapps.id
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": "incident-create-001",
+        "X-Request-ID": "bc82da3c-f47f-428e-aefd-60bd0ec706a4",
+    }
+    body = {
+        "title": "API-created outage",
+        "description": "Created through the versioned REST contract.",
+        "priority": "P2",
+        "assignment_group_id": coreapps_id,
+    }
+    assert client.get("/api/v1/tickets").status_code == 401
+    created = client.post("/api/v1/incidents", json=body, headers=headers)
+    assert created.status_code == 201
+    assert created.headers["X-Request-ID"] == headers["X-Request-ID"]
+    number = created.json["data"]["number"]
+    assert created.json["data"]["internal"]["assignment_group"]["name"] == "CoreApps"
+    replayed = client.post("/api/v1/incidents", json=body, headers=headers)
+    assert replayed.status_code == 201
+    assert replayed.headers["Idempotency-Replayed"] == "true"
+    assert replayed.json == created.json
+    conflict = client.post(
+        "/api/v1/incidents", json=body | {"title": "Different request"},
+        headers=headers,
+    )
+    assert conflict.status_code == 409
+    assert conflict.json["error"]["request_id"]
+    listed = client.get(
+        "/api/v1/tickets?limit=1",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert listed.status_code == 200
+    assert len(listed.json["data"]) == 1
+    updated = client.patch(
+        f"/api/v1/tickets/{number}",
+        json={"state": "In Progress"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "incident-update-001",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json["data"]["state"] == "In Progress"
+    with app.app_context():
+        assert Ticket.query.filter_by(title="API-created outage").count() == 1
+        assert APIIdempotencyRecord.query.count() == 2
+        assert verify_audit_chain(1)["valid"]
+
+
+def test_api_client_admin_one_time_secret_and_pwa_privacy(client, app):
+    login(client)
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+    created = client.post("/admin/api-clients", data={
+        "name": "One-time secret test",
+        "acting_user_id": str(admin_id),
+        "scopes": ["tickets:read"],
+    }, follow_redirects=True)
+    assert created.status_code == 200
+    match = re.search(rb"sop_[A-Za-z0-9_-]+", created.data)
+    assert match
+    token = match.group(0).decode()
+    assert token not in "\n".join(created.headers.getlist("Set-Cookie"))
+    assert token.encode() not in client.get("/admin/api-clients").data
+    assert client.get(
+        "/api/v1/tickets", headers={"Authorization": f"Bearer {token}"}
+    ).status_code == 200
+    assert client.post(
+        "/api/v1/incidents",
+        json={"title": "Denied", "description": "No scope"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "denied-create",
+        },
+    ).status_code == 403
+    manifest = client.get("/manifest.webmanifest")
+    assert manifest.status_code == 200
+    assert manifest.json["display"] == "standalone"
+    worker = client.get("/service-worker.js")
+    assert worker.status_code == 200
+    assert b"/api/" not in worker.data
+    assert b"/ticket/" not in worker.data
+    assert b"caches.open" in worker.data
+
+
+def test_durable_smtp_signed_webhook_and_teams_delivery(monkeypatch, app):
+    assert not integration_endpoint_valid("http://hooks.example.test/serviceops")
+    assert not integration_endpoint_valid("https://127.0.0.1/hook")
+    assert not integration_endpoint_valid("https://169.254.169.254/latest/meta-data")
+    assert integration_endpoint_valid("https://hooks.example.test/serviceops")
+    smtp_messages = []
+    webhook_calls = []
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout):
+            assert (host, port, timeout) == ("smtp.example.test", 587, 10)
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return False
+        def ehlo(self):
+            return None
+        def starttls(self, context):
+            assert context
+        def login(self, username, password):
+            assert (username, password) == ("mailer", "smtp-secret")
+        def send_message(self, message):
+            smtp_messages.append(message)
+
+    class FakeResponse:
+        status_code = 202
+
+    def fake_post(url, json, headers, timeout):
+        webhook_calls.append((url, json, headers, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr("app.smtplib.SMTP", FakeSMTP)
+    monkeypatch.setattr("app.requests.post", fake_post)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        settings = {
+            "SMTP_ENABLED": "true", "SMTP_HOST": "smtp.example.test",
+            "SMTP_PORT": "587", "SMTP_STARTTLS": "true",
+            "SMTP_USERNAME": "mailer", "SMTP_FROM": "serviceops@example.test",
+        }
+        for key, value in settings.items():
+            db.session.add(PlatformSetting(key=key, value=value, encrypted=False))
+        db.session.add(PlatformSetting(
+            key="SMTP_PASSWORD",
+            value=settings_cipher().encrypt(b"smtp-secret").decode(),
+            encrypted=True,
+        ))
+        db.session.add_all([
+            IntegrationConnection(
+                name="Signed operations webhook", kind="webhook",
+                endpoint="https://hooks.example.test/serviceops",
+                secret_encrypted=settings_cipher().encrypt(b"signing-secret").decode(),
+                created_by_id=admin.id,
+            ),
+            IntegrationConnection(
+                name="Operations Teams", kind="teams",
+                endpoint="https://teams.example.test/webhook",
+                created_by_id=admin.id,
+            ),
+        ])
+        create_notification(
+            admin.id, "Integration test", "Durable delivery body."
+        )
+        db.session.commit()
+        assert process_outbox() == 1
+        event = OutboxEvent.query.one()
+        assert event.state == "Completed"
+        assert IntegrationDelivery.query.filter_by(state="Delivered").count() == 3
+        assert len(smtp_messages) == 1
+        assert smtp_messages[0]["To"] == admin.email
+        signed = next(call for call in webhook_calls if "hooks.example" in call[0])
+        assert signed[2]["X-ServiceOps-Signature"].startswith("sha256=")
+        assert signed[2]["X-ServiceOps-Event-ID"] == event.event_id
+        teams = next(call for call in webhook_calls if "teams.example" in call[0])
+        assert teams[1]["text"].startswith("**Integration test**")
+
+
+def test_monitoring_ingestion_auth_deduplication_and_team_routing(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        token, prefix, token_hash = create_api_token()
+        source = MonitoringSource(
+            name="Production monitoring", token_prefix=prefix,
+            token_hash=token_hash, assignment_group_id=unix.id,
+            created_by_id=admin.id,
+        )
+        db.session.add(source)
+        db.session.commit()
+        source_id = source.source_id
+    payload = {
+        "external_id": "alert-9001",
+        "severity": "critical",
+        "resource": "unix-prod-01",
+        "summary": "Filesystem unavailable",
+        "observed_value": 100,
+    }
+    endpoint = f"/api/v1/monitoring/{source_id}/events"
+    assert client.post(endpoint, json=payload).status_code == 401
+    headers = {"Authorization": f"Bearer {token}"}
+    created = client.post(endpoint, json=payload, headers=headers)
+    assert created.status_code == 201
+    assert not created.json["data"]["deduplicated"]
+    replay = client.post(endpoint, json=payload, headers=headers)
+    assert replay.status_code == 200
+    assert replay.json["data"]["deduplicated"]
+    assert replay.json["data"]["record_number"] == created.json["data"]["record_number"]
+    with app.app_context():
+        assert MonitoringEvent.query.count() == 1
+        record = EnterpriseRecord.query.filter_by(domain="event").one()
+        assert (record.priority, record.risk) == ("P1", "Critical")
+        task = OperationalTask.query.filter_by(parent_id=record.id, task_kind="event").one()
+        assert task.assignment_group.name == "Unix"
+        assert verify_audit_chain(1)["valid"]
+
+
 def test_login_and_dashboard(client):
     response = login(client)
     assert response.status_code == 200
     assert b"Recently updated" in response.data
+
+
+def test_declarative_action_policy_and_requester_field_projection(client, app):
+    assert validate_policy()
+    assert role_has_action("requester", "comment_public")
+    assert not role_has_action("requester", "comment_internal")
+    assert not role_has_action("requester", "approve")
+    assert role_has_action("admin", "security_administer")
+
+    login(client, "employee", "Employee123!")
+    client.post("/tickets/new/incident", data={
+        "title": "Requester projection test",
+        "description": "Public incident description",
+        "category": "Software", "priority": "P3",
+        "group_id": group_id(app),
+    })
+    client.post("/logout")
+    login(client)
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Requester projection test").one()
+        ticket_id = ticket.id
+    client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "In Progress",
+        "priority": "P2", "assignee_id": "",
+    })
+    internal = client.get(f"/ticket/{ticket_id}")
+    assert b"Ticket history" in internal.data
+    assert b"priority" in internal.data.lower()
+
+    client.post("/logout")
+    login(client, "employee", "Employee123!")
+    requester = client.get(f"/ticket/{ticket_id}")
+    assert requester.status_code == 200
+    assert b"Public incident description" in requester.data
+    assert b"Ticket history" not in requester.data
+    assert b"Major incident coordination" not in requester.data
+    assert b"Service level commitments" not in requester.data
+    assert b"Approval history" not in requester.data
+
+
+def test_tenant_scope_prevents_cross_tenant_ticket_discovery(client, app):
+    with app.app_context():
+        other_tenant = Tenant(id=2, slug="other", name="Other organisation")
+        other_user = User(
+            username="other.agent", name="Other Agent", email="other@test.invalid",
+            password_hash=generate_password_hash("OtherTenant123!"),
+            role="agent", tenant_id=2,
+        )
+        db.session.add_all([other_tenant, other_user])
+        db.session.flush()
+        other_group = SupportGroup(
+            name="Other Operations", group_type="IT Fulfillment",
+            manager_id=other_user.id, tenant_id=2,
+        )
+        db.session.add(other_group)
+        db.session.flush()
+        db.session.add(GroupMember(
+            group_id=other_group.id, user_id=other_user.id, role="manager"
+        ))
+        other_ticket = Ticket(
+            number="INC9000001", kind="incident", title="Other tenant outage",
+            description="Must not cross the tenant boundary.",
+            requester_id=other_user.id, tenant_id=2,
+        )
+        db.session.add(other_ticket)
+        db.session.flush()
+        db.session.add(TicketAssignmentGroup(
+            ticket_id=other_ticket.id, group_id=other_group.id
+        ))
+        db.session.add_all([
+            Knowledge(
+                title="Other tenant runbook", category="Operations",
+                body="Must remain private.", author_id=other_user.id, tenant_id=2,
+            ),
+            Asset(
+                asset_tag="OTHER-ASSET-1", name="Other tenant server",
+                asset_type="Server", status="In use", tenant_id=2,
+            ),
+            ConfigurationItem(
+                name="other-private-ci", ci_class="Server",
+                environment="Production", operational_status="Operational",
+                tenant_id=2,
+            ),
+            CatalogItem(
+                name="Other tenant catalog item", category="Private",
+                description="Must remain private.", delivery_days=1,
+                active=True, tenant_id=2,
+            ),
+        ])
+        db.session.commit()
+        other_ticket_id = other_ticket.id
+        other_catalog_id = CatalogItem.query.filter_by(
+            name="Other tenant catalog item"
+        ).one().id
+
+    login(client)
+    assert b"INC9000001" not in client.get("/tickets/incident").data
+    assert client.get(f"/ticket/{other_ticket_id}").status_code == 404
+    assert b"Other tenant runbook" not in client.get("/knowledge").data
+    assert b"OTHER-ASSET-1" not in client.get("/assets").data
+    assert b"other-private-ci" not in client.get("/cmdb").data
+    assert b"Other tenant catalog item" not in client.get("/catalog").data
+    assert client.post(
+        f"/catalog/{other_catalog_id}/order", data={"details": "Cross tenant"}
+    ).status_code == 404
+    assert client.get(
+        "/ui/search?q=INC9000001", headers={"Accept": "application/json"}
+    ).json == {"results": []}
+    assert client.get(
+        "/ui/search?q=other-private-ci", headers={"Accept": "application/json"}
+    ).json == {"results": []}
+
+    client.post("/logout")
+    login(client, "other.agent", "OtherTenant123!")
+    assert client.get(f"/ticket/{other_ticket_id}").status_code == 200
 
 
 def test_incident_lifecycle(client, app):
@@ -139,25 +644,25 @@ def test_only_owning_team_can_operationally_update_ticket(client, app):
     with app.app_context():
         ticket = Ticket.query.filter_by(title="Unix-owned protected change").one()
         ticket_id, current_state = ticket.id, ticket.state
-        attachment = FileAttachment(
-            ticket_id=ticket.id,
-            uploaded_by_id=User.query.filter_by(username="admin").one().id,
-            original_name="unix-plan.txt", stored_name="not-needed-in-access-test",
-            mime_type="text/plain", size_bytes=4,
-        )
-        db.session.add(attachment)
-        db.session.commit()
-        attachment_id = attachment.id
+    assert client.post(
+        f"/ticket/{ticket_id}/attachments",
+        data={"file": (BytesIO(b"plan"), "unix-plan.txt")},
+        content_type="multipart/form-data",
+    ).status_code == 302
+    with app.app_context():
+        attachment_id = FileAttachment.query.filter_by(ticket_id=ticket_id).one().id
 
     client.post("/logout")
     login(client, "ssd.agent", "Ssd12345!")
     detail = client.get(f"/ticket/{ticket_id}")
-    assert detail.status_code == 403
-    assert b"Unix-owned protected change" not in client.get("/tickets/change").data
-    assert b"Unix-owned protected change" not in client.get(
+    assert detail.status_code == 200
+    assert b"Read only: operational updates are restricted to active members of Unix" in detail.data
+    assert b"Save changes" not in detail.data
+    assert b"Unix-owned protected change" in client.get("/tickets/change").data
+    assert b"Unix-owned protected change" in client.get(
         "/ui/search?q=Unix-owned", headers={"Accept": "application/json"}
     ).data
-    assert client.get(f"/attachments/{attachment_id}").status_code == 403
+    assert client.get(f"/attachments/{attachment_id}").status_code == 200
     assert client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": current_state, "priority": "P1",
         "assignee_id": "",

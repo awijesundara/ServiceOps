@@ -19,6 +19,15 @@
       "type": "object",
       "required": ["mode"],
       "properties": {"mode": {"type": "string", "const": "external"}}
+    },
+    "security": {
+      "type": "object",
+      "required": ["csrfEnabled", "sessionCookieSecure", "sessionLifetimeMinutes"],
+      "properties": {
+        "csrfEnabled": {"type": "boolean", "const": true},
+        "sessionCookieSecure": {"type": "boolean"},
+        "sessionLifetimeMinutes": {"type": "integer", "minimum": 5, "maximum": 1440}
+      }
     }
   }
 }

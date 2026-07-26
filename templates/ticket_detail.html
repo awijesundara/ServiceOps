@@ -13,6 +13,7 @@
     {% if owning_group %}<dt>Team manager</dt><dd>{{ owning_group.manager.name if owning_group.manager else 'Not assigned' }}</dd>{% endif %}
   </dl>
 
+  {% if internal_view %}
   {% if ticket.kind == 'incident' %}
   <hr><h2>Major incident coordination</h2>
   {% set major = ticket.major_incident_profile %}
@@ -124,6 +125,7 @@
   <hr><h2>Checklist</h2>{% for item in ticket.checklist|sort(attribute='position') %}{% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_toggle', item_id=item.id) }}" class="checklist-row"><button aria-label="Toggle checklist item">{{ '✓' if item.completed else '○' }}</button><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></form>{% else %}<div class="checklist-row"><span>{{ '✓' if item.completed else '○' }}</span><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></div>{% endif %}{% else %}<p class="muted">No checklist items.</p>{% endfor %}
   {% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_add', ticket_id=ticket.id) }}" class="inline-form"><input name="text" placeholder="Add checklist item" required><button>Add</button></form>{% endif %}
 
+  {% endif %}
   <hr><h2>Attachments</h2>{% for attachment in ticket.attachments %}<a class="attachment" href="{{ url_for('attachment_download', attachment_id=attachment.id) }}"><strong>{{ attachment.original_name }}</strong><span>{{ (attachment.size_bytes / 1024)|round(1) }} KB · {{ attachment.uploaded_by.name }}</span></a>{% else %}<p class="muted">No attachments.</p>{% endfor %}
   <form method="post" action="{{ url_for('attachment_upload', ticket_id=ticket.id) }}" enctype="multipart/form-data" class="inline-form"><input type="file" name="file" required><button>Upload</button></form>
 
@@ -131,9 +133,9 @@
   {% for c in ticket.comments|sort(attribute='created_at', reverse=true) %}<article class="comment"><div class="avatar">{{ c.author.name[0] }}</div><div><strong>{{ c.author.name }}</strong><small>{{ c.created_at.strftime('%b %d, %H:%M') }}</small><p>{{ c.body }}</p></div></article>{% else %}<p class="muted">No comments yet.</p>{% endfor %}
   <form method="post" class="comment-box"><input type="hidden" name="action" value="comment"><textarea name="body" rows="3" placeholder="Add a comment…" required></textarea><button class="primary">Post comment</button></form>
 
-  <hr><h2>Ticket history</h2>
+  {% if internal_view %}<hr><h2>Ticket history</h2>
   {% for event in history %}<article class="timeline"><strong>{{ event.event }}</strong><span>{{ event.actor.name if event.actor else 'System' }} · {{ event.created_at.strftime('%b %d, %H:%M:%S') }}</span>{% if event.field_name %}<p><b>{{ event.field_name }}</b>: {{ event.old_value or '—' }} → {{ event.new_value or '—' }}</p>{% endif %}{% if event.details %}<p>{{ event.details }}</p>{% endif %}</article>
-  {% else %}<p class="muted">No recorded history.</p>{% endfor %}
+  {% else %}<p class="muted">No recorded history.</p>{% endfor %}{% endif %}
 </section>
 
 <aside class="panel facts">

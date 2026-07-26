@@ -35,6 +35,9 @@ existingSecret: serviceops-secrets
 secret:
   create: false
   secretKey: ""
+  settingsEncryptionKey: ""
+  auditIntegrityKey: ""
+  apiTokenPepper: ""
   adminPassword: ""
   databaseUrl: ""
   ldapBindPassword: ""
@@ -78,6 +81,11 @@ auth:
     discoveryUrl: ""
     clientId: ""
     roleMappings: "{}"
+
+security:
+  csrfEnabled: true
+  sessionCookieSecure: true
+  sessionLifetimeMinutes: 480
 
 proxy:
   trustHeaders: true

@@ -1,2 +1,6 @@
-{% extends "base.html" %}{% block content %}<header class="page-head"><div><p class="eyebrow">SECURITY</p><h1>Audit log</h1><p>Recent privileged and record activity.</p></div></header><section class="panel"><table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ r.user.username if r.user else 'system' }}</td><td>{{ r.action }}</td><td><strong>{{ r.target }}</strong></td><td>{{ r.details }}</td></tr>{% endfor %}</tbody></table></section>{% endblock %}
-
+{% extends "base.html" %}{% block content %}
+<header class="page-head"><div><p class="eyebrow">SECURITY</p><h1>Audit log</h1><p>Append-only, request-correlated security and record activity.</p></div><a class="button" href="{{ url_for('audit_export') }}">Export verified evidence</a></header>
+<section class="panel">
+  <p><strong>Integrity:</strong> {% if integrity.valid %}Verified · {{ integrity.checked }} events · head {{ integrity.head[:12] if integrity.head else 'empty chain' }}{% else %}FAILED at {{ integrity.event_id }} · {{ integrity.reason }}{% endif %}</p>
+  <table><thead><tr><th>Time</th><th>Request</th><th>User</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td><code>{{ r.request_id[:8] }}</code></td><td>{{ r.user.username if r.user else 'system' }}</td><td>{{ r.action }}</td><td><strong>{{ r.target }}</strong></td><td>{{ r.details }}</td></tr>{% endfor %}</tbody></table>
+</section>{% endblock %}

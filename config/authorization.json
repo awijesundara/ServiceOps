@@ -1,0 +1,28 @@
+{
+  "schema": "serviceops.authorization.v1",
+  "actions": [
+    "discover", "read", "comment_public", "comment_internal", "create",
+    "update", "assign", "accept", "transition", "resolve", "close",
+    "reopen", "approve", "delegate", "relate", "export", "report",
+    "delete", "purge", "configure", "administer", "security_administer"
+  ],
+  "roles": {
+    "requester": ["discover", "read", "comment_public", "create"],
+    "agent": [
+      "discover", "read", "comment_public", "comment_internal", "create",
+      "update", "assign", "accept", "transition", "resolve", "close",
+      "reopen", "relate", "report"
+    ],
+    "manager": [
+      "discover", "read", "comment_public", "comment_internal", "create",
+      "update", "assign", "accept", "transition", "resolve", "close",
+      "reopen", "approve", "delegate", "relate", "export", "report"
+    ],
+    "admin": [
+      "discover", "read", "comment_public", "comment_internal", "create",
+      "update", "assign", "accept", "transition", "resolve", "close",
+      "reopen", "approve", "delegate", "relate", "export", "report",
+      "delete", "purge", "configure", "administer", "security_administer"
+    ]
+  }
+}
