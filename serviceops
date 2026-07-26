@@ -41,7 +41,7 @@ ENV_FILE="$ROOT_DIR/.env"
   echo "ServiceOps is not installed. Run ./serviceops install web" >&2
   exit 1
 }
-MODE="$(sed -n 's/^DEPLOYMENT_MODE=\"\\{0,1\\}\\([^\"[:space:]]*\\).*/\\1/p' "$ENV_FILE" | tail -1)"
+MODE="$(awk -F= '/^DEPLOYMENT_MODE=/{value=$2; gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", value); print value}' "$ENV_FILE" | tail -1)"
 if [[ "$MODE" == "external" ]]; then
   FILE="$ROOT_DIR/compose.external-db.yaml"
 else
@@ -59,7 +59,7 @@ case "$command" in
   status) "${COMPOSE[@]}" ps ;;
   logs) "${COMPOSE[@]}" logs -f --tail=200 app ;;
   health)
-    port="$(sed -n 's/^APP_PORT=\"\\{0,1\\}\\([^\"[:space:]]*\\).*/\\1/p' "$ENV_FILE" | tail -1)"
+    port="$(awk -F= '/^APP_PORT=/{value=$2; gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", value); print value}' "$ENV_FILE" | tail -1)"
     curl -fsS "http://127.0.0.1:${port:-8080}/health"
     printf "\nhealthy\n"
     ;;

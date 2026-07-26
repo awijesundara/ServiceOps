@@ -169,6 +169,29 @@ class CatalogItem(db.Model):
     active = db.Column(db.Boolean, nullable=False, default=True)
 
 
+class CatalogItemRouting(db.Model):
+    """Administrator-managed default fulfillment route for a catalog item."""
+    id = db.Column(db.Integer, primary_key=True)
+    catalog_item_id = db.Column(
+        db.Integer, db.ForeignKey("catalog_item.id"), unique=True, nullable=False
+    )
+    support_group_id = db.Column(
+        db.Integer, db.ForeignKey("support_group.id"), nullable=False
+    )
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    updated_at = db.Column(
+        db.DateTime(timezone=True), default=now, onupdate=now, nullable=False
+    )
+    item = db.relationship(
+        "CatalogItem", backref=db.backref(
+            "fulfillment_route", uselist=False, cascade="all, delete-orphan"
+        )
+    )
+    support_group = db.relationship("SupportGroup", foreign_keys=[support_group_id])
+    updated_by = db.relationship("User", foreign_keys=[updated_by_id])
+
+
 class ConfigurationItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(160), nullable=False)
@@ -1054,12 +1077,59 @@ def ticket_owning_group(ticket):
 def user_can_manage_ticket(user, ticket):
     if not user.is_authenticated or not user.active:
         return False
+    if user.role == "admin":
+        return True
     group = ticket_owning_group(ticket)
     if not group:
         return False
     if group.manager_id == user.id:
         return True
     return GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first() is not None
+
+
+def visible_ticket_query(user):
+    query = Ticket.query
+    if not user.is_authenticated or not user.active:
+        return query.filter(Ticket.id == -1)
+    if user.role == "admin":
+        return query
+    ticket_ids = {
+        row[0] for row in db.session.query(Ticket.id).filter(
+            Ticket.requester_id == user.id
+        ).all()
+    }
+    group_ids = user_support_group_ids(user)
+    if group_ids:
+        ticket_ids.update(
+            row[0] for row in db.session.query(TicketAssignmentGroup.ticket_id).filter(
+                TicketAssignmentGroup.group_id.in_(group_ids)
+            ).all()
+        )
+        ticket_ids.update(
+            row[0] for row in db.session.query(ChangeOwnership.ticket_id).filter(
+                ChangeOwnership.group_id.in_(group_ids)
+            ).all()
+        )
+        ticket_ids.update(
+            row[0] for row in db.session.query(OperationalTask.parent_id).filter(
+                OperationalTask.parent_type == "ticket",
+                OperationalTask.assignment_group_id.in_(group_ids),
+            ).all()
+        )
+    ticket_ids.update(
+        row[0] for row in db.session.query(ApprovalChain.target_id).join(
+            ApprovalGate, ApprovalGate.chain_id == ApprovalChain.id
+        ).join(ApprovalVote, ApprovalVote.gate_id == ApprovalGate.id).filter(
+            ApprovalChain.target_type == "ticket",
+            ApprovalVote.approver_id == user.id,
+            ApprovalVote.state.in_(["Requested", "Approved", "Rejected"]),
+        ).all()
+    )
+    return query.filter(Ticket.id.in_(ticket_ids)) if ticket_ids else query.filter(Ticket.id == -1)
+
+
+def user_can_view_ticket(user, ticket):
+    return visible_ticket_query(user).filter(Ticket.id == ticket.id).first() is not None
 
 
 def require_ticket_team_access(ticket):
@@ -1158,7 +1228,8 @@ def user_in_group(user, group):
     if not user.is_authenticated or not user.active or not group:
         return False
     return (
-        group.manager_id == user.id
+        user.role == "admin"
+        or group.manager_id == user.id
         or GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first() is not None
     )
 
@@ -1273,17 +1344,182 @@ def sync_slas(target_type, target_id, state):
             task_sla.breached = True
 
 
+def catalog_fulfillment_group(item):
+    route = item.fulfillment_route
+    if route and route.active and route.support_group and route.support_group.active:
+        return route.support_group
+    return SupportGroup.query.filter_by(name="Service Desk", active=True).first()
+
+
+def user_support_group_ids(user):
+    if not user.is_authenticated or not user.active:
+        return set()
+    group_ids = {
+        membership.group_id
+        for membership in GroupMember.query.filter_by(user_id=user.id).all()
+        if membership.group.active
+    }
+    group_ids.update(
+        group.id for group in SupportGroup.query.filter_by(
+            manager_id=user.id, active=True
+        ).all()
+    )
+    return group_ids
+
+
+def visible_catalog_request_query(user):
+    query = CatalogRequest.query
+    if not user.is_authenticated or not user.active:
+        return query.filter(CatalogRequest.id == -1)
+    if user.role == "admin":
+        return query
+    request_ids = {
+        row[0] for row in db.session.query(CatalogRequest.id).filter(db.or_(
+            CatalogRequest.requested_by_id == user.id,
+            CatalogRequest.requested_for_id == user.id,
+        )).all()
+    }
+    group_ids = user_support_group_ids(user)
+    if group_ids:
+        routed_item_ids = {
+            row[0] for row in db.session.query(CatalogItemRouting.catalog_item_id).filter(
+                CatalogItemRouting.active.is_(True),
+                CatalogItemRouting.support_group_id.in_(group_ids),
+            ).all()
+        }
+        if routed_item_ids:
+            request_ids.update(
+                row[0] for row in db.session.query(RequestedItem.request_id).filter(
+                    RequestedItem.catalog_item_id.in_(routed_item_ids)
+                ).all()
+            )
+        request_ids.update(
+            row[0] for row in db.session.query(RequestedItem.request_id).join(
+                CatalogTask, CatalogTask.requested_item_id == RequestedItem.id
+            ).filter(CatalogTask.assignment_group_id.in_(group_ids)).all()
+        )
+    approved_ritm_ids = {
+        row[0] for row in db.session.query(ApprovalChain.target_id).join(
+            ApprovalGate, ApprovalGate.chain_id == ApprovalChain.id
+        ).join(
+            ApprovalVote, ApprovalVote.gate_id == ApprovalGate.id
+        ).filter(
+            ApprovalChain.target_type == "ritm",
+            ApprovalVote.approver_id == user.id,
+            ApprovalVote.state.in_(["Requested", "Approved", "Rejected"]),
+        ).all()
+    }
+    if approved_ritm_ids:
+        request_ids.update(
+            row[0] for row in db.session.query(RequestedItem.request_id).filter(
+                RequestedItem.id.in_(approved_ritm_ids)
+            ).all()
+        )
+    if not request_ids:
+        return query.filter(CatalogRequest.id == -1)
+    return query.filter(CatalogRequest.id.in_(request_ids))
+
+
+def user_can_view_catalog_request(user, catalog_request):
+    return visible_catalog_request_query(user).filter(
+        CatalogRequest.id == catalog_request.id
+    ).first() is not None
+
+
+def user_can_add_request_item(user, catalog_request):
+    return (
+        user.is_authenticated and user.active
+        and (
+            user.role == "admin"
+            or catalog_request.requested_by_id == user.id
+            or catalog_request.requested_for_id == user.id
+        )
+    )
+
+
+def user_can_manage_ritm(user, ritm):
+    if not user.is_authenticated or not user.active:
+        return False
+    if user.role == "admin":
+        return True
+    group_ids = user_support_group_ids(user)
+    route_group = catalog_fulfillment_group(ritm.item)
+    return (
+        bool(route_group and route_group.id in group_ids)
+        or any(task.assignment_group_id in group_ids for task in ritm.tasks)
+    )
+
+
+def visible_enterprise_record_query(user):
+    query = EnterpriseRecord.query
+    if not user.is_authenticated or not user.active:
+        return query.filter(EnterpriseRecord.id == -1)
+    if user.role == "admin":
+        return query
+    record_ids = {
+        row[0] for row in db.session.query(EnterpriseRecord.id).filter(db.or_(
+            EnterpriseRecord.requester_id == user.id,
+            EnterpriseRecord.assignee_id == user.id,
+        )).all()
+    }
+    record_ids.update(
+        row[0] for row in db.session.query(Approval.enterprise_record_id).filter(
+            Approval.approver_id == user.id
+        ).all()
+    )
+    group_ids = user_support_group_ids(user)
+    if group_ids:
+        record_ids.update(
+            row[0] for row in db.session.query(OperationalTask.parent_id).filter(
+                OperationalTask.parent_type == "enterprise",
+                OperationalTask.assignment_group_id.in_(group_ids),
+            ).all()
+        )
+    return (
+        query.filter(EnterpriseRecord.id.in_(record_ids))
+        if record_ids else query.filter(EnterpriseRecord.id == -1)
+    )
+
+
+def user_can_view_enterprise_record(user, record):
+    return visible_enterprise_record_query(user).filter(
+        EnterpriseRecord.id == record.id
+    ).first() is not None
+
+
+def user_can_manage_enterprise_record(user, record):
+    if not user.is_authenticated or not user.active:
+        return False
+    if user.role == "admin":
+        return True
+    if user.role not in ("agent", "manager"):
+        return False
+    if record.requester_id == user.id or record.assignee_id == user.id:
+        return True
+    group_ids = user_support_group_ids(user)
+    return any(
+        task.assignment_group_id in group_ids
+        for task in OperationalTask.query.filter_by(
+            parent_type="enterprise", parent_id=record.id
+        ).all()
+    )
+
+
 def create_catalog_task(ritm):
     if ritm.tasks:
         return ritm.tasks[0]
-    group = SupportGroup.query.filter_by(name="Service Desk").first()
+    group = catalog_fulfillment_group(ritm.item)
+    if not group:
+        abort(409, description=(
+            f"{ritm.item.name} has no active fulfillment route and no active Service Desk fallback."
+        ))
     task = CatalogTask(number=sequence_number(CatalogTask, "SCTASK"), requested_item_id=ritm.id,
-                       title=f"Fulfill {ritm.item.name}", assignment_group_id=group.id if group else None,
+                       title=f"Fulfill {ritm.item.name}", assignment_group_id=group.id,
                        due_at=ritm.due_at)
     db.session.add(task)
     log_history(
         "ritm", ritm.id, "Catalog task created",
-        details=f"{task.number}: {task.title}",
+        details=f"{task.number}: {task.title} → {group.name}",
     )
     return task
 
@@ -1305,6 +1541,19 @@ def seed_itil(admin):
     if not ccb:
         ccb = SupportGroup(name="Change Control Board", group_type="CCB Approval")
         db.session.add(ccb)
+    db.session.flush()
+    windows = SupportGroup.query.filter_by(name="Windows").first()
+    if windows:
+        for item in CatalogItem.query.all():
+            normalized = f"{item.name} {item.category}".lower()
+            if (
+                ("laptop" in normalized or "software" in normalized)
+                and not item.fulfillment_route
+            ):
+                db.session.add(CatalogItemRouting(
+                    catalog_item_id=item.id, support_group_id=windows.id,
+                    updated_by_id=admin.id,
+                ))
     if not SLADefinition.query.first():
         db.session.add_all([
             SLADefinition(name="P1 incident response", target_type="ticket", priority="P1", duration_minutes=15),
@@ -1647,14 +1896,16 @@ def create_app(test_config=None):
     @app.get("/")
     @login_required
     def dashboard():
+        visible_requests = visible_catalog_request_query(current_user)
+        ticket_query = visible_ticket_query(current_user)
         counts = {
-            "incident": Ticket.query.filter_by(kind="incident").count(),
-            "request": CatalogRequest.query.count(),
-            "change": Ticket.query.filter_by(kind="change").count(),
+            "incident": ticket_query.filter_by(kind="incident").count(),
+            "request": visible_requests.count(),
+            "change": ticket_query.filter_by(kind="change").count(),
         }
         open_count = (
-            Ticket.query.filter(Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])).count()
-            + CatalogRequest.query.filter(
+            ticket_query.filter(Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])).count()
+            + visible_requests.filter(
                 CatalogRequest.state.notin_(["Closed Complete", "Closed Incomplete", "Cancelled"])
             ).count()
         )
@@ -1662,10 +1913,7 @@ def create_app(test_config=None):
         return render_template("dashboard.html", counts=counts, open_count=open_count, recent=recent)
 
     def visible_tickets():
-        query = Ticket.query
-        if current_user.role == "requester":
-            query = query.filter_by(requester_id=current_user.id)
-        return query
+        return visible_ticket_query(current_user)
 
     @app.get("/tickets/<kind>")
     @login_required
@@ -1754,8 +2002,8 @@ def create_app(test_config=None):
     @login_required
     def ticket_detail(ticket_id):
         ticket = db.get_or_404(Ticket, ticket_id)
-        if current_user.role == "requester" and ticket.requester_id != current_user.id:
-            abort(403)
+        if not user_can_view_ticket(current_user, ticket):
+            abort(403, description="You are not involved in this ticket or its assigned work.")
         if request.method == "POST":
             action = request.form.get("action")
             if action == "comment":
@@ -1953,9 +2201,32 @@ def create_app(test_config=None):
             abort(404)
         if isinstance(source, Ticket):
             require_ticket_team_access(source)
+        elif isinstance(source, EnterpriseRecord):
+            if not user_can_manage_enterprise_record(current_user, source):
+                abort(403)
+        elif isinstance(source, RequestedItem):
+            if not user_can_manage_ritm(current_user, source):
+                abort(403)
         target = find_record_by_number(request.form.get("target_number"))
         if not target:
             abort(404, description="No record matches the supplied number.")
+        if isinstance(target, Ticket) and not user_can_view_ticket(current_user, target):
+            abort(404)
+        if (
+            isinstance(target, EnterpriseRecord)
+            and not user_can_view_enterprise_record(current_user, target)
+        ):
+            abort(404)
+        if (
+            isinstance(target, CatalogRequest)
+            and not user_can_view_catalog_request(current_user, target)
+        ):
+            abort(404)
+        if (
+            isinstance(target, RequestedItem)
+            and not user_can_view_catalog_request(current_user, target.request)
+        ):
+            abort(404)
         target_type = record_type_for(target)
         relation_type = request.form.get("link_type", "")
         source_kind = (
@@ -2019,6 +2290,8 @@ def create_app(test_config=None):
             abort(404)
         if isinstance(target, Ticket):
             require_ticket_team_access(target)
+        elif not user_can_manage_enterprise_record(current_user, target):
+            abort(403)
         ci = db.get_or_404(ConfigurationItem, int(request.form["ci_id"]))
         role = request.form.get("relationship_role")
         if role not in ("Primary CI", "Affected CI", "Impacted service"):
@@ -2309,7 +2582,8 @@ def create_app(test_config=None):
     @app.get("/modules")
     @login_required
     def modules():
-        counts = {key: EnterpriseRecord.query.filter_by(domain=key).count() for key in DOMAIN_CONFIG}
+        query = visible_enterprise_record_query(current_user)
+        counts = {key: query.filter_by(domain=key).count() for key in DOMAIN_CONFIG}
         return render_template("modules.html", modules=DOMAIN_CONFIG, counts=counts)
 
     @app.get("/module/<domain>")
@@ -2318,9 +2592,7 @@ def create_app(test_config=None):
         config = DOMAIN_CONFIG.get(domain)
         if not config:
             abort(404)
-        query = EnterpriseRecord.query.filter_by(domain=domain)
-        if current_user.role == "requester" and domain not in ("customer", "hr"):
-            query = query.filter_by(requester_id=current_user.id)
+        query = visible_enterprise_record_query(current_user).filter_by(domain=domain)
         q = request.args.get("q", "").strip()
         state = request.args.get("state", "").strip()
         if q:
@@ -2369,11 +2641,14 @@ def create_app(test_config=None):
     @login_required
     def enterprise_detail(record_id):
         record = db.get_or_404(EnterpriseRecord, record_id)
-        if current_user.role == "requester" and record.requester_id != current_user.id:
-            abort(403)
+        if not user_can_view_enterprise_record(current_user, record):
+            abort(403, description="You are not involved in this record or its assigned work.")
+        can_manage_record = user_can_manage_enterprise_record(current_user, record)
         if request.method == "POST":
             action = request.form.get("action")
-            if action == "update" and current_user.role in ("agent", "manager", "admin"):
+            if action == "update":
+                if not can_manage_record:
+                    abort(403)
                 before = {
                     "state": record.state,
                     "priority": record.priority,
@@ -2394,6 +2669,7 @@ def create_app(test_config=None):
                 audit("update", record.number, f"{record.state}, {record.priority}, risk {record.risk}")
             elif action in ("approve", "reject"):
                 approval = Approval.query.filter_by(id=int(request.form["approval_id"]),
+                                                    enterprise_record_id=record.id,
                                                     approver_id=current_user.id, state="Requested").first_or_404()
                 approval.state = "Approved" if action == "approve" else "Rejected"
                 approval.comments = request.form.get("comments", "")
@@ -2439,6 +2715,7 @@ def create_app(test_config=None):
                 group_type="IT Fulfillment", active=True
             ).order_by(SupportGroup.name).all(),
             task_agents=task_agents, task_permissions=task_permissions,
+            can_manage_record=can_manage_record,
         )
 
     @app.post("/problem/<int:record_id>/analysis")
@@ -2447,6 +2724,8 @@ def create_app(test_config=None):
         record = db.get_or_404(EnterpriseRecord, record_id)
         if record.domain != "problem":
             abort(404)
+        if not user_can_manage_enterprise_record(current_user, record):
+            abort(403)
         profile = record.problem_profile
         if not profile:
             profile = ProblemProfile(enterprise_record_id=record.id)
@@ -2486,6 +2765,8 @@ def create_app(test_config=None):
         record = db.get_or_404(EnterpriseRecord, record_id)
         if record.domain != "problem":
             abort(404)
+        if not user_can_manage_enterprise_record(current_user, record):
+            abort(403)
         group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
         if not group.active or group.group_type != "IT Fulfillment":
             abort(400, description="Problem tasks require an active IT fulfillment team.")
@@ -2519,6 +2800,8 @@ def create_app(test_config=None):
     @login_required
     def catalog_order(item_id):
         item = db.get_or_404(CatalogItem, item_id)
+        if not item.active:
+            abort(404)
         req = CatalogRequest(number=sequence_number(CatalogRequest, "REQ"), requested_by_id=current_user.id,
                              requested_for_id=current_user.id)
         db.session.add(req)
@@ -2604,29 +2887,45 @@ def create_app(test_config=None):
     @app.get("/approval-chains")
     @login_required
     def approval_chains():
-        chains = ApprovalChain.query.order_by(ApprovalChain.created_at.desc()).all()
+        chains = []
+        for chain in ApprovalChain.query.order_by(ApprovalChain.created_at.desc()).all():
+            if current_user.role == "admin" or any(
+                vote.approver_id == current_user.id
+                for gate in chain.gates for vote in gate.votes
+            ):
+                chains.append(chain)
+            elif chain.target_type == "ticket":
+                target = db.session.get(Ticket, chain.target_id)
+                if target and user_can_view_ticket(current_user, target):
+                    chains.append(chain)
+            elif chain.target_type == "ritm":
+                target = db.session.get(RequestedItem, chain.target_id)
+                if target and user_can_view_catalog_request(current_user, target.request):
+                    chains.append(chain)
         pending = ApprovalVote.query.filter_by(approver_id=current_user.id, state="Requested").all()
         return render_template("approval_chains.html", chains=chains, pending=pending)
 
     @app.get("/requests")
     @login_required
     def requests_list():
-        query = CatalogRequest.query
-        if current_user.role == "requester":
-            query = query.filter_by(requested_for_id=current_user.id)
+        query = visible_catalog_request_query(current_user)
         return render_template("requests.html", requests=query.order_by(CatalogRequest.opened_at.desc()).all())
 
     @app.get("/request/<int:request_id>")
     @login_required
     def request_detail(request_id):
         req = db.get_or_404(CatalogRequest, request_id)
-        if current_user.role == "requester" and req.requested_for_id != current_user.id:
-            abort(403)
+        if not user_can_view_catalog_request(current_user, req):
+            abort(403, description="You are not involved in this request or its fulfillment.")
         chains = {}
         slas = {}
         task_state_options = {}
         catalog_task_permissions = {}
+        catalog_task_create_permissions = {}
         for ritm in req.items:
+            catalog_task_create_permissions[ritm.id] = user_can_manage_ritm(
+                current_user, ritm
+            )
             chains[ritm.id] = ApprovalChain.query.filter_by(target_type="ritm", target_id=ritm.id).all()
             slas[ritm.id] = TaskSLA.query.filter_by(target_type="ritm", target_id=ritm.id).all()
             for task in ritm.tasks:
@@ -2655,6 +2954,8 @@ def create_app(test_config=None):
                 for ritm in req.items
             },
             catalog_task_permissions=catalog_task_permissions,
+            can_add_request_item=user_can_add_request_item(current_user, req),
+            catalog_task_create_permissions=catalog_task_create_permissions,
         )
 
     @app.post("/request/<int:request_id>/items")
@@ -2663,8 +2964,8 @@ def create_app(test_config=None):
         req = db.get_or_404(CatalogRequest, request_id)
         if req.state not in ("Open", "Awaiting Approval"):
             abort(409, description="Items cannot be added to a completed request.")
-        if current_user.role == "requester" and req.requested_for_id != current_user.id:
-            abort(403)
+        if not user_can_add_request_item(current_user, req):
+            abort(403, description="Only request participants or an administrator can add items.")
         item = db.get_or_404(CatalogItem, int(request.form["catalog_item_id"]))
         ritm = RequestedItem(
             number=sequence_number(RequestedItem, "RITM"), request_id=req.id,
@@ -2707,12 +3008,14 @@ def create_app(test_config=None):
     @roles("agent", "manager", "admin")
     def catalog_task_add(ritm_id):
         ritm = db.get_or_404(RequestedItem, ritm_id)
+        if not user_can_manage_ritm(current_user, ritm):
+            abort(403, description="Only the fulfillment team can add tasks to this requested item.")
         chain = approval_chain_for("ritm", ritm.id)
         if chain and chain.state != "Approved":
             abort(409, description="Catalog tasks cannot be added until the RITM is approved.")
         group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
-        if not group.active:
-            abort(400)
+        if not group.active or group.group_type != "IT Fulfillment":
+            abort(400, description="Catalog tasks require an active IT fulfillment team.")
         task = CatalogTask(
             number=sequence_number(CatalogTask, "SCTASK"),
             requested_item_id=ritm.id,
@@ -2868,12 +3171,115 @@ def create_app(test_config=None):
                 audit("configure", "CCB approval authority",
                       f"{user.username}: {'granted' if enabled else 'revoked'}")
                 flash("CCB approval authority updated.", "success")
+            elif action == "set_catalog_route":
+                item = db.get_or_404(CatalogItem, int(request.form["catalog_item_id"]))
+                group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
+                if (
+                    not group.active
+                    or group.group_type not in ("Fulfillment", "IT Fulfillment")
+                ):
+                    abort(400, description=(
+                        "Catalog items can route only to an active fulfillment team."
+                    ))
+                route = item.fulfillment_route
+                if not route:
+                    route = CatalogItemRouting(catalog_item_id=item.id)
+                    db.session.add(route)
+                route.support_group_id = group.id
+                route.active = True
+                route.updated_by_id = current_user.id
+                audit(
+                    "configure", f"{item.name} catalog route",
+                    f"Default fulfillment team: {group.name}",
+                )
+                flash(
+                    f"{item.name} will create fulfillment tasks for {group.name}.",
+                    "success",
+                )
+            elif action in ("create_catalog_item", "update_catalog_item"):
+                name = request.form.get("name", "").strip()
+                category = request.form.get("category", "").strip()
+                description = request.form.get("description", "").strip()
+                try:
+                    delivery_days = int(request.form.get("delivery_days", ""))
+                    group_id = int(request.form.get("group_id", ""))
+                except (TypeError, ValueError):
+                    abort(400, description="Delivery target and fulfillment team are required.")
+                if not name or len(name) > 160:
+                    abort(400, description="Catalog item name must contain 1 to 160 characters.")
+                if not category or len(category) > 80:
+                    abort(400, description="Category must contain 1 to 80 characters.")
+                if not description:
+                    abort(400, description="Catalog item description is required.")
+                if delivery_days < 1 or delivery_days > 365:
+                    abort(400, description="Delivery target must be between 1 and 365 days.")
+                group = db.get_or_404(SupportGroup, group_id)
+                if (
+                    not group.active
+                    or group.group_type not in ("Fulfillment", "IT Fulfillment")
+                ):
+                    abort(400, description=(
+                        "Catalog items can route only to an active fulfillment team."
+                    ))
+                item_id = (
+                    int(request.form["catalog_item_id"])
+                    if action == "update_catalog_item" else None
+                )
+                duplicate = CatalogItem.query.filter(
+                    func.lower(CatalogItem.name) == name.casefold()
+                )
+                if item_id:
+                    duplicate = duplicate.filter(CatalogItem.id != item_id)
+                if duplicate.first():
+                    abort(409, description="A catalog item with that name already exists.")
+                if item_id:
+                    item = db.get_or_404(CatalogItem, item_id)
+                    previous_name = item.name
+                else:
+                    item = CatalogItem()
+                    db.session.add(item)
+                    previous_name = None
+                item.name = name
+                item.category = category
+                item.description = description
+                item.delivery_days = delivery_days
+                item.approval_required = bool(request.form.get("approval_required"))
+                item.active = bool(request.form.get("active"))
+                db.session.flush()
+                route = item.fulfillment_route
+                if not route:
+                    route = CatalogItemRouting(catalog_item_id=item.id)
+                    db.session.add(route)
+                route.support_group_id = group.id
+                route.active = True
+                route.updated_by_id = current_user.id
+                audit(
+                    "create" if action == "create_catalog_item" else "update",
+                    f"Catalog item: {item.name}",
+                    (
+                        f"{category}; {delivery_days} day target; "
+                        f"{'approval required' if item.approval_required else 'no approval'}; "
+                        f"{'active' if item.active else 'inactive'}; route {group.name}"
+                    ),
+                )
+                flash(
+                    (
+                        f"{item.name} created and routed to {group.name}."
+                        if previous_name is None else
+                        f"{previous_name} updated as {item.name}."
+                    ),
+                    "success",
+                )
             else:
                 abort(400)
             db.session.commit()
             return redirect(url_for("itil_admin"))
         groups = SupportGroup.query.order_by(SupportGroup.name).all()
         teams = [group for group in groups if group.group_type == "IT Fulfillment"]
+        fulfillment_groups = [
+            group for group in groups
+            if group.active and group.group_type in ("Fulfillment", "IT Fulfillment")
+        ]
         candidates = User.query.filter(
             User.active.is_(True), User.role.in_(["agent", "manager", "admin"])
         ).order_by(User.name).all()
@@ -2888,6 +3294,10 @@ def create_app(test_config=None):
                 DirectoryGroupMapping.directory_group
             ).all(),
             services=ServiceOffering.query.all(), sla_definitions=SLADefinition.query.all(),
+            catalog_items=CatalogItem.query.order_by(
+                CatalogItem.category, CatalogItem.name
+            ).all(),
+            fulfillment_groups=fulfillment_groups,
         )
 
     @app.post("/change/<int:ticket_id>/conflicts")
@@ -2942,11 +3352,21 @@ def create_app(test_config=None):
     @app.get("/analytics")
     @roles("agent", "manager", "admin")
     def analytics():
-        ticket_states = dict(db.session.query(Ticket.state, func.count(Ticket.id)).group_by(Ticket.state).all())
-        domain_counts = dict(db.session.query(EnterpriseRecord.domain, func.count(EnterpriseRecord.id)).group_by(EnterpriseRecord.domain).all())
-        priority_counts = dict(db.session.query(Ticket.priority, func.count(Ticket.id)).group_by(Ticket.priority).all())
-        overdue = EnterpriseRecord.query.filter(EnterpriseRecord.due_at < now(),
-                                                EnterpriseRecord.state.notin_(["Closed", "Resolved", "Completed"])).count()
+        ticket_ids = [row.id for row in visible_ticket_query(current_user).all()]
+        record_ids = [row.id for row in visible_enterprise_record_query(current_user).all()]
+        ticket_states = dict(db.session.query(Ticket.state, func.count(Ticket.id)).filter(
+            Ticket.id.in_(ticket_ids)
+        ).group_by(Ticket.state).all())
+        domain_counts = dict(db.session.query(EnterpriseRecord.domain, func.count(EnterpriseRecord.id)).filter(
+            EnterpriseRecord.id.in_(record_ids)
+        ).group_by(EnterpriseRecord.domain).all())
+        priority_counts = dict(db.session.query(Ticket.priority, func.count(Ticket.id)).filter(
+            Ticket.id.in_(ticket_ids)
+        ).group_by(Ticket.priority).all())
+        overdue = EnterpriseRecord.query.filter(
+            EnterpriseRecord.id.in_(record_ids), EnterpriseRecord.due_at < now(),
+            EnterpriseRecord.state.notin_(["Closed", "Resolved", "Completed"])
+        ).count()
         return render_template("analytics.html", ticket_states=ticket_states, domain_counts=domain_counts,
                                priority_counts=priority_counts, overdue=overdue, modules=DOMAIN_CONFIG)
 
@@ -2957,33 +3377,53 @@ def create_app(test_config=None):
         results = []
         if q:
             pattern = f"%{q}%"
-            for row in Ticket.query.filter(db.or_(Ticket.number.ilike(pattern), Ticket.title.ilike(pattern),
+            visible_ticket_ids = {
+                row.id for row in visible_ticket_query(current_user).all()
+            }
+            visible_enterprise_ids = {
+                row.id for row in visible_enterprise_record_query(current_user).all()
+            }
+            visible_request_ids = {
+                row.id for row in visible_catalog_request_query(current_user).all()
+            }
+            for row in Ticket.query.filter(Ticket.id.in_(visible_ticket_ids), db.or_(
+                                                   Ticket.number.ilike(pattern), Ticket.title.ilike(pattern),
                                                    Ticket.description.ilike(pattern))).limit(20):
                 results.append({"type": row.kind.title(), "label": f"{row.number} · {row.title}",
                                 "url": url_for("ticket_detail", ticket_id=row.id), "meta": row.state})
             for row in Knowledge.query.filter(db.or_(Knowledge.title.ilike(pattern), Knowledge.body.ilike(pattern))).limit(20):
                 results.append({"type": "Knowledge", "label": row.title, "url": url_for("knowledge"),
                                 "meta": row.category})
-            for row in EnterpriseRecord.query.filter(db.or_(EnterpriseRecord.number.ilike(pattern),
+            for row in EnterpriseRecord.query.filter(EnterpriseRecord.id.in_(visible_enterprise_ids), db.or_(
+                                                             EnterpriseRecord.number.ilike(pattern),
                                                              EnterpriseRecord.title.ilike(pattern))).limit(20):
                 results.append({"type": DOMAIN_CONFIG[row.domain]["name"], "label": f"{row.number} · {row.title}",
                                 "url": url_for("enterprise_detail", record_id=row.id), "meta": row.state})
             for row in ConfigurationItem.query.filter(ConfigurationItem.name.ilike(pattern)).limit(20):
                 results.append({"type": "Configuration item", "label": row.name, "url": url_for("cmdb"),
                                 "meta": row.ci_class})
-            for row in CatalogRequest.query.filter(CatalogRequest.number.ilike(pattern)).limit(20):
+            for row in CatalogRequest.query.filter(
+                CatalogRequest.id.in_(visible_request_ids),
+                CatalogRequest.number.ilike(pattern),
+            ).limit(20):
                 results.append({
                     "type": "Request", "label": row.number,
                     "url": url_for("request_detail", request_id=row.id), "meta": row.state,
                 })
-            for row in RequestedItem.query.filter(RequestedItem.number.ilike(pattern)).limit(20):
+            for row in RequestedItem.query.filter(
+                RequestedItem.request_id.in_(visible_request_ids),
+                RequestedItem.number.ilike(pattern),
+            ).limit(20):
                 results.append({
                     "type": "Requested item", "label": f"{row.number} · {row.item.name}",
                     "url": url_for("request_detail", request_id=row.request_id), "meta": row.state,
                 })
-            for row in CatalogTask.query.filter(db.or_(
-                CatalogTask.number.ilike(pattern), CatalogTask.title.ilike(pattern)
-            )).limit(20):
+            for row in CatalogTask.query.join(RequestedItem).filter(
+                RequestedItem.request_id.in_(visible_request_ids),
+                db.or_(
+                    CatalogTask.number.ilike(pattern), CatalogTask.title.ilike(pattern)
+                ),
+            ).limit(20):
                 results.append({
                     "type": "Catalog task", "label": f"{row.number} · {row.title}",
                     "url": url_for("request_detail", request_id=row.requested_item.request_id),
@@ -2993,6 +3433,10 @@ def create_app(test_config=None):
                 OperationalTask.number.ilike(pattern), OperationalTask.title.ilike(pattern)
             )).limit(20):
                 parent = record_reference(row.parent_type, row.parent_id)
+                if isinstance(parent, Ticket) and parent.id not in visible_ticket_ids:
+                    continue
+                if isinstance(parent, EnterpriseRecord) and parent.id not in visible_enterprise_ids:
+                    continue
                 results.append({
                     "type": "Change task" if row.task_kind == "change" else "Problem task",
                     "label": f"{row.number} · {row.title}",
@@ -3123,13 +3567,15 @@ def create_app(test_config=None):
     @login_required
     def attachment_upload(ticket_id):
         ticket = db.get_or_404(Ticket, ticket_id)
-        if current_user.role == "requester" and ticket.requester_id != current_user.id:
+        if not user_can_view_ticket(current_user, ticket):
             abort(403)
         upload = request.files.get("file")
         if not upload or not upload.filename:
             flash("Choose a file to upload.", "error")
             return redirect(url_for("ticket_detail", ticket_id=ticket_id))
         original = secure_filename(upload.filename)
+        if not original:
+            abort(400, description="The attachment filename is invalid.")
         stored = f"{uuid.uuid4().hex}-{original}"
         path = os.path.join(app.config["UPLOAD_FOLDER"], stored)
         upload.save(path)
@@ -3148,7 +3594,7 @@ def create_app(test_config=None):
     @login_required
     def attachment_download(attachment_id):
         attachment = db.get_or_404(FileAttachment, attachment_id)
-        if current_user.role == "requester" and attachment.ticket.requester_id != current_user.id:
+        if not user_can_view_ticket(current_user, attachment.ticket):
             abort(403)
         return send_from_directory(app.config["UPLOAD_FOLDER"], attachment.stored_name,
                                    as_attachment=True, download_name=attachment.original_name)

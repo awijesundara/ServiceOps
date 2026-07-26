@@ -12,6 +12,60 @@
 <section class="panel admin-section">
   <div class="panel-head">
     <div>
+      <h2>Service catalog items and fulfillment routing</h2>
+      <p>Create and maintain catalog items, their approval behavior, delivery target, availability, and the team that receives the initial SCTASK.</p>
+    </div>
+  </div>
+  <details open>
+    <summary>Add a catalog item</summary>
+    <form method="post" class="form-grid">
+      <input type="hidden" name="action" value="create_catalog_item">
+      <label>Item name<input name="name" maxlength="160" required></label>
+      <label>Category<input name="category" maxlength="80" placeholder="Hardware, Software, Access…" required></label>
+      <label class="wide">Description<textarea name="description" rows="3" required></textarea></label>
+      <label>Delivery target (days)<input name="delivery_days" type="number" min="1" max="365" value="3" required></label>
+      <label>Fulfillment team<select name="group_id" required>{% for group in fulfillment_groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></label>
+      <label class="check"><input type="checkbox" name="approval_required" value="1"> Approval required</label>
+      <label class="check"><input type="checkbox" name="active" value="1" checked> Available in catalog</label>
+      <div class="wide actions"><button class="primary">Create catalog item</button></div>
+    </form>
+  </details>
+  <table>
+    <thead><tr><th>Catalog item</th><th>Category</th><th>Policy</th><th>Current fulfillment team</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for item in catalog_items %}
+      <tr>
+        <td><strong>{{ item.name }}</strong><small>{{ item.description }}</small></td>
+        <td>{{ item.category }}</td>
+        <td>{{ item.delivery_days }} days · {{ "Approval required" if item.approval_required else "No approval" }} · {{ "Active" if item.active else "Inactive" }}</td>
+        <td>{{ item.fulfillment_route.support_group.name if item.fulfillment_route and item.fulfillment_route.active else "Service Desk fallback" }}</td>
+        <td>
+          <details><summary>Edit</summary>
+            <form method="post" class="form-grid">
+              <input type="hidden" name="action" value="update_catalog_item">
+              <input type="hidden" name="catalog_item_id" value="{{ item.id }}">
+              <label>Name<input name="name" maxlength="160" value="{{ item.name }}" required></label>
+              <label>Category<input name="category" maxlength="80" value="{{ item.category }}" required></label>
+              <label class="wide">Description<textarea name="description" rows="3" required>{{ item.description }}</textarea></label>
+              <label>Delivery days<input name="delivery_days" type="number" min="1" max="365" value="{{ item.delivery_days }}" required></label>
+              <label>Fulfillment team<select name="group_id" required>{% for group in fulfillment_groups %}<option value="{{ group.id }}" {% if item.fulfillment_route and item.fulfillment_route.support_group_id == group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
+              <label class="check"><input type="checkbox" name="approval_required" value="1" {% if item.approval_required %}checked{% endif %}> Approval required</label>
+              <label class="check"><input type="checkbox" name="active" value="1" {% if item.active %}checked{% endif %}> Available in catalog</label>
+              <div class="wide actions"><button class="button">Save item</button></div>
+            </form>
+          </details>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No catalog items are configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel admin-section">
+  <div class="panel-head">
+    <div>
       <h2>AD group → ServiceOps team</h2>
       <p>Enter a short AD group such as <code>gg_unix</code> or its complete distinguished name. Membership synchronizes whenever the user signs in through AD/LDAP.</p>
     </div>
