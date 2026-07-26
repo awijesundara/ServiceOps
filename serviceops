@@ -16,7 +16,10 @@ Operations:
   ./serviceops start | stop | restart | status | health | logs | doctor
   ./serviceops backup [NAME]
   ./serviceops restore DATABASE_DUMP
+  ./serviceops rehearse-recovery [MANIFEST]
+  ./serviceops rehearse-pitr
   ./serviceops rehearse-migrations [ROW_COUNT]
+  ./serviceops rehearse-upgrade
   ./serviceops retire-bootstrap-secret
   ./serviceops update | config
 EOF
@@ -102,13 +105,21 @@ case "$command" in
     stamp="${2:-$(date -u +%Y%m%dT%H%M%SZ)}"
     dump="$BACKUP_DIR/serviceops-$stamp.dump"
     uploads="$BACKUP_DIR/serviceops-uploads-$stamp.tar.gz"
+    manifest="$BACKUP_DIR/serviceops-$stamp.manifest.json"
+    started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     set -a; source "$ENV_FILE"; set +a
     "${COMPOSE[@]}" exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom >"$dump"
     docker run --rm -v serviceops_uploads:/data:ro -v "$BACKUP_DIR":/backup alpine:3.21 \
       tar -czf "/backup/$(basename "$uploads")" -C /data .
-    chmod 600 "$dump" "$uploads"
+    completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    python3 "$ROOT_DIR/tools/recovery_verify.py" create-manifest \
+      --database "$dump" --uploads "$uploads" --output "$manifest" \
+      --started-at "$started_at" --completed-at "$completed_at" \
+      --application-image "${SERVICEOPS_IMAGE:-unknown}"
+    chmod 600 "$dump" "$uploads" "$manifest"
     echo "Database: $dump"
     echo "Uploads:  $uploads"
+    echo "Manifest: $manifest"
     ;;
   restore)
     [[ "$MODE" == "bundled" ]] || { echo "Restore is managed by the external database provider."; exit 2; }
@@ -116,13 +127,22 @@ case "$command" in
     read -r -p "This replaces the ServiceOps database. Type RESTORE: " answer
     [[ "$answer" == "RESTORE" ]] || { echo "Cancelled."; exit 1; }
     set -a; source "$ENV_FILE"; set +a
-    "${COMPOSE[@]}" stop app
+    "${COMPOSE[@]}" stop app worker
     "${COMPOSE[@]}" exec -T db pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner <"$dump"
-    "${COMPOSE[@]}" start app
+    "${COMPOSE[@]}" start app worker
     "$0" health
+    ;;
+  rehearse-recovery)
+    exec "$ROOT_DIR/tools/rehearse-recovery.sh" "${2:-}"
+    ;;
+  rehearse-pitr)
+    exec "$ROOT_DIR/tools/rehearse-pitr.sh"
     ;;
   rehearse-migrations)
     exec "$ROOT_DIR/tools/rehearse-postgres-migrations.sh" "${2:-100000}"
+    ;;
+  rehearse-upgrade)
+    exec "$ROOT_DIR/tools/rehearse-upgrade.sh"
     ;;
   update)
     "$0" backup || true

@@ -2,7 +2,7 @@ replicaCount: 2
 
 image:
   repository: serviceops
-  tag: "1.19.1"
+  tag: "1.22.0"
   digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
@@ -10,6 +10,8 @@ imagePullSecrets: []
 deploymentProfile: production
 revisionHistoryLimit: 5
 terminationGracePeriodSeconds: 45
+progressDeadlineSeconds: 600
+minReadySeconds: 10
 
 serviceAccount:
   create: true
