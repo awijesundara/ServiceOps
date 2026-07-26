@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from werkzeug.security import generate_password_hash
 
 from app import (
-    Asset, CatalogItem, ConfigurationItem, DirectoryGroupMapping, GroupMember,
+    Asset, CatalogItem, CatalogItemRouting, ConfigurationItem, DirectoryGroupMapping, GroupMember,
     Knowledge, PlatformSetting, ServiceOffering, SupportGroup, User, create_app, db,
 )
 
@@ -59,22 +59,34 @@ def load_fixture():
         team.manager_id = user.id
         add_membership(team, user, "manager")
         add_membership(ccb, user, "CCB approver")
-        add_membership(service_desk, user, "member")
+        if team_name == "Windows":
+            add_membership(service_desk, user, "member")
         db.session.add(DirectoryGroupMapping(
             directory_group=f"gg_{team_name.lower()}", support_group_id=team.id
         ))
         created.append(username)
 
+    laptop = CatalogItem(
+        name="Test laptop", category="Hardware",
+        description="Disposable catalog item for end-to-end request testing.",
+        delivery_days=1, approval_required=True,
+    )
+    software = CatalogItem(
+        name="Test software access", category="Access",
+        description="Disposable catalog item for fulfillment testing.",
+        delivery_days=1, approval_required=False,
+    )
+    db.session.add_all([laptop, software])
+    db.session.flush()
+    windows = SupportGroup.query.filter_by(name="Windows").one()
     db.session.add_all([
-        CatalogItem(
-            name="Test laptop", category="Hardware",
-            description="Disposable catalog item for end-to-end request testing.",
-            delivery_days=1, approval_required=True,
+        CatalogItemRouting(
+            catalog_item_id=laptop.id, support_group_id=windows.id,
+            updated_by_id=admin.id,
         ),
-        CatalogItem(
-            name="Test software access", category="Access",
-            description="Disposable catalog item for fulfillment testing.",
-            delivery_days=1, approval_required=False,
+        CatalogItemRouting(
+            catalog_item_id=software.id, support_group_id=windows.id,
+            updated_by_id=admin.id,
         ),
     ])
     ci = ConfigurationItem(

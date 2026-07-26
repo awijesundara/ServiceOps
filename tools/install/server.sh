@@ -121,7 +121,7 @@ umask 077
   printf "SECRET_KEY=%s\n" "$SECRET_KEY"
   printf "ADMIN_PASSWORD=%s\n" "$ADMIN_PASSWORD"
   printf "SETTINGS_ENCRYPTION_KEY=%s\n" "$SETTINGS_ENCRYPTION_KEY"
-  printf "SERVICEOPS_IMAGE=serviceops-app:1.3.0\n"
+  printf "SERVICEOPS_IMAGE=serviceops-app:1.4.1\n"
   if [[ "$MODE" == "bundled" ]]; then
     printf "POSTGRES_DB=serviceops\nPOSTGRES_USER=serviceops\nPOSTGRES_PASSWORD=%s\n" "$POSTGRES_PASSWORD"
   else

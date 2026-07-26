@@ -5,7 +5,7 @@ from io import BytesIO
 import pytest
 
 from app import (Approval, ApprovalChain, CatalogRequest, CatalogTask, ChangeRevision,
-                 EnterpriseRecord, CatalogItem, DirectoryGroupMapping,
+                 EnterpriseRecord, CatalogItem, CatalogItemRouting, DirectoryGroupMapping,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
                  GroupMember, Notification, OperationalTask, ProblemProfile, RecordLink,
                  RequestedItem, PlatformSetting, SupportGroup, TaskHistory, TaskSLA,
@@ -40,9 +40,16 @@ def app():
         db.session.add(GroupMember(group_id=ccb.id, user_id=manager.id, role="CCB approver"))
         service_desk = SupportGroup.query.filter_by(name="Service Desk").one()
         db.session.add(GroupMember(group_id=service_desk.id, user_id=manager.id, role="member"))
-        db.session.add(CatalogItem(
+        catalog_item = CatalogItem(
             name="Laptop computer", category="Hardware", description="Test catalog item.",
             delivery_days=5, approval_required=True,
+        )
+        db.session.add(catalog_item)
+        db.session.flush()
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        db.session.add(CatalogItemRouting(
+            catalog_item_id=catalog_item.id, support_group_id=windows.id,
+            updated_by_id=admin.id,
         ))
         db.session.commit()
     yield app
@@ -132,13 +139,25 @@ def test_only_owning_team_can_operationally_update_ticket(client, app):
     with app.app_context():
         ticket = Ticket.query.filter_by(title="Unix-owned protected change").one()
         ticket_id, current_state = ticket.id, ticket.state
+        attachment = FileAttachment(
+            ticket_id=ticket.id,
+            uploaded_by_id=User.query.filter_by(username="admin").one().id,
+            original_name="unix-plan.txt", stored_name="not-needed-in-access-test",
+            mime_type="text/plain", size_bytes=4,
+        )
+        db.session.add(attachment)
+        db.session.commit()
+        attachment_id = attachment.id
 
     client.post("/logout")
     login(client, "ssd.agent", "Ssd12345!")
     detail = client.get(f"/ticket/{ticket_id}")
-    assert detail.status_code == 200
-    assert b"Read only: operational updates are restricted to active members of Unix" in detail.data
-    assert b"Save changes" not in detail.data
+    assert detail.status_code == 403
+    assert b"Unix-owned protected change" not in client.get("/tickets/change").data
+    assert b"Unix-owned protected change" not in client.get(
+        "/ui/search?q=Unix-owned", headers={"Accept": "application/json"}
+    ).data
+    assert client.get(f"/attachments/{attachment_id}").status_code == 403
     assert client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": current_state, "priority": "P1",
         "assignee_id": "",
@@ -169,6 +188,61 @@ def test_only_owning_team_can_operationally_update_ticket(client, app):
         ticket = db.session.get(Ticket, ticket_id)
         assert ticket.priority == "P2"
         assert ticket.state == current_state
+
+
+def test_unrelated_team_cannot_view_or_mutate_catalog_request(client, app):
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        unix_agent = User(
+            username="unix.catalog", name="Unix Catalog Agent",
+            email="unix.catalog@test.invalid",
+            password_hash=generate_password_hash("UnixCatalog123!"), role="agent",
+        )
+        windows_agent = User(
+            username="windows.catalog", name="Windows Catalog Agent",
+            email="windows.catalog@test.invalid",
+            password_hash=generate_password_hash("WindowsCatalog123!"), role="agent",
+        )
+        db.session.add_all([unix_agent, windows_agent])
+        db.session.flush()
+        db.session.add_all([
+            GroupMember(group_id=unix.id, user_id=unix_agent.id, role="member"),
+            GroupMember(group_id=windows.id, user_id=windows_agent.id, role="member"),
+        ])
+        item = CatalogItem.query.filter_by(name="Laptop computer").one()
+        item.approval_required = False
+        db.session.commit()
+        item_id = item.id
+
+    login(client)
+    assert client.post(f"/catalog/{item_id}/order", data={
+        "details": "Windows-only fulfillment visibility",
+    }).status_code == 302
+    with app.app_context():
+        req = CatalogRequest.query.one()
+        request_id = req.id
+        ritm_id = req.items[0].id
+
+    client.post("/logout")
+    login(client, "unix.catalog", "UnixCatalog123!")
+    assert client.get("/requests").status_code == 200
+    assert b"REQ0000001" not in client.get("/requests").data
+    assert client.get(f"/request/{request_id}").status_code == 403
+    assert client.get(
+        "/ui/search?q=REQ0000001", headers={"Accept": "application/json"}
+    ).json == {"results": []}
+    assert client.post(f"/request/{request_id}/items", data={
+        "catalog_item_id": item_id, "details": "Unauthorized extra item",
+    }).status_code == 403
+    assert client.post(f"/ritm/{ritm_id}/tasks", data={
+        "title": "Unauthorized Unix task", "group_id": group_id(app, "Unix"),
+        "execution_mode": "Parallel",
+    }).status_code == 403
+
+    client.post("/logout")
+    login(client, "windows.catalog", "WindowsCatalog123!")
+    assert client.get(f"/request/{request_id}").status_code == 200
 
 
 def test_requester_cannot_create_change(client):
@@ -239,8 +313,141 @@ def test_catalog_approval_chain_creates_fulfillment_task(client, app):
     with app.app_context():
         ritm = db.session.get(RequestedItem, ritm_id)
         assert ritm.state == "Approved"
-        assert CatalogTask.query.filter_by(requested_item_id=ritm.id).count() == 1
+        task = CatalogTask.query.filter_by(requested_item_id=ritm.id).one()
+        assert task.assignment_group.name == "Windows"
         assert TaskSLA.query.filter_by(target_type="ritm", target_id=ritm.id).count() == 1
+
+
+def test_admin_can_route_future_catalog_items_to_any_fulfillment_team(client, app):
+    with app.app_context():
+        item = CatalogItem(
+            name="Database access package", category="Access",
+            description="Future catalog routing verification.",
+            approval_required=False,
+        )
+        db.session.add(item)
+        db.session.commit()
+        item_id = item.id
+        database_id = SupportGroup.query.filter_by(name="Database").one().id
+    login(client)
+    configured = client.post("/itil/administration", data={
+        "action": "set_catalog_route",
+        "catalog_item_id": item_id,
+        "group_id": database_id,
+    })
+    assert configured.status_code == 302
+    ordered = client.post(f"/catalog/{item_id}/order", data={
+        "details": "Route this future use case to Database.",
+    })
+    assert ordered.status_code == 302
+    with app.app_context():
+        route = CatalogItemRouting.query.filter_by(catalog_item_id=item_id).one()
+        task = CatalogTask.query.join(RequestedItem).filter(
+            RequestedItem.catalog_item_id == item_id
+        ).one()
+        assert route.support_group.name == "Database"
+        assert task.assignment_group.name == "Database"
+
+
+def test_admin_can_create_and_edit_catalog_item_with_fulfillment_policy(client, app):
+    login(client)
+    database_id = group_id(app, "Database")
+    created = client.post("/itil/administration", data={
+        "action": "create_catalog_item",
+        "name": "Managed database account",
+        "category": "Access",
+        "description": "Provision a governed database account.",
+        "delivery_days": "4",
+        "group_id": database_id,
+        "approval_required": "1",
+        "active": "1",
+    })
+    assert created.status_code == 302
+    with app.app_context():
+        item = CatalogItem.query.filter_by(name="Managed database account").one()
+        item_id = item.id
+        assert item.category == "Access"
+        assert item.delivery_days == 4
+        assert item.approval_required
+        assert item.active
+        assert item.fulfillment_route.support_group.name == "Database"
+
+    windows_id = group_id(app, "Windows")
+    updated = client.post("/itil/administration", data={
+        "action": "update_catalog_item",
+        "catalog_item_id": item_id,
+        "name": "Managed application account",
+        "category": "Software",
+        "description": "Provision a governed application account.",
+        "delivery_days": "2",
+        "group_id": windows_id,
+    })
+    assert updated.status_code == 302
+    with app.app_context():
+        item = db.session.get(CatalogItem, item_id)
+        assert item.name == "Managed application account"
+        assert item.delivery_days == 2
+        assert not item.approval_required
+        assert not item.active
+        assert item.fulfillment_route.support_group.name == "Windows"
+    assert client.post(f"/catalog/{item_id}/order", data={
+        "details": "Inactive items must remain unavailable.",
+    }).status_code == 404
+
+
+def test_catalog_request_visibility_is_limited_to_participants_and_fulfillment_team(client, app):
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        unix_user = User(
+            username="visibility.unix", name="Visibility Unix",
+            email="visibility.unix@test.invalid",
+            password_hash=generate_password_hash("UnixVisibility123!"), role="agent",
+        )
+        windows_user = User(
+            username="visibility.windows", name="Visibility Windows",
+            email="visibility.windows@test.invalid",
+            password_hash=generate_password_hash("WindowsVisibility123!"), role="agent",
+        )
+        db.session.add_all([unix_user, windows_user])
+        db.session.flush()
+        db.session.add_all([
+            GroupMember(group_id=unix.id, user_id=unix_user.id, role="member"),
+            GroupMember(group_id=windows.id, user_id=windows_user.id, role="member"),
+        ])
+        db.session.commit()
+
+    login(client, "employee", "Employee123!")
+    assert client.post("/catalog/1/order", data={
+        "details": "Windows-routed laptop request.",
+    }).status_code == 302
+    with app.app_context():
+        req = CatalogRequest.query.one()
+        request_id, request_number = req.id, req.number
+
+    client.post("/logout")
+    login(client, "visibility.unix", "UnixVisibility123!")
+    unix_list = client.get("/requests")
+    assert request_number.encode() not in unix_list.data
+    assert client.get(f"/request/{request_id}").status_code == 403
+    unix_search = client.get(f"/ui/search?q={request_number}", headers={
+        "Accept": "application/json",
+    })
+    assert unix_search.json == {"results": []}
+
+    client.post("/logout")
+    login(client, "visibility.windows", "WindowsVisibility123!")
+    assert request_number.encode() in client.get("/requests").data
+    assert client.get(f"/request/{request_id}").status_code == 200
+
+    client.post("/logout")
+    login(client, "employee", "Employee123!")
+    assert request_number.encode() in client.get("/requests").data
+    assert client.get(f"/request/{request_id}").status_code == 200
+
+    client.post("/logout")
+    login(client)
+    assert request_number.encode() in client.get("/requests").data
 
 
 def test_catalog_task_requires_valid_fulfillment_lifecycle(client, app):
@@ -657,6 +864,40 @@ def test_enterprise_record_cannot_bypass_requested_approval(client, app):
     assert bypass.status_code == 409
     with app.app_context():
         assert db.session.get(EnterpriseRecord, record_id).state == "Awaiting Approval"
+
+
+def test_enterprise_approval_cannot_be_replayed_against_another_record(client, app):
+    login(client)
+    for title in ("Approval source", "Approval target"):
+        assert client.post("/module/problem/new", data={
+            "record_type": "Root cause analysis", "title": title,
+            "description": "Approval binding verification.",
+            "priority": "P2", "risk": "High", "approval_required": "1",
+        }).status_code == 302
+    with app.app_context():
+        source, target = EnterpriseRecord.query.order_by(EnterpriseRecord.id).all()
+        source_approval_id = source.approvals[0].id
+        target_id = target.id
+    assert client.post(f"/enterprise/{target_id}", data={
+        "action": "approve", "approval_id": source_approval_id,
+        "comments": "Attempted cross-record approval",
+    }).status_code == 404
+    with app.app_context():
+        target = db.session.get(EnterpriseRecord, target_id)
+        assert target.state == "Awaiting Approval"
+        assert target.approvals[0].state == "Requested"
+
+
+def test_inactive_catalog_item_cannot_be_ordered_directly(client, app):
+    login(client)
+    with app.app_context():
+        item = CatalogItem.query.filter_by(name="Laptop computer").one()
+        item.active = False
+        db.session.commit()
+        item_id = item.id
+    assert client.post(f"/catalog/{item_id}/order", data={"details": "Hidden item"}).status_code == 404
+    with app.app_context():
+        assert CatalogRequest.query.count() == 0
 
 
 def test_it_teams_managers_and_ccb_membership(client, app):

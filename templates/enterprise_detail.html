@@ -13,7 +13,7 @@
   <dt>Workaround</dt><dd>{{ profile.workaround if profile and profile.workaround else 'Not documented' }}</dd>
   <dt>Permanent fix</dt><dd>{{ profile.fix_notes if profile and profile.fix_notes else 'Not documented' }}</dd>
 </dl>
-{% if current_user.role in ['agent','manager','admin'] %}
+{% if can_manage_record %}
 <details><summary>Update root cause, workaround, and fix</summary>
 <form method="post" action="{{ url_for('problem_analysis_update', record_id=record.id) }}" class="form-grid">
   <label class="check wide"><input type="checkbox" name="known_error" value="1" {% if profile and profile.known_error %}checked{% endif %}> Treat as known error</label>
@@ -32,7 +32,7 @@
   <label>Assigned to<select name="assignee_id"><option value="">Unassigned</option>{% for user in task_agents[task.id] %}<option value="{{ user.id }}" {% if task.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
   <label class="wide">Work notes<textarea name="work_notes" rows="2">{{ task.work_notes }}</textarea></label><div class="wide actions"><button>Update {{ task.number }}</button></div>
 </form>{% endif %}</article>{% else %}<p class="muted">No investigation tasks.</p>{% endfor %}
-{% if current_user.role in ['agent','manager','admin'] %}<details><summary>Add problem task</summary><form method="post" action="{{ url_for('problem_task_add', record_id=record.id) }}" class="form-grid">
+{% if can_manage_record %}<details><summary>Add problem task</summary><form method="post" action="{{ url_for('problem_task_add', record_id=record.id) }}" class="form-grid">
   <label class="wide">Task summary<input name="title" required></label><label>Type<select name="task_type"><option>Investigation</option><option>Root Cause Analysis</option><option>Reproduction</option><option>Vendor Analysis</option><option>Documentation</option></select></label>
   <label>Assignment group<select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label>
   <label class="check wide"><input type="checkbox" name="required" value="1" checked> Required task</label><div class="wide actions"><button>Add PTASK</button></div>
@@ -40,11 +40,11 @@
 
 <hr><h2>Related incidents, changes, and knowledge</h2>
 {% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ item.label }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">No related records.</p>{% endfor %}
-{% if current_user.role in ['agent','manager','admin'] %}<form method="post" action="{{ url_for('record_link_add', source_type='enterprise', source_id=record.id) }}" class="inline-form"><select name="link_type"><option value="related_incident">Related incident</option><option value="problem_change">Permanent or temporary fix change</option><option value="knowledge_article">Knowledge article</option></select><input name="target_number" placeholder="INC, CHG or KB number" required><button>Link record</button></form>{% endif %}
+{% if can_manage_record %}<form method="post" action="{{ url_for('record_link_add', source_type='enterprise', source_id=record.id) }}" class="inline-form"><select name="link_type"><option value="related_incident">Related incident</option><option value="problem_change">Permanent or temporary fix change</option><option value="knowledge_article">Knowledge article</option></select><input name="target_number" placeholder="INC, CHG or KB number" required><button>Link record</button></form>{% endif %}
 
 <hr><h2>Affected CIs and impacted services</h2>
 {% for link in ci_links %}<div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div><span class="badge">{{ link.relationship_role }}</span></div>{% else %}<p class="muted">No additional CI relationships.</p>{% endfor %}
-{% if current_user.role in ['agent','manager','admin'] %}<form method="post" action="{{ url_for('task_ci_add', target_type='enterprise', target_id=record.id) }}" class="inline-form"><select name="relationship_role"><option>Primary CI</option><option>Affected CI</option><option>Impacted service</option></select><select name="ci_id">{% for ci in cis %}<option value="{{ ci.id }}">{{ ci.name }} · {{ ci.ci_class }}</option>{% endfor %}</select><button>Link CI</button></form>{% endif %}
+{% if can_manage_record %}<form method="post" action="{{ url_for('task_ci_add', target_type='enterprise', target_id=record.id) }}" class="inline-form"><select name="relationship_role"><option>Primary CI</option><option>Affected CI</option><option>Impacted service</option></select><select name="ci_id">{% for ci in cis %}<option value="{{ ci.id }}">{{ ci.name }} · {{ ci.ci_class }}</option>{% endfor %}</select><button>Link CI</button></form>{% endif %}
 {% endif %}
 
 {% if record.approvals %}<hr><h2>Approval history</h2>{% for approval in record.approvals %}<article class="timeline"><strong>{{ approval.state }}</strong><span>{{ approval.approver.name }}</span><p>{{ approval.comments or 'No decision comments.' }}</p>
@@ -55,7 +55,7 @@
 {% for event in history %}<article class="timeline"><strong>{{ event.event }}</strong><span>{{ event.actor.name if event.actor else 'System' }} · {{ event.created_at.strftime('%b %d, %H:%M:%S') }}</span>{% if event.field_name %}<p><b>{{ event.field_name }}</b>: {{ event.old_value or '—' }} → {{ event.new_value or '—' }}</p>{% endif %}{% if event.details %}<p>{{ event.details }}</p>{% endif %}</article>{% else %}<p class="muted">No recorded history.</p>{% endfor %}
 </section>
 <aside class="panel facts"><h2>Record details</h2>
-{% if current_user.role in ['agent','manager','admin'] %}<form method="post" class="stack"><input type="hidden" name="action" value="update">
+{% if can_manage_record %}<form method="post" class="stack"><input type="hidden" name="action" value="update">
 <label>State<select name="state">{% for state in record_state_options %}<option {% if record.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
 <label>Priority<select name="priority">{% for priority in ['P1','P2','P3','P4'] %}<option {% if record.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
 <label>Risk<select name="risk">{% for risk in ['Low','Medium','High','Critical'] %}<option {% if record.risk==risk %}selected{% endif %}>{{ risk }}</option>{% endfor %}</select></label>
