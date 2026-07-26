@@ -4,7 +4,8 @@
 <form method="post" class="panel form-grid">
   <label class="wide">Short description<input name="title" maxlength="180" required autofocus></label>
   <label>Category<select name="category"><option>General</option><option>Access</option><option>Hardware</option><option>Software</option><option>Network</option><option>Security</option></select></label>
-  <label>Priority<select name="priority">{% for priority in ['P4','P3','P2','P1'] %}<option {% if priority == default_priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
+  <label>Impact<select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if value == 'Medium' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <label>Urgency<select name="urgency" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if value == 'Medium' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select><small>Priority is calculated from impact and urgency.</small></label>
   <label class="wide">Description<textarea name="description" rows="8" required></textarea></label>
   <label>Owning IT team<select name="group_id" required><option value="">Select a team</option>{% for team in teams %}<option value="{{ team.id }}" {% if kind == 'change' and not team.manager %}disabled{% endif %}>{{ team.name }}{% if kind == 'change' %} — {{ team.manager.name if team.manager else "manager not configured" }}{% endif %}</option>{% endfor %}</select></label>
   {% if kind == 'change' %}

@@ -1,0 +1,90 @@
+{
+  "schema_version": 2,
+  "subflows": {
+    "record-automation-evidence": [
+      {
+        "type": "add_history",
+        "event": "Governed automation executed",
+        "details": "A published ServiceOps workflow completed governed automation for {number}."
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "key": "incident-resolved",
+      "name": "Incident resolved communication",
+      "event": "ticket.state_entry",
+      "rate_limit_per_minute": 200,
+      "conditions": [
+        {"field": "kind", "operator": "equals", "value": "incident"},
+        {"field": "state", "operator": "equals", "value": "Resolved"}
+      ],
+      "actions": [
+        {
+          "type": "run_subflow",
+          "subflow": "record-automation-evidence"
+        },
+        {
+          "type": "add_history",
+          "event": "Resolution workflow completed",
+          "details": "The governed incident-resolution workflow ran successfully."
+        },
+        {
+          "type": "notify_requester",
+          "title": "Incident resolved: {number}",
+          "body": "{number} has been resolved. Review the resolution and contact the service desk if service is not restored."
+        }
+      ]
+    },
+    {
+      "key": "change-started",
+      "name": "Change implementation started",
+      "event": "ticket.state_entry",
+      "rate_limit_per_minute": 100,
+      "conditions": [
+        {"field": "kind", "operator": "equals", "value": "change"},
+        {"field": "state", "operator": "equals", "value": "In Progress"}
+      ],
+      "actions": [
+        {
+          "type": "notify_team_manager",
+          "title": "Change implementation started: {number}",
+          "body": "{number} has entered implementation under the approved plan."
+        }
+      ]
+    },
+    {
+      "key": "sla-breach-escalation-evidence",
+      "name": "SLA breach workflow evidence",
+      "event": "ticket.sla_breached",
+      "rate_limit_per_minute": 200,
+      "conditions": [
+        {"field": "state", "operator": "not_empty"}
+      ],
+      "actions": [
+        {
+          "type": "add_history",
+          "event": "SLA breach workflow completed",
+          "details": "The governed SLA-triggered automation completed for {number}."
+        }
+      ]
+    },
+    {
+      "key": "scheduled-stale-incident-reminder",
+      "name": "Scheduled stale incident reminder",
+      "event": "ticket.scheduled",
+      "rate_limit_per_minute": 100,
+      "conditions": [
+        {"field": "kind", "operator": "equals", "value": "incident"},
+        {"field": "state", "operator": "in", "value": ["New", "Pending"]}
+      ],
+      "actions": [
+        {
+          "type": "notify_team_manager",
+          "title": "Scheduled incident review: {number}",
+          "body": "{number} remains {state} and requires an owning-team review."
+        }
+      ]
+    }
+  ]
+}

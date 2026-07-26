@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "levels": ["Critical", "High", "Medium", "Low"],
+  "matrix": {
+    "Critical": {"Critical": "P1", "High": "P1", "Medium": "P2", "Low": "P3"},
+    "High": {"Critical": "P1", "High": "P2", "Medium": "P2", "Low": "P3"},
+    "Medium": {"Critical": "P2", "High": "P2", "Medium": "P3", "Low": "P4"},
+    "Low": {"Critical": "P3", "High": "P3", "Medium": "P4", "Low": "P4"}
+  }
+}

@@ -32,6 +32,7 @@ ingress:
   tls: []
 
 existingSecret: serviceops-secrets
+existingBootstrapSecret: serviceops-bootstrap
 secret:
   create: false
   secretKey: ""

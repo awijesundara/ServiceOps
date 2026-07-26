@@ -143,13 +143,16 @@
   {% if can_manage_ticket %}
   <form method="post" class="stack"><input type="hidden" name="action" value="update">
     <label>State<select name="state">{% for state in ticket_state_options %}<option {% if ticket.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
-    <label>Priority<select name="priority">{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
+    <label>Impact<select name="impact">{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+    <label>Urgency<select name="urgency">{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.urgency==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+    <label>Priority<select name="priority">{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select><small>Calculated from impact and urgency. Manager/admin overrides require a reason.</small></label>
+    <label class="wide">Priority override reason<textarea name="priority_override_reason" rows="2">{{ ticket.priority_override_reason or '' }}</textarea></label>
     <label>Assigned to<select name="assignee_id"><option value="">Unassigned</option>{% for user in agents %}<option value="{{ user.id }}" {% if ticket.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
     <button class="primary">Save changes</button>
   </form>
   {% else %}
   {% if current_user.role in ['agent','manager','admin'] %}<p class="muted">Read only: operational updates are restricted to active members of {{ owning_group.name if owning_group else 'the owning team' }}.</p>{% endif %}
-  <dl><dt>State</dt><dd>{{ ticket.state }}</dd><dt>Priority</dt><dd>{{ ticket.priority }}</dd><dt>Category</dt><dd>{{ ticket.category }}</dd><dt>Assigned to</dt><dd>{{ ticket.assignee.name if ticket.assignee else 'Unassigned' }}</dd></dl>
+  <dl><dt>State</dt><dd>{{ ticket.state }}</dd><dt>Priority</dt><dd>{{ ticket.priority }}{% if ticket.priority_overridden %} · governed override{% endif %}</dd><dt>Impact / urgency</dt><dd>{{ ticket.impact }} / {{ ticket.urgency }}</dd><dt>Category</dt><dd>{{ ticket.category }}</dd><dt>Assigned to</dt><dd>{{ ticket.assignee.name if ticket.assignee else 'Unassigned' }}</dd></dl>
   {% endif %}
 </aside>
 </div>

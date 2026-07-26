@@ -2,7 +2,7 @@ name: serviceops
 
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-serviceops}
       POSTGRES_USER: ${POSTGRES_USER:-serviceops}
@@ -24,7 +24,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-serviceops}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-serviceops}
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_PASSWORD_FILE: ${ADMIN_PASSWORD_FILE:-}
       DEPLOYMENT_PROFILE: production
       INSTANCE_NAME: ${INSTANCE_NAME:-ServiceOps}
       COMPANY_NAME: ${COMPANY_NAME:-Your Company}
@@ -82,7 +83,6 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-serviceops}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-serviceops}
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?Set SETTINGS_ENCRYPTION_KEY in .env}
       AUDIT_INTEGRITY_KEY: ${AUDIT_INTEGRITY_KEY:-}
       API_TOKEN_PEPPER: ${API_TOKEN_PEPPER:-}
