@@ -4,6 +4,8 @@ deploymentProfile: production
 image:
   repository: registry.example.com/serviceops
   tag: "1.0.0"
+  # Replace this non-existent placeholder with the verified release digest.
+  digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
   pullPolicy: IfNotPresent
 
 existingSecret: serviceops-secrets

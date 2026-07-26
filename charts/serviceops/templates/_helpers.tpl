@@ -23,3 +23,6 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "serviceops.secretName" -}}
 {{- if .Values.secret.create }}{{ include "serviceops.fullname" . }}-secrets{{ else }}{{ required "existingSecret is required when secret.create=false" .Values.existingSecret }}{{ end }}
 {{- end }}
+{{- define "serviceops.imageRef" -}}
+{{- printf "%s@%s" .Values.image.repository (required "image.digest is required" .Values.image.digest) -}}
+{{- end }}

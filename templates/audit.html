@@ -1,5 +1,23 @@
 {% extends "base.html" %}{% block content %}
 <header class="page-head"><div><p class="eyebrow">SECURITY</p><h1>Audit log</h1><p>Append-only, request-correlated security and record activity.</p></div><a class="button" href="{{ url_for('audit_export') }}">Export verified evidence</a></header>
+<div class="detail-grid">
+<section class="panel">
+  <h2>Integrity keys</h2>
+  <p>Historical keys remain encrypted for verification. Rotation never rewrites an audit event.</p>
+  <table><thead><tr><th>Key ID</th><th>Status</th><th>Activated</th><th>Retired</th></tr></thead><tbody>{% for key in keys %}<tr><td><code>{{ key.key_id }}</code></td><td>{{ 'Active' if key.active else 'Historical' }}</td><td>{{ key.activated_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ key.retired_at.strftime('%Y-%m-%d %H:%M') if key.retired_at else '—' }}</td></tr>{% else %}<tr><td colspan="4">Environment key is active. Rotate once to place versioned verification keys under governed storage.</td></tr>{% endfor %}</tbody></table>
+  <form method="post" action="{{ url_for('audit_rotate_key') }}" class="stack"><label>Confirmation<input name="confirmation" required placeholder="Type ROTATE"></label><button>Rotate audit key</button></form>
+</section>
+<aside class="panel">
+  <h2>Retention and external evidence</h2>
+  <p>Primary audit records are append-only and are never automatically purged. Dedicated active SIEM connections: <strong>{{ siem_connections }}</strong>.</p>
+  <form method="post" action="{{ url_for('audit_retention') }}" class="stack">
+    <label>Minimum retention days<input name="retention_days" type="number" min="2555" max="36500" value="{{ retention.retention_days if retention else 2555 }}" required></label>
+    <label class="check"><input name="legal_hold" type="checkbox" {% if retention and retention.legal_hold %}checked{% endif %}> Legal hold</label>
+    <label class="check"><input name="external_export_required" type="checkbox" {% if not retention or retention.external_export_required %}checked{% endif %}> Require external immutable export</label>
+    <button>Save retention policy</button>
+  </form>
+</aside>
+</div>
 <section class="panel">
   <p><strong>Integrity:</strong> {% if integrity.valid %}Verified · {{ integrity.checked }} events · head {{ integrity.head[:12] if integrity.head else 'empty chain' }}{% else %}FAILED at {{ integrity.event_id }} · {{ integrity.reason }}{% endif %}</p>
   <table><thead><tr><th>Time</th><th>Request</th><th>User</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td><code>{{ r.request_id[:8] }}</code></td><td>{{ r.user.username if r.user else 'system' }}</td><td>{{ r.action }}</td><td><strong>{{ r.target }}</strong></td><td>{{ r.details }}</td></tr>{% endfor %}</tbody></table>

@@ -24,7 +24,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: outbox
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: {{ include "serviceops.imageRef" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["python", "-m", "tools.outbox_worker"]
           securityContext:

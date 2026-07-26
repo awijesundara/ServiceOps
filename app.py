@@ -39,6 +39,7 @@ from serviceops_core.workflow import (
     canonical_json, load_workflow_package, materialize_workflow,
     package_digest, validate_workflow, workflow_matches,
 )
+from serviceops_core.projections import project_document, validate_projection_policy
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -201,11 +202,47 @@ class Audit(db.Model):
     source_ip = db.Column(db.String(64))
     user_agent = db.Column(db.String(255))
     integrity_version = db.Column(db.String(30), nullable=False, default="hmac-sha256-v1")
+    integrity_key_id = db.Column(
+        db.String(80), nullable=False, default="environment-v1"
+    )
     previous_hash = db.Column(db.String(64), nullable=False, default="")
     event_hash = db.Column(db.String(64), unique=True, nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     user = db.relationship("User")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+
+
+class AuditIntegrityKey(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    key_id = db.Column(db.String(80), nullable=False)
+    secret_encrypted = db.Column(db.Text, nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    activated_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    retired_at = db.Column(db.DateTime(timezone=True))
+    tenant_id = db.Column(
+        db.Integer, db.ForeignKey("tenant.id"), nullable=False,
+        default=tenant_context_id, index=True,
+    )
+    created_by = db.relationship("User")
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "key_id", name="uq_audit_key_tenant_key"),
+    )
+
+
+class AuditRetentionPolicy(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    retention_days = db.Column(db.Integer, nullable=False, default=2555)
+    legal_hold = db.Column(db.Boolean, nullable=False, default=False)
+    external_export_required = db.Column(db.Boolean, nullable=False, default=True)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(
+        db.Integer, db.ForeignKey("tenant.id"), nullable=False,
+        default=tenant_context_id, unique=True, index=True,
+    )
+    updated_by = db.relationship("User")
 
 
 class APIClient(db.Model):
@@ -1049,8 +1086,21 @@ def require_action(action):
     return decorator
 
 
-def audit_integrity_key():
-    configured = os.getenv("AUDIT_INTEGRITY_KEY") or os.getenv(
+def audit_integrity_key(key_id="environment-v1", tenant_id=None):
+    tenant_id = tenant_id or tenant_context_id()
+    if key_id != "environment-v1":
+        stored = AuditIntegrityKey.query.filter_by(
+            tenant_id=tenant_id, key_id=key_id
+        ).one_or_none()
+        if not stored:
+            raise RuntimeError(f"Audit integrity key {key_id!r} is unavailable.")
+        return settings_cipher().decrypt(stored.secret_encrypted.encode())
+    stored = AuditIntegrityKey.query.filter_by(
+        tenant_id=tenant_id, key_id="environment-v1"
+    ).one_or_none()
+    if stored:
+        return settings_cipher().decrypt(stored.secret_encrypted.encode())
+    configured = secret_value("AUDIT_INTEGRITY_KEY") or os.getenv(
         "SETTINGS_ENCRYPTION_KEY"
     )
     return (configured or current_app.config["SECRET_KEY"]).encode()
@@ -1060,7 +1110,7 @@ def audit_payload(row):
     created_at = row.created_at
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=timezone.utc)
-    return json.dumps({
+    payload = {
         "action": row.action,
         "created_at": created_at.astimezone(timezone.utc).isoformat(),
         "details": row.details or "",
@@ -1072,14 +1122,20 @@ def audit_payload(row):
         "tenant_id": row.tenant_id,
         "user_agent": row.user_agent or "",
         "user_id": row.user_id,
-    }, sort_keys=True, separators=(",", ":")).encode()
+    }
+    if row.integrity_version == "hmac-sha256-v2":
+        payload["integrity_key_id"] = row.integrity_key_id
+    return json.dumps(
+        payload, sort_keys=True, separators=(",", ":")
+    ).encode()
 
 
 def calculate_audit_hash(row):
     if row.integrity_version == "legacy-sha256-v1":
         return hashlib.sha256(audit_payload(row)).hexdigest()
     return hmac.new(
-        audit_integrity_key(), audit_payload(row), hashlib.sha256
+        audit_integrity_key(row.integrity_key_id, row.tenant_id),
+        audit_payload(row), hashlib.sha256
     ).hexdigest()
 
 
@@ -1105,6 +1161,50 @@ def verify_audit_chain(tenant_id):
     }
 
 
+def rotate_audit_integrity_key(tenant_id, user_id):
+    integrity = verify_audit_chain(tenant_id)
+    if not integrity["valid"]:
+        raise RuntimeError("Audit key rotation is blocked while integrity is invalid.")
+    environment_key = AuditIntegrityKey.query.filter_by(
+        tenant_id=tenant_id, key_id="environment-v1"
+    ).one_or_none()
+    if not environment_key:
+        environment_key = AuditIntegrityKey(
+            key_id="environment-v1",
+            secret_encrypted=settings_cipher().encrypt(
+                audit_integrity_key("environment-v1", tenant_id)
+            ).decode(),
+            active=False,
+            created_by_id=user_id,
+            activated_at=now(),
+            retired_at=now(),
+            tenant_id=tenant_id,
+        )
+        db.session.add(environment_key)
+    for existing in AuditIntegrityKey.query.filter_by(
+        tenant_id=tenant_id, active=True
+    ).all():
+        existing.active = False
+        existing.retired_at = now()
+    key_id = f"audit-{now():%Y%m%dT%H%M%SZ}-{secrets.token_hex(4)}"
+    key = AuditIntegrityKey(
+        key_id=key_id,
+        secret_encrypted=settings_cipher().encrypt(secrets.token_bytes(32)).decode(),
+        active=True,
+        created_by_id=user_id,
+        activated_at=now(),
+        tenant_id=tenant_id,
+    )
+    db.session.add(key)
+    db.session.flush()
+    audit(
+        "audit key rotate", key_id,
+        f"previous_head={integrity.get('head') or 'empty'}",
+        user_id=user_id, tenant_id=tenant_id,
+    )
+    return key
+
+
 def audit(action, target, details="", user_id=None, tenant_id=None):
     tenant_id = tenant_id or tenant_context_id()
     if db.engine.dialect.name == "postgresql":
@@ -1124,6 +1224,9 @@ def audit(action, target, details="", user_id=None, tenant_id=None):
                 Audit.tenant_id == tenant_id
             ).order_by(Audit.id.desc()).limit(1)
         ).scalar_one_or_none() or ""
+    active_key = AuditIntegrityKey.query.filter_by(
+        tenant_id=tenant_id, active=True
+    ).order_by(AuditIntegrityKey.id.desc()).first()
     row = Audit(
         event_id=str(uuid.uuid4()),
         user_id=(
@@ -1141,13 +1244,34 @@ def audit(action, target, details="", user_id=None, tenant_id=None):
         user_agent=(
             str(request.user_agent)[:255] if has_request_context() else None
         ),
-        integrity_version="hmac-sha256-v1",
+        integrity_version="hmac-sha256-v2",
+        integrity_key_id=active_key.key_id if active_key else "environment-v1",
         previous_hash=previous_hash,
         created_at=now(),
         tenant_id=tenant_id,
     )
     row.event_hash = calculate_audit_hash(row)
     db.session.add(row)
+    if setting_bool("AUDIT_STREAM_ENABLED", False):
+        db.session.add(OutboxEvent(
+            event_type="audit.created",
+            payload_json=json.dumps({
+                "event_id": row.event_id,
+                "request_id": row.request_id,
+                "user_id": row.user_id,
+                "action": row.action,
+                "target": row.target,
+                "details": row.details or "",
+                "source_ip": row.source_ip or "",
+                "integrity_version": row.integrity_version,
+                "integrity_key_id": row.integrity_key_id,
+                "previous_hash": row.previous_hash,
+                "event_hash": row.event_hash,
+                "created_at": row.created_at.isoformat(),
+                "tenant_id": row.tenant_id,
+            }, sort_keys=True),
+            tenant_id=tenant_id,
+        ))
 
 
 API_SCOPES = {
@@ -1197,7 +1321,6 @@ def require_api_scope(scope):
 
 
 def api_ticket_document(ticket, user):
-    internal = role_has_action(user.role, "comment_internal")
     document = {
         "id": ticket.id,
         "number": ticket.number,
@@ -1210,18 +1333,17 @@ def api_ticket_document(ticket, user):
         "opened_at": ticket.created_at.isoformat(),
         "updated_at": ticket.updated_at.isoformat(),
     }
-    if internal:
-        group = ticket_owning_group(ticket)
-        document["internal"] = {
-            "assignment_group": (
-                {"id": group.id, "name": group.name} if group else None
-            ),
-            "assigned_to": (
-                {"id": ticket.assignee.id, "name": ticket.assignee.name}
-                if ticket.assignee else None
-            ),
-        }
-    return document
+    group = ticket_owning_group(ticket)
+    document["internal"] = {
+        "assignment_group": (
+            {"id": group.id, "name": group.name} if group else None
+        ),
+        "assigned_to": (
+            {"id": ticket.assignee.id, "name": ticket.assignee.name}
+            if ticket.assignee else None
+        ),
+    }
+    return project_document("ticket", user.role, document)
 
 
 def api_idempotency_context():
@@ -1318,6 +1440,7 @@ SETTING_DEFINITIONS = {
         {"key": "ENABLE_HSTS", "label": "Enable HSTS", "type": "bool", "default": "false", "live": True},
         {"key": "SESSION_HOURS", "label": "Session lifetime in hours", "type": "int", "default": "8", "min": 1, "max": 168, "live": False},
         {"key": "MAX_UPLOAD_MB", "label": "Maximum upload size (MB)", "type": "int", "default": "20", "min": 1, "max": 500, "live": True},
+        {"key": "AUDIT_STREAM_ENABLED", "label": "Stream audit events to SIEM", "type": "bool", "default": "false", "live": True},
     ],
     "workflow": [
         {"key": "DEFAULT_TICKET_PRIORITY", "label": "Default ticket priority", "type": "choice", "choices": ["P1", "P2", "P3", "P4"], "default": "P3", "live": True},
@@ -1492,6 +1615,10 @@ def process_outbox(limit=50):
         for connection in IntegrationConnection.query.filter_by(
             tenant_id=event.tenant_id, active=True
         ).all():
+            if event.event_type == "audit.created" and connection.kind != "siem":
+                continue
+            if event.event_type != "audit.created" and connection.kind == "siem":
+                continue
             prior = IntegrationDelivery.query.filter_by(
                 outbox_event_id=event.id, connection_id=connection.id,
                 state="Delivered",
@@ -3003,6 +3130,7 @@ def create_app(test_config=None):
     oauth.init_app(app)
     validate_policy()
     validate_priority_policy()
+    validate_projection_policy()
 
     with app.app_context():
         if app.config["TESTING"] and not app.config.get("AUTO_MIGRATE_IN_TESTS"):
@@ -3081,7 +3209,9 @@ def create_app(test_config=None):
     def verify_api_identity():
         if (
             request.path.startswith("/api/v1/")
-            and request.endpoint not in {"api_openapi", "monitoring_ingest"}
+            and request.endpoint not in {
+                "api_openapi", "api_docs", "monitoring_ingest",
+            }
         ):
             authenticate_api_request()
 
@@ -3232,26 +3362,116 @@ def create_app(test_config=None):
     def api_openapi():
         return jsonify({
             "openapi": "3.1.0",
-            "info": {"title": "ServiceOps REST API", "version": "1.0.0"},
+            "info": {
+                "title": "ServiceOps REST API",
+                "version": "1.0.0",
+                "description": (
+                    "Tenant-aware ServiceOps REST contract. API scopes never "
+                    "bypass the acting user's role, team, lifecycle, or field policy."
+                ),
+            },
             "servers": [{"url": "/api/v1"}],
+            "externalDocs": {"description": "Complete API guide", "url": "/api/v1/docs"},
             "components": {
                 "securitySchemes": {
-                    "bearerAuth": {"type": "http", "scheme": "bearer"}
-                }
+                    "bearerAuth": {
+                        "type": "http", "scheme": "bearer",
+                        "description": "One-time sop_ API-client token.",
+                    },
+                    "monitoringToken": {
+                        "type": "http", "scheme": "bearer",
+                        "description": "Token issued for one monitoring source.",
+                    },
+                },
+                "parameters": {
+                    "RequestId": {
+                        "name": "X-Request-ID", "in": "header", "required": False,
+                        "schema": {"type": "string", "format": "uuid"},
+                    },
+                    "IdempotencyKey": {
+                        "name": "Idempotency-Key", "in": "header", "required": True,
+                        "schema": {
+                            "type": "string", "minLength": 1, "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9._:-]+$",
+                        },
+                    },
+                },
             },
             "security": [{"bearerAuth": []}],
             "paths": {
-                "/tickets": {"get": {"summary": "List visible tickets"}},
+                "/openapi.json": {
+                    "get": {"summary": "OpenAPI contract", "security": []}
+                },
+                "/docs": {
+                    "get": {"summary": "Complete Markdown API guide", "security": []}
+                },
+                "/tickets": {"get": {
+                    "summary": "List visible incidents and changes",
+                    "description": "Requires tickets:read. Cursor limit is 1-100.",
+                    "parameters": [
+                        {"$ref": "#/components/parameters/RequestId"},
+                        {"name": "type", "in": "query", "schema": {
+                            "type": "string", "enum": ["incident", "change"]
+                        }},
+                        {"name": "state", "in": "query", "schema": {"type": "string"}},
+                        {"name": "limit", "in": "query", "schema": {
+                            "type": "integer", "minimum": 1, "maximum": 100,
+                            "default": 50,
+                        }},
+                        {"name": "cursor", "in": "query", "schema": {
+                            "type": "integer", "minimum": 0, "default": 0,
+                        }},
+                    ],
+                }},
                 "/tickets/{number}": {
-                    "get": {"summary": "Get a visible ticket"},
-                    "patch": {"summary": "Update an authorized ticket"},
+                    "parameters": [{"name": "number", "in": "path", "required": True,
+                                    "schema": {"type": "string"}}],
+                    "get": {
+                        "summary": "Get a visible ticket",
+                        "description": "Requires tickets:read.",
+                    },
+                    "patch": {
+                        "summary": "Update an authorized owning-team ticket",
+                        "description": (
+                            "Requires tickets:update and an acting user with update, "
+                            "assign, transition, and owning-team authority."
+                        ),
+                        "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}],
+                    },
                 },
                 "/tickets/{number}/workflow-events": {
-                    "post": {"summary": "Queue an authorized workflow event"}
+                    "parameters": [{"name": "number", "in": "path", "required": True,
+                                    "schema": {"type": "string"}}],
+                    "post": {
+                        "summary": "Queue an authorized durable workflow event",
+                        "description": "Requires workflows:execute.",
+                        "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}],
+                    },
                 },
-                "/incidents": {"post": {"summary": "Create an incident"}},
+                "/incidents": {"post": {
+                    "summary": "Create an incident",
+                    "description": "Requires incidents:create.",
+                    "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}],
+                }},
+                "/monitoring/{source_id}/events": {
+                    "parameters": [{"name": "source_id", "in": "path", "required": True,
+                                    "schema": {"type": "string", "format": "uuid"}}],
+                    "post": {
+                        "summary": "Ingest and deduplicate a monitoring event",
+                        "security": [{"monitoringToken": []}],
+                    },
+                },
             },
         })
+
+    @app.get("/api/v1/docs")
+    def api_docs():
+        return send_from_directory(
+            os.path.join(app.root_path, "docs"),
+            "API_REFERENCE.md",
+            mimetype="text/markdown",
+            max_age=0,
+        )
 
     @app.post("/api/v1/monitoring/<source_id>/events")
     def monitoring_ingest(source_id):
@@ -3292,11 +3512,11 @@ def create_app(test_config=None):
         ).first()
         if existing:
             return jsonify({
-                "data": {
+                "data": project_document("monitoring_ack", "monitoring_source", {
                     "event_id": existing.id,
                     "record_number": existing.record.number,
                     "deduplicated": True,
-                }
+                })
             })
         priority = {
             "critical": "P1", "high": "P2", "medium": "P3",
@@ -3339,11 +3559,11 @@ def create_app(test_config=None):
         )
         db.session.commit()
         return jsonify({
-            "data": {
+            "data": project_document("monitoring_ack", "monitoring_source", {
                 "event_id": event.id,
                 "record_number": record.number,
                 "deduplicated": False,
-            }
+            })
         }), 201
 
     @app.get("/api/v1/tickets")
@@ -3526,10 +3746,10 @@ def create_app(test_config=None):
             tenant_id=ticket.tenant_id,
         )
         db.session.flush()
-        document = {"data": {
+        document = {"data": project_document("workflow_ack", g.api_user.role, {
             "event_id": job.event_id, "state": job.state,
             "ticket": ticket.number,
-        }}
+        })}
         store_api_idempotency(key, request_hash, document, 202)
         audit(
             "api workflow trigger", ticket.number,
@@ -4356,7 +4576,7 @@ def create_app(test_config=None):
                 endpoint = request.form.get("endpoint", "").strip()
                 if (
                     not name or len(name) > 160
-                    or kind not in {"webhook", "teams"}
+                    or kind not in {"webhook", "teams", "siem"}
                     or not integration_endpoint_valid(endpoint)
                 ):
                     abort(400, description=(
@@ -4364,9 +4584,9 @@ def create_app(test_config=None):
                     ))
                 secret = (
                     request.form.get("secret", "").strip()
-                    if kind == "webhook" else ""
+                    if kind in {"webhook", "siem"} else ""
                 )
-                if kind == "webhook" and not secret:
+                if kind in {"webhook", "siem"} and not secret:
                     secret = secrets.token_urlsafe(32)
                     revealed_secret = secret
                 encrypted = (
@@ -4683,7 +4903,70 @@ def create_app(test_config=None):
             "audit.html",
             rows=tenant_query(Audit).order_by(Audit.created_at.desc()).limit(250).all(),
             integrity=integrity,
+            keys=AuditIntegrityKey.query.filter_by(
+                tenant_id=current_user.tenant_id
+            ).order_by(AuditIntegrityKey.id.desc()).all(),
+            retention=AuditRetentionPolicy.query.filter_by(
+                tenant_id=current_user.tenant_id
+            ).one_or_none(),
+            siem_connections=IntegrationConnection.query.filter_by(
+                tenant_id=current_user.tenant_id, kind="siem", active=True
+            ).count(),
         )
+
+    @app.post("/admin/audit/rotate-key")
+    @roles("admin")
+    @require_action("security_administer")
+    def audit_rotate_key():
+        if request.form.get("confirmation") != "ROTATE":
+            abort(400, description="Type ROTATE to confirm audit-key rotation.")
+        try:
+            key = rotate_audit_integrity_key(
+                current_user.tenant_id, current_user.id
+            )
+            db.session.commit()
+        except RuntimeError as error:
+            db.session.rollback()
+            abort(409, description=str(error))
+        flash(f"Audit signing key rotated to {key.key_id}.", "success")
+        return redirect(url_for("audit_log"))
+
+    @app.post("/admin/audit/retention")
+    @roles("admin")
+    @require_action("security_administer")
+    def audit_retention():
+        try:
+            retention_days = int(request.form.get("retention_days", "0"))
+        except ValueError:
+            abort(400, description="Retention must be an integer number of days.")
+        if retention_days < 2555 or retention_days > 36500:
+            abort(400, description=(
+                "Audit retention must be between 2555 and 36500 days."
+            ))
+        policy = AuditRetentionPolicy.query.filter_by(
+            tenant_id=current_user.tenant_id
+        ).one_or_none()
+        if not policy:
+            policy = AuditRetentionPolicy(
+                tenant_id=current_user.tenant_id,
+                updated_by_id=current_user.id,
+            )
+            db.session.add(policy)
+        policy.retention_days = retention_days
+        policy.legal_hold = request.form.get("legal_hold") == "on"
+        policy.external_export_required = (
+            request.form.get("external_export_required") == "on"
+        )
+        policy.updated_by_id = current_user.id
+        policy.updated_at = now()
+        audit(
+            "audit retention update", "Audit retention policy",
+            f"days={retention_days}; legal_hold={policy.legal_hold}; "
+            f"external_export_required={policy.external_export_required}",
+        )
+        db.session.commit()
+        flash("Audit retention policy saved.", "success")
+        return redirect(url_for("audit_log"))
 
     @app.get("/admin/audit/export")
     @roles("admin")
@@ -4701,7 +4984,7 @@ def create_app(test_config=None):
             "exported_at": now().isoformat(),
             "tenant_id": current_user.tenant_id,
             "integrity": integrity,
-            "events": [{
+            "events": [project_document("audit_event", "admin", {
                 "id": row.id,
                 "event_id": row.event_id,
                 "request_id": row.request_id,
@@ -4712,20 +4995,27 @@ def create_app(test_config=None):
                 "source_ip": row.source_ip,
                 "user_agent": row.user_agent,
                 "integrity_version": row.integrity_version,
+                "integrity_key_id": row.integrity_key_id,
                 "previous_hash": row.previous_hash,
                 "event_hash": row.event_hash,
                 "created_at": row.created_at.isoformat(),
-            } for row in rows],
+            }) for row in rows],
         }
         body = json.dumps(document, indent=2, sort_keys=True).encode()
+        active_key = AuditIntegrityKey.query.filter_by(
+            tenant_id=current_user.tenant_id, active=True
+        ).order_by(AuditIntegrityKey.id.desc()).first()
+        signing_key_id = active_key.key_id if active_key else "environment-v1"
         signature = hmac.new(
-            audit_integrity_key(), body, hashlib.sha256
+            audit_integrity_key(signing_key_id, current_user.tenant_id),
+            body, hashlib.sha256
         ).hexdigest()
         response = Response(body, mimetype="application/json")
         response.headers["Content-Disposition"] = (
             f'attachment; filename="serviceops-audit-{now():%Y%m%dT%H%M%SZ}.json"'
         )
         response.headers["X-ServiceOps-Audit-Signature"] = signature
+        response.headers["X-ServiceOps-Audit-Key-ID"] = signing_key_id
         return response
 
     @app.get("/modules")
@@ -5713,7 +6003,10 @@ def create_app(test_config=None):
                     "url": record_url(parent), "meta": row.state,
                 })
         if request.accept_mimetypes.best == "application/json":
-            return jsonify(results=results[:30])
+            return jsonify(results=[
+                project_document("search_result", current_user.role, row)
+                for row in results[:30]
+            ])
         return render_template("search.html", q=q, results=results[:60])
 
     @app.post("/ui/favorite")
@@ -5730,7 +6023,9 @@ def create_app(test_config=None):
                                     folder=request.form.get("folder", "My favorites")[:80]))
             active = True
         db.session.commit()
-        return jsonify(active=active)
+        return jsonify(project_document(
+            "ui_action_ack", current_user.role, {"active": active}
+        ))
 
     @app.post("/ui/history")
     @login_required
@@ -5801,7 +6096,9 @@ def create_app(test_config=None):
             )
         audit("board move", ticket.number, state)
         db.session.commit()
-        return jsonify(state=state)
+        return jsonify(project_document(
+            "ui_action_ack", current_user.role, {"state": state}
+        ))
 
     @app.post("/ticket/<int:ticket_id>/checklist")
     @roles("agent", "manager", "admin")
