@@ -71,6 +71,7 @@ spec:
             - {name: ENABLE_HSTS, value: {{ .Values.proxy.enableHsts | quote }}}
           envFrom:
             - secretRef: {name: {{ include "serviceops.secretName" . }}}
+            - secretRef: {name: {{ include "serviceops.bootstrapSecretName" . }}}
           volumeMounts:
             - {name: uploads, mountPath: /app/uploads}
             - {name: tmp, mountPath: /tmp}

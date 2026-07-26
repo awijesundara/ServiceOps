@@ -9,7 +9,7 @@ import ipaddress
 import re
 import secrets
 import smtplib
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time as dt_time, timedelta, timezone
 from email.message import EmailMessage
 from functools import wraps
 from urllib.parse import urlparse
@@ -33,6 +33,12 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException
 
 from serviceops_core.security import role_has_action, validate_policy
+from serviceops_core.priority import calculate_priority, validate_priority_policy
+from serviceops_core.business_time import add_business_minutes, validate_calendar
+from serviceops_core.workflow import (
+    canonical_json, load_workflow_package, materialize_workflow,
+    package_digest, validate_workflow, workflow_matches,
+)
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -46,6 +52,20 @@ def now():
 
 def env_bool(name, default=False):
     return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def secret_value(name):
+    """Read a secret from a mounted file first, then the legacy environment value."""
+    file_path = os.getenv(f"{name}_FILE", "").strip()
+    if file_path:
+        try:
+            value = open(file_path, encoding="utf-8").read().strip()
+        except OSError as error:
+            raise RuntimeError(f"Cannot read {name}_FILE: {error}") from error
+        if not value:
+            raise RuntimeError(f"{name}_FILE is empty.")
+        return value
+    return os.getenv(name, "")
 
 
 def tenant_context_id():
@@ -85,6 +105,7 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(30), nullable=False, default="requester")
     active = db.Column(db.Boolean, default=True, nullable=False)
+    auth_version = db.Column(db.Integer, nullable=False, default=1)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
@@ -121,6 +142,10 @@ class Ticket(db.Model):
     description = db.Column(db.Text, nullable=False)
     state = db.Column(db.String(30), nullable=False, default="New", index=True)
     priority = db.Column(db.String(10), nullable=False, default="P3")
+    impact = db.Column(db.String(20), nullable=False, default="Medium")
+    urgency = db.Column(db.String(20), nullable=False, default="Medium")
+    priority_overridden = db.Column(db.Boolean, nullable=False, default=False)
+    priority_override_reason = db.Column(db.Text)
     category = db.Column(db.String(80), nullable=False, default="General")
     requester_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     assignee_id = db.Column(db.Integer, db.ForeignKey("user.id"))
@@ -551,6 +576,8 @@ class SLADefinition(db.Model):
     duration_minutes = db.Column(db.Integer, nullable=False)
     pause_states = db.Column(db.String(200), nullable=False, default="Pending,On Hold")
     active = db.Column(db.Boolean, nullable=False, default=True)
+    schedule_id = db.Column(db.Integer, db.ForeignKey("business_schedule.id"))
+    schedule = db.relationship("BusinessSchedule")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
@@ -567,6 +594,174 @@ class TaskSLA(db.Model):
     paused_seconds = db.Column(db.Integer, nullable=False, default=0)
     breached = db.Column(db.Boolean, nullable=False, default=False)
     definition = db.relationship("SLADefinition")
+
+
+class BusinessSchedule(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(160), nullable=False)
+    timezone_name = db.Column(db.String(80), nullable=False, default="UTC")
+    weekdays_json = db.Column(db.Text, nullable=False, default="[0,1,2,3,4]")
+    start_time_text = db.Column(db.String(5), nullable=False, default="09:00")
+    end_time_text = db.Column(db.String(5), nullable=False, default="17:00")
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    holidays = db.relationship("ScheduleHoliday", cascade="all, delete-orphan", backref="schedule")
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_business_schedule_tenant_name"),)
+
+    @property
+    def weekdays(self):
+        return json.loads(self.weekdays_json)
+
+    @property
+    def start_time(self):
+        return dt_time.fromisoformat(self.start_time_text)
+
+    @property
+    def end_time(self):
+        return dt_time.fromisoformat(self.end_time_text)
+
+
+class ScheduleHoliday(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    schedule_id = db.Column(db.Integer, db.ForeignKey("business_schedule.id"), nullable=False)
+    holiday_date = db.Column(db.Date, nullable=False)
+    name = db.Column(db.String(160), nullable=False)
+    __table_args__ = (db.UniqueConstraint("schedule_id", "holiday_date", name="uq_schedule_holiday_date"),)
+
+
+class SLAEvent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    task_sla_id = db.Column(db.Integer, db.ForeignKey("task_sla.id"), nullable=False)
+    event_type = db.Column(db.String(30), nullable=False)
+    occurred_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    details = db.Column(db.Text, nullable=False, default="")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+
+
+class WorkflowDefinition(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    workflow_key = db.Column(db.String(120), nullable=False)
+    name = db.Column(db.String(160), nullable=False)
+    event_type = db.Column(db.String(80), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    published_version_id = db.Column(db.Integer)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    versions = db.relationship(
+        "WorkflowVersion", cascade="all, delete-orphan", backref="definition",
+        foreign_keys="WorkflowVersion.definition_id",
+    )
+    __table_args__ = (db.UniqueConstraint(
+        "tenant_id", "workflow_key", name="uq_workflow_definition_key"
+    ),)
+
+    @property
+    def published_version(self):
+        return db.session.get(WorkflowVersion, self.published_version_id)
+
+
+class WorkflowVersion(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    definition_id = db.Column(db.Integer, db.ForeignKey("workflow_definition.id"), nullable=False)
+    version = db.Column(db.Integer, nullable=False)
+    state = db.Column(db.String(20), nullable=False, default="Draft")
+    definition_json = db.Column(db.Text, nullable=False)
+    package_hash = db.Column(db.String(64), nullable=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    published_at = db.Column(db.DateTime(timezone=True))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    created_by = db.relationship("User")
+    __table_args__ = (db.UniqueConstraint(
+        "definition_id", "version", name="uq_workflow_definition_version"
+    ),)
+
+    @property
+    def specification(self):
+        return json.loads(self.definition_json)
+
+
+class WorkflowJob(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    event_type = db.Column(db.String(80), nullable=False, index=True)
+    target_type = db.Column(db.String(30), nullable=False)
+    target_id = db.Column(db.Integer, nullable=False)
+    context_json = db.Column(db.Text, nullable=False)
+    state = db.Column(db.String(20), nullable=False, default="Pending", index=True)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    available_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    last_error = db.Column(db.Text)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    completed_at = db.Column(db.DateTime(timezone=True))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+
+    @property
+    def context(self):
+        return json.loads(self.context_json)
+
+
+class WorkflowExecution(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(db.Integer, db.ForeignKey("workflow_job.id"), nullable=False)
+    version_id = db.Column(db.Integer, db.ForeignKey("workflow_version.id"), nullable=False)
+    correlation_id = db.Column(db.String(36), nullable=False)
+    state = db.Column(db.String(20), nullable=False)
+    input_json = db.Column(db.Text, nullable=False)
+    output_json = db.Column(db.Text, nullable=False, default="[]")
+    error = db.Column(db.Text)
+    started_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    completed_at = db.Column(db.DateTime(timezone=True))
+    next_action_index = db.Column(db.Integer, nullable=False, default=0)
+    resume_at = db.Column(db.DateTime(timezone=True))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    version = db.relationship("WorkflowVersion")
+    job = db.relationship("WorkflowJob")
+    __table_args__ = (db.UniqueConstraint(
+        "job_id", "version_id", name="uq_workflow_job_version"
+    ),)
+
+
+class WorkflowStepExecution(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    execution_id = db.Column(db.Integer, db.ForeignKey("workflow_execution.id"), nullable=False)
+    action_index = db.Column(db.Integer, nullable=False)
+    action_type = db.Column(db.String(40), nullable=False)
+    state = db.Column(db.String(20), nullable=False)
+    input_json = db.Column(db.Text, nullable=False)
+    output_json = db.Column(db.Text, nullable=False, default="{}")
+    error = db.Column(db.Text)
+    started_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    completed_at = db.Column(db.DateTime(timezone=True))
+    compensation_state = db.Column(db.String(20))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    execution = db.relationship(
+        "WorkflowExecution", backref=db.backref(
+            "steps", order_by="WorkflowStepExecution.action_index",
+            cascade="all, delete-orphan",
+        )
+    )
+    __table_args__ = (db.UniqueConstraint(
+        "execution_id", "action_index", name="uq_workflow_execution_action"
+    ),)
+
+
+class WorkflowSchedule(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    schedule_key = db.Column(db.String(120), nullable=False)
+    name = db.Column(db.String(160), nullable=False)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False)
+    interval_minutes = db.Column(db.Integer, nullable=False)
+    next_run_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    last_run_at = db.Column(db.DateTime(timezone=True))
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    ticket = db.relationship("Ticket")
+    created_by = db.relationship("User")
+    __table_args__ = (db.UniqueConstraint(
+        "tenant_id", "schedule_key", name="uq_workflow_schedule_key"
+    ),)
 
 
 class CatalogRequest(db.Model):
@@ -959,6 +1154,7 @@ API_SCOPES = {
     "tickets:read",
     "incidents:create",
     "tickets:update",
+    "workflows:execute",
 }
 
 
@@ -1610,8 +1806,15 @@ def transition_ticket(ticket, new_state):
                 f"{ticket.number} cannot complete while required task "
                 f"{incomplete.number} remains {incomplete.state}."
             ))
+    old_state = ticket.state
     ticket.state = new_state
     sync_slas("ticket", ticket.id, new_state)
+    if new_state != old_state:
+        queue_workflow_event(
+            "ticket.state_entry", "ticket", ticket.id,
+            ticket_workflow_context(ticket, old_state),
+            tenant_id=ticket.tenant_id,
+        )
     if (
         ticket.kind == "incident"
         and setting_bool("SYNC_CHILD_INCIDENT_STATES", False)
@@ -1937,8 +2140,25 @@ def attach_slas(target_type, target_id, priority):
         exists = TaskSLA.query.filter_by(definition_id=definition.id, target_type=target_type,
                                          target_id=target_id).first()
         if not exists:
-            db.session.add(TaskSLA(definition_id=definition.id, target_type=target_type, target_id=target_id,
-                                   breach_at=now() + timedelta(minutes=definition.duration_minutes)))
+            started = now()
+            if definition.schedule:
+                holidays = [row.holiday_date for row in definition.schedule.holidays]
+                breach_at = add_business_minutes(
+                    started, definition.duration_minutes, definition.schedule, holidays
+                )
+            else:
+                breach_at = started + timedelta(minutes=definition.duration_minutes)
+            task_sla = TaskSLA(
+                definition_id=definition.id, target_type=target_type,
+                target_id=target_id, started_at=started, breach_at=breach_at,
+            )
+            db.session.add(task_sla)
+            db.session.flush()
+            db.session.add(SLAEvent(
+                task_sla_id=task_sla.id, event_type="Started",
+                details=f"Target {breach_at.isoformat()}",
+                tenant_id=definition.tenant_id,
+            ))
 
 
 def sync_slas(target_type, target_id, state):
@@ -1949,9 +2169,19 @@ def sync_slas(target_type, target_id, state):
         if state in ("Resolved", "Closed", "Completed", "Closed Complete"):
             task_sla.stage = "Completed"
             task_sla.stopped_at = now()
+            db.session.add(SLAEvent(
+                task_sla_id=task_sla.id, event_type="Completed",
+                details=f"Stopped in state {state}",
+                tenant_id=task_sla.definition.tenant_id,
+            ))
         elif state in pause_states and task_sla.stage == "In Progress":
             task_sla.stage = "Paused"
             task_sla.paused_at = now()
+            db.session.add(SLAEvent(
+                task_sla_id=task_sla.id, event_type="Paused",
+                details=f"Paused in state {state}",
+                tenant_id=task_sla.definition.tenant_id,
+            ))
         elif state not in pause_states and task_sla.stage == "Paused":
             current = now()
             if task_sla.paused_at.tzinfo is None:
@@ -1961,11 +2191,378 @@ def sync_slas(target_type, target_id, state):
             task_sla.breach_at += timedelta(seconds=paused)
             task_sla.paused_at = None
             task_sla.stage = "In Progress"
+            db.session.add(SLAEvent(
+                task_sla_id=task_sla.id, event_type="Resumed",
+                details=f"Resumed after {paused} seconds",
+                tenant_id=task_sla.definition.tenant_id,
+            ))
         current = now()
         if task_sla.breach_at.tzinfo is None:
             current = current.replace(tzinfo=None)
         if task_sla.stage == "In Progress" and current > task_sla.breach_at:
             task_sla.breached = True
+
+
+def process_sla_breaches(limit=50):
+    """Claim newly breached SLAs once and create durable escalation notifications."""
+    current = now()
+    rows = TaskSLA.query.filter_by(stage="In Progress", breached=False).filter(
+        TaskSLA.breach_at <= current
+    ).order_by(TaskSLA.breach_at).with_for_update(skip_locked=True).limit(limit).all()
+    processed = 0
+    for task_sla in rows:
+        task_sla.breached = True
+        definition = task_sla.definition
+        db.session.add(SLAEvent(
+            task_sla_id=task_sla.id, event_type="Breached",
+            details=f"Breached at {current.isoformat()}",
+            tenant_id=definition.tenant_id,
+        ))
+        recipients = set()
+        reference = f"{task_sla.target_type}:{task_sla.target_id}"
+        if task_sla.target_type == "ticket":
+            ticket = db.session.get(Ticket, task_sla.target_id)
+            if ticket and ticket.tenant_id == definition.tenant_id:
+                reference = ticket.number
+                group = ticket_owning_group(ticket)
+                if group and group.manager_id:
+                    recipients.add(group.manager_id)
+                if ticket.assignee_id:
+                    recipients.add(ticket.assignee_id)
+                log_history("ticket", ticket.id, "SLA breached", details=definition.name)
+                context = ticket_workflow_context(ticket)
+                context["sla_name"] = definition.name
+                queue_workflow_event(
+                    "ticket.sla_breached", "ticket", ticket.id, context,
+                    tenant_id=ticket.tenant_id,
+                )
+        for user_id in recipients:
+            create_notification(
+                user_id, f"SLA breached: {reference}",
+                f"{definition.name} breached for {reference}. Immediate attention is required.",
+                tenant_id=definition.tenant_id,
+            )
+        processed += 1
+    db.session.commit()
+    return processed
+
+
+def deploy_workflow_package(actor_id, package=None):
+    """Validate and publish the Git-backed package as immutable runtime versions."""
+    package = package or load_workflow_package()
+    digest = package_digest(package)
+    deployed = 0
+    for specification in package["workflows"]:
+        subflows = package.get("subflows", {})
+        validate_workflow(specification, subflows)
+        deployed_specification = materialize_workflow(specification, subflows)
+        definition = tenant_query(WorkflowDefinition).filter_by(
+            workflow_key=specification["key"]
+        ).first()
+        if not definition:
+            definition = WorkflowDefinition(
+                workflow_key=specification["key"], name=specification["name"],
+                event_type=specification["event"],
+            )
+            db.session.add(definition)
+            db.session.flush()
+        definition.name = specification["name"]
+        definition.event_type = specification["event"]
+        latest = WorkflowVersion.query.filter_by(
+            definition_id=definition.id
+        ).order_by(WorkflowVersion.version.desc()).first()
+        encoded = canonical_json(deployed_specification)
+        if latest and latest.package_hash == digest and latest.definition_json == encoded:
+            definition.published_version_id = latest.id
+            definition.active = True
+            continue
+        version = WorkflowVersion(
+            definition_id=definition.id,
+            version=(latest.version + 1 if latest else 1),
+            state="Published", definition_json=encoded, package_hash=digest,
+            created_by_id=actor_id, published_at=now(),
+        )
+        db.session.add(version)
+        db.session.flush()
+        if latest and latest.state == "Published":
+            latest.state = "Superseded"
+        definition.published_version_id = version.id
+        definition.active = True
+        deployed += 1
+    return {"package_hash": digest, "published": deployed}
+
+
+def queue_workflow_event(event_type, target_type, target_id, context, tenant_id=None):
+    job = WorkflowJob(
+        event_type=event_type, target_type=target_type, target_id=target_id,
+        context_json=canonical_json(context), tenant_id=tenant_id or tenant_context_id(),
+    )
+    db.session.add(job)
+    return job
+
+
+def ticket_workflow_context(ticket, previous_state=None):
+    return {
+        "number": ticket.number, "kind": ticket.kind, "state": ticket.state,
+        "previous_state": previous_state if previous_state is not None else ticket.state,
+        "priority": ticket.priority, "impact": ticket.impact,
+        "urgency": ticket.urgency, "category": ticket.category,
+    }
+
+
+def workflow_action_preview(action, context):
+    if action["type"] == "wait":
+        return {
+            "type": "wait", "minutes": action["minutes"],
+            "resume_at": None,
+        }
+    return {
+        "type": action["type"],
+        "recipient": (
+            "requester" if action["type"] == "notify_requester"
+            else "team_manager" if action["type"] == "notify_team_manager"
+            else None
+        ),
+        "title": action.get("title", "").format_map(context),
+        "body": action.get("body", "").format_map(context),
+        "event": action.get("event"),
+        "details": action.get("details", "").format_map(context),
+    }
+
+
+def simulate_workflows(event_type, context, tenant_id=None):
+    tenant_id = tenant_id or tenant_context_id()
+    matches = []
+    definitions = WorkflowDefinition.query.filter_by(
+        tenant_id=tenant_id, event_type=event_type, active=True
+    ).all()
+    for definition in definitions:
+        version = definition.published_version
+        if not version:
+            continue
+        specification = version.specification
+        if workflow_matches(specification, event_type, context):
+            matches.append({
+                "workflow_key": definition.workflow_key,
+                "version": version.version,
+                "actions": [
+                    workflow_action_preview(action, context)
+                    for action in specification["actions"]
+                ],
+            })
+    return matches
+
+
+def execute_workflow_action(action, job, context):
+    preview = workflow_action_preview(action, context)
+    ticket = db.session.get(Ticket, job.target_id) if job.target_type == "ticket" else None
+    if not ticket or ticket.tenant_id != job.tenant_id:
+        raise RuntimeError("Workflow target is unavailable.")
+    if action["type"] == "add_history":
+        log_history(
+            "ticket", ticket.id, preview["event"], details=preview["details"]
+        )
+    elif action["type"] == "notify_requester":
+        create_notification(
+            ticket.requester_id, preview["title"], preview["body"],
+            tenant_id=job.tenant_id,
+        )
+    elif action["type"] == "notify_team_manager":
+        group = ticket_owning_group(ticket)
+        if not group or not group.manager_id:
+            raise RuntimeError("Owning team manager is unavailable.")
+        create_notification(
+            group.manager_id, preview["title"], preview["body"],
+            tenant_id=job.tenant_id,
+        )
+    return preview
+
+
+def compensate_workflow_execution(execution, job):
+    specification = execution.version.specification
+    for step in sorted(execution.steps, key=lambda item: item.action_index, reverse=True):
+        action = specification["actions"][step.action_index]
+        compensation = action.get("compensate")
+        if step.state != "Completed" or not compensation or step.compensation_state == "Completed":
+            continue
+        try:
+            execute_workflow_action(compensation, job, job.context)
+            step.compensation_state = "Completed"
+        except Exception as error:
+            step.compensation_state = "Failed"
+            step.error = f"{step.error or ''}\nCompensation: {error}".strip()
+
+
+def workflow_rate_limited(version, specification, tenant_id):
+    cutoff = now() - timedelta(minutes=1)
+    count = WorkflowExecution.query.filter(
+        WorkflowExecution.version_id == version.id,
+        WorkflowExecution.tenant_id == tenant_id,
+        WorkflowExecution.started_at >= cutoff,
+    ).count()
+    return count >= specification["rate_limit_per_minute"]
+
+
+def process_workflow_schedules(limit=50):
+    """Atomically emit one event per due schedule and advance past the current time."""
+    current = now()
+    schedules = WorkflowSchedule.query.filter(
+        WorkflowSchedule.active.is_(True),
+        WorkflowSchedule.next_run_at <= current,
+    ).order_by(WorkflowSchedule.next_run_at).with_for_update(
+        skip_locked=True
+    ).limit(limit).all()
+    processed = 0
+    for schedule in schedules:
+        ticket = schedule.ticket
+        if not ticket or ticket.tenant_id != schedule.tenant_id:
+            schedule.active = False
+            processed += 1
+            continue
+        scheduled_for = schedule.next_run_at
+        context = ticket_workflow_context(ticket)
+        context["schedule_key"] = schedule.schedule_key
+        context["scheduled_for"] = scheduled_for.isoformat()
+        queue_workflow_event(
+            "ticket.scheduled", "ticket", ticket.id, context,
+            tenant_id=schedule.tenant_id,
+        )
+        schedule.last_run_at = current
+        next_run = scheduled_for
+        comparison_now = current
+        if next_run.tzinfo is None:
+            comparison_now = current.replace(tzinfo=None)
+        interval = timedelta(minutes=schedule.interval_minutes)
+        while next_run <= comparison_now:
+            next_run += interval
+        schedule.next_run_at = next_run
+        processed += 1
+    db.session.commit()
+    return processed
+
+
+def process_workflow_jobs(limit=50):
+    jobs = WorkflowJob.query.filter(
+        WorkflowJob.state.in_(["Pending", "Retry", "Waiting", "Rate Limited"]),
+        WorkflowJob.available_at <= now(),
+    ).order_by(WorkflowJob.id).with_for_update(skip_locked=True).limit(limit).all()
+    processed = 0
+    for job in jobs:
+        try:
+            job.state = "Running"
+            matches = simulate_workflows(job.event_type, job.context, job.tenant_id)
+            outputs = []
+            for match in matches:
+                definition = WorkflowDefinition.query.filter_by(
+                    tenant_id=job.tenant_id, workflow_key=match["workflow_key"]
+                ).one()
+                version = definition.published_version
+                existing = WorkflowExecution.query.filter_by(
+                    job_id=job.id, version_id=version.id
+                ).first()
+                if existing and existing.state == "Completed":
+                    continue
+                if not existing and workflow_rate_limited(
+                    version, version.specification, job.tenant_id
+                ):
+                    job.state = "Rate Limited"
+                    job.available_at = now() + timedelta(minutes=1)
+                    db.session.commit()
+                    break
+                execution = existing or WorkflowExecution(
+                    job_id=job.id, version_id=version.id,
+                    correlation_id=job.event_id, state="Running",
+                    input_json=job.context_json, tenant_id=job.tenant_id,
+                )
+                execution.state = "Running"
+                execution.resume_at = None
+                db.session.add(execution)
+                db.session.flush()
+                action_outputs = [
+                    json.loads(step.output_json) for step in execution.steps
+                    if step.state == "Completed"
+                ]
+                actions = version.specification["actions"]
+                waiting = False
+                for index in range(execution.next_action_index, len(actions)):
+                    action = actions[index]
+                    step = WorkflowStepExecution.query.filter_by(
+                        execution_id=execution.id, action_index=index
+                    ).first()
+                    if step and step.state == "Completed":
+                        execution.next_action_index = index + 1
+                        continue
+                    step = step or WorkflowStepExecution(
+                        execution_id=execution.id, action_index=index,
+                        action_type=action["type"], state="Running",
+                        input_json=canonical_json(action),
+                        tenant_id=job.tenant_id,
+                    )
+                    db.session.add(step)
+                    db.session.flush()
+                    if action["type"] == "wait":
+                        resume_at = now() + timedelta(minutes=action["minutes"])
+                        output = {
+                            "type": "wait", "minutes": action["minutes"],
+                            "resume_at": resume_at.isoformat(),
+                        }
+                        step.output_json = canonical_json(output)
+                        step.state = "Completed"
+                        step.completed_at = now()
+                        execution.next_action_index = index + 1
+                        execution.state = "Waiting"
+                        execution.resume_at = resume_at
+                        job.state = "Waiting"
+                        job.available_at = resume_at
+                        action_outputs.append(output)
+                        waiting = True
+                        break
+                    output = execute_workflow_action(action, job, job.context)
+                    step.output_json = canonical_json(output)
+                    step.state = "Completed"
+                    step.completed_at = now()
+                    execution.next_action_index = index + 1
+                    action_outputs.append(output)
+                execution.output_json = canonical_json(action_outputs)
+                if waiting:
+                    db.session.commit()
+                    break
+                execution.state = "Completed"
+                execution.resume_at = None
+                execution.completed_at = now()
+                outputs.extend(action_outputs)
+            if job.state in ("Waiting", "Rate Limited"):
+                processed += 1
+                continue
+            job.state = "Completed"
+            job.completed_at = now()
+            job.last_error = None
+            db.session.commit()
+        except Exception as error:
+            db.session.rollback()
+            claimed = db.session.get(WorkflowJob, job.id)
+            execution = WorkflowExecution.query.filter_by(
+                job_id=claimed.id
+            ).order_by(WorkflowExecution.id.desc()).first()
+            if execution:
+                execution.state = "Retry"
+                execution.error = str(error)[:2000]
+            claimed.attempts += 1
+            claimed.last_error = str(error)[:2000]
+            if claimed.attempts >= 5:
+                claimed.state = "Dead"
+                if execution:
+                    execution.state = "Failed"
+                    execution.completed_at = now()
+                    compensate_workflow_execution(execution, claimed)
+            else:
+                claimed.state = "Retry"
+                claimed.available_at = now() + timedelta(
+                    seconds=min(300, 2 ** claimed.attempts)
+                )
+            db.session.commit()
+        processed += 1
+    return processed
 
 
 def catalog_fulfillment_group(item):
@@ -2196,9 +2793,13 @@ def seed():
         if not admin:
             raise RuntimeError("The database has users but no administrator account.")
         seed_itil(admin)
+        deploy_workflow_package(admin.id)
         db.session.commit()
         return
-    admin_password = current_app.config.get("BOOTSTRAP_ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD")
+    admin_password = (
+        current_app.config.get("BOOTSTRAP_ADMIN_PASSWORD")
+        or secret_value("ADMIN_PASSWORD")
+    )
     if not admin_password:
         raise RuntimeError("ADMIN_PASSWORD is required to bootstrap the first administrator.")
     if not current_app.config.get("TESTING") and len(admin_password) < 14:
@@ -2208,6 +2809,7 @@ def seed():
     db.session.add(admin)
     db.session.flush()
     seed_itil(admin)
+    deploy_workflow_package(admin.id)
     db.session.commit()
 
 
@@ -2400,6 +3002,7 @@ def create_app(test_config=None):
     login_manager.init_app(app)
     oauth.init_app(app)
     validate_policy()
+    validate_priority_policy()
 
     with app.app_context():
         if app.config["TESTING"] and not app.config.get("AUTO_MIGRATE_IN_TESTS"):
@@ -2500,6 +3103,19 @@ def create_app(test_config=None):
             abort(400, description=(
                 "The security token is missing or expired. Refresh the page and try again."
             ))
+        return None
+
+    @app.before_request
+    def verify_session_version():
+        if (
+            current_user.is_authenticated
+            and session.get("_auth_version") != current_user.auth_version
+        ):
+            logout_user()
+            session.clear()
+            if request.path.startswith("/api/"):
+                abort(401, description="The authenticated session is no longer valid.")
+            return redirect(url_for("login"))
         return None
 
     @app.after_request
@@ -2629,6 +3245,9 @@ def create_app(test_config=None):
                 "/tickets/{number}": {
                     "get": {"summary": "Get a visible ticket"},
                     "patch": {"summary": "Update an authorized ticket"},
+                },
+                "/tickets/{number}/workflow-events": {
+                    "post": {"summary": "Queue an authorized workflow event"}
                 },
                 "/incidents": {"post": {"summary": "Create an incident"}},
             },
@@ -2882,6 +3501,44 @@ def create_app(test_config=None):
         db.session.commit()
         return jsonify(document)
 
+    @app.post("/api/v1/tickets/<number>/workflow-events")
+    def api_workflow_event(number):
+        require_api_scope("workflows:execute")
+        if not role_has_action(g.api_user.role, "transition"):
+            abort(403, description="The acting user cannot execute workflows.")
+        ticket = visible_ticket_query(g.api_user).filter(
+            func.upper(Ticket.number) == number.upper()
+        ).first()
+        if not ticket:
+            abort(404, description="The requested ticket was not found.")
+        if not user_can_manage_ticket(g.api_user, ticket):
+            abort(403, description="The acting user cannot manage this ticket.")
+        key, request_hash, replay = api_idempotency_context()
+        if replay:
+            return replay
+        body = request.get_json(silent=True)
+        if body not in ({}, None) and not isinstance(body, dict):
+            abort(400, description="A JSON object is required.")
+        context = ticket_workflow_context(ticket)
+        context["triggered_by"] = g.api_user.username
+        job = queue_workflow_event(
+            "ticket.api_trigger", "ticket", ticket.id, context,
+            tenant_id=ticket.tenant_id,
+        )
+        db.session.flush()
+        document = {"data": {
+            "event_id": job.event_id, "state": job.state,
+            "ticket": ticket.number,
+        }}
+        store_api_idempotency(key, request_hash, document, 202)
+        audit(
+            "api workflow trigger", ticket.number,
+            f"client={g.api_client.client_id}; event={job.event_id}",
+            user_id=g.api_user.id, tenant_id=ticket.tenant_id,
+        )
+        db.session.commit()
+        return jsonify(document), 202
+
     @app.after_request
     def security_headers(response):
         response.headers["X-Request-ID"] = g.get("request_id", str(uuid.uuid4()))
@@ -2912,6 +3569,7 @@ def create_app(test_config=None):
             if user and user.active:
                 login_user(user)
                 session.permanent = True
+                session["_auth_version"] = user.auth_version
                 session["_csrf_token"] = secrets.token_urlsafe(32)
                 audit("login", user.username, f"provider={provider}")
                 db.session.commit()
@@ -2945,6 +3603,7 @@ def create_app(test_config=None):
             claims.get("name", ""), claims.get("email", ""), role)
         login_user(user)
         session.permanent = True
+        session["_auth_version"] = user.auth_version
         session["_csrf_token"] = secrets.token_urlsafe(32)
         audit("login", user.username, "provider=keycloak")
         db.session.commit()
@@ -2954,8 +3613,32 @@ def create_app(test_config=None):
     @login_required
     def logout():
         logout_user()
-        session.pop("_csrf_token", None)
+        session.clear()
         return redirect(url_for("login"))
+
+    @app.route("/profile/password", methods=["GET", "POST"])
+    @login_required
+    def change_password():
+        if request.method == "POST":
+            current_password = request.form.get("current_password", "")
+            new_password = request.form.get("new_password", "")
+            confirmation = request.form.get("confirm_password", "")
+            if not check_password_hash(current_user.password_hash, current_password):
+                abort(400, description="The current password is incorrect.")
+            if len(new_password) < 14:
+                abort(400, description="The new password must contain at least 14 characters.")
+            if new_password != confirmation:
+                abort(400, description="The password confirmation does not match.")
+            if check_password_hash(current_user.password_hash, new_password):
+                abort(400, description="The new password must differ from the current password.")
+            current_user.password_hash = generate_password_hash(new_password)
+            current_user.auth_version += 1
+            session["_auth_version"] = current_user.auth_version
+            audit("credential rotate", current_user.username, "Local password changed")
+            db.session.commit()
+            flash("Password changed. Other browser sessions have been invalidated.", "success")
+            return redirect(url_for("preferences"))
+        return render_template("change_password.html")
 
     @app.get("/")
     @login_required
@@ -3020,9 +3703,13 @@ def create_app(test_config=None):
                 abort(409, description=(
                     "The selected team must have an active manager before a change can be submitted."
                 ))
+            impact = request.form.get("impact", "Medium")
+            urgency = request.form.get("urgency", "Medium")
+            priority = calculate_priority(impact, urgency)
             ticket = Ticket(number=next_number(kind), kind=kind,
                             title=request.form["title"].strip(), description=request.form["description"].strip(),
-                            category=request.form.get("category", "General"), priority=request.form.get("priority", "P3"),
+                            category=request.form.get("category", "General"), priority=priority,
+                            impact=impact, urgency=urgency,
                             requester_id=current_user.id)
             db.session.add(ticket)
             db.session.flush()
@@ -3092,15 +3779,38 @@ def create_app(test_config=None):
                 before = {
                     "state": ticket.state,
                     "priority": ticket.priority,
+                    "impact": ticket.impact,
+                    "urgency": ticket.urgency,
                     "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
                 }
                 transition_ticket(ticket, request.form["state"])
-                ticket.priority = request.form["priority"]
+                impact = request.form.get("impact", ticket.impact)
+                urgency = request.form.get("urgency", ticket.urgency)
+                calculated = calculate_priority(impact, urgency)
+                requested_priority = request.form.get("priority", calculated)
+                reason = request.form.get("priority_override_reason", "").strip()
+                governed_priority_input = "impact" in request.form or "urgency" in request.form
+                if governed_priority_input and requested_priority != calculated:
+                    if current_user.role not in ("manager", "admin") or len(reason) < 10:
+                        abort(400, description=(
+                            "Only a manager or administrator may override calculated priority, "
+                            "with a reason of at least 10 characters."
+                        ))
+                    ticket.priority_overridden = True
+                    ticket.priority_override_reason = reason
+                elif governed_priority_input:
+                    ticket.priority_overridden = False
+                    ticket.priority_override_reason = None
+                ticket.impact = impact
+                ticket.urgency = urgency
+                ticket.priority = requested_priority
                 ticket.assignee_id = assignee_id
                 assignee = db.session.get(User, assignee_id) if assignee_id else None
                 log_field_changes("ticket", ticket.id, before, {
                     "state": ticket.state,
                     "priority": ticket.priority,
+                    "impact": ticket.impact,
+                    "urgency": ticket.urgency,
                     "assigned to": assignee.name if assignee else "Unassigned",
                 })
                 audit("update", ticket.number, f"{ticket.state}, {ticket.priority}")
@@ -3728,6 +4438,136 @@ def create_app(test_config=None):
         db.session.commit()
         flash(f"Processed {count} outbox event(s).", "success")
         return redirect(url_for("integrations_admin"))
+
+    @app.route("/admin/workflows", methods=["GET", "POST"])
+    @roles("admin")
+    @require_action("configure")
+    def workflows_admin():
+        simulation = None
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "deploy":
+                result = deploy_workflow_package(current_user.id)
+                audit(
+                    "workflow deploy", "Git workflow package",
+                    f"{result['package_hash']}; {result['published']} published",
+                )
+                db.session.commit()
+                flash(
+                    f"Workflow package validated; {result['published']} new version(s) published.",
+                    "success",
+                )
+                return redirect(url_for("workflows_admin"))
+            if action == "simulate":
+                try:
+                    context = json.loads(request.form.get("context_json", "{}"))
+                    if not isinstance(context, dict):
+                        raise ValueError
+                    simulation = simulate_workflows(
+                        request.form.get("event_type", ""), context,
+                        current_user.tenant_id,
+                    )
+                except (json.JSONDecodeError, ValueError, KeyError) as error:
+                    abort(400, description=f"Simulation input is invalid: {error}")
+                audit("workflow simulate", request.form.get("event_type", ""),
+                      f"{len(simulation)} match(es)")
+                db.session.commit()
+            elif action == "manual_trigger":
+                ticket = tenant_record_or_404(
+                    Ticket, int(request.form.get("ticket_id", ""))
+                )
+                context = ticket_workflow_context(ticket)
+                context["triggered_by"] = current_user.username
+                job = queue_workflow_event(
+                    "ticket.manual", "ticket", ticket.id, context,
+                    tenant_id=ticket.tenant_id,
+                )
+                audit("workflow manual trigger", ticket.number, job.event_id)
+                db.session.commit()
+                flash(f"Manual workflow event queued for {ticket.number}.", "success")
+                return redirect(url_for("workflows_admin"))
+            elif action == "replay_dead":
+                job = tenant_record_or_404(
+                    WorkflowJob, int(request.form.get("job_id", ""))
+                )
+                if job.state != "Dead":
+                    abort(409, description="Only dead workflow jobs can be replayed.")
+                job.state = "Retry"
+                job.attempts = 0
+                job.available_at = now()
+                job.last_error = None
+                audit("workflow replay", job.event_id, f"{job.target_type}:{job.target_id}")
+                db.session.commit()
+                flash("Dead workflow job queued for controlled replay.", "success")
+                return redirect(url_for("workflows_admin"))
+            elif action == "create_schedule":
+                key = request.form.get("schedule_key", "").strip()
+                name = request.form.get("name", "").strip()
+                if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,119}", key):
+                    abort(400, description=(
+                        "Schedule key must be 3-120 lowercase letters, numbers or hyphens."
+                    ))
+                if not name or len(name) > 160:
+                    abort(400, description="Schedule name must contain 1-160 characters.")
+                try:
+                    ticket = tenant_record_or_404(
+                        Ticket, int(request.form.get("ticket_id", ""))
+                    )
+                    interval = int(request.form.get("interval_minutes", ""))
+                    start_text = request.form.get("next_run_at", "").strip()
+                    next_run = datetime.fromisoformat(start_text) if start_text else now()
+                    if next_run.tzinfo is None:
+                        next_run = next_run.replace(tzinfo=timezone.utc)
+                except (TypeError, ValueError):
+                    abort(400, description="Schedule target, interval, or start time is invalid.")
+                if interval < 1 or interval > 525600:
+                    abort(400, description="Schedule interval must be 1-525600 minutes.")
+                if tenant_query(WorkflowSchedule).filter_by(schedule_key=key).first():
+                    abort(409, description="A schedule with that key already exists.")
+                db.session.add(WorkflowSchedule(
+                    schedule_key=key, name=name, ticket_id=ticket.id,
+                    interval_minutes=interval, next_run_at=next_run,
+                    created_by_id=current_user.id,
+                ))
+                audit("workflow schedule create", key,
+                      f"{ticket.number}; every {interval} minute(s)")
+                db.session.commit()
+                flash(f"Workflow schedule {name} created.", "success")
+                return redirect(url_for("workflows_admin"))
+            elif action == "toggle_schedule":
+                schedule = tenant_record_or_404(
+                    WorkflowSchedule, int(request.form.get("schedule_id", ""))
+                )
+                schedule.active = not schedule.active
+                if schedule.active and schedule.next_run_at < now():
+                    schedule.next_run_at = now()
+                audit(
+                    "workflow schedule toggle", schedule.schedule_key,
+                    "active" if schedule.active else "disabled",
+                )
+                db.session.commit()
+                flash("Workflow schedule status updated.", "success")
+                return redirect(url_for("workflows_admin"))
+            else:
+                abort(400)
+        definitions = tenant_query(WorkflowDefinition).order_by(
+            WorkflowDefinition.workflow_key
+        ).all()
+        return render_template(
+            "workflows.html", definitions=definitions, simulation=simulation,
+            package=load_workflow_package(),
+            package_hash=package_digest(load_workflow_package()),
+            jobs=WorkflowJob.query.filter_by(
+                tenant_id=current_user.tenant_id
+            ).order_by(WorkflowJob.id.desc()).limit(50).all(),
+            executions=WorkflowExecution.query.filter_by(
+                tenant_id=current_user.tenant_id
+            ).order_by(WorkflowExecution.id.desc()).limit(50).all(),
+            tickets=tenant_query(Ticket).order_by(Ticket.updated_at.desc()).limit(100).all(),
+            schedules=tenant_query(WorkflowSchedule).order_by(
+                WorkflowSchedule.name
+            ).all(),
+        )
 
     @app.get("/branding/company-logo.png")
     def company_logo():
@@ -4612,6 +5452,82 @@ def create_app(test_config=None):
                     ),
                     "success",
                 )
+            elif action == "create_business_schedule":
+                name = request.form.get("name", "").strip()
+                timezone_name = request.form.get("timezone_name", "").strip()
+                weekdays = sorted({
+                    int(value) for value in request.form.getlist("weekdays")
+                })
+                start_text = request.form.get("start_time", "")
+                end_text = request.form.get("end_time", "")
+                if not name or len(name) > 160:
+                    abort(400, description="Schedule name must contain 1 to 160 characters.")
+                try:
+                    start_time = dt_time.fromisoformat(start_text)
+                    end_time = dt_time.fromisoformat(end_text)
+                    validate_calendar(timezone_name, weekdays, start_time, end_time)
+                except (ValueError, TypeError) as error:
+                    abort(400, description=str(error))
+                duplicate = tenant_query(BusinessSchedule).filter(
+                    func.lower(BusinessSchedule.name) == name.casefold()
+                ).first()
+                if duplicate:
+                    abort(409, description="A business schedule with that name already exists.")
+                db.session.add(BusinessSchedule(
+                    name=name, timezone_name=timezone_name,
+                    weekdays_json=json.dumps(weekdays),
+                    start_time_text=start_text, end_time_text=end_text,
+                ))
+                audit("create", f"Business schedule: {name}", timezone_name)
+                flash(f"Business schedule {name} created.", "success")
+            elif action == "add_schedule_holiday":
+                schedule = tenant_record_or_404(
+                    BusinessSchedule, int(request.form["schedule_id"])
+                )
+                holiday_name = request.form.get("name", "").strip()
+                try:
+                    holiday_date = date.fromisoformat(request.form.get("holiday_date", ""))
+                except ValueError:
+                    abort(400, description="Enter a valid holiday date.")
+                if not holiday_name:
+                    abort(400, description="Holiday name is required.")
+                if ScheduleHoliday.query.filter_by(
+                    schedule_id=schedule.id, holiday_date=holiday_date
+                ).first():
+                    abort(409, description="That date is already excluded.")
+                db.session.add(ScheduleHoliday(
+                    schedule_id=schedule.id, holiday_date=holiday_date, name=holiday_name
+                ))
+                audit("create", f"Schedule holiday: {schedule.name}",
+                      f"{holiday_date.isoformat()} {holiday_name}")
+                flash("Schedule holiday added.", "success")
+            elif action == "create_sla_definition":
+                name = request.form.get("name", "").strip()
+                target_type = request.form.get("target_type", "")
+                priority = request.form.get("priority") or None
+                pause_states = request.form.get("pause_states", "").strip()
+                try:
+                    duration = int(request.form.get("duration_minutes", ""))
+                    schedule_id = int(request.form["schedule_id"]) if request.form.get("schedule_id") else None
+                except (TypeError, ValueError):
+                    abort(400, description="SLA duration and schedule are invalid.")
+                if not name or target_type not in ("ticket", "ritm") or priority not in (None, "P1", "P2", "P3", "P4"):
+                    abort(400, description="SLA name, target and priority are invalid.")
+                if duration < 1 or duration > 525600:
+                    abort(400, description="SLA duration must be between 1 and 525600 minutes.")
+                schedule = tenant_record_or_404(BusinessSchedule, schedule_id) if schedule_id else None
+                if tenant_query(SLADefinition).filter(
+                    func.lower(SLADefinition.name) == name.casefold()
+                ).first():
+                    abort(409, description="An SLA definition with that name already exists.")
+                db.session.add(SLADefinition(
+                    name=name, target_type=target_type, priority=priority,
+                    duration_minutes=duration, pause_states=pause_states,
+                    schedule_id=schedule.id if schedule else None,
+                ))
+                audit("create", f"SLA definition: {name}",
+                      f"{duration} minutes; {schedule.name if schedule else '24x7'}")
+                flash(f"SLA definition {name} created.", "success")
             else:
                 abort(400)
             db.session.commit()
@@ -4637,6 +5553,9 @@ def create_app(test_config=None):
             ).all(),
             services=tenant_query(ServiceOffering).all(),
             sla_definitions=tenant_query(SLADefinition).all(),
+            business_schedules=tenant_query(BusinessSchedule).order_by(
+                BusinessSchedule.name
+            ).all(),
             catalog_items=tenant_query(CatalogItem).order_by(
                 CatalogItem.category, CatalogItem.name
             ).all(),

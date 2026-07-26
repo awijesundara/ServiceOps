@@ -16,6 +16,7 @@ Operations:
   ./serviceops start | stop | restart | status | health | logs | doctor
   ./serviceops backup [NAME]
   ./serviceops restore DATABASE_DUMP
+  ./serviceops retire-bootstrap-secret
   ./serviceops update | config
 EOF
 }
@@ -73,7 +74,27 @@ case "$command" in
     "$0" health >/dev/null 2>&1 && echo "✓ Application health" || { echo "✗ Application health"; failures=$((failures+1)); }
     "${COMPOSE[@]}" exec -T app python -c "from app import create_app,db; from sqlalchemy import text; a=create_app(); c=a.app_context(); c.push(); db.session.execute(text('SELECT 1')); print('✓ Database query')" 2>/dev/null || { echo "✗ Database query"; failures=$((failures+1)); }
     "${COMPOSE[@]}" exec -T app sh -c 'test -w /app/uploads' && echo "✓ Upload persistence" || { echo "✗ Upload persistence"; failures=$((failures+1)); }
+    "${COMPOSE[@]}" exec -T worker sh -c 'test -z "${ADMIN_PASSWORD:-}" && test -z "${ADMIN_PASSWORD_FILE:-}"' \
+      && echo "✓ Worker excludes bootstrap administrator secret" \
+      || { echo "✗ Worker contains bootstrap administrator secret"; failures=$((failures+1)); }
     exit "$failures"
+    ;;
+  retire-bootstrap-secret)
+    "${COMPOSE[@]}" exec -T app python -c "from app import create_app,User; a=create_app(); c=a.app_context(); c.push(); assert User.query.filter_by(role='admin',active=True).count() > 0, 'No active administrator exists'; print('Active administrator verified')"
+    read -r -p "Confirm the local administrator password is stored in your vault. Type RETIRE: " answer
+    [[ "$answer" == "RETIRE" ]] || { echo "Cancelled."; exit 1; }
+    retired_file="$(mktemp "$ROOT_DIR/.env.retire.XXXXXX")"
+    awk '
+      /^ADMIN_PASSWORD=/ {print "ADMIN_PASSWORD="; next}
+      /^ADMIN_PASSWORD_FILE=/ {print "ADMIN_PASSWORD_FILE="; next}
+      {print}
+    ' "$ENV_FILE" >"$retired_file"
+    chmod 600 "$retired_file"
+    mv "$retired_file" "$ENV_FILE"
+    "${COMPOSE[@]}" up -d --force-recreate app worker
+    "$0" health
+    "${COMPOSE[@]}" exec -T app sh -c 'test -z "${ADMIN_PASSWORD:-}" && test -z "${ADMIN_PASSWORD_FILE:-}"'
+    echo "Bootstrap administrator secret retired from the steady-state containers."
     ;;
   backup)
     [[ "$MODE" == "bundled" ]] || { echo "External database mode: use the database provider backup service."; exit 2; }

@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import tempfile
@@ -9,20 +10,32 @@ from alembic.config import Config as AlembicConfig
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import DBAPIError
 
-from app import (APIClient, APIIdempotencyRecord, Approval, ApprovalChain, Asset, Audit, CatalogRequest, CatalogTask, ChangeRevision,
+from app import (APIClient, APIIdempotencyRecord, Approval, ApprovalChain, Asset, Audit, BusinessSchedule, CatalogRequest, CatalogTask, ChangeRevision,
                  ConfigurationItem, EnterpriseRecord, CatalogItem, CatalogItemRouting, DirectoryGroupMapping,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
                  MonitoringEvent, MonitoringSource, Notification, OperationalTask,
-                 OutboxEvent, ProblemProfile, RecordLink,
+                 OutboxEvent, ProblemProfile, RecordLink, ScheduleHoliday, SLADefinition,
                  RequestedItem, PlatformSetting, SupportGroup, TaskHistory, TaskSLA,
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference,
+                 WorkflowDefinition, WorkflowExecution, WorkflowJob,
+                 WorkflowSchedule,
                  create_api_token, create_app, create_notification, db,
+                 deploy_workflow_package, process_workflow_jobs,
+                 process_workflow_schedules, queue_workflow_event,
+                 simulate_workflows,
                  integration_endpoint_valid, process_outbox,
-                 provision_external_user, settings_cipher,
+                 provision_external_user, secret_value, settings_cipher,
                  verify_audit_chain)
 from werkzeug.security import generate_password_hash
 from serviceops_core.security import role_has_action, validate_policy
+from serviceops_core.priority import calculate_priority, validate_priority_policy
+from serviceops_core.business_time import add_business_minutes
+from serviceops_core.workflow import (
+    WorkflowConfigurationError, load_workflow_package, materialize_workflow,
+    validate_subflows, validate_workflow,
+)
+from datetime import datetime, time, timedelta, timezone
 
 
 @pytest.fixture()
@@ -140,7 +153,7 @@ def test_migration_baseline_creates_fresh_schema_and_records_revision():
         revision = db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "20260726_0005"
+        assert revision == "20260726_0010"
         assert User.query.filter_by(username="admin").one()
     os.unlink(path)
 
@@ -168,7 +181,7 @@ def test_migration_baseline_adopts_existing_schema_without_data_loss():
         assert Knowledge.query.filter_by(title="Preserve during adoption").one()
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "20260726_0005"
+        ).scalar_one() == "20260726_0010"
     os.unlink(path)
 
 
@@ -210,7 +223,7 @@ def test_tenant_migration_is_reversible_and_preserves_records():
         )).scalar_one() == before
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "20260726_0005"
+            ).scalar_one() == "20260726_0010"
     os.unlink(path)
 
 
@@ -1609,3 +1622,268 @@ def test_dark_theme_is_removed(client, app):
     assert b'value="dark"' not in response.data
     with app.app_context():
         assert all(pref.theme == "light" for pref in UserPreference.query.all())
+
+
+def test_declarative_priority_matrix_is_complete():
+    assert validate_priority_policy()
+    assert calculate_priority("Critical", "Critical") == "P1"
+    assert calculate_priority("Medium", "Medium") == "P3"
+    assert calculate_priority("Low", "Low") == "P4"
+    with pytest.raises(ValueError):
+        calculate_priority("Unknown", "High")
+
+
+def test_business_calendar_skips_weekend_and_holiday():
+    class Calendar:
+        timezone_name = "UTC"
+        weekdays = [0, 1, 2, 3, 4]
+        start_time = time(9, 0)
+        end_time = time(17, 0)
+
+    friday = datetime(2026, 7, 24, 16, 0, tzinfo=timezone.utc)
+    assert add_business_minutes(friday, 120, Calendar()) == datetime(
+        2026, 7, 27, 10, 0, tzinfo=timezone.utc
+    )
+    assert add_business_minutes(
+        friday, 120, Calendar(), holidays={datetime(2026, 7, 27).date()}
+    ) == datetime(2026, 7, 28, 10, 0, tzinfo=timezone.utc)
+
+
+def test_admin_configures_business_calendar_holiday_and_sla(client, app):
+    login(client)
+    response = client.post("/itil/administration", data={
+        "action": "create_business_schedule", "name": "Sydney business hours",
+        "timezone_name": "Australia/Sydney", "start_time": "08:30",
+        "end_time": "17:00", "weekdays": ["0", "1", "2", "3", "4"],
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        schedule_id = BusinessSchedule.query.filter_by(
+            name="Sydney business hours"
+        ).one().id
+    assert client.post("/itil/administration", data={
+        "action": "add_schedule_holiday", "schedule_id": schedule_id,
+        "holiday_date": "2026-12-25", "name": "Christmas Day",
+    }).status_code == 302
+    assert client.post("/itil/administration", data={
+        "action": "create_sla_definition", "name": "P2 Sydney resolution",
+        "target_type": "ticket", "priority": "P2", "duration_minutes": "480",
+        "schedule_id": schedule_id, "pause_states": "Pending,On Hold",
+    }).status_code == 302
+    with app.app_context():
+        assert ScheduleHoliday.query.filter_by(schedule_id=schedule_id).one()
+        assert SLADefinition.query.filter_by(
+            name="P2 Sydney resolution", schedule_id=schedule_id
+        ).one()
+
+
+def test_workflow_package_rejects_arbitrary_scripts():
+    assert load_workflow_package()["schema_version"] == 2
+    malicious = {
+        "key": "unsafe", "name": "Unsafe", "event": "ticket.state_entry",
+        "conditions": [],
+        "actions": [{"type": "controlled_script", "code": "import os"}],
+    }
+    with pytest.raises(WorkflowConfigurationError):
+        validate_workflow(malicious)
+
+
+def test_workflow_simulation_and_durable_idempotent_execution(app):
+    with app.app_context():
+        employee = User.query.filter_by(username="employee").one()
+        admin = User.query.filter_by(username="admin").one()
+        coreapps = SupportGroup.query.filter_by(name="CoreApps").one()
+        ticket = Ticket(
+            number="INC0099001", kind="incident", title="Workflow test",
+            description="Exercise declarative automation.", state="Resolved",
+            priority="P2", impact="High", urgency="High",
+            requester_id=employee.id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        db.session.add(TicketAssignmentGroup(
+            ticket_id=ticket.id, group_id=coreapps.id
+        ))
+        context = {
+            "number": ticket.number, "kind": "incident", "state": "Resolved",
+            "previous_state": "In Progress", "priority": "P2",
+            "impact": "High", "urgency": "High", "category": "General",
+        }
+        preview = simulate_workflows("ticket.state_entry", context, 1)
+        assert preview[0]["workflow_key"] == "incident-resolved"
+        queue_workflow_event("ticket.state_entry", "ticket", ticket.id, context, 1)
+        db.session.commit()
+        assert process_workflow_jobs() == 1
+        assert WorkflowJob.query.filter_by(state="Completed").count() == 1
+        assert WorkflowExecution.query.filter_by(state="Completed").count() == 1
+        history_count = TaskHistory.query.filter_by(
+            target_type="ticket", target_id=ticket.id,
+            event="Resolution workflow completed",
+        ).count()
+        assert history_count == 1
+        assert process_workflow_jobs() == 0
+        assert TaskHistory.query.filter_by(
+            target_type="ticket", target_id=ticket.id,
+            event="Resolution workflow completed",
+        ).count() == history_count
+        assert admin
+
+
+def test_admin_can_simulate_and_redeploy_workflows(client, app):
+    login(client)
+    page = client.get("/admin/workflows")
+    assert page.status_code == 200
+    assert b"Arbitrary scripts are not supported" in page.data
+    simulated = client.post("/admin/workflows", data={
+        "action": "simulate", "event_type": "ticket.state_entry",
+        "context_json": json.dumps({
+            "number": "INC0000001", "kind": "incident", "state": "Resolved",
+            "previous_state": "In Progress", "priority": "P2",
+            "impact": "High", "urgency": "High", "category": "Software",
+        }),
+    })
+    assert simulated.status_code == 200
+    assert b"incident-resolved" in simulated.data
+    assert client.post("/admin/workflows", data={"action": "deploy"}).status_code == 302
+
+
+def test_durable_workflow_wait_resumes_without_replaying_steps(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        employee = User.query.filter_by(username="employee").one()
+        coreapps = SupportGroup.query.filter_by(name="CoreApps").one()
+        package = {
+            "schema_version": 1,
+            "workflows": [{
+                "key": "manual-wait-test", "name": "Manual wait test",
+                "event": "ticket.manual", "rate_limit_per_minute": 10,
+                "conditions": [{"field": "kind", "operator": "equals", "value": "incident"}],
+                "actions": [
+                    {"type": "add_history", "event": "Before durable wait",
+                     "details": "First action executed once."},
+                    {"type": "wait", "minutes": 1},
+                    {"type": "add_history", "event": "After durable wait",
+                     "details": "Execution resumed successfully."},
+                ],
+            }],
+        }
+        deploy_workflow_package(admin.id, package)
+        ticket = Ticket(
+            number="INC0099002", kind="incident", title="Wait test",
+            description="Durable workflow wait.", requester_id=employee.id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        db.session.add(TicketAssignmentGroup(
+            ticket_id=ticket.id, group_id=coreapps.id
+        ))
+        queue_workflow_event(
+            "ticket.manual", "ticket", ticket.id,
+            {
+                "number": ticket.number, "kind": "incident", "state": "New",
+                "previous_state": "New", "priority": "P3", "impact": "Medium",
+                "urgency": "Medium", "category": "General",
+                "triggered_by": admin.username,
+            }, 1,
+        )
+        db.session.commit()
+        assert process_workflow_jobs() == 1
+        job = WorkflowJob.query.filter_by(target_id=ticket.id).one()
+        execution = WorkflowExecution.query.filter_by(job_id=job.id).one()
+        assert job.state == "Waiting"
+        assert execution.state == "Waiting"
+        assert execution.next_action_index == 2
+        assert TaskHistory.query.filter_by(
+            target_type="ticket", target_id=ticket.id, event="Before durable wait"
+        ).count() == 1
+        job.available_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        execution.resume_at = job.available_at
+        db.session.commit()
+        assert process_workflow_jobs() == 1
+        assert job.state == "Completed"
+        assert execution.state == "Completed"
+        assert TaskHistory.query.filter_by(
+            target_type="ticket", target_id=ticket.id, event="Before durable wait"
+        ).count() == 1
+        assert TaskHistory.query.filter_by(
+            target_type="ticket", target_id=ticket.id, event="After durable wait"
+        ).count() == 1
+
+
+def test_subflows_are_materialized_and_cycles_fail_closed():
+    subflows = {
+        "evidence": [{
+            "type": "add_history", "event": "Subflow evidence",
+            "details": "Reusable action executed for {number}.",
+        }]
+    }
+    assert validate_subflows(subflows) == subflows
+    workflow = {
+        "key": "subflow-test", "name": "Subflow test",
+        "event": "ticket.manual", "rate_limit_per_minute": 10,
+        "conditions": [],
+        "actions": [{"type": "run_subflow", "subflow": "evidence"}],
+    }
+    validate_workflow(workflow, subflows)
+    materialized = materialize_workflow(workflow, subflows)
+    assert materialized["actions"][0]["type"] == "add_history"
+    with pytest.raises(WorkflowConfigurationError, match="cycle"):
+        validate_subflows({
+            "one": [{"type": "run_subflow", "subflow": "two"}],
+            "two": [{"type": "run_subflow", "subflow": "one"}],
+        })
+
+
+def test_due_schedule_emits_once_and_advances_beyond_now(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        employee = User.query.filter_by(username="employee").one()
+        ticket = Ticket(
+            number="INC0099003", kind="incident", title="Schedule test",
+            description="Recurring schedule verification.", requester_id=employee.id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        schedule = WorkflowSchedule(
+            schedule_key="schedule-test", name="Schedule test",
+            ticket_id=ticket.id, interval_minutes=60,
+            next_run_at=datetime.now(timezone.utc) - timedelta(days=2),
+            created_by_id=admin.id,
+        )
+        db.session.add(schedule)
+        db.session.commit()
+        assert process_workflow_schedules() == 1
+        assert WorkflowJob.query.filter_by(
+            target_id=ticket.id, event_type="ticket.scheduled"
+        ).count() == 1
+        assert schedule.next_run_at > datetime.now(timezone.utc).replace(tzinfo=None)
+        assert process_workflow_schedules() == 0
+
+
+def test_secret_file_takes_precedence_and_rejects_empty(monkeypatch, tmp_path):
+    secret_path = tmp_path / "bootstrap-password"
+    secret_path.write_text("mounted-secret-value\n", encoding="utf-8")
+    monkeypatch.setenv("ADMIN_PASSWORD", "legacy-environment-value")
+    monkeypatch.setenv("ADMIN_PASSWORD_FILE", str(secret_path))
+    assert secret_value("ADMIN_PASSWORD") == "mounted-secret-value"
+    secret_path.write_text("", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="empty"):
+        secret_value("ADMIN_PASSWORD")
+
+
+def test_password_rotation_invalidates_other_sessions(app):
+    first = app.test_client()
+    second = app.test_client()
+    assert login(first).status_code == 200
+    assert login(second).status_code == 200
+    response = first.post("/profile/password", data={
+        "current_password": "Admin123!",
+        "new_password": "NewAdminPassword-2026!",
+        "confirm_password": "NewAdminPassword-2026!",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Other browser sessions have been invalidated" in response.data
+    assert first.get("/").status_code == 200
+    stale = second.get("/", follow_redirects=False)
+    assert stale.status_code == 302
+    assert stale.headers["Location"].endswith("/login")

@@ -186,9 +186,38 @@
 </div>
 
 <section class="panel admin-section">
-  <h2>SLA definitions</h2>
-  <table><thead><tr><th>Name</th><th>Target</th><th>Priority</th><th>Duration</th><th>Pause states</th></tr></thead>
-    <tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td>{{ sla.target_type }}</td><td>{{ sla.priority or "All" }}</td><td>{{ sla.duration_minutes }} minutes</td><td>{{ sla.pause_states }}</td></tr>{% endfor %}</tbody>
+  <h2>Business calendars and SLA definitions</h2>
+  <p>New work uses the selected timezone-aware calendar. Existing running SLA targets are preserved.</p>
+  <details><summary>Add business schedule</summary>
+    <form method="post" class="form-grid">
+      <input type="hidden" name="action" value="create_business_schedule">
+      <label>Name<input name="name" maxlength="160" required></label>
+      <label>IANA timezone<input name="timezone_name" value="UTC" placeholder="Australia/Sydney" required></label>
+      <label>Start time<input type="time" name="start_time" value="09:00" required></label>
+      <label>End time<input type="time" name="end_time" value="17:00" required></label>
+      <fieldset class="wide"><legend>Business days</legend>{% for value,label in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}<label class="check"><input type="checkbox" name="weekdays" value="{{ value }}" {% if value < 5 %}checked{% endif %}> {{ label }}</label>{% endfor %}</fieldset>
+      <div class="wide actions"><button class="primary">Create schedule</button></div>
+    </form>
+  </details>
+  {% for schedule in business_schedules %}
+  <article class="config-row"><div><strong>{{ schedule.name }}</strong><small>{{ schedule.timezone_name }} · {{ schedule.start_time_text }}–{{ schedule.end_time_text }} · days {{ schedule.weekdays|join(', ') }}</small></div>
+    <form method="post" class="inline-form"><input type="hidden" name="action" value="add_schedule_holiday"><input type="hidden" name="schedule_id" value="{{ schedule.id }}"><input type="date" name="holiday_date" required><input name="name" placeholder="Holiday name" required><button class="button">Exclude date</button></form>
+  </article>
+  {% endfor %}
+  <details><summary>Add SLA definition</summary>
+    <form method="post" class="form-grid">
+      <input type="hidden" name="action" value="create_sla_definition">
+      <label>Name<input name="name" maxlength="160" required></label>
+      <label>Target<select name="target_type"><option value="ticket">Ticket</option><option value="ritm">Requested item</option></select></label>
+      <label>Priority<select name="priority"><option value="">All</option>{% for value in ['P1','P2','P3','P4'] %}<option>{{ value }}</option>{% endfor %}</select></label>
+      <label>Duration (business minutes)<input type="number" name="duration_minutes" min="1" max="525600" required></label>
+      <label>Calendar<select name="schedule_id"><option value="">24x7 wall clock</option>{% for schedule in business_schedules %}<option value="{{ schedule.id }}">{{ schedule.name }}</option>{% endfor %}</select></label>
+      <label>Pause states<input name="pause_states" value="Pending,On Hold"></label>
+      <div class="wide actions"><button class="primary">Create SLA</button></div>
+    </form>
+  </details>
+  <table><thead><tr><th>Name</th><th>Target</th><th>Priority</th><th>Duration</th><th>Calendar</th><th>Pause states</th></tr></thead>
+    <tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td>{{ sla.target_type }}</td><td>{{ sla.priority or "All" }}</td><td>{{ sla.duration_minutes }} minutes</td><td>{{ sla.schedule.name if sla.schedule else "24x7" }}</td><td>{{ sla.pause_states }}</td></tr>{% endfor %}</tbody>
   </table>
 </section>
 {% endblock %}

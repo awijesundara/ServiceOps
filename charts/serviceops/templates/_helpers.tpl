@@ -6,6 +6,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 {{- end }}
+{{- define "serviceops.bootstrapSecretName" -}}
+{{- if .Values.secret.create }}{{ include "serviceops.fullname" . }}-bootstrap{{ else }}{{ required "existingBootstrapSecret is required when secret.create=false" .Values.existingBootstrapSecret }}{{ end }}
+{{- end }}
 {{- define "serviceops.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "serviceops.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}

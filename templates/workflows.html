@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Workflow administration · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">AUTOMATION GOVERNANCE</p><h1>Declarative workflows</h1><p>Validate, publish, simulate, and inspect the Git-backed workflow package. Arbitrary scripts are not supported.</p></div></header>
+<section class="panel admin-section">
+  <div class="panel-head"><div><h2>Deployment package</h2><p><code>{{ package_hash }}</code> · schema {{ package.schema_version }} · {{ package.workflows|length }} workflows</p></div>
+    <form method="post"><input type="hidden" name="action" value="deploy"><button class="primary">Validate and deploy package</button></form>
+  </div>
+  <table><thead><tr><th>Workflow</th><th>Event</th><th>Published version</th><th>Status</th></tr></thead><tbody>
+  {% for definition in definitions %}<tr><td><strong>{{ definition.name }}</strong><small><code>{{ definition.workflow_key }}</code></small></td><td>{{ definition.event_type }}</td><td>{{ definition.published_version.version if definition.published_version else "None" }}</td><td>{{ "Active" if definition.active else "Disabled" }}</td></tr>{% else %}<tr><td colspan="4">No workflows deployed.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+<section class="panel admin-section">
+  <h2>Safe simulation</h2><p>Simulation evaluates conditions and renders action previews without changing operational records.</p>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="action" value="simulate">
+    <label>Event<select name="event_type"><option value="ticket.state_entry">Ticket state entry</option><option value="ticket.manual">Manual ticket event</option><option value="ticket.api_trigger">API ticket event</option><option value="ticket.sla_breached">SLA breached</option></select></label>
+    <label class="wide">Context JSON<textarea name="context_json" rows="7" required>{"number":"INC0000001","kind":"incident","state":"Resolved","previous_state":"In Progress","priority":"P2","impact":"High","urgency":"High","category":"Software"}</textarea></label>
+    <div class="wide actions"><button class="button">Simulate</button></div>
+  </form>
+  {% if simulation is not none %}<pre>{{ simulation|tojson(indent=2) }}</pre>{% endif %}
+</section>
+<section class="panel admin-section"><h2>Manual trigger</h2><p>Queue a governed manual event for a real tenant ticket. Only workflows explicitly bound to the manual event can match.</p>
+  <form method="post" class="inline-form"><input type="hidden" name="action" value="manual_trigger"><select name="ticket_id" required>{% for ticket in tickets %}<option value="{{ ticket.id }}">{{ ticket.number }} · {{ ticket.title }}</option>{% endfor %}</select><button class="button">Queue manual event</button></form>
+</section>
+<section class="panel admin-section"><h2>Recurring schedules</h2><p>Schedules emit one tenant-scoped event when due and advance directly to the next future interval, preventing restart catch-up storms.</p>
+  <details><summary>Create schedule</summary><form method="post" class="form-grid">
+    <input type="hidden" name="action" value="create_schedule">
+    <label>Schedule key<input name="schedule_key" placeholder="stale-incident-review" pattern="[a-z0-9][a-z0-9-]{2,119}" required></label>
+    <label>Name<input name="name" maxlength="160" required></label>
+    <label>Ticket<select name="ticket_id" required>{% for ticket in tickets %}<option value="{{ ticket.id }}">{{ ticket.number }} · {{ ticket.title }}</option>{% endfor %}</select></label>
+    <label>Interval minutes<input type="number" name="interval_minutes" min="1" max="525600" value="1440" required></label>
+    <label>First run (UTC if offset omitted)<input type="datetime-local" name="next_run_at"></label>
+    <div class="wide actions"><button class="primary">Create schedule</button></div>
+  </form></details>
+  <table><thead><tr><th>Schedule</th><th>Ticket</th><th>Interval</th><th>Next run</th><th>Last run</th><th>Status</th></tr></thead><tbody>
+  {% for schedule in schedules %}<tr><td><strong>{{ schedule.name }}</strong><small><code>{{ schedule.schedule_key }}</code></small></td><td>{{ schedule.ticket.number }}</td><td>{{ schedule.interval_minutes }} minutes</td><td>{{ schedule.next_run_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ schedule.last_run_at.strftime('%Y-%m-%d %H:%M') if schedule.last_run_at else 'Never' }}</td><td><form method="post"><input type="hidden" name="action" value="toggle_schedule"><input type="hidden" name="schedule_id" value="{{ schedule.id }}"><button class="button">{{ 'Disable' if schedule.active else 'Enable' }}</button></form></td></tr>{% else %}<tr><td colspan="6">No recurring schedules configured.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+<section class="panel admin-section"><h2>Recent workflow jobs</h2>
+  <table><thead><tr><th>Event ID</th><th>Event</th><th>Target</th><th>State</th><th>Attempts</th><th>Error</th></tr></thead><tbody>
+  {% for job in jobs %}<tr><td><code>{{ job.event_id }}</code></td><td>{{ job.event_type }}</td><td>{{ job.target_type }}:{{ job.target_id }}</td><td>{{ job.state }}</td><td>{{ job.attempts }}</td><td>{{ job.last_error or "—" }}{% if job.state == 'Dead' %}<form method="post"><input type="hidden" name="action" value="replay_dead"><input type="hidden" name="job_id" value="{{ job.id }}"><button class="button">Replay</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="6">No workflow jobs.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+<section class="panel admin-section"><h2>Execution evidence</h2>
+  <table><thead><tr><th>Correlation</th><th>Workflow version</th><th>State</th><th>Started</th><th>Error</th></tr></thead><tbody>
+  {% for execution in executions %}<tr><td><code>{{ execution.correlation_id }}</code></td><td>{{ execution.version.definition.workflow_key }} v{{ execution.version.version }}</td><td>{{ execution.state }}</td><td>{{ execution.started_at.strftime('%b %d, %H:%M') }}</td><td>{{ execution.error or "—" }}</td></tr>{% else %}<tr><td colspan="5">No workflow executions.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+{% endblock %}
