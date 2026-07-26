@@ -6,6 +6,7 @@ CHART="$ROOT_DIR/charts/serviceops"
 NAMESPACE="${SERVICEOPS_NAMESPACE:-serviceops}"
 RELEASE="${SERVICEOPS_RELEASE:-serviceops}"
 VALUES_FILE="${SERVICEOPS_VALUES:-$ROOT_DIR/deploy/kubernetes/values-production.yaml}"
+GITHUB_ORGANIZATION="${SERVICEOPS_GITHUB_ORGANIZATION:-}"
 PREFLIGHT_ONLY=false
 [[ "${1:-}" == "--preflight" ]] && PREFLIGHT_ONLY=true
 
@@ -27,6 +28,8 @@ ok "Required namespace deployment permission is available"
 
 helm lint "$CHART" >/dev/null
 ok "Helm chart lint passed"
+python3 "$ROOT_DIR/tools/verify_supply_chain.py" >/dev/null
+ok "Supply-chain policy verification passed"
 
 if [[ "$PREFLIGHT_ONLY" == true ]]; then exit 0; fi
 [[ -f "$VALUES_FILE" ]] || die "Create $VALUES_FILE from deploy/kubernetes/values-production.example.yaml."
@@ -37,6 +40,25 @@ kubectl label namespace "$NAMESPACE" \
   pod-security.kubernetes.io/audit=restricted \
   pod-security.kubernetes.io/warn=restricted --overwrite >/dev/null
 ok "Namespace exists with Restricted Pod Security admission labels"
+
+[[ -n "$GITHUB_ORGANIZATION" ]] ||
+  die "SERVICEOPS_GITHUB_ORGANIZATION is required for provenance admission."
+kubectl auth can-i create clusterimagepolicies.policy.sigstore.dev >/dev/null ||
+  die "Current identity cannot install the cluster image-attestation policy."
+helm upgrade policy-controller --install --atomic \
+  --create-namespace --namespace artifact-attestations \
+  oci://ghcr.io/sigstore/helm-charts/policy-controller \
+  --version 0.10.5 >/dev/null
+helm upgrade trust-policies --install --atomic \
+  --namespace artifact-attestations \
+  oci://ghcr.io/github/artifact-attestations-helm-charts/trust-policies \
+  --version v0.7.0 \
+  --set policy.enabled=true \
+  --set "policy.organization=$GITHUB_ORGANIZATION" \
+  --set "policy.images[0]=ghcr.io/$GITHUB_ORGANIZATION/**" >/dev/null
+kubectl label namespace "$NAMESPACE" \
+  policy.sigstore.dev/include=true --overwrite >/dev/null
+ok "GitHub provenance admission is enforced for the ServiceOps namespace"
 
 secret_file="$(mktemp)"
 chmod 600 "$secret_file"

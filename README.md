@@ -56,6 +56,7 @@ ServiceOps implements broad, independently developed enterprise workflow capabil
 
 Controlled documentation:
 
+- [REST API reference](docs/API_REFERENCE.md) — authentication, scopes, examples and errors
 - [Operations manual](docs/OPERATIONS_MANUAL.md) — administration and product use
 - [Deployment guide](docs/DEPLOYMENT.md) — Docker, Kubernetes, identity, backup and recovery
 - [Backlog](docs/BACKLOG.md) — authoritative completed and open work

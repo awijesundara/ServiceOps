@@ -1,0 +1,75 @@
+{
+  "schema": "serviceops.field-projections.v1",
+  "resources": {
+    "ticket": {
+      "allowed_fields": [
+        "id", "number", "type", "title", "description", "state", "priority",
+        "category", "opened_at", "updated_at", "internal"
+      ],
+      "audiences": {
+        "requester": [
+          "id", "number", "type", "title", "description", "state", "priority",
+          "category", "opened_at", "updated_at"
+        ],
+        "agent": [
+          "id", "number", "type", "title", "description", "state", "priority",
+          "category", "opened_at", "updated_at", "internal"
+        ],
+        "manager": [
+          "id", "number", "type", "title", "description", "state", "priority",
+          "category", "opened_at", "updated_at", "internal"
+        ],
+        "admin": [
+          "id", "number", "type", "title", "description", "state", "priority",
+          "category", "opened_at", "updated_at", "internal"
+        ]
+      }
+    },
+    "audit_event": {
+      "allowed_fields": [
+        "id", "event_id", "request_id", "user_id", "action", "target",
+        "details", "source_ip", "user_agent", "integrity_version",
+        "integrity_key_id", "previous_hash", "event_hash", "created_at"
+      ],
+      "audiences": {
+        "admin": [
+          "id", "event_id", "request_id", "user_id", "action", "target",
+          "details", "source_ip", "user_agent", "integrity_version",
+          "integrity_key_id", "previous_hash", "event_hash", "created_at"
+        ]
+      }
+    },
+    "search_result": {
+      "allowed_fields": ["type", "label", "url", "meta"],
+      "audiences": {
+        "requester": ["type", "label", "url", "meta"],
+        "agent": ["type", "label", "url", "meta"],
+        "manager": ["type", "label", "url", "meta"],
+        "admin": ["type", "label", "url", "meta"]
+      }
+    },
+    "monitoring_ack": {
+      "allowed_fields": ["event_id", "record_number", "deduplicated"],
+      "audiences": {
+        "monitoring_source": ["event_id", "record_number", "deduplicated"]
+      }
+    },
+    "workflow_ack": {
+      "allowed_fields": ["event_id", "state", "ticket"],
+      "audiences": {
+        "agent": ["event_id", "state", "ticket"],
+        "manager": ["event_id", "state", "ticket"],
+        "admin": ["event_id", "state", "ticket"]
+      }
+    },
+    "ui_action_ack": {
+      "allowed_fields": ["active", "state"],
+      "audiences": {
+        "requester": ["active", "state"],
+        "agent": ["active", "state"],
+        "manager": ["active", "state"],
+        "admin": ["active", "state"]
+      }
+    }
+  }
+}

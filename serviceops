@@ -16,6 +16,7 @@ Operations:
   ./serviceops start | stop | restart | status | health | logs | doctor
   ./serviceops backup [NAME]
   ./serviceops restore DATABASE_DUMP
+  ./serviceops rehearse-migrations [ROW_COUNT]
   ./serviceops retire-bootstrap-secret
   ./serviceops update | config
 EOF
@@ -119,6 +120,9 @@ case "$command" in
     "${COMPOSE[@]}" exec -T db pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner <"$dump"
     "${COMPOSE[@]}" start app
     "$0" health
+    ;;
+  rehearse-migrations)
+    exec "$ROOT_DIR/tools/rehearse-postgres-migrations.sh" "${2:-100000}"
     ;;
   update)
     "$0" backup || true

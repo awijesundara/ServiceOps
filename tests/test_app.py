@@ -10,7 +10,7 @@ from alembic.config import Config as AlembicConfig
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import DBAPIError
 
-from app import (APIClient, APIIdempotencyRecord, Approval, ApprovalChain, Asset, Audit, BusinessSchedule, CatalogRequest, CatalogTask, ChangeRevision,
+from app import (APIClient, APIIdempotencyRecord, Approval, ApprovalChain, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy, BusinessSchedule, CatalogRequest, CatalogTask, ChangeRevision,
                  ConfigurationItem, EnterpriseRecord, CatalogItem, CatalogItemRouting, DirectoryGroupMapping,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
@@ -20,21 +20,25 @@ from app import (APIClient, APIIdempotencyRecord, Approval, ApprovalChain, Asset
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference,
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
-                 create_api_token, create_app, create_notification, db,
+                 audit, create_api_token, create_app, create_notification, db,
                  deploy_workflow_package, process_workflow_jobs,
                  process_workflow_schedules, queue_workflow_event,
                  simulate_workflows,
                  integration_endpoint_valid, process_outbox,
                  provision_external_user, secret_value, settings_cipher,
-                 verify_audit_chain)
+                 rotate_audit_integrity_key, verify_audit_chain)
 from werkzeug.security import generate_password_hash
 from serviceops_core.security import role_has_action, validate_policy
 from serviceops_core.priority import calculate_priority, validate_priority_policy
+from serviceops_core.projections import (
+    ProjectionConfigurationError, project_document, validate_projection_policy,
+)
 from serviceops_core.business_time import add_business_minutes
 from serviceops_core.workflow import (
     WorkflowConfigurationError, load_workflow_package, materialize_workflow,
     validate_subflows, validate_workflow,
 )
+from tools.verify_supply_chain import verify_supply_chain
 from datetime import datetime, time, timedelta, timezone
 
 
@@ -102,6 +106,38 @@ def test_health(client):
     assert client.get("/ready").json == {"status": "ready"}
 
 
+def test_live_api_documentation_matches_supported_contract(client):
+    guide = client.get("/api/v1/docs")
+    assert guide.status_code == 200
+    assert guide.mimetype == "text/markdown"
+    assert b"Idempotency-Key" in guide.data
+    assert b"tickets:read" in guide.data
+    assert b"Current compatibility boundary" in guide.data
+
+    contract = client.get("/api/v1/openapi.json")
+    assert contract.status_code == 200
+    assert contract.json["openapi"] == "3.1.0"
+    paths = contract.json["paths"]
+    assert {
+        "/openapi.json", "/docs", "/tickets", "/tickets/{number}",
+        "/tickets/{number}/workflow-events", "/incidents",
+        "/monitoring/{source_id}/events",
+    }.issubset(paths)
+    assert paths["/docs"]["get"]["security"] == []
+    assert paths["/monitoring/{source_id}/events"]["post"]["security"] == [
+        {"monitoringToken": []}
+    ]
+    assert contract.json["components"]["parameters"]["IdempotencyKey"]["required"]
+
+
+def test_supply_chain_release_and_admission_controls_are_fail_closed():
+    evidence = verify_supply_chain()
+    assert evidence["valid"]
+    assert evidence["action_pins"] >= 7
+    assert evidence["kubernetes_digest_enforced"]
+    assert evidence["attestation_admission_enabled"]
+
+
 def test_csrf_protects_login_and_authenticated_mutations():
     fd, path = tempfile.mkstemp()
     os.close(fd)
@@ -153,7 +189,7 @@ def test_migration_baseline_creates_fresh_schema_and_records_revision():
         revision = db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "20260726_0010"
+        assert revision == "20260726_0011"
         assert User.query.filter_by(username="admin").one()
     os.unlink(path)
 
@@ -181,7 +217,7 @@ def test_migration_baseline_adopts_existing_schema_without_data_loss():
         assert Knowledge.query.filter_by(title="Preserve during adoption").one()
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "20260726_0010"
+        ).scalar_one() == "20260726_0011"
     os.unlink(path)
 
 
@@ -223,8 +259,27 @@ def test_tenant_migration_is_reversible_and_preserves_records():
         )).scalar_one() == before
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-            ).scalar_one() == "20260726_0010"
+            ).scalar_one() == "20260726_0011"
     os.unlink(path)
+
+
+def test_postgres_migration_rehearsal_requires_isolated_database():
+    from tools.postgres_migration_rehearsal import (
+        digest_rows, validated_rehearsal_database,
+    )
+
+    assert validated_rehearsal_database(
+        "postgresql+psycopg://user:secret@db/serviceops_migration_rehearsal"
+    ) == "serviceops_migration_rehearsal"
+    for unsafe_url in (
+        "postgresql+psycopg://user:secret@db/serviceops",
+        "sqlite:////tmp/serviceops_migration_rehearsal",
+    ):
+        with pytest.raises(ValueError):
+            validated_rehearsal_database(unsafe_url)
+    assert digest_rows([(1, "alpha"), (2, "beta")]) == digest_rows(
+        [(1, "alpha"), (2, "beta")]
+    )
 
 
 def test_audit_chain_is_correlated_verified_exportable_and_append_only():
@@ -266,6 +321,89 @@ def test_audit_chain_is_correlated_verified_exportable_and_append_only():
     assert exported.json["integrity"]["valid"]
     assert exported.json["events"][0]["request_id"] == request_id
     os.unlink(path)
+
+
+def test_audit_key_rotation_retention_and_dedicated_siem_delivery(
+    monkeypatch, client, app
+):
+    deliveries = []
+
+    class FakeResponse:
+        status_code = 202
+
+    def fake_post(url, json, headers, timeout):
+        deliveries.append((url, json, headers, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr("app.requests.post", fake_post)
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        original = Audit.query.order_by(Audit.id).first()
+        original_hash = original.event_hash
+        original_key_id = original.integrity_key_id
+        key = rotate_audit_integrity_key(1, admin.id)
+        db.session.commit()
+        assert key.active
+        assert key.key_id != original_key_id
+        assert AuditIntegrityKey.query.filter_by(
+            key_id="environment-v1"
+        ).one().secret_encrypted
+        assert Audit.query.filter_by(
+            action="audit key rotate"
+        ).one().integrity_key_id == key.key_id
+        assert db.session.get(Audit, original.id).event_hash == original_hash
+        assert verify_audit_chain(1)["valid"]
+
+        db.session.add_all([
+            PlatformSetting(
+                key="AUDIT_STREAM_ENABLED", value="true", encrypted=False
+            ),
+            IntegrationConnection(
+                name="Immutable SIEM", kind="siem",
+                endpoint="https://siem.example.test/ingest",
+                secret_encrypted=settings_cipher().encrypt(b"siem-secret").decode(),
+                created_by_id=admin.id,
+            ),
+            IntegrationConnection(
+                name="General webhook", kind="webhook",
+                endpoint="https://hooks.example.test/serviceops",
+                secret_encrypted=settings_cipher().encrypt(b"hook-secret").decode(),
+                created_by_id=admin.id,
+            ),
+        ])
+        audit("security test", "Audit streaming", "SIEM only")
+        db.session.commit()
+        assert process_outbox() >= 1
+        audit_delivery = next(
+            item for item in deliveries if "siem.example" in item[0]
+        )
+        assert audit_delivery[1]["type"] == "audit.created"
+        assert audit_delivery[1]["data"]["integrity_key_id"] == key.key_id
+        assert not any(
+            "hooks.example" in item[0]
+            and item[1].get("type") == "audit.created"
+            for item in deliveries
+        )
+
+    assert client.post("/admin/audit/retention", data={
+        "retention_days": "30",
+    }).status_code == 400
+    saved = client.post("/admin/audit/retention", data={
+        "retention_days": "3650",
+        "legal_hold": "on",
+        "external_export_required": "on",
+    })
+    assert saved.status_code == 302
+    with app.app_context():
+        policy = AuditRetentionPolicy.query.one()
+        assert policy.retention_days == 3650
+        assert policy.legal_hold
+        assert policy.external_export_required
+        assert verify_audit_chain(1)["valid"]
+    exported = client.get("/admin/audit/export")
+    assert exported.status_code == 200
+    assert exported.headers["X-ServiceOps-Audit-Key-ID"].startswith("audit-")
 
 
 def test_rest_api_scopes_idempotency_projection_and_pagination(client, app):
@@ -493,6 +631,24 @@ def test_declarative_action_policy_and_requester_field_projection(client, app):
     assert not role_has_action("requester", "comment_internal")
     assert not role_has_action("requester", "approve")
     assert role_has_action("admin", "security_administer")
+    assert validate_projection_policy()
+    assert project_document("ticket", "requester", {
+        "id": 1, "number": "INC1", "title": "Visible",
+        "internal": {"secret": "must not leak"},
+        "unexpected": "must not leak",
+    }) == {"id": 1, "number": "INC1", "title": "Visible"}
+    with pytest.raises(ProjectionConfigurationError):
+        project_document("unregistered_record", "admin", {"id": 1})
+    with pytest.raises(ProjectionConfigurationError):
+        validate_projection_policy({
+            "schema": "serviceops.field-projections.v1",
+            "resources": {
+                "ticket": {
+                    "allowed_fields": ["id"],
+                    "audiences": {"requester": ["id", "secret"]},
+                }
+            },
+        })
 
     login(client, "employee", "Employee123!")
     client.post("/tickets/new/incident", data={
@@ -523,6 +679,25 @@ def test_declarative_action_policy_and_requester_field_projection(client, app):
     assert b"Major incident coordination" not in requester.data
     assert b"Service level commitments" not in requester.data
     assert b"Approval history" not in requester.data
+
+    with app.app_context():
+        employee = User.query.filter_by(username="employee").one()
+        token, prefix, token_hash = create_api_token()
+        db.session.add(APIClient(
+            name="Requester projection token",
+            token_prefix=prefix,
+            token_hash=token_hash,
+            scopes_json='["tickets:read"]',
+            acting_user_id=employee.id,
+            created_by_id=User.query.filter_by(username="admin").one().id,
+        ))
+        db.session.commit()
+    api_record = client.get(
+        "/api/v1/tickets", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert api_record.status_code == 200
+    assert api_record.json["data"]
+    assert all("internal" not in row for row in api_record.json["data"])
 
 
 def test_tenant_scope_prevents_cross_tenant_ticket_discovery(client, app):
