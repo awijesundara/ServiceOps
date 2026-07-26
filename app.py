@@ -4,14 +4,25 @@ import ssl
 import uuid
 import base64
 import hashlib
+import hmac
+import ipaddress
 import re
+import secrets
+import smtplib
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from functools import wraps
+from urllib.parse import urlparse
 
-from flask import Flask, abort, current_app, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
+import requests
+from flask import Flask, Response, abort, current_app, flash, g, has_request_context, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_sqlalchemy import SQLAlchemy
 from authlib.integrations.flask_client import OAuth
+from alembic import command
+from alembic.config import Config as AlembicConfig
+from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from cryptography.fernet import Fernet, InvalidToken
 from ldap3 import ALL, SUBTREE, Connection, Server, Tls
 from ldap3.utils.conv import escape_filter_chars
@@ -19,6 +30,9 @@ from sqlalchemy import func
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.exceptions import HTTPException
+
+from serviceops_core.security import role_has_action, validate_policy
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -34,6 +48,35 @@ def env_bool(name, default=False):
     return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def tenant_context_id():
+    try:
+        if current_user.is_authenticated and getattr(current_user, "tenant_id", None):
+            return current_user.tenant_id
+    except (AttributeError, RuntimeError):
+        pass
+    return 1
+
+
+def tenant_record_or_404(model, record_id):
+    """Resolve a tenant-owned root without exposing another tenant's existence."""
+    return model.query.filter_by(
+        id=record_id, tenant_id=tenant_context_id()
+    ).first_or_404()
+
+
+def tenant_query(model):
+    """Start a query constrained to the authenticated/default tenant."""
+    return model.query.filter(model.tenant_id == tenant_context_id())
+
+
+class Tenant(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    slug = db.Column(db.String(80), unique=True, nullable=False)
+    name = db.Column(db.String(160), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+
+
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -43,6 +86,7 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(30), nullable=False, default="requester")
     active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
     @property
     def is_active(self):
@@ -66,6 +110,7 @@ class PlatformSetting(db.Model):
     updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     updated_by = db.relationship("User")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class Ticket(db.Model):
@@ -84,6 +129,7 @@ class Ticket(db.Model):
     requester = db.relationship("User", foreign_keys=[requester_id])
     assignee = db.relationship("User", foreign_keys=[assignee_id])
     comments = db.relationship("Comment", cascade="all, delete-orphan", backref="ticket")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class Comment(db.Model):
@@ -104,6 +150,7 @@ class Knowledge(db.Model):
     author_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     author = db.relationship("User")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class Asset(db.Model):
@@ -115,16 +162,196 @@ class Asset(db.Model):
     owner_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     serial_number = db.Column(db.String(120))
     owner = db.relationship("User")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class Audit(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     action = db.Column(db.String(120), nullable=False)
     target = db.Column(db.String(120), nullable=False)
     details = db.Column(db.Text, default="")
+    request_id = db.Column(db.String(36), nullable=False, index=True)
+    source_ip = db.Column(db.String(64))
+    user_agent = db.Column(db.String(255))
+    integrity_version = db.Column(db.String(30), nullable=False, default="hmac-sha256-v1")
+    previous_hash = db.Column(db.String(64), nullable=False, default="")
+    event_hash = db.Column(db.String(64), unique=True, nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     user = db.relationship("User")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+
+
+class APIClient(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(
+        db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    name = db.Column(db.String(160), nullable=False)
+    token_prefix = db.Column(db.String(16), nullable=False)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+    scopes_json = db.Column(db.Text, nullable=False, default="[]")
+    acting_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    last_used_at = db.Column(db.DateTime(timezone=True))
+    revoked_at = db.Column(db.DateTime(timezone=True))
+    tenant_id = db.Column(
+        db.Integer, db.ForeignKey("tenant.id"), nullable=False,
+        default=tenant_context_id, index=True,
+    )
+    acting_user = db.relationship("User", foreign_keys=[acting_user_id])
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
+
+    @property
+    def scopes(self):
+        try:
+            return set(json.loads(self.scopes_json))
+        except (TypeError, json.JSONDecodeError):
+            return set()
+
+
+class APIIdempotencyRecord(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    api_client_id = db.Column(
+        db.Integer, db.ForeignKey("api_client.id"), nullable=False
+    )
+    idempotency_key = db.Column(db.String(128), nullable=False)
+    method = db.Column(db.String(10), nullable=False)
+    path = db.Column(db.String(255), nullable=False)
+    request_hash = db.Column(db.String(64), nullable=False)
+    response_status = db.Column(db.Integer, nullable=False)
+    response_body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    tenant_id = db.Column(
+        db.Integer, db.ForeignKey("tenant.id"), nullable=False,
+        default=tenant_context_id, index=True,
+    )
+    api_client = db.relationship("APIClient")
+    __table_args__ = (
+        db.UniqueConstraint(
+            "api_client_id", "idempotency_key",
+            name="uq_api_idempotency_client_key",
+        ),
+    )
+
+
+class IntegrationConnection(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(160), nullable=False)
+    kind = db.Column(db.String(30), nullable=False)
+    endpoint = db.Column(db.String(500), nullable=False)
+    secret_encrypted = db.Column(db.Text)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(
+        db.Integer, db.ForeignKey("tenant.id"), nullable=False,
+        default=tenant_context_id, index=True,
+    )
+    created_by = db.relationship("User")
+
+    @property
+    def secret(self):
+        if not self.secret_encrypted:
+            return ""
+        return settings_cipher().decrypt(self.secret_encrypted.encode()).decode()
+
+
+class OutboxEvent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(
+        db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    event_type = db.Column(db.String(120), nullable=False, index=True)
+    payload_json = db.Column(db.Text, nullable=False)
+    state = db.Column(db.String(30), nullable=False, default="Pending", index=True)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    available_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    last_error = db.Column(db.Text)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    completed_at = db.Column(db.DateTime(timezone=True))
+    tenant_id = db.Column(
+        db.Integer, db.ForeignKey("tenant.id"), nullable=False,
+        default=tenant_context_id, index=True,
+    )
+
+    @property
+    def payload(self):
+        return json.loads(self.payload_json)
+
+
+class IntegrationDelivery(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    outbox_event_id = db.Column(
+        db.Integer, db.ForeignKey("outbox_event.id"), nullable=False
+    )
+    connection_id = db.Column(db.Integer, db.ForeignKey("integration_connection.id"))
+    channel = db.Column(db.String(30), nullable=False)
+    state = db.Column(db.String(30), nullable=False)
+    status_code = db.Column(db.Integer)
+    error = db.Column(db.Text)
+    attempted_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(
+        db.Integer, db.ForeignKey("tenant.id"), nullable=False,
+        default=tenant_context_id, index=True,
+    )
+    event = db.relationship("OutboxEvent")
+    connection = db.relationship("IntegrationConnection")
+
+
+class MonitoringSource(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    source_id = db.Column(
+        db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    name = db.Column(db.String(160), nullable=False)
+    token_prefix = db.Column(db.String(16), nullable=False)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+    assignment_group_id = db.Column(
+        db.Integer, db.ForeignKey("support_group.id"), nullable=False
+    )
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    last_seen_at = db.Column(db.DateTime(timezone=True))
+    tenant_id = db.Column(
+        db.Integer, db.ForeignKey("tenant.id"), nullable=False,
+        default=tenant_context_id, index=True,
+    )
+    assignment_group = db.relationship("SupportGroup")
+    created_by = db.relationship("User")
+
+
+class MonitoringEvent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    monitoring_source_id = db.Column(
+        db.Integer, db.ForeignKey("monitoring_source.id"), nullable=False
+    )
+    external_id = db.Column(db.String(200), nullable=False)
+    severity = db.Column(db.String(20), nullable=False)
+    resource = db.Column(db.String(255), nullable=False)
+    summary = db.Column(db.String(500), nullable=False)
+    payload_json = db.Column(db.Text, nullable=False)
+    enterprise_record_id = db.Column(
+        db.Integer, db.ForeignKey("enterprise_record.id"), nullable=False
+    )
+    received_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(
+        db.Integer, db.ForeignKey("tenant.id"), nullable=False,
+        default=tenant_context_id, index=True,
+    )
+    source = db.relationship("MonitoringSource")
+    record = db.relationship("EnterpriseRecord")
+    __table_args__ = (
+        db.UniqueConstraint(
+            "monitoring_source_id", "external_id",
+            name="uq_monitoring_source_external_event",
+        ),
+    )
 
 
 class EnterpriseRecord(db.Model):
@@ -147,6 +374,7 @@ class EnterpriseRecord(db.Model):
     requester = db.relationship("User", foreign_keys=[requester_id])
     assignee = db.relationship("User", foreign_keys=[assignee_id])
     approvals = db.relationship("Approval", cascade="all, delete-orphan", backref="record")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class Approval(db.Model):
@@ -167,6 +395,7 @@ class CatalogItem(db.Model):
     delivery_days = db.Column(db.Integer, nullable=False, default=3)
     approval_required = db.Column(db.Boolean, nullable=False, default=False)
     active = db.Column(db.Boolean, nullable=False, default=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class CatalogItemRouting(db.Model):
@@ -201,6 +430,7 @@ class ConfigurationItem(db.Model):
     ip_address = db.Column(db.String(60))
     owner_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     owner = db.relationship("User")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class CIRelationship(db.Model):
@@ -220,6 +450,7 @@ class Notification(db.Model):
     read = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     user = db.relationship("User")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class SupportGroup(db.Model):
@@ -230,6 +461,7 @@ class SupportGroup(db.Model):
     active = db.Column(db.Boolean, nullable=False, default=True)
     manager = db.relationship("User")
     members = db.relationship("GroupMember", cascade="all, delete-orphan", backref="group")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class GroupMember(db.Model):
@@ -273,6 +505,7 @@ class ApprovalChain(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     completed_at = db.Column(db.DateTime(timezone=True))
     gates = db.relationship("ApprovalGate", cascade="all, delete-orphan", backref="chain", order_by="ApprovalGate.sequence")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class ApprovalGate(db.Model):
@@ -307,6 +540,7 @@ class ServiceOffering(db.Model):
     status = db.Column(db.String(30), nullable=False, default="Operational")
     owner = db.relationship("User")
     support_group = db.relationship("SupportGroup")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class SLADefinition(db.Model):
@@ -317,6 +551,7 @@ class SLADefinition(db.Model):
     duration_minutes = db.Column(db.Integer, nullable=False)
     pause_states = db.Column(db.String(200), nullable=False, default="Pending,On Hold")
     active = db.Column(db.Boolean, nullable=False, default=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class TaskSLA(db.Model):
@@ -345,6 +580,7 @@ class CatalogRequest(db.Model):
     requested_by = db.relationship("User", foreign_keys=[requested_by_id])
     requested_for = db.relationship("User", foreign_keys=[requested_for_id])
     items = db.relationship("RequestedItem", cascade="all, delete-orphan", backref="request")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class RequestedItem(db.Model):
@@ -606,9 +842,233 @@ def roles(*allowed):
     return decorator
 
 
-def audit(action, target, details=""):
-    db.session.add(Audit(user_id=current_user.id if current_user.is_authenticated else None,
-                         action=action, target=target, details=details))
+def require_action(action):
+    def decorator(fn):
+        @wraps(fn)
+        @login_required
+        def wrapped(*args, **kwargs):
+            if not role_has_action(current_user.role, action):
+                abort(403)
+            return fn(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
+def audit_integrity_key():
+    configured = os.getenv("AUDIT_INTEGRITY_KEY") or os.getenv(
+        "SETTINGS_ENCRYPTION_KEY"
+    )
+    return (configured or current_app.config["SECRET_KEY"]).encode()
+
+
+def audit_payload(row):
+    created_at = row.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return json.dumps({
+        "action": row.action,
+        "created_at": created_at.astimezone(timezone.utc).isoformat(),
+        "details": row.details or "",
+        "event_id": row.event_id,
+        "previous_hash": row.previous_hash or "",
+        "request_id": row.request_id,
+        "source_ip": row.source_ip or "",
+        "target": row.target,
+        "tenant_id": row.tenant_id,
+        "user_agent": row.user_agent or "",
+        "user_id": row.user_id,
+    }, sort_keys=True, separators=(",", ":")).encode()
+
+
+def calculate_audit_hash(row):
+    if row.integrity_version == "legacy-sha256-v1":
+        return hashlib.sha256(audit_payload(row)).hexdigest()
+    return hmac.new(
+        audit_integrity_key(), audit_payload(row), hashlib.sha256
+    ).hexdigest()
+
+
+def verify_audit_chain(tenant_id):
+    previous_hash = ""
+    checked = 0
+    for row in Audit.query.filter_by(tenant_id=tenant_id).order_by(Audit.id):
+        checked += 1
+        if row.previous_hash != previous_hash:
+            return {
+                "valid": False, "checked": checked,
+                "event_id": row.event_id, "reason": "previous hash mismatch",
+            }
+        if not hmac.compare_digest(row.event_hash, calculate_audit_hash(row)):
+            return {
+                "valid": False, "checked": checked,
+                "event_id": row.event_id, "reason": "event hash mismatch",
+            }
+        previous_hash = row.event_hash
+    return {
+        "valid": True, "checked": checked,
+        "head": previous_hash, "reason": None,
+    }
+
+
+def audit(action, target, details="", user_id=None, tenant_id=None):
+    tenant_id = tenant_id or tenant_context_id()
+    if db.engine.dialect.name == "postgresql":
+        db.session.execute(
+            db.text("SELECT pg_advisory_xact_lock(:tenant_id)"),
+            {"tenant_id": tenant_id},
+        )
+    pending = [
+        row for row in db.session.new
+        if isinstance(row, Audit) and row.tenant_id == tenant_id
+    ]
+    if pending:
+        previous_hash = pending[-1].event_hash
+    else:
+        previous_hash = db.session.execute(
+            db.select(Audit.event_hash).where(
+                Audit.tenant_id == tenant_id
+            ).order_by(Audit.id.desc()).limit(1)
+        ).scalar_one_or_none() or ""
+    row = Audit(
+        event_id=str(uuid.uuid4()),
+        user_id=(
+            user_id if user_id is not None else
+            current_user.id if has_request_context() and current_user.is_authenticated else None
+        ),
+        action=action,
+        target=target,
+        details=details,
+        request_id=(
+            getattr(g, "request_id", None) or str(uuid.uuid4())
+            if has_request_context() else str(uuid.uuid4())
+        ),
+        source_ip=request.remote_addr if has_request_context() else None,
+        user_agent=(
+            str(request.user_agent)[:255] if has_request_context() else None
+        ),
+        integrity_version="hmac-sha256-v1",
+        previous_hash=previous_hash,
+        created_at=now(),
+        tenant_id=tenant_id,
+    )
+    row.event_hash = calculate_audit_hash(row)
+    db.session.add(row)
+
+
+API_SCOPES = {
+    "tickets:read",
+    "incidents:create",
+    "tickets:update",
+}
+
+
+def api_token_hash(token):
+    pepper = os.getenv("API_TOKEN_PEPPER") or current_app.config["SECRET_KEY"]
+    return hmac.new(
+        pepper.encode(), token.encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def create_api_token():
+    token = f"sop_{secrets.token_urlsafe(32)}"
+    return token, token[:12], api_token_hash(token)
+
+
+def authenticate_api_request():
+    authorization = request.headers.get("Authorization", "")
+    if not authorization.startswith("Bearer "):
+        abort(401, description="A bearer API token is required.")
+    token = authorization[7:].strip()
+    if not token:
+        abort(401, description="A bearer API token is required.")
+    token_hash = api_token_hash(token)
+    client = APIClient.query.filter_by(token_hash=token_hash, active=True).first()
+    if not client or not hmac.compare_digest(client.token_hash, token_hash):
+        abort(401, description="The API token is invalid or revoked.")
+    if not client.acting_user.active or client.acting_user.tenant_id != client.tenant_id:
+        abort(403, description="The API identity is inactive or invalid.")
+    client.last_used_at = now()
+    g.api_client = client
+    g.api_user = client.acting_user
+    db.session.commit()
+
+
+def require_api_scope(scope):
+    if scope not in API_SCOPES:
+        raise RuntimeError(f"Unknown API scope: {scope}")
+    if scope not in g.api_client.scopes:
+        abort(403, description=f"The API client lacks scope {scope}.")
+
+
+def api_ticket_document(ticket, user):
+    internal = role_has_action(user.role, "comment_internal")
+    document = {
+        "id": ticket.id,
+        "number": ticket.number,
+        "type": ticket.kind,
+        "title": ticket.title,
+        "description": ticket.description,
+        "state": ticket.state,
+        "priority": ticket.priority,
+        "category": ticket.category,
+        "opened_at": ticket.created_at.isoformat(),
+        "updated_at": ticket.updated_at.isoformat(),
+    }
+    if internal:
+        group = ticket_owning_group(ticket)
+        document["internal"] = {
+            "assignment_group": (
+                {"id": group.id, "name": group.name} if group else None
+            ),
+            "assigned_to": (
+                {"id": ticket.assignee.id, "name": ticket.assignee.name}
+                if ticket.assignee else None
+            ),
+        }
+    return document
+
+
+def api_idempotency_context():
+    key = request.headers.get("Idempotency-Key", "").strip()
+    if not key or len(key) > 128 or not re.fullmatch(r"[A-Za-z0-9._:-]+", key):
+        abort(400, description=(
+            "Idempotency-Key is required and must contain 1-128 safe characters."
+        ))
+    request_hash = hashlib.sha256(
+        request.method.encode() + b"\0" + request.path.encode() + b"\0"
+        + request.get_data(cache=True)
+    ).hexdigest()
+    existing = APIIdempotencyRecord.query.filter_by(
+        api_client_id=g.api_client.id, idempotency_key=key
+    ).first()
+    if existing:
+        if (
+            existing.method != request.method
+            or existing.path != request.path
+            or not hmac.compare_digest(existing.request_hash, request_hash)
+        ):
+            abort(409, description=(
+                "The idempotency key was already used for a different request."
+            ))
+        response = Response(existing.response_body, status=existing.response_status)
+        response.mimetype = "application/json"
+        response.headers["Idempotency-Replayed"] = "true"
+        return key, request_hash, response
+    return key, request_hash, None
+
+
+def store_api_idempotency(key, request_hash, response_body, status):
+    db.session.add(APIIdempotencyRecord(
+        api_client_id=g.api_client.id,
+        idempotency_key=key,
+        method=request.method,
+        path=request.path,
+        request_hash=request_hash,
+        response_status=status,
+        response_body=json.dumps(response_body, sort_keys=True),
+        expires_at=now() + timedelta(hours=24),
+        tenant_id=g.api_client.tenant_id,
+    ))
 
 
 def next_number(kind):
@@ -668,6 +1128,15 @@ SETTING_DEFINITIONS = {
         {"key": "CHANGE_FREEZE_MESSAGE", "label": "Change freeze message", "type": "text", "default": "", "live": True},
         {"key": "SYNC_CHILD_INCIDENT_STATES", "label": "Synchronize parent incident state to children", "type": "bool", "default": "false", "live": True},
     ],
+    "email": [
+        {"key": "SMTP_ENABLED", "label": "Enable SMTP delivery", "type": "bool", "default": "false", "live": True},
+        {"key": "SMTP_HOST", "label": "SMTP host", "type": "text", "default": "", "live": True},
+        {"key": "SMTP_PORT", "label": "SMTP port", "type": "int", "default": "587", "min": 1, "max": 65535, "live": True},
+        {"key": "SMTP_STARTTLS", "label": "Require SMTP STARTTLS", "type": "bool", "default": "true", "live": True},
+        {"key": "SMTP_USERNAME", "label": "SMTP username", "type": "text", "default": "", "live": True},
+        {"key": "SMTP_PASSWORD", "label": "SMTP password", "type": "secret", "default": "", "live": True},
+        {"key": "SMTP_FROM", "label": "SMTP from address", "type": "email", "default": "", "live": True},
+    ],
 }
 
 
@@ -705,6 +1174,165 @@ def setting_bool(key, default=False):
     return str(setting_value(key, str(default))).lower() in {"1", "true", "yes", "on"}
 
 
+def create_notification(user_id, title, body, tenant_id=None):
+    tenant_id = tenant_id or tenant_context_id()
+    notification = Notification(
+        user_id=user_id, title=title, body=body, tenant_id=tenant_id
+    )
+    db.session.add(notification)
+    db.session.add(OutboxEvent(
+        event_type="notification.created",
+        payload_json=json.dumps({
+            "user_id": user_id, "title": title, "body": body,
+        }, sort_keys=True),
+        tenant_id=tenant_id,
+    ))
+    return notification
+
+
+def integration_endpoint_valid(endpoint):
+    parsed = urlparse(endpoint)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username:
+        return False
+    hostname = parsed.hostname.lower()
+    if hostname in {"localhost", "127.0.0.1", "::1"} or hostname.endswith(".local"):
+        return False
+    try:
+        address = ipaddress.ip_address(hostname)
+        if not address.is_global:
+            return False
+    except ValueError:
+        pass
+    return True
+
+
+def deliver_smtp(event):
+    payload = event.payload
+    user = db.session.get(User, payload["user_id"])
+    if not user or user.tenant_id != event.tenant_id or not user.email:
+        raise RuntimeError("Notification recipient is unavailable.")
+    host = setting_value("SMTP_HOST", "")
+    sender = setting_value("SMTP_FROM", "")
+    if not host or not sender:
+        raise RuntimeError("SMTP host and from address are required.")
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = user.email
+    message["Subject"] = payload["title"]
+    message.set_content(payload["body"])
+    with smtplib.SMTP(host, int(setting_value("SMTP_PORT", "587")), timeout=10) as smtp:
+        smtp.ehlo()
+        if setting_bool("SMTP_STARTTLS", True):
+            smtp.starttls(context=ssl.create_default_context())
+            smtp.ehlo()
+        username = setting_value("SMTP_USERNAME", "")
+        if username:
+            smtp.login(username, setting_value("SMTP_PASSWORD", ""))
+        smtp.send_message(message)
+
+
+def deliver_webhook(event, connection):
+    payload = {
+        "id": event.event_id,
+        "type": event.event_type,
+        "created_at": event.created_at.isoformat(),
+        "data": event.payload,
+    }
+    if connection.kind == "teams":
+        body = {
+            "text": f"**{event.payload['title']}**\n\n{event.payload['body']}"
+        }
+        headers = {"Content-Type": "application/json"}
+    else:
+        body = payload
+        encoded = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+        timestamp = str(int(now().timestamp()))
+        signature = hmac.new(
+            connection.secret.encode(),
+            timestamp.encode() + b"." + encoded,
+            hashlib.sha256,
+        ).hexdigest()
+        headers = {
+            "Content-Type": "application/json",
+            "X-ServiceOps-Event-ID": event.event_id,
+            "X-ServiceOps-Timestamp": timestamp,
+            "X-ServiceOps-Signature": f"sha256={signature}",
+        }
+    response = requests.post(
+        connection.endpoint, json=body, headers=headers, timeout=10
+    )
+    if response.status_code < 200 or response.status_code >= 300:
+        raise RuntimeError(f"HTTP {response.status_code}")
+    return response.status_code
+
+
+def process_outbox(limit=50):
+    events = OutboxEvent.query.filter(
+        OutboxEvent.state.in_(["Pending", "Retry"]),
+        OutboxEvent.available_at <= now(),
+    ).order_by(OutboxEvent.id).with_for_update(skip_locked=True).limit(limit).all()
+    processed = 0
+    for event in events:
+        failures = []
+        attempted = False
+        if setting_bool("SMTP_ENABLED"):
+            prior = IntegrationDelivery.query.filter_by(
+                outbox_event_id=event.id, channel="smtp", state="Delivered"
+            ).first()
+            if not prior:
+                attempted = True
+                try:
+                    deliver_smtp(event)
+                    db.session.add(IntegrationDelivery(
+                        outbox_event_id=event.id, channel="smtp", state="Delivered",
+                        tenant_id=event.tenant_id,
+                    ))
+                except Exception as error:
+                    failures.append(f"smtp: {error}")
+                    db.session.add(IntegrationDelivery(
+                        outbox_event_id=event.id, channel="smtp", state="Failed",
+                        error=str(error)[:1000], tenant_id=event.tenant_id,
+                    ))
+        for connection in IntegrationConnection.query.filter_by(
+            tenant_id=event.tenant_id, active=True
+        ).all():
+            prior = IntegrationDelivery.query.filter_by(
+                outbox_event_id=event.id, connection_id=connection.id,
+                state="Delivered",
+            ).first()
+            if prior:
+                continue
+            attempted = True
+            try:
+                status = deliver_webhook(event, connection)
+                db.session.add(IntegrationDelivery(
+                    outbox_event_id=event.id, connection_id=connection.id,
+                    channel=connection.kind, state="Delivered",
+                    status_code=status, tenant_id=event.tenant_id,
+                ))
+            except Exception as error:
+                failures.append(f"{connection.name}: {error}")
+                db.session.add(IntegrationDelivery(
+                    outbox_event_id=event.id, connection_id=connection.id,
+                    channel=connection.kind, state="Failed",
+                    error=str(error)[:1000], tenant_id=event.tenant_id,
+                ))
+        event.attempts += 1
+        if failures:
+            event.last_error = "; ".join(failures)[:4000]
+            event.state = "Dead" if event.attempts >= 5 else "Retry"
+            event.available_at = now() + timedelta(
+                seconds=min(300, 2 ** event.attempts * 5)
+            )
+        else:
+            event.state = "Completed"
+            event.completed_at = now()
+            event.last_error = None if attempted else "No delivery channels enabled."
+        processed += 1
+    db.session.commit()
+    return processed
+
+
 def next_enterprise_number(domain):
     prefix = DOMAIN_CONFIG[domain]["prefix"]
     latest = EnterpriseRecord.query.filter_by(domain=domain).order_by(EnterpriseRecord.id.desc()).first()
@@ -718,7 +1346,9 @@ def sequence_number(model, prefix):
 
 
 def next_operational_task_number(task_kind):
-    prefix = "CTASK" if task_kind == "change" else "PTASK"
+    prefix = {"change": "CTASK", "problem": "PTASK", "event": "EVTASK"}.get(
+        task_kind, "TASK"
+    )
     latest = OperationalTask.query.filter_by(task_kind=task_kind).order_by(
         OperationalTask.id.desc()
     ).first()
@@ -1091,31 +1721,21 @@ def visible_ticket_query(user):
     query = Ticket.query
     if not user.is_authenticated or not user.active:
         return query.filter(Ticket.id == -1)
+    query = query.filter(Ticket.tenant_id == user.tenant_id)
     if user.role == "admin":
+        return query
+    group_ids = user_support_group_ids(user)
+    if group_ids and SupportGroup.query.filter(
+        SupportGroup.id.in_(group_ids),
+        SupportGroup.group_type == "IT Fulfillment",
+        SupportGroup.active.is_(True),
+    ).first():
         return query
     ticket_ids = {
         row[0] for row in db.session.query(Ticket.id).filter(
             Ticket.requester_id == user.id
         ).all()
     }
-    group_ids = user_support_group_ids(user)
-    if group_ids:
-        ticket_ids.update(
-            row[0] for row in db.session.query(TicketAssignmentGroup.ticket_id).filter(
-                TicketAssignmentGroup.group_id.in_(group_ids)
-            ).all()
-        )
-        ticket_ids.update(
-            row[0] for row in db.session.query(ChangeOwnership.ticket_id).filter(
-                ChangeOwnership.group_id.in_(group_ids)
-            ).all()
-        )
-        ticket_ids.update(
-            row[0] for row in db.session.query(OperationalTask.parent_id).filter(
-                OperationalTask.parent_type == "ticket",
-                OperationalTask.assignment_group_id.in_(group_ids),
-            ).all()
-        )
     ticket_ids.update(
         row[0] for row in db.session.query(ApprovalChain.target_id).join(
             ApprovalGate, ApprovalGate.chain_id == ApprovalChain.id
@@ -1210,11 +1830,12 @@ def supersede_change_approval(ticket, changed_fields):
     }
     summary = ", ".join(changed_fields)
     for approver_id in approver_ids:
-        db.session.add(Notification(
-            user_id=approver_id,
+        create_notification(
+            approver_id,
             title=f"Reapproval required: {ticket.number} v{revision.revision}",
             body=f"Material change fields were revised: {summary}. Review the new plan before implementation.",
-        ))
+            tenant_id=ticket.tenant_id,
+        )
     log_history(
         "ticket", ticket.id, "Approval restarted",
         "approval revision",
@@ -1238,8 +1859,11 @@ def activate_gate(gate):
     gate.state = "Requested"
     for vote in gate.votes:
         vote.state = "Requested"
-        db.session.add(Notification(user_id=vote.approver_id, title=f"Approval requested: {gate.name}",
-                                    body=f"Your decision is required for approval chain {gate.chain.name}."))
+        create_notification(
+            vote.approver_id, f"Approval requested: {gate.name}",
+            f"Your decision is required for approval chain {gate.chain.name}.",
+            tenant_id=gate.chain.tenant_id,
+        )
 
 
 def create_approval_chain(name, target_type, target_id, stages):
@@ -1357,11 +1981,11 @@ def user_support_group_ids(user):
     group_ids = {
         membership.group_id
         for membership in GroupMember.query.filter_by(user_id=user.id).all()
-        if membership.group.active
+        if membership.group.active and membership.group.tenant_id == user.tenant_id
     }
     group_ids.update(
         group.id for group in SupportGroup.query.filter_by(
-            manager_id=user.id, active=True
+            manager_id=user.id, active=True, tenant_id=user.tenant_id
         ).all()
     )
     return group_ids
@@ -1371,6 +1995,7 @@ def visible_catalog_request_query(user):
     query = CatalogRequest.query
     if not user.is_authenticated or not user.active:
         return query.filter(CatalogRequest.id == -1)
+    query = query.filter(CatalogRequest.tenant_id == user.tenant_id)
     if user.role == "admin":
         return query
     request_ids = {
@@ -1454,6 +2079,7 @@ def visible_enterprise_record_query(user):
     query = EnterpriseRecord.query
     if not user.is_authenticated or not user.active:
         return query.filter(EnterpriseRecord.id == -1)
+    query = query.filter(EnterpriseRecord.tenant_id == user.tenant_id)
     if user.role == "admin":
         return query
     record_ids = {
@@ -1644,11 +2270,12 @@ def sync_directory_team_memberships(user, groups):
             db.session.add(DirectoryManagedMembership(
                 user_id=user.id, group_id=group_id, directory_group=mapping.directory_group
             ))
-    db.session.add(Audit(
-        user_id=user.id, action="directory group sync", target=user.username,
-        details=", ".join(sorted(mapping.support_group.name for mapping in desired.values()))
-                or "No mapped teams",
-    ))
+    audit(
+        "directory group sync", user.username,
+        ", ".join(sorted(mapping.support_group.name for mapping in desired.values()))
+        or "No mapped teams",
+        user_id=user.id,
+    )
 
 
 def provision_external_user(provider, subject, username, name, email, role, groups=None):
@@ -1741,10 +2368,20 @@ def create_app(test_config=None):
         LDAP_ENABLED=env_bool("LDAP_ENABLED"),
         KEYCLOAK_ENABLED=env_bool("KEYCLOAK_ENABLED"),
         LOCAL_AUTH_ENABLED=env_bool("LOCAL_AUTH_ENABLED", True),
+        CSRF_ENABLED=env_bool("CSRF_ENABLED", True),
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=env_bool("SESSION_COOKIE_SECURE", False),
+        PERMANENT_SESSION_LIFETIME=timedelta(
+            minutes=int(os.getenv("SESSION_LIFETIME_MINUTES", "480"))
+        ),
+        AUTO_MIGRATE=env_bool("AUTO_MIGRATE", True),
     )
     if test_config:
         app.config.update(test_config)
     if app.config["TESTING"]:
+        if not test_config or "CSRF_ENABLED" not in test_config:
+            app.config["CSRF_ENABLED"] = False
         app.config["SECRET_KEY"] = app.config.get("SECRET_KEY") or "test-only-secret"
         app.config["BOOTSTRAP_ADMIN_PASSWORD"] = app.config.get(
             "BOOTSTRAP_ADMIN_PASSWORD", "Admin123!"
@@ -1762,9 +2399,46 @@ def create_app(test_config=None):
     db.init_app(app)
     login_manager.init_app(app)
     oauth.init_app(app)
+    validate_policy()
 
     with app.app_context():
-        db.create_all()
+        if app.config["TESTING"] and not app.config.get("AUTO_MIGRATE_IN_TESTS"):
+            db.create_all()
+        else:
+            migration_config = AlembicConfig(
+                os.path.join(os.path.dirname(__file__), "alembic.ini")
+            )
+            migration_config.set_main_option(
+                "script_location", os.path.join(os.path.dirname(__file__), "migrations")
+            )
+            migration_config.set_main_option(
+                "sqlalchemy.url", str(db.engine.url).replace("%", "%%")
+            )
+            if app.config["AUTO_MIGRATE"]:
+                command.upgrade(migration_config, "head")
+            else:
+                with db.engine.connect() as migration_connection:
+                    current_revision = MigrationContext.configure(
+                        migration_connection
+                    ).get_current_revision()
+                required_revision = ScriptDirectory.from_config(
+                    migration_config
+                ).get_current_head()
+                if current_revision != required_revision:
+                    raise RuntimeError(
+                        "Database migration required: current revision "
+                        f"{current_revision or 'unversioned'}, required {required_revision}. "
+                        "Run the migration job before starting ServiceOps."
+                    )
+        default_tenant = db.session.get(Tenant, 1)
+        if not default_tenant:
+            default_tenant = Tenant(
+                id=1,
+                slug=os.getenv("DEFAULT_TENANT_SLUG", "default"),
+                name=os.getenv("DEFAULT_TENANT_NAME", "Default organisation"),
+            )
+            db.session.add(default_tenant)
+            db.session.commit()
         seed()
         UserPreference.query.filter(UserPreference.theme != "light").update({"theme": "light"})
         db.session.commit()
@@ -1784,6 +2458,85 @@ def create_app(test_config=None):
         # Gunicorn preloads the application before forking workers. Do not let
         # workers inherit PostgreSQL connections or prepared-statement state.
         db.engine.dispose()
+
+    def csrf_token():
+        token = session.get("_csrf_token")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            session["_csrf_token"] = token
+        return token
+
+    @app.before_request
+    def assign_request_id():
+        supplied = request.headers.get("X-Request-ID", "").strip()
+        try:
+            g.request_id = str(uuid.UUID(supplied)) if supplied else str(uuid.uuid4())
+        except ValueError:
+            g.request_id = str(uuid.uuid4())
+
+    @app.before_request
+    def verify_api_identity():
+        if (
+            request.path.startswith("/api/v1/")
+            and request.endpoint not in {"api_openapi", "monitoring_ingest"}
+        ):
+            authenticate_api_request()
+
+    @app.before_request
+    def verify_csrf():
+        if (
+            request.path.startswith("/api/v1/monitoring/")
+            or request.path.startswith("/api/v1/")
+            and getattr(g, "api_client", None)
+        ):
+            return None
+        if not app.config["CSRF_ENABLED"] or request.method not in {
+            "POST", "PUT", "PATCH", "DELETE",
+        }:
+            return None
+        expected = session.get("_csrf_token")
+        supplied = request.headers.get("X-CSRF-Token") or request.form.get("_csrf_token")
+        if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+            abort(400, description=(
+                "The security token is missing or expired. Refresh the page and try again."
+            ))
+        return None
+
+    @app.after_request
+    def inject_csrf(response):
+        if (
+            app.config["CSRF_ENABLED"]
+            and response.status_code < 400
+            and response.mimetype == "text/html"
+        ):
+            body = response.get_data(as_text=True)
+            token = csrf_token()
+            hidden = f'<input type="hidden" name="_csrf_token" value="{token}">'
+            body = re.sub(
+                r'(<form\b[^>]*\bmethod=["\']post["\'][^>]*>)',
+                rf"\1{hidden}", body, flags=re.IGNORECASE,
+            )
+            meta = f'<meta name="csrf-token" content="{token}">'
+            if "</head>" in body:
+                body = body.replace("</head>", f"{meta}</head>", 1)
+            response.set_data(body)
+            response.headers["Content-Length"] = str(len(response.get_data()))
+        return response
+
+    @app.errorhandler(HTTPException)
+    def http_error(error):
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "error": {
+                    "status": error.code,
+                    "title": error.name,
+                    "detail": error.description,
+                    "request_id": g.get("request_id"),
+                }
+            }), error.code
+        return render_template(
+            "error.html", code=error.code, message=error.description
+        ), error.code
 
     @app.context_processor
     def ui_context():
@@ -1807,7 +2560,9 @@ def create_app(test_config=None):
             "ui_preference": preference,
             "ui_favorites": Favorite.query.filter_by(user_id=current_user.id).order_by(Favorite.folder, Favorite.label).all(),
             "ui_history": RecentView.query.filter_by(user_id=current_user.id).order_by(RecentView.viewed_at.desc()).limit(12).all(),
-            "unread_notifications": Notification.query.filter_by(user_id=current_user.id, read=False).count(),
+            "unread_notifications": tenant_query(Notification).filter_by(
+                user_id=current_user.id, read=False
+            ).count(),
         }
 
     @app.get("/health")
@@ -1824,8 +2579,312 @@ def create_app(test_config=None):
         db.session.execute(db.select(func.count(User.id))).scalar()
         return jsonify(status="ready")
 
+    @app.get("/manifest.webmanifest")
+    def pwa_manifest():
+        manifest = {
+            "id": "/",
+            "name": setting_value("INSTANCE_NAME", "ServiceOps"),
+            "short_name": setting_value("INSTANCE_NAME", "ServiceOps")[:30],
+            "description": "Enterprise service operations",
+            "start_url": "/",
+            "scope": "/",
+            "display": "standalone",
+            "background_color": "#f4f7f8",
+            "theme_color": setting_value("BRAND_TEAL", "#003e4c"),
+        }
+        if os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png")):
+            manifest["icons"] = [{
+                "src": url_for("company_logo"),
+                "sizes": "any",
+                "type": "image/png",
+                "purpose": "any maskable",
+            }]
+        response = jsonify(manifest)
+        response.mimetype = "application/manifest+json"
+        return response
+
+    @app.get("/service-worker.js")
+    def pwa_service_worker():
+        response = send_from_directory(
+            app.static_folder, "service-worker.js",
+            mimetype="application/javascript", max_age=0,
+        )
+        response.headers["Service-Worker-Allowed"] = "/"
+        return response
+
+    @app.get("/api/v1/openapi.json")
+    def api_openapi():
+        return jsonify({
+            "openapi": "3.1.0",
+            "info": {"title": "ServiceOps REST API", "version": "1.0.0"},
+            "servers": [{"url": "/api/v1"}],
+            "components": {
+                "securitySchemes": {
+                    "bearerAuth": {"type": "http", "scheme": "bearer"}
+                }
+            },
+            "security": [{"bearerAuth": []}],
+            "paths": {
+                "/tickets": {"get": {"summary": "List visible tickets"}},
+                "/tickets/{number}": {
+                    "get": {"summary": "Get a visible ticket"},
+                    "patch": {"summary": "Update an authorized ticket"},
+                },
+                "/incidents": {"post": {"summary": "Create an incident"}},
+            },
+        })
+
+    @app.post("/api/v1/monitoring/<source_id>/events")
+    def monitoring_ingest(source_id):
+        authorization = request.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer "):
+            abort(401, description="A monitoring bearer token is required.")
+        token = authorization[7:].strip()
+        source = MonitoringSource.query.filter_by(
+            source_id=source_id, active=True
+        ).first()
+        token_hash = api_token_hash(token) if token else ""
+        if (
+            not source or not token_hash
+            or not hmac.compare_digest(source.token_hash, token_hash)
+        ):
+            abort(401, description="The monitoring token is invalid or revoked.")
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            abort(400, description="A JSON object is required.")
+        required = {"external_id", "severity", "resource", "summary"}
+        if not required.issubset(body):
+            abort(400, description=(
+                "external_id, severity, resource and summary are required."
+            ))
+        external_id = str(body["external_id"]).strip()
+        severity = str(body["severity"]).strip().lower()
+        resource = str(body["resource"]).strip()
+        summary = str(body["summary"]).strip()
+        if (
+            not external_id or len(external_id) > 200
+            or severity not in {"critical", "high", "medium", "low", "info"}
+            or not resource or len(resource) > 255
+            or not summary or len(summary) > 500
+        ):
+            abort(400, description="Monitoring event fields are invalid.")
+        existing = MonitoringEvent.query.filter_by(
+            monitoring_source_id=source.id, external_id=external_id
+        ).first()
+        if existing:
+            return jsonify({
+                "data": {
+                    "event_id": existing.id,
+                    "record_number": existing.record.number,
+                    "deduplicated": True,
+                }
+            })
+        priority = {
+            "critical": "P1", "high": "P2", "medium": "P3",
+            "low": "P4", "info": "P4",
+        }[severity]
+        record = EnterpriseRecord(
+            number=next_enterprise_number("event"),
+            domain="event", record_type="Infrastructure event",
+            title=summary, description=json.dumps(body, indent=2, sort_keys=True),
+            state="New", priority=priority, risk=severity.title(),
+            requester_id=source.created_by_id,
+            metadata_json=json.dumps({
+                "monitoring_source_id": source.source_id,
+                "external_id": external_id,
+                "resource": resource,
+            }, sort_keys=True),
+            tenant_id=source.tenant_id,
+        )
+        db.session.add(record)
+        db.session.flush()
+        event = MonitoringEvent(
+            monitoring_source_id=source.id, external_id=external_id,
+            severity=severity, resource=resource, summary=summary,
+            payload_json=json.dumps(body, sort_keys=True),
+            enterprise_record_id=record.id, tenant_id=source.tenant_id,
+        )
+        db.session.add(event)
+        task = OperationalTask(
+            number=next_operational_task_number("event"),
+            task_kind="event", parent_type="enterprise", parent_id=record.id,
+            title=f"Investigate {resource}", task_type="Investigation",
+            assignment_group_id=source.assignment_group_id, required=True,
+        )
+        db.session.add(task)
+        source.last_seen_at = now()
+        audit(
+            "monitoring ingest", record.number,
+            f"source={source.source_id}; external_id={external_id}",
+            user_id=source.created_by_id, tenant_id=source.tenant_id,
+        )
+        db.session.commit()
+        return jsonify({
+            "data": {
+                "event_id": event.id,
+                "record_number": record.number,
+                "deduplicated": False,
+            }
+        }), 201
+
+    @app.get("/api/v1/tickets")
+    def api_tickets():
+        require_api_scope("tickets:read")
+        user = g.api_user
+        query = visible_ticket_query(user)
+        kind = request.args.get("type", "").strip()
+        state = request.args.get("state", "").strip()
+        if kind:
+            if kind not in ("incident", "change"):
+                abort(400, description="type must be incident or change.")
+            query = query.filter(Ticket.kind == kind)
+        if state:
+            query = query.filter(Ticket.state == state)
+        try:
+            limit = min(max(int(request.args.get("limit", "50")), 1), 100)
+            cursor = int(request.args.get("cursor", "0"))
+        except ValueError:
+            abort(400, description="limit and cursor must be integers.")
+        rows = query.filter(Ticket.id > cursor).order_by(Ticket.id).limit(
+            limit + 1
+        ).all()
+        page = rows[:limit]
+        return jsonify({
+            "data": [api_ticket_document(row, user) for row in page],
+            "meta": {
+                "limit": limit,
+                "next_cursor": page[-1].id if len(rows) > limit and page else None,
+                "request_id": g.request_id,
+            },
+        })
+
+    @app.get("/api/v1/tickets/<number>")
+    def api_ticket_get(number):
+        require_api_scope("tickets:read")
+        ticket = visible_ticket_query(g.api_user).filter(
+            func.upper(Ticket.number) == number.upper()
+        ).first()
+        if not ticket:
+            abort(404, description="The requested ticket was not found.")
+        return jsonify({"data": api_ticket_document(ticket, g.api_user)})
+
+    @app.post("/api/v1/incidents")
+    def api_incident_create():
+        require_api_scope("incidents:create")
+        if not role_has_action(g.api_user.role, "create"):
+            abort(403, description="The acting user cannot create records.")
+        key, request_hash, replay = api_idempotency_context()
+        if replay:
+            return replay
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            abort(400, description="A JSON object is required.")
+        allowed = {"title", "description", "category", "priority", "assignment_group_id"}
+        unknown = set(body) - allowed
+        if unknown:
+            abort(400, description=f"Unknown fields: {', '.join(sorted(unknown))}.")
+        title = str(body.get("title", "")).strip()
+        description = str(body.get("description", "")).strip()
+        priority = str(body.get("priority", "P3"))
+        if not title or len(title) > 180 or not description:
+            abort(400, description="title and description are required.")
+        if priority not in ("P1", "P2", "P3", "P4"):
+            abort(400, description="priority must be P1, P2, P3 or P4.")
+        try:
+            group_id = int(body.get("assignment_group_id"))
+        except (TypeError, ValueError):
+            abort(400, description="assignment_group_id is required.")
+        group = SupportGroup.query.filter_by(
+            id=group_id, tenant_id=g.api_client.tenant_id,
+            active=True, group_type="IT Fulfillment",
+        ).first()
+        if not group:
+            abort(400, description="Select an active tenant IT fulfillment team.")
+        ticket = Ticket(
+            number=next_number("incident"), kind="incident",
+            title=title, description=description,
+            category=str(body.get("category", "General"))[:80],
+            priority=priority, requester_id=g.api_user.id,
+            tenant_id=g.api_client.tenant_id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=group.id))
+        attach_slas("ticket", ticket.id, ticket.priority)
+        log_history(
+            "ticket", ticket.id, "Record created",
+            details=f"{ticket.number} created through REST API and assigned to {group.name}.",
+        )
+        document = {"data": api_ticket_document(ticket, g.api_user)}
+        store_api_idempotency(key, request_hash, document, 201)
+        audit(
+            "api create", ticket.number, f"client={g.api_client.client_id}",
+            user_id=g.api_user.id, tenant_id=g.api_client.tenant_id,
+        )
+        db.session.commit()
+        return jsonify(document), 201
+
+    @app.patch("/api/v1/tickets/<number>")
+    def api_ticket_update(number):
+        require_api_scope("tickets:update")
+        for action in ("update", "assign", "transition"):
+            if not role_has_action(g.api_user.role, action):
+                abort(403, description=f"The acting user cannot perform {action}.")
+        ticket = visible_ticket_query(g.api_user).filter(
+            func.upper(Ticket.number) == number.upper()
+        ).first()
+        if not ticket:
+            abort(404, description="The requested ticket was not found.")
+        if not user_can_manage_ticket(g.api_user, ticket):
+            abort(403, description="The acting user cannot manage this ticket.")
+        key, request_hash, replay = api_idempotency_context()
+        if replay:
+            return replay
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or not body:
+            abort(400, description="A non-empty JSON object is required.")
+        allowed = {"state", "priority", "assigned_to_id"}
+        unknown = set(body) - allowed
+        if unknown:
+            abort(400, description=f"Unknown fields: {', '.join(sorted(unknown))}.")
+        before = {
+            "state": ticket.state, "priority": ticket.priority,
+            "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
+        }
+        if "state" in body:
+            transition_ticket(ticket, str(body["state"]))
+        if "priority" in body:
+            priority = str(body["priority"])
+            if priority not in ("P1", "P2", "P3", "P4"):
+                abort(400, description="priority must be P1, P2, P3 or P4.")
+            ticket.priority = priority
+        if "assigned_to_id" in body:
+            assignee_id = body["assigned_to_id"]
+            if assignee_id is not None:
+                try:
+                    assignee_id = int(assignee_id)
+                except (TypeError, ValueError):
+                    abort(400, description="assigned_to_id must be an integer or null.")
+                eligible_ids = {agent.id for agent in ticket_team_agents(ticket)}
+                if assignee_id not in eligible_ids:
+                    abort(400, description="The assignee must belong to the owning team.")
+            ticket.assignee_id = assignee_id
+        log_field_changes("ticket", ticket.id, before, {
+            "state": ticket.state, "priority": ticket.priority,
+            "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
+        }, event="REST API update")
+        document = {"data": api_ticket_document(ticket, g.api_user)}
+        store_api_idempotency(key, request_hash, document, 200)
+        audit(
+            "api update", ticket.number, f"client={g.api_client.client_id}",
+            user_id=g.api_user.id, tenant_id=g.api_client.tenant_id,
+        )
+        db.session.commit()
+        return jsonify(document)
+
     @app.after_request
     def security_headers(response):
+        response.headers["X-Request-ID"] = g.get("request_id", str(uuid.uuid4()))
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -1852,6 +2911,8 @@ def create_app(test_config=None):
                     user = candidate
             if user and user.active:
                 login_user(user)
+                session.permanent = True
+                session["_csrf_token"] = secrets.token_urlsafe(32)
                 audit("login", user.username, f"provider={provider}")
                 db.session.commit()
                 preference = UserPreference.query.filter_by(user_id=user.id).first()
@@ -1883,6 +2944,8 @@ def create_app(test_config=None):
             "keycloak", subject, claims.get("preferred_username", ""),
             claims.get("name", ""), claims.get("email", ""), role)
         login_user(user)
+        session.permanent = True
+        session["_csrf_token"] = secrets.token_urlsafe(32)
         audit("login", user.username, "provider=keycloak")
         db.session.commit()
         return redirect(url_for("dashboard"))
@@ -1891,6 +2954,7 @@ def create_app(test_config=None):
     @login_required
     def logout():
         logout_user()
+        session.pop("_csrf_token", None)
         return redirect(url_for("login"))
 
     @app.get("/")
@@ -1993,7 +3057,9 @@ def create_app(test_config=None):
             db.session.commit()
             flash(f"{ticket.number} created.", "success")
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
-        teams = SupportGroup.query.filter_by(group_type="IT Fulfillment", active=True).order_by(SupportGroup.name).all()
+        teams = tenant_query(SupportGroup).filter_by(
+            group_type="IT Fulfillment", active=True
+        ).order_by(SupportGroup.name).all()
         return render_template("ticket_form.html", kind=kind, cis=ConfigurationItem.query.order_by(ConfigurationItem.name).all(),
                                teams=teams, default_priority=setting_value("DEFAULT_TICKET_PRIORITY", "P3"),
                                change_freeze_message=setting_value("CHANGE_FREEZE_MESSAGE", ""))
@@ -2001,18 +3067,23 @@ def create_app(test_config=None):
     @app.route("/ticket/<int:ticket_id>", methods=["GET", "POST"])
     @login_required
     def ticket_detail(ticket_id):
-        ticket = db.get_or_404(Ticket, ticket_id)
+        ticket = tenant_record_or_404(Ticket, ticket_id)
         if not user_can_view_ticket(current_user, ticket):
             abort(403, description="You are not involved in this ticket or its assigned work.")
         if request.method == "POST":
             action = request.form.get("action")
             if action == "comment":
+                if not role_has_action(current_user.role, "comment_public"):
+                    abort(403)
                 body = request.form.get("body", "").strip()
                 if body:
                     db.session.add(Comment(ticket_id=ticket.id, user_id=current_user.id, body=body))
                     log_history("ticket", ticket.id, "Comment added", details=body[:500])
                     audit("comment", ticket.number)
             elif action == "update":
+                for required_action in ("update", "assign", "transition"):
+                    if not role_has_action(current_user.role, required_action):
+                        abort(403)
                 require_ticket_team_access(ticket)
                 assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
                 eligible_ids = {agent.id for agent in ticket_team_agents(ticket)}
@@ -2038,6 +3109,7 @@ def create_app(test_config=None):
         agents = ticket_team_agents(ticket)
         owning_group = ticket_owning_group(ticket)
         can_manage_ticket = user_can_manage_ticket(current_user, ticket)
+        internal_view = role_has_action(current_user.role, "comment_internal")
         chains = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         slas = TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         work_tasks = OperationalTask.query.filter_by(
@@ -2066,15 +3138,18 @@ def create_app(test_config=None):
             can_manage_ticket=can_manage_ticket, related=related_records("ticket", ticket.id),
             relation_labels=RELATION_LABELS, work_tasks=work_tasks,
             work_task_states=OPERATIONAL_TASK_TRANSITIONS, history=history,
+            internal_view=internal_view,
             ci_links=ci_links, cis=ConfigurationItem.query.order_by(ConfigurationItem.name).all(),
-            teams=SupportGroup.query.filter_by(group_type="IT Fulfillment", active=True).order_by(SupportGroup.name).all(),
+            teams=tenant_query(SupportGroup).filter_by(
+                group_type="IT Fulfillment", active=True
+            ).order_by(SupportGroup.name).all(),
             task_agents=task_agents, task_permissions=task_permissions,
         )
 
     @app.post("/change/<int:ticket_id>/plan")
     @roles("agent", "manager", "admin")
     def change_plan_update(ticket_id):
-        ticket = db.get_or_404(Ticket, ticket_id)
+        ticket = tenant_record_or_404(Ticket, ticket_id)
         if ticket.kind != "change" or not ticket.change_governance:
             abort(404)
         require_ticket_team_access(ticket)
@@ -2162,7 +3237,7 @@ def create_app(test_config=None):
     @app.post("/incident/<int:ticket_id>/major-incident")
     @roles("agent", "manager", "admin")
     def major_incident_update(ticket_id):
-        ticket = db.get_or_404(Ticket, ticket_id)
+        ticket = tenant_record_or_404(Ticket, ticket_id)
         if ticket.kind != "incident":
             abort(404)
         require_ticket_team_access(ticket)
@@ -2292,7 +3367,7 @@ def create_app(test_config=None):
             require_ticket_team_access(target)
         elif not user_can_manage_enterprise_record(current_user, target):
             abort(403)
-        ci = db.get_or_404(ConfigurationItem, int(request.form["ci_id"]))
+        ci = tenant_record_or_404(ConfigurationItem, int(request.form["ci_id"]))
         role = request.form.get("relationship_role")
         if role not in ("Primary CI", "Affected CI", "Impacted service"):
             abort(400)
@@ -2321,11 +3396,11 @@ def create_app(test_config=None):
     @app.post("/change/<int:ticket_id>/tasks")
     @roles("agent", "manager", "admin")
     def change_task_add(ticket_id):
-        ticket = db.get_or_404(Ticket, ticket_id)
+        ticket = tenant_record_or_404(Ticket, ticket_id)
         if ticket.kind != "change":
             abort(404)
         require_ticket_team_access(ticket)
-        group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
+        group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
         if not group.active or group.group_type != "IT Fulfillment":
             abort(400, description="Change tasks require an active IT fulfillment team.")
         task_type = request.form.get("task_type")
@@ -2411,7 +3486,7 @@ def create_app(test_config=None):
     @login_required
     def knowledge():
         q = request.args.get("q", "").strip()
-        query = Knowledge.query.filter_by(published=True)
+        query = tenant_query(Knowledge).filter_by(published=True)
         if q:
             query = query.filter(db.or_(Knowledge.title.ilike(f"%{q}%"), Knowledge.body.ilike(f"%{q}%")))
         return render_template("knowledge.html", articles=query.order_by(Knowledge.created_at.desc()).all(), q=q)
@@ -2432,7 +3507,10 @@ def create_app(test_config=None):
     @app.get("/assets")
     @roles("agent", "manager", "admin")
     def assets():
-        return render_template("assets.html", assets=Asset.query.order_by(Asset.asset_tag).all())
+        return render_template(
+            "assets.html",
+            assets=tenant_query(Asset).order_by(Asset.asset_tag).all(),
+        )
 
     @app.route("/assets/new", methods=["GET", "POST"])
     @roles("admin")
@@ -2449,19 +3527,32 @@ def create_app(test_config=None):
 
     @app.get("/admin/users")
     @roles("admin")
+    @require_action("security_administer")
     def users():
-        memberships = GroupMember.query.all()
+        tenant_group_ids = [
+            group.id for group in tenant_query(SupportGroup).all()
+        ]
+        tenant_user_ids = [user.id for user in tenant_query(User).all()]
+        memberships = GroupMember.query.filter(
+            GroupMember.group_id.in_(tenant_group_ids),
+            GroupMember.user_id.in_(tenant_user_ids),
+        ).all()
         directory_managed = {
             (item.user_id, item.group_id)
-            for item in DirectoryManagedMembership.query.all()
+            for item in DirectoryManagedMembership.query.filter(
+                DirectoryManagedMembership.group_id.in_(tenant_group_ids),
+                DirectoryManagedMembership.user_id.in_(tenant_user_ids),
+            ).all()
         }
         return render_template(
-            "users.html", users=User.query.order_by(User.name).all(),
+            "users.html",
+            users=tenant_query(User).order_by(User.name).all(),
             memberships=memberships, directory_managed=directory_managed,
         )
 
     @app.route("/admin/users/new", methods=["GET", "POST"])
     @roles("admin")
+    @require_action("security_administer")
     def user_new():
         if request.method == "POST":
             user = User(username=request.form["username"], name=request.form["name"], email=request.form["email"],
@@ -2471,6 +3562,172 @@ def create_app(test_config=None):
             db.session.commit()
             return redirect(url_for("users"))
         return render_template("user_form.html")
+
+    @app.route("/admin/api-clients", methods=["GET", "POST"])
+    @roles("admin")
+    @require_action("security_administer")
+    def api_clients_admin():
+        if request.method == "POST":
+            name = request.form.get("name", "").strip()
+            try:
+                acting_user_id = int(request.form.get("acting_user_id", ""))
+            except (TypeError, ValueError):
+                abort(400, description="Select a valid acting user.")
+            acting_user = tenant_query(User).filter_by(
+                id=acting_user_id, active=True
+            ).first()
+            scopes = sorted(set(request.form.getlist("scopes")))
+            if not name or len(name) > 160:
+                abort(400, description="Client name must contain 1-160 characters.")
+            if not acting_user:
+                abort(400, description="The acting user must be active in this tenant.")
+            if not scopes or not set(scopes).issubset(API_SCOPES):
+                abort(400, description="Select one or more valid API scopes.")
+            token, prefix, token_hash = create_api_token()
+            client = APIClient(
+                name=name, token_prefix=prefix, token_hash=token_hash,
+                scopes_json=json.dumps(scopes),
+                acting_user_id=acting_user.id,
+                created_by_id=current_user.id,
+                tenant_id=current_user.tenant_id,
+            )
+            db.session.add(client)
+            audit(
+                "api client create", name,
+                f"acting_user={acting_user.username}; scopes={','.join(scopes)}",
+            )
+            db.session.commit()
+            return render_template(
+                "api_clients.html",
+                clients=APIClient.query.filter_by(
+                    tenant_id=current_user.tenant_id
+                ).order_by(APIClient.created_at.desc()).all(),
+                users=tenant_query(User).filter_by(active=True).order_by(User.name).all(),
+                available_scopes=sorted(API_SCOPES),
+                new_token=token,
+                new_client_name=name,
+            )
+        return render_template(
+            "api_clients.html",
+            clients=APIClient.query.filter_by(
+                tenant_id=current_user.tenant_id
+            ).order_by(APIClient.created_at.desc()).all(),
+            users=tenant_query(User).filter_by(active=True).order_by(User.name).all(),
+            available_scopes=sorted(API_SCOPES),
+            new_token=None,
+            new_client_name=None,
+        )
+
+    @app.post("/admin/api-clients/<int:client_id>/revoke")
+    @roles("admin")
+    @require_action("security_administer")
+    def api_client_revoke(client_id):
+        client = APIClient.query.filter_by(
+            id=client_id, tenant_id=current_user.tenant_id
+        ).first_or_404()
+        if client.active:
+            client.active = False
+            client.revoked_at = now()
+            audit("api client revoke", client.name, client.client_id)
+            db.session.commit()
+        return redirect(url_for("api_clients_admin"))
+
+    @app.route("/admin/integrations", methods=["GET", "POST"])
+    @roles("admin")
+    @require_action("configure")
+    def integrations_admin():
+        revealed_token = None
+        revealed_secret = None
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "create_connection":
+                name = request.form.get("name", "").strip()
+                kind = request.form.get("kind", "")
+                endpoint = request.form.get("endpoint", "").strip()
+                if (
+                    not name or len(name) > 160
+                    or kind not in {"webhook", "teams"}
+                    or not integration_endpoint_valid(endpoint)
+                ):
+                    abort(400, description=(
+                        "A name, supported kind and public HTTPS endpoint are required."
+                    ))
+                secret = (
+                    request.form.get("secret", "").strip()
+                    if kind == "webhook" else ""
+                )
+                if kind == "webhook" and not secret:
+                    secret = secrets.token_urlsafe(32)
+                    revealed_secret = secret
+                encrypted = (
+                    settings_cipher().encrypt(secret.encode()).decode()
+                    if secret else None
+                )
+                db.session.add(IntegrationConnection(
+                    name=name, kind=kind, endpoint=endpoint,
+                    secret_encrypted=encrypted,
+                    created_by_id=current_user.id,
+                    tenant_id=current_user.tenant_id,
+                ))
+                audit("integration create", name, kind)
+            elif action == "create_monitoring_source":
+                name = request.form.get("name", "").strip()
+                group = tenant_record_or_404(
+                    SupportGroup, int(request.form.get("group_id", "0"))
+                )
+                if (
+                    not name or len(name) > 160 or not group.active
+                    or group.group_type != "IT Fulfillment"
+                ):
+                    abort(400, description=(
+                        "A name and active IT fulfillment team are required."
+                    ))
+                token, prefix, token_hash = create_api_token()
+                source = MonitoringSource(
+                    name=name, token_prefix=prefix, token_hash=token_hash,
+                    assignment_group_id=group.id,
+                    created_by_id=current_user.id,
+                    tenant_id=current_user.tenant_id,
+                )
+                db.session.add(source)
+                db.session.flush()
+                revealed_token = {
+                    "token": token, "source_id": source.source_id, "name": name,
+                }
+                audit("monitoring source create", name, group.name)
+            else:
+                abort(400)
+            db.session.commit()
+        return render_template(
+            "integrations.html",
+            connections=IntegrationConnection.query.filter_by(
+                tenant_id=current_user.tenant_id
+            ).order_by(IntegrationConnection.name).all(),
+            sources=MonitoringSource.query.filter_by(
+                tenant_id=current_user.tenant_id
+            ).order_by(MonitoringSource.name).all(),
+            deliveries=IntegrationDelivery.query.filter_by(
+                tenant_id=current_user.tenant_id
+            ).order_by(IntegrationDelivery.id.desc()).limit(50).all(),
+            outbox=OutboxEvent.query.filter_by(
+                tenant_id=current_user.tenant_id
+            ).order_by(OutboxEvent.id.desc()).limit(50).all(),
+            teams=tenant_query(SupportGroup).filter_by(
+                group_type="IT Fulfillment", active=True
+            ).order_by(SupportGroup.name).all(),
+            revealed_token=revealed_token,
+            revealed_secret=revealed_secret,
+        )
+
+    @app.post("/admin/integrations/process")
+    @roles("admin")
+    @require_action("configure")
+    def integrations_process():
+        count = process_outbox()
+        audit("integration process", "Outbox", f"{count} event(s)")
+        db.session.commit()
+        flash(f"Processed {count} outbox event(s).", "success")
+        return redirect(url_for("integrations_admin"))
 
     @app.get("/branding/company-logo.png")
     def company_logo():
@@ -2482,12 +3739,15 @@ def create_app(test_config=None):
 
     @app.route("/admin/settings", methods=["GET", "POST"])
     @roles("admin")
+    @require_action("administer")
     def system_settings():
         definitions = [item for group in SETTING_DEFINITIONS.values() for item in group]
         if request.method == "POST":
             errors, restart_required, changed = [], False, []
             for definition in definitions:
                 key, field_type = definition["key"], definition["type"]
+                if key not in request.form and field_type != "bool":
+                    continue
                 submitted = request.form.get(key)
                 if field_type == "bool":
                     submitted = "true" if submitted else "false"
@@ -2576,8 +3836,57 @@ def create_app(test_config=None):
 
     @app.get("/admin/audit")
     @roles("admin")
+    @require_action("report")
     def audit_log():
-        return render_template("audit.html", rows=Audit.query.order_by(Audit.created_at.desc()).limit(250).all())
+        integrity = verify_audit_chain(current_user.tenant_id)
+        return render_template(
+            "audit.html",
+            rows=tenant_query(Audit).order_by(Audit.created_at.desc()).limit(250).all(),
+            integrity=integrity,
+        )
+
+    @app.get("/admin/audit/export")
+    @roles("admin")
+    @require_action("export")
+    def audit_export():
+        integrity = verify_audit_chain(current_user.tenant_id)
+        if not integrity["valid"]:
+            abort(409, description=(
+                "Audit integrity verification failed; export is blocked pending "
+                "security investigation."
+            ))
+        rows = tenant_query(Audit).order_by(Audit.id).all()
+        document = {
+            "schema": "serviceops.audit-export.v1",
+            "exported_at": now().isoformat(),
+            "tenant_id": current_user.tenant_id,
+            "integrity": integrity,
+            "events": [{
+                "id": row.id,
+                "event_id": row.event_id,
+                "request_id": row.request_id,
+                "user_id": row.user_id,
+                "action": row.action,
+                "target": row.target,
+                "details": row.details,
+                "source_ip": row.source_ip,
+                "user_agent": row.user_agent,
+                "integrity_version": row.integrity_version,
+                "previous_hash": row.previous_hash,
+                "event_hash": row.event_hash,
+                "created_at": row.created_at.isoformat(),
+            } for row in rows],
+        }
+        body = json.dumps(document, indent=2, sort_keys=True).encode()
+        signature = hmac.new(
+            audit_integrity_key(), body, hashlib.sha256
+        ).hexdigest()
+        response = Response(body, mimetype="application/json")
+        response.headers["Content-Disposition"] = (
+            f'attachment; filename="serviceops-audit-{now():%Y%m%dT%H%M%SZ}.json"'
+        )
+        response.headers["X-ServiceOps-Audit-Signature"] = signature
+        return response
 
     @app.get("/modules")
     @login_required
@@ -2625,8 +3934,10 @@ def create_app(test_config=None):
             if request.form.get("approval_required") and current_user.role != "requester":
                 admin = User.query.filter_by(role="admin", active=True).first()
                 db.session.add(Approval(enterprise_record_id=record.id, approver_id=admin.id))
-                db.session.add(Notification(user_id=admin.id, title=f"Approval requested: {record.number}",
-                                            body=record.title))
+                create_notification(
+                    admin.id, f"Approval requested: {record.number}",
+                    record.title, tenant_id=record.tenant_id,
+                )
                 record.state = "Awaiting Approval"
             log_history(
                 "enterprise", record.id, "Record created",
@@ -2640,7 +3951,7 @@ def create_app(test_config=None):
     @app.route("/enterprise/<int:record_id>", methods=["GET", "POST"])
     @login_required
     def enterprise_detail(record_id):
-        record = db.get_or_404(EnterpriseRecord, record_id)
+        record = tenant_record_or_404(EnterpriseRecord, record_id)
         if not user_can_view_enterprise_record(current_user, record):
             abort(403, description="You are not involved in this record or its assigned work.")
         can_manage_record = user_can_manage_enterprise_record(current_user, record)
@@ -2675,8 +3986,11 @@ def create_app(test_config=None):
                 approval.comments = request.form.get("comments", "")
                 approval.decided_at = now()
                 record.state = "Approved" if action == "approve" else "Rejected"
-                db.session.add(Notification(user_id=record.requester_id, title=f"{record.number} {record.state.lower()}",
-                                            body=approval.comments or f"Your record was {record.state.lower()}."))
+                create_notification(
+                    record.requester_id, f"{record.number} {record.state.lower()}",
+                    approval.comments or f"Your record was {record.state.lower()}.",
+                    tenant_id=record.tenant_id,
+                )
                 log_history(
                     "enterprise", record.id, f"Approval {approval.state.lower()}",
                     details=approval.comments,
@@ -2721,7 +4035,7 @@ def create_app(test_config=None):
     @app.post("/problem/<int:record_id>/analysis")
     @roles("agent", "manager", "admin")
     def problem_analysis_update(record_id):
-        record = db.get_or_404(EnterpriseRecord, record_id)
+        record = tenant_record_or_404(EnterpriseRecord, record_id)
         if record.domain != "problem":
             abort(404)
         if not user_can_manage_enterprise_record(current_user, record):
@@ -2762,12 +4076,12 @@ def create_app(test_config=None):
     @app.post("/problem/<int:record_id>/tasks")
     @roles("agent", "manager", "admin")
     def problem_task_add(record_id):
-        record = db.get_or_404(EnterpriseRecord, record_id)
+        record = tenant_record_or_404(EnterpriseRecord, record_id)
         if record.domain != "problem":
             abort(404)
         if not user_can_manage_enterprise_record(current_user, record):
             abort(403)
-        group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
+        group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
         if not group.active or group.group_type != "IT Fulfillment":
             abort(400, description="Problem tasks require an active IT fulfillment team.")
         task = OperationalTask(
@@ -2794,12 +4108,17 @@ def create_app(test_config=None):
     @app.get("/catalog")
     @login_required
     def catalog():
-        return render_template("catalog.html", items=CatalogItem.query.filter_by(active=True).order_by(CatalogItem.category, CatalogItem.name).all())
+        return render_template(
+            "catalog.html",
+            items=tenant_query(CatalogItem).filter_by(active=True).order_by(
+                CatalogItem.category, CatalogItem.name
+            ).all(),
+        )
 
     @app.post("/catalog/<int:item_id>/order")
     @login_required
     def catalog_order(item_id):
-        item = db.get_or_404(CatalogItem, item_id)
+        item = tenant_record_or_404(CatalogItem, item_id)
         if not item.active:
             abort(404)
         req = CatalogRequest(number=sequence_number(CatalogRequest, "REQ"), requested_by_id=current_user.id,
@@ -2815,8 +4134,12 @@ def create_app(test_config=None):
         db.session.flush()
         attach_slas("ritm", ritm.id, None)
         if item.approval_required:
-            manager = User.query.filter_by(role="admin", active=True).first()
-            fulfillment = SupportGroup.query.filter_by(name="Service Desk").first()
+            manager = tenant_query(User).filter_by(
+                role="admin", active=True
+            ).first()
+            fulfillment = tenant_query(SupportGroup).filter_by(
+                name="Service Desk"
+            ).first()
             stages = [
                 {"name": "Manager approval", "mode": "all", "approver_ids": [manager.id]},
                 {"name": "Fulfillment authorization", "mode": "any",
@@ -2838,8 +4161,15 @@ def create_app(test_config=None):
     @app.get("/cmdb")
     @roles("agent", "manager", "admin")
     def cmdb():
-        return render_template("cmdb.html", cis=ConfigurationItem.query.order_by(ConfigurationItem.ci_class, ConfigurationItem.name).all(),
-                               relationships=CIRelationship.query.all())
+        cis = tenant_query(ConfigurationItem).order_by(
+            ConfigurationItem.ci_class, ConfigurationItem.name
+        ).all()
+        ci_ids = [ci.id for ci in cis]
+        relationships = CIRelationship.query.filter(
+            CIRelationship.parent_id.in_(ci_ids),
+            CIRelationship.child_id.in_(ci_ids),
+        ).all()
+        return render_template("cmdb.html", cis=cis, relationships=relationships)
 
     @app.route("/cmdb/new", methods=["GET", "POST"])
     @roles("admin")
@@ -2857,7 +4187,9 @@ def create_app(test_config=None):
     @app.get("/approvals")
     @login_required
     def approvals():
-        query = Approval.query
+        query = Approval.query.join(EnterpriseRecord).filter(
+            EnterpriseRecord.tenant_id == current_user.tenant_id
+        )
         if current_user.role != "admin":
             query = query.filter_by(approver_id=current_user.id)
         return render_template("approvals.html", approvals=query.order_by(Approval.id.desc()).all())
@@ -2866,7 +4198,10 @@ def create_app(test_config=None):
     @login_required
     def approval_vote_decide(vote_id):
         vote = db.get_or_404(ApprovalVote, vote_id)
-        if vote.approver_id != current_user.id:
+        if (
+            vote.approver_id != current_user.id
+            or vote.gate.chain.tenant_id != current_user.tenant_id
+        ):
             abort(403)
         decision = request.form.get("decision")
         if decision not in ("Approved", "Rejected"):
@@ -2888,7 +4223,9 @@ def create_app(test_config=None):
     @login_required
     def approval_chains():
         chains = []
-        for chain in ApprovalChain.query.order_by(ApprovalChain.created_at.desc()).all():
+        for chain in tenant_query(ApprovalChain).order_by(
+            ApprovalChain.created_at.desc()
+        ).all():
             if current_user.role == "admin" or any(
                 vote.approver_id == current_user.id
                 for gate in chain.gates for vote in gate.votes
@@ -2902,7 +4239,11 @@ def create_app(test_config=None):
                 target = db.session.get(RequestedItem, chain.target_id)
                 if target and user_can_view_catalog_request(current_user, target.request):
                     chains.append(chain)
-        pending = ApprovalVote.query.filter_by(approver_id=current_user.id, state="Requested").all()
+        pending = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
+            ApprovalVote.approver_id == current_user.id,
+            ApprovalVote.state == "Requested",
+            ApprovalChain.tenant_id == current_user.tenant_id,
+        ).all()
         return render_template("approval_chains.html", chains=chains, pending=pending)
 
     @app.get("/requests")
@@ -2914,7 +4255,7 @@ def create_app(test_config=None):
     @app.get("/request/<int:request_id>")
     @login_required
     def request_detail(request_id):
-        req = db.get_or_404(CatalogRequest, request_id)
+        req = tenant_record_or_404(CatalogRequest, request_id)
         if not user_can_view_catalog_request(current_user, req):
             abort(403, description="You are not involved in this request or its fulfillment.")
         chains = {}
@@ -2938,10 +4279,10 @@ def create_app(test_config=None):
         return render_template(
             "request_detail.html", req=req, chains=chains, slas=slas,
             task_state_options=task_state_options,
-            teams=SupportGroup.query.filter_by(
+            teams=tenant_query(SupportGroup).filter_by(
                 group_type="IT Fulfillment", active=True
             ).order_by(SupportGroup.name).all(),
-            catalog_items=CatalogItem.query.filter_by(active=True).order_by(
+            catalog_items=tenant_query(CatalogItem).filter_by(active=True).order_by(
                 CatalogItem.category, CatalogItem.name
             ).all(),
             related_by_ritm={
@@ -2961,12 +4302,12 @@ def create_app(test_config=None):
     @app.post("/request/<int:request_id>/items")
     @login_required
     def request_item_add(request_id):
-        req = db.get_or_404(CatalogRequest, request_id)
+        req = tenant_record_or_404(CatalogRequest, request_id)
         if req.state not in ("Open", "Awaiting Approval"):
             abort(409, description="Items cannot be added to a completed request.")
         if not user_can_add_request_item(current_user, req):
             abort(403, description="Only request participants or an administrator can add items.")
-        item = db.get_or_404(CatalogItem, int(request.form["catalog_item_id"]))
+        item = tenant_record_or_404(CatalogItem, int(request.form["catalog_item_id"]))
         ritm = RequestedItem(
             number=sequence_number(RequestedItem, "RITM"), request_id=req.id,
             catalog_item_id=item.id,
@@ -3013,7 +4354,7 @@ def create_app(test_config=None):
         chain = approval_chain_for("ritm", ritm.id)
         if chain and chain.state != "Approved":
             abort(409, description="Catalog tasks cannot be added until the RITM is approved.")
-        group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
+        group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
         if not group.active or group.group_type != "IT Fulfillment":
             abort(400, description="Catalog tasks require an active IT fulfillment team.")
         task = CatalogTask(
@@ -3087,12 +4428,13 @@ def create_app(test_config=None):
 
     @app.route("/itil/administration", methods=["GET", "POST"])
     @roles("admin")
+    @require_action("configure")
     def itil_admin():
         if request.method == "POST":
             action = request.form.get("action")
             if action == "add_directory_mapping":
                 directory_group = request.form.get("directory_group", "").strip()
-                group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
+                group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
                 if not directory_group or len(directory_group) > 500:
                     abort(400)
                 existing = DirectoryGroupMapping.query.filter(
@@ -3114,7 +4456,7 @@ def create_app(test_config=None):
                 audit("disable", "AD team mapping", mapping.directory_group)
                 flash("AD group mapping disabled. Memberships reconcile at next login.", "success")
             elif action == "set_manager":
-                group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
+                group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
                 if group.group_type != "IT Fulfillment":
                     abort(400)
                 old_manager_id = group.manager_id
@@ -3151,7 +4493,7 @@ def create_app(test_config=None):
                       manager.username if manager else "Unassigned")
                 flash(f"{group.name} manager updated.", "success")
             elif action == "set_ccb_authority":
-                user = db.get_or_404(User, int(request.form["user_id"]))
+                user = tenant_record_or_404(User, int(request.form["user_id"]))
                 ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
                 membership = GroupMember.query.filter_by(
                     group_id=ccb.id, user_id=user.id
@@ -3172,8 +4514,8 @@ def create_app(test_config=None):
                       f"{user.username}: {'granted' if enabled else 'revoked'}")
                 flash("CCB approval authority updated.", "success")
             elif action == "set_catalog_route":
-                item = db.get_or_404(CatalogItem, int(request.form["catalog_item_id"]))
-                group = db.get_or_404(SupportGroup, int(request.form["group_id"]))
+                item = tenant_record_or_404(CatalogItem, int(request.form["catalog_item_id"]))
+                group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
                 if (
                     not group.active
                     or group.group_type not in ("Fulfillment", "IT Fulfillment")
@@ -3213,7 +4555,7 @@ def create_app(test_config=None):
                     abort(400, description="Catalog item description is required.")
                 if delivery_days < 1 or delivery_days > 365:
                     abort(400, description="Delivery target must be between 1 and 365 days.")
-                group = db.get_or_404(SupportGroup, group_id)
+                group = tenant_record_or_404(SupportGroup, group_id)
                 if (
                     not group.active
                     or group.group_type not in ("Fulfillment", "IT Fulfillment")
@@ -3233,7 +4575,7 @@ def create_app(test_config=None):
                 if duplicate.first():
                     abort(409, description="A catalog item with that name already exists.")
                 if item_id:
-                    item = db.get_or_404(CatalogItem, item_id)
+                    item = tenant_record_or_404(CatalogItem, item_id)
                     previous_name = item.name
                 else:
                     item = CatalogItem()
@@ -3274,13 +4616,13 @@ def create_app(test_config=None):
                 abort(400)
             db.session.commit()
             return redirect(url_for("itil_admin"))
-        groups = SupportGroup.query.order_by(SupportGroup.name).all()
+        groups = tenant_query(SupportGroup).order_by(SupportGroup.name).all()
         teams = [group for group in groups if group.group_type == "IT Fulfillment"]
         fulfillment_groups = [
             group for group in groups
             if group.active and group.group_type in ("Fulfillment", "IT Fulfillment")
         ]
-        candidates = User.query.filter(
+        candidates = tenant_query(User).filter(
             User.active.is_(True), User.role.in_(["agent", "manager", "admin"])
         ).order_by(User.name).all()
         ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
@@ -3293,8 +4635,9 @@ def create_app(test_config=None):
             directory_mappings=DirectoryGroupMapping.query.order_by(
                 DirectoryGroupMapping.directory_group
             ).all(),
-            services=ServiceOffering.query.all(), sla_definitions=SLADefinition.query.all(),
-            catalog_items=CatalogItem.query.order_by(
+            services=tenant_query(ServiceOffering).all(),
+            sla_definitions=tenant_query(SLADefinition).all(),
+            catalog_items=tenant_query(CatalogItem).order_by(
                 CatalogItem.category, CatalogItem.name
             ).all(),
             fulfillment_groups=fulfillment_groups,
@@ -3303,7 +4646,7 @@ def create_app(test_config=None):
     @app.post("/change/<int:ticket_id>/conflicts")
     @roles("agent", "manager", "admin")
     def detect_change_conflicts(ticket_id):
-        ticket = db.get_or_404(Ticket, ticket_id)
+        ticket = tenant_record_or_404(Ticket, ticket_id)
         require_ticket_team_access(ticket)
         governance = ticket.change_governance
         if not governance:
@@ -3344,8 +4687,12 @@ def create_app(test_config=None):
     @app.get("/notifications")
     @login_required
     def notifications():
-        rows = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).all()
-        Notification.query.filter_by(user_id=current_user.id, read=False).update({"read": True})
+        rows = tenant_query(Notification).filter_by(
+            user_id=current_user.id
+        ).order_by(Notification.created_at.desc()).all()
+        tenant_query(Notification).filter_by(
+            user_id=current_user.id, read=False
+        ).update({"read": True})
         db.session.commit()
         return render_template("notifications.html", rows=rows)
 
@@ -3391,7 +4738,9 @@ def create_app(test_config=None):
                                                    Ticket.description.ilike(pattern))).limit(20):
                 results.append({"type": row.kind.title(), "label": f"{row.number} · {row.title}",
                                 "url": url_for("ticket_detail", ticket_id=row.id), "meta": row.state})
-            for row in Knowledge.query.filter(db.or_(Knowledge.title.ilike(pattern), Knowledge.body.ilike(pattern))).limit(20):
+            for row in tenant_query(Knowledge).filter(db.or_(
+                Knowledge.title.ilike(pattern), Knowledge.body.ilike(pattern)
+            )).limit(20):
                 results.append({"type": "Knowledge", "label": row.title, "url": url_for("knowledge"),
                                 "meta": row.category})
             for row in EnterpriseRecord.query.filter(EnterpriseRecord.id.in_(visible_enterprise_ids), db.or_(
@@ -3399,7 +4748,9 @@ def create_app(test_config=None):
                                                              EnterpriseRecord.title.ilike(pattern))).limit(20):
                 results.append({"type": DOMAIN_CONFIG[row.domain]["name"], "label": f"{row.number} · {row.title}",
                                 "url": url_for("enterprise_detail", record_id=row.id), "meta": row.state})
-            for row in ConfigurationItem.query.filter(ConfigurationItem.name.ilike(pattern)).limit(20):
+            for row in tenant_query(ConfigurationItem).filter(
+                ConfigurationItem.name.ilike(pattern)
+            ).limit(20):
                 results.append({"type": "Configuration item", "label": row.name, "url": url_for("cmdb"),
                                 "meta": row.ci_class})
             for row in CatalogRequest.query.filter(
@@ -3517,7 +4868,7 @@ def create_app(test_config=None):
     @app.post("/task-board/<int:ticket_id>/move")
     @roles("agent", "manager", "admin")
     def task_board_move(ticket_id):
-        ticket = db.get_or_404(Ticket, ticket_id)
+        ticket = tenant_record_or_404(Ticket, ticket_id)
         require_ticket_team_access(ticket)
         state = request.form.get("state")
         if state not in ("New", "In Progress", "Pending", "Resolved", "Closed"):
@@ -3536,7 +4887,7 @@ def create_app(test_config=None):
     @app.post("/ticket/<int:ticket_id>/checklist")
     @roles("agent", "manager", "admin")
     def checklist_add(ticket_id):
-        ticket = db.get_or_404(Ticket, ticket_id)
+        ticket = tenant_record_or_404(Ticket, ticket_id)
         require_ticket_team_access(ticket)
         text = request.form.get("text", "").strip()
         if text:
@@ -3553,7 +4904,7 @@ def create_app(test_config=None):
     @roles("agent", "manager", "admin")
     def checklist_toggle(item_id):
         item = db.get_or_404(ChecklistItem, item_id)
-        ticket = db.get_or_404(Ticket, item.ticket_id)
+        ticket = tenant_record_or_404(Ticket, item.ticket_id)
         require_ticket_team_access(ticket)
         item.completed = not item.completed
         log_history(
@@ -3566,7 +4917,7 @@ def create_app(test_config=None):
     @app.post("/ticket/<int:ticket_id>/attachments")
     @login_required
     def attachment_upload(ticket_id):
-        ticket = db.get_or_404(Ticket, ticket_id)
+        ticket = tenant_record_or_404(Ticket, ticket_id)
         if not user_can_view_ticket(current_user, ticket):
             abort(403)
         upload = request.files.get("file")
@@ -3606,17 +4957,23 @@ def create_app(test_config=None):
 
     @app.errorhandler(403)
     def forbidden(error):
+        if request.path.startswith("/api/"):
+            return http_error(error)
         return render_template(
             "error.html", code=403,
             message=error.description or "You do not have permission to access this page.",
         ), 403
 
     @app.errorhandler(404)
-    def not_found(_):
+    def not_found(error):
+        if request.path.startswith("/api/"):
+            return http_error(error)
         return render_template("error.html", code=404, message="The requested record was not found."), 404
 
     @app.errorhandler(409)
     def workflow_conflict(error):
+        if request.path.startswith("/api/"):
+            return http_error(error)
         return render_template(
             "error.html", code=409,
             message=error.description or "The requested workflow transition is not allowed.",

@@ -106,6 +106,8 @@ SECRET_KEY="$(random_hex 48)"
 POSTGRES_PASSWORD="$(random_hex 24)"
 ADMIN_PASSWORD="$(random_hex 12)"
 SETTINGS_ENCRYPTION_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')"
+AUDIT_INTEGRITY_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')"
+API_TOKEN_PEPPER="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')"
 
 if [[ -f "$ENV_FILE" ]]; then
   backup="$ENV_FILE.backup.$(date -u +%Y%m%dT%H%M%SZ)"
@@ -121,7 +123,9 @@ umask 077
   printf "SECRET_KEY=%s\n" "$SECRET_KEY"
   printf "ADMIN_PASSWORD=%s\n" "$ADMIN_PASSWORD"
   printf "SETTINGS_ENCRYPTION_KEY=%s\n" "$SETTINGS_ENCRYPTION_KEY"
-  printf "SERVICEOPS_IMAGE=serviceops-app:1.4.1\n"
+  printf "AUDIT_INTEGRITY_KEY=%s\n" "$AUDIT_INTEGRITY_KEY"
+  printf "API_TOKEN_PEPPER=%s\n" "$API_TOKEN_PEPPER"
+  printf "SERVICEOPS_IMAGE=serviceops-app:1.10.1\n"
   if [[ "$MODE" == "bundled" ]]; then
     printf "POSTGRES_DB=serviceops\nPOSTGRES_USER=serviceops\nPOSTGRES_PASSWORD=%s\n" "$POSTGRES_PASSWORD"
   else

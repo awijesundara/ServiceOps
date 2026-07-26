@@ -51,6 +51,10 @@ spec:
             - {name: DEPLOYMENT_PROFILE, value: {{ .Values.deploymentProfile | quote }}}
             - {name: UPLOAD_FOLDER, value: /app/uploads}
             - {name: LOCAL_AUTH_ENABLED, value: {{ .Values.auth.localEnabled | quote }}}
+            - {name: CSRF_ENABLED, value: {{ .Values.security.csrfEnabled | quote }}}
+            - {name: SESSION_COOKIE_SECURE, value: {{ .Values.security.sessionCookieSecure | quote }}}
+            - {name: SESSION_LIFETIME_MINUTES, value: {{ .Values.security.sessionLifetimeMinutes | quote }}}
+            - {name: AUTO_MIGRATE, value: "false"}
             - {name: LDAP_ENABLED, value: {{ .Values.auth.ldap.enabled | quote }}}
             - {name: LDAP_SERVER_URI, value: {{ .Values.auth.ldap.serverUri | quote }}}
             - {name: LDAP_BIND_DN, value: {{ .Values.auth.ldap.bindDn | quote }}}

@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <link rel="manifest" href="{{ url_for('pwa_manifest') }}">
+  <meta name="theme-color" content="{{ brand_teal }}">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ instance_name|default('ServiceOps') }}{% endblock %}</title>
@@ -43,6 +45,8 @@
     <a href="{{ url_for('system_settings') }}">System settings</a>
     <a href="{{ url_for('users') }}">Users & roles</a>
     <a href="{{ url_for('audit_log') }}">Audit log</a>
+    <a href="{{ url_for('api_clients_admin') }}">API clients</a>
+    <a href="{{ url_for('integrations_admin') }}">Integrations</a>
     {% endif %}
   </nav>
   <div class="profile">

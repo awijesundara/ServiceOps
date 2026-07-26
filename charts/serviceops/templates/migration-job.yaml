@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "serviceops.fullname" . }}-migrate-{{ .Release.Revision }}
+  labels:
+    {{- include "serviceops.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "serviceops.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-c"]
+          args:
+            - "from app import create_app; create_app(); print('ServiceOps migrations complete')"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          env:
+            - {name: AUTO_MIGRATE, value: "true"}
+            - {name: DEPLOYMENT_PROFILE, value: "production"}
+            - {name: UPLOAD_FOLDER, value: /tmp/uploads}
+            - {name: LOCAL_AUTH_ENABLED, value: "true"}
+            - {name: CSRF_ENABLED, value: "true"}
+          envFrom:
+            - secretRef: {name: {{ include "serviceops.secretName" . }}}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {}
