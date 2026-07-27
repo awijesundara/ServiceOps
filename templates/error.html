@@ -1,2 +1,3 @@
-{% extends "base.html" %}{% block content %}<div class="error-page"><strong>{{ code }}</strong><h1>{{ message }}</h1><a class="primary button" href="{{ url_for('dashboard') }}">Back to dashboard</a></div>{% endblock %}
+{% extends "base.html" %}{% block title %}Error {{ code }} · {{ instance_name }}{% endblock %}
+{% block content %}<div class="error-page"><strong>{{ code }}</strong><h1>{{ message }}</h1><a class="primary button" href="{{ url_for('dashboard') }}">Back to dashboard</a></div>{% endblock %}
 

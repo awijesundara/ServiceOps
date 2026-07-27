@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Manager portal · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">LEADERSHIP</p><h1>Manager portal</h1><p>Open work across the IT fulfillment teams you manage.</p></div></header>
+<section class="panel table-panel">
+<table>
+  <thead><tr><th>Team</th><th>Manager</th><th>Open changes</th><th>Open incidents</th><th>Open tasks</th></tr></thead>
+  <tbody>
+    {% for row in team_rows %}
+    <tr>
+      <td><strong>{{ row.group.name }}</strong></td>
+      <td>{{ row.group.manager.name if row.group.manager else "Unassigned" }}</td>
+      <td>{{ row.open_changes }}</td>
+      <td>{{ row.open_incidents }}</td>
+      <td>{{ row.open_tasks }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="empty">No IT fulfillment teams under your management.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</section>
+{% endblock %}

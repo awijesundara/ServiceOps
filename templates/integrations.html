@@ -1,4 +1,5 @@
-{% extends "base.html" %}{% block content %}
+{% extends "base.html" %}{% block title %}Integrations · {{ instance_name }}{% endblock %}
+{% block content %}
 <header class="page-head"><div><p class="eyebrow">INTEGRATIONS</p><h1>Delivery and monitoring</h1><p>Durable SMTP, signed webhook, SIEM, Teams and monitoring adapters.</p></div><form method="post" action="{{ url_for('integrations_process') }}"><button>Process pending delivery</button></form></header>
 {% if revealed_secret %}<section class="panel"><h2>Copy the webhook signing secret now</h2><pre class="pre">{{ revealed_secret }}</pre></section>{% endif %}
 {% if revealed_token %}<section class="panel"><h2>Copy the monitoring credentials now</h2><p>Source ID: <code>{{ revealed_token.source_id }}</code></p><pre class="pre">{{ revealed_token.token }}</pre></section>{% endif %}

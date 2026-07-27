@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}{{ kind|title }}s · {{ instance_name }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">WORK QUEUE</p><h1>{{ kind|title }}s</h1><p>Track and manage {{ kind }} records.</p></div>
 <a class="primary button" href="{{ url_for('ticket_new', kind=kind) }}">+ New {{ kind }}</a></header>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}API clients · {{ instance_name }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">SECURITY ADMINISTRATION</p><h1>REST API clients</h1><p>Tenant-scoped service identities bound to a real ServiceOps user and explicit scopes.</p></div></header>
 {% if new_token %}
