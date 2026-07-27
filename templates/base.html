@@ -21,40 +21,39 @@
   <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo">{% else %}<span class="company-mark">{{ company_name[:2]|upper }}</span>{% endif %}<span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span></a>
   <nav>
     <small>WORKSPACE</small>
-    <a href="{{ url_for('dashboard') }}">Dashboard</a>
-    <a href="{{ url_for('task_board') }}">Visual task board</a>
-    {% if current_user.role in ['agent','manager','admin'] %}<a href="{{ url_for('my_work_tasks') }}">My tasks</a>{% endif %}
-    <a href="{{ url_for('tickets', kind='incident') }}">Incidents</a>
-    <a href="{{ url_for('requests_list') }}">Service requests</a>
-    {% if current_user.role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}">Changes</a>{% endif %}
-    <a href="{{ url_for('catalog') }}">Service catalog</a>
-    <a href="{{ url_for('knowledge') }}">Knowledge</a>
-    <a href="{{ url_for('modules') }}">All workspaces</a>
-    <a href="{{ url_for('approval_chains') }}">My approvals</a>
-    <a href="{{ url_for('requests_list') }}">Requests / RITMs</a>
-    <a href="{{ url_for('notifications') }}">Notifications</a>
+    <a href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}class="active" aria-current="page"{% endif %}>Dashboard</a>
+    <a href="{{ url_for('task_board') }}" {% if nav_active('task_board') %}class="active" aria-current="page"{% endif %}>Visual task board</a>
+    {% if current_user.role in ['agent','manager','admin'] %}<a href="{{ url_for('my_work_tasks') }}" {% if nav_active('my_work_tasks') %}class="active" aria-current="page"{% endif %}>My tasks</a>{% endif %}
+    <a href="{{ url_for('tickets', kind='incident') }}" {% if nav_active('tickets', kind='incident') %}class="active" aria-current="page"{% endif %}>Incidents</a>
+    <a href="{{ url_for('requests_list') }}" {% if nav_active('requests_list') %}class="active" aria-current="page"{% endif %}>Service requests</a>
+    {% if current_user.role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}" {% if nav_active('tickets', kind='change') %}class="active" aria-current="page"{% endif %}>Changes</a>{% endif %}
+    <a href="{{ url_for('catalog') }}" {% if nav_active('catalog') %}class="active" aria-current="page"{% endif %}>Service catalog</a>
+    <a href="{{ url_for('knowledge') }}" {% if nav_active('knowledge') %}class="active" aria-current="page"{% endif %}>Knowledge</a>
+    <a href="{{ url_for('modules') }}" {% if nav_active('modules') %}class="active" aria-current="page"{% endif %}>All workspaces</a>
+    <a href="{{ url_for('approval_chains') }}" {% if nav_active('approval_chains') %}class="active" aria-current="page"{% endif %}>My approvals</a>
+    <a href="{{ url_for('notifications') }}" {% if nav_active('notifications') %}class="active" aria-current="page"{% endif %}>Notifications</a>
     {% if current_user.role in ['manager','admin'] %}
     <small>LEADERSHIP</small>
-    <a href="{{ url_for('manager_portal') }}">Manager portal</a>
+    <a href="{{ url_for('manager_portal') }}" {% if nav_active('manager_portal') %}class="active" aria-current="page"{% endif %}>Manager portal</a>
     {% endif %}
     {% if current_user.role in ['agent','manager','admin'] %}
     <small>OPERATIONS</small>
-    <a href="{{ url_for('module_records', domain='problem') }}">Problems</a>
-    <a href="{{ url_for('module_records', domain='event') }}">IT operations</a>
-    <a href="{{ url_for('cmdb') }}">CMDB & service map</a>
-    <a href="{{ url_for('assets') }}">Assets</a>
-    <a href="{{ url_for('analytics') }}">Analytics</a>
+    <a href="{{ url_for('module_records', domain='problem') }}" {% if nav_active('module_records', domain='problem') %}class="active" aria-current="page"{% endif %}>Problems</a>
+    <a href="{{ url_for('module_records', domain='event') }}" {% if nav_active('module_records', domain='event') %}class="active" aria-current="page"{% endif %}>IT operations</a>
+    <a href="{{ url_for('cmdb') }}" {% if nav_active('cmdb') %}class="active" aria-current="page"{% endif %}>CMDB & service map</a>
+    <a href="{{ url_for('assets') }}" {% if nav_active('assets') %}class="active" aria-current="page"{% endif %}>Assets</a>
+    <a href="{{ url_for('analytics') }}" {% if nav_active('analytics') %}class="active" aria-current="page"{% endif %}>Analytics</a>
     {% endif %}
     {% if current_user.role == 'admin' %}
     <small>ADMINISTRATION</small>
-    <a href="{{ url_for('itil_admin') }}">ITIL configuration</a>
-    <a href="{{ url_for('system_settings') }}">System settings</a>
-    <a href="{{ url_for('users') }}">Users & roles</a>
-    <a href="{{ url_for('audit_log') }}">Audit log</a>
-    <a href="{{ url_for('api_clients_admin') }}">API clients</a>
-    <a href="{{ url_for('integrations_admin') }}">Integrations</a>
-    <a href="{{ url_for('workflows_admin') }}">Workflows</a>
-    <a href="{{ url_for('change_password') }}">Change password</a>
+    <a href="{{ url_for('itil_admin') }}" {% if nav_active('itil_admin') %}class="active" aria-current="page"{% endif %}>ITIL configuration</a>
+    <a href="{{ url_for('system_settings') }}" {% if nav_active('system_settings') %}class="active" aria-current="page"{% endif %}>System settings</a>
+    <a href="{{ url_for('users') }}" {% if nav_active('users') %}class="active" aria-current="page"{% endif %}>Users & roles</a>
+    <a href="{{ url_for('audit_log') }}" {% if nav_active('audit_log') %}class="active" aria-current="page"{% endif %}>Audit log</a>
+    <a href="{{ url_for('api_clients_admin') }}" {% if nav_active('api_clients_admin') %}class="active" aria-current="page"{% endif %}>API clients</a>
+    <a href="{{ url_for('integrations_admin') }}" {% if nav_active('integrations_admin') %}class="active" aria-current="page"{% endif %}>Integrations</a>
+    <a href="{{ url_for('workflows_admin') }}" {% if nav_active('workflows_admin') %}class="active" aria-current="page"{% endif %}>Workflows</a>
+    <a href="{{ url_for('change_password') }}" {% if nav_active('change_password') %}class="active" aria-current="page"{% endif %}>Change password</a>
     {% endif %}
   </nav>
   <div class="profile">

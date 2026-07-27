@@ -2205,9 +2205,9 @@ def supersede_change_approval(ticket, changed_fields):
         f"{ticket.number} change authorization v{revision.revision}",
         "ticket", ticket.id, stages,
     )
-    approver_ids = {
-        approver_id for stage in stages for approver_id in stage["approver_ids"]
-    }
+    # Only the first (currently active) stage's approvers act now; later stages
+    # (e.g. CCB) are notified by activate_gate() once their gate actually opens.
+    approver_ids = set(stages[0]["approver_ids"]) if stages else set()
     summary = ", ".join(changed_fields)
     for approver_id in approver_ids:
         create_notification(
@@ -3357,9 +3357,15 @@ def create_app(test_config=None):
             "error.html", code=error.code, message=error.description
         ), error.code
 
+    def nav_active(endpoint, **params):
+        if request.endpoint != endpoint:
+            return False
+        return all(request.view_args.get(key) == value for key, value in params.items())
+
     @app.context_processor
     def ui_context():
         platform_context = {
+            "nav_active": nav_active,
             "instance_name": setting_value("INSTANCE_NAME", "ServiceOps"),
             "company_name": setting_value("COMPANY_NAME", "Your Company"),
             "brand_teal": setting_value("BRAND_TEAL", "#003e4c"),
