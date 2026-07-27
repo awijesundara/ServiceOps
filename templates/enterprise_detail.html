@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}{{ record.number }} · {{ config.name }} · {{ instance_name }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">{{ config.name|upper }} · {{ record.number }}</p><h1>{{ record.title }}</h1><p>{{ record.record_type }} · opened by {{ record.requester.name }} on {{ record.created_at.strftime('%B %d, %Y') }}</p></div><span class="badge big">{{ record.state }}</span></header>
 <div class="detail-grid"><section class="panel"><h2>Description</h2><p class="pre">{{ record.description }}</p>

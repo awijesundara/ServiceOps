@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Open work · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">NEEDS ATTENTION</p><h1>Open work</h1><p>Every incident, change, and service request that isn't resolved or closed yet.</p></div></header>
+
+<section class="panel table-panel">
+<h2>Open incidents & changes</h2>
+<table>
+  <thead><tr><th>Number</th><th>Summary</th><th>State</th><th>Priority</th><th>Updated</th></tr></thead>
+  <tbody>
+    {% for t in open_tickets %}
+    <tr>
+      <td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td>
+      <td>{{ t.title }}</td>
+      <td><span class="badge">{{ t.state }}</span></td>
+      <td><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td>
+      <td>{{ t.updated_at.strftime('%b %d, %H:%M') }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="empty">No open incidents or changes.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</section>
+
+<section class="panel table-panel">
+<h2>Open service requests</h2>
+<table>
+  <thead><tr><th>Request</th><th>Requested for</th><th>State</th><th>Opened</th></tr></thead>
+  <tbody>
+    {% for req in open_requests %}
+    <tr>
+      <td><a href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></td>
+      <td>{{ req.requested_for.name }}</td>
+      <td><span class="badge">{{ req.state }}</span></td>
+      <td>{{ req.opened_at.strftime('%b %d, %H:%M') }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="empty">No open service requests.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</section>
+{% endblock %}

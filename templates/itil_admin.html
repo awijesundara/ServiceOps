@@ -122,7 +122,7 @@
             <input type="hidden" name="group_id" value="{{ team.id }}">
             <select name="manager_id">
               <option value="">Unassigned</option>
-              {% for user in candidates %}
+              {% for user in manager_candidates %}
               <option value="{{ user.id }}" {% if team.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
               {% endfor %}
             </select>
@@ -141,7 +141,7 @@
   <table>
     <thead><tr><th>User</th><th>Platform role</th><th>Team memberships</th><th>CCB authority</th></tr></thead>
     <tbody>
-      {% for user in candidates %}
+      {% for user in ccb_candidates %}
       <tr>
         <td><strong>{{ user.name }}</strong><small>{{ user.username }}</small></td>
         <td><span class="tag">{{ user.role }}</span></td>

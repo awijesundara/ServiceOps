@@ -3,7 +3,11 @@ name: serviceops
 services:
   app:
     image: ${SERVICEOPS_IMAGE:?Set an immutable SERVICEOPS_IMAGE tag in .env}
-    build: .
+    build:
+      context: .
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
@@ -60,7 +64,11 @@ services:
 
   worker:
     image: ${SERVICEOPS_IMAGE:?Set an immutable SERVICEOPS_IMAGE tag in .env}
-    build: .
+    build:
+      context: .
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     command: ["python", "-m", "tools.outbox_worker"]
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}

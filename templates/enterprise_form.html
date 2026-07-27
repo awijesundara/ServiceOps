@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}New {{ config.name }} record · {{ instance_name }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">{{ config.name|upper }}</p><h1>New record</h1><p>Create governed work in the {{ config.name }} workspace.</p></div></header>
 <form method="post" class="panel form-grid">

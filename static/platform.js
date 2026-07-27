@@ -11,11 +11,23 @@ document.addEventListener("DOMContentLoaded", () => {
     fetch("/ui/history", {method: "POST", headers: csrfHeaders, body: data});
   }
   document.querySelector("[data-nav-toggle]")?.addEventListener("click", () => body.classList.toggle("nav-collapsed"));
+  const sidebarNav = document.querySelector(".sidebar nav");
+  if (sidebarNav) {
+    const savedScroll = sessionStorage.getItem("sidebarNavScrollTop");
+    if (savedScroll) sidebarNav.scrollTop = parseInt(savedScroll, 10) || 0;
+    sidebarNav.addEventListener("scroll", () => {
+      sessionStorage.setItem("sidebarNavScrollTop", String(sidebarNav.scrollTop));
+    });
+  }
   document.querySelector("[data-favorite]")?.addEventListener("click", async (event) => {
     const data = new URLSearchParams({url: path, label: document.querySelector("h1")?.textContent || document.title});
     const response = await fetch("/ui/favorite", {method: "POST", headers: csrfHeaders, body: data});
     const result = await response.json();
-    event.currentTarget.textContent = result.active ? "★" : "☆";
+    event.currentTarget.textContent = result.active
+      ? "Remove this page from favorites"
+      : "Add this page to favorites";
+    const star = document.querySelector("[data-favorite-star]");
+    if (star) star.textContent = result.active ? "★" : "☆";
   });
   let dragged = null;
   document.querySelectorAll(".board-card[draggable=true]").forEach(card => {

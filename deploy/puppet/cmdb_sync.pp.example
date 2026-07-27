@@ -1,0 +1,37 @@
+# Example Puppet manifest for the ServiceOps CMDB auto-registration agent.
+#
+# Drops tools/cmdb_sync_agent.sh onto each Linux node and runs it hourly so
+# every managed server keeps its own CMDB Configuration Item current. Copy
+# this into your Puppet control repo (e.g. as a class in a serviceops
+# module) and fill in the two ServiceOps values below.
+#
+# The agent only needs curl and standard POSIX tools - no facter plugin,
+# no custom types, no gems.
+
+class serviceops::cmdb_sync (
+  String $serviceops_url   = 'https://serviceops.example.com',
+  String $serviceops_token = lookup('serviceops::cmdb_token', String, 'first', ''), # store in Hiera eyaml, not in plaintext manifests
+  String $ci_environment    = 'Production',
+) {
+  file { '/opt/serviceops/cmdb_sync_agent.sh':
+    ensure => file,
+    source => 'puppet:///modules/serviceops/cmdb_sync_agent.sh',
+    mode   => '0750',
+    owner  => 'root',
+    group  => 'root',
+  }
+
+  file { '/opt/serviceops':
+    ensure => directory,
+    mode   => '0750',
+  }
+
+  cron { 'serviceops-cmdb-sync':
+    ensure      => present,
+    command     => "SERVICEOPS_URL='${serviceops_url}' SERVICEOPS_TOKEN='${serviceops_token}' CI_ENVIRONMENT='${ci_environment}' /opt/serviceops/cmdb_sync_agent.sh >> /var/log/serviceops-cmdb-sync.log 2>&1",
+    user        => 'root',
+    minute      => fqdn_rand(60, 'serviceops-cmdb-sync'), # spread load across the fleet
+    hour        => '*',
+    require     => File['/opt/serviceops/cmdb_sync_agent.sh'],
+  }
+}

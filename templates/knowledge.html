@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}Knowledge base · {{ instance_name }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">SELF SERVICE</p><h1>Knowledge base</h1><p>Find answers and resolve common issues.</p></div>{% if current_user.role in ['agent','manager','admin'] %}<a class="primary button" href="{{ url_for('knowledge_new') }}">+ New article</a>{% endif %}</header>
 <form class="filters"><input name="q" value="{{ q }}" placeholder="Search the knowledge base…"><button>Search</button></form>

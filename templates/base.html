@@ -22,6 +22,7 @@
     <small>WORKSPACE</small>
     <a href="{{ url_for('dashboard') }}">Dashboard</a>
     <a href="{{ url_for('task_board') }}">Visual task board</a>
+    {% if current_user.role in ['agent','manager','admin'] %}<a href="{{ url_for('my_work_tasks') }}">My tasks</a>{% endif %}
     <a href="{{ url_for('tickets', kind='incident') }}">Incidents</a>
     <a href="{{ url_for('requests_list') }}">Service requests</a>
     {% if current_user.role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}">Changes</a>{% endif %}
@@ -31,6 +32,10 @@
     <a href="{{ url_for('approval_chains') }}">My approvals</a>
     <a href="{{ url_for('requests_list') }}">Requests / RITMs</a>
     <a href="{{ url_for('notifications') }}">Notifications</a>
+    {% if current_user.role in ['manager','admin'] %}
+    <small>LEADERSHIP</small>
+    <a href="{{ url_for('manager_portal') }}">Manager portal</a>
+    {% endif %}
     {% if current_user.role in ['agent','manager','admin'] %}
     <small>OPERATIONS</small>
     <a href="{{ url_for('module_records', domain='problem') }}">Problems</a>
@@ -61,12 +66,25 @@
   <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation">☰</button>
   <form action="{{ url_for('global_search') }}" class="global-search"><span>⌕</span><input name="q" placeholder="Search ServiceOps" aria-label="Search ServiceOps"></form>
   <div class="nav-menus">
-    <details><summary>★</summary><div class="nav-popover"><h3>Favorites</h3>{% for favorite in ui_favorites %}<a href="{{ favorite.url }}">{{ favorite.label }}</a>{% else %}<p>No favorites yet.</p>{% endfor %}</div></details>
-    <details><summary>◷</summary><div class="nav-popover"><h3>History</h3>{% for row in ui_history %}<a href="{{ row.url }}">{{ row.label }}</a>{% else %}<p>No recent pages.</p>{% endfor %}</div></details>
-    <a class="nav-icon" href="{{ url_for('notifications') }}" aria-label="Notifications">♢{% if unread_notifications %}<b>{{ unread_notifications }}</b>{% endif %}</a>
-    <button class="nav-icon" type="button" data-favorite aria-label="Favorite this page">☆</button>
-    <a class="nav-icon" href="{{ url_for('help_center') }}" aria-label="Help">?</a>
-    <a class="nav-icon" href="{{ url_for('preferences') }}" aria-label="Preferences">⚙</a>
+    <details>
+      <summary title="Favorites" aria-label="Favorites"><span data-favorite-star>{{ '★' if current_page_is_favorite else '☆' }}</span></summary>
+      <div class="nav-popover">
+        <h3>Favorites</h3>
+        <button type="button" class="favorite-toggle" data-favorite>{{ 'Remove this page from favorites' if current_page_is_favorite else 'Add this page to favorites' }}</button>
+        <hr>
+        {% for favorite in ui_favorites %}<a href="{{ favorite.url }}">{{ favorite.label }}</a>{% else %}<p>No favorites yet.</p>{% endfor %}
+      </div>
+    </details>
+    <details>
+      <summary title="Recently viewed pages" aria-label="Recently viewed pages">◷</summary>
+      <div class="nav-popover">
+        <h3>Recently viewed</h3>
+        {% for row in ui_history %}<a href="{{ row.url }}">{{ row.label }}</a>{% else %}<p>No recent pages.</p>{% endfor %}
+      </div>
+    </details>
+    <a class="nav-icon" href="{{ url_for('notifications') }}" title="Notifications" aria-label="Notifications">♢{% if unread_notifications %}<b>{{ unread_notifications }}</b>{% endif %}</a>
+    <a class="nav-icon" href="{{ url_for('help_center') }}" title="Help" aria-label="Help">?</a>
+    <a class="nav-icon" href="{{ url_for('preferences') }}" title="Preferences" aria-label="Preferences">⚙</a>
   </div>
 </header>
 {% endif %}

@@ -55,6 +55,11 @@ def env_bool(name, default=False):
     return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def is_safe_internal_path(url):
+    """Reject anything but a same-app relative path, to keep stored favorite/history links from becoming stored javascript: or open-redirect XSS."""
+    return bool(url) and url.startswith("/") and not url.startswith("//")
+
+
 def secret_value(name):
     """Read a secret from a mounted file first, then the legacy environment value."""
     file_path = os.getenv(f"{name}_FILE", "").strip()
@@ -71,8 +76,15 @@ def secret_value(name):
 
 def tenant_context_id():
     try:
-        if current_user.is_authenticated and getattr(current_user, "tenant_id", None):
-            return current_user.tenant_id
+        if current_user.is_authenticated:
+            tenant_id = getattr(current_user, "tenant_id", None)
+            if tenant_id:
+                return tenant_id
+            if has_request_context():
+                current_app.logger.warning(
+                    "Authenticated user %s has no tenant_id; defaulting to tenant 1",
+                    getattr(current_user, "username", "unknown"),
+                )
     except (AttributeError, RuntimeError):
         pass
     return 1
@@ -107,6 +119,8 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(30), nullable=False, default="requester")
     active = db.Column(db.Boolean, default=True, nullable=False)
     auth_version = db.Column(db.Integer, nullable=False, default=1)
+    failed_login_count = db.Column(db.Integer, nullable=False, default=0)
+    locked_until = db.Column(db.DateTime(timezone=True))
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
@@ -509,6 +523,8 @@ class Notification(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     title = db.Column(db.String(180), nullable=False)
     body = db.Column(db.Text, nullable=False)
+    target_type = db.Column(db.String(30))
+    target_id = db.Column(db.Integer)
     read = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     user = db.relationship("User")
@@ -1279,6 +1295,7 @@ API_SCOPES = {
     "incidents:create",
     "tickets:update",
     "workflows:execute",
+    "cmdb:write",
 }
 
 
@@ -1441,11 +1458,19 @@ SETTING_DEFINITIONS = {
         {"key": "SESSION_HOURS", "label": "Session lifetime in hours", "type": "int", "default": "8", "min": 1, "max": 168, "live": False},
         {"key": "MAX_UPLOAD_MB", "label": "Maximum upload size (MB)", "type": "int", "default": "20", "min": 1, "max": 500, "live": True},
         {"key": "AUDIT_STREAM_ENABLED", "label": "Stream audit events to SIEM", "type": "bool", "default": "false", "live": True},
+        {"key": "LOGIN_MAX_ATTEMPTS", "label": "Failed logins before lockout", "type": "int", "default": "5", "min": 3, "max": 20, "live": True},
+        {"key": "LOGIN_LOCKOUT_MINUTES", "label": "Lockout duration in minutes", "type": "int", "default": "15", "min": 1, "max": 1440, "live": True},
     ],
     "workflow": [
         {"key": "DEFAULT_TICKET_PRIORITY", "label": "Default ticket priority", "type": "choice", "choices": ["P1", "P2", "P3", "P4"], "default": "P3", "live": True},
         {"key": "CHANGE_FREEZE_MESSAGE", "label": "Change freeze message", "type": "text", "default": "", "live": True},
         {"key": "SYNC_CHILD_INCIDENT_STATES", "label": "Synchronize parent incident state to children", "type": "bool", "default": "false", "live": True},
+    ],
+    "dashboard": [
+        {"key": "DASHBOARD_SHOW_MY_ASSIGNED", "label": "Show \"Assigned to me\"", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_SHOW_SLA_WIDGETS", "label": "Show SLA breached / at-risk widgets", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_SHOW_RECENT", "label": "Show \"Recently updated\"", "type": "bool", "default": "true", "live": True},
+        {"key": "SLA_AT_RISK_HOURS", "label": "SLA \"at risk\" warning window (hours)", "type": "int", "default": "4", "min": 1, "max": 72, "live": True},
     ],
     "email": [
         {"key": "SMTP_ENABLED", "label": "Enable SMTP delivery", "type": "bool", "default": "false", "live": True},
@@ -1493,10 +1518,18 @@ def setting_bool(key, default=False):
     return str(setting_value(key, str(default))).lower() in {"1", "true", "yes", "on"}
 
 
-def create_notification(user_id, title, body, tenant_id=None):
+def setting_int(key, default=0):
+    try:
+        return int(setting_value(key, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def create_notification(user_id, title, body, tenant_id=None, target_type=None, target_id=None):
     tenant_id = tenant_id or tenant_context_id()
     notification = Notification(
-        user_id=user_id, title=title, body=body, tenant_id=tenant_id
+        user_id=user_id, title=title, body=body, tenant_id=tenant_id,
+        target_type=target_type, target_id=target_id,
     )
     db.session.add(notification)
     db.session.add(OutboxEvent(
@@ -1771,6 +1804,15 @@ def record_url(record):
         parent = record_reference(record.parent_type, record.parent_id)
         return record_url(parent) if parent else "#"
     return "#"
+
+
+def notification_target_url(target_type, target_id):
+    if target_type == "approval_queue":
+        return url_for("approval_chains")
+    if not target_type or not target_id:
+        return None
+    record = record_reference(target_type, target_id)
+    return record_url(record) if record else None
 
 
 def find_record_by_number(number):
@@ -2075,6 +2117,13 @@ def visible_ticket_query(user):
             ApprovalVote.state.in_(["Requested", "Approved", "Rejected"]),
         ).all()
     )
+    if group_ids:
+        ticket_ids.update(
+            row[0] for row in db.session.query(OperationalTask.parent_id).filter(
+                OperationalTask.parent_type == "ticket",
+                OperationalTask.assignment_group_id.in_(group_ids),
+            ).all()
+        )
     return query.filter(Ticket.id.in_(ticket_ids)) if ticket_ids else query.filter(Ticket.id == -1)
 
 
@@ -2164,7 +2213,7 @@ def supersede_change_approval(ticket, changed_fields):
             approver_id,
             title=f"Reapproval required: {ticket.number} v{revision.revision}",
             body=f"Material change fields were revised: {summary}. Review the new plan before implementation.",
-            tenant_id=ticket.tenant_id,
+            tenant_id=ticket.tenant_id, target_type="ticket", target_id=ticket.id,
         )
     log_history(
         "ticket", ticket.id, "Approval restarted",
@@ -2192,7 +2241,7 @@ def activate_gate(gate):
         create_notification(
             vote.approver_id, f"Approval requested: {gate.name}",
             f"Your decision is required for approval chain {gate.chain.name}.",
-            tenant_id=gate.chain.tenant_id,
+            tenant_id=gate.chain.tenant_id, target_type="approval_queue",
         )
 
 
@@ -2368,6 +2417,7 @@ def process_sla_breaches(limit=50):
                 user_id, f"SLA breached: {reference}",
                 f"{definition.name} breached for {reference}. Immediate attention is required.",
                 tenant_id=definition.tenant_id,
+                target_type=task_sla.target_type, target_id=task_sla.target_id,
             )
         processed += 1
     db.session.commit()
@@ -2492,7 +2542,7 @@ def execute_workflow_action(action, job, context):
     elif action["type"] == "notify_requester":
         create_notification(
             ticket.requester_id, preview["title"], preview["body"],
-            tenant_id=job.tenant_id,
+            tenant_id=job.tenant_id, target_type="ticket", target_id=ticket.id,
         )
     elif action["type"] == "notify_team_manager":
         group = ticket_owning_group(ticket)
@@ -2500,7 +2550,7 @@ def execute_workflow_action(action, job, context):
             raise RuntimeError("Owning team manager is unavailable.")
         create_notification(
             group.manager_id, preview["title"], preview["body"],
-            tenant_id=job.tenant_id,
+            tenant_id=job.tenant_id, target_type="ticket", target_id=ticket.id,
         )
     return preview
 
@@ -2947,9 +2997,9 @@ def mapped_role(groups, mapping_name, default="requester"):
         mappings = json.loads(setting_value(mapping_name, "{}"))
     except json.JSONDecodeError:
         mappings = {}
-    normalized = {str(group).lower() for group in groups}
+    normalized = normalized_directory_groups(groups)
     for group, role in mappings.items():
-        if str(group).lower() in normalized and role in allowed:
+        if str(group).strip().casefold() in normalized and role in allowed:
             return role
     configured = setting_value(f"{mapping_name}_DEFAULT", default)
     return configured if configured in allowed else default
@@ -3007,6 +3057,26 @@ def sync_directory_team_memberships(user, groups):
     )
 
 
+def normalize_user_role_from_assignments(user):
+    """Keep non-admin user roles aligned with actual team responsibilities."""
+    if not user or user.role == "admin":
+        return user.role if user else "requester"
+    manages_team = SupportGroup.query.filter_by(
+        manager_id=user.id, active=True
+    ).first() is not None
+    if manages_team:
+        user.role = "manager"
+        return user.role
+    has_team_membership = GroupMember.query.join(
+        SupportGroup, GroupMember.group_id == SupportGroup.id
+    ).filter(
+        GroupMember.user_id == user.id,
+        SupportGroup.active.is_(True),
+    ).first() is not None
+    user.role = "agent" if has_team_membership else "requester"
+    return user.role
+
+
 def provision_external_user(provider, subject, username, name, email, role, groups=None):
     identity = ExternalIdentity.query.filter_by(provider=provider, subject=subject).first()
     if identity:
@@ -3015,6 +3085,7 @@ def provision_external_user(provider, subject, username, name, email, role, grou
         user.active = True
         if provider == "ldap":
             sync_directory_team_memberships(user, groups)
+            normalize_user_role_from_assignments(user)
         return user
     base = (username or f"{provider}-{uuid.uuid4().hex[:8]}").strip().lower()[:70]
     candidate, suffix = base, 1
@@ -3032,6 +3103,7 @@ def provision_external_user(provider, subject, username, name, email, role, grou
     db.session.add(ExternalIdentity(provider=provider, subject=subject, user_id=user.id))
     if provider == "ldap":
         sync_directory_team_memberships(user, groups)
+        normalize_user_role_from_assignments(user)
     return user
 
 
@@ -3302,10 +3374,14 @@ def create_app(test_config=None):
             preference = UserPreference(user_id=current_user.id)
             db.session.add(preference)
             db.session.commit()
+        favorites = Favorite.query.filter_by(user_id=current_user.id).order_by(Favorite.folder, Favorite.label).all()
+        current_page_url = request.path + (f"?{request.query_string.decode()}" if request.query_string else "")
         return platform_context | {
             "ui_preference": preference,
-            "ui_favorites": Favorite.query.filter_by(user_id=current_user.id).order_by(Favorite.folder, Favorite.label).all(),
+            "ui_favorites": favorites,
             "ui_history": RecentView.query.filter_by(user_id=current_user.id).order_by(RecentView.viewed_at.desc()).limit(12).all(),
+            "current_page_url": current_page_url,
+            "current_page_is_favorite": any(favorite.url == current_page_url for favorite in favorites),
             "unread_notifications": tenant_query(Notification).filter_by(
                 user_id=current_user.id, read=False
             ).count(),
@@ -3459,6 +3535,16 @@ def create_app(test_config=None):
                     "post": {
                         "summary": "Ingest and deduplicate a monitoring event",
                         "security": [{"monitoringToken": []}],
+                    },
+                },
+                "/cmdb/configuration-items": {
+                    "put": {
+                        "summary": "Create or update a configuration item by name",
+                        "description": (
+                            "Requires cmdb:write. Idempotent by name within the "
+                            "acting API client's tenant — safe to call on every "
+                            "agent/cron run; no Idempotency-Key needed."
+                        ),
                     },
                 },
             },
@@ -3721,6 +3807,49 @@ def create_app(test_config=None):
         db.session.commit()
         return jsonify(document)
 
+    @app.put("/api/v1/cmdb/configuration-items")
+    def api_ci_upsert():
+        require_api_scope("cmdb:write")
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            abort(400, description="A JSON object is required.")
+        allowed = {"name", "ci_class", "environment", "operational_status", "ip_address"}
+        unknown = set(body) - allowed
+        if unknown:
+            abort(400, description=f"Unknown fields: {', '.join(sorted(unknown))}.")
+        name = str(body.get("name", "")).strip()[:160]
+        if not name:
+            abort(400, description="name is required.")
+        environment = str(body.get("environment", "Production"))
+        if environment not in ("Production", "Staging", "Development", "Test"):
+            abort(400, description="environment must be Production, Staging, Development or Test.")
+        operational_status = str(body.get("operational_status", "Operational"))
+        if operational_status not in ("Operational", "Degraded", "Down", "Maintenance", "Retired"):
+            abort(400, description="operational_status must be a recognized CI status.")
+        ci_class = str(body.get("ci_class", "Server")).strip()[:80] or "Server"
+        ip_address = str(body.get("ip_address", "")).strip()[:60] or None
+        ci = ConfigurationItem.query.filter_by(name=name, tenant_id=g.api_client.tenant_id).first()
+        created = ci is None
+        if created:
+            ci = ConfigurationItem(name=name, tenant_id=g.api_client.tenant_id, owner_id=g.api_user.id)
+            db.session.add(ci)
+        ci.ci_class = ci_class
+        ci.environment = environment
+        ci.operational_status = operational_status
+        ci.ip_address = ip_address
+        db.session.flush()
+        document = {"data": {
+            "id": ci.id, "name": ci.name, "ci_class": ci.ci_class,
+            "environment": ci.environment, "operational_status": ci.operational_status,
+            "ip_address": ci.ip_address, "created": created,
+        }}
+        audit(
+            "api sync", "CI", f"{ci.name} via client={g.api_client.client_id}",
+            user_id=g.api_user.id, tenant_id=g.api_client.tenant_id,
+        )
+        db.session.commit()
+        return jsonify(document), 201 if created else 200
+
     @app.post("/api/v1/tickets/<number>/workflow-events")
     def api_workflow_event(number):
         require_api_scope("workflows:execute")
@@ -3776,6 +3905,16 @@ def create_app(test_config=None):
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
             provider = request.form.get("provider", "local")
+            lockout_record = User.query.filter_by(username=username).first()
+            if lockout_record and lockout_record.locked_until and lockout_record.locked_until > now():
+                audit("login_blocked", username, "reason=locked")
+                db.session.commit()
+                flash("This account is temporarily locked due to repeated failed sign-ins. Try again later.", "error")
+                return render_template(
+                    "login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
+                    keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
+                    local_enabled=setting_bool("LOCAL_AUTH_ENABLED", True),
+                    deployment_profile=app.config["DEPLOYMENT_PROFILE"])
             user = None
             if provider == "ldap" and setting_bool("LDAP_ENABLED"):
                 try:
@@ -3787,6 +3926,8 @@ def create_app(test_config=None):
                 if candidate and check_password_hash(candidate.password_hash, password):
                     user = candidate
             if user and user.active:
+                user.failed_login_count = 0
+                user.locked_until = None
                 login_user(user)
                 session.permanent = True
                 session["_auth_version"] = user.auth_version
@@ -3795,6 +3936,16 @@ def create_app(test_config=None):
                 db.session.commit()
                 preference = UserPreference.query.filter_by(user_id=user.id).first()
                 return redirect(preference.start_page if preference else url_for("dashboard"))
+            if lockout_record:
+                lockout_record.failed_login_count = (lockout_record.failed_login_count or 0) + 1
+                max_attempts = setting_int("LOGIN_MAX_ATTEMPTS", 5)
+                if lockout_record.failed_login_count >= max_attempts:
+                    lockout_record.locked_until = now() + timedelta(minutes=setting_int("LOGIN_LOCKOUT_MINUTES", 15))
+                    lockout_record.failed_login_count = 0
+                    audit("login_locked", username, f"attempts={max_attempts}")
+                else:
+                    audit("login_failed", username, f"attempts={lockout_record.failed_login_count}")
+                db.session.commit()
             flash("Invalid username or password.", "error")
         return render_template("login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
                                keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
@@ -3860,6 +4011,20 @@ def create_app(test_config=None):
             return redirect(url_for("preferences"))
         return render_template("change_password.html")
 
+    @app.get("/work/open")
+    @login_required
+    def open_work():
+        ticket_query = visible_ticket_query(current_user)
+        open_tickets = ticket_query.filter(
+            Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])
+        ).order_by(Ticket.priority, Ticket.updated_at.desc()).all()
+        open_requests = visible_catalog_request_query(current_user).filter(
+            CatalogRequest.state.notin_(["Closed Complete", "Closed Incomplete", "Cancelled"])
+        ).order_by(CatalogRequest.opened_at.desc()).all()
+        return render_template(
+            "open_work.html", open_tickets=open_tickets, open_requests=open_requests,
+        )
+
     @app.get("/")
     @login_required
     def dashboard():
@@ -3870,17 +4035,155 @@ def create_app(test_config=None):
             "request": visible_requests.count(),
             "change": ticket_query.filter_by(kind="change").count(),
         }
+        open_ticket_query = ticket_query.filter(Ticket.state.notin_(["Resolved", "Closed", "Cancelled"]))
         open_count = (
-            ticket_query.filter(Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])).count()
+            open_ticket_query.count()
             + visible_requests.filter(
                 CatalogRequest.state.notin_(["Closed Complete", "Closed Incomplete", "Cancelled"])
             ).count()
         )
-        recent = visible_tickets().order_by(Ticket.updated_at.desc()).limit(8).all()
-        return render_template("dashboard.html", counts=counts, open_count=open_count, recent=recent)
+        show_recent = setting_bool("DASHBOARD_SHOW_RECENT", True)
+        show_my_assigned = setting_bool("DASHBOARD_SHOW_MY_ASSIGNED", True)
+        show_sla_widgets = setting_bool("DASHBOARD_SHOW_SLA_WIDGETS", True)
+        recent = (
+            visible_tickets().order_by(Ticket.updated_at.desc()).limit(8).all()
+            if show_recent else []
+        )
+        my_assigned = (
+            open_ticket_query.filter(Ticket.assignee_id == current_user.id)
+            .order_by(Ticket.priority, Ticket.updated_at.desc()).limit(8).all()
+            if show_my_assigned else []
+        )
+        open_incident_query = open_ticket_query.filter(Ticket.kind == "incident")
+        incident_priority_counts = {
+            "p1": open_incident_query.filter(Ticket.priority == "P1").count(),
+            "p2": open_incident_query.filter(Ticket.priority == "P2").count(),
+        }
+        sla_at_risk_hours = setting_int("SLA_AT_RISK_HOURS", 4)
+        sla_breached, sla_at_risk, sla_tickets = [], [], {}
+        if show_sla_widgets:
+            open_ticket_ids = [row[0] for row in open_ticket_query.with_entities(Ticket.id).all()]
+            sla_rows = []
+            if open_ticket_ids:
+                sla_rows = TaskSLA.query.filter(
+                    TaskSLA.target_type == "ticket",
+                    TaskSLA.target_id.in_(open_ticket_ids),
+                    TaskSLA.stage == "In Progress",
+                ).order_by(TaskSLA.breach_at).all()
+            if sla_rows:
+                sla_tickets = {
+                    ticket.id: ticket
+                    for ticket in Ticket.query.filter(
+                        Ticket.id.in_({row.target_id for row in sla_rows})
+                    ).all()
+                }
+            breach_horizon = now() + timedelta(hours=sla_at_risk_hours)
+            sla_breached = [row for row in sla_rows if row.breached][:8]
+            sla_at_risk = [
+                row for row in sla_rows if not row.breached and row.breach_at <= breach_horizon
+            ][:8]
+        return render_template(
+            "dashboard.html", counts=counts, open_count=open_count, recent=recent,
+            show_recent=show_recent, show_my_assigned=show_my_assigned, show_sla_widgets=show_sla_widgets,
+            sla_at_risk_hours=sla_at_risk_hours,
+            my_assigned=my_assigned, incident_priority_counts=incident_priority_counts,
+            sla_breached=sla_breached, sla_at_risk=sla_at_risk, sla_tickets=sla_tickets,
+        )
 
     def visible_tickets():
         return visible_ticket_query(current_user)
+
+    @app.get("/manager/portal")
+    @roles("manager", "admin")
+    def manager_portal():
+        if current_user.role == "admin":
+            groups = tenant_query(SupportGroup).filter(
+                SupportGroup.group_type == "IT Fulfillment",
+                SupportGroup.active.is_(True),
+            ).order_by(SupportGroup.name).all()
+        else:
+            groups = tenant_query(SupportGroup).filter(
+                SupportGroup.group_type == "IT Fulfillment",
+                SupportGroup.active.is_(True),
+                SupportGroup.manager_id == current_user.id,
+            ).order_by(SupportGroup.name).all()
+        team_rows = []
+        for group in groups:
+            open_changes = db.session.query(func.count(Ticket.id)).join(
+                ChangeOwnership, ChangeOwnership.ticket_id == Ticket.id
+            ).filter(
+                ChangeOwnership.group_id == group.id,
+                Ticket.state.notin_(["Resolved", "Closed", "Cancelled"]),
+            ).scalar() or 0
+            open_incidents = db.session.query(func.count(Ticket.id)).join(
+                TicketAssignmentGroup, TicketAssignmentGroup.ticket_id == Ticket.id
+            ).filter(
+                TicketAssignmentGroup.group_id == group.id,
+                Ticket.kind == "incident",
+                Ticket.state.notin_(["Resolved", "Closed", "Cancelled"]),
+            ).scalar() or 0
+            open_tasks = db.session.query(func.count(OperationalTask.id)).filter(
+                OperationalTask.assignment_group_id == group.id,
+                OperationalTask.state.notin_(["Closed Complete", "Closed Incomplete", "Closed Skipped"]),
+            ).scalar() or 0
+            team_rows.append({
+                "group": group,
+                "open_changes": open_changes,
+                "open_incidents": open_incidents,
+                "open_tasks": open_tasks,
+            })
+        return render_template("manager_portal.html", team_rows=team_rows)
+
+    @app.get("/work/tasks")
+    @login_required
+    def my_work_tasks():
+        terminal = ["Closed Complete", "Closed Incomplete", "Closed Skipped"]
+        group_ids = user_support_group_ids(current_user)
+
+        def open_tasks(model):
+            return model.query.filter(model.state.notin_(terminal))
+
+        def row_for(task, kind_label):
+            return {
+                "number": task.number,
+                "kind": kind_label,
+                "title": task.title,
+                "state": task.state,
+                "group": task.assignment_group.name if task.assignment_group else "Unassigned",
+                "assignee": task.assignee.name if task.assignee else "Unassigned",
+                "due_at": getattr(task, "due_at", None) or getattr(task, "planned_end", None),
+                "url": record_url(task),
+            }
+
+        assigned_to_me, team_tasks = [], []
+        for model, kind_label in ((OperationalTask, None), (CatalogTask, "SCTASK")):
+            mine = open_tasks(model).filter(model.assignee_id == current_user.id).all()
+            mine_ids = {task.id for task in mine}
+            assigned_to_me.extend(
+                row_for(task, kind_label or task.task_kind.upper()) for task in mine
+            )
+            if current_user.role == "admin":
+                team_query = open_tasks(model).join(
+                    SupportGroup, model.assignment_group_id == SupportGroup.id
+                ).filter(SupportGroup.tenant_id == current_user.tenant_id)
+            elif group_ids:
+                team_query = open_tasks(model).filter(model.assignment_group_id.in_(group_ids))
+            else:
+                team_query = None
+            if team_query is not None:
+                team_tasks.extend(
+                    row_for(task, kind_label or task.task_kind.upper())
+                    for task in team_query.all() if task.id not in mine_ids
+                )
+
+        def sort_key(row):
+            return (row["due_at"] is None, row["due_at"] or now())
+
+        assigned_to_me.sort(key=sort_key)
+        team_tasks.sort(key=sort_key)
+        return render_template(
+            "task_queue.html", assigned_to_me=assigned_to_me, team_tasks=team_tasks,
+        )
 
     @app.get("/tickets/<kind>")
     @login_required
@@ -3902,7 +4205,16 @@ def create_app(test_config=None):
     def ticket_new(kind):
         if kind not in ("incident", "change"):
             abort(404)
-        if kind == "change" and current_user.role == "requester":
+        team_ids = user_support_group_ids(current_user)
+        eligible_it_team_ids = {
+            group.id
+            for group in SupportGroup.query.filter(
+                SupportGroup.id.in_(team_ids),
+                SupportGroup.group_type == "IT Fulfillment",
+                SupportGroup.active.is_(True),
+            ).all()
+        }
+        if kind == "change" and current_user.role == "requester" and not eligible_it_team_ids:
             abort(403)
         if request.method == "POST":
             try:
@@ -3916,6 +4228,14 @@ def create_app(test_config=None):
                 or owning_group.group_type != "IT Fulfillment"
             ):
                 abort(400, description="Select an active IT fulfillment team.")
+            if (
+                kind == "change"
+                and current_user.role != "admin"
+                and owning_group.id not in eligible_it_team_ids
+            ):
+                abort(403, description=(
+                    "You can submit changes only for IT fulfillment teams you belong to."
+                ))
             if kind == "change" and (
                 not owning_group.manager
                 or not owning_group.manager.active
@@ -3964,9 +4284,15 @@ def create_app(test_config=None):
             db.session.commit()
             flash(f"{ticket.number} created.", "success")
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
-        teams = tenant_query(SupportGroup).filter_by(
+        teams_query = tenant_query(SupportGroup).filter_by(
             group_type="IT Fulfillment", active=True
-        ).order_by(SupportGroup.name).all()
+        )
+        if kind == "change" and current_user.role != "admin":
+            if eligible_it_team_ids:
+                teams_query = teams_query.filter(SupportGroup.id.in_(eligible_it_team_ids))
+            else:
+                teams_query = teams_query.filter(SupportGroup.id == -1)
+        teams = teams_query.order_by(SupportGroup.name).all()
         return render_template("ticket_form.html", kind=kind, cis=ConfigurationItem.query.order_by(ConfigurationItem.name).all(),
                                teams=teams, default_priority=setting_value("DEFAULT_TICKET_PRIORITY", "P3"),
                                change_freeze_message=setting_value("CHANGE_FREEZE_MESSAGE", ""))
@@ -5067,6 +5393,7 @@ def create_app(test_config=None):
                 create_notification(
                     admin.id, f"Approval requested: {record.number}",
                     record.title, tenant_id=record.tenant_id,
+                    target_type="enterprise", target_id=record.id,
                 )
                 record.state = "Awaiting Approval"
             log_history(
@@ -5120,6 +5447,7 @@ def create_app(test_config=None):
                     record.requester_id, f"{record.number} {record.state.lower()}",
                     approval.comments or f"Your record was {record.state.lower()}.",
                     tenant_id=record.tenant_id,
+                    target_type="enterprise", target_id=record.id,
                 )
                 log_history(
                     "enterprise", record.id, f"Approval {approval.state.lower()}",
@@ -5313,6 +5641,64 @@ def create_app(test_config=None):
             db.session.commit()
             return redirect(url_for("cmdb"))
         return render_template("ci_form.html")
+
+    @app.route("/cmdb/<int:ci_id>/edit", methods=["GET", "POST"])
+    @roles("admin")
+    def ci_edit(ci_id):
+        ci = tenant_record_or_404(ConfigurationItem, ci_id)
+        if request.method == "POST":
+            before = {
+                "name": ci.name, "class": ci.ci_class, "environment": ci.environment,
+                "status": ci.operational_status, "IP address": ci.ip_address or "",
+            }
+            ci.name = request.form["name"].strip()
+            ci.ci_class = request.form["ci_class"].strip()
+            ci.environment = request.form["environment"]
+            ci.operational_status = request.form["operational_status"]
+            ci.ip_address = request.form.get("ip_address", "").strip() or None
+            owner_id = request.form.get("owner_id")
+            ci.owner_id = int(owner_id) if owner_id else None
+            log_field_changes("ci", ci.id, before, {
+                "name": ci.name, "class": ci.ci_class, "environment": ci.environment,
+                "status": ci.operational_status, "IP address": ci.ip_address or "",
+            })
+            audit("update", "CI", ci.name)
+            db.session.commit()
+            flash(f"{ci.name} updated.", "success")
+            return redirect(url_for("cmdb"))
+        owners = tenant_query(User).filter_by(active=True).order_by(User.name).all()
+        return render_template("ci_form.html", ci=ci, owners=owners)
+
+    @app.post("/cmdb/relationships")
+    @roles("admin")
+    def ci_relationship_add():
+        parent = tenant_record_or_404(ConfigurationItem, int(request.form["parent_id"]))
+        child = tenant_record_or_404(ConfigurationItem, int(request.form["child_id"]))
+        if parent.id == child.id:
+            abort(400, description="A configuration item cannot depend on itself.")
+        relationship_type = request.form.get("relationship_type", "Depends on").strip()[:60] or "Depends on"
+        existing = CIRelationship.query.filter_by(parent_id=parent.id, child_id=child.id).first()
+        if not existing:
+            db.session.add(CIRelationship(parent_id=parent.id, child_id=child.id, relationship_type=relationship_type))
+            audit("create", "CI relationship", f"{parent.name} — {relationship_type} → {child.name}")
+            db.session.commit()
+            flash(f"Linked {parent.name} to {child.name}.", "success")
+        return redirect(url_for("cmdb"))
+
+    @app.post("/cmdb/relationships/<int:relationship_id>/delete")
+    @roles("admin")
+    def ci_relationship_delete(relationship_id):
+        relationship = db.get_or_404(CIRelationship, relationship_id)
+        if (
+            relationship.parent.tenant_id != current_user.tenant_id
+            or relationship.child.tenant_id != current_user.tenant_id
+        ):
+            abort(404)
+        audit("delete", "CI relationship", f"{relationship.parent.name} — {relationship.child.name}")
+        db.session.delete(relationship)
+        db.session.commit()
+        flash("Relationship removed.", "success")
+        return redirect(url_for("cmdb"))
 
     @app.get("/approvals")
     @login_required
@@ -5592,7 +5978,7 @@ def create_app(test_config=None):
                 old_manager_id = group.manager_id
                 manager_id = int(request.form["manager_id"]) if request.form.get("manager_id") else None
                 manager = db.session.get(User, manager_id) if manager_id else None
-                if manager and (not manager.active or manager.role not in ("agent", "manager", "admin")):
+                if manager and not manager.active:
                     abort(400)
                 if old_manager_id and old_manager_id != manager_id:
                     old_membership = GroupMember.query.filter_by(
@@ -5617,8 +6003,10 @@ def create_app(test_config=None):
                         db.session.add(GroupMember(
                             group_id=group.id, user_id=manager.id, role="manager"
                         ))
-                    if manager.role != "admin":
-                        manager.role = "manager"
+                    normalize_user_role_from_assignments(manager)
+                if old_manager_id and old_manager_id != manager_id:
+                    old_manager = db.session.get(User, old_manager_id)
+                    normalize_user_role_from_assignments(old_manager)
                 audit("configure", f"{group.name} manager",
                       manager.username if manager else "Unassigned")
                 flash(f"{group.name} manager updated.", "success")
@@ -5828,15 +6216,20 @@ def create_app(test_config=None):
             group for group in groups
             if group.active and group.group_type in ("Fulfillment", "IT Fulfillment")
         ]
-        candidates = tenant_query(User).filter(
-            User.active.is_(True), User.role.in_(["agent", "manager", "admin"])
+        manager_candidates = tenant_query(User).filter(
+            User.active.is_(True)
+        ).order_by(User.name).all()
+        ccb_candidates = tenant_query(User).filter(
+            User.active.is_(True),
+            User.role == "manager",
         ).order_by(User.name).all()
         ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
         ccb_approver_ids = {
             member.user_id for member in ccb.members if member.role == "CCB approver"
         }
         return render_template(
-            "itil_admin.html", groups=groups, teams=teams, candidates=candidates,
+            "itil_admin.html", groups=groups, teams=teams,
+            manager_candidates=manager_candidates, ccb_candidates=ccb_candidates,
             ccb=ccb, ccb_approver_ids=ccb_approver_ids,
             directory_mappings=DirectoryGroupMapping.query.order_by(
                 DirectoryGroupMapping.directory_group
@@ -5903,7 +6296,10 @@ def create_app(test_config=None):
             user_id=current_user.id, read=False
         ).update({"read": True})
         db.session.commit()
-        return render_template("notifications.html", rows=rows)
+        notification_urls = {
+            row.id: notification_target_url(row.target_type, row.target_id) for row in rows
+        }
+        return render_template("notifications.html", rows=rows, notification_urls=notification_urls)
 
     @app.get("/analytics")
     @roles("agent", "manager", "admin")
@@ -6013,6 +6409,8 @@ def create_app(test_config=None):
     @login_required
     def favorite_toggle():
         url = request.form.get("url", "")[:500]
+        if not is_safe_internal_path(url):
+            abort(400)
         label = request.form.get("label", "Saved page")[:180]
         existing = Favorite.query.filter_by(user_id=current_user.id, url=url).first()
         if existing:
@@ -6031,7 +6429,7 @@ def create_app(test_config=None):
     @login_required
     def history_record():
         url = request.form.get("url", "")[:500]
-        if not url or url.startswith(("/static", "/health", "/ui/")):
+        if not is_safe_internal_path(url) or url.startswith(("/static", "/health", "/ui/")):
             return ("", 204)
         row = RecentView.query.filter_by(user_id=current_user.id, url=url).first()
         if row:

@@ -1,4 +1,5 @@
-{% extends "base.html" %}{% block content %}
+{% extends "base.html" %}{% block title %}Audit log · {{ instance_name }}{% endblock %}
+{% block content %}
 <header class="page-head"><div><p class="eyebrow">SECURITY</p><h1>Audit log</h1><p>Append-only, request-correlated security and record activity.</p></div><a class="button" href="{{ url_for('audit_export') }}">Export verified evidence</a></header>
 <div class="detail-grid">
 <section class="panel">
