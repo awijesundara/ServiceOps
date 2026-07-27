@@ -14,7 +14,7 @@
   <label>Change type<select name="change_type"><option>Normal</option><option>Standard</option><option>Emergency</option></select></label>
   <label>Impact<select name="impact"><option>Low</option><option selected>Medium</option><option>High</option></select></label>
   <label>Risk score<input type="number" min="0" max="100" name="risk_score" value="50"></label>
-  <label>Configuration item<select name="ci_id"><option value="">Not selected</option>{% for ci in cis %}<option value="{{ ci.id }}">{{ ci.name }}</option>{% endfor %}</select></label>
+  <label>Configuration item<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off"><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div></label>
   <label>Planned start<input type="datetime-local" name="planned_start"></label>
   <label>Planned end<input type="datetime-local" name="planned_end"></label>
   <label class="wide">Implementation plan<textarea name="implementation_plan" rows="4" required></textarea></label>
