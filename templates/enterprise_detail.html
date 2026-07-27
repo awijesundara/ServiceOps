@@ -18,7 +18,7 @@
 <details><summary>Update root cause, workaround, and fix</summary>
 <form method="post" action="{{ url_for('problem_analysis_update', record_id=record.id) }}" class="form-grid">
   <label class="check wide"><input type="checkbox" name="known_error" value="1" {% if profile and profile.known_error %}checked{% endif %}> Treat as known error</label>
-  <label>Primary CI<select name="primary_ci_id"><option value="">Not selected</option>{% for ci in cis %}<option value="{{ ci.id }}" {% if profile and profile.primary_ci_id==ci.id %}selected{% endif %}>{{ ci.name }}</option>{% endfor %}</select></label>
+  <label>Primary CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" value="{{ profile.primary_ci.name if profile and profile.primary_ci else '' }}"><input type="hidden" name="primary_ci_id" value="{{ profile.primary_ci_id if profile and profile.primary_ci_id else '' }}"><div class="lookup-results" hidden></div></div></label>
   <label class="wide">Root cause<textarea name="root_cause" rows="4">{{ profile.root_cause if profile else '' }}</textarea></label>
   <label class="wide">Workaround<textarea name="workaround" rows="4">{{ profile.workaround if profile else '' }}</textarea></label>
   <label class="wide">Permanent fix<textarea name="fix_notes" rows="4">{{ profile.fix_notes if profile else '' }}</textarea></label>
@@ -41,11 +41,11 @@
 
 <hr><h2>Related incidents, changes, and knowledge</h2>
 {% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ item.label }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">No related records.</p>{% endfor %}
-{% if can_manage_record %}<form method="post" action="{{ url_for('record_link_add', source_type='enterprise', source_id=record.id) }}" class="inline-form"><select name="link_type"><option value="related_incident">Related incident</option><option value="problem_change">Permanent or temporary fix change</option><option value="knowledge_article">Knowledge article</option></select><input name="target_number" placeholder="INC, CHG or KB number" required><button>Link record</button></form>{% endif %}
+{% if can_manage_record %}<form method="post" action="{{ url_for('record_link_add', source_type='enterprise', source_id=record.id) }}" class="inline-form"><select name="link_type"><option value="related_incident">Related incident</option><option value="problem_change">Permanent or temporary fix change</option><option value="knowledge_article">Knowledge article</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_records') }}"><input type="text" name="target_number" class="lookup-search" placeholder="Search INC, CHG or KB…" autocomplete="off" required><div class="lookup-results" hidden></div></div><button>Link record</button></form>{% endif %}
 
 <hr><h2>Affected CIs and impacted services</h2>
 {% for link in ci_links %}<div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div><span class="badge">{{ link.relationship_role }}</span></div>{% else %}<p class="muted">No additional CI relationships.</p>{% endfor %}
-{% if can_manage_record %}<form method="post" action="{{ url_for('task_ci_add', target_type='enterprise', target_id=record.id) }}" class="inline-form"><select name="relationship_role"><option>Primary CI</option><option>Affected CI</option><option>Impacted service</option></select><select name="ci_id">{% for ci in cis %}<option value="{{ ci.id }}">{{ ci.name }} · {{ ci.ci_class }}</option>{% endfor %}</select><button>Link CI</button></form>{% endif %}
+{% if can_manage_record %}<form method="post" action="{{ url_for('task_ci_add', target_type='enterprise', target_id=record.id) }}" class="inline-form"><select name="relationship_role"><option>Primary CI</option><option>Affected CI</option><option>Impacted service</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div><button>Link CI</button></form>{% endif %}
 {% endif %}
 
 {% if record.approvals %}<hr><h2>Approval history</h2>{% for approval in record.approvals %}<article class="timeline"><strong>{{ approval.state }}</strong><span>{{ approval.approver.name }}</span><p>{{ approval.comments or 'No decision comments.' }}</p>

@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='platform.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='brand.css') }}">
   <script src="{{ url_for('static', filename='platform.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='lookup.js') }}" defer></script>
 </head>
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
 {% if current_user.is_authenticated %}
