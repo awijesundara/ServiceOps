@@ -13,6 +13,19 @@
     <dt>Owning team</dt><dd>{{ owning_group.name if owning_group else 'Not assigned' }}</dd>
     {% if owning_group %}<dt>Team manager</dt><dd>{{ owning_group.manager.name if owning_group.manager else 'Not assigned' }}</dd>{% endif %}
   </dl>
+  {% if can_manage_ticket and reassignable_teams %}
+  <details><summary>Reassign to another team</summary>
+    <form method="post" class="inline-form">
+      <input type="hidden" name="action" value="reassign_team">
+      <select name="new_group_id" required>
+        <option value="">Select a team</option>
+        {% for team in reassignable_teams %}<option value="{{ team.id }}">{{ team.name }}{% if ticket.kind == 'change' %} — {{ team.manager.name if team.manager else "manager not configured" }}{% endif %}</option>{% endfor %}
+      </select>
+      <button>Send to team</button>
+    </form>
+    <p class="muted">The record moves entirely to the selected team; the current assignee is cleared so the new team picks it up.</p>
+  </details>
+  {% endif %}
 
   {% if internal_view %}
   {% if ticket.kind == 'incident' %}
@@ -46,7 +59,7 @@
       <label>Change type<select name="change_type">{% for value in ['Standard','Normal','Emergency'] %}<option {% if ticket.change_governance.change_type==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label>Impact<select name="impact">{% for value in ['Low','Medium','High'] %}<option {% if ticket.change_governance.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label>Risk score<input type="number" min="0" max="100" name="risk_score" value="{{ ticket.change_governance.risk_score }}"></label>
-      <label>Primary CI<select name="ci_id"><option value="">Not selected</option>{% for ci in cis %}<option value="{{ ci.id }}" {% if ticket.change_governance.ci_id==ci.id %}selected{% endif %}>{{ ci.name }}</option>{% endfor %}</select></label>
+      <label>Primary CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" value="{{ ticket.change_governance.ci.name if ticket.change_governance.ci else '' }}"><input type="hidden" name="ci_id" value="{{ ticket.change_governance.ci_id or '' }}"><div class="lookup-results" hidden></div></div></label>
       <label>Planned start<input type="datetime-local" name="planned_start" value="{{ ticket.change_governance.planned_start.strftime('%Y-%m-%dT%H:%M') if ticket.change_governance.planned_start else '' }}"></label>
       <label>Planned end<input type="datetime-local" name="planned_end" value="{{ ticket.change_governance.planned_end.strftime('%Y-%m-%dT%H:%M') if ticket.change_governance.planned_end else '' }}"></label>
       <label class="wide">Implementation plan<textarea name="implementation_plan" rows="4" required>{{ ticket.change_governance.implementation_plan }}</textarea></label>
@@ -105,7 +118,8 @@
       <option value="requested_item_change">Requested item</option>
       {% endif %}
     </select>
-    <input name="target_number" placeholder="INC, PRB, CHG, REQ or RITM number" required><button>Link record</button>
+    <div class="lookup" data-lookup-url="{{ url_for('lookup_records') }}"><input type="text" name="target_number" class="lookup-search" placeholder="Search INC, PRB, CHG, REQ or RITM…" autocomplete="off" required><div class="lookup-results" hidden></div></div>
+    <button>Link record</button>
   </form>
   {% endif %}
 
@@ -115,7 +129,8 @@
   {% if can_manage_ticket %}
   <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
     <select name="relationship_role"><option>Primary CI</option><option>Affected CI</option><option>Impacted service</option></select>
-    <select name="ci_id">{% for ci in cis %}<option value="{{ ci.id }}">{{ ci.name }} · {{ ci.ci_class }}</option>{% endfor %}</select><button>Link CI</button>
+    <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div>
+    <button>Link CI</button>
   </form>
   {% endif %}
 

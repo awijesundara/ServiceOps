@@ -985,6 +985,7 @@ class ProblemProfile(db.Model):
     workaround = db.Column(db.Text, default="")
     fix_notes = db.Column(db.Text, default="")
     primary_ci_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"))
+    primary_ci = db.relationship("ConfigurationItem")
     record = db.relationship(
         "EnterpriseRecord", backref=db.backref("problem_profile", uselist=False)
     )
@@ -4293,7 +4294,7 @@ def create_app(test_config=None):
             else:
                 teams_query = teams_query.filter(SupportGroup.id == -1)
         teams = teams_query.order_by(SupportGroup.name).all()
-        return render_template("ticket_form.html", kind=kind, cis=ConfigurationItem.query.order_by(ConfigurationItem.name).all(),
+        return render_template("ticket_form.html", kind=kind,
                                teams=teams, default_priority=setting_value("DEFAULT_TICKET_PRIORITY", "P3"),
                                change_freeze_message=setting_value("CHANGE_FREEZE_MESSAGE", ""))
 
@@ -4360,6 +4361,51 @@ def create_app(test_config=None):
                     "assigned to": assignee.name if assignee else "Unassigned",
                 })
                 audit("update", ticket.number, f"{ticket.state}, {ticket.priority}")
+            elif action == "reassign_team":
+                if not user_can_manage_ticket(current_user, ticket):
+                    abort(403, description=(
+                        "Only the current owning team's manager or an admin can reassign this record."
+                    ))
+                try:
+                    new_group_id = int(request.form["new_group_id"])
+                except (KeyError, ValueError):
+                    abort(400, description="Select a team to reassign to.")
+                new_group = SupportGroup.query.filter_by(
+                    id=new_group_id, tenant_id=ticket.tenant_id,
+                    active=True, group_type="IT Fulfillment",
+                ).first()
+                if not new_group:
+                    abort(400, description="Select an active IT fulfillment team.")
+                current_group = ticket_owning_group(ticket)
+                if current_group and current_group.id == new_group.id:
+                    abort(400, description="This record is already owned by that team.")
+                if ticket.kind == "change" and (not new_group.manager or not new_group.manager.active):
+                    abort(400, description=(
+                        "The selected team must have an active manager before it can own a change."
+                    ))
+                if ticket.kind == "change":
+                    ticket.change_ownership.group_id = new_group.id
+                else:
+                    assignment = TicketAssignmentGroup.query.filter_by(ticket_id=ticket.id).first()
+                    if assignment:
+                        assignment.group_id = new_group.id
+                    else:
+                        db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=new_group.id))
+                ticket.assignee_id = None
+                log_history(
+                    "ticket", ticket.id, "Reassigned to another team",
+                    "owning team",
+                    current_group.name if current_group else "Unassigned", new_group.name,
+                )
+                audit(
+                    "reassign", ticket.number,
+                    f"{current_group.name if current_group else 'Unassigned'} -> {new_group.name}",
+                )
+                if ticket.kind == "change":
+                    supersede_change_approval(ticket, ["owning team"])
+                db.session.commit()
+                flash(f"{ticket.number} reassigned to {new_group.name}.", "success")
+                return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             db.session.commit()
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
         agents = ticket_team_agents(ticket)
@@ -4395,9 +4441,14 @@ def create_app(test_config=None):
             relation_labels=RELATION_LABELS, work_tasks=work_tasks,
             work_task_states=OPERATIONAL_TASK_TRANSITIONS, history=history,
             internal_view=internal_view,
-            ci_links=ci_links, cis=ConfigurationItem.query.order_by(ConfigurationItem.name).all(),
+            ci_links=ci_links,
             teams=tenant_query(SupportGroup).filter_by(
                 group_type="IT Fulfillment", active=True
+            ).order_by(SupportGroup.name).all(),
+            reassignable_teams=tenant_query(SupportGroup).filter(
+                SupportGroup.group_type == "IT Fulfillment",
+                SupportGroup.active.is_(True),
+                SupportGroup.id != (owning_group.id if owning_group else -1),
             ).order_by(SupportGroup.name).all(),
             task_agents=task_agents, task_permissions=task_permissions,
         )
@@ -5482,7 +5533,6 @@ def create_app(test_config=None):
             ci_links=TaskCI.query.filter_by(
                 target_type="enterprise", target_id=record.id
             ).order_by(TaskCI.relationship_role).all(),
-            cis=ConfigurationItem.query.order_by(ConfigurationItem.name).all(),
             teams=SupportGroup.query.filter_by(
                 group_type="IT Fulfillment", active=True
             ).order_by(SupportGroup.name).all(),
@@ -6321,6 +6371,75 @@ def create_app(test_config=None):
         ).count()
         return render_template("analytics.html", ticket_states=ticket_states, domain_counts=domain_counts,
                                priority_counts=priority_counts, overdue=overdue, modules=DOMAIN_CONFIG)
+
+    @app.get("/internal/lookup/cis")
+    @login_required
+    def lookup_cis():
+        q = request.args.get("q", "").strip()
+        query = tenant_query(ConfigurationItem)
+        if q:
+            pattern = f"%{q}%"
+            query = query.filter(db.or_(
+                ConfigurationItem.name.ilike(pattern),
+                ConfigurationItem.ci_class.ilike(pattern),
+            ))
+        rows = query.order_by(ConfigurationItem.name).limit(15).all()
+        return jsonify([{
+            "value": ci.id,
+            "label": ci.name,
+            "description": f"{ci.ci_class} · {ci.environment} · {ci.operational_status}",
+        } for ci in rows])
+
+    @app.get("/internal/lookup/records")
+    @login_required
+    def lookup_records():
+        q = request.args.get("q", "").strip()
+        if len(q) < 2:
+            return jsonify([])
+        pattern = f"%{q}%"
+        results = []
+        ticket_ids = {row.id for row in visible_ticket_query(current_user).all()}
+        for row in Ticket.query.filter(
+            Ticket.id.in_(ticket_ids),
+            db.or_(Ticket.number.ilike(pattern), Ticket.title.ilike(pattern)),
+        ).order_by(Ticket.updated_at.desc()).limit(10):
+            results.append({
+                "value": row.number, "label": f"{row.number} — {row.title}",
+                "description": f"{row.kind.title()} · {row.state}",
+            })
+        enterprise_ids = {row.id for row in visible_enterprise_record_query(current_user).all()}
+        for row in EnterpriseRecord.query.filter(
+            EnterpriseRecord.id.in_(enterprise_ids),
+            db.or_(EnterpriseRecord.number.ilike(pattern), EnterpriseRecord.title.ilike(pattern)),
+        ).order_by(EnterpriseRecord.updated_at.desc()).limit(10):
+            results.append({
+                "value": row.number, "label": f"{row.number} — {row.title}",
+                "description": f"{DOMAIN_CONFIG[row.domain]['name']} · {row.state}",
+            })
+        for row in tenant_query(Knowledge).filter(
+            db.or_(Knowledge.title.ilike(pattern), Knowledge.body.ilike(pattern))
+        ).limit(10):
+            results.append({
+                "value": f"KB{row.id:07d}", "label": f"KB{row.id:07d} — {row.title}",
+                "description": f"Knowledge · {row.category}",
+            })
+        request_ids = {row.id for row in visible_catalog_request_query(current_user).all()}
+        for row in CatalogRequest.query.filter(
+            CatalogRequest.id.in_(request_ids), CatalogRequest.number.ilike(pattern),
+        ).limit(10):
+            results.append({
+                "value": row.number, "label": f"{row.number} — {row.requested_for.name}",
+                "description": f"Service request · {row.state}",
+            })
+        for row in RequestedItem.query.filter(
+            RequestedItem.request_id.in_(request_ids),
+            RequestedItem.number.ilike(pattern),
+        ).limit(10):
+            results.append({
+                "value": row.number, "label": f"{row.number} — {row.item.name}",
+                "description": f"Requested item · {row.state}",
+            })
+        return jsonify(results[:15])
 
     @app.get("/ui/search")
     @login_required

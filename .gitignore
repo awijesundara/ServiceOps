@@ -3,7 +3,6 @@
 .serviceops-install
 .installer-state/
 backups/
-docs/
 __pycache__/
 *.py[cod]
 .pytest_cache/
