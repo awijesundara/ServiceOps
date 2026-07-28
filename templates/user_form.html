@@ -1,2 +1,33 @@
-{% extends "base.html" %}{% block title %}New user · {{ instance_name }}{% endblock %}
-{% block content %}<header class="page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>New user</h1></div></header><form method="post" class="panel form-grid"><label>Name<input name="name" required></label><label>Username<input name="username" required></label><label>Email<input type="email" name="email" required></label><label>Role<select name="role"><option>requester</option><option>agent</option><option>manager</option><option>admin</option></select></label><label class="wide">Temporary password<input type="password" name="password" minlength="8" required></label><div class="wide actions"><a class="button" href="{{ url_for('users') }}">Cancel</a><button class="primary">Create user</button></div></form>{% endblock %}
+{% extends "base.html" %}
+{% set editing = user is not none %}
+{% block title %}{{ "My profile" if self_service else ("User " ~ user.username if editing else "New user") }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<section class="record-shell">
+  <header class="record-toolbar">
+    <div class="record-identity">
+      <a class="record-back" href="{{ url_for('dashboard') if self_service else url_for('users') }}" aria-label="Back">‹</a>
+      <span class="record-type-icon">U</span><div><strong>User</strong><small>{{ user.username if editing else "New record" }}{% if self_service %} · Self-service view{% endif %}</small></div>
+    </div>
+    <div class="record-actions"><button class="primary" form="user-record-form">{{ "Update" if editing else "Create" }}</button></div>
+  </header>
+  <form method="post" id="user-record-form" class="record-form">
+    <div class="record-grid">
+      {% if editing %}<label><span>User ID</span><input value="{{ user.username }}" disabled></label>{% else %}<label class="required-field"><span>User ID</span><input name="username" required maxlength="80"></label>{% endif %}
+      <label class="required-field"><span>Email</span><input type="email" name="email" value="{{ user.email if editing else '' }}" required></label>
+      <label class="required-field"><span>Full name</span><input name="name" value="{{ user.name if editing else '' }}" required maxlength="120"></label>
+      <label><span>Time zone</span><select name="timezone">{% for zone in ['Asia/Tokyo','UTC','Australia/Sydney','Europe/London','America/New_York','America/Los_Angeles'] %}<option {% if (editing and user.timezone==zone) or (not editing and zone=='Asia/Tokyo') %}selected{% endif %}>{{ zone }}</option>{% endfor %}</select></label>
+      <label><span>Title</span><input name="title" value="{{ user.title if editing else '' }}" maxlength="120"></label>
+      <label><span>Date format</span><select name="date_format"><option value="system">System (yyyy-MM-dd)</option><option value="day_first" {% if editing and user.date_format=='day_first' %}selected{% endif %}>dd/MM/yyyy</option><option value="month_first" {% if editing and user.date_format=='month_first' %}selected{% endif %}>MM/dd/yyyy</option></select></label>
+      {% if not self_service %}<label><span>Department</span><input name="department" value="{{ user.department if editing else '' }}" maxlength="120"></label>{% else %}<label><span>Department</span><input value="{{ user.department or 'Not assigned' }}" disabled></label>{% endif %}
+      <label><span>Business phone</span><input name="business_phone" value="{{ user.business_phone if editing else '' }}" maxlength="40"></label>
+      {% if not self_service %}<label><span>Role</span><select name="role">{% for role in ['requester','agent','manager','admin'] %}<option {% if editing and user.role==role %}selected{% endif %}>{{ role }}</option>{% endfor %}</select></label>{% endif %}
+      <label><span>Mobile phone</span><input name="mobile_phone" value="{{ user.mobile_phone if editing else '' }}" maxlength="40"></label>
+      {% if not self_service %}<label><span>Active</span><label class="switch"><input type="checkbox" name="active" {% if not editing or user.active %}checked{% endif %}><span></span></label></label>{% endif %}
+      {% if editing %}<label><span>Calendar integration</span><select name="calendar_integration"><option>None</option><option {% if user.calendar_integration=='Outlook' %}selected{% endif %}>Outlook</option><option {% if user.calendar_integration=='Google Calendar' %}selected{% endif %}>Google Calendar</option></select></label>{% endif %}
+      {% if not editing %}<label class="required-field"><span>Temporary password</span><input type="password" name="password" minlength="12" required></label>{% endif %}
+    </div>
+    <footer class="record-footer-actions"><button class="primary">{{ "Update user" if editing else "Create user" }}</button></footer>
+  </form>
+</section>
+{% if editing %}<section class="panel related-links"><h2>Related links</h2><a href="{{ url_for('change_password') if self_service else url_for('users') }}">{{ "Change password" if self_service else "Return to users" }}</a><a href="{{ url_for('notifications') }}">View notifications</a></section>{% endif %}
+{% endblock %}
