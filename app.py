@@ -4087,7 +4087,10 @@ def create_app(test_config=None):
             breach_horizon = now() + timedelta(hours=sla_at_risk_hours)
             sla_breached = [row for row in sla_rows if row.breached][:8]
             sla_at_risk = [
-                row for row in sla_rows if not row.breached and row.breach_at <= breach_horizon
+                row for row in sla_rows
+                if not row.breached
+                and (row.breach_at if row.breach_at.tzinfo else row.breach_at.replace(tzinfo=timezone.utc))
+                <= breach_horizon
             ][:8]
         return render_template(
             "dashboard.html", counts=counts, open_count=open_count, recent=recent,
