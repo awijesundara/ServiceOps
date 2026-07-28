@@ -6,13 +6,14 @@ import base64
 import hashlib
 import hmac
 import ipaddress
+import socket
 import re
 import secrets
 import smtplib
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from email.message import EmailMessage
 from functools import wraps
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 from flask import Flask, Response, abort, current_app, flash, g, has_request_context, jsonify, redirect, render_template, request, send_from_directory, session, url_for
@@ -74,19 +75,28 @@ def secret_value(name):
     return os.getenv(name, "")
 
 
+class TenantResolutionError(RuntimeError):
+    """Raised when an authenticated user has no tenant_id to fail closed on."""
+
+
 def tenant_context_id():
     try:
-        if current_user.is_authenticated:
-            tenant_id = getattr(current_user, "tenant_id", None)
-            if tenant_id:
-                return tenant_id
-            if has_request_context():
-                current_app.logger.warning(
-                    "Authenticated user %s has no tenant_id; defaulting to tenant 1",
-                    getattr(current_user, "username", "unknown"),
-                )
-    except (AttributeError, RuntimeError):
-        pass
+        is_authenticated = current_user.is_authenticated
+    except AttributeError:
+        is_authenticated = False
+    if is_authenticated:
+        tenant_id = getattr(current_user, "tenant_id", None)
+        if tenant_id:
+            return tenant_id
+        # An authenticated user is only ever missing tenant_id if the data is
+        # corrupt (the column is NOT NULL) -- fail closed instead of silently
+        # attaching their action to tenant 1's data.
+        if has_request_context():
+            current_app.logger.error(
+                "Authenticated user %s has no tenant_id; refusing to default to tenant 1",
+                getattr(current_user, "username", "unknown"),
+            )
+        raise TenantResolutionError("Authenticated user has no tenant_id.")
     return 1
 
 
@@ -1559,6 +1569,36 @@ def integration_endpoint_valid(endpoint):
     return True
 
 
+def integration_endpoint_resolves_safely(endpoint):
+    """Re-resolve the endpoint's hostname and reject it if any A/AAAA record is
+    non-global. A literal-IP/hostname string check alone (integration_endpoint_valid)
+    cannot catch a public-looking hostname that resolves to a private address
+    (DNS rebinding) -- this closes that gap at delivery time, immediately before
+    the connection is made."""
+    hostname = urlparse(endpoint).hostname
+    if not hostname:
+        return False
+    try:
+        address = ipaddress.ip_address(hostname)
+        return address.is_global
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except OSError:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        raw_address = info[4][0]
+        try:
+            if not ipaddress.ip_address(raw_address).is_global:
+                return False
+        except ValueError:
+            return False
+    return True
+
+
 def deliver_smtp(event):
     payload = event.payload
     user = db.session.get(User, payload["user_id"])
@@ -1611,12 +1651,22 @@ def deliver_webhook(event, connection):
             "X-ServiceOps-Timestamp": timestamp,
             "X-ServiceOps-Signature": f"sha256={signature}",
         }
-    response = requests.post(
-        connection.endpoint, json=body, headers=headers, timeout=10
-    )
-    if response.status_code < 200 or response.status_code >= 300:
-        raise RuntimeError(f"HTTP {response.status_code}")
-    return response.status_code
+    target = connection.endpoint
+    max_redirects = 3
+    for _ in range(max_redirects + 1):
+        if not integration_endpoint_valid(target) or not integration_endpoint_resolves_safely(target):
+            raise RuntimeError("Webhook destination resolves to a non-routable or private address.")
+        response = requests.post(
+            target, json=body, headers=headers, timeout=10, allow_redirects=False,
+        )
+        if response.is_redirect:
+            location = response.headers.get("Location", "")
+            target = urljoin(target, location)
+            continue
+        if response.status_code < 200 or response.status_code >= 300:
+            raise RuntimeError(f"HTTP {response.status_code}")
+        return response.status_code
+    raise RuntimeError("Webhook delivery exceeded the maximum redirect hops.")
 
 
 def process_outbox(limit=50):
@@ -2201,21 +2251,16 @@ def supersede_change_approval(ticket, changed_fields):
     revision.revision += 1
     revision.last_material_change_at = now()
     stages = change_approval_stages(ticket)
+    summary = ", ".join(changed_fields)
+    # Notify only once for the first (currently active) stage's approvers, with
+    # reapproval-specific wording; later stages (e.g. CCB) are notified by
+    # activate_gate() with its default wording once their gate actually opens.
     chain = create_approval_chain(
         f"{ticket.number} change authorization v{revision.revision}",
         "ticket", ticket.id, stages,
+        first_gate_title=f"Reapproval required: {ticket.number} v{revision.revision}",
+        first_gate_body=f"Material change fields were revised: {summary}. Review the new plan before implementation.",
     )
-    # Only the first (currently active) stage's approvers act now; later stages
-    # (e.g. CCB) are notified by activate_gate() once their gate actually opens.
-    approver_ids = set(stages[0]["approver_ids"]) if stages else set()
-    summary = ", ".join(changed_fields)
-    for approver_id in approver_ids:
-        create_notification(
-            approver_id,
-            title=f"Reapproval required: {ticket.number} v{revision.revision}",
-            body=f"Material change fields were revised: {summary}. Review the new plan before implementation.",
-            tenant_id=ticket.tenant_id, target_type="ticket", target_id=ticket.id,
-        )
     log_history(
         "ticket", ticket.id, "Approval restarted",
         "approval revision",
@@ -2235,18 +2280,19 @@ def user_in_group(user, group):
     )
 
 
-def activate_gate(gate):
+def activate_gate(gate, notify_title=None, notify_body=None):
     gate.state = "Requested"
+    title = notify_title or f"Approval requested: {gate.name}"
+    body = notify_body or f"Your decision is required for approval chain {gate.chain.name}."
     for vote in gate.votes:
         vote.state = "Requested"
         create_notification(
-            vote.approver_id, f"Approval requested: {gate.name}",
-            f"Your decision is required for approval chain {gate.chain.name}.",
+            vote.approver_id, title, body,
             tenant_id=gate.chain.tenant_id, target_type="approval_queue",
         )
 
 
-def create_approval_chain(name, target_type, target_id, stages):
+def create_approval_chain(name, target_type, target_id, stages, first_gate_title=None, first_gate_body=None):
     if not stages or any(not [item for item in stage["approver_ids"] if item]
                          for stage in stages):
         raise ValueError("Every approval stage must have at least one configured approver.")
@@ -2262,7 +2308,7 @@ def create_approval_chain(name, target_type, target_id, stages):
             db.session.add(ApprovalVote(gate_id=gate.id, approver_id=approver_id))
     db.session.flush()
     first_gate = ApprovalGate.query.filter_by(chain_id=chain.id, sequence=1).one()
-    activate_gate(first_gate)
+    activate_gate(first_gate, notify_title=first_gate_title, notify_body=first_gate_body)
     set_target_state(target_type, target_id, "Awaiting Approval")
     log_history(
         target_type, target_id, "Approval requested",
@@ -3173,7 +3219,7 @@ def create_app(test_config=None):
         CSRF_ENABLED=env_bool("CSRF_ENABLED", True),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        SESSION_COOKIE_SECURE=env_bool("SESSION_COOKIE_SECURE", False),
+        SESSION_COOKIE_SECURE=env_bool("SESSION_COOKIE_SECURE", True),
         PERMANENT_SESSION_LIFETIME=timedelta(
             minutes=int(os.getenv("SESSION_LIFETIME_MINUTES", "480"))
         ),
@@ -3190,6 +3236,16 @@ def create_app(test_config=None):
         )
     elif not app.config["SECRET_KEY"] or len(app.config["SECRET_KEY"]) < 32:
         raise RuntimeError("SECRET_KEY is required and must contain at least 32 characters.")
+    if (
+        not app.config["TESTING"]
+        and not app.config["SESSION_COOKIE_SECURE"]
+        and not env_bool("ALLOW_INSECURE_SESSION_COOKIES")
+    ):
+        raise RuntimeError(
+            "SESSION_COOKIE_SECURE=false requires TLS termination in front of this app. "
+            "Set SESSION_COOKIE_SECURE=true (default) behind TLS, or explicitly set "
+            "ALLOW_INSECURE_SESSION_COOKIES=true for a non-TLS development deployment only."
+        )
     if env_bool("TRUST_PROXY_HEADERS"):
         app.wsgi_app = ProxyFix(
             app.wsgi_app,
@@ -3356,6 +3412,22 @@ def create_app(test_config=None):
         return render_template(
             "error.html", code=error.code, message=error.description
         ), error.code
+
+    @app.errorhandler(TenantResolutionError)
+    def tenant_resolution_error(error):
+        logout_user()
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "error": {
+                    "status": 403,
+                    "title": "Forbidden",
+                    "detail": "Account has no tenant assignment.",
+                    "request_id": g.get("request_id"),
+                }
+            }), 403
+        return render_template(
+            "error.html", code=403, message="Your account has no tenant assignment. Contact an administrator."
+        ), 403
 
     def nav_active(endpoint, **params):
         if request.endpoint != endpoint:
@@ -3902,6 +3974,18 @@ def create_app(test_config=None):
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "font-src 'self'; "
+            "connect-src 'self'; "
+            "frame-ancestors 'self'; "
+            "base-uri 'self'; "
+            "form-action 'self'",
+        )
         if setting_bool("ENABLE_HSTS"):
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
@@ -3942,7 +4026,10 @@ def create_app(test_config=None):
                 audit("login", user.username, f"provider={provider}")
                 db.session.commit()
                 preference = UserPreference.query.filter_by(user_id=user.id).first()
-                return redirect(preference.start_page if preference else url_for("dashboard"))
+                start_page = preference.start_page if preference else None
+                if not is_safe_internal_path(start_page):
+                    start_page = url_for("dashboard")
+                return redirect(start_page)
             if lockout_record:
                 lockout_record.failed_login_count = (lockout_record.failed_login_count or 0) + 1
                 max_attempts = setting_int("LOGIN_MAX_ATTEMPTS", 5)
@@ -6583,7 +6670,8 @@ def create_app(test_config=None):
             pref.high_contrast = bool(request.form.get("high_contrast"))
             pref.reduced_motion = bool(request.form.get("reduced_motion"))
             pref.nav_pinned = bool(request.form.get("nav_pinned"))
-            pref.start_page = request.form.get("start_page", "/")[:500]
+            submitted_start_page = request.form.get("start_page", "/")[:500]
+            pref.start_page = submitted_start_page if is_safe_internal_path(submitted_start_page) else "/"
             audit("update", "UI preferences", current_user.username)
             db.session.commit()
             flash("Display and accessibility preferences saved.", "success")
