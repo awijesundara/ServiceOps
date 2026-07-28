@@ -1851,6 +1851,19 @@ def record_reference(record_type, record_id):
     return db.session.get(model, record_id) if model else None
 
 
+def record_tenant_id(record):
+    if isinstance(record, Knowledge):
+        return record.tenant_id
+    if isinstance(record, CatalogTask):
+        return record.requested_item.request.tenant_id if record.requested_item else None
+    if isinstance(record, OperationalTask):
+        parent = record_reference(record.parent_type, record.parent_id)
+        return record_tenant_id(parent) if parent else None
+    if isinstance(record, RequestedItem):
+        return record.request.tenant_id if record.request else None
+    return getattr(record, "tenant_id", None)
+
+
 def record_type_for(record):
     if isinstance(record, Ticket):
         return "ticket"
@@ -4867,7 +4880,7 @@ def create_app(test_config=None):
             abort(400, description="Planned start and planned end are required for a change.")
         if planned_end <= planned_start:
             abort(400, description="Planned end must be later than planned start.")
-        if ci_id and not db.session.get(ConfigurationItem, ci_id):
+        if ci_id and not tenant_query(ConfigurationItem).filter(ConfigurationItem.id == ci_id).first():
             abort(400, description="The selected configuration item does not exist.")
         required_text = {
             "Short description": request.form.get("title", "").strip(),
@@ -4999,6 +5012,11 @@ def create_app(test_config=None):
         if (
             isinstance(target, RequestedItem)
             and not user_can_view_catalog_request(current_user, target.request)
+        ):
+            abort(404)
+        if (
+            isinstance(target, (CatalogTask, OperationalTask, Knowledge))
+            and record_tenant_id(target) != tenant_context_id()
         ):
             abort(404)
         target_type = record_type_for(target)
@@ -6084,7 +6102,11 @@ def create_app(test_config=None):
             "primary CI": profile.primary_ci.name if profile.primary_ci else "",
         }
         ci_id = int(request.form["primary_ci_id"]) if request.form.get("primary_ci_id") else None
-        if ci_id and not db.session.get(ConfigurationItem, ci_id):
+        selected_ci = (
+            tenant_query(ConfigurationItem).filter(ConfigurationItem.id == ci_id).first()
+            if ci_id else None
+        )
+        if ci_id and not selected_ci:
             abort(400)
         profile.known_error = bool(request.form.get("known_error"))
         profile.root_cause = request.form.get("root_cause", "").strip()
@@ -6096,7 +6118,7 @@ def create_app(test_config=None):
             "root cause": profile.root_cause,
             "workaround": profile.workaround,
             "permanent fix": profile.fix_notes,
-            "primary CI": db.session.get(ConfigurationItem, ci_id).name if ci_id else "",
+            "primary CI": selected_ci.name if selected_ci else "",
         }
         changed = log_field_changes(
             "enterprise", record.id, before, after, event="Problem analysis updated"
