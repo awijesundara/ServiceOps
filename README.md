@@ -1,6 +1,6 @@
 # ServiceOps
 
-A self-contained, Docker-deployable enterprise service management platform. ServiceOps is an independent project and has no dependency on the Ollama project.
+A self-contained, Docker-deployable enterprise service management platform.
 
 ## Recommended web installation
 

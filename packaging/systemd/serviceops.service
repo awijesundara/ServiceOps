@@ -1,0 +1,20 @@
+[Unit]
+Description=ServiceOps ITSM platform (Docker Compose stack)
+Documentation=https://github.com/awijesundara/ServiceOps
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=serviceops
+Group=serviceops
+WorkingDirectory=/opt/serviceops
+ExecStart=/usr/bin/serviceops start
+ExecStop=/usr/bin/serviceops stop
+TimeoutStartSec=300
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
