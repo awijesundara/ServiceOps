@@ -1,7 +1,14 @@
 .git
 .env
+.env.backup.*
+.serviceops-install
+.installer-state
+backups
+release-evidence
 .venv
 __pycache__
 *.pyc
 .pytest_cache
 instance
+CLAUDE.md
+.DS_Store
