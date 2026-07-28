@@ -58,8 +58,13 @@ jobs:
           tags: ${{ env.IMAGE_REF }}
           push: ${{ startsWith(github.ref, 'refs/tags/v') }}
           load: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-          provenance: mode=max
-          sbom: true
+          # The docker exporter used by `load: true` can't import a manifest
+          # list, which provenance/sbom attestations force even for a single
+          # platform. Only request them on the push (release-tag) path, where
+          # the image goes straight to the registry instead of the local
+          # docker daemon.
+          provenance: ${{ startsWith(github.ref, 'refs/tags/v') && 'mode=max' || false }}
+          sbom: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Block fixable high and critical vulnerabilities
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
