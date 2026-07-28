@@ -6,8 +6,17 @@
 # immutable, pinned container image; this tree only ever pulls it.
 set -Eeuo pipefail
 
-VERSION="${1:?Usage: build-dist.sh VERSION [IMAGE_REPO]}"
+VERSION="${1:?Usage: build-dist.sh VERSION [IMAGE_REPO] [IMAGE_DIGEST]}"
 IMAGE_REPO="${2:-ghcr.io/awijesundara/serviceops}"
+IMAGE_DIGEST="${3:-}"
+
+if [[ -n "$IMAGE_DIGEST" ]]; then
+  IMAGE_REF="$IMAGE_REPO@$IMAGE_DIGEST"
+else
+  echo "WARNING: no IMAGE_DIGEST given; pinning by mutable tag $IMAGE_REPO:$VERSION instead of an immutable digest." >&2
+  echo "  Pass the pushed image's sha256 digest as the 3rd argument for a reproducible, tamper-evident install." >&2
+  IMAGE_REF="$IMAGE_REPO:$VERSION"
+fi
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 STAGE_DIR="$ROOT_DIR/dist/serviceops-$VERSION"
@@ -42,8 +51,9 @@ sed -i.bak 's/"\${COMPOSE\[@\]}" up --build -d/"${COMPOSE[@]}" pull \&\& "${COMP
 rm -f "$STAGE_DIR/serviceops.bak" "$STAGE_DIR/tools/install/server.sh.bak"
 
 # The installer's generated .env must point at the real published image, not
-# a bare local tag that only exists after a local `docker build`.
-sed -i.bak "s#SERVICEOPS_IMAGE=serviceops-app:[0-9][0-9.]*#SERVICEOPS_IMAGE=$IMAGE_REPO:$VERSION#" \
+# a bare local tag that only exists after a local `docker build`. Prefer an
+# immutable digest reference over a mutable tag when one was supplied.
+sed -i.bak "s#SERVICEOPS_IMAGE=serviceops-app:[0-9][0-9.]*#SERVICEOPS_IMAGE=$IMAGE_REF#" \
   "$STAGE_DIR/tools/install/server.sh"
 rm -f "$STAGE_DIR/tools/install/server.sh.bak"
 

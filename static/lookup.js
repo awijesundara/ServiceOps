@@ -61,8 +61,17 @@ function initLookup(container) {
       return;
     }
     debounceTimer = setTimeout(async () => {
-      const response = await fetch(`${url}?q=${encodeURIComponent(q)}`);
-      if (!response.ok) return;
+      let response;
+      try {
+        response = await fetch(`${url}?q=${encodeURIComponent(q)}`);
+      } catch (error) {
+        window.showToast?.("Search is unavailable right now. Please try again.", "error");
+        return;
+      }
+      if (!response.ok) {
+        window.showToast?.("Search is unavailable right now. Please try again.", "error");
+        return;
+      }
       render(await response.json());
     }, 200);
   });

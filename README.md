@@ -140,4 +140,3 @@ pytest -q
 - Back up the PostgreSQL volume.
 - Add your organization’s SSO provider before broad internal rollout.
 - ServiceOps does not use or bundle third-party proprietary platform code, branding, or APIs.
-# ServiceOps
