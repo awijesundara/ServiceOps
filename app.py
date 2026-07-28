@@ -52,6 +52,32 @@ def now():
     return datetime.now(timezone.utc)
 
 
+def parse_form_datetime(value):
+    """Parses a datetime-local form value into a UTC-aware datetime so it can
+    be safely compared against tz-aware DateTime(timezone=True) columns."""
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def align_tz(value, reference):
+    """Matches value's tz-awareness to reference's. SQLite silently drops
+    tzinfo on round-trip (unlike Postgres), so a value fresh off request.form
+    and a value just read back from the database can disagree on awareness
+    even when they represent the same instant; comparing them directly raises
+    TypeError. This normalizes purely for in-Python comparison purposes."""
+    if value is None or reference is None:
+        return value
+    if reference.tzinfo is None and value.tzinfo is not None:
+        return value.replace(tzinfo=None)
+    if reference.tzinfo is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
 def env_bool(name, default=False):
     return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -125,6 +151,13 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(160), unique=True, nullable=False)
+    title = db.Column(db.String(120), nullable=False, default="")
+    department = db.Column(db.String(120), nullable=False, default="")
+    business_phone = db.Column(db.String(40), nullable=False, default="")
+    mobile_phone = db.Column(db.String(40), nullable=False, default="")
+    timezone = db.Column(db.String(80), nullable=False, default="Asia/Tokyo")
+    date_format = db.Column(db.String(40), nullable=False, default="system")
+    calendar_integration = db.Column(db.String(40), nullable=False, default="None")
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(30), nullable=False, default="requester")
     active = db.Column(db.Boolean, default=True, nullable=False)
@@ -172,12 +205,17 @@ class Ticket(db.Model):
     priority_overridden = db.Column(db.Boolean, nullable=False, default=False)
     priority_override_reason = db.Column(db.Text)
     category = db.Column(db.String(80), nullable=False, default="General")
+    subcategory = db.Column(db.String(80), nullable=False, default="")
+    contact_type = db.Column(db.String(40), nullable=False, default="Self-service")
+    notify = db.Column(db.String(40), nullable=False, default="Email")
+    service_offering_id = db.Column(db.Integer, db.ForeignKey("service_offering.id"))
     requester_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     assignee_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     requester = db.relationship("User", foreign_keys=[requester_id])
     assignee = db.relationship("User", foreign_keys=[assignee_id])
+    service_offering = db.relationship("ServiceOffering", foreign_keys=[service_offering_id])
     comments = db.relationship("Comment", cascade="all, delete-orphan", backref="ticket")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
@@ -1062,6 +1100,11 @@ class UserPreference(db.Model):
     reduced_motion = db.Column(db.Boolean, nullable=False, default=False)
     nav_pinned = db.Column(db.Boolean, nullable=False, default=True)
     start_page = db.Column(db.String(500), nullable=False, default="/")
+    accessible_tooltips = db.Column(db.Boolean, nullable=False, default=True)
+    data_patterns = db.Column(db.Boolean, nullable=False, default=False)
+    compact_dates = db.Column(db.Boolean, nullable=False, default=False)
+    keyboard_shortcuts = db.Column(db.Boolean, nullable=False, default=True)
+    date_time_display = db.Column(db.String(20), nullable=False, default="both")
     user = db.relationship("User")
 
 
@@ -1961,6 +2004,27 @@ ENTERPRISE_TRANSITIONS = {
     "Awaiting Approval": ("Awaiting Approval",),
     "Rejected": ("Rejected",),
 }
+STATE_TRACK_ORDER = {
+    "incident": ["New", "In Progress", "Pending", "Resolved", "Closed"],
+    "request": ["New", "In Progress", "Pending", "Resolved", "Closed"],
+    "change": ["New", "Awaiting Approval", "Approved", "In Progress", "Pending", "Resolved", "Closed"],
+    "problem": ["New", "Open", "In Progress", "Pending", "Resolved", "Completed", "Closed"],
+}
+
+
+def build_state_track(kind, current_state):
+    order = STATE_TRACK_ORDER.get(kind, STATE_TRACK_ORDER["incident"])
+    if current_state not in order:
+        return [{"name": step, "status": "upcoming"} for step in order] + [
+            {"name": current_state, "status": "current"}
+        ]
+    idx = order.index(current_state)
+    return [
+        {"name": step, "status": "done" if i < idx else ("current" if i == idx else "upcoming")}
+        for i, step in enumerate(order)
+    ]
+
+
 CATALOG_TASK_TRANSITIONS = {
     "Open": ("Open", "Work in Progress", "Pending", "Closed Incomplete", "Closed Skipped"),
     "Work in Progress": ("Work in Progress", "Pending", "Closed Complete", "Closed Incomplete", "Closed Skipped"),
@@ -2271,6 +2335,59 @@ def supersede_change_approval(ticket, changed_fields):
         f"Material fields changed: {summary}",
     )
     return chain
+
+
+def run_change_conflict_detection(ticket, governance):
+    """Flags scheduling conflicts against other changes and open incidents/problems
+    sharing a CI during the same window. Tenant-scoped: joins through Ticket so a
+    change in one tenant never leaks into another tenant's conflict check."""
+    conflicts = []
+    if governance.planned_start and governance.planned_end:
+        current_ci_ids = {
+            link.ci_id for link in TaskCI.query.filter_by(
+                target_type="ticket", target_id=ticket.id
+            ).all()
+        }
+        if governance.ci_id:
+            current_ci_ids.add(governance.ci_id)
+        overlapping = ChangeGovernance.query.join(
+            Ticket, ChangeGovernance.ticket_id == Ticket.id
+        ).filter(
+            ChangeGovernance.id != governance.id,
+            Ticket.tenant_id == ticket.tenant_id,
+            ChangeGovernance.planned_start.isnot(None),
+            ChangeGovernance.planned_end.isnot(None),
+            ChangeGovernance.planned_start < governance.planned_end,
+            ChangeGovernance.planned_end > governance.planned_start,
+        ).all()
+        for other in overlapping:
+            other_ci_ids = {
+                link.ci_id for link in TaskCI.query.filter_by(
+                    target_type="ticket", target_id=other.ticket_id
+                ).all()
+            }
+            if other.ci_id:
+                other_ci_ids.add(other.ci_id)
+            if current_ci_ids.intersection(other_ci_ids):
+                conflicts.append(f"{other.ticket.number} (overlapping change)")
+        if current_ci_ids:
+            open_incidents = Ticket.query.filter(
+                Ticket.tenant_id == ticket.tenant_id,
+                Ticket.kind == "incident",
+                Ticket.id != ticket.id,
+                Ticket.state.notin_(["Resolved", "Closed", "Cancelled"]),
+            ).join(
+                TaskCI, db.and_(TaskCI.target_type == "ticket", TaskCI.target_id == Ticket.id)
+            ).filter(TaskCI.ci_id.in_(current_ci_ids)).all()
+            for incident in open_incidents:
+                conflicts.append(f"{incident.number} (open incident on same CI)")
+    governance.conflict_status = f"Conflict: {', '.join(conflicts)}" if conflicts else "No conflict"
+    log_history(
+        "ticket", ticket.id, "Conflict detection completed",
+        details=governance.conflict_status,
+    )
+    audit("conflict check", ticket.number, governance.conflict_status)
+    return conflicts
 
 
 def user_in_group(user, group):
@@ -4303,8 +4420,22 @@ def create_app(test_config=None):
             query = query.filter(db.or_(Ticket.number.ilike(f"%{q}%"), Ticket.title.ilike(f"%{q}%")))
         if state:
             query = query.filter_by(state=state)
-        return render_template("tickets.html", tickets=query.order_by(Ticket.updated_at.desc()).all(),
-                               kind=kind, q=q, state=state)
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            page = 1
+        per_page = 50
+        total = query.count()
+        pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, pages)
+        rows = query.order_by(Ticket.updated_at.desc()).offset(
+            (page - 1) * per_page
+        ).limit(per_page).all()
+        return render_template(
+            "tickets.html", tickets=rows, kind=kind, q=q, state=state,
+            page=page, pages=pages, total=total,
+            owning_groups={row.id: ticket_owning_group(row) for row in rows},
+        )
 
     @app.route("/tickets/new/<kind>", methods=["GET", "POST"])
     @login_required
@@ -4323,6 +4454,21 @@ def create_app(test_config=None):
         if kind == "change" and current_user.role == "requester" and not eligible_it_team_ids:
             abort(403)
         if request.method == "POST":
+            contact_type = request.form.get("contact_type", "Self-service")
+            notify = request.form.get("notify", "Email")
+            if contact_type not in {
+                "Self-service", "Phone", "Email", "Chat", "Monitoring"
+            }:
+                abort(400, description="Select a valid contact type.")
+            if notify not in {"Email", "In-app only", "Do not notify"}:
+                abort(400, description="Select a valid notification preference.")
+            offering = None
+            if request.form.get("service_offering_id"):
+                offering = tenant_record_or_404(
+                    ServiceOffering, int(request.form["service_offering_id"])
+                )
+                if offering.status != "Operational":
+                    abort(400, description="Select an operational service offering.")
             try:
                 group_id = int(request.form.get("group_id", ""))
             except (TypeError, ValueError):
@@ -4349,6 +4495,13 @@ def create_app(test_config=None):
                 abort(409, description=(
                     "The selected team must have an active manager before a change can be submitted."
                 ))
+            if kind == "change":
+                if not request.form.get("planned_start") or not request.form.get("planned_end"):
+                    abort(400, description="Planned start and planned end are required for a change.")
+                planned_start = parse_form_datetime(request.form["planned_start"])
+                planned_end = parse_form_datetime(request.form["planned_end"])
+                if planned_end <= planned_start:
+                    abort(400, description="Planned end must be later than planned start.")
             impact = request.form.get("impact", "Medium")
             urgency = request.form.get("urgency", "Medium")
             priority = calculate_priority(impact, urgency)
@@ -4356,9 +4509,20 @@ def create_app(test_config=None):
                             title=request.form["title"].strip(), description=request.form["description"].strip(),
                             category=request.form.get("category", "General"), priority=priority,
                             impact=impact, urgency=urgency,
+                            subcategory=request.form.get("subcategory", "").strip(),
+                            contact_type=contact_type, notify=notify,
+                            service_offering_id=offering.id if offering else None,
                             requester_id=current_user.id)
             db.session.add(ticket)
             db.session.flush()
+            if kind == "incident" and request.form.get("ci_id"):
+                ci = tenant_record_or_404(
+                    ConfigurationItem, int(request.form["ci_id"])
+                )
+                db.session.add(TaskCI(
+                    target_type="ticket", target_id=ticket.id, ci_id=ci.id,
+                    relationship_role="Primary CI",
+                ))
             attach_slas("ticket", ticket.id, ticket.priority)
             if kind == "change":
                 governance = ChangeGovernance(ticket_id=ticket.id, change_type=request.form.get("change_type", "Normal"),
@@ -4367,17 +4531,36 @@ def create_app(test_config=None):
                                               implementation_plan=request.form.get("implementation_plan", ""),
                                               test_plan=request.form.get("test_plan", ""),
                                               backout_plan=request.form.get("backout_plan", ""),
-                                              planned_start=datetime.fromisoformat(request.form["planned_start"]) if request.form.get("planned_start") else None,
-                                              planned_end=datetime.fromisoformat(request.form["planned_end"]) if request.form.get("planned_end") else None,
+                                              planned_start=planned_start, planned_end=planned_end,
                                               ci_id=int(request.form["ci_id"]) if request.form.get("ci_id") else None)
                 db.session.add(governance)
                 db.session.flush()
                 db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=owning_group.id))
                 db.session.add(ChangeRevision(ticket_id=ticket.id, revision=1))
                 db.session.flush()
+                run_change_conflict_detection(ticket, governance)
                 create_approval_chain(
                     f"{ticket.number} change authorization v1",
                     "ticket", ticket.id, change_approval_stages(ticket),
+                )
+                implementation_notes = "\n\n".join(filter(None, [
+                    f"Implementation plan:\n{governance.implementation_plan}",
+                    f"Test plan:\n{governance.test_plan}",
+                    f"Backout plan:\n{governance.backout_plan}",
+                ]))
+                initial_task = OperationalTask(
+                    number=next_operational_task_number("change"),
+                    task_kind="change", parent_type="ticket", parent_id=ticket.id,
+                    title="Implementation", task_type="Implementation",
+                    sequence=1, assignment_group_id=owning_group.id,
+                    planned_start=governance.planned_start, planned_end=governance.planned_end,
+                    required=True, work_notes=implementation_notes,
+                )
+                db.session.add(initial_task)
+                db.session.flush()
+                log_history(
+                    "ticket", ticket.id, "Change task created",
+                    details=f"{initial_task.number} Implementation: created from the change's plan → {owning_group.name}",
                 )
             else:
                 db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=owning_group.id))
@@ -4388,7 +4571,12 @@ def create_app(test_config=None):
             )
             audit("create", ticket.number, ticket.title)
             db.session.commit()
-            flash(f"{ticket.number} created.", "success")
+            conflicts = kind == "change" and governance.conflict_status.startswith("Conflict")
+            flash(
+                f"{ticket.number} created."
+                + (f" {governance.conflict_status}." if conflicts else ""),
+                "error" if conflicts else "success",
+            )
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
         teams_query = tenant_query(SupportGroup).filter_by(
             group_type="IT Fulfillment", active=True
@@ -4399,9 +4587,15 @@ def create_app(test_config=None):
             else:
                 teams_query = teams_query.filter(SupportGroup.id == -1)
         teams = teams_query.order_by(SupportGroup.name).all()
-        return render_template("ticket_form.html", kind=kind,
-                               teams=teams, default_priority=setting_value("DEFAULT_TICKET_PRIORITY", "P3"),
-                               change_freeze_message=setting_value("CHANGE_FREEZE_MESSAGE", ""))
+        return render_template(
+            "ticket_form.html", kind=kind, teams=teams,
+            state_track=build_state_track(kind, "New"),
+            default_priority=setting_value("DEFAULT_TICKET_PRIORITY", "P3"),
+            change_freeze_message=setting_value("CHANGE_FREEZE_MESSAGE", ""),
+            service_offerings=tenant_query(ServiceOffering).filter_by(
+                status="Operational"
+            ).order_by(ServiceOffering.name).all(),
+        )
 
     @app.route("/ticket/<int:ticket_id>", methods=["GET", "POST"])
     @login_required
@@ -4419,6 +4613,18 @@ def create_app(test_config=None):
                     db.session.add(Comment(ticket_id=ticket.id, user_id=current_user.id, body=body))
                     log_history("ticket", ticket.id, "Comment added", details=body[:500])
                     audit("comment", ticket.number)
+            elif action == "quick_resolve":
+                if not role_has_action(current_user.role, "resolve"):
+                    abort(403)
+                require_ticket_team_access(ticket)
+                before_state = ticket.state
+                transition_ticket(ticket, "Resolved")
+                log_history(
+                    "ticket", ticket.id, "State changed", "state",
+                    before_state, ticket.state,
+                    details="Resolved from the incident action bar.",
+                )
+                audit("resolve", ticket.number, f"{before_state} -> Resolved")
             elif action == "update":
                 for required_action in ("update", "assign", "transition"):
                     if not role_has_action(current_user.role, required_action):
@@ -4429,10 +4635,20 @@ def create_app(test_config=None):
                 if assignee_id is not None and assignee_id not in eligible_ids:
                     abort(400, description="The assignee must be an active member of the owning team.")
                 before = {
+                    "short description": ticket.title,
+                    "description": ticket.description,
                     "state": ticket.state,
                     "priority": ticket.priority,
                     "impact": ticket.impact,
                     "urgency": ticket.urgency,
+                    "category": ticket.category,
+                    "subcategory": ticket.subcategory,
+                    "contact type": ticket.contact_type,
+                    "notification": ticket.notify,
+                    "service offering": (
+                        ticket.service_offering.name
+                        if ticket.service_offering else "Not selected"
+                    ),
                     "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
                 }
                 transition_ticket(ticket, request.form["state"])
@@ -4457,12 +4673,81 @@ def create_app(test_config=None):
                 ticket.urgency = urgency
                 ticket.priority = requested_priority
                 ticket.assignee_id = assignee_id
+                if ticket.kind == "incident":
+                    contact_type = request.form.get(
+                        "contact_type", ticket.contact_type
+                    )
+                    notify = request.form.get("notify", ticket.notify)
+                    if contact_type not in {
+                        "Self-service", "Phone", "Email", "Chat", "Monitoring"
+                    }:
+                        abort(400, description="Select a valid contact type.")
+                    if notify not in {"Email", "In-app only", "Do not notify"}:
+                        abort(400, description="Select a valid notification preference.")
+                    ticket.title = request.form.get("title", ticket.title).strip()
+                    ticket.description = request.form.get(
+                        "description", ticket.description
+                    ).strip()
+                    ticket.category = request.form.get(
+                        "category", ticket.category
+                    ).strip()
+                    ticket.subcategory = request.form.get(
+                        "subcategory", ticket.subcategory
+                    ).strip()
+                    ticket.contact_type = contact_type
+                    ticket.notify = notify
+                    offering_id = request.form.get("service_offering_id", "")
+                    offering = (
+                        tenant_record_or_404(ServiceOffering, int(offering_id))
+                        if offering_id else None
+                    )
+                    if offering and offering.status != "Operational":
+                        abort(400, description="Select an operational service offering.")
+                    ticket.service_offering_id = offering.id if offering else None
+                    ci_id = request.form.get("ci_id", "")
+                    existing_primary = TaskCI.query.filter_by(
+                        target_type="ticket", target_id=ticket.id,
+                        relationship_role="Primary CI",
+                    ).first()
+                    old_ci_name = (
+                        existing_primary.ci.name if existing_primary else "Not selected"
+                    )
+                    if ci_id:
+                        ci = tenant_record_or_404(ConfigurationItem, int(ci_id))
+                        if not existing_primary:
+                            existing_primary = TaskCI(
+                                target_type="ticket", target_id=ticket.id,
+                                relationship_role="Primary CI",
+                            )
+                            db.session.add(existing_primary)
+                        existing_primary.ci_id = ci.id
+                        if old_ci_name != ci.name:
+                            log_history(
+                                "ticket", ticket.id, "Field changed",
+                                "configuration item", old_ci_name, ci.name,
+                            )
+                    elif existing_primary:
+                        db.session.delete(existing_primary)
+                        log_history(
+                            "ticket", ticket.id, "Field changed",
+                            "configuration item", old_ci_name, "Not selected",
+                        )
                 assignee = db.session.get(User, assignee_id) if assignee_id else None
                 log_field_changes("ticket", ticket.id, before, {
+                    "short description": ticket.title,
+                    "description": ticket.description,
                     "state": ticket.state,
                     "priority": ticket.priority,
                     "impact": ticket.impact,
                     "urgency": ticket.urgency,
+                    "category": ticket.category,
+                    "subcategory": ticket.subcategory,
+                    "contact type": ticket.contact_type,
+                    "notification": ticket.notify,
+                    "service offering": (
+                        ticket.service_offering.name
+                        if ticket.service_offering else "Not selected"
+                    ),
                     "assigned to": assignee.name if assignee else "Unassigned",
                 })
                 audit("update", ticket.number, f"{ticket.state}, {ticket.priority}")
@@ -4540,7 +4825,9 @@ def create_app(test_config=None):
             target_type="ticket", target_id=ticket.id
         ).order_by(TaskCI.relationship_role).all()
         return render_template(
-            "ticket_detail.html", ticket=ticket, agents=agents, chains=chains, slas=slas,
+            "incident_detail.html" if ticket.kind == "incident" else "ticket_detail.html",
+            ticket=ticket, agents=agents, chains=chains, slas=slas,
+            state_track=build_state_track(ticket.kind, ticket.state),
             ticket_state_options=allowed_ticket_states(ticket), owning_group=owning_group,
             can_manage_ticket=can_manage_ticket, related=related_records("ticket", ticket.id),
             relation_labels=RELATION_LABELS, work_tasks=work_tasks,
@@ -4556,6 +4843,9 @@ def create_app(test_config=None):
                 SupportGroup.id != (owning_group.id if owning_group else -1),
             ).order_by(SupportGroup.name).all(),
             task_agents=task_agents, task_permissions=task_permissions,
+            service_offerings=tenant_query(ServiceOffering).filter_by(
+                status="Operational"
+            ).order_by(ServiceOffering.name).all(),
         )
 
     @app.post("/change/<int:ticket_id>/plan")
@@ -4568,18 +4858,14 @@ def create_app(test_config=None):
         governance = ticket.change_governance
         try:
             risk_score = max(0, min(100, int(request.form.get("risk_score", "50"))))
-            planned_start = (
-                datetime.fromisoformat(request.form["planned_start"])
-                if request.form.get("planned_start") else None
-            )
-            planned_end = (
-                datetime.fromisoformat(request.form["planned_end"])
-                if request.form.get("planned_end") else None
-            )
+            planned_start = parse_form_datetime(request.form.get("planned_start"))
+            planned_end = parse_form_datetime(request.form.get("planned_end"))
             ci_id = int(request.form["ci_id"]) if request.form.get("ci_id") else None
         except (TypeError, ValueError):
             abort(400, description="Change plan dates, risk, or CI are invalid.")
-        if planned_start and planned_end and planned_end <= planned_start:
+        if not planned_start or not planned_end:
+            abort(400, description="Planned start and planned end are required for a change.")
+        if planned_end <= planned_start:
             abort(400, description="Planned end must be later than planned start.")
         if ci_id and not db.session.get(ConfigurationItem, ci_id):
             abort(400, description="The selected configuration item does not exist.")
@@ -4617,7 +4903,6 @@ def create_app(test_config=None):
         governance.planned_start = planned_start
         governance.planned_end = planned_end
         governance.ci_id = ci_id
-        governance.conflict_status = "Not Run"
         after = {
             "short description": ticket.title,
             "description": ticket.description,
@@ -4637,12 +4922,14 @@ def create_app(test_config=None):
         if not changed_fields:
             flash("No change-plan values changed.", "success")
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+        conflicts = run_change_conflict_detection(ticket, governance)
         supersede_change_approval(ticket, changed_fields)
         audit("revise change plan", ticket.number, ", ".join(changed_fields))
         db.session.commit()
         flash(
-            f"Change plan revised. {ticket.number} returned to Awaiting Approval and approvers were notified.",
-            "success",
+            f"Change plan revised. {ticket.number} returned to Awaiting Approval and approvers were notified."
+            + (f" Conflicts flagged: {', '.join(conflicts)}." if conflicts else ""),
+            "error" if conflicts else "success",
         )
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
@@ -4812,33 +5099,32 @@ def create_app(test_config=None):
         if ticket.kind != "change":
             abort(404)
         require_ticket_team_access(ticket)
+        if ticket.state in ("Resolved", "Closed", "Cancelled"):
+            abort(409, description=(
+                f"{ticket.number} is {ticket.state}; change tasks cannot be added to a closed-out change."
+            ))
         group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
         if not group.active or group.group_type != "IT Fulfillment":
             abort(400, description="Change tasks require an active IT fulfillment team.")
         task_type = request.form.get("task_type")
         if task_type not in ("Planning", "Implementation", "Testing", "Review"):
             abort(400)
-        planned_start = (
-            datetime.fromisoformat(request.form["planned_start"])
-            if request.form.get("planned_start") else None
-        )
-        planned_end = (
-            datetime.fromisoformat(request.form["planned_end"])
-            if request.form.get("planned_end") else None
-        )
+        if not request.form.get("planned_start") or not request.form.get("planned_end"):
+            abort(400, description="Task planned start and planned end are required.")
+        planned_start = parse_form_datetime(request.form["planned_start"])
+        planned_end = parse_form_datetime(request.form["planned_end"])
         governance = ticket.change_governance
-        if planned_start and planned_end and planned_end <= planned_start:
+        if planned_end <= planned_start:
             abort(400, description="Task end must be later than task start.")
-        if task_type == "Implementation" and governance:
+        if governance and governance.planned_start and governance.planned_end:
             if (
-                governance.planned_start and planned_start
-                and planned_start < governance.planned_start
-            ) or (
-                governance.planned_end and planned_end
-                and planned_end > governance.planned_end
+                align_tz(planned_start, governance.planned_start) < governance.planned_start
+                or align_tz(planned_end, governance.planned_end) > governance.planned_end
             ):
                 abort(409, description=(
-                    "Implementation task dates must fall within the parent change window."
+                    "Task dates must fall within the parent change's planned window "
+                    f"({governance.planned_start.strftime('%Y-%m-%d %H:%M')} → "
+                    f"{governance.planned_end.strftime('%Y-%m-%d %H:%M')})."
                 ))
         task = OperationalTask(
             number=next_operational_task_number("change"),
@@ -4858,7 +5144,19 @@ def create_app(test_config=None):
             details=f"{task.number} {task.task_type}: {task.title} → {group.name}",
         )
         audit("create", task.number, f"{ticket.number}: {task.title}")
+        chain = approval_chain_for("ticket", ticket.id)
+        reapproval_triggered = chain is not None and chain.state in ("Running", "Approved")
+        if reapproval_triggered:
+            supersede_change_approval(
+                ticket, [f"Change tasks ({task.number} {task.task_type} added)"]
+            )
         db.session.commit()
+        if reapproval_triggered:
+            flash(
+                f"{task.number} added. Adding a task after submission is a material change — "
+                f"{ticket.number} returned to Awaiting Approval and approvers were notified.",
+                "error",
+            )
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
     @app.post("/operational-task/<int:task_id>")
@@ -4997,9 +5295,17 @@ def create_app(test_config=None):
                 DirectoryManagedMembership.user_id.in_(tenant_user_ids),
             ).all()
         }
+        search = request.args.get("q", "").strip()
+        user_query = tenant_query(User)
+        if search:
+            pattern = f"%{search}%"
+            user_query = user_query.filter(db.or_(
+                User.username.ilike(pattern), User.name.ilike(pattern),
+                User.email.ilike(pattern), User.department.ilike(pattern),
+            ))
         return render_template(
             "users.html",
-            users=tenant_query(User).order_by(User.name).all(),
+            users=user_query.order_by(User.name).all(), search=search,
             memberships=memberships, directory_managed=directory_managed,
         )
 
@@ -5009,12 +5315,69 @@ def create_app(test_config=None):
     def user_new():
         if request.method == "POST":
             user = User(username=request.form["username"], name=request.form["name"], email=request.form["email"],
-                        password_hash=generate_password_hash(request.form["password"]), role=request.form["role"])
+                        password_hash=generate_password_hash(request.form["password"]), role=request.form["role"],
+                        title=request.form.get("title", "")[:120],
+                        department=request.form.get("department", "")[:120],
+                        business_phone=request.form.get("business_phone", "")[:40],
+                        mobile_phone=request.form.get("mobile_phone", "")[:40],
+                        timezone=request.form.get("timezone", "Asia/Tokyo")[:80],
+                        date_format=request.form.get("date_format", "system")[:40])
             db.session.add(user)
             audit("create", user.username, user.role)
             db.session.commit()
             return redirect(url_for("users"))
-        return render_template("user_form.html")
+        return render_template("user_form.html", user=None, self_service=False)
+
+    @app.route("/admin/users/<int:user_id>", methods=["GET", "POST"])
+    @roles("admin")
+    @require_action("security_administer")
+    def user_edit(user_id):
+        user = tenant_query(User).filter_by(id=user_id).first_or_404()
+        if request.method == "POST":
+            before = {
+                "name": user.name, "email": user.email, "role": user.role,
+                "active": user.active, "department": user.department,
+            }
+            user.name = request.form["name"].strip()[:120]
+            user.email = request.form["email"].strip()[:160]
+            user.role = request.form["role"]
+            user.active = bool(request.form.get("active"))
+            user.title = request.form.get("title", "").strip()[:120]
+            user.department = request.form.get("department", "").strip()[:120]
+            user.business_phone = request.form.get("business_phone", "").strip()[:40]
+            user.mobile_phone = request.form.get("mobile_phone", "").strip()[:40]
+            user.timezone = request.form.get("timezone", "Asia/Tokyo")[:80]
+            user.date_format = request.form.get("date_format", "system")[:40]
+            user.calendar_integration = request.form.get("calendar_integration", "None")[:40]
+            audit("update", user.username, json.dumps({"before": before, "role": user.role, "active": user.active}))
+            db.session.commit()
+            flash("User record updated.", "success")
+            return redirect(url_for("user_edit", user_id=user.id))
+        return render_template("user_form.html", user=user, self_service=False)
+
+    @app.route("/profile", methods=["GET", "POST"])
+    @login_required
+    def profile():
+        user = tenant_query(User).filter_by(id=current_user.id).first_or_404()
+        if request.method == "POST":
+            user.name = request.form["name"].strip()[:120]
+            user.email = request.form["email"].strip()[:160]
+            user.title = request.form.get("title", "").strip()[:120]
+            user.business_phone = request.form.get("business_phone", "").strip()[:40]
+            user.mobile_phone = request.form.get("mobile_phone", "").strip()[:40]
+            user.timezone = request.form.get("timezone", "Asia/Tokyo")[:80]
+            user.date_format = request.form.get("date_format", "system")[:40]
+            audit("update", user.username, "Self-service profile updated")
+            db.session.commit()
+            flash("Profile updated.", "success")
+            return redirect(url_for("profile"))
+        return render_template("user_form.html", user=user, self_service=True)
+
+    @app.get("/admin")
+    @roles("admin")
+    @require_action("security_administer")
+    def admin_home():
+        return render_template("admin_home.html")
 
     @app.route("/admin/api-clients", methods=["GET", "POST"])
     @roles("admin")
@@ -5562,8 +5925,22 @@ def create_app(test_config=None):
                                         EnterpriseRecord.title.ilike(f"%{q}%")))
         if state:
             query = query.filter_by(state=state)
-        return render_template("module_records.html", domain=domain, config=config,
-                               records=query.order_by(EnterpriseRecord.updated_at.desc()).all(), q=q, state=state)
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            page = 1
+        per_page = 50
+        total = query.count()
+        pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, pages)
+        rows = query.order_by(EnterpriseRecord.updated_at.desc()).offset(
+            (page - 1) * per_page
+        ).limit(per_page).all()
+        return render_template(
+            "module_records.html", domain=domain, config=config,
+            records=rows, q=q, state=state, page=page, pages=pages,
+            total=total,
+        )
 
     @app.route("/module/<domain>/new", methods=["GET", "POST"])
     @login_required
@@ -5670,6 +6047,7 @@ def create_app(test_config=None):
             task_permissions[task.id] = user_in_group(current_user, task.assignment_group)
         return render_template(
             "enterprise_detail.html", record=record, config=DOMAIN_CONFIG[record.domain],
+            state_track=build_state_track(record.domain, record.state),
             agents=agents, record_state_options=allowed_enterprise_states(record),
             related=related_records("enterprise", record.id), relation_labels=RELATION_LABELS,
             work_tasks=work_tasks, work_task_states=OPERATIONAL_TASK_TRANSITIONS,
@@ -6451,36 +6829,7 @@ def create_app(test_config=None):
         governance = ticket.change_governance
         if not governance:
             abort(404)
-        conflicts = []
-        if governance.planned_start and governance.planned_end:
-            overlapping = ChangeGovernance.query.filter(
-                ChangeGovernance.id != governance.id,
-                ChangeGovernance.planned_start < governance.planned_end,
-                ChangeGovernance.planned_end > governance.planned_start,
-            ).all()
-            current_ci_ids = {
-                link.ci_id for link in TaskCI.query.filter_by(
-                    target_type="ticket", target_id=ticket.id
-                ).all()
-            }
-            if governance.ci_id:
-                current_ci_ids.add(governance.ci_id)
-            for other in overlapping:
-                other_ci_ids = {
-                    link.ci_id for link in TaskCI.query.filter_by(
-                        target_type="ticket", target_id=other.ticket_id
-                    ).all()
-                }
-                if other.ci_id:
-                    other_ci_ids.add(other.ci_id)
-                if current_ci_ids.intersection(other_ci_ids):
-                    conflicts.append(other.ticket.number)
-        governance.conflict_status = f"Conflict: {', '.join(conflicts)}" if conflicts else "No conflict"
-        log_history(
-            "ticket", ticket.id, "Conflict detection completed",
-            details=governance.conflict_status,
-        )
-        audit("conflict check", ticket.number, governance.conflict_status)
+        run_change_conflict_detection(ticket, governance)
         db.session.commit()
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
@@ -6547,6 +6896,43 @@ def create_app(test_config=None):
             "label": ci.name,
             "description": f"{ci.ci_class} · {ci.environment} · {ci.operational_status}",
         } for ci in rows])
+
+    @app.get("/internal/lookup/cis/browse")
+    @login_required
+    def lookup_cis_browse():
+        q = request.args.get("q", "").strip()
+        ci_class = request.args.get("ci_class", "").strip()
+        environment = request.args.get("environment", "").strip()
+        query = tenant_query(ConfigurationItem)
+        if q:
+            pattern = f"%{q}%"
+            query = query.filter(db.or_(
+                ConfigurationItem.name.ilike(pattern),
+                ConfigurationItem.ip_address.ilike(pattern),
+            ))
+        if ci_class:
+            query = query.filter(ConfigurationItem.ci_class == ci_class)
+        if environment:
+            query = query.filter(ConfigurationItem.environment == environment)
+        rows = query.order_by(ConfigurationItem.name).limit(200).all()
+        classes = [
+            row[0] for row in tenant_query(ConfigurationItem).with_entities(
+                ConfigurationItem.ci_class
+            ).distinct().order_by(ConfigurationItem.ci_class).all()
+        ]
+        environments = [
+            row[0] for row in tenant_query(ConfigurationItem).with_entities(
+                ConfigurationItem.environment
+            ).distinct().order_by(ConfigurationItem.environment).all()
+        ]
+        return jsonify({
+            "results": [{
+                "id": ci.id, "name": ci.name, "ci_class": ci.ci_class,
+                "environment": ci.environment, "ip_address": ci.ip_address or "—",
+                "status": ci.operational_status,
+            } for ci in rows],
+            "classes": classes, "environments": environments,
+        })
 
     @app.get("/internal/lookup/records")
     @login_required
@@ -6732,6 +7118,11 @@ def create_app(test_config=None):
             pref.high_contrast = bool(request.form.get("high_contrast"))
             pref.reduced_motion = bool(request.form.get("reduced_motion"))
             pref.nav_pinned = bool(request.form.get("nav_pinned"))
+            pref.accessible_tooltips = bool(request.form.get("accessible_tooltips"))
+            pref.data_patterns = bool(request.form.get("data_patterns"))
+            pref.compact_dates = bool(request.form.get("compact_dates"))
+            pref.keyboard_shortcuts = bool(request.form.get("keyboard_shortcuts"))
+            pref.date_time_display = request.form.get("date_time_display", "both") if request.form.get("date_time_display") in {"calendar", "relative", "both"} else "both"
             submitted_start_page = request.form.get("start_page", "/")[:500]
             pref.start_page = submitted_start_page if is_safe_internal_path(submitted_start_page) else "/"
             audit("update", "UI preferences", current_user.username)

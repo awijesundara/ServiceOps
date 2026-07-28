@@ -1,7 +1,46 @@
 {% extends "base.html" %}
 {% block title %}New {{ kind }} · {{ instance_name }}{% endblock %}
 {% block content %}
+{% if kind == 'incident' %}
+<section class="record-shell">
+  <header class="record-toolbar">
+    <div class="record-identity">
+      <a class="record-back" href="{{ url_for('tickets', kind='incident') }}" aria-label="Back to incidents">‹</a>
+      <span class="record-type-icon" aria-hidden="true">!</span>
+      <div><strong>Incident</strong><small>New record</small></div>
+    </div>
+    <div class="record-actions">
+      <button class="primary" type="submit" form="incident-create-form">Create incident</button>
+    </div>
+  </header>
+  {% include "_state_track.html" %}
+  <form method="post" id="incident-create-form" class="record-form">
+    <div class="record-grid">
+      <label><span>Number</span><input value="Assigned on creation" disabled></label>
+      <label><span>Contact type</span><select name="contact_type"><option>Self-service</option><option>Phone</option><option>Email</option><option>Chat</option><option>Monitoring</option></select></label>
+      <label class="required-field"><span>Caller</span><input value="{{ current_user.name }} · {{ current_user.email }}" disabled></label>
+      <label><span>State</span><input value="New" disabled></label>
+      <label><span>Category</span><select name="category"><option>General</option><option>Access</option><option>Hardware</option><option>Software</option><option>Network</option><option>Security</option></select></label>
+      <label><span>Impact</span><select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if value == 'Medium' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label><span>Subcategory</span><input name="subcategory" maxlength="80" placeholder="Select or describe the affected area"></label>
+      <label><span>Urgency</span><select name="urgency" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if value == 'Medium' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label><span>Service offering</span><select name="service_offering_id"><option value="">Not selected</option>{% for offering in service_offerings %}<option value="{{ offering.id }}">{{ offering.name }}</option>{% endfor %}</select></label>
+      <label><span>Priority</span><input value="Calculated from impact and urgency" disabled></label>
+      <label><span>Configuration item</span><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off"><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div></label>
+      <label class="required-field"><span>Assignment group</span><select name="group_id" required><option value="">Select an IT team</option>{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label>
+      <label><span>Notify</span><select name="notify"><option>Email</option><option>In-app only</option><option>Do not notify</option></select></label>
+      <label><span>Assigned to</span><input value="Unassigned until the owning team accepts it" disabled></label>
+    </div>
+    <div class="record-long-fields">
+      <label class="required-field"><span>Short description</span><input name="title" maxlength="180" required autofocus></label>
+      <label class="required-field"><span>Description</span><textarea name="description" rows="7" required></textarea></label>
+    </div>
+    <footer class="record-footer-actions"><a class="button" href="{{ url_for('tickets', kind='incident') }}">Cancel</a><button class="primary">Create incident</button></footer>
+  </form>
+</section>
+{% else %}
 <header class="page-head"><div><p class="eyebrow">NEW RECORD</p><h1>Create {{ kind }}</h1><p>Provide the details needed to route and resolve this work.</p></div></header>
+{% include "_state_track.html" %}
 <form method="post" class="panel form-grid">
   <label class="wide">Short description<input name="title" maxlength="180" required autofocus></label>
   <label>Category<select name="category"><option>General</option><option>Access</option><option>Hardware</option><option>Software</option><option>Network</option><option>Security</option></select></label>
@@ -11,16 +50,17 @@
   <label>Owning IT team<select name="group_id" required><option value="">Select a team</option>{% for team in teams %}<option value="{{ team.id }}" {% if kind == 'change' and not team.manager %}disabled{% endif %}>{{ team.name }}{% if kind == 'change' %} — {{ team.manager.name if team.manager else "manager not configured" }}{% endif %}</option>{% endfor %}</select></label>
   {% if kind == 'change' %}
   {% if change_freeze_message %}<div class="wide flash">{{ change_freeze_message }}</div>{% endif %}
-  <label>Change type<span class="info-tip" tabindex="0" data-tip="Standard changes use a pre-authorized template. Normal changes require team-manager and CCB approval. Emergency changes use an accelerated but still auditable route — being submitted late is not, by itself, a valid emergency justification.">i</span><select name="change_type"><option>Normal</option><option>Standard</option><option>Emergency</option></select></label>
-  <label>Impact<span class="info-tip" tabindex="0" data-tip="How much of the business or how many users are affected if this change goes wrong.">i</span><select name="impact"><option>Low</option><option selected>Medium</option><option>High</option></select></label>
-  <label>Risk score<span class="info-tip" tabindex="0" data-tip="0-100 estimate of how likely this change is to cause an incident, based on scope, complexity, and rollback difficulty. Higher scores may require additional approval scrutiny.">i</span><input type="number" min="0" max="100" name="risk_score" value="50"></label>
+  <label><span>Change type<span class="info-tip" tabindex="0" data-tip="Standard changes use a pre-authorized template. Normal changes require team-manager and CCB approval. Emergency changes use an accelerated but still auditable route — being submitted late is not, by itself, a valid emergency justification.">i</span></span><select name="change_type"><option>Normal</option><option>Standard</option><option>Emergency</option></select></label>
+  <label><span>Impact<span class="info-tip" tabindex="0" data-tip="How much of the business or how many users are affected if this change goes wrong.">i</span></span><select name="impact"><option>Low</option><option selected>Medium</option><option>High</option></select></label>
+  <label><span>Risk score<span class="info-tip" tabindex="0" data-tip="0-100 estimate of how likely this change is to cause an incident, based on scope, complexity, and rollback difficulty. Higher scores may require additional approval scrutiny.">i</span></span><input type="number" min="0" max="100" name="risk_score" value="50"></label>
   <label>Configuration item<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off"><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div></label>
-  <label>Planned start<input type="datetime-local" name="planned_start"></label>
-  <label>Planned end<input type="datetime-local" name="planned_end"></label>
+  <label>Planned start<input type="datetime-local" name="planned_start" required></label>
+  <label>Planned end<input type="datetime-local" name="planned_end" required></label>
   <label class="wide">Implementation plan<textarea name="implementation_plan" rows="4" required></textarea></label>
   <label class="wide">Test plan<textarea name="test_plan" rows="4" required></textarea></label>
   <label class="wide">Backout plan<textarea name="backout_plan" rows="4" required></textarea></label>
   {% endif %}
   <div class="wide actions"><a class="button" href="{{ url_for('tickets', kind=kind) }}">Cancel</a><button class="primary">Create {{ kind }}</button></div>
 </form>
+{% endif %}
 {% endblock %}

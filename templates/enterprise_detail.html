@@ -1,67 +1,106 @@
 {% extends "base.html" %}
 {% block title %}{{ record.number }} · {{ config.name }} · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">{{ config.name|upper }} · {{ record.number }}</p><h1>{{ record.title }}</h1><p>{{ record.record_type }} · opened by {{ record.requester.name }} on {{ record.created_at.strftime('%B %d, %Y') }}</p></div><span class="badge big">{{ record.state }}</span></header>
-<div class="detail-grid"><section class="panel"><h2>Description</h2><p class="pre">{{ record.description }}</p>
-
-{% if record.domain == 'problem' %}
-<hr><h2>Problem analysis and known error</h2>
-{% set profile = record.problem_profile %}
-<dl class="governance-grid">
-  <dt>Known error</dt><dd>{{ 'Yes' if profile and profile.known_error else 'No' }}</dd>
-  <dt>Primary CI</dt><dd>{{ profile.primary_ci.name if profile and profile.primary_ci else 'Not selected' }}</dd>
-  <dt>Root cause</dt><dd>{{ profile.root_cause if profile and profile.root_cause else 'Under investigation' }}</dd>
-  <dt>Workaround</dt><dd>{{ profile.workaround if profile and profile.workaround else 'Not documented' }}</dd>
-  <dt>Permanent fix</dt><dd>{{ profile.fix_notes if profile and profile.fix_notes else 'Not documented' }}</dd>
-</dl>
-{% if can_manage_record %}
-<details><summary>Update root cause, workaround, and fix</summary>
-<form method="post" action="{{ url_for('problem_analysis_update', record_id=record.id) }}" class="form-grid">
-  <label class="check wide"><input type="checkbox" name="known_error" value="1" {% if profile and profile.known_error %}checked{% endif %}> Treat as known error</label>
-  <label>Primary CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" value="{{ profile.primary_ci.name if profile and profile.primary_ci else '' }}"><input type="hidden" name="primary_ci_id" value="{{ profile.primary_ci_id if profile and profile.primary_ci_id else '' }}"><div class="lookup-results" hidden></div></div></label>
-  <label class="wide">Root cause<textarea name="root_cause" rows="4">{{ profile.root_cause if profile else '' }}</textarea></label>
-  <label class="wide">Workaround<textarea name="workaround" rows="4">{{ profile.workaround if profile else '' }}</textarea></label>
-  <label class="wide">Permanent fix<textarea name="fix_notes" rows="4">{{ profile.fix_notes if profile else '' }}</textarea></label>
-  <div class="wide actions"><button>Save problem analysis</button></div>
-</form></details>
-{% endif %}
-
-<hr><h2>Problem tasks (PTASK)</h2>
-{% for task in work_tasks %}<article class="timeline"><strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · Required{% endif %}</strong><span class="badge">{{ task.state }}</span><p>{{ task.title }}</p><small>{{ task.assignment_group.name }} · {{ task.assignee.name if task.assignee else 'Unassigned' }}</small>
-{% if task_permissions[task.id] %}<form method="post" action="{{ url_for('operational_task_update', task_id=task.id) }}" class="form-grid">
-  <label>State<select name="state">{% for state in work_task_states[task.state] %}<option {% if task.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
-  <label>Assigned to<select name="assignee_id"><option value="">Unassigned</option>{% for user in task_agents[task.id] %}<option value="{{ user.id }}" {% if task.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
-  <label class="wide">Work notes<textarea name="work_notes" rows="2">{{ task.work_notes }}</textarea></label><div class="wide actions"><button>Update {{ task.number }}</button></div>
-</form>{% endif %}</article>{% else %}<p class="muted">No investigation tasks.</p>{% endfor %}
-{% if can_manage_record %}<details><summary>Add problem task</summary><form method="post" action="{{ url_for('problem_task_add', record_id=record.id) }}" class="form-grid">
-  <label class="wide">Task summary<input name="title" required></label><label>Type<select name="task_type"><option>Investigation</option><option>Root Cause Analysis</option><option>Reproduction</option><option>Vendor Analysis</option><option>Documentation</option></select></label>
-  <label>Assignment group<select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label>
-  <label class="check wide"><input type="checkbox" name="required" value="1" checked> Required task</label><div class="wide actions"><button>Add PTASK</button></div>
-</form></details>{% endif %}
-
-<hr><h2>Related incidents, changes, and knowledge</h2>
-{% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ item.label }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">No related records.</p>{% endfor %}
-{% if can_manage_record %}<form method="post" action="{{ url_for('record_link_add', source_type='enterprise', source_id=record.id) }}" class="inline-form"><select name="link_type"><option value="related_incident">Related incident</option><option value="problem_change">Permanent or temporary fix change</option><option value="knowledge_article">Knowledge article</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_records') }}"><input type="text" name="target_number" class="lookup-search" placeholder="Search INC, CHG or KB…" autocomplete="off" required><div class="lookup-results" hidden></div></div><button>Link record</button></form>{% endif %}
-
-<hr><h2>Affected CIs and impacted services</h2>
-{% for link in ci_links %}<div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div><span class="badge">{{ link.relationship_role }}</span></div>{% else %}<p class="muted">No additional CI relationships.</p>{% endfor %}
-{% if can_manage_record %}<form method="post" action="{{ url_for('task_ci_add', target_type='enterprise', target_id=record.id) }}" class="inline-form"><select name="relationship_role"><option>Primary CI</option><option>Affected CI</option><option>Impacted service</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div><button>Link CI</button></form>{% endif %}
-{% endif %}
-
-{% if record.approvals %}<hr><h2>Approval history</h2>{% for approval in record.approvals %}<article class="timeline"><strong>{{ approval.state }}</strong><span>{{ approval.approver.name }}</span><p>{{ approval.comments or 'No decision comments.' }}</p>
-{% if approval.state=='Requested' and approval.approver_id==current_user.id %}<form method="post" class="approval-actions"><input type="hidden" name="approval_id" value="{{ approval.id }}"><input name="comments" placeholder="Decision comments"><button name="action" value="reject">Reject</button><button class="primary" name="action" value="approve">Approve</button></form>{% endif %}
-</article>{% endfor %}{% endif %}
-
-<hr><h2>Record history</h2>
-{% for event in history %}<article class="timeline"><strong>{{ event.event }}</strong><span>{{ event.actor.name if event.actor else 'System' }} · {{ event.created_at.strftime('%b %d, %H:%M:%S') }}</span>{% if event.field_name %}<p><b>{{ event.field_name }}</b>: {{ event.old_value or '—' }} → {{ event.new_value or '—' }}</p>{% endif %}{% if event.details %}<p>{{ event.details }}</p>{% endif %}</article>{% else %}<p class="muted">No recorded history.</p>{% endfor %}
+{% set primary_ci_link = (ci_links|selectattr('relationship_role','equalto','Primary CI')|first) %}
+<section class="record-shell task-record-shell">
+  <header class="record-toolbar">
+    <div class="record-identity"><a class="record-back" href="{{ url_for('module_records', domain=record.domain) }}" aria-label="Back to {{ config.name }}">‹</a><span class="record-type-icon" aria-hidden="true">{{ record.number[:1] }}</span><div><strong>{{ record.record_type }}</strong><small>{{ record.number }}</small></div></div>
+    <div class="record-actions"><span class="record-updated">Updated {{ record.updated_at.strftime('%b %d, %H:%M') }}</span>{% if can_manage_record %}<button class="button" type="submit" form="enterprise-record-form">Update</button>{% endif %}</div>
+  </header>
+  {% include "_state_track.html" %}
+  <form method="post" id="enterprise-record-form" class="record-form">
+    <input type="hidden" name="action" value="update">
+    <div class="record-grid">
+      <label><span>Number</span><input value="{{ record.number }}" disabled></label>
+      <label><span>State</span><select name="state" {% if not can_manage_record %}disabled{% endif %}>{% for state in record_state_options %}<option {% if record.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
+      <label class="required-field"><span>Requested by</span><input value="{{ record.requester.name }} · {{ record.requester.email }}" disabled></label>
+      <label><span>Priority</span><select name="priority" {% if not can_manage_record %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if record.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
+      <label><span>Record type</span><input value="{{ record.record_type }}" disabled></label>
+      <label><span>Risk</span><select name="risk" {% if not can_manage_record %}disabled{% endif %}>{% for risk in ['Low','Medium','High','Critical'] %}<option {% if record.risk==risk %}selected{% endif %}>{{ risk }}</option>{% endfor %}</select></label>
+      <label><span>Configuration item</span><input value="{{ primary_ci_link.ci.name if primary_ci_link else 'Not selected' }}" disabled></label>
+      <label><span>Assigned to</span><select name="assignee_id" {% if not can_manage_record %}disabled{% endif %}><option value="">Unassigned</option>{% for user in agents %}<option value="{{ user.id }}" {% if record.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+      <label><span>Opened</span><input value="{{ record.created_at.strftime('%b %d, %Y · %H:%M') }}" disabled></label>
+      <label><span>Due</span><input value="{{ record.due_at.strftime('%b %d, %Y · %H:%M') if record.due_at else 'Not set' }}" disabled></label>
+    </div>
+    <div class="record-long-fields"><label class="required-field"><span>Short description</span><input value="{{ record.title }}" disabled></label><label class="required-field"><span>Description</span><textarea rows="6" disabled>{{ record.description }}</textarea></label></div>
+    {% if can_manage_record %}<footer class="record-footer-actions"><button class="primary">Update record</button></footer>{% endif %}
+  </form>
 </section>
-<aside class="panel facts"><h2>Record details</h2>
-{% if can_manage_record %}<form method="post" class="stack"><input type="hidden" name="action" value="update">
-<label>State<select name="state">{% for state in record_state_options %}<option {% if record.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
-<label>Priority<select name="priority">{% for priority in ['P1','P2','P3','P4'] %}<option {% if record.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
-<label>Risk<select name="risk">{% for risk in ['Low','Medium','High','Critical'] %}<option {% if record.risk==risk %}selected{% endif %}>{{ risk }}</option>{% endfor %}</select></label>
-<label>Assigned to<select name="assignee_id"><option value="">Unassigned</option>{% for user in agents %}<option value="{{ user.id }}" {% if record.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
-<button class="primary">Save changes</button></form>
-{% else %}<dl><dt>State</dt><dd>{{ record.state }}</dd><dt>Priority</dt><dd>{{ record.priority }}</dd><dt>Risk</dt><dd>{{ record.risk }}</dd><dt>Due</dt><dd>{{ record.due_at.strftime('%b %d, %Y') if record.due_at else 'Not set' }}</dd></dl>{% endif %}
-</aside></div>
+
+<nav class="record-section-tabs" aria-label="{{ record.record_type }} sections">
+  <a class="active" href="#related-records">Related records</a><a href="#investigation">{{ 'Problem analysis' if record.domain == 'problem' else 'Fulfillment' }}</a>{% if record.approvals %}<a href="#approvals">Approvers</a>{% endif %}<a href="#event-history">Event history</a>
+</nav>
+
+<section class="panel event-history-panel" id="event-history">
+  <header class="section-heading"><div><p class="eyebrow">ACTIVITY</p><h2>Event history</h2></div><span>{{ history|length }} events</span></header>
+  <div class="event-stream">{% for event in history %}<article class="event-entry"><div class="event-marker">{{ event.actor.name[0] if event.actor else 'S' }}</div><div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ event.created_at.strftime('%b %d, %Y · %H:%M:%S') }}</time></div><small>{{ event.actor.name if event.actor else 'System' }}</small>{% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span>→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}{% if event.details %}<p>{{ event.details }}</p>{% endif %}</div></article>{% endfor %}<article class="event-entry"><div class="event-marker">{{ record.requester.name[0] }}</div><div class="event-body"><div><strong>Opened</strong><time>{{ record.created_at.strftime('%b %d, %Y · %H:%M:%S') }}</time></div><small>{{ record.requester.name }}</small><p>{{ record.record_type }} {{ record.number }} opened as {{ record.priority }} · {{ record.risk }} risk.</p></div></article></div>
+</section>
+
+<section class="panel incident-related-panel" id="related-records">
+  <header class="section-heading"><div><h2>Related records and affected services</h2><p>Problems, changes, requests, CIs and service impact</p></div></header>
+
+  {% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ item.label }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">No related records.</p>{% endfor %}
+  {% if can_manage_record %}<form method="post" action="{{ url_for('record_link_add', source_type='enterprise', source_id=record.id) }}" class="inline-form"><select name="link_type"><option value="related_incident">Related incident</option><option value="problem_change">Permanent or temporary fix change</option><option value="knowledge_article">Knowledge article</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_records') }}"><input type="text" name="target_number" class="lookup-search" placeholder="Search INC, CHG or KB…" autocomplete="off" required><div class="lookup-results" hidden></div></div><button>Link record</button></form>{% endif %}
+
+  <hr>
+  <h3>Affected CIs and impacted services</h3>
+  {% if can_manage_record and record.domain != 'problem' %}<form method="post" action="{{ url_for('task_ci_add', target_type='enterprise', target_id=record.id) }}" class="inline-form"><input type="hidden" name="relationship_role" value="Primary CI"><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required value="{{ primary_ci_link.ci.name if primary_ci_link else '' }}"><input type="hidden" name="ci_id" value="{{ primary_ci_link.ci_id if primary_ci_link else '' }}"><div class="lookup-results" hidden></div></div><button>{{ 'Change primary CI' if primary_ci_link else 'Set primary CI' }}</button></form>{% endif %}
+  {% for link in ci_links if link.relationship_role != 'Primary CI' %}<div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div><span class="badge">{{ link.relationship_role }}</span></div>{% else %}<p class="muted">No additional CI relationships.</p>{% endfor %}
+  {% if can_manage_record %}<form method="post" action="{{ url_for('task_ci_add', target_type='enterprise', target_id=record.id) }}" class="inline-form"><select name="relationship_role"><option>Affected CI</option><option>Impacted service</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div><button>Link CI</button></form>{% endif %}
+</section>
+
+<section class="panel" id="investigation">
+{% if record.domain == 'problem' %}
+  <header class="section-heading"><div><h2>Problem analysis and known error</h2></div></header>
+  {% set profile = record.problem_profile %}
+  <dl class="governance-grid">
+    <dt>Known error</dt><dd>{{ 'Yes' if profile and profile.known_error else 'No' }}</dd>
+    <dt>Primary CI</dt><dd>{{ profile.primary_ci.name if profile and profile.primary_ci else 'Not selected' }}</dd>
+    <dt>Root cause</dt><dd>{{ profile.root_cause if profile and profile.root_cause else 'Under investigation' }}</dd>
+    <dt>Workaround</dt><dd>{{ profile.workaround if profile and profile.workaround else 'Not documented' }}</dd>
+    <dt>Permanent fix</dt><dd>{{ profile.fix_notes if profile and profile.fix_notes else 'Not documented' }}</dd>
+  </dl>
+  {% if can_manage_record %}
+  <details><summary>Update root cause, workaround, and fix</summary>
+  <form method="post" action="{{ url_for('problem_analysis_update', record_id=record.id) }}" class="form-grid">
+    <label class="check wide"><input type="checkbox" name="known_error" value="1" {% if profile and profile.known_error %}checked{% endif %}> Treat as known error</label>
+    <label>Primary CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" value="{{ profile.primary_ci.name if profile and profile.primary_ci else '' }}"><input type="hidden" name="primary_ci_id" value="{{ profile.primary_ci_id if profile and profile.primary_ci_id else '' }}"><div class="lookup-results" hidden></div></div></label>
+    <label class="wide">Root cause<textarea name="root_cause" rows="4">{{ profile.root_cause if profile else '' }}</textarea></label>
+    <label class="wide">Workaround<textarea name="workaround" rows="4">{{ profile.workaround if profile else '' }}</textarea></label>
+    <label class="wide">Permanent fix<textarea name="fix_notes" rows="4">{{ profile.fix_notes if profile else '' }}</textarea></label>
+    <div class="wide actions"><button>Save problem analysis</button></div>
+  </form></details>
+  {% endif %}
+
+  <hr><h3>Problem tasks (PTASK)</h3>
+  {% for task in work_tasks %}<article class="timeline"><strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · Required{% endif %}</strong><span class="badge">{{ task.state }}</span><p>{{ task.title }}</p><small>{{ task.assignment_group.name }} · {{ task.assignee.name if task.assignee else 'Unassigned' }}</small>
+  {% if task_permissions[task.id] %}<form method="post" action="{{ url_for('operational_task_update', task_id=task.id) }}" class="form-grid">
+    <label>State<select name="state">{% for state in work_task_states[task.state] %}<option {% if task.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
+    <label>Assigned to<select name="assignee_id"><option value="">Unassigned</option>{% for user in task_agents[task.id] %}<option value="{{ user.id }}" {% if task.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+    <label class="wide">Work notes<textarea name="work_notes" rows="2">{{ task.work_notes }}</textarea></label><div class="wide actions"><button>Update {{ task.number }}</button></div>
+  </form>{% endif %}</article>{% else %}<p class="muted">No investigation tasks.</p>{% endfor %}
+  {% if can_manage_record %}<details><summary>Add problem task</summary><form method="post" action="{{ url_for('problem_task_add', record_id=record.id) }}" class="form-grid">
+    <label class="wide">Task summary<input name="title" required></label><label>Type<select name="task_type"><option>Investigation</option><option>Root Cause Analysis</option><option>Reproduction</option><option>Vendor Analysis</option><option>Documentation</option></select></label>
+    <label>Assignment group<select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label>
+    <label class="check wide"><input type="checkbox" name="required" value="1" checked> Required task</label><div class="wide actions"><button>Add PTASK</button></div>
+  </form></details>{% endif %}
+{% else %}
+  <header class="section-heading"><div><h2>Fulfillment tasks</h2></div></header>
+  {% for task in work_tasks %}<article class="timeline"><strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · Required{% endif %}</strong><span class="badge">{{ task.state }}</span><p>{{ task.title }}</p><small>{{ task.assignment_group.name }} · {{ task.assignee.name if task.assignee else 'Unassigned' }}</small>
+  {% if task_permissions[task.id] %}<form method="post" action="{{ url_for('operational_task_update', task_id=task.id) }}" class="form-grid">
+    <label>State<select name="state">{% for state in work_task_states[task.state] %}<option {% if task.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
+    <label>Assigned to<select name="assignee_id"><option value="">Unassigned</option>{% for user in task_agents[task.id] %}<option value="{{ user.id }}" {% if task.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+    <label class="wide">Work notes<textarea name="work_notes" rows="2">{{ task.work_notes }}</textarea></label><div class="wide actions"><button>Update {{ task.number }}</button></div>
+  </form>{% endif %}</article>{% else %}<p class="muted">No fulfillment tasks.</p>{% endfor %}
+{% endif %}
+</section>
+
+{% if record.approvals %}
+<section class="panel" id="approvals">
+  <header class="section-heading"><div><h2>Approval history</h2></div></header>
+  {% for approval in record.approvals %}<article class="timeline"><strong>{{ approval.state }}</strong><span>{{ approval.approver.name }}</span><p>{{ approval.comments or 'No decision comments.' }}</p>
+  {% if approval.state=='Requested' and approval.approver_id==current_user.id %}<form method="post" class="approval-actions"><input type="hidden" name="approval_id" value="{{ approval.id }}"><input name="comments" placeholder="Decision comments"><button name="action" value="reject">Reject</button><button class="primary" name="action" value="approve">Approve</button></form>{% endif %}
+  </article>{% endfor %}
+</section>
+{% endif %}
 {% endblock %}

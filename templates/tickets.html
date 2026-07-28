@@ -1,12 +1,38 @@
 {% extends "base.html" %}
 {% block title %}{{ kind|title }}s · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">WORK QUEUE</p><h1>{{ kind|title }}s</h1><p>Track and manage {{ kind }} records.</p></div>
-<a class="primary button" href="{{ url_for('ticket_new', kind=kind) }}">+ New {{ kind }}</a></header>
-<form class="filters"><input name="q" value="{{ q }}" placeholder="Search number or summary…"><select name="state"><option value="">All states</option>{% for s in ['New','In Progress','Pending','Resolved','Closed','Cancelled'] %}<option {% if state==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select><button>Filter</button></form>
-<section class="panel table-panel">
-<table><thead><tr><th>Number</th><th>Summary</th><th>Requester</th><th>State</th><th>Priority</th><th>Assigned to</th></tr></thead>
-<tbody>{% for t in tickets %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td>{{ t.requester.name }}</td><td><span class="badge">{{ t.state }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td><td>{{ t.assignee.name if t.assignee else 'Unassigned' }}</td></tr>{% else %}<tr><td colspan="6" class="empty">No matching records.</td></tr>{% endfor %}</tbody></table>
+<section class="list-workspace">
+  <header class="list-toolbar">
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ kind|title }}s</strong><small>{{ total }} records</small></div></div>
+    <a class="primary button" href="{{ url_for('ticket_new', kind=kind) }}">New</a>
+    <form class="list-search">
+      <label><span>Search</span><select name="state"><option value="">All states</option>{% for s in ['New','In Progress','Pending','Resolved','Closed','Cancelled'] %}<option {% if state==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
+      <input name="q" value="{{ q }}" placeholder="Number or short description" aria-label="Search {{ kind }} records">
+      <button>Search</button>
+    </form>
+    <nav class="list-pagination" aria-label="Pagination">
+      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('tickets', kind=kind, q=q, state=state, page=page-1) }}">‹</a>
+      <span>Page {{ page }} of {{ pages }}</span>
+      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('tickets', kind=kind, q=q, state=state, page=page+1) }}">›</a>
+    </nav>
+  </header>
+  <div class="list-breadcrumb"><span>▽</span> All{% if state %} › State = {{ state }}{% endif %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
+  <div class="task-list-scroll">
+    <table class="task-list">
+      <thead><tr><th>Number</th><th>Opened</th><th>Short description</th><th>Caller</th><th>Priority</th><th>State</th><th>Category</th><th>Assignment group</th><th>Assigned to</th><th>Updated</th></tr></thead>
+      <tbody>{% for t in tickets %}<tr>
+        <td><a class="record-number" href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td>
+        <td>{{ t.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>{{ t.title }}</td>
+        <td>{{ t.requester.name }}</td>
+        <td><span class="priority-dot {{ t.priority|lower }}"></span><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td>
+        <td><span class="badge">{{ t.state }}</span></td>
+        <td>{{ t.category }}</td>
+        <td>{{ owning_groups[t.id].name if owning_groups.get(t.id) else 'Unassigned' }}</td>
+        <td>{{ t.assignee.name if t.assignee else 'Unassigned' }}</td>
+        <td>{{ t.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      </tr>{% else %}<tr><td colspan="10" class="empty">No matching records.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}
-

@@ -16,7 +16,8 @@ from app import (APIClient, APIIdempotencyRecord, Approval, ApprovalChain, Asset
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
                  MonitoringEvent, MonitoringSource, Notification, OperationalTask,
                  OutboxEvent, ProblemProfile, RecordLink, ScheduleHoliday, SLADefinition,
-                 RequestedItem, PlatformSetting, SupportGroup, TaskHistory, TaskSLA,
+                 RequestedItem, PlatformSetting, ServiceOffering, SupportGroup,
+                 TaskCI, TaskHistory, TaskSLA,
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference,
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
@@ -191,7 +192,7 @@ def test_migration_baseline_creates_fresh_schema_and_records_revision():
         revision = db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "20260728_0014"
+        assert revision == "20260728_0016"
         assert User.query.filter_by(username="admin").one()
     os.unlink(path)
 
@@ -219,7 +220,7 @@ def test_migration_baseline_adopts_existing_schema_without_data_loss():
         assert Knowledge.query.filter_by(title="Preserve during adoption").one()
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "20260728_0014"
+        ).scalar_one() == "20260728_0016"
     os.unlink(path)
 
 
@@ -261,7 +262,7 @@ def test_tenant_migration_is_reversible_and_preserves_records():
         )).scalar_one() == before
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-            ).scalar_one() == "20260728_0014"
+            ).scalar_one() == "20260728_0016"
     os.unlink(path)
 
 
@@ -508,6 +509,11 @@ def test_api_client_admin_one_time_secret_and_pwa_privacy(client, app):
     assert b"/api/" not in worker.data
     assert b"/ticket/" not in worker.data
     assert b"caches.open" in worker.data
+    assert b"serviceops-shell-v5" in worker.data
+    assert b"/static/itil.css?v=1.26.1" in worker.data
+    assert worker.data.index(b"fetch(event.request)") < worker.data.index(
+        b"caches.match(event.request)"
+    )
 
 
 def test_durable_smtp_signed_webhook_and_teams_delivery(monkeypatch, app):
@@ -679,7 +685,7 @@ def test_declarative_action_policy_and_requester_field_projection(client, app):
         "priority": "P2", "assignee_id": "",
     })
     internal = client.get(f"/ticket/{ticket_id}")
-    assert b"Ticket history" in internal.data
+    assert b"Event history" in internal.data
     assert b"priority" in internal.data.lower()
 
     client.post("/logout")
@@ -687,7 +693,7 @@ def test_declarative_action_policy_and_requester_field_projection(client, app):
     requester = client.get(f"/ticket/{ticket_id}")
     assert requester.status_code == 200
     assert b"Public incident description" in requester.data
-    assert b"Ticket history" not in requester.data
+    assert b"Event history" not in requester.data
     assert b"Major incident coordination" not in requester.data
     assert b"Service level commitments" not in requester.data
     assert b"Approval history" not in requester.data
@@ -790,24 +796,109 @@ def test_tenant_scope_prevents_cross_tenant_ticket_discovery(client, app):
 
 
 def test_incident_lifecycle(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        offering = ServiceOffering(
+            name="Workplace connectivity", owner_id=admin.id,
+            support_group_id=group_id(app, "Network"), status="Operational",
+        )
+        ci = ConfigurationItem(
+            name="vpn-gateway-prod", ci_class="Network Appliance",
+            environment="Production", owner_id=admin.id,
+        )
+        db.session.add_all([offering, ci])
+        db.session.commit()
+        offering_id, ci_id = offering.id, ci.id
     login(client)
     created = client.post("/tickets/new/incident", data={
         "title": "VPN is unavailable",
         "description": "Connection fails from the remote office.",
         "category": "Network",
-        "priority": "P2",
+        "subcategory": "Remote access",
+        "contact_type": "Phone",
+        "notify": "In-app only",
+        "service_offering_id": str(offering_id),
+        "ci_id": str(ci_id),
+        "impact": "High",
+        "urgency": "High",
         "group_id": group_id(app, "Network"),
     }, follow_redirects=True)
     assert created.status_code == 200
     assert b"INC0000001" in created.data
+    assert b"Event history" in created.data
+    assert b"Remote access" in created.data
+    assert b"Workplace connectivity" in created.data
+    assert b"vpn-gateway-prod" in created.data
     with app.app_context():
         ticket = Ticket.query.one()
         ticket_id = ticket.id
         assert ticket.assignment_group_record.group.name == "Network"
+        assert (ticket.contact_type, ticket.notify, ticket.subcategory) == (
+            "Phone", "In-app only", "Remote access",
+        )
+        assert ticket.service_offering_id == offering_id
+        assert TaskCI.query.filter_by(
+            target_type="ticket", target_id=ticket.id,
+            relationship_role="Primary CI",
+        ).one().ci_id == ci_id
     updated = client.post(f"/ticket/{ticket_id}", data={
-        "action": "update", "state": "In Progress", "priority": "P1", "assignee_id": ""
+        "action": "update", "state": "In Progress", "priority": "P2",
+        "impact": "High", "urgency": "High", "assignee_id": "",
+        "title": "VPN remote access is unavailable",
+        "description": "Connection fails from every remote office.",
+        "category": "Network", "subcategory": "VPN",
+        "contact_type": "Monitoring", "notify": "Email",
+        "service_offering_id": str(offering_id), "ci_id": str(ci_id),
     }, follow_redirects=True)
     assert b"In Progress" in updated.data
+    assert b"VPN remote access is unavailable" in updated.data
+    assert b"Monitoring" in updated.data
+    with app.app_context():
+        assert TaskHistory.query.filter_by(
+            target_type="ticket", target_id=ticket_id,
+            field_name="short description",
+        ).one().new_value == "VPN remote access is unavailable"
+
+
+def test_shared_task_record_and_list_interface(client, app):
+    login(client)
+    incident_list = client.get("/tickets/incident")
+    assert incident_list.status_code == 200
+    assert b"list-workspace" in incident_list.data
+    assert b"Assignment group" in incident_list.data
+    assert b"Page 1 of 1" in incident_list.data
+
+    change = client.post("/tickets/new/change", data={
+        "title": "Shared record interface change",
+        "description": "Validate the common task-derived record workspace.",
+        "category": "Software", "change_type": "Normal",
+        "risk_score": "40", "impact": "Medium", "urgency": "Medium",
+        "implementation_plan": "Implement the shared interface.",
+        "test_plan": "Render and validate the interface.",
+        "backout_plan": "Restore the previous templates.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+        "group_id": group_id(app),
+    }, follow_redirects=True)
+    assert change.status_code == 200
+    assert b'id="task-record-form"' in change.data
+    assert b"Event history" in change.data
+
+    problem = client.post("/module/problem/new", data={
+        "record_type": "Root cause analysis",
+        "title": "Shared problem interface",
+        "description": "Validate the enterprise task record workspace.",
+        "priority": "P3", "risk": "Medium",
+    }, follow_redirects=True)
+    assert problem.status_code == 200
+    assert b'id="enterprise-record-form"' in problem.data
+    assert b"Event history" in problem.data
+
+    request_record = client.post("/catalog/1/order", data={
+        "details": "Validate the request record workspace.",
+    }, follow_redirects=True)
+    assert request_record.status_code == 200
+    assert b"request-record-shell" in request_record.data
+    assert b"Requested items" in request_record.data
 
 
 def test_only_owning_team_can_operationally_update_ticket(client, app):
@@ -839,6 +930,7 @@ def test_only_owning_team_can_operationally_update_ticket(client, app):
         "risk_score": "50", "impact": "Medium", "group_id": unix_id,
         "implementation_plan": "Implement.", "test_plan": "Test.",
         "backout_plan": "Back out.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
     })
     assert response.status_code == 302
     with app.app_context():
@@ -1192,6 +1284,7 @@ def test_change_has_governance_approval_chain_and_sla(client, app):
         "implementation_plan": "Upgrade replicas, then primary.",
         "test_plan": "Run health and transaction tests.",
         "backout_plan": "Restore the previous release.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
         "group_id": group_id(app),
     })
     with app.app_context():
@@ -1212,6 +1305,7 @@ def test_change_cannot_bypass_approval_from_detail_or_board(client, app):
         "risk_score": "70", "impact": "High",
         "implementation_plan": "Implement safely.", "test_plan": "Validate safely.",
         "backout_plan": "Back out safely.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
         "group_id": group_id(app),
     })
     with app.app_context():
@@ -1279,6 +1373,7 @@ def test_incident_problem_change_and_parent_relationship_network(client, app):
         "risk_score": "70", "impact": "High", "group_id": coreapps_id,
         "implementation_plan": "Deploy safely.", "test_plan": "Validate service.",
         "backout_plan": "Restore prior release.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
     }).status_code == 302
     with app.app_context():
         incidents = Ticket.query.filter_by(kind="incident").order_by(Ticket.id).all()
@@ -1324,6 +1419,7 @@ def test_material_change_edit_supersedes_approvals_and_notifies_approvers(client
         "implementation_plan": "Deploy version one.",
         "test_plan": "Test version one.",
         "backout_plan": "Restore version zero.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
     }).status_code == 302
     with app.app_context():
         ticket = Ticket.query.filter_by(title="Approved production deployment").one()
@@ -1359,7 +1455,7 @@ def test_material_change_edit_supersedes_approvals_and_notifies_approvers(client
         "implementation_plan": "Deploy version two with a new sequence.",
         "test_plan": "Run expanded regression.",
         "backout_plan": "Restore version one.",
-        "planned_start": "", "planned_end": "", "ci_id": "",
+        "planned_start": "2026-08-02T09:00", "planned_end": "2026-08-02T17:00", "ci_id": "",
     })
     assert revised.status_code == 302
     with app.app_context():
@@ -1406,6 +1502,7 @@ def test_required_change_tasks_block_parent_completion(client, app):
         "risk_score": "20", "impact": "Low", "group_id": group_id(app),
         "implementation_plan": "Implement.", "test_plan": "Test.",
         "backout_plan": "Back out.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
     }).status_code == 302
     with app.app_context():
         ticket = Ticket.query.filter_by(title="Task-controlled change").one()
@@ -1425,19 +1522,42 @@ def test_required_change_tasks_block_parent_completion(client, app):
     assert client.post(f"/change/{ticket_id}/tasks", data={
         "title": "Deploy application package", "task_type": "Implementation",
         "group_id": group_id(app), "required": "1",
-        "planned_start": "", "planned_end": "",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    }).status_code == 302
+    with app.app_context():
+        # Adding a change task after the change was already approved is a
+        # material change: it must supersede the prior approval and require
+        # a fresh reapproval cycle before the change can complete again.
+        ticket = db.session.get(Ticket, ticket_id)
+        assert ticket.state == "Awaiting Approval"
+        new_chain = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id, state="Running"
+        ).one()
+        new_vote_id = new_chain.gates[0].votes[0].id
+    assert client.post(f"/approval-votes/{new_vote_id}/decide", data={
+        "decision": "Approved",
+    }).status_code == 302
+    assert client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "In Progress", "priority": "P3",
+        "assignee_id": "",
     }).status_code == 302
     assert client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": "Resolved", "priority": "P3",
         "assignee_id": "",
     }).status_code == 409
     with app.app_context():
-        task = OperationalTask.query.filter_by(parent_id=ticket_id).one()
-        task_id = task.id
-    assert client.post(f"/operational-task/{task_id}", data={
-        "state": "Closed Complete", "assignee_id": "",
-        "work_notes": "Deployment and validation completed.",
-    }).status_code == 302
+        # The change's auto-created "Implementation" task (from creation) and
+        # the manually added task above are both required and must each close
+        # before the parent change can resolve.
+        task_ids = [
+            task.id for task in
+            OperationalTask.query.filter_by(parent_id=ticket_id).order_by(OperationalTask.id).all()
+        ]
+    for task_id in task_ids:
+        assert client.post(f"/operational-task/{task_id}", data={
+            "state": "Closed Complete", "assignee_id": "",
+            "work_notes": "Deployment and validation completed.",
+        }).status_code == 302
     assert client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": "Resolved", "priority": "P3",
         "assignee_id": "",
@@ -1662,12 +1782,61 @@ def test_unified_search_favorites_and_preferences(client, app):
     client.post("/preferences", data={
         "theme": "dark", "density": "compact", "font_scale": "115",
         "high_contrast": "1", "reduced_motion": "1", "nav_pinned": "1",
+        "accessible_tooltips": "1", "data_patterns": "1",
+        "compact_dates": "1", "keyboard_shortcuts": "1",
+        "date_time_display": "relative",
         "start_page": "/task-board",
     })
     with app.app_context():
         assert Favorite.query.filter_by(url="/task-board").one()
         pref = UserPreference.query.one()
         assert (pref.theme, pref.density, pref.font_scale, pref.start_page) == ("light", "compact", 115, "/task-board")
+        assert (pref.accessible_tooltips, pref.data_patterns, pref.compact_dates) == (True, True, True)
+        assert (pref.keyboard_shortcuts, pref.date_time_display) == (True, "relative")
+
+
+def test_profile_and_user_administration_are_tenant_and_role_governed(client, app):
+    login(client, "employee", "Employee123!")
+    assert client.get("/profile").status_code == 200
+    assert client.get("/admin").status_code == 403
+    assert client.get("/admin/users").status_code == 403
+    response = client.post("/profile", data={
+        "name": "Updated Employee", "email": "employee@test.invalid",
+        "title": "Analyst", "business_phone": "02 5550 0100",
+        "mobile_phone": "0400 000 001", "timezone": "Australia/Sydney",
+        "date_format": "day_first",
+        "role": "admin", "active": "1", "department": "Security",
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        employee = User.query.filter_by(username="employee").one()
+        assert employee.name == "Updated Employee"
+        assert employee.title == "Analyst"
+        assert employee.timezone == "Australia/Sydney"
+        assert employee.role == "requester"
+        assert employee.department == ""
+
+    client.post("/logout")
+    login(client)
+    employee_id = None
+    with app.app_context():
+        employee_id = User.query.filter_by(username="employee").one().id
+    assert client.get("/admin").status_code == 200
+    assert b"User administration" in client.get("/admin").data
+    assert b"Updated Employee" in client.get("/admin/users?q=Updated+Employee").data
+    response = client.post(f"/admin/users/{employee_id}", data={
+        "name": "Governed Employee", "email": "employee@test.invalid",
+        "role": "agent", "active": "1", "title": "Support analyst",
+        "department": "Service Desk", "business_phone": "", "mobile_phone": "",
+        "timezone": "UTC", "date_format": "system",
+        "calendar_integration": "None",
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        employee = db.session.get(User, employee_id)
+        assert (employee.name, employee.role, employee.department) == (
+            "Governed Employee", "agent", "Service Desk"
+        )
 
 
 def test_visual_board_checklist_and_attachment(client, app):
@@ -2200,3 +2369,149 @@ def test_knowledge_archive_without_new_version_hides_from_search(client, app):
         assert article.archived is True
         assert article.published is False
         assert article.superseded_by_id is None
+
+
+def test_change_requires_planned_dates_at_creation_and_edit(client, app):
+    login(client)
+    assert client.post("/tickets/new/change", data={
+        "title": "Missing schedule change", "description": "No planned window supplied.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+    }).status_code == 400
+    assert client.post("/tickets/new/change", data={
+        "title": "Backwards schedule change", "description": "End before start.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+        "planned_start": "2026-08-01T17:00", "planned_end": "2026-08-01T09:00",
+    }).status_code == 400
+    assert client.post("/tickets/new/change", data={
+        "title": "Well-scheduled change", "description": "Has a valid window.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    }).status_code == 302
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Well-scheduled change").one().id
+    assert client.post(f"/change/{ticket_id}/plan", data={
+        "title": "Well-scheduled change", "description": "Has a valid window.",
+        "change_type": "Standard", "risk_score": "25", "impact": "Low",
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.", "planned_start": "", "planned_end": "",
+    }).status_code == 400
+
+
+def test_change_task_requires_dates_within_parent_window(client, app):
+    login(client)
+    assert client.post("/tickets/new/change", data={
+        "title": "Windowed change", "description": "Has a bounded change window.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    }).status_code == 302
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Windowed change").one().id
+    assert client.post(f"/change/{ticket_id}/tasks", data={
+        "title": "Planning session", "task_type": "Planning",
+        "group_id": group_id(app), "required": "",
+    }).status_code == 400
+    assert client.post(f"/change/{ticket_id}/tasks", data={
+        "title": "Out of window task", "task_type": "Planning",
+        "group_id": group_id(app), "required": "",
+        "planned_start": "2026-07-31T09:00", "planned_end": "2026-07-31T17:00",
+    }).status_code == 409
+    assert client.post(f"/change/{ticket_id}/tasks", data={
+        "title": "In window task", "task_type": "Planning",
+        "group_id": group_id(app), "required": "",
+        "planned_start": "2026-08-01T10:00", "planned_end": "2026-08-01T11:00",
+    }).status_code == 302
+
+
+def test_change_conflict_detection_flags_overlapping_change_and_open_incident(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        ci = ConfigurationItem(
+            name="shared-app-server", ci_class="Server",
+            environment="Production", owner_id=admin.id,
+        )
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+    login(client)
+    assert client.post("/tickets/new/incident", data={
+        "title": "Shared server degraded", "description": "Ongoing incident on the CI.",
+        "category": "Software", "priority": "P2", "group_id": group_id(app),
+        "ci_id": str(ci_id),
+    }).status_code == 302
+    assert client.post("/tickets/new/change", data={
+        "title": "First maintenance window", "description": "First change on the CI.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.", "ci_id": str(ci_id),
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    }).status_code == 302
+    with app.app_context():
+        first = Ticket.query.filter_by(title="First maintenance window").one()
+        assert "open incident" in first.change_governance.conflict_status.lower()
+    assert client.post("/tickets/new/change", data={
+        "title": "Second overlapping window", "description": "Overlaps the first change.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.", "ci_id": str(ci_id),
+        "planned_start": "2026-08-01T12:00", "planned_end": "2026-08-01T18:00",
+    }).status_code == 302
+    with app.app_context():
+        second = Ticket.query.filter_by(title="Second overlapping window").one()
+        assert "overlapping change" in second.change_governance.conflict_status.lower()
+        assert first.number in second.change_governance.conflict_status
+
+
+def test_adding_change_task_after_approval_forces_reapproval(client, app):
+    login(client)
+    assert client.post("/tickets/new/change", data={
+        "title": "Approved then rescoped change", "description": "Gets a task added post-approval.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    }).status_code == 302
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Approved then rescoped change").one()
+        ticket_id = ticket.id
+        vote_id = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id
+        ).one().gates[0].votes[0].id
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+    assert client.post(f"/approval-votes/{vote_id}/decide", data={
+        "decision": "Approved",
+    }).status_code == 302
+    with app.app_context():
+        assert db.session.get(Ticket, ticket_id).state == "Approved"
+    assert client.post(f"/change/{ticket_id}/tasks", data={
+        "title": "Extra validation step", "task_type": "Testing",
+        "group_id": group_id(app), "required": "",
+        "planned_start": "2026-08-01T10:00", "planned_end": "2026-08-01T11:00",
+    }).status_code == 302
+    with app.app_context():
+        ticket = db.session.get(Ticket, ticket_id)
+        assert ticket.state == "Awaiting Approval"
+        chains = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id
+        ).order_by(ApprovalChain.id).all()
+        assert len(chains) == 2
+        assert chains[0].state == "Superseded"
+        assert chains[1].state == "Running"
+        assert TaskHistory.query.filter_by(
+            target_type="ticket", target_id=ticket_id, event="Approval restarted",
+        ).one()

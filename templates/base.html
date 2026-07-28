@@ -6,13 +6,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ instance_name|default('ServiceOps') }}{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css') }}">
-  <script src="{{ url_for('static', filename='platform.js') }}" defer></script>
-  <script src="{{ url_for('static', filename='lookup.js') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='1.26.1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v='1.26.1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v='1.26.1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v='1.26.1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v='1.26.1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v='1.26.1') }}">
+  <script src="{{ url_for('static', filename='platform.js', v='1.26.1') }}" defer></script>
+  <script src="{{ url_for('static', filename='lookup.js', v='1.26.1') }}" defer></script>
 </head>
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
 {% if current_user.is_authenticated %}
@@ -48,6 +49,7 @@
     <small>ADMINISTRATION</small>
     <a href="{{ url_for('itil_admin') }}" {% if nav_active('itil_admin') %}class="active" aria-current="page"{% endif %}>ITIL configuration<span class="info-tip" tabindex="0" data-tip="ITIL = Information Technology Infrastructure Library, the industry-standard framework of IT service management practices (incidents, problems, changes, requests) ServiceOps' workflows follow.">i</span></a>
     <a href="{{ url_for('system_settings') }}" {% if nav_active('system_settings') %}class="active" aria-current="page"{% endif %}>System settings</a>
+    <a href="{{ url_for('admin_home') }}" {% if nav_active('admin_home') %}class="active" aria-current="page"{% endif %}>Administration</a>
     <a href="{{ url_for('users') }}" {% if nav_active('users') %}class="active" aria-current="page"{% endif %}>Users & roles</a>
     <a href="{{ url_for('audit_log') }}" {% if nav_active('audit_log') %}class="active" aria-current="page"{% endif %}>Audit log</a>
     <a href="{{ url_for('api_clients_admin') }}" {% if nav_active('api_clients_admin') %}class="active" aria-current="page"{% endif %}>API clients</a>
@@ -58,7 +60,7 @@
   </nav>
   <div class="profile">
     <div class="avatar">{{ current_user.name[0] }}</div>
-    <div><strong>{{ current_user.name }}</strong><small>{{ current_user.role }}</small></div>
+    <a href="{{ url_for('profile') }}"><strong>{{ current_user.name }}</strong><small>{{ current_user.role }}</small></a>
     <form action="{{ url_for('logout') }}" method="post"><button class="link-button" aria-label="Sign out">↗</button></form>
   </div>
 </aside>
