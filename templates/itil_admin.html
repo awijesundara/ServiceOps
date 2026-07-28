@@ -192,7 +192,7 @@
     <form method="post" class="form-grid">
       <input type="hidden" name="action" value="create_business_schedule">
       <label>Name<input name="name" maxlength="160" required></label>
-      <label>IANA timezone<input name="timezone_name" value="UTC" placeholder="Australia/Sydney" required></label>
+      <label>IANA timezone<input name="timezone_name" value="Asia/Tokyo" placeholder="Australia/Sydney" required></label>
       <label>Start time<input type="time" name="start_time" value="09:00" required></label>
       <label>End time<input type="time" name="end_time" value="17:00" required></label>
       <fieldset class="wide"><legend>Business days</legend>{% for value,label in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}<label class="check"><input type="checkbox" name="weekdays" value="{{ value }}" {% if value < 5 %}checked{% endif %}> {{ label }}</label>{% endfor %}</fieldset>

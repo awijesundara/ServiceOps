@@ -1,32 +1,28 @@
 {% extends "base.html" %}
-{% block title %}Users & roles · {{ instance_name }}{% endblock %}
+{% block title %}Users · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head">
-  <div><p class="eyebrow">ADMINISTRATION</p><h1>Users, roles, and teams</h1><p>Directory users are created at first login and their mapped team memberships synchronize at every AD login.</p></div>
-  <a class="primary button" href="{{ url_for('user_new') }}">+ New local user</a>
-</header>
-<section class="panel">
-  <table>
-    <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Team memberships</th><th>Status</th></tr></thead>
-    <tbody>
-      {% for user in users %}
-      <tr>
-        <td><strong>{{ user.name }}</strong></td>
-        <td>{{ user.username }}</td>
-        <td>{{ user.email }}</td>
-        <td><span class="tag">{{ user.role }}</span></td>
-        <td>
-          {% set ns = namespace(items=[]) %}
-          {% for membership in memberships %}{% if membership.user_id == user.id %}
-            {% set source = "AD" if (user.id, membership.group_id) in directory_managed else "Manual" %}
-            {% set ns.items = ns.items + [membership.group.name ~ " (" ~ membership.role ~ ", " ~ source ~ ")"] %}
-          {% endif %}{% endfor %}
-          {{ ns.items|join(", ") or "None" }}
-        </td>
-        <td>{{ "Active" if user.active else "Disabled" }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<section class="list-workspace">
+  <header class="list-toolbar">
+    <div class="list-title"><span class="record-type-icon">U</span><div><strong>Users</strong><small>User administration</small></div></div>
+    <a class="primary button" href="{{ url_for('user_new') }}">New</a>
+    <form method="get" class="list-search"><label for="user-search">Search users</label><input id="user-search" name="q" value="{{ search }}" placeholder="Name, username, email or department"><button>Search</button></form>
+    <a class="button" href="{{ url_for('admin_home') }}">Administration home</a>
+  </header>
+  <div class="list-filter-summary"><span class="filter-icon">▽</span><strong>All users{% if search %} matching “{{ search }}”{% endif %}</strong><span>{{ users|length }} records</span></div>
+  <div class="table-scroll">
+    <table class="record-list">
+      <thead><tr><th>User ID</th><th>Name</th><th>Email</th><th>Active</th><th>Role</th><th>Department</th><th>Team memberships</th></tr></thead>
+      <tbody>
+        {% for user in users %}
+        <tr>
+          <td><a href="{{ url_for('user_edit', user_id=user.id) }}">{{ user.username }}</a></td>
+          <td><strong>{{ user.name }}</strong></td><td>{{ user.email }}</td><td>{{ "true" if user.active else "false" }}</td>
+          <td><span class="tag">{{ user.role }}</span></td><td>{{ user.department or "—" }}</td>
+          <td>{% set ns = namespace(items=[]) %}{% for membership in memberships %}{% if membership.user_id == user.id %}{% set source = "AD" if (user.id, membership.group_id) in directory_managed else "Manual" %}{% set ns.items = ns.items + [membership.group.name ~ " (" ~ membership.role ~ ", " ~ source ~ ")"] %}{% endif %}{% endfor %}{{ ns.items|join(", ") or "None" }}</td>
+        </tr>
+        {% else %}<tr><td colspan="7" class="empty-table">No users match this search.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ ticket.number }} · Incident · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set primary_ci_link = (ci_links|selectattr('relationship_role','equalto','Primary CI')|first) %}
+<section class="record-shell">
+  <header class="record-toolbar">
+    <div class="record-identity">
+      <a class="record-back" href="{{ url_for('tickets', kind='incident') }}" aria-label="Back to incidents">‹</a>
+      <span class="record-type-icon" aria-hidden="true">!</span>
+      <div><strong>Incident</strong><small>{{ ticket.number }}</small></div>
+    </div>
+    <div class="record-actions">
+      <span class="record-updated">Updated {{ ticket.updated_at.strftime('%b %d, %H:%M') }}</span>
+      {% if can_manage_ticket %}
+      <button class="button" type="submit" form="incident-record-form">Update</button>
+      {% if 'Resolved' in ticket_state_options and ticket.state != 'Resolved' %}
+      <form method="post"><input type="hidden" name="action" value="quick_resolve"><button class="primary">Resolve</button></form>
+      {% endif %}
+      {% endif %}
+    </div>
+  </header>
+  {% include "_state_track.html" %}
+  <form method="post" id="incident-record-form" class="record-form">
+    <input type="hidden" name="action" value="update">
+    <div class="record-grid">
+      <label><span>Number</span><input value="{{ ticket.number }}" disabled></label>
+      <label><span>Contact type</span><select name="contact_type" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Self-service','Phone','Email','Chat','Monitoring'] %}<option {% if ticket.contact_type==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label class="required-field"><span>Caller</span><input value="{{ ticket.requester.name }} · {{ ticket.requester.email }}" disabled></label>
+      <label><span>State</span><select name="state" {% if not can_manage_ticket %}disabled{% endif %}>{% for state in ticket_state_options %}<option {% if ticket.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
+      <label><span>Category</span><select name="category" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['General','Access','Hardware','Software','Network','Security'] %}<option {% if ticket.category==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label><span>Impact</span><select name="impact" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label><span>Subcategory</span><input name="subcategory" maxlength="80" value="{{ ticket.subcategory }}" {% if not can_manage_ticket %}disabled{% endif %}></label>
+      <label><span>Urgency</span><select name="urgency" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.urgency==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label><span>Service offering</span><select name="service_offering_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">Not selected</option>{% for offering in service_offerings %}<option value="{{ offering.id }}" {% if ticket.service_offering_id==offering.id %}selected{% endif %}>{{ offering.name }}</option>{% endfor %}</select></label>
+      <label><span>Priority</span><select name="priority" {% if not can_manage_ticket %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
+      <label><span>Configuration item</span><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" value="{{ primary_ci_link.ci.name if primary_ci_link else '' }}" {% if not can_manage_ticket %}disabled{% endif %}><input type="hidden" name="ci_id" value="{{ primary_ci_link.ci_id if primary_ci_link else '' }}"><div class="lookup-results" hidden></div></div></label>
+      <label class="required-field"><span>Assignment group</span><input value="{{ owning_group.name if owning_group else 'Not assigned' }}" disabled></label>
+      <label><span>Team manager</span><input value="{{ owning_group.manager.name if owning_group and owning_group.manager else 'Not assigned' }}" disabled></label>
+      <label><span>Notify</span><select name="notify" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Email','In-app only','Do not notify'] %}<option {% if ticket.notify==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label><span>Assigned to</span><select name="assignee_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">Unassigned</option>{% for user in agents %}<option value="{{ user.id }}" {% if ticket.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+    </div>
+    <div class="record-long-fields">
+      <label class="required-field"><span>Short description</span><input name="title" maxlength="180" value="{{ ticket.title }}" required {% if not can_manage_ticket %}disabled{% endif %}></label>
+      <label class="required-field"><span>Description</span><textarea name="description" rows="7" required {% if not can_manage_ticket %}disabled{% endif %}>{{ ticket.description }}</textarea></label>
+      {% if can_manage_ticket %}<label><span>Priority override reason</span><textarea name="priority_override_reason" rows="2" placeholder="Required when overriding calculated priority">{{ ticket.priority_override_reason or '' }}</textarea></label>{% endif %}
+    </div>
+    {% if can_manage_ticket %}<footer class="record-footer-actions"><button class="primary">Update incident</button></footer>{% endif %}
+  </form>
+</section>
+
+{% if internal_view %}
+<nav class="record-section-tabs" aria-label="Incident sections">
+  <a class="active" href="#notes">Notes</a><a href="#related-records">Related records</a><a href="#resolution-information">Resolution information</a><a href="#event-history">Event history</a>
+</nav>
+<section class="panel event-history-panel" id="event-history">
+  <header class="section-heading"><div><p class="eyebrow">EVENT STREAM</p><h2>Event history</h2></div><span>{{ history|length }} events</span></header>
+  <div class="event-stream">
+    {% for event in history %}
+    <article class="event-entry">
+      <div class="event-marker">{{ event.actor.name[0] if event.actor else 'S' }}</div>
+      <div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ event.created_at.strftime('%b %d, %Y · %H:%M:%S') }}</time></div><small>{{ event.actor.name if event.actor else 'System' }}</small>
+      {% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span aria-hidden="true">→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}
+      {% if event.details %}<p>{{ event.details }}</p>{% endif %}</div>
+    </article>
+    {% endfor %}
+    <article class="event-entry"><div class="event-marker">{{ ticket.requester.name[0] }}</div><div class="event-body"><div><strong>Opened</strong><time>{{ ticket.created_at.strftime('%b %d, %Y · %H:%M:%S') }}</time></div><small>{{ ticket.requester.name }}</small><p>Incident {{ ticket.number }} opened as {{ ticket.priority }} · {{ ticket.impact }} impact via {{ ticket.contact_type }}.</p></div></article>
+  </div>
+</section>
+{% endif %}
+
+<div class="incident-support-grid" id="notes">
+  <section class="panel">
+    <header class="section-heading"><div><h2>Activity and work notes</h2><p>Conversation and resolution evidence</p></div></header>
+    {% for c in ticket.comments|sort(attribute='created_at', reverse=true) %}<article class="comment"><div class="avatar">{{ c.author.name[0] }}</div><div><strong>{{ c.author.name }}</strong><small>{{ c.created_at.strftime('%b %d, %H:%M') }}</small><p>{{ c.body }}</p></div></article>{% else %}<p class="muted">No comments yet.</p>{% endfor %}
+    <form method="post" class="comment-box"><input type="hidden" name="action" value="comment"><textarea name="body" rows="3" placeholder="Add a work note or comment…" required></textarea><button class="primary">Post comment</button></form>
+  </section>
+
+  <section class="panel">
+    <header class="section-heading"><div><h2>Service commitments</h2><p>Active SLA definitions and breach targets</p></div></header>
+    {% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ sla.stage }}{% if sla.breached %} · BREACHED{% endif %}</small></div><div><span>Breach target</span><strong>{{ sla.breach_at.strftime('%b %d, %H:%M') }}</strong></div></div>{% else %}<p class="muted">No active service commitments.</p>{% endfor %}
+  </section>
+</div>
+
+<section class="panel incident-related-panel" id="related-records">
+  <header class="section-heading"><div><h2>Related records and affected services</h2><p>Problems, changes, requests, CIs and service impact</p></div></header>
+  {% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ item.label }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">No related records.</p>{% endfor %}
+  {% if can_manage_ticket %}
+  <form method="post" action="{{ url_for('record_link_add', source_type='ticket', source_id=ticket.id) }}" class="inline-form">
+    <select name="link_type"><option value="parent_incident">Parent incident</option><option value="underlying_problem">Problem</option><option value="resolution_change">Change request</option><option value="caused_by_change">Caused by change</option><option value="converted_request">Service request</option></select>
+    <div class="lookup" data-lookup-url="{{ url_for('lookup_records') }}"><input type="text" name="target_number" class="lookup-search" placeholder="Search INC, PRB, CHG, REQ or RITM…" autocomplete="off" required><div class="lookup-results" hidden></div></div><button>Link record</button>
+  </form>
+  {% endif %}
+  {% for link in ci_links if link.relationship_role != 'Primary CI' %}<div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div><span class="badge">{{ link.relationship_role }}</span></div>{% endfor %}
+  {% if can_manage_ticket %}<form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form"><select name="relationship_role"><option>Affected CI</option><option>Impacted service</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div><button>Link CI</button></form>{% endif %}
+</section>
+
+<div class="incident-support-grid" id="resolution-information">
+  <section class="panel">
+    <h2>Attachments</h2>{% for attachment in ticket.attachments %}<a class="attachment" href="{{ url_for('attachment_download', attachment_id=attachment.id) }}"><strong>{{ attachment.original_name }}</strong><span>{{ (attachment.size_bytes / 1024)|round(1) }} KB · {{ attachment.uploaded_by.name }}</span></a>{% else %}<p class="muted">No attachments.</p>{% endfor %}
+    <form method="post" action="{{ url_for('attachment_upload', ticket_id=ticket.id) }}" enctype="multipart/form-data" class="inline-form"><input type="file" name="file" required><button>Upload</button></form>
+  </section>
+  <section class="panel">
+    <h2>Checklist</h2>{% for item in ticket.checklist|sort(attribute='position') %}{% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_toggle', item_id=item.id) }}" class="checklist-row"><button aria-label="Toggle checklist item">{{ '✓' if item.completed else '○' }}</button><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></form>{% else %}<div class="checklist-row"><span>{{ '✓' if item.completed else '○' }}</span><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></div>{% endif %}{% else %}<p class="muted">No checklist items.</p>{% endfor %}
+    {% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_add', ticket_id=ticket.id) }}" class="inline-form"><input name="text" placeholder="Add checklist item" required><button>Add</button></form>{% endif %}
+  </section>
+</div>
+
+{% if can_manage_ticket and reassignable_teams %}
+<details class="panel incident-reassign"><summary>Reassign incident to another team</summary><form method="post" class="inline-form"><input type="hidden" name="action" value="reassign_team"><select name="new_group_id" required><option value="">Select a team</option>{% for team in reassignable_teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select><button>Send to team</button></form></details>
+{% endif %}
+{% endblock %}

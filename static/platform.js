@@ -130,4 +130,45 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     show();
   });
+  const tabActivators = {};
+  document.querySelectorAll(".record-section-tabs").forEach(nav => {
+    const links = Array.from(nav.querySelectorAll("a"));
+    const targets = links
+      .map(a => document.getElementById(a.getAttribute("href").slice(1)))
+      .filter(Boolean);
+    if (!targets.length) return;
+    const activate = (id) => {
+      links.forEach(a => a.classList.toggle("active", a.getAttribute("href") === `#${id}`));
+      targets.forEach(el => { el.classList.toggle("tab-panel-hidden", el.id !== id); });
+    };
+    targets.forEach(el => { tabActivators[el.id] = activate; });
+    links.forEach(a => {
+      a.addEventListener("click", (event) => {
+        event.preventDefault();
+        activate(a.getAttribute("href").slice(1));
+        history.replaceState(null, "", a.getAttribute("href"));
+      });
+    });
+    const hashId = location.hash.slice(1);
+    const initial = targets.some(el => el.id === hashId) ? hashId : targets[0].id;
+    activate(initial);
+  });
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest('a[href^="#"]');
+    if (!link || link.closest(".record-section-tabs")) return;
+    const id = link.getAttribute("href").slice(1);
+    if (!tabActivators[id]) return;
+    event.preventDefault();
+    tabActivators[id](id);
+    document.getElementById(id)?.scrollIntoView({block: "start"});
+  });
+  document.querySelectorAll("[data-pref-tab]").forEach(button => {
+    button.addEventListener("click", () => {
+      const selected = button.dataset.prefTab;
+      document.querySelectorAll("[data-pref-tab]").forEach(item => item.classList.toggle("active", item === button));
+      document.querySelectorAll("[data-pref-panel]").forEach(panel => {
+        panel.hidden = panel.dataset.prefPanel !== selected;
+      });
+    });
+  });
 });

@@ -1,7 +1,20 @@
 {% extends "base.html" %}
 {% block title %}{{ req.number }} · Service request · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">REQUEST · {{ req.number }}</p><h1>Service request</h1><p>Requested for {{ req.requested_for.name }} by {{ req.requested_by.name }}</p></div><span class="badge big">{{ req.state }}</span></header>
+<section class="record-shell task-record-shell request-record-shell">
+  <header class="record-toolbar"><div class="record-identity"><a class="record-back" href="{{ url_for('requests_list') }}" aria-label="Back to requests">‹</a><span class="record-type-icon" aria-hidden="true">R</span><div><strong>Request</strong><small>{{ req.number }}</small></div></div><div class="record-actions"><span class="badge">{{ req.state }}</span></div></header>
+  <div class="record-form">
+    <div class="record-grid">
+      <label><span>Number</span><input value="{{ req.number }}" disabled></label>
+      <label><span>State</span><input value="{{ req.state }}" disabled></label>
+      <label class="required-field"><span>Requested by</span><input value="{{ req.requested_by.name }} · {{ req.requested_by.email }}" disabled></label>
+      <label class="required-field"><span>Requested for</span><input value="{{ req.requested_for.name }} · {{ req.requested_for.email }}" disabled></label>
+      <label><span>Opened</span><input value="{{ req.opened_at.strftime('%b %d, %Y · %H:%M') }}" disabled></label>
+      <label><span>Requested items</span><input value="{{ req.items|length }}" disabled></label>
+    </div>
+    <div class="record-long-fields"><label><span>Summary</span><input value="{% for ritm in req.items %}{{ ritm.item.name }}{% if not loop.last %}; {% endif %}{% endfor %}" disabled></label></div>
+  </div>
+</section>
 
 {% if req.state in ['Open','Awaiting Approval'] and can_add_request_item %}
 <details class="panel"><summary>Add another requested item to this REQ</summary>

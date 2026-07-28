@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}Administration · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">PLATFORM ADMINISTRATION</p><h1>Administration home</h1><p>Configure security, people, service management, integrations, workflows, and platform operations.</p></div></header>
+<section class="admin-capability-grid">
+  {% set cards = [
+    ('Guided setup','Validate installation and platform connections','system_settings','✓'),
+    ('System security','Identity, authentication, API clients and audit','api_clients_admin','◆'),
+    ('Service management','ITIL classifications, routing and approvals','itil_admin','↔'),
+    ('User administration','Users, teams, directory mappings and roles','users','U'),
+    ('Business logic','Governed workflows and lifecycle automation','workflows_admin','▶'),
+    ('Data management','CMDB, services, assets and configuration','cmdb','▦'),
+    ('Diagnostics','Runtime settings and operational readiness','system_settings','⌁'),
+    ('Email and integrations','SMTP, webhooks, monitoring and Teams','integrations_admin','✉'),
+    ('Reporting and analytics','Operational workload and service metrics','analytics','◕')
+  ] %}
+  {% for title, description, endpoint, icon in cards %}<a class="admin-capability-card" href="{{ url_for(endpoint) }}"><span>{{ icon }}</span><div><h2>{{ title }}</h2><p>{{ description }}</p></div></a>{% endfor %}
+</section>
+{% endblock %}

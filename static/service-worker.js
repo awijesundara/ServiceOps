@@ -1,11 +1,13 @@
-const CACHE_NAME = "serviceops-shell-v1";
+const CACHE_NAME = "serviceops-shell-v5";
 const SHELL_ASSETS = [
-  "/static/platform.css",
-  "/static/app.css",
-  "/static/enterprise.css",
-  "/static/brand.css",
-  "/static/itil.css",
-  "/static/platform.js"
+  "/static/platform.css?v=1.26.1",
+  "/static/app.css?v=1.26.1",
+  "/static/enterprise.css?v=1.26.1",
+  "/static/brand.css?v=1.26.1",
+  "/static/itil.css?v=1.26.1",
+  "/static/platform.js?v=1.26.1",
+  "/static/admin-workspace.css?v=1.26.1",
+  "/static/lookup.js?v=1.26.1"
 ];
 
 self.addEventListener("install", (event) => {
@@ -25,8 +27,16 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin || !SHELL_ASSETS.includes(url.pathname)) return;
+  if (url.origin !== self.location.origin || !url.pathname.startsWith("/static/")) return;
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok && SHELL_ASSETS.includes(`${url.pathname}${url.search}`)) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
