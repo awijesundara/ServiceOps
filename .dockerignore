@@ -12,3 +12,4 @@ __pycache__
 instance
 CLAUDE.md
 .DS_Store
+dist
