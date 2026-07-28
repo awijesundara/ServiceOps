@@ -1,5 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".lookup").forEach(initLookup);
+  initCIBrowser();
 });
 
 function escapeRegExp(text) {
@@ -31,6 +32,17 @@ function initLookup(container) {
   const spinner = document.createElement("span");
   spinner.className = "lookup-loading";
   container.insertBefore(spinner, results);
+  if (url.includes("/lookup/cis") && !input.disabled) {
+    container.classList.add("lookup-has-browse");
+    const browseButton = document.createElement("button");
+    browseButton.type = "button";
+    browseButton.className = "lookup-browse";
+    browseButton.setAttribute("aria-label", "Browse configuration items");
+    browseButton.title = "Browse configuration items";
+    browseButton.textContent = "⌕";
+    browseButton.addEventListener("click", () => openCIBrowser(input, hidden));
+    container.appendChild(browseButton);
+  }
   let items = [];
   let activeIndex = -1;
   let debounceTimer = null;
@@ -137,4 +149,122 @@ function initLookup(container) {
   input.addEventListener("blur", () => {
     setTimeout(() => { results.hidden = true; }, 150);
   });
+}
+
+let ciBrowserTarget = null;
+let ciBrowserFiltersLoaded = false;
+let ciBrowserDebounce = null;
+
+function openCIBrowser(input, hidden) {
+  const modal = document.getElementById("ci-browser-modal");
+  if (!modal) return;
+  ciBrowserTarget = {input, hidden};
+  const q = modal.querySelector(".ci-browser-q");
+  q.value = "";
+  modal.querySelector(".ci-browser-class").value = "";
+  modal.querySelector(".ci-browser-environment").value = "";
+  if (typeof modal.showModal === "function") {
+    modal.showModal();
+  } else {
+    modal.setAttribute("open", "");
+  }
+  runCIBrowserSearch(true);
+  q.focus();
+}
+
+function renderCIBrowserResults(payload) {
+  const modal = document.getElementById("ci-browser-modal");
+  const tbody = modal.querySelector(".ci-browser-table tbody");
+  tbody.innerHTML = "";
+  if (!payload.results.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 5;
+    cell.className = "empty";
+    cell.textContent = "No matching configuration items.";
+    row.appendChild(cell);
+    tbody.appendChild(row);
+    return;
+  }
+  payload.results.forEach((ci) => {
+    const row = document.createElement("tr");
+    const nameCell = document.createElement("td");
+    const strong = document.createElement("strong");
+    strong.textContent = ci.name;
+    nameCell.appendChild(strong);
+    row.appendChild(nameCell);
+    [ci.ci_class, ci.environment, ci.ip_address, ci.status].forEach((value) => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.appendChild(cell);
+    });
+    row.addEventListener("click", () => {
+      if (ciBrowserTarget) {
+        ciBrowserTarget.input.value = ci.name;
+        if (ciBrowserTarget.hidden) ciBrowserTarget.hidden.value = ci.id;
+      }
+      modal.close ? modal.close() : modal.removeAttribute("open");
+    });
+    tbody.appendChild(row);
+  });
+}
+
+function populateCIBrowserFilters(payload) {
+  if (ciBrowserFiltersLoaded) return;
+  const modal = document.getElementById("ci-browser-modal");
+  const classSelect = modal.querySelector(".ci-browser-class");
+  const envSelect = modal.querySelector(".ci-browser-environment");
+  (payload.classes || []).forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    classSelect.appendChild(option);
+  });
+  (payload.environments || []).forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    envSelect.appendChild(option);
+  });
+  ciBrowserFiltersLoaded = true;
+}
+
+async function runCIBrowserSearch() {
+  const modal = document.getElementById("ci-browser-modal");
+  const params = new URLSearchParams({
+    q: modal.querySelector(".ci-browser-q").value.trim(),
+    ci_class: modal.querySelector(".ci-browser-class").value,
+    environment: modal.querySelector(".ci-browser-environment").value,
+  });
+  let response;
+  try {
+    response = await fetch(`/internal/lookup/cis/browse?${params.toString()}`);
+  } catch (error) {
+    window.showToast?.("Configuration item search is unavailable right now.", "error");
+    return;
+  }
+  if (!response.ok) {
+    window.showToast?.("Configuration item search is unavailable right now.", "error");
+    return;
+  }
+  const payload = await response.json();
+  populateCIBrowserFilters(payload);
+  renderCIBrowserResults(payload);
+}
+
+function initCIBrowser() {
+  const modal = document.getElementById("ci-browser-modal");
+  if (!modal) return;
+  modal.querySelector("[data-ci-browser-close]").addEventListener("click", () => {
+    modal.close ? modal.close() : modal.removeAttribute("open");
+  });
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) modal.close ? modal.close() : modal.removeAttribute("open");
+  });
+  modal.querySelector(".ci-browser-q").addEventListener("input", () => {
+    clearTimeout(ciBrowserDebounce);
+    ciBrowserDebounce = setTimeout(runCIBrowserSearch, 200);
+  });
+  modal.querySelector(".ci-browser-class").addEventListener("change", runCIBrowserSearch);
+  modal.querySelector(".ci-browser-environment").addEventListener("change", runCIBrowserSearch);
 }
