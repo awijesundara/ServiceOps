@@ -11,6 +11,7 @@ RUN addgroup --system app && adduser --system --ingroup app app
 COPY requirements.txt .
 RUN if [ -n "$PIP_INDEX_URL" ]; then pip config set global.index-url "$PIP_INDEX_URL"; fi \
     && if [ -n "$PIP_TRUSTED_HOST" ]; then pip config set global.trusted-host "$PIP_TRUSTED_HOST"; fi \
+    && pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 COPY . .
 # Never ship the disposable-fixture loader in the production image: it seeds

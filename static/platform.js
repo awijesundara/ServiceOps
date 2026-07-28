@@ -1,3 +1,27 @@
+function showToast(message, category) {
+  let stack = document.querySelector(".toast-stack");
+  if (!stack) {
+    stack = document.createElement("div");
+    stack.className = "toast-stack";
+    document.body.appendChild(stack);
+  }
+  const toast = document.createElement("div");
+  toast.className = `toast${category ? ` ${category}` : ""}`;
+  toast.setAttribute("role", "status");
+  const text = document.createElement("p");
+  text.textContent = message;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "toast-close";
+  close.setAttribute("aria-label", "Dismiss");
+  close.textContent = "×";
+  close.addEventListener("click", () => toast.remove());
+  toast.append(text, close);
+  stack.appendChild(toast);
+  setTimeout(() => toast.remove(), 6000);
+}
+window.showToast = showToast;
+
 document.addEventListener("DOMContentLoaded", () => {
   if ("serviceWorker" in navigator && window.isSecureContext) {
     navigator.serviceWorker.register("/service-worker.js", { scope: "/" });
@@ -21,7 +45,17 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   document.querySelector("[data-favorite]")?.addEventListener("click", async (event) => {
     const data = new URLSearchParams({url: path, label: document.querySelector("h1")?.textContent || document.title});
-    const response = await fetch("/ui/favorite", {method: "POST", headers: csrfHeaders, body: data});
+    let response;
+    try {
+      response = await fetch("/ui/favorite", {method: "POST", headers: csrfHeaders, body: data});
+    } catch (error) {
+      showToast("Could not reach the server. Check your connection and try again.", "error");
+      return;
+    }
+    if (!response.ok) {
+      showToast("Could not update favorites. Please try again.", "error");
+      return;
+    }
     const result = await response.json();
     event.currentTarget.textContent = result.active
       ? "Remove this page from favorites"
@@ -39,8 +73,18 @@ document.addEventListener("DOMContentLoaded", () => {
     lane.addEventListener("drop", async () => {
       if (!dragged) return;
       const data = new URLSearchParams({state: lane.dataset.state});
-      const response = await fetch(`/task-board/${dragged.dataset.ticket}/move`, {method: "POST", headers: csrfHeaders, body: data});
-      if (response.ok) lane.querySelector(".board-cards").appendChild(dragged);
+      let response;
+      try {
+        response = await fetch(`/task-board/${dragged.dataset.ticket}/move`, {method: "POST", headers: csrfHeaders, body: data});
+      } catch (error) {
+        showToast("Could not reach the server. The card was not moved.", "error");
+        return;
+      }
+      if (response.ok) {
+        lane.querySelector(".board-cards").appendChild(dragged);
+      } else {
+        showToast("Could not move this card. Please try again.", "error");
+      }
     });
   });
   document.querySelector("[data-start-tour]")?.addEventListener("click", () => {
@@ -50,14 +94,39 @@ document.addEventListener("DOMContentLoaded", () => {
       [".nav-menus", "Open favorites, history, notifications, help, and preferences."]
     ];
     let index = 0;
+    const endTour = () => {
+      document.querySelectorAll(".tour-focus").forEach(el => el.classList.remove("tour-focus"));
+      document.querySelector(".tour-popover")?.remove();
+    };
     const show = () => {
       document.querySelectorAll(".tour-focus").forEach(el => el.classList.remove("tour-focus"));
-      if (index >= steps.length) return alert("Tour complete.");
+      document.querySelector(".tour-popover")?.remove();
+      if (index >= steps.length) {
+        showToast("Tour complete.", "success");
+        return;
+      }
       const element = document.querySelector(steps[index][0]);
       element?.classList.add("tour-focus");
-      alert(steps[index][1]);
-      index += 1;
-      show();
+      const popover = document.createElement("div");
+      popover.className = "tour-popover";
+      popover.setAttribute("role", "dialog");
+      popover.setAttribute("aria-label", "Guided tour");
+      const text = document.createElement("p");
+      text.textContent = steps[index][1];
+      const actions = document.createElement("div");
+      actions.className = "tour-popover-actions";
+      const skip = document.createElement("button");
+      skip.type = "button";
+      skip.textContent = "Skip";
+      skip.addEventListener("click", endTour);
+      const next = document.createElement("button");
+      next.type = "button";
+      next.className = "primary";
+      next.textContent = index === steps.length - 1 ? "Done" : "Next";
+      next.addEventListener("click", () => { index += 1; show(); });
+      actions.append(skip, next);
+      popover.append(text, actions);
+      document.body.appendChild(popover);
     };
     show();
   });
