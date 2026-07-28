@@ -117,5 +117,9 @@ MSG
 %{_unitdir}/serviceops.service
 
 %changelog
+* Tue Jul 28 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.23.3-1
+- Security release: Flask 3.1.3, Authlib 1.6.12, requests 2.33.0, Werkzeug 3.1.6.
+- build-dist.sh now accepts an image digest to pin packaged installs to an
+  immutable repository@sha256:... reference instead of a mutable tag.
 * Tue Jul 28 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.23.2-1
 - Initial RPM packaging of the ServiceOps control plane.

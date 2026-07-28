@@ -11,9 +11,9 @@
   <label>Owning IT team<select name="group_id" required><option value="">Select a team</option>{% for team in teams %}<option value="{{ team.id }}" {% if kind == 'change' and not team.manager %}disabled{% endif %}>{{ team.name }}{% if kind == 'change' %} — {{ team.manager.name if team.manager else "manager not configured" }}{% endif %}</option>{% endfor %}</select></label>
   {% if kind == 'change' %}
   {% if change_freeze_message %}<div class="wide flash">{{ change_freeze_message }}</div>{% endif %}
-  <label>Change type<select name="change_type"><option>Normal</option><option>Standard</option><option>Emergency</option></select></label>
-  <label>Impact<select name="impact"><option>Low</option><option selected>Medium</option><option>High</option></select></label>
-  <label>Risk score<input type="number" min="0" max="100" name="risk_score" value="50"></label>
+  <label>Change type<span class="info-tip" tabindex="0" data-tip="Standard changes use a pre-authorized template. Normal changes require team-manager and CCB approval. Emergency changes use an accelerated but still auditable route — being submitted late is not, by itself, a valid emergency justification.">i</span><select name="change_type"><option>Normal</option><option>Standard</option><option>Emergency</option></select></label>
+  <label>Impact<span class="info-tip" tabindex="0" data-tip="How much of the business or how many users are affected if this change goes wrong.">i</span><select name="impact"><option>Low</option><option selected>Medium</option><option>High</option></select></label>
+  <label>Risk score<span class="info-tip" tabindex="0" data-tip="0-100 estimate of how likely this change is to cause an incident, based on scope, complexity, and rollback difficulty. Higher scores may require additional approval scrutiny.">i</span><input type="number" min="0" max="100" name="risk_score" value="50"></label>
   <label>Configuration item<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off"><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div></label>
   <label>Planned start<input type="datetime-local" name="planned_start"></label>
   <label>Planned end<input type="datetime-local" name="planned_end"></label>

@@ -139,7 +139,7 @@
 <section class="panel admin-section">
   <div class="panel-head"><div><h2>Change Control Board approvers</h2><p>Only users explicitly granted CCB approval authority are selected as voters for new non-standard changes. Removing authority does not rewrite historical decisions.</p></div></div>
   <table>
-    <thead><tr><th>User</th><th>Platform role</th><th>Team memberships</th><th>CCB authority</th></tr></thead>
+    <thead><tr><th>User</th><th>Platform role</th><th>Team memberships</th><th>CCB authority<span class="info-tip" tabindex="0" data-tip="Change Control Board approval authority. Only users granted this can vote on Normal/Emergency change approvals. Removing it does not alter past approval decisions.">i</span></th></tr></thead>
     <tbody>
       {% for user in ccb_candidates %}
       <tr>
