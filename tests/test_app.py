@@ -189,7 +189,7 @@ def test_migration_baseline_creates_fresh_schema_and_records_revision():
         revision = db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "20260726_0011"
+        assert revision == "20260727_0013"
         assert User.query.filter_by(username="admin").one()
     os.unlink(path)
 
@@ -217,7 +217,7 @@ def test_migration_baseline_adopts_existing_schema_without_data_loss():
         assert Knowledge.query.filter_by(title="Preserve during adoption").one()
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "20260726_0011"
+        ).scalar_one() == "20260727_0013"
     os.unlink(path)
 
 
@@ -259,7 +259,7 @@ def test_tenant_migration_is_reversible_and_preserves_records():
         )).scalar_one() == before
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-            ).scalar_one() == "20260726_0011"
+            ).scalar_one() == "20260727_0013"
     os.unlink(path)
 
 
