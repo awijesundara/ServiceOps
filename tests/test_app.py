@@ -191,7 +191,7 @@ def test_migration_baseline_creates_fresh_schema_and_records_revision():
         revision = db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "20260727_0013"
+        assert revision == "20260728_0014"
         assert User.query.filter_by(username="admin").one()
     os.unlink(path)
 
@@ -219,7 +219,7 @@ def test_migration_baseline_adopts_existing_schema_without_data_loss():
         assert Knowledge.query.filter_by(title="Preserve during adoption").one()
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "20260727_0013"
+        ).scalar_one() == "20260728_0014"
     os.unlink(path)
 
 
@@ -261,7 +261,7 @@ def test_tenant_migration_is_reversible_and_preserves_records():
         )).scalar_one() == before
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-            ).scalar_one() == "20260727_0013"
+            ).scalar_one() == "20260728_0014"
     os.unlink(path)
 
 
@@ -2149,3 +2149,54 @@ def test_webhook_rejects_hostname_that_resolves_to_private_address(monkeypatch, 
             lambda host, port: [(2, 1, 6, "", ("93.184.216.34", 0))],
         )
         assert integration_endpoint_resolves_safely("https://hooks.example.test/serviceops")
+
+
+def test_knowledge_publish_updated_version_archives_previous(client, app):
+    login(client)
+    assert client.post("/knowledge/new", data={
+        "title": "Reset a locked account", "category": "Access",
+        "body": "Original steps.",
+    }).status_code == 302
+    with app.app_context():
+        article = Knowledge.query.filter_by(title="Reset a locked account").one()
+        article_id = article.id
+    detail = client.get(f"/knowledge/{article_id}")
+    assert b"Original steps." in detail.data
+    assert client.post(f"/knowledge/{article_id}/edit", data={
+        "title": "Reset a locked account", "category": "Access",
+        "body": "Updated steps with MFA re-enrollment.",
+    }).status_code == 302
+    with app.app_context():
+        original = db.session.get(Knowledge, article_id)
+        assert original.archived is True
+        assert original.published is False
+        new_version = db.session.get(Knowledge, original.superseded_by_id)
+        assert new_version.body == "Updated steps with MFA re-enrollment."
+        assert new_version.published is True
+        assert new_version.archived is False
+        new_version_id = new_version.id
+    listing = client.get("/knowledge")
+    assert b"Updated steps with MFA re-enrollment." in listing.data
+    assert listing.data.count(b"Reset a locked account") == 1
+    with app.app_context():
+        assert Knowledge.query.filter_by(archived=True).count() == 1
+    archived_detail = client.get(f"/knowledge/{article_id}")
+    assert b"archived" in archived_detail.data.lower()
+    assert client.get(f"/knowledge/{new_version_id}").status_code == 200
+
+
+def test_knowledge_archive_without_new_version_hides_from_search(client, app):
+    login(client)
+    assert client.post("/knowledge/new", data={
+        "title": "Deprecated VPN setup", "category": "Network",
+        "body": "This process no longer applies.",
+    }).status_code == 302
+    with app.app_context():
+        article_id = Knowledge.query.filter_by(title="Deprecated VPN setup").one().id
+    assert client.post(f"/knowledge/{article_id}/archive").status_code == 302
+    assert b"Deprecated VPN setup" not in client.get("/knowledge").data
+    with app.app_context():
+        article = db.session.get(Knowledge, article_id)
+        assert article.archived is True
+        assert article.published is False
+        assert article.superseded_by_id is None

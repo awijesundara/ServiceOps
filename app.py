@@ -197,9 +197,12 @@ class Knowledge(db.Model):
     category = db.Column(db.String(80), nullable=False, default="General")
     body = db.Column(db.Text, nullable=False)
     published = db.Column(db.Boolean, nullable=False, default=True)
+    archived = db.Column(db.Boolean, nullable=False, default=False)
+    superseded_by_id = db.Column(db.Integer, db.ForeignKey("knowledge.id"))
     author_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     author = db.relationship("User")
+    superseded_by = db.relationship("Knowledge", remote_side=[id])
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
@@ -4108,15 +4111,21 @@ def create_app(test_config=None):
     @app.get("/work/open")
     @login_required
     def open_work():
+        priority = request.args.get("priority", "").strip()
         ticket_query = visible_ticket_query(current_user)
-        open_tickets = ticket_query.filter(
+        open_ticket_query = ticket_query.filter(
             Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])
-        ).order_by(Ticket.priority, Ticket.updated_at.desc()).all()
+        )
+        if priority:
+            open_ticket_query = open_ticket_query.filter_by(priority=priority)
+        open_tickets = open_ticket_query.order_by(Ticket.priority, Ticket.updated_at.desc()).all()
         open_requests = visible_catalog_request_query(current_user).filter(
             CatalogRequest.state.notin_(["Closed Complete", "Closed Incomplete", "Cancelled"])
         ).order_by(CatalogRequest.opened_at.desc()).all()
+        if priority:
+            open_requests = []
         return render_template(
-            "open_work.html", open_tickets=open_tickets, open_requests=open_requests,
+            "open_work.html", open_tickets=open_tickets, open_requests=open_requests, priority=priority,
         )
 
     @app.get("/")
@@ -4889,7 +4898,7 @@ def create_app(test_config=None):
     @login_required
     def knowledge():
         q = request.args.get("q", "").strip()
-        query = tenant_query(Knowledge).filter_by(published=True)
+        query = tenant_query(Knowledge).filter_by(published=True, archived=False)
         if q:
             query = query.filter(db.or_(Knowledge.title.ilike(f"%{q}%"), Knowledge.body.ilike(f"%{q}%")))
         return render_template("knowledge.html", articles=query.order_by(Knowledge.created_at.desc()).all(), q=q)
@@ -4906,6 +4915,47 @@ def create_app(test_config=None):
             db.session.commit()
             return redirect(url_for("knowledge"))
         return render_template("knowledge_form.html")
+
+    @app.get("/knowledge/<int:article_id>")
+    @login_required
+    def knowledge_detail(article_id):
+        article = tenant_query(Knowledge).filter_by(id=article_id).first_or_404()
+        history = tenant_query(Knowledge).filter_by(superseded_by_id=article.id).order_by(Knowledge.created_at.desc()).all()
+        return render_template("knowledge_detail.html", article=article, history=history)
+
+    @app.route("/knowledge/<int:article_id>/edit", methods=["GET", "POST"])
+    @roles("agent", "manager", "admin")
+    def knowledge_edit(article_id):
+        article = tenant_query(Knowledge).filter_by(id=article_id).first_or_404()
+        if article.archived:
+            abort(409, description="This article is archived. Create a new article instead of editing an archived version.")
+        if request.method == "POST":
+            new_version = Knowledge(
+                title=request.form["title"], category=request.form["category"],
+                body=request.form["body"], author_id=current_user.id, published=True,
+            )
+            db.session.add(new_version)
+            db.session.flush()
+            article.archived = True
+            article.published = False
+            article.superseded_by_id = new_version.id
+            audit("supersede", f"KB{article.id:06d}", f"Replaced by KB{new_version.id:06d}")
+            audit("create", f"KB{new_version.id:06d}", new_version.title)
+            db.session.commit()
+            flash("Published an updated version. The previous version is preserved and archived.", "success")
+            return redirect(url_for("knowledge_detail", article_id=new_version.id))
+        return render_template("knowledge_form.html", article=article)
+
+    @app.post("/knowledge/<int:article_id>/archive")
+    @roles("agent", "manager", "admin")
+    def knowledge_archive(article_id):
+        article = tenant_query(Knowledge).filter_by(id=article_id).first_or_404()
+        article.archived = True
+        article.published = False
+        audit("archive", f"KB{article.id:06d}", article.title)
+        db.session.commit()
+        flash("Article archived. It no longer appears in knowledge search but its history is preserved.", "success")
+        return redirect(url_for("knowledge_detail", article_id=article.id))
 
     @app.get("/assets")
     @roles("agent", "manager", "admin")
@@ -5765,6 +5815,7 @@ def create_app(test_config=None):
     @app.get("/cmdb")
     @roles("agent", "manager", "admin")
     def cmdb():
+        status = request.args.get("status", "").strip()
         cis = tenant_query(ConfigurationItem).order_by(
             ConfigurationItem.ci_class, ConfigurationItem.name
         ).all()
@@ -5773,7 +5824,8 @@ def create_app(test_config=None):
             CIRelationship.parent_id.in_(ci_ids),
             CIRelationship.child_id.in_(ci_ids),
         ).all()
-        return render_template("cmdb.html", cis=cis, relationships=relationships)
+        visible_cis = [ci for ci in cis if not status or ci.operational_status == status] if status else cis
+        return render_template("cmdb.html", cis=cis, visible_cis=visible_cis, relationships=relationships, status=status)
 
     @app.route("/cmdb/new", methods=["GET", "POST"])
     @roles("admin")
@@ -6467,6 +6519,16 @@ def create_app(test_config=None):
         ).count()
         return render_template("analytics.html", ticket_states=ticket_states, domain_counts=domain_counts,
                                priority_counts=priority_counts, overdue=overdue, modules=DOMAIN_CONFIG)
+
+    @app.get("/analytics/overdue")
+    @roles("agent", "manager", "admin")
+    def analytics_overdue():
+        record_ids = [row.id for row in visible_enterprise_record_query(current_user).all()]
+        overdue_records = EnterpriseRecord.query.filter(
+            EnterpriseRecord.id.in_(record_ids), EnterpriseRecord.due_at < now(),
+            EnterpriseRecord.state.notin_(["Closed", "Resolved", "Completed"])
+        ).order_by(EnterpriseRecord.due_at).all()
+        return render_template("analytics_overdue.html", overdue_records=overdue_records, modules=DOMAIN_CONFIG)
 
     @app.get("/internal/lookup/cis")
     @login_required

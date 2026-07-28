@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ article.title }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><p class="eyebrow">KB{{ '%07d'|format(article.id) }} · {{ article.category }}{% if article.archived %} · ARCHIVED{% endif %}</p><h1>{{ article.title }}</h1><p>By {{ article.author.name }} · {{ article.created_at.strftime('%b %d, %Y') }}</p></div>
+  <a class="button" href="{{ url_for('knowledge') }}">← Back to knowledge base</a>
+</header>
+
+{% if article.archived %}
+<div class="flash">This version is archived and no longer appears in knowledge search.{% if article.superseded_by %} Superseded by <a href="{{ url_for('knowledge_detail', article_id=article.superseded_by_id) }}">KB{{ '%07d'|format(article.superseded_by_id) }} — {{ article.superseded_by.title }}</a>.{% endif %}</div>
+{% endif %}
+
+<section class="panel">
+  <p class="pre">{{ article.body }}</p>
+</section>
+
+{% if current_user.role in ['agent','manager','admin'] and not article.archived %}
+<section class="panel actions">
+  <a class="button" href="{{ url_for('knowledge_edit', article_id=article.id) }}">Publish updated version</a>
+  <form method="post" action="{{ url_for('knowledge_archive', article_id=article.id) }}"><button class="button" title="Archives this article. It will no longer appear in knowledge search, but its content and audit history are preserved.">Archive</button></form>
+</section>
+{% endif %}
+
+{% if history %}
+<section class="panel">
+  <h2>Version history</h2>
+  <table>
+    <thead><tr><th>Version</th><th>Title</th><th>Author</th><th>Published</th></tr></thead>
+    <tbody>
+      {% for h in history %}
+      <tr><td><a href="{{ url_for('knowledge_detail', article_id=h.id) }}">KB{{ '%07d'|format(h.id) }}</a></td><td>{{ h.title }}</td><td>{{ h.author.name }}</td><td>{{ h.created_at.strftime('%b %d, %Y') }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

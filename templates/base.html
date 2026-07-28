@@ -40,13 +40,13 @@
     <small>OPERATIONS</small>
     <a href="{{ url_for('module_records', domain='problem') }}" {% if nav_active('module_records', domain='problem') %}class="active" aria-current="page"{% endif %}>Problems</a>
     <a href="{{ url_for('module_records', domain='event') }}" {% if nav_active('module_records', domain='event') %}class="active" aria-current="page"{% endif %}>IT operations</a>
-    <a href="{{ url_for('cmdb') }}" {% if nav_active('cmdb') %}class="active" aria-current="page"{% endif %}>CMDB & service map</a>
+    <a href="{{ url_for('cmdb') }}" {% if nav_active('cmdb') %}class="active" aria-current="page"{% endif %}>CMDB & service map<span class="info-tip" tabindex="0" data-tip="CMDB = Configuration Management Database: tracks every server, application, and service (CI = Configuration Item) and how they depend on one another.">i</span></a>
     <a href="{{ url_for('assets') }}" {% if nav_active('assets') %}class="active" aria-current="page"{% endif %}>Assets</a>
     <a href="{{ url_for('analytics') }}" {% if nav_active('analytics') %}class="active" aria-current="page"{% endif %}>Analytics</a>
     {% endif %}
     {% if current_user.role == 'admin' %}
     <small>ADMINISTRATION</small>
-    <a href="{{ url_for('itil_admin') }}" {% if nav_active('itil_admin') %}class="active" aria-current="page"{% endif %}>ITIL configuration</a>
+    <a href="{{ url_for('itil_admin') }}" {% if nav_active('itil_admin') %}class="active" aria-current="page"{% endif %}>ITIL configuration<span class="info-tip" tabindex="0" data-tip="ITIL = Information Technology Infrastructure Library, the industry-standard framework of IT service management practices (incidents, problems, changes, requests) ServiceOps' workflows follow.">i</span></a>
     <a href="{{ url_for('system_settings') }}" {% if nav_active('system_settings') %}class="active" aria-current="page"{% endif %}>System settings</a>
     <a href="{{ url_for('users') }}" {% if nav_active('users') %}class="active" aria-current="page"{% endif %}>Users & roles</a>
     <a href="{{ url_for('audit_log') }}" {% if nav_active('audit_log') %}class="active" aria-current="page"{% endif %}>Audit log</a>
