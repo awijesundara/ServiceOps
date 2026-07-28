@@ -13,6 +13,11 @@ RUN if [ -n "$PIP_INDEX_URL" ]; then pip config set global.index-url "$PIP_INDEX
     && if [ -n "$PIP_TRUSTED_HOST" ]; then pip config set global.trusted-host "$PIP_TRUSTED_HOST"; fi \
     && pip install --no-cache-dir -r requirements.txt
 COPY . .
+# Never ship the disposable-fixture loader in the production image: it seeds
+# well-known weak passwords and must only be reachable from a developer
+# checkout (or Dockerfile.test), not from `docker exec` against a running
+# production container.
+RUN rm -f /app/tools/load_test_fixture.py
 RUN mkdir -p /app/uploads && chmod 755 /app/tools/container-entrypoint.sh /app/tools/gunicorn-entrypoint.sh && chown -R app:app /app
 USER app
 EXPOSE 8080
