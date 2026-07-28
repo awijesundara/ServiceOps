@@ -24,9 +24,11 @@ from app import (APIClient, APIIdempotencyRecord, Approval, ApprovalChain, Asset
                  deploy_workflow_package, process_workflow_jobs,
                  process_workflow_schedules, queue_workflow_event,
                  simulate_workflows,
-                 integration_endpoint_valid, process_outbox,
+                 integration_endpoint_valid, integration_endpoint_resolves_safely,
+                 is_safe_internal_path, process_outbox,
                  provision_external_user, secret_value, settings_cipher,
-                 rotate_audit_integrity_key, verify_audit_chain)
+                 rotate_audit_integrity_key, tenant_context_id, TenantResolutionError,
+                 verify_audit_chain)
 from werkzeug.security import generate_password_hash
 from serviceops_core.security import role_has_action, validate_policy
 from serviceops_core.priority import calculate_priority, validate_priority_policy
@@ -330,12 +332,17 @@ def test_audit_key_rotation_retention_and_dedicated_siem_delivery(
 
     class FakeResponse:
         status_code = 202
+        is_redirect = False
 
-    def fake_post(url, json, headers, timeout):
+    def fake_post(url, json, headers, timeout, allow_redirects=True):
         deliveries.append((url, json, headers, timeout))
         return FakeResponse()
 
     monkeypatch.setattr("app.requests.post", fake_post)
+    monkeypatch.setattr(
+        "app.socket.getaddrinfo",
+        lambda host, port: [(2, 1, 6, "", ("93.184.216.34", 0))],
+    )
     login(client)
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
@@ -529,13 +536,18 @@ def test_durable_smtp_signed_webhook_and_teams_delivery(monkeypatch, app):
 
     class FakeResponse:
         status_code = 202
+        is_redirect = False
 
-    def fake_post(url, json, headers, timeout):
+    def fake_post(url, json, headers, timeout, allow_redirects=True):
         webhook_calls.append((url, json, headers, timeout))
         return FakeResponse()
 
     monkeypatch.setattr("app.smtplib.SMTP", FakeSMTP)
     monkeypatch.setattr("app.requests.post", fake_post)
+    monkeypatch.setattr(
+        "app.socket.getaddrinfo",
+        lambda host, port: [(2, 1, 6, "", ("93.184.216.34", 0))],
+    )
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
         settings = {
@@ -1337,6 +1349,9 @@ def test_material_change_edit_supersedes_approvals_and_notifies_approvers(client
             target_type="ticket", target_id=ticket_id
         ).one().id
         notifications_before = Notification.query.count()
+        notification_id_marker = db.session.execute(
+            text("SELECT COALESCE(MAX(id), 0) FROM notification")
+        ).scalar_one()
     revised = client.post(f"/change/{ticket_id}/plan", data={
         "title": "Approved production deployment",
         "description": "Revised production purpose.",
@@ -1361,6 +1376,25 @@ def test_material_change_edit_supersedes_approvals_and_notifies_approvers(client
             target_type="ticket", target_id=ticket_id,
             event="Approval restarted",
         ).one()
+        new_chain = chains[-1]
+        stage1_approver_ids = {vote.approver_id for vote in new_chain.gates[0].votes}
+        stage2_approver_ids = {vote.approver_id for vote in new_chain.gates[1].votes}
+        # Each stage-1 (owning-team manager) approver gets exactly one
+        # reapproval notification -- create_approval_chain() and
+        # supersede_change_approval() must not both notify them.
+        for approver_id in stage1_approver_ids:
+            assert Notification.query.filter(
+                Notification.id > notification_id_marker,
+                Notification.user_id == approver_id,
+                Notification.title == f"Reapproval required: {ticket.number} v2",
+            ).count() == 1
+        # Stage-2 (CCB) approvers must not be notified at all yet -- their gate
+        # has not been activated because stage 1 hasn't approved v2.
+        for approver_id in stage2_approver_ids - stage1_approver_ids:
+            assert Notification.query.filter(
+                Notification.id > notification_id_marker,
+                Notification.user_id == approver_id,
+            ).count() == 0
 
 
 def test_required_change_tasks_block_parent_completion(client, app):
@@ -2062,3 +2096,56 @@ def test_password_rotation_invalidates_other_sessions(app):
     stale = second.get("/", follow_redirects=False)
     assert stale.status_code == 302
     assert stale.headers["Location"].endswith("/login")
+
+
+def test_tenant_context_fails_closed_when_authenticated_user_has_no_tenant(app):
+    from flask_login import login_user
+
+    with app.test_request_context("/"):
+        with app.app_context():
+            admin = User.query.filter_by(username="admin").one()
+            db.session.expunge(admin)
+        admin.tenant_id = None  # simulate corrupt data without violating the NOT NULL column
+        login_user(admin)
+        with pytest.raises(TenantResolutionError):
+            tenant_context_id()
+
+
+def test_preferences_reject_open_redirect_start_page(client, app):
+    login(client)
+    response = client.post("/preferences", data={
+        "density": "comfortable", "font_scale": "100",
+        "start_page": "https://evil.example/phish",
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        pref = UserPreference.query.filter_by(
+            user_id=User.query.filter_by(username="admin").one().id
+        ).one()
+        assert pref.start_page == "/"
+
+    ok_response = client.post("/preferences", data={
+        "density": "comfortable", "font_scale": "100",
+        "start_page": "/dashboard",
+    })
+    assert ok_response.status_code == 302
+    with app.app_context():
+        pref = UserPreference.query.filter_by(
+            user_id=User.query.filter_by(username="admin").one().id
+        ).one()
+        assert pref.start_page == "/dashboard"
+
+
+def test_webhook_rejects_hostname_that_resolves_to_private_address(monkeypatch, app):
+    with app.app_context():
+        assert integration_endpoint_valid("https://hooks.example.test/serviceops")
+        monkeypatch.setattr(
+            "app.socket.getaddrinfo",
+            lambda host, port: [(2, 1, 6, "", ("10.0.0.5", 0))],
+        )
+        assert not integration_endpoint_resolves_safely("https://hooks.example.test/serviceops")
+        monkeypatch.setattr(
+            "app.socket.getaddrinfo",
+            lambda host, port: [(2, 1, 6, "", ("93.184.216.34", 0))],
+        )
+        assert integration_endpoint_resolves_safely("https://hooks.example.test/serviceops")

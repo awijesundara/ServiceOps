@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 from alembic import command
 from alembic.config import Config as AlembicConfig
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 
 from app import create_app, db
@@ -93,6 +94,23 @@ def migration_config() -> AlembicConfig:
     return config
 
 
+def head_and_prior_revisions(config: AlembicConfig) -> tuple[str, str]:
+    """Resolve the current migration head and the revision immediately before it.
+
+    Hardcoding these as literal revision IDs made this script go stale every
+    time a new migration landed; deriving them from the script directory keeps
+    the rehearsal valid for whatever the tree's actual head is.
+    """
+    script = ScriptDirectory.from_config(config)
+    head = script.get_current_head()
+    if head is None:
+        raise RuntimeError("No migration head found in migrations/versions.")
+    down_revision = script.get_revision(head).down_revision
+    if down_revision is None:
+        raise RuntimeError(f"Head revision {head} has no prior revision to downgrade to.")
+    return head, down_revision
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--rows", type=int, default=100_000)
@@ -103,22 +121,23 @@ def main() -> int:
 
     app = create_app({"AUTO_MIGRATE_IN_TESTS": False})
     with app.app_context():
+        head, prior_revision = head_and_prior_revisions(migration_config())
         revision = db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        if revision != "20260726_0011":
+        if revision != head:
             raise RuntimeError(
-                f"Rehearsal clone must start at 20260726_0011, found {revision}."
+                f"Rehearsal clone must start at head {head}, found {revision}."
             )
         seed_representative_rows(args.rows)
         before = snapshot()
         db.session.remove()
 
-        command.downgrade(migration_config(), "20260726_0010")
+        command.downgrade(migration_config(), prior_revision)
         downgraded_revision = db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        if downgraded_revision != "20260726_0010":
+        if downgraded_revision != prior_revision:
             raise RuntimeError("Downgrade revision verification failed.")
         after_downgrade = snapshot()
         if after_downgrade != before:
@@ -129,7 +148,7 @@ def main() -> int:
         upgraded_revision = db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        if upgraded_revision != "20260726_0011":
+        if upgraded_revision != head:
             raise RuntimeError("Roll-forward revision verification failed.")
         if "integrity_key_id" not in {
             column["name"] for column in inspect(db.engine).get_columns("audit")
