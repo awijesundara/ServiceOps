@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Open work · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">NEEDS ATTENTION</p><h1>Open work</h1><p>Every incident, change, and service request that isn't resolved or closed yet.</p></div></header>
+<header class="page-head"><div><p class="eyebrow">NEEDS ATTENTION</p><h1>Open work</h1><p>{% if priority %}Open incidents and changes at priority {{ priority }}.{% else %}Every incident, change, and service request that isn't resolved or closed yet.{% endif %}</p></div>{% if priority %}<a class="button" href="{{ url_for('open_work') }}">Clear filter</a>{% endif %}</header>
 
 <section class="panel table-panel">
-<h2>Open incidents & changes</h2>
+<h2>Open incidents & changes{% if priority %} <small>· {{ priority }}</small>{% endif %}</h2>
 <table>
   <thead><tr><th>Number</th><th>Summary</th><th>State</th><th>Priority</th><th>Updated</th></tr></thead>
   <tbody>
@@ -23,6 +23,7 @@
 </table>
 </section>
 
+{% if not priority %}
 <section class="panel table-panel">
 <h2>Open service requests</h2>
 <table>
@@ -41,4 +42,5 @@
   </tbody>
 </table>
 </section>
+{% endif %}
 {% endblock %}

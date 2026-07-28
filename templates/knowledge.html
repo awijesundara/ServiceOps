@@ -3,5 +3,5 @@
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">SELF SERVICE</p><h1>Knowledge base</h1><p>Find answers and resolve common issues.</p></div>{% if current_user.role in ['agent','manager','admin'] %}<a class="primary button" href="{{ url_for('knowledge_new') }}">+ New article</a>{% endif %}</header>
 <form class="filters"><input name="q" value="{{ q }}" placeholder="Search the knowledge base…"><button>Search</button></form>
-<section class="article-grid">{% for a in articles %}<article class="panel"><span class="tag">KB{{ '%07d'|format(a.id) }} · {{ a.category }}</span><h2>{{ a.title }}</h2><p>{{ a.body }}</p><small>By {{ a.author.name }} · {{ a.created_at.strftime('%b %d, %Y') }}</small></article>{% else %}<div class="panel empty">No articles found.</div>{% endfor %}</section>
+<section class="article-grid">{% for a in articles %}<article class="panel"><span class="tag">KB{{ '%07d'|format(a.id) }} · {{ a.category }}</span><h2><a href="{{ url_for('knowledge_detail', article_id=a.id) }}">{{ a.title }}</a></h2><p>{{ a.body }}</p><small>By {{ a.author.name }} · {{ a.created_at.strftime('%b %d, %Y') }}</small></article>{% else %}<div class="panel empty">No articles found.</div>{% endfor %}</section>
 {% endblock %}
