@@ -510,7 +510,7 @@ def test_api_client_admin_one_time_secret_and_pwa_privacy(client, app):
     assert b"/ticket/" not in worker.data
     assert b"caches.open" in worker.data
     assert b"serviceops-shell-v5" in worker.data
-    assert b"/static/itil.css?v=1.26.1" in worker.data
+    assert b"/static/itil.css?v=1.26.2" in worker.data
     assert worker.data.index(b"fetch(event.request)") < worker.data.index(
         b"caches.match(event.request)"
     )
