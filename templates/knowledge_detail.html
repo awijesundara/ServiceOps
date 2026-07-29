@@ -2,7 +2,7 @@
 {% block title %}{{ article.title }} · {{ instance_name }}{% endblock %}
 {% block content %}
 <header class="page-head">
-  <div><p class="eyebrow">KB{{ '%07d'|format(article.id) }} · {{ article.category }}{% if article.archived %} · ARCHIVED{% endif %}</p><h1>{{ article.title }}</h1><p>By {{ article.author.name }} · {{ article.created_at.strftime('%b %d, %Y') }}</p></div>
+  <div><p class="eyebrow">KB{{ '%07d'|format(article.id) }} · {{ article.category }}{% if article.archived %} · ARCHIVED{% endif %}</p><h1>{{ article.title }}</h1><p>By {{ article.author.name }} · {{ (article.created_at|usertime('%b %d, %Y')) }}</p></div>
   <a class="button" href="{{ url_for('knowledge') }}">← Back to knowledge base</a>
 </header>
 
@@ -28,7 +28,7 @@
     <thead><tr><th>Version</th><th>Title</th><th>Author</th><th>Published</th></tr></thead>
     <tbody>
       {% for h in history %}
-      <tr><td><a href="{{ url_for('knowledge_detail', article_id=h.id) }}">KB{{ '%07d'|format(h.id) }}</a></td><td>{{ h.title }}</td><td>{{ h.author.name }}</td><td>{{ h.created_at.strftime('%b %d, %Y') }}</td></tr>
+      <tr><td><a href="{{ url_for('knowledge_detail', article_id=h.id) }}">KB{{ '%07d'|format(h.id) }}</a></td><td>{{ h.title }}</td><td>{{ h.author.name }}</td><td>{{ (h.created_at|usertime('%b %d, %Y')) }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

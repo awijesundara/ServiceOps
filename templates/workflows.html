@@ -34,7 +34,7 @@
     <div class="wide actions"><button class="primary">Create schedule</button></div>
   </form></details>
   <table><thead><tr><th>Schedule</th><th>Ticket</th><th>Interval</th><th>Next run</th><th>Last run</th><th>Status</th></tr></thead><tbody>
-  {% for schedule in schedules %}<tr><td><strong>{{ schedule.name }}</strong><small><code>{{ schedule.schedule_key }}</code></small></td><td>{{ schedule.ticket.number }}</td><td>{{ schedule.interval_minutes }} minutes</td><td>{{ schedule.next_run_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ schedule.last_run_at.strftime('%Y-%m-%d %H:%M') if schedule.last_run_at else 'Never' }}</td><td><form method="post"><input type="hidden" name="action" value="toggle_schedule"><input type="hidden" name="schedule_id" value="{{ schedule.id }}"><button class="button">{{ 'Disable' if schedule.active else 'Enable' }}</button></form></td></tr>{% else %}<tr><td colspan="6">No recurring schedules configured.</td></tr>{% endfor %}
+  {% for schedule in schedules %}<tr><td><strong>{{ schedule.name }}</strong><small><code>{{ schedule.schedule_key }}</code></small></td><td>{{ schedule.ticket.number }}</td><td>{{ schedule.interval_minutes }} minutes</td><td>{{ (schedule.next_run_at|usertime('%Y-%m-%d %H:%M')) }}</td><td>{{ (schedule.last_run_at|usertime('%Y-%m-%d %H:%M')) if schedule.last_run_at else 'Never' }}</td><td><form method="post"><input type="hidden" name="action" value="toggle_schedule"><input type="hidden" name="schedule_id" value="{{ schedule.id }}"><button class="button">{{ 'Disable' if schedule.active else 'Enable' }}</button></form></td></tr>{% else %}<tr><td colspan="6">No recurring schedules configured.</td></tr>{% endfor %}
   </tbody></table>
 </section>
 <section class="panel admin-section"><h2>Recent workflow jobs</h2>
@@ -44,7 +44,7 @@
 </section>
 <section class="panel admin-section"><h2>Execution evidence</h2>
   <table><thead><tr><th>Correlation</th><th>Workflow version</th><th>State</th><th>Started</th><th>Error</th></tr></thead><tbody>
-  {% for execution in executions %}<tr><td><code>{{ execution.correlation_id }}</code></td><td>{{ execution.version.definition.workflow_key }} v{{ execution.version.version }}</td><td>{{ execution.state }}</td><td>{{ execution.started_at.strftime('%b %d, %H:%M') }}</td><td>{{ execution.error or "—" }}</td></tr>{% else %}<tr><td colspan="5">No workflow executions.</td></tr>{% endfor %}
+  {% for execution in executions %}<tr><td><code>{{ execution.correlation_id }}</code></td><td>{{ execution.version.definition.workflow_key }} v{{ execution.version.version }}</td><td>{{ execution.state }}</td><td>{{ (execution.started_at|usertime('%b %d, %H:%M')) }}</td><td>{{ execution.error or "—" }}</td></tr>{% else %}<tr><td colspan="5">No workflow executions.</td></tr>{% endfor %}
   </tbody></table>
 </section>
 {% endblock %}

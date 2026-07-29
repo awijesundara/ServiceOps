@@ -8,7 +8,7 @@
 <div class="detail-grid">
 <section class="panel"><h2>Clients</h2>
 <table><thead><tr><th>Name</th><th>Acting user</th><th>Scopes</th><th>Last used</th><th>Status</th><th></th></tr></thead><tbody>
-{% for client in clients %}<tr><td><strong>{{ client.name }}</strong><small>{{ client.token_prefix }}…</small></td><td>{{ client.acting_user.name }}</td><td>{{ client.scopes|sort|join(', ') }}</td><td>{{ client.last_used_at.strftime('%Y-%m-%d %H:%M') if client.last_used_at else 'Never' }}</td><td>{{ 'Active' if client.active else 'Revoked' }}</td><td>{% if client.active %}<form method="post" action="{{ url_for('api_client_revoke', client_id=client.id) }}"><button>Revoke</button></form>{% endif %}</td></tr>
+{% for client in clients %}<tr><td><strong>{{ client.name }}</strong><small>{{ client.token_prefix }}…</small></td><td>{{ client.acting_user.name }}</td><td>{{ client.scopes|sort|join(', ') }}</td><td>{{ (client.last_used_at|usertime('%Y-%m-%d %H:%M')) if client.last_used_at else 'Never' }}</td><td>{{ 'Active' if client.active else 'Revoked' }}</td><td>{% if client.active %}<form method="post" action="{{ url_for('api_client_revoke', client_id=client.id) }}"><button>Revoke</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="6">No API clients.</td></tr>{% endfor %}
 </tbody></table></section>
 <aside class="panel"><h2>Create client</h2><form method="post" class="stack">

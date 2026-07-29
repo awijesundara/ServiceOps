@@ -59,7 +59,7 @@
     {% endif %}
   </nav>
   <div class="profile">
-    <div class="avatar">{{ current_user.name[0] }}</div>
+    {{ user_avatar(current_user) }}
     <a href="{{ url_for('profile') }}"><strong>{{ current_user.name }}</strong><small>{{ current_user.role }}</small></a>
     <form action="{{ url_for('logout') }}" method="post"><button class="link-button" aria-label="Sign out">↗</button></form>
   </div>
@@ -84,7 +84,7 @@
         {% for row in ui_history %}<a href="{{ row.url }}">{{ row.label }}</a>{% else %}<p>No recent pages.</p>{% endfor %}
       </div>
     </details>
-    <a class="nav-icon" href="{{ url_for('notifications') }}" title="Notifications" aria-label="Notifications">♢{% if unread_notifications %}<b>{{ unread_notifications }}</b>{% endif %}</a>
+    <a class="nav-icon" href="{{ url_for('notifications') }}" title="Notifications" aria-label="Notifications">🔔︎{% if unread_notifications %}<b>{{ unread_notifications }}</b>{% endif %}</a>
     <a class="nav-icon" href="{{ url_for('help_center') }}" title="Help" aria-label="Help">?</a>
     <a class="nav-icon" href="{{ url_for('preferences') }}" title="Preferences" aria-label="Preferences">⚙</a>
   </div>

@@ -5,7 +5,7 @@
 <section class="record-shell task-record-shell">
   <header class="record-toolbar">
     <div class="record-identity"><a class="record-back" href="{{ url_for('module_records', domain=record.domain) }}" aria-label="Back to {{ config.name }}">‹</a><span class="record-type-icon" aria-hidden="true">{{ record.number[:1] }}</span><div><strong>{{ record.record_type }}</strong><small>{{ record.number }}</small></div></div>
-    <div class="record-actions"><span class="record-updated">Updated {{ record.updated_at.strftime('%b %d, %H:%M') }}</span>{% if can_manage_record %}<button class="button" type="submit" form="enterprise-record-form">Update</button>{% endif %}</div>
+    <div class="record-actions"><span class="record-updated">Updated {{ (record.updated_at|usertime('%b %d, %H:%M')) }}</span>{% if can_manage_record %}<button class="button" type="submit" form="enterprise-record-form">Update</button>{% endif %}</div>
   </header>
   {% include "_state_track.html" %}
   <form method="post" id="enterprise-record-form" class="record-form">
@@ -19,8 +19,8 @@
       <label><span>Risk</span><select name="risk" {% if not can_manage_record %}disabled{% endif %}>{% for risk in ['Low','Medium','High','Critical'] %}<option {% if record.risk==risk %}selected{% endif %}>{{ risk }}</option>{% endfor %}</select></label>
       <label><span>Configuration item</span><input value="{{ primary_ci_link.ci.name if primary_ci_link else 'Not selected' }}" disabled></label>
       <label><span>Assigned to</span><select name="assignee_id" {% if not can_manage_record %}disabled{% endif %}><option value="">Unassigned</option>{% for user in agents %}<option value="{{ user.id }}" {% if record.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
-      <label><span>Opened</span><input value="{{ record.created_at.strftime('%b %d, %Y · %H:%M') }}" disabled></label>
-      <label><span>Due</span><input value="{{ record.due_at.strftime('%b %d, %Y · %H:%M') if record.due_at else 'Not set' }}" disabled></label>
+      <label><span>Opened</span><input value="{{ (record.created_at|usertime('%b %d, %Y · %H:%M')) }}" disabled></label>
+      <label><span>Due</span><input value="{{ (record.due_at|usertime('%b %d, %Y · %H:%M')) if record.due_at else 'Not set' }}" disabled></label>
     </div>
     <div class="record-long-fields"><label class="required-field"><span>Short description</span><input value="{{ record.title }}" disabled></label><label class="required-field"><span>Description</span><textarea rows="6" disabled>{{ record.description }}</textarea></label></div>
     {% if can_manage_record %}<footer class="record-footer-actions"><button class="primary">Update record</button></footer>{% endif %}
@@ -33,7 +33,7 @@
 
 <section class="panel event-history-panel" id="event-history">
   <header class="section-heading"><div><p class="eyebrow">ACTIVITY</p><h2>Event history</h2></div><span>{{ history|length }} events</span></header>
-  <div class="event-stream">{% for event in history %}<article class="event-entry"><div class="event-marker">{{ event.actor.name[0] if event.actor else 'S' }}</div><div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ event.created_at.strftime('%b %d, %Y · %H:%M:%S') }}</time></div><small>{{ event.actor.name if event.actor else 'System' }}</small>{% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span>→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}{% if event.details %}<p>{{ event.details }}</p>{% endif %}</div></article>{% endfor %}<article class="event-entry"><div class="event-marker">{{ record.requester.name[0] }}</div><div class="event-body"><div><strong>Opened</strong><time>{{ record.created_at.strftime('%b %d, %Y · %H:%M:%S') }}</time></div><small>{{ record.requester.name }}</small><p>{{ record.record_type }} {{ record.number }} opened as {{ record.priority }} · {{ record.risk }} risk.</p></div></article></div>
+  <div class="event-stream">{% for event in history %}<article class="event-entry">{{ user_avatar(event.actor, 'event-marker') }}<div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ event.actor.name if event.actor else 'System' }}</small>{% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span>→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}{% if event.details %}<p>{{ event.details }}</p>{% endif %}</div></article>{% endfor %}<article class="event-entry">{{ user_avatar(record.requester, 'event-marker') }}<div class="event-body"><div><strong>Opened</strong><time>{{ (record.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ record.requester.name }}</small><p>{{ record.record_type }} {{ record.number }} opened as {{ record.priority }} · {{ record.risk }} risk.</p></div></article></div>
 </section>
 
 <section class="panel incident-related-panel" id="related-records">
