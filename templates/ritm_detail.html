@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ ritm.number }} · {{ ritm.item.name }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<section class="record-shell task-record-shell">
+  <header class="record-toolbar">
+    <div class="record-identity">
+      <a class="record-back" href="{{ url_for('request_detail', request_id=req.id) }}" aria-label="Back to {{ req.number }}">‹</a>
+      <span class="record-type-icon" aria-hidden="true">R</span>
+      <div><strong>Requested Item</strong><small>{{ ritm.number }}</small></div>
+    </div>
+    <div class="record-actions"><span class="badge">{{ ritm.state }}</span></div>
+  </header>
+  <div class="record-form">
+    <div class="record-grid">
+      <label><span>Number</span><input value="{{ ritm.number }}" disabled></label>
+      <label><span>Request</span><a class="record-parent-link" href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></label>
+      <label><span>Item</span><input value="{{ ritm.item.name }}" disabled></label>
+      <label><span>Stage</span><input value="{{ ritm.stage }}" disabled></label>
+      <label><span>Requested for</span><input value="{{ req.requested_for.name }}" disabled></label>
+      <label><span>Due</span><input value="{{ (ritm.due_at|usertime('%b %d, %Y')) if ritm.due_at else 'Not set' }}" disabled></label>
+    </div>
+  </div>
+</section>
+
+<nav class="record-section-tabs" aria-label="{{ ritm.number }} sections">
+  <a class="active" href="#ritm-tasks">Fulfillment tasks (SCTASK)</a>
+  <a href="#ritm-approvals">Approvals</a>
+  <a href="#ritm-form-responses">Form Responses</a>
+  <a href="#ritm-related">Related changes</a>
+  <a href="#ritm-commitments">Service commitments</a>
+  <a href="#ritm-history">History</a>
+</nav>
+
+<section id="ritm-tasks" class="panel table-panel">
+  <header class="section-heading"><div><h2>Fulfillment tasks</h2></div><span>{{ ritm.tasks|length }} tasks</span></header>
+  {% for task in ritm.tasks %}
+  <article class="catalog-task">
+    <div><strong><a href="{{ url_for('catalog_task_detail', task_id=task.id) }}">{{ task.number }}</a> · {{ task.title }}</strong>
+      <p>{{ task.assignment_group.name if task.assignment_group else 'Unassigned group' }} · {{ task.assignee.name if task.assignee else 'Unassigned' }}{% if task.flow_control %} · {{ task.flow_control.execution_mode }}{% if task.flow_control.predecessor %} after {{ task.flow_control.predecessor.number }}{% endif %}{% endif %}</p>
+    </div>
+    {% if catalog_task_permissions[task.id] %}<form method="post" action="{{ url_for('catalog_task_update', task_id=task.id) }}"><select name="state">{% for state in task_state_options[task.id] %}<option {% if task.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select><input name="work_notes" value="{{ task.work_notes }}" placeholder="Work notes"><button class="primary">Update</button></form>{% else %}<span class="badge">{{ task.state }}</span>{% endif %}
+  </article>
+  {% else %}<p class="muted">No fulfillment tasks. Automation may fulfill this item.</p>{% endfor %}
+  {% if can_manage %}<form method="post" action="{{ url_for('catalog_task_add', ritm_id=ritm.id) }}" class="inline-form"><input name="title" placeholder="New fulfillment task" required><select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select><select name="execution_mode"><option>Parallel</option><option>Sequential</option></select><button>Add SCTASK</button></form>{% endif %}
+</section>
+
+<section id="ritm-approvals" class="panel">
+  <header class="section-heading"><div><h2>Approvals</h2></div></header>
+  {% for chain in chains %}<div class="chain"><strong>{{ chain.name }}</strong> · {{ chain.state }}
+    {% for gate in chain.gates %}<div class="gate"><b>{{ gate.sequence }}. {{ gate.name }}</b> — {{ gate.state }}
+      {% for vote in gate.votes %}<div class="vote">{{ vote.approver.name }}: {{ vote.state }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}"><input name="comments" placeholder="Comments"><button name="decision" value="Rejected">Reject</button><button class="primary" name="decision" value="Approved">Approve</button></form>{% endif %}</div>{% endfor %}
+    </div>{% endfor %}
+  </div>{% else %}<p class="muted">No approval chain required.</p>{% endfor %}
+</section>
+
+<section id="ritm-form-responses" class="panel">
+  <header class="section-heading"><div><h2>Form Responses</h2></div></header>
+  {% if variables %}
+  <dl class="governance-grid">{% for key, value in variables.items() %}<dt>{{ key|replace('_',' ')|title }}</dt><dd>{{ value if value else 'Not provided' }}</dd>{% endfor %}</dl>
+  {% else %}<p class="muted">No form variables recorded for this item.</p>{% endif %}
+</section>
+
+<section id="ritm-related" class="panel">
+  <header class="section-heading"><div><h2>Related changes</h2></div></header>
+  {% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ item.label }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">No controlled change linked.</p>{% endfor %}
+  {% if can_manage %}<form method="post" action="{{ url_for('record_link_add', source_type='ritm', source_id=ritm.id) }}" class="inline-form"><input type="hidden" name="link_type" value="requested_item_change"><input name="target_number" placeholder="CHG number" required><button>Link change</button></form>{% endif %}
+</section>
+
+<section id="ritm-commitments" class="panel">
+  <header class="section-heading"><div><h2>Service commitments</h2></div></header>
+  {% for sla in slas %}<div class="sla-row"><strong>{{ sla.definition.name }}</strong><span>{{ sla.stage }} · target {{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</span></div>{% else %}<p class="muted">No active service commitments.</p>{% endfor %}
+</section>
+
+<section id="ritm-history" class="panel table-panel">
+  <header class="section-heading"><div><h2>History</h2></div></header>
+  <table><thead><tr><th>Event</th><th>Field</th><th>From</th><th>To</th><th>Actor</th><th>When</th></tr></thead><tbody>
+    {% for event in history %}<tr>
+      <td>{{ event.event }}</td>
+      <td>{{ event.field_name or '—' }}</td>
+      <td>{{ event.old_value or '—' }}</td>
+      <td>{{ event.new_value or '—' }}</td>
+      <td>{{ event.actor.name if event.actor else 'System' }}</td>
+      <td>{{ (event.created_at|usertime('%b %d, %H:%M:%S')) }}</td>
+    </tr>{% else %}<tr><td colspan="6" class="empty">No recorded history.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+{% endblock %}

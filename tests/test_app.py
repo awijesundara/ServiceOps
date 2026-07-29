@@ -11,13 +11,13 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import DBAPIError
 
 from app import (APIClient, APIIdempotencyRecord, Approval, ApprovalChain, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy, BusinessSchedule, CatalogRequest, CatalogTask, ChangeRevision,
-                 ConfigurationItem, EnterpriseRecord, CatalogItem, CatalogItemRouting, DirectoryGroupMapping,
+                 ChecklistItem, ConfigurationItem, EnterpriseRecord, CatalogItem, CatalogItemRouting, DirectoryGroupMapping,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
                  MonitoringEvent, MonitoringSource, Notification, OperationalTask,
                  OutboxEvent, ProblemProfile, RecordLink, ScheduleHoliday, SLADefinition,
                  RequestedItem, PlatformSetting, ServiceOffering, SupportGroup,
-                 TaskCI, TaskHistory, TaskSLA,
+                 TaskCI, TaskHistory, TaskNote, TaskSLA,
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference,
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
@@ -192,7 +192,7 @@ def test_migration_baseline_creates_fresh_schema_and_records_revision():
         revision = db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "20260729_0021"
+        assert revision == "20260729_0022"
         assert User.query.filter_by(username="admin").one()
     os.unlink(path)
 
@@ -220,7 +220,7 @@ def test_migration_baseline_adopts_existing_schema_without_data_loss():
         assert Knowledge.query.filter_by(title="Preserve during adoption").one()
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "20260729_0021"
+        ).scalar_one() == "20260729_0022"
     os.unlink(path)
 
 
@@ -262,7 +262,7 @@ def test_tenant_migration_is_reversible_and_preserves_records():
         )).scalar_one() == before
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-            ).scalar_one() == "20260729_0021"
+            ).scalar_one() == "20260729_0022"
     os.unlink(path)
 
 
@@ -324,6 +324,35 @@ def test_audit_chain_is_correlated_verified_exportable_and_append_only():
     assert exported.json["integrity"]["valid"]
     assert exported.json["events"][0]["request_id"] == request_id
     os.unlink(path)
+
+
+def test_audit_log_page_paginates_and_defers_integrity_check(client, app):
+    login(client)
+    default_view = client.get("/admin/audit")
+    assert default_view.status_code == 200
+    assert b"Not checked this view" in default_view.data
+    assert b"Verify integrity now" in default_view.data
+
+    verified_view = client.get("/admin/audit?verify=1")
+    assert verified_view.status_code == 200
+    assert b"Not checked this view" not in verified_view.data
+    assert b"Verified" in verified_view.data or b"FAILED" in verified_view.data
+
+    filtered = client.get("/admin/audit?q=login")
+    assert filtered.status_code == 200
+
+
+def test_ritm_detail_page_shows_approvals_tasks_and_form_responses(client, app):
+    login(client, "employee", "Employee123!")
+    client.post("/catalog/1/order", data={"details": "Standalone RITM page test"}, follow_redirects=True)
+    with app.app_context():
+        ritm_id = RequestedItem.query.one().id
+    page = client.get(f"/ritm/{ritm_id}")
+    assert page.status_code == 200
+    assert b"Fulfillment tasks (SCTASK)" in page.data
+    assert b"Approvals" in page.data
+    assert b"Form Responses" in page.data
+    assert b"Standalone RITM page test" in page.data
 
 
 def test_audit_key_rotation_retention_and_dedicated_siem_delivery(
@@ -1086,7 +1115,11 @@ def test_catalog_request_and_cmdb(client, app):
     ordered = client.post("/catalog/1/order", data={"details": "Laptop for remote work"}, follow_redirects=True)
     assert b"REQ0000001" in ordered.data
     assert b"RITM0000001" in ordered.data
-    assert b"Manager approval" in ordered.data
+    with app.app_context():
+        ritm_id = RequestedItem.query.one().id
+    ritm_page = client.get(f"/ritm/{ritm_id}")
+    assert ritm_page.status_code == 200
+    assert b"Manager approval" in ritm_page.data
     client.post("/logout")
     login(client)
     assert client.get("/cmdb").status_code == 200
@@ -1266,15 +1299,142 @@ def test_catalog_task_requires_valid_fulfillment_lifecycle(client, app):
         task_id = CatalogTask.query.one().id
     client.post("/logout")
     login(client, "database.manager", "Manager123!")
-    assert client.post(f"/catalog-task/{task_id}", data={
+    bypass = client.post(f"/catalog-task/{task_id}", data={
         "state": "Closed Complete", "work_notes": "Attempted bypass",
-    }).status_code == 409
+    }, follow_redirects=True)
+    assert bypass.status_code == 200
+    assert b"cannot move from" in bypass.data
     assert client.post(f"/catalog-task/{task_id}", data={
         "state": "Work in Progress", "work_notes": "Started",
     }).status_code == 302
     assert client.post(f"/catalog-task/{task_id}", data={
         "state": "Closed Complete", "work_notes": "Completed",
     }).status_code == 302
+
+
+def test_catalog_task_blocks_production_work_until_linked_change_is_approved(client, app):
+    login(client)
+    with app.app_context():
+        item = CatalogItem(
+            name="Change-linked catalog item", category="Testing",
+            description="SCTASK linked to a CHG must wait for approval.",
+            approval_required=False,
+        )
+        db.session.add(item)
+        db.session.commit()
+        item_id = item.id
+    client.post(f"/catalog/{item_id}/order", data={"details": "Install production database agent"})
+    with app.app_context():
+        ritm = RequestedItem.query.join(CatalogItem).filter(CatalogItem.id == item_id).one()
+        ritm_id, task_id = ritm.id, ritm.tasks[0].id
+
+    assert client.post("/tickets/new/change", data={
+        "title": "Install production database agent",
+        "description": "Requested via catalog fulfillment.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    }).status_code == 302
+    with app.app_context():
+        change_ticket = Ticket.query.filter_by(title="Install production database agent").one()
+        change_id, change_number = change_ticket.id, change_ticket.number
+        vote_id = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=change_id
+        ).one().gates[0].votes[0].id
+
+    assert client.post(f"/record/ritm/{ritm_id}/relationships", data={
+        "link_type": "requested_item_change", "target_number": change_number,
+    }).status_code == 302
+
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+
+    # Coordination: moving the SCTASK to Pending (tracking the change) is fine.
+    coordination = client.post(f"/catalog-task/{task_id}", data={
+        "state": "Pending", "work_notes": "Tracking change approval.",
+    })
+    assert coordination.status_code == 302
+
+    # Production work must wait for the linked change to be approved.
+    blocked = client.post(f"/catalog-task/{task_id}", data={
+        "state": "Work in Progress", "work_notes": "Attempting production work early.",
+    }, follow_redirects=True)
+    assert blocked.status_code == 200
+    assert b"cannot start production work" in blocked.data
+    with app.app_context():
+        assert CatalogTask.query.get(task_id).state == "Pending"
+
+    assert client.post(f"/approval-votes/{vote_id}/decide", data={
+        "decision": "Approved",
+    }).status_code == 302
+
+    unblocked = client.post(f"/catalog-task/{task_id}", data={
+        "state": "Work in Progress", "work_notes": "Change approved, proceeding.",
+    })
+    assert unblocked.status_code == 302
+    with app.app_context():
+        assert CatalogTask.query.get(task_id).state == "Work in Progress"
+
+
+def test_catalog_task_detail_page_shows_notes_form_responses_and_siblings(client, app):
+    login(client)
+    with app.app_context():
+        item = CatalogItem(
+            name="Detail page test item", category="Testing",
+            description="Standalone catalog task page test", approval_required=False,
+        )
+        db.session.add(item)
+        db.session.commit()
+        item_id = item.id
+    client.post("/logout")
+    login(client, "employee", "Employee123!")
+    client.post(f"/catalog/{item_id}/order", data={"details": "Needs a laptop"})
+    client.post("/logout")
+    login(client)
+    with app.app_context():
+        ritm = RequestedItem.query.join(CatalogItem).filter(CatalogItem.id == item_id).one()
+        ritm_id = ritm.id
+        first_task_id = ritm.tasks[0].id
+        sibling = CatalogTask(
+            number="TASKSIB0001", requested_item_id=ritm_id, title="Sibling task",
+            assignment_group_id=RequestedItem.query.get(ritm_id).tasks[0].assignment_group_id,
+        )
+        db.session.add(sibling)
+        db.session.commit()
+
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+
+    page = client.get(f"/catalog-task/{first_task_id}")
+    assert page.status_code == 200
+    assert b"Activity / Worknotes" in page.data
+    assert b"RITM Comments (Customer Visible)" in page.data
+    assert b"Form Responses" in page.data
+    assert b"Needs a laptop" in page.data
+    assert b"Sibling task" in page.data
+
+    internal_note = client.post(f"/catalog-task/{first_task_id}/notes", data={
+        "visibility": "internal", "body": "Internal-only work note",
+    }, follow_redirects=True)
+    assert b"Internal-only work note" in internal_note.data
+
+    customer_note = client.post(f"/catalog-task/{first_task_id}/notes", data={
+        "visibility": "customer", "body": "Your laptop is being prepared",
+    }, follow_redirects=True)
+    assert b"Your laptop is being prepared" in customer_note.data
+
+    client.post("/logout")
+    login(client, "employee", "Employee123!")
+    requester_view = client.get(f"/catalog-task/{first_task_id}")
+    assert requester_view.status_code == 200
+    assert b"Your laptop is being prepared" in requester_view.data
+    assert b"Internal-only work note" not in requester_view.data
+    with app.app_context():
+        assert Notification.query.filter(
+            Notification.body.contains("Your laptop is being prepared")
+        ).count() == 1
 
 
 def test_change_has_governance_approval_chain_and_sla(client, app):
@@ -1635,9 +1795,11 @@ def test_request_supports_multiple_ritms_and_sctasks(client, app):
         first_task_id, second_task_id = tasks[0].id, tasks[1].id
     client.post("/logout")
     login(client, "database.manager", "Manager123!")
-    assert client.post(f"/catalog-task/{second_task_id}", data={
+    premature = client.post(f"/catalog-task/{second_task_id}", data={
         "state": "Work in Progress", "work_notes": "Premature start.",
-    }).status_code == 409
+    }, follow_redirects=True)
+    assert premature.status_code == 200
+    assert b"cannot start until predecessor" in premature.data
     assert client.post(f"/catalog-task/{first_task_id}", data={
         "state": "Work in Progress", "work_notes": "Started.",
     }).status_code == 302
@@ -1710,8 +1872,9 @@ def test_enterprise_record_cannot_bypass_requested_approval(client, app):
     bypass = client.post(f"/enterprise/{record_id}", data={
         "action": "update", "state": "In Progress", "priority": "P2",
         "risk": "High", "assignee_id": "",
-    })
-    assert bypass.status_code == 409
+    }, follow_redirects=True)
+    assert bypass.status_code == 200
+    assert b"cannot move from Awaiting Approval to In Progress" in bypass.data
     with app.app_context():
         assert db.session.get(EnterpriseRecord, record_id).state == "Awaiting Approval"
 
@@ -1919,6 +2082,58 @@ def test_priority_override_rejection_stays_on_ticket_page(client, app):
         ticket = Ticket.query.get(ticket_id)
         assert ticket.priority_overridden is True
         assert ticket.priority_override_reason == "Customer executive escalation, needs immediate handling"
+
+
+def test_resolved_ticket_locks_edits_but_allows_comments_and_reopen(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Lock after resolve test", "description": "Should lock once resolved",
+        "category": "Software", "priority": "P3",
+        "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Lock after resolve test").one().id
+
+    assert client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "Resolved", "priority": "P3", "assignee_id": "",
+    }).status_code == 302
+    with app.app_context():
+        assert Ticket.query.get(ticket_id).state == "Resolved"
+
+    blocked_update = client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "Resolved", "priority": "P1", "assignee_id": "",
+    }, follow_redirects=True)
+    assert blocked_update.status_code == 200
+    assert b"is Resolved and locked" in blocked_update.data
+    with app.app_context():
+        assert Ticket.query.get(ticket_id).priority == "P3"
+
+    blocked_checklist = client.post(f"/ticket/{ticket_id}/checklist", data={
+        "text": "Should not be added",
+    }, follow_redirects=True)
+    assert b"is Resolved and locked" in blocked_checklist.data
+    with app.app_context():
+        assert ChecklistItem.query.filter_by(ticket_id=ticket_id).count() == 0
+
+    commented = client.post(f"/ticket/{ticket_id}", data={
+        "action": "comment", "body": "Still allowed after resolution",
+    }, follow_redirects=True)
+    assert commented.status_code == 200
+    assert b"Still allowed after resolution" in commented.data
+
+    reopened = client.post(f"/ticket/{ticket_id}", data={
+        "action": "reopen",
+    }, follow_redirects=True)
+    assert reopened.status_code == 200
+    assert b"reopened" in reopened.data.lower()
+    with app.app_context():
+        assert Ticket.query.get(ticket_id).state == "In Progress"
+
+    assert client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "In Progress", "priority": "P1", "assignee_id": "",
+    }).status_code == 302
+    with app.app_context():
+        assert Ticket.query.get(ticket_id).priority == "P1"
 
 
 def test_org_chart_reflects_manager_assignment_and_blocks_cycles(client, app):
@@ -2507,12 +2722,14 @@ def test_change_requires_planned_dates_at_creation_and_edit(client, app):
     }).status_code == 302
     with app.app_context():
         ticket_id = Ticket.query.filter_by(title="Well-scheduled change").one().id
-    assert client.post(f"/change/{ticket_id}/plan", data={
+    plan_edit = client.post(f"/change/{ticket_id}/plan", data={
         "title": "Well-scheduled change", "description": "Has a valid window.",
         "change_type": "Standard", "risk_score": "25", "impact": "Low",
         "implementation_plan": "Implement.", "test_plan": "Test.",
         "backout_plan": "Back out.", "planned_start": "", "planned_end": "",
-    }).status_code == 400
+    }, follow_redirects=True)
+    assert plan_edit.status_code == 200
+    assert b"Planned start and planned end are required" in plan_edit.data
 
 
 def test_change_task_requires_dates_within_parent_window(client, app):
@@ -2541,6 +2758,157 @@ def test_change_task_requires_dates_within_parent_window(client, app):
         "group_id": group_id(app), "required": "",
         "planned_start": "2026-08-01T10:00", "planned_end": "2026-08-01T11:00",
     }).status_code == 302
+
+
+def test_change_task_unlocking_model_gates_implementation_and_review(client, app):
+    login(client)
+    assert client.post("/tickets/new/change", data={
+        "title": "Gated implementation change",
+        "description": "Implementation and review must stay Pending until approved/complete.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    }).status_code == 302
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Gated implementation change").one()
+        ticket_id = ticket.id
+        implementation_task = OperationalTask.query.filter_by(
+            parent_id=ticket_id, task_type="Implementation",
+        ).one()
+        assert implementation_task.state == "Pending"
+        implementation_task_id = implementation_task.id
+
+    # A Planning task can proceed before approval.
+    plan_added = client.post(f"/change/{ticket_id}/tasks", data={
+        "title": "Draft rollout plan", "task_type": "Planning",
+        "group_id": group_id(app), "required": "",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T09:30",
+    })
+    assert plan_added.status_code == 302
+    with app.app_context():
+        plan_task_id = OperationalTask.query.filter_by(
+            parent_id=ticket_id, task_type="Planning",
+        ).one().id
+        vote_id = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id, state="Running",
+        ).one().gates[0].votes[0].id
+    plan_open = client.post(f"/operational-task/{plan_task_id}", data={
+        "state": "Work in Progress", "assignee_id": "", "work_notes": "Started planning.",
+    })
+    assert plan_open.status_code == 302
+
+    # Implementation must stay Pending until the change is fully approved.
+    blocked = client.post(f"/operational-task/{implementation_task_id}", data={
+        "state": "Work in Progress", "assignee_id": "", "work_notes": "Attempted early start.",
+    }, follow_redirects=True)
+    assert blocked.status_code == 200
+    assert b"must stay Pending until" in blocked.data
+    with app.app_context():
+        assert OperationalTask.query.get(implementation_task_id).state == "Pending"
+
+    # The state dropdown itself must be disabled while gated, with an explanatory note.
+    gated_page = client.get(f"/operational-task/{implementation_task_id}")
+    assert gated_page.status_code == 200
+    import re as _re
+    select_html = _re.search(rb'<select name="state".*?</select>', gated_page.data, _re.S).group(0)
+    assert b"Work in Progress" not in select_html
+    assert b"field-gate-note" in gated_page.data
+    assert b"must stay Pending until" in gated_page.data
+
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+    assert client.post(f"/approval-votes/{vote_id}/decide", data={
+        "decision": "Approved",
+    }).status_code == 302
+    assert client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "In Progress", "priority": "P3", "assignee_id": "",
+    }).status_code == 302
+
+    # Now that the change is approved, Implementation can proceed.
+    unblocked = client.post(f"/operational-task/{implementation_task_id}", data={
+        "state": "Work in Progress", "assignee_id": "", "work_notes": "Approved, starting work.",
+    })
+    assert unblocked.status_code == 302
+    with app.app_context():
+        assert OperationalTask.query.get(implementation_task_id).state == "Work in Progress"
+
+    # Review is added and must stay Pending until implementation is closed.
+    review_added = client.post(f"/change/{ticket_id}/tasks", data={
+        "title": "Post-implementation review", "task_type": "Review",
+        "group_id": group_id(app), "required": "1",
+        "planned_start": "2026-08-01T16:30", "planned_end": "2026-08-01T17:00",
+    })
+    assert review_added.status_code == 302
+    with app.app_context():
+        # Adding a task after In Progress supersedes approval again; re-approve
+        # so the implementation task can be closed in this test.
+        new_vote_id = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id, state="Running"
+        ).one().gates[0].votes[0].id
+        review_task_id = OperationalTask.query.filter_by(
+            parent_id=ticket_id, task_type="Review",
+        ).one().id
+    assert client.post(f"/approval-votes/{new_vote_id}/decide", data={
+        "decision": "Approved",
+    }).status_code == 302
+    assert client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "In Progress", "priority": "P3", "assignee_id": "",
+    }).status_code == 302
+
+    review_blocked = client.post(f"/operational-task/{review_task_id}", data={
+        "state": "Work in Progress", "assignee_id": "", "work_notes": "Too early.",
+    }, follow_redirects=True)
+    assert review_blocked.status_code == 200
+    assert b"must stay Pending until all required" in review_blocked.data
+
+    assert client.post(f"/operational-task/{implementation_task_id}", data={
+        "state": "Closed Complete", "assignee_id": "", "work_notes": "Deployed.",
+    }).status_code == 302
+
+    review_open = client.post(f"/operational-task/{review_task_id}", data={
+        "state": "Work in Progress", "assignee_id": "", "work_notes": "Starting review.",
+    })
+    assert review_open.status_code == 302
+    with app.app_context():
+        assert OperationalTask.query.get(review_task_id).state == "Work in Progress"
+
+
+def test_operational_task_detail_shows_activity_notes_and_siblings(client, app):
+    login(client)
+    assert client.post("/tickets/new/change", data={
+        "title": "Note visibility change", "description": "Verifies CTASK activity tab.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    }).status_code == 302
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Note visibility change").one().id
+    assert client.post(f"/change/{ticket_id}/tasks", data={
+        "title": "Second task", "task_type": "Planning",
+        "group_id": group_id(app), "required": "",
+        "planned_start": "2026-08-01T10:00", "planned_end": "2026-08-01T11:00",
+    }).status_code == 302
+    with app.app_context():
+        tasks = OperationalTask.query.filter_by(parent_id=ticket_id).order_by(OperationalTask.id).all()
+        first_task_id, second_task_id = tasks[0].id, tasks[1].id
+
+    page = client.get(f"/operational-task/{first_task_id}")
+    assert page.status_code == 200
+    assert b"Activity / Worknotes" in page.data
+    assert b"Sibling tasks" in page.data
+    assert b"Second task" in page.data
+
+    posted = client.post(f"/operational-task/{first_task_id}/notes", data={
+        "body": "Coordinating with the network team before starting.",
+    }, follow_redirects=True)
+    assert posted.status_code == 200
+    assert b"Coordinating with the network team before starting." in posted.data
+    with app.app_context():
+        assert TaskNote.query.filter_by(target_type="operational_task", target_id=first_task_id).count() == 1
 
 
 def test_change_creation_blocks_on_open_incident_conflict(client, app):

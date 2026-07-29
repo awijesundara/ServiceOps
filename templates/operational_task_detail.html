@@ -22,7 +22,7 @@
       <label><span>Number</span><input value="{{ task.number }}" disabled></label>
       <label><span>Type</span><input value="{{ task.task_type }}" disabled></label>
       <label><span>{{ 'Change request' if task.task_kind == 'change' else 'Parent record' }}</span><a class="record-parent-link" href="{{ parent_url }}">{{ parent.number }}</a></label>
-      <label><span>State</span><select name="state" {% if not can_edit %}disabled{% endif %}>{% for state in work_task_states[task.state] %}<option {% if task.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
+      <label><span>State</span><select name="state" {% if not can_edit or selectable_states|length < 2 %}disabled{% endif %}>{% for state in selectable_states %}<option {% if task.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select>{% if gate_block %}<small class="field-gate-note">{{ gate_block }}</small>{% endif %}</label>
       <label><span>Planned start date</span><input value="{{ (task.planned_start|usertime('%b %d, %Y %H:%M')) if task.planned_start else 'Not scheduled' }}" disabled></label>
       <label><span>Assignment group</span><input value="{{ task.assignment_group.name }}" disabled></label>
       <label><span>Planned end date</span><input value="{{ (task.planned_end|usertime('%b %d, %Y %H:%M')) if task.planned_end else 'Not scheduled' }}" disabled></label>
@@ -31,7 +31,7 @@
     </div>
     <div class="record-long-fields">
       <label><span>Short description</span><input value="{{ task.title }}" disabled></label>
-      <label><span>Work notes</span><textarea name="work_notes" rows="8" {% if not can_edit %}disabled{% endif %}>{{ task.work_notes }}</textarea></label>
+      <label><span>Work notes</span><textarea name="work_notes" rows="4" {% if not can_edit %}disabled{% endif %}>{{ task.work_notes }}</textarea></label>
     </div>
     {% if can_edit %}<footer class="record-footer-actions"><button class="primary">Update {{ task.number }}</button></footer>{% endif %}
   </form>
@@ -45,9 +45,57 @@
 </section>
 
 <nav class="record-section-tabs" aria-label="{{ task.number }} sections">
-  <a class="active" href="#task-event-history">Event history</a>
+  <a class="active" href="#task-activity">Activity / Worknotes</a>
+  <a href="#task-siblings">Sibling tasks</a>
+  <a href="#task-affected-cis">Affected CIs</a>
+  {% if approval_votes %}<a href="#task-approvers">Approvers</a>{% endif %}
+  <a href="#task-event-history">Event history</a>
 </nav>
+
+<div class="incident-support-grid" id="task-activity">
+  <section class="panel">
+    <header class="section-heading"><div><h2>Activity / Worknotes</h2></div></header>
+    {% for note in notes %}<article class="comment">{{ user_avatar(note.author) }}<div><strong>{{ note.author.name }}</strong><small>{{ (note.created_at|usertime('%b %d, %H:%M')) }}</small><p>{{ note.body }}</p></div></article>{% else %}<p class="muted">No activity yet.</p>{% endfor %}
+    {% if can_edit %}<form method="post" action="{{ url_for('operational_task_note_add', task_id=task.id) }}" class="comment-box"><textarea name="body" rows="3" placeholder="Add a work note…" required></textarea><button class="primary">Post</button></form>{% endif %}
+  </section>
+</div>
+
+<section id="task-siblings" class="panel table-panel">
+  <header class="section-heading"><div><h2>Sibling tasks</h2></div><span>{{ siblings|length }} other tasks</span></header>
+  <table><thead><tr><th>Number</th><th>Title</th><th>State</th><th>Assignment group</th><th>Assigned to</th></tr></thead><tbody>
+    {% for sibling in siblings %}<tr>
+      <td><a class="record-number" href="{{ url_for('operational_task_detail', task_id=sibling.id) }}">{{ sibling.number }}</a></td>
+      <td>{{ sibling.title }}</td>
+      <td>{{ sibling.state }}</td>
+      <td>{{ sibling.assignment_group.name if sibling.assignment_group else '—' }}</td>
+      <td>{{ sibling.assignee.name if sibling.assignee else 'Unassigned' }}</td>
+    </tr>{% else %}<tr><td colspan="5" class="empty">No sibling tasks on this record.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+
+<section id="task-affected-cis" class="panel table-panel">
+  <header class="section-heading"><div><h2>Affected CIs</h2><p>Inherited from {{ parent.number }}</p></div><span>{{ ci_links|length }} linked</span></header>
+  <table><thead><tr><th>CI</th><th>Class</th><th>Relationship</th></tr></thead><tbody>
+    {% for link in ci_links %}<tr><td>{{ link.ci.name }}</td><td>{{ link.ci.ci_class }}</td><td>{{ link.relationship_role }}</td></tr>{% else %}<tr><td colspan="3" class="empty">No CIs linked on the parent record.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+
+{% if approval_votes %}
+<section id="task-approvers" class="panel table-panel">
+  <header class="section-heading"><div><h2>Approvers</h2><p>From the parent change's approval chain</p></div><span>{{ approval_votes|length }} votes</span></header>
+  <table><thead><tr><th>Approver</th><th>Gate</th><th>State</th><th>Decided</th></tr></thead><tbody>
+    {% for vote in approval_votes %}<tr>
+      <td>{{ vote.approver.name }}</td>
+      <td>{{ vote.gate.name }}</td>
+      <td>{{ vote.state }}</td>
+      <td>{{ (vote.decided_at|usertime('%b %d, %Y %H:%M')) if vote.decided_at else '—' }}</td>
+    </tr>{% endfor %}
+  </tbody></table>
+</section>
+{% endif %}
+
 <section id="task-event-history" class="panel table-panel">
+  <header class="section-heading"><div><h2>Event history</h2></div></header>
   <table><thead><tr><th>Event</th><th>Field</th><th>From</th><th>To</th><th>Actor</th><th>When</th></tr></thead><tbody>
     {% for row in history %}<tr>
       <td>{{ row.event }}</td>
