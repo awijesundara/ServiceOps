@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Org chart · {{ instance_name }}{% endblock %}
+{% block content %}
+{% macro render_node(user) %}
+<li>
+  <div class="org-card">
+    {{ user_avatar(user, 'org-avatar') }}
+    {% if can_edit %}<a href="{{ url_for('user_edit', user_id=user.id) }}">{{ user.name }}</a>{% else %}<strong>{{ user.name }}</strong>{% endif %}
+    <small>{{ user.title or user.role|capitalize }}</small>
+  </div>
+  {% if children.get(user.id) %}
+  <ul>
+    {% for child in children[user.id] %}{{ render_node(child) }}{% endfor %}
+  </ul>
+  {% endif %}
+</li>
+{% endmacro %}
+<section class="panel org-chart-panel">
+  <header class="section-heading">
+    <div><h2>Org Chart</h2><p>Reporting hierarchy across the organization, based on each user's manager.</p></div>
+    {% if can_edit %}<a class="button" href="{{ url_for('users') }}">Edit reporting lines</a>{% endif %}
+  </header>
+  {% if roots %}
+  <div class="org-chart-scroll">
+    <ul class="org-tree">
+      {% for root in roots %}{{ render_node(root) }}{% endfor %}
+    </ul>
+  </div>
+  {% else %}
+  <p class="muted">No active users yet. {% if can_edit %}Set a manager on a user's record to build the chart.{% endif %}</p>
+  {% endif %}
+</section>
+{% endblock %}
