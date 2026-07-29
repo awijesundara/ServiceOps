@@ -1,3 +1,29 @@
 {% extends "base.html" %}{% block title %}Requests & RITMs · {{ instance_name }}{% endblock %}
-{% block content %}<header class="page-head"><div><p class="eyebrow">REQUEST MANAGEMENT</p><h1>Requests and requested items</h1><p>REQ → RITM → SCTASK fulfillment hierarchy.</p></div><a class="primary button" href="{{ url_for('catalog') }}">Open catalog</a></header><section class="panel"><table><thead><tr><th>Request</th><th>Requested for</th><th>Items</th><th>State</th><th>Opened</th></tr></thead><tbody>{% for req in requests %}<tr><td><a href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></td><td>{{ req.requested_for.name }}</td><td>{% for item in req.items %}<span class="tag">{{ item.number }}</span> {{ item.item.name }}{% endfor %}</td><td><span class="badge">{{ req.state }}</span></td><td>{{ (req.opened_at|usertime('%b %d, %H:%M')) }}</td></tr>{% else %}<tr><td colspan="5" class="empty">No catalog requests.</td></tr>{% endfor %}</tbody></table></section>{% endblock %}
-
+{% block content %}
+<section class="list-workspace">
+  <header class="list-toolbar">
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Requests</strong><small>{{ total }} records</small></div></div>
+    <a class="primary button" href="{{ url_for('catalog') }}">Open catalog</a>
+    <form class="list-search">
+      <input name="q" value="{{ q }}" placeholder="REQ number" aria-label="Search requests">
+      <button>Search</button>
+    </form>
+    <nav class="list-pagination" aria-label="Pagination">
+      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('requests_list', q=q, page=page-1) }}">‹</a>
+      <span>Page {{ page }} of {{ pages }}</span>
+      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('requests_list', q=q, page=page+1) }}">›</a>
+    </nav>
+  </header>
+  <div class="task-list-scroll">
+  <table class="task-list"><thead><tr><th>Request</th><th>Requested for</th><th>Items</th><th>State</th><th>Opened</th></tr></thead><tbody>
+    {% for req in requests %}<tr>
+      <td><a class="record-number" href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></td>
+      <td>{{ req.requested_for.name }}</td>
+      <td>{% for item in req.items %}<a class="tag" href="{{ url_for('ritm_detail', ritm_id=item.id) }}">{{ item.number }}</a> {{ item.item.name }}{% if not loop.last %}; {% endif %}{% endfor %}</td>
+      <td><span class="badge">{{ req.state }}</span></td>
+      <td>{{ (req.opened_at|usertime('%b %d, %H:%M')) }}</td>
+    </tr>{% else %}<tr><td colspan="5" class="empty">No catalog requests.</td></tr>{% endfor %}
+  </tbody></table>
+  </div>
+</section>
+{% endblock %}

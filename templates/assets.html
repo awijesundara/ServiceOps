@@ -1,3 +1,24 @@
 {% extends "base.html" %}{% block title %}Assets · {{ instance_name }}{% endblock %}
-{% block content %}<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>Assets</h1><p>Hardware and software configuration items.</p></div>{% if current_user.role=='admin' %}<a class="primary button" href="{{ url_for('asset_new') }}">+ New asset</a>{% endif %}</header><section class="panel"><table><thead><tr><th>Asset tag</th><th>Name</th><th>Type</th><th>Status</th><th>Owner</th><th>Serial</th></tr></thead><tbody>{% for a in assets %}<tr><td><strong>{{ a.asset_tag }}</strong></td><td>{{ a.name }}</td><td>{{ a.asset_type }}</td><td><span class="badge">{{ a.status }}</span></td><td>{{ a.owner.name if a.owner else 'Unassigned' }}</td><td>{{ a.serial_number or '—' }}</td></tr>{% endfor %}</tbody></table></section>{% endblock %}
-
+{% block content %}
+<section class="list-workspace">
+  <header class="list-toolbar">
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Assets</strong><small>{{ total }} records</small></div></div>
+    {% if current_user.role=='admin' %}<a class="primary button" href="{{ url_for('asset_new') }}">+ New asset</a>{% endif %}
+    <form class="list-search">
+      <input name="q" value="{{ q }}" placeholder="Tag, name, or serial" aria-label="Search assets">
+      <button>Search</button>
+    </form>
+    <nav class="list-pagination" aria-label="Pagination">
+      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('assets', q=q, page=page-1) }}">‹</a>
+      <span>Page {{ page }} of {{ pages }}</span>
+      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('assets', q=q, page=page+1) }}">›</a>
+    </nav>
+  </header>
+  <div class="task-list-scroll">
+  <table class="task-list"><thead><tr><th>Asset tag</th><th>Name</th><th>Type</th><th>Status</th><th>Owner</th><th>Serial</th></tr></thead><tbody>
+    {% for a in assets %}<tr><td><strong>{{ a.asset_tag }}</strong></td><td>{{ a.name }}</td><td>{{ a.asset_type }}</td><td><span class="badge">{{ a.status }}</span></td><td>{{ a.owner.name if a.owner else 'Unassigned' }}</td><td>{{ a.serial_number or '—' }}</td></tr>
+    {% else %}<tr><td colspan="6" class="empty">No matching assets.</td></tr>{% endfor %}
+  </tbody></table>
+  </div>
+</section>
+{% endblock %}

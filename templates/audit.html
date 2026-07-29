@@ -19,7 +19,31 @@
   </form>
 </aside>
 </div>
-<section class="panel">
-  <p><strong>Integrity:</strong> {% if integrity.valid %}Verified · {{ integrity.checked }} events · head {{ integrity.head[:12] if integrity.head else 'empty chain' }}{% else %}FAILED at {{ integrity.event_id }} · {{ integrity.reason }}{% endif %}</p>
-  <table><thead><tr><th>Time</th><th>Request</th><th>User</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ (r.created_at|usertime('%Y-%m-%d %H:%M')) }}</td><td><code>{{ r.request_id[:8] }}</code></td><td>{{ r.user.username if r.user else 'system' }}</td><td>{{ r.action }}</td><td><strong>{{ r.target }}</strong></td><td>{{ r.details }}</td></tr>{% endfor %}</tbody></table>
+<section class="list-workspace">
+  <header class="list-toolbar">
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Audit events</strong><small>{{ total }} records</small></div></div>
+    <form class="list-search">
+      <input name="q" value="{{ q }}" placeholder="Action or target" aria-label="Search audit events">
+      <button>Search</button>
+    </form>
+    <nav class="list-pagination" aria-label="Pagination">
+      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('audit_log', q=q, page=page-1) }}">‹</a>
+      <span>Page {{ page }} of {{ pages }}</span>
+      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('audit_log', q=q, page=page+1) }}">›</a>
+    </nav>
+  </header>
+  <p style="padding:12px 16px 0">
+    <strong>Integrity:</strong>
+    {% if integrity is none %}
+      Not checked this view — verification hashes every event in the tenant's history and is only run on request.
+      <a href="{{ url_for('audit_log', q=q, page=page, verify=1) }}">Verify integrity now</a>
+    {% elif integrity.valid %}
+      Verified · {{ integrity.checked }} events · head {{ integrity.head[:12] if integrity.head else 'empty chain' }}
+    {% else %}
+      FAILED at {{ integrity.event_id }} · {{ integrity.reason }}
+    {% endif %}
+  </p>
+  <div class="task-list-scroll">
+  <table class="task-list"><thead><tr><th>Time</th><th>Request</th><th>User</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ (r.created_at|usertime('%Y-%m-%d %H:%M')) }}</td><td><code>{{ r.request_id[:8] }}</code></td><td>{{ r.user.username if r.user else 'system' }}</td><td>{{ r.action }}</td><td><strong>{{ r.target }}</strong></td><td>{{ r.details }}</td></tr>{% else %}<tr><td colspan="6" class="empty">No matching audit events.</td></tr>{% endfor %}</tbody></table>
+  </div>
 </section>{% endblock %}

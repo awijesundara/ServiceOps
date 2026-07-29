@@ -12,16 +12,20 @@
     <div class="record-actions">
       <span class="record-updated">Updated {{ (ticket.updated_at|usertime('%b %d, %H:%M')) }}</span>
       {% if can_manage_ticket %}<button class="button" type="submit" form="task-record-form">Update</button>{% endif %}
+      {% if can_reopen %}<button class="button" type="submit" form="ticket-reopen-form">Reopen</button>{% endif %}
       {% if can_manage_ticket and ticket.kind == 'change' and not ticket.deleted_at and ticket.state in ('New', 'Awaiting Approval') %}
       <button class="button" type="submit" form="change-delete-form" onclick="return confirm('Delete {{ ticket.number }}? It will be marked Cancelled and kept for the audit trail — this cannot be undone from here.');">Delete</button>
       {% endif %}
     </div>
   </header>
-  {% if ticket.deleted_at %}<div class="record-readonly-notice">Deleted {{ (ticket.deleted_at|usertime('%b %d, %Y %H:%M')) }} by {{ ticket.deleted_by.name if ticket.deleted_by else 'an administrator' }}. Retained as Cancelled for the audit trail.</div>{% endif %}
+  {% if ticket.deleted_at %}<div class="record-readonly-notice">Deleted {{ (ticket.deleted_at|usertime('%b %d, %Y %H:%M')) }} by {{ ticket.deleted_by.name if ticket.deleted_by else 'an administrator' }}. Retained as Cancelled for the audit trail.</div>
+  {% elif ticket_locked %}<div class="record-readonly-notice">{{ ticket.number }} is {{ ticket.state }} and locked: only comments and notes can be added.{% if can_reopen %} Use Reopen to make other changes.{% endif %}</div>
+  {% endif %}
+  {% if can_reopen %}<form method="post" id="ticket-reopen-form" action="{{ url_for('ticket_detail', ticket_id=ticket.id) }}" hidden><input type="hidden" name="action" value="reopen"></form>{% endif %}
   {% include "_state_track.html" %}
   <form method="post" id="task-record-form" class="record-form">
     <input type="hidden" name="action" value="update">
-    {% if not can_manage_ticket and current_user.role in ['agent','manager','admin'] %}<div class="record-readonly-notice">Read only: operational updates are restricted to active members of {{ owning_group.name if owning_group else 'the owning team' }}.</div>{% endif %}
+    {% if not can_manage_ticket and not ticket_locked and current_user.role in ['agent','manager','admin'] %}<div class="record-readonly-notice">Read only: operational updates are restricted to active members of {{ owning_group.name if owning_group else 'the owning team' }}.</div>{% endif %}
     <div class="record-grid">
       <label><span>Number</span><input value="{{ ticket.number }}" disabled></label>
       <label><span>State</span><select name="state" {% if not can_manage_ticket %}disabled{% endif %}>{% for state in ticket_state_options %}<option {% if ticket.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
