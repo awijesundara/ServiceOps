@@ -10,7 +10,7 @@
       <div><strong>Incident</strong><small>{{ ticket.number }}</small></div>
     </div>
     <div class="record-actions">
-      <span class="record-updated">Updated {{ ticket.updated_at.strftime('%b %d, %H:%M') }}</span>
+      <span class="record-updated">Updated {{ (ticket.updated_at|usertime('%b %d, %H:%M')) }}</span>
       {% if can_manage_ticket %}
       <button class="button" type="submit" form="incident-record-form">Update</button>
       {% if 'Resolved' in ticket_state_options and ticket.state != 'Resolved' %}
@@ -57,13 +57,13 @@
   <div class="event-stream">
     {% for event in history %}
     <article class="event-entry">
-      <div class="event-marker">{{ event.actor.name[0] if event.actor else 'S' }}</div>
-      <div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ event.created_at.strftime('%b %d, %Y · %H:%M:%S') }}</time></div><small>{{ event.actor.name if event.actor else 'System' }}</small>
+      {{ user_avatar(event.actor, 'event-marker') }}
+      <div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ event.actor.name if event.actor else 'System' }}</small>
       {% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span aria-hidden="true">→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}
       {% if event.details %}<p>{{ event.details }}</p>{% endif %}</div>
     </article>
     {% endfor %}
-    <article class="event-entry"><div class="event-marker">{{ ticket.requester.name[0] }}</div><div class="event-body"><div><strong>Opened</strong><time>{{ ticket.created_at.strftime('%b %d, %Y · %H:%M:%S') }}</time></div><small>{{ ticket.requester.name }}</small><p>Incident {{ ticket.number }} opened as {{ ticket.priority }} · {{ ticket.impact }} impact via {{ ticket.contact_type }}.</p></div></article>
+    <article class="event-entry">{{ user_avatar(ticket.requester, 'event-marker') }}<div class="event-body"><div><strong>Opened</strong><time>{{ (ticket.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ ticket.requester.name }}</small><p>Incident {{ ticket.number }} opened as {{ ticket.priority }} · {{ ticket.impact }} impact via {{ ticket.contact_type }}.</p></div></article>
   </div>
 </section>
 {% endif %}
@@ -71,13 +71,13 @@
 <div class="incident-support-grid" id="notes">
   <section class="panel">
     <header class="section-heading"><div><h2>Activity and work notes</h2><p>Conversation and resolution evidence</p></div></header>
-    {% for c in ticket.comments|sort(attribute='created_at', reverse=true) %}<article class="comment"><div class="avatar">{{ c.author.name[0] }}</div><div><strong>{{ c.author.name }}</strong><small>{{ c.created_at.strftime('%b %d, %H:%M') }}</small><p>{{ c.body }}</p></div></article>{% else %}<p class="muted">No comments yet.</p>{% endfor %}
+    {% for c in ticket.comments|sort(attribute='created_at', reverse=true) %}<article class="comment">{{ user_avatar(c.author) }}<div><strong>{{ c.author.name }}</strong><small>{{ (c.created_at|usertime('%b %d, %H:%M')) }}</small><p>{{ c.body }}</p></div></article>{% else %}<p class="muted">No comments yet.</p>{% endfor %}
     <form method="post" class="comment-box"><input type="hidden" name="action" value="comment"><textarea name="body" rows="3" placeholder="Add a work note or comment…" required></textarea><button class="primary">Post comment</button></form>
   </section>
 
   <section class="panel">
     <header class="section-heading"><div><h2>Service commitments</h2><p>Active SLA definitions and breach targets</p></div></header>
-    {% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ sla.stage }}{% if sla.breached %} · BREACHED{% endif %}</small></div><div><span>Breach target</span><strong>{{ sla.breach_at.strftime('%b %d, %H:%M') }}</strong></div></div>{% else %}<p class="muted">No active service commitments.</p>{% endfor %}
+    {% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ sla.stage }}{% if sla.breached %} · BREACHED{% endif %}</small></div><div><span>Breach target</span><strong>{{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</strong></div></div>{% else %}<p class="muted">No active service commitments.</p>{% endfor %}
   </section>
 </div>
 

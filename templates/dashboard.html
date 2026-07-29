@@ -26,7 +26,7 @@
   <div class="panel-head"><div><h2 class="sla-breached-heading">SLA breached<span class="info-tip" tabindex="0" data-tip="SLA = Service Level Agreement: the committed time limit for responding to or resolving this ticket. These have passed their commitment and need escalation.">i</span></h2><p>These need escalation now</p></div></div>
   {% if sla_breached %}
   <table><thead><tr><th>Number</th><th>Summary</th><th>Breached at</th></tr></thead>
-  <tbody>{% for row in sla_breached %}{% set t = sla_tickets.get(row.target_id) %}{% if t %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td class="sla-breached-cell">{{ row.breach_at.strftime('%b %d, %H:%M') }}</td></tr>{% endif %}{% endfor %}</tbody></table>
+  <tbody>{% for row in sla_breached %}{% set t = sla_tickets.get(row.target_id) %}{% if t %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td class="sla-breached-cell">{{ (row.breach_at|usertime('%b %d, %H:%M')) }}</td></tr>{% endif %}{% endfor %}</tbody></table>
   {% else %}<p class="muted">No breached SLAs.</p>{% endif %}
 </section>
 
@@ -34,7 +34,7 @@
   <div class="panel-head"><div><h2>SLA at risk<span class="info-tip" tabindex="0" data-tip="SLA = Service Level Agreement: the committed time limit for responding to or resolving this ticket. These are approaching that limit but have not breached it yet.">i</span></h2><p>Breaching within {{ sla_at_risk_hours }} hour{{ 's' if sla_at_risk_hours != 1 }}</p></div></div>
   {% if sla_at_risk %}
   <table><thead><tr><th>Number</th><th>Summary</th><th>Breaches at</th></tr></thead>
-  <tbody>{% for row in sla_at_risk %}{% set t = sla_tickets.get(row.target_id) %}{% if t %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td class="sla-at-risk-cell">{{ row.breach_at.strftime('%b %d, %H:%M') }}</td></tr>{% endif %}{% endfor %}</tbody></table>
+  <tbody>{% for row in sla_at_risk %}{% set t = sla_tickets.get(row.target_id) %}{% if t %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td class="sla-at-risk-cell">{{ (row.breach_at|usertime('%b %d, %H:%M')) }}</td></tr>{% endif %}{% endfor %}</tbody></table>
   {% else %}<p class="muted">Nothing at risk in the next {{ sla_at_risk_hours }} hour{{ 's' if sla_at_risk_hours != 1 }}.</p>{% endif %}
 </section>
 </div>
@@ -45,7 +45,7 @@
   <div class="panel-head"><div><h2>Recently updated</h2><p>Your latest service activity</p></div></div>
   {% if recent %}
   <table><thead><tr><th>Number</th><th>Summary</th><th>State</th><th>Priority</th><th>Updated</th></tr></thead>
-  <tbody>{% for t in recent %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td><span class="badge">{{ t.state }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td><td>{{ t.updated_at.strftime('%b %d, %H:%M') }}</td></tr>{% endfor %}</tbody></table>
+  <tbody>{% for t in recent %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td><span class="badge">{{ t.state }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td><td>{{ (t.updated_at|usertime('%b %d, %H:%M')) }}</td></tr>{% endfor %}</tbody></table>
   {% else %}<div class="empty"><h3>No activity yet</h3><p>Create an incident or service request to get started.</p></div>{% endif %}
 </section>
 {% endif %}

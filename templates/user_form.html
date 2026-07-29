@@ -10,18 +10,28 @@
     </div>
     <div class="record-actions"><button class="primary" form="user-record-form">{{ "Update" if editing else "Create" }}</button></div>
   </header>
-  <form method="post" id="user-record-form" class="record-form">
+  {% if self_service %}
+  <div class="profile-avatar-row">
+    <img class="profile-avatar-preview" src="{{ url_for('profile_avatar', user_id=user.id) if user.avatar_path else '' }}" alt="Profile picture"{% if not user.avatar_path %} style="display:none"{% endif %}>
+    {% if not user.avatar_path %}<div class="profile-avatar-preview profile-avatar-placeholder">{{ user.name[0] }}</div>{% endif %}
+    <div class="profile-avatar-meta"><strong>{{ user.name }}</strong><small>{{ user.title or (user.role|capitalize) }}</small></div>
+  </div>
+  {% endif %}
+  <form method="post" id="user-record-form" class="record-form"{% if self_service %} enctype="multipart/form-data"{% endif %}>
     <div class="record-grid">
       {% if editing %}<label><span>User ID</span><input value="{{ user.username }}" disabled></label>{% else %}<label class="required-field"><span>User ID</span><input name="username" required maxlength="80"></label>{% endif %}
-      <label class="required-field"><span>Email</span><input type="email" name="email" value="{{ user.email if editing else '' }}" required></label>
+      {% if self_service and email_managed_externally %}<label><span>Email</span><input type="email" value="{{ user.email }}" disabled title="Managed by your Active Directory account"><small>Synced from Active Directory</small></label>{% else %}<label class="required-field"><span>Email</span><input type="email" name="email" value="{{ user.email if editing else '' }}" required></label>{% endif %}
       <label class="required-field"><span>Full name</span><input name="name" value="{{ user.name if editing else '' }}" required maxlength="120"></label>
+      {% if self_service %}<label><span>Profile picture</span><input type="file" name="avatar" accept="image/png,image/jpeg"></label>{% endif %}
       <label><span>Time zone</span><select name="timezone">{% for zone in ['Asia/Tokyo','UTC','Australia/Sydney','Europe/London','America/New_York','America/Los_Angeles'] %}<option {% if (editing and user.timezone==zone) or (not editing and zone=='Asia/Tokyo') %}selected{% endif %}>{{ zone }}</option>{% endfor %}</select></label>
       <label><span>Title</span><input name="title" value="{{ user.title if editing else '' }}" maxlength="120"></label>
       <label><span>Date format</span><select name="date_format"><option value="system">System (yyyy-MM-dd)</option><option value="day_first" {% if editing and user.date_format=='day_first' %}selected{% endif %}>dd/MM/yyyy</option><option value="month_first" {% if editing and user.date_format=='month_first' %}selected{% endif %}>MM/dd/yyyy</option></select></label>
       {% if not self_service %}<label><span>Department</span><input name="department" value="{{ user.department if editing else '' }}" maxlength="120"></label>{% else %}<label><span>Department</span><input value="{{ user.department or 'Not assigned' }}" disabled></label>{% endif %}
+      <label><span>Location</span><input name="location" value="{{ user.location if editing else '' }}" maxlength="120"></label>
       <label><span>Business phone</span><input name="business_phone" value="{{ user.business_phone if editing else '' }}" maxlength="40"></label>
       {% if not self_service %}<label><span>Role</span><select name="role">{% for role in ['requester','agent','manager','admin'] %}<option {% if editing and user.role==role %}selected{% endif %}>{{ role }}</option>{% endfor %}</select></label>{% endif %}
       <label><span>Mobile phone</span><input name="mobile_phone" value="{{ user.mobile_phone if editing else '' }}" maxlength="40"></label>
+      {% if self_service %}<label><span>Team</span><input value="{{ teams|join(', ') if teams else 'Not assigned' }}" disabled title="Team membership is assigned automatically from your Active Directory group and cannot be changed here."></label>{% endif %}
       {% if not self_service %}<label><span>Active</span><label class="switch"><input type="checkbox" name="active" {% if not editing or user.active %}checked{% endif %}><span></span></label></label>{% endif %}
       {% if editing %}<label><span>Calendar integration</span><select name="calendar_integration"><option>None</option><option {% if user.calendar_integration=='Outlook' %}selected{% endif %}>Outlook</option><option {% if user.calendar_integration=='Google Calendar' %}selected{% endif %}>Google Calendar</option></select></label>{% endif %}
       {% if not editing %}<label class="required-field"><span>Temporary password</span><input type="password" name="password" minlength="12" required></label>{% endif %}

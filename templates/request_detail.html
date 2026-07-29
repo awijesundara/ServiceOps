@@ -9,7 +9,7 @@
       <label><span>State</span><input value="{{ req.state }}" disabled></label>
       <label class="required-field"><span>Requested by</span><input value="{{ req.requested_by.name }} · {{ req.requested_by.email }}" disabled></label>
       <label class="required-field"><span>Requested for</span><input value="{{ req.requested_for.name }} · {{ req.requested_for.email }}" disabled></label>
-      <label><span>Opened</span><input value="{{ req.opened_at.strftime('%b %d, %Y · %H:%M') }}" disabled></label>
+      <label><span>Opened</span><input value="{{ (req.opened_at|usertime('%b %d, %Y · %H:%M')) }}" disabled></label>
       <label><span>Requested items</span><input value="{{ req.items|length }}" disabled></label>
     </div>
     <div class="record-long-fields"><label><span>Summary</span><input value="{% for ritm in req.items %}{{ ritm.item.name }}{% if not loop.last %}; {% endif %}{% endfor %}" disabled></label></div>
@@ -26,7 +26,7 @@
 {% endif %}
 
 {% for ritm in req.items %}
-<section class="panel ritm"><div class="panel-head"><div><p class="eyebrow">{{ ritm.number }}</p><h2>{{ ritm.item.name }}</h2><p>Stage: {{ ritm.stage }} · Due {{ ritm.due_at.strftime('%b %d, %Y') if ritm.due_at else 'not set' }}</p></div><span class="badge">{{ ritm.state }}</span></div>
+<section class="panel ritm"><div class="panel-head"><div><p class="eyebrow">{{ ritm.number }}</p><h2>{{ ritm.item.name }}</h2><p>Stage: {{ ritm.stage }} · Due {{ (ritm.due_at|usertime('%b %d, %Y')) if ritm.due_at else 'not set' }}</p></div><span class="badge">{{ ritm.state }}</span></div>
 
 <h3>Approvals</h3>
 {% for chain in chains[ritm.id] %}<div class="chain"><strong>{{ chain.name }}</strong> · {{ chain.state }}{% for gate in chain.gates %}<div class="gate"><b>{{ gate.sequence }}. {{ gate.name }}</b> — {{ gate.state }}{% for vote in gate.votes %}<div class="vote">{{ vote.approver.name }}: {{ vote.state }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}"><input name="comments" placeholder="Comments"><button name="decision" value="Rejected">Reject</button><button class="primary" name="decision" value="Approved">Approve</button></form>{% endif %}</div>{% endfor %}</div>{% endfor %}</div>{% else %}<p class="muted">No approval chain required.</p>{% endfor %}
@@ -39,10 +39,10 @@
 {% for item in related_by_ritm[ritm.id] %}<a class="attachment" href="{{ item.url }}"><strong>{{ item.label }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">No controlled change linked.</p>{% endfor %}
 {% if catalog_task_create_permissions[ritm.id] %}<form method="post" action="{{ url_for('record_link_add', source_type='ritm', source_id=ritm.id) }}" class="inline-form"><input type="hidden" name="link_type" value="requested_item_change"><input name="target_number" placeholder="CHG number" required><button>Link change</button></form>{% endif %}
 
-{% for sla in slas[ritm.id] %}<div class="sla-row"><strong>{{ sla.definition.name }}</strong><span>{{ sla.stage }} · target {{ sla.breach_at.strftime('%b %d, %H:%M') }}</span></div>{% endfor %}
+{% for sla in slas[ritm.id] %}<div class="sla-row"><strong>{{ sla.definition.name }}</strong><span>{{ sla.stage }} · target {{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</span></div>{% endfor %}
 
 <h3>RITM history</h3>
-{% for event in history_by_ritm[ritm.id] %}<article class="timeline"><strong>{{ event.event }}</strong><span>{{ event.actor.name if event.actor else 'System' }} · {{ event.created_at.strftime('%b %d, %H:%M:%S') }}</span>{% if event.field_name %}<p><b>{{ event.field_name }}</b>: {{ event.old_value or '—' }} → {{ event.new_value or '—' }}</p>{% endif %}{% if event.details %}<p>{{ event.details }}</p>{% endif %}</article>{% else %}<p class="muted">No recorded history.</p>{% endfor %}
+{% for event in history_by_ritm[ritm.id] %}<article class="timeline"><strong>{{ event.event }}</strong><span>{{ event.actor.name if event.actor else 'System' }} · {{ (event.created_at|usertime('%b %d, %H:%M:%S')) }}</span>{% if event.field_name %}<p><b>{{ event.field_name }}</b>: {{ event.old_value or '—' }} → {{ event.new_value or '—' }}</p>{% endif %}{% if event.details %}<p>{{ event.details }}</p>{% endif %}</article>{% else %}<p class="muted">No recorded history.</p>{% endfor %}
 </section>
 {% endfor %}
 {% endblock %}

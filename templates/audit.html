@@ -5,7 +5,7 @@
 <section class="panel">
   <h2>Integrity keys</h2>
   <p>Historical keys remain encrypted for verification. Rotation never rewrites an audit event.</p>
-  <table><thead><tr><th>Key ID</th><th>Status</th><th>Activated</th><th>Retired</th></tr></thead><tbody>{% for key in keys %}<tr><td><code>{{ key.key_id }}</code></td><td>{{ 'Active' if key.active else 'Historical' }}</td><td>{{ key.activated_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ key.retired_at.strftime('%Y-%m-%d %H:%M') if key.retired_at else '—' }}</td></tr>{% else %}<tr><td colspan="4">Environment key is active. Rotate once to place versioned verification keys under governed storage.</td></tr>{% endfor %}</tbody></table>
+  <table><thead><tr><th>Key ID</th><th>Status</th><th>Activated</th><th>Retired</th></tr></thead><tbody>{% for key in keys %}<tr><td><code>{{ key.key_id }}</code></td><td>{{ 'Active' if key.active else 'Historical' }}</td><td>{{ (key.activated_at|usertime('%Y-%m-%d %H:%M')) }}</td><td>{{ (key.retired_at|usertime('%Y-%m-%d %H:%M')) if key.retired_at else '—' }}</td></tr>{% else %}<tr><td colspan="4">Environment key is active. Rotate once to place versioned verification keys under governed storage.</td></tr>{% endfor %}</tbody></table>
   <form method="post" action="{{ url_for('audit_rotate_key') }}" class="stack"><label>Confirmation<input name="confirmation" required placeholder="Type ROTATE"></label><button>Rotate audit key</button></form>
 </section>
 <aside class="panel">
@@ -21,5 +21,5 @@
 </div>
 <section class="panel">
   <p><strong>Integrity:</strong> {% if integrity.valid %}Verified · {{ integrity.checked }} events · head {{ integrity.head[:12] if integrity.head else 'empty chain' }}{% else %}FAILED at {{ integrity.event_id }} · {{ integrity.reason }}{% endif %}</p>
-  <table><thead><tr><th>Time</th><th>Request</th><th>User</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td><code>{{ r.request_id[:8] }}</code></td><td>{{ r.user.username if r.user else 'system' }}</td><td>{{ r.action }}</td><td><strong>{{ r.target }}</strong></td><td>{{ r.details }}</td></tr>{% endfor %}</tbody></table>
+  <table><thead><tr><th>Time</th><th>Request</th><th>User</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ (r.created_at|usertime('%Y-%m-%d %H:%M')) }}</td><td><code>{{ r.request_id[:8] }}</code></td><td>{{ r.user.username if r.user else 'system' }}</td><td>{{ r.action }}</td><td><strong>{{ r.target }}</strong></td><td>{{ r.details }}</td></tr>{% endfor %}</tbody></table>
 </section>{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ task.number }} · {{ task.title }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<section class="record-shell task-record-shell">
+  <header class="record-toolbar">
+    <div class="record-identity">
+      <a class="record-back" href="{{ parent_url }}" aria-label="Back to {{ parent.number }}">‹</a>
+      <span class="record-type-icon" aria-hidden="true">{{ 'C' if task.task_kind == 'change' else ('P' if task.task_kind == 'problem' else 'E') }}</span>
+      <div><strong>{{ 'Change Task' if task.task_kind == 'change' else ('Problem Task' if task.task_kind == 'problem' else 'Event Task') }}</strong><small>{{ task.number }}</small></div>
+    </div>
+    <div class="record-actions">
+      <span class="record-updated">Updated {{ (task.updated_at|usertime('%b %d, %H:%M')) }}</span>
+      {% if can_edit %}
+      <button class="button" type="submit" form="task-record-form">Update</button>
+      <button class="primary" type="submit" form="task-close-form">Close Task</button>
+      {% endif %}
+    </div>
+  </header>
+  {% if not can_edit %}<div class="record-readonly-notice">Read only: operational updates are restricted to active members of {{ task.assignment_group.name }}.</div>{% endif %}
+  <form method="post" id="task-record-form" class="record-form" action="{{ url_for('operational_task_update', task_id=task.id) }}">
+    <div class="record-grid">
+      <label><span>Number</span><input value="{{ task.number }}" disabled></label>
+      <label><span>Type</span><input value="{{ task.task_type }}" disabled></label>
+      <label><span>{{ 'Change request' if task.task_kind == 'change' else 'Parent record' }}</span><a class="record-parent-link" href="{{ parent_url }}">{{ parent.number }}</a></label>
+      <label><span>State</span><select name="state" {% if not can_edit %}disabled{% endif %}>{% for state in work_task_states[task.state] %}<option {% if task.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
+      <label><span>Planned start date</span><input value="{{ (task.planned_start|usertime('%b %d, %Y %H:%M')) if task.planned_start else 'Not scheduled' }}" disabled></label>
+      <label><span>Assignment group</span><input value="{{ task.assignment_group.name }}" disabled></label>
+      <label><span>Planned end date</span><input value="{{ (task.planned_end|usertime('%b %d, %Y %H:%M')) if task.planned_end else 'Not scheduled' }}" disabled></label>
+      <label><span>Assigned to</span><select name="assignee_id" {% if not can_edit %}disabled{% endif %}><option value="">Unassigned</option>{% for user in agents %}<option value="{{ user.id }}" {% if task.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+      <label><span>Required</span><input value="{{ 'Yes' if task.required else 'No' }}" disabled></label>
+    </div>
+    <div class="record-long-fields">
+      <label><span>Short description</span><input value="{{ task.title }}" disabled></label>
+      <label><span>Work notes</span><textarea name="work_notes" rows="8" {% if not can_edit %}disabled{% endif %}>{{ task.work_notes }}</textarea></label>
+    </div>
+    {% if can_edit %}<footer class="record-footer-actions"><button class="primary">Update {{ task.number }}</button></footer>{% endif %}
+  </form>
+  {% if can_edit %}
+  <form method="post" id="task-close-form" action="{{ url_for('operational_task_update', task_id=task.id) }}" hidden>
+    <input type="hidden" name="assignee_id" value="{{ task.assignee_id or '' }}">
+    <input type="hidden" name="work_notes" value="{{ task.work_notes or '' }}">
+    <input type="hidden" name="state" value="{{ closing_state }}">
+  </form>
+  {% endif %}
+</section>
+
+<nav class="record-section-tabs" aria-label="{{ task.number }} sections">
+  <a class="active" href="#task-event-history">Event history</a>
+</nav>
+<section id="task-event-history" class="panel table-panel">
+  <table><thead><tr><th>Event</th><th>Field</th><th>From</th><th>To</th><th>Actor</th><th>When</th></tr></thead><tbody>
+    {% for row in history %}<tr>
+      <td>{{ row.event }}</td>
+      <td>{{ row.field_name or '—' }}</td>
+      <td>{{ row.old_value or '—' }}</td>
+      <td>{{ row.new_value or '—' }}</td>
+      <td>{{ row.actor.name if row.actor else 'System' }}</td>
+      <td>{{ (row.created_at|usertime('%b %d, %Y %H:%M')) }}</td>
+    </tr>{% else %}<tr><td colspan="6" class="empty">No history recorded for this task.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+{% endblock %}

@@ -15,7 +15,7 @@
       <td>{{ row.title }}</td>
       <td><span class="badge">{{ row.state }}</span></td>
       <td>{{ row.group }}</td>
-      <td>{{ row.due_at.strftime('%b %d, %H:%M') if row.due_at else "—" }}</td>
+      <td>{{ (row.due_at|usertime('%b %d, %H:%M')) if row.due_at else "—" }}</td>
     </tr>
     {% else %}
     <tr><td colspan="6" class="empty">Nothing assigned to you right now.</td></tr>
@@ -37,7 +37,7 @@
       <td><span class="badge">{{ row.state }}</span></td>
       <td>{{ row.group }}</td>
       <td>{{ row.assignee }}</td>
-      <td>{{ row.due_at.strftime('%b %d, %H:%M') if row.due_at else "—" }}</td>
+      <td>{{ (row.due_at|usertime('%b %d, %H:%M')) if row.due_at else "—" }}</td>
     </tr>
     {% else %}
     <tr><td colspan="7" class="empty">No open tasks for your teams.</td></tr>
