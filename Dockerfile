@@ -14,11 +14,11 @@ RUN if [ -n "$PIP_INDEX_URL" ]; then pip config set global.index-url "$PIP_INDEX
     && pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 COPY . .
-# Never ship the disposable-fixture loader in the production image: it seeds
-# well-known weak passwords and must only be reachable from a developer
-# checkout (or Dockerfile.test), not from `docker exec` against a running
-# production container.
-RUN rm -f /app/tools/load_test_fixture.py
+# Never ship disposable-fixture/demo-data loaders in the production image:
+# they seed well-known weak passwords and sample operational records, and
+# must only be reachable from a developer checkout (or Dockerfile.test), not
+# from `docker exec` against a running production container.
+RUN rm -f /app/tools/load_test_fixture.py /app/tools/load_demo_dataset.py
 RUN mkdir -p /app/uploads && chmod 755 /app/tools/container-entrypoint.sh /app/tools/gunicorn-entrypoint.sh && chown -R app:app /app
 USER app
 EXPOSE 8080
