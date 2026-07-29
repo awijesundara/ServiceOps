@@ -192,7 +192,7 @@ def test_migration_baseline_creates_fresh_schema_and_records_revision():
         revision = db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "20260729_0020"
+        assert revision == "20260729_0021"
         assert User.query.filter_by(username="admin").one()
     os.unlink(path)
 
@@ -220,7 +220,7 @@ def test_migration_baseline_adopts_existing_schema_without_data_loss():
         assert Knowledge.query.filter_by(title="Preserve during adoption").one()
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "20260729_0020"
+        ).scalar_one() == "20260729_0021"
     os.unlink(path)
 
 
@@ -262,7 +262,7 @@ def test_tenant_migration_is_reversible_and_preserves_records():
         )).scalar_one() == before
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-            ).scalar_one() == "20260729_0020"
+            ).scalar_one() == "20260729_0021"
     os.unlink(path)
 
 
@@ -973,10 +973,13 @@ def test_only_owning_team_can_operationally_update_ticket(client, app):
     assert b"Save changes" in owner_detail.data
     assert b"Unix Agent" in owner_detail.data
     assert b"SSD Agent" not in owner_detail.data
-    assert client.post(f"/ticket/{ticket_id}", data={
+    ineligible = client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": current_state, "priority": "P2",
         "assignee_id": ssd_agent_id,
-    }).status_code == 400
+    }, follow_redirects=True)
+    assert ineligible.status_code == 200
+    assert ineligible.request.path == f"/ticket/{ticket_id}"
+    assert b"The assignee must be an active member of the owning team" in ineligible.data
     assert client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": current_state, "priority": "P2",
         "assignee_id": "",
@@ -1857,6 +1860,112 @@ def test_visual_board_checklist_and_attachment(client, app):
     assert b"evidence.txt" in uploaded.data
     with app.app_context():
         assert FileAttachment.query.filter_by(ticket_id=ticket_id).one().size_bytes == 8
+
+
+def test_oversized_attachment_redirects_with_friendly_message(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Oversized upload test", "description": "Exceeds the configured limit",
+        "category": "Software", "priority": "P3",
+        "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Oversized upload test").one().id
+        max_mb = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
+    oversized = client.post(
+        f"/ticket/{ticket_id}/attachments",
+        data={"file": (BytesIO(b"x" * (app.config["MAX_CONTENT_LENGTH"] + 1)), "too-big.bin")},
+        content_type="multipart/form-data", follow_redirects=True,
+        headers={"Referer": f"http://localhost/ticket/{ticket_id}"},
+    )
+    assert oversized.status_code == 200
+    assert f"maximum upload size is {max_mb} MB".encode() in oversized.data
+    assert oversized.request.path == f"/ticket/{ticket_id}"
+    with app.app_context():
+        assert FileAttachment.query.filter_by(ticket_id=ticket_id).count() == 0
+
+
+def test_priority_override_rejection_stays_on_ticket_page(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Priority override test", "description": "Needs an override",
+        "category": "Software", "priority": "P3",
+        "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Priority override test").one()
+        ticket_id, current_state = ticket.id, ticket.state
+
+    too_short = client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": current_state, "priority": "P1",
+        "impact": "Low", "urgency": "Low", "assignee_id": "",
+        "priority_override_reason": "too short",
+    }, follow_redirects=True)
+    assert too_short.status_code == 200
+    assert too_short.request.path == f"/ticket/{ticket_id}"
+    assert b"Only a manager or administrator may override calculated priority" in too_short.data
+    with app.app_context():
+        assert Ticket.query.get(ticket_id).priority_overridden is False
+
+    accepted = client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": current_state, "priority": "P1",
+        "impact": "Low", "urgency": "Low", "assignee_id": "",
+        "priority_override_reason": "Customer executive escalation, needs immediate handling",
+    }, follow_redirects=True)
+    assert accepted.status_code == 200
+    assert b"Priority override reason recorded" in accepted.data
+    assert b"Customer executive escalation" in accepted.data
+    with app.app_context():
+        ticket = Ticket.query.get(ticket_id)
+        assert ticket.priority_overridden is True
+        assert ticket.priority_override_reason == "Customer executive escalation, needs immediate handling"
+
+
+def test_org_chart_reflects_manager_assignment_and_blocks_cycles(client, app):
+    login(client)
+    with app.app_context():
+        tenant_id = User.query.filter_by(username="admin").one().tenant_id
+        exec_user = User(
+            username="org.exec", name="Org Exec", email="org.exec@example.com",
+            password_hash=generate_password_hash("Exec12345!"), role="manager",
+            tenant_id=tenant_id, title="VP",
+        )
+        lead_user = User(
+            username="org.lead", name="Org Lead", email="org.lead@example.com",
+            password_hash=generate_password_hash("Lead12345!"), role="agent",
+            tenant_id=tenant_id, title="Team Lead",
+        )
+        db.session.add_all([exec_user, lead_user])
+        db.session.commit()
+        exec_id, lead_id = exec_user.id, lead_user.id
+
+    assert client.post(f"/admin/users/{lead_id}", data={
+        "name": "Org Lead", "email": "org.lead@example.com", "role": "agent",
+        "active": "1", "manager_id": str(exec_id),
+    }).status_code == 302
+
+    with app.app_context():
+        assert User.query.get(lead_id).manager_id == exec_id
+
+    chart = client.get("/org-chart")
+    assert chart.status_code == 200
+    assert b"Org Exec" in chart.data
+    assert b"Org Lead" in chart.data
+
+    cycle = client.post(f"/admin/users/{exec_id}", data={
+        "name": "Org Exec", "email": "org.exec@example.com", "role": "manager",
+        "active": "1", "manager_id": str(lead_id),
+    }, follow_redirects=True)
+    assert cycle.status_code == 200
+    assert b"reporting-line loop" in cycle.data
+    with app.app_context():
+        assert User.query.get(exec_id).manager_id is None
+
+    self_manage = client.post(f"/admin/users/{exec_id}", data={
+        "name": "Org Exec", "email": "org.exec@example.com", "role": "manager",
+        "active": "1", "manager_id": str(exec_id),
+    }, follow_redirects=True)
+    assert b"cannot be their own manager" in self_manage.data
 
 
 def test_visual_board_rejects_invalid_lifecycle_jump(client, app):
