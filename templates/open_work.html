@@ -2,6 +2,8 @@
 {% block title %}Open work · {{ instance_name }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">NEEDS ATTENTION</p><h1>Open work</h1><p>{% if priority %}Open incidents and changes at priority {{ priority }}.{% else %}Every incident, change, and service request that isn't resolved or closed yet.{% endif %}</p></div>{% if priority %}<a class="button" href="{{ url_for('open_work') }}">Clear filter</a>{% endif %}</header>
+{% set csv_url = url_for('open_work_export', priority=priority) %}
+{% include "_export_toolbar.html" %}
 
 <section class="panel table-panel">
 <h2>Open incidents & changes{% if priority %} <small>· {{ priority }}</small>{% endif %}</h2>

@@ -1,23 +1,50 @@
 {% extends "base.html" %}
 {% block title %}Manager portal · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">LEADERSHIP</p><h1>Manager portal</h1><p>Open work across the IT fulfillment teams you manage.</p></div></header>
-<section class="panel table-panel">
-<table>
-  <thead><tr><th>Team</th><th>Manager</th><th>Open changes</th><th>Open incidents</th><th>Open tasks</th></tr></thead>
-  <tbody>
-    {% for row in team_rows %}
-    <tr>
-      <td><strong>{{ row.group.name }}</strong></td>
-      <td>{{ row.group.manager.name if row.group.manager else "Unassigned" }}</td>
-      <td>{{ row.open_changes }}</td>
-      <td>{{ row.open_incidents }}</td>
-      <td>{{ row.open_tasks }}</td>
-    </tr>
-    {% else %}
-    <tr><td colspan="5" class="empty">No IT fulfillment teams under your management.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+<header class="page-head"><div><p class="eyebrow">LEADERSHIP</p><h1>Manager portal</h1><p>Team workload, SLA exposure and performance across the IT fulfillment teams you manage.</p></div></header>
+{% set csv_url = url_for('manager_portal_export') %}
+{% include "_export_toolbar.html" %}
+
+{% if not team_rows %}
+<section class="panel"><p class="empty">No IT fulfillment teams under your management.</p></section>
+{% endif %}
+
+{% for row in team_rows %}
+<section class="panel table-panel" style="margin-bottom:20px">
+  <header class="section-heading">
+    <div>
+      <h2>{{ row.group.name }}</h2>
+      <p>Manager: {{ row.group.manager.name if row.group.manager else "Unassigned" }} · {{ row.member_count }} member{{ 's' if row.member_count != 1 }}</p>
+    </div>
+    <span>
+      {{ row.open_incidents }} open incident{{ 's' if row.open_incidents != 1 }} ·
+      {{ row.open_changes }} open change{{ 's' if row.open_changes != 1 }} ·
+      {{ row.open_tasks }} open task{{ 's' if row.open_tasks != 1 }}
+      {% if row.sla_breached %}· <span class="sla-breached-cell">{{ row.sla_breached }} SLA breached</span>{% endif %}
+    </span>
+  </header>
+  <table>
+    <thead><tr>
+      <th>Member</th><th>Status</th><th>Open incidents</th><th>Open changes</th>
+      <th>Open tasks</th><th>Resolved (30d)</th><th>SLA breached</th><th>SLA at risk</th>
+    </tr></thead>
+    <tbody>
+      {% for member in member_rows_by_group.get(row.group.id, []) %}
+      <tr>
+        <td><a href="{{ url_for('user_edit', user_id=member.user.id) }}">{{ member.user.name }}</a><br><small class="muted">{{ member.user.title or member.role_in_group|capitalize }}</small></td>
+        <td><span class="badge {% if member.status == 'Inactive' %}priority p4{% endif %}">{{ member.status }}</span></td>
+        <td>{{ member.open_incidents }}</td>
+        <td>{{ member.open_changes }}</td>
+        <td>{{ member.open_tasks }}</td>
+        <td>{{ member.resolved_30d }}</td>
+        <td>{% if member.sla_breached %}<span class="sla-breached-cell">{{ member.sla_breached }}</span>{% else %}0{% endif %}</td>
+        <td>{% if member.sla_at_risk %}<span class="sla-at-risk-cell">{{ member.sla_at_risk }}</span>{% else %}0{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="empty">No members assigned to this team yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </section>
+{% endfor %}
 {% endblock %}
