@@ -713,6 +713,11 @@ class ApprovalGate(db.Model):
     mode = db.Column(db.String(20), nullable=False, default="all")
     state = db.Column(db.String(30), nullable=False, default="Pending")
     votes = db.relationship("ApprovalVote", cascade="all, delete-orphan", backref="gate")
+    # Redundant with chain.tenant_id but kept as its own enforced column (same
+    # defense-in-depth rationale as ci_relationship.tenant_id in B-253): a
+    # decision record like this should not depend solely on every future query
+    # remembering to join back through approval_chain.
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     __table_args__ = (db.UniqueConstraint("chain_id", "sequence"),)
 
 
@@ -726,6 +731,7 @@ class ApprovalVote(db.Model):
     decided_at = db.Column(db.DateTime(timezone=True))
     approver = db.relationship("User", foreign_keys=[approver_id])
     delegated_from = db.relationship("User", foreign_keys=[delegated_from_id])
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class ServiceOffering(db.Model):
@@ -1005,6 +1011,7 @@ class ChangeGovernance(db.Model):
     ci_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"))
     conflict_status = db.Column(db.String(500), nullable=False, default="Not Run")
     ccb_required = db.Column(db.Boolean, nullable=False, default=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     ticket = db.relationship("Ticket", backref=db.backref("change_governance", uselist=False))
     ci = db.relationship("ConfigurationItem")
 
@@ -1193,6 +1200,8 @@ class FileAttachment(db.Model):
     stored_name = db.Column(db.String(255), unique=True, nullable=False)
     mime_type = db.Column(db.String(120))
     size_bytes = db.Column(db.Integer, nullable=False)
+    sha256 = db.Column(db.String(64))
+    scan_status = db.Column(db.String(20), nullable=False, default="not_scanned")
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     ticket = db.relationship("Ticket", backref=db.backref("attachments", cascade="all, delete-orphan"))
     uploaded_by = db.relationship("User")
@@ -1619,6 +1628,9 @@ SETTING_DEFINITIONS = {
         {"key": "LOGIN_MAX_ATTEMPTS", "label": "Failed logins before lockout", "type": "int", "default": "5", "min": 3, "max": 20, "live": True},
         {"key": "LOGIN_LOCKOUT_MINUTES", "label": "Lockout duration in minutes", "type": "int", "default": "15", "min": 1, "max": 1440, "live": True},
         {"key": "API_RATE_LIMIT_PER_MINUTE", "label": "REST API requests per minute (per client)", "type": "int", "default": "120", "min": 10, "max": 6000, "live": True},
+        {"key": "CLAMAV_ENABLED", "label": "Scan attachments with ClamAV", "type": "bool", "default": "false", "live": True},
+        {"key": "CLAMAV_HOST", "label": "ClamAV daemon host", "type": "text", "default": "", "live": True},
+        {"key": "CLAMAV_PORT", "label": "ClamAV daemon port", "type": "int", "default": "3310", "min": 1, "max": 65535, "live": True},
     ],
     "workflow": [
         {"key": "DEFAULT_TICKET_PRIORITY", "label": "Default ticket priority", "type": "choice", "choices": ["P1", "P2", "P3", "P4"], "default": "P3", "live": True},
@@ -2036,6 +2048,49 @@ def validate_attachment_upload(upload):
         if header != signature:
             return None
     return ext, mime_type
+
+
+CLAMAV_MAX_CHUNK = 4096
+
+
+def scan_attachment(path):
+    """Optional malware-scan adapter: speaks the ClamAV daemon's INSTREAM
+    protocol directly over a socket (no clamd client dependency added — same
+    zero-new-dependency preference this repo has applied elsewhere, e.g. the
+    analytics CSS bar charts). Returns one of "clean", "infected",
+    "scan_error", or "not_scanned" (the honest answer when no scanner is
+    configured — this app must never claim a file was scanned when it
+    wasn't). Fails open on scanner unavailability by design: this is an
+    optional adapter per CLAUDE.md's integration model, and a misconfigured
+    or down ClamAV instance rejecting every upload tenant-wide would itself
+    be a production incident. Magic-byte/extension validation in
+    validate_attachment_upload() runs unconditionally regardless of this."""
+    if not setting_bool("CLAMAV_ENABLED", False):
+        return "not_scanned"
+    host = setting_value("CLAMAV_HOST", "") or ""
+    port = setting_int("CLAMAV_PORT", 3310)
+    if not host:
+        return "not_scanned"
+    try:
+        with socket.create_connection((host, port), timeout=10) as sock:
+            sock.sendall(b"zINSTREAM\0")
+            with open(path, "rb") as handle:
+                while True:
+                    chunk = handle.read(CLAMAV_MAX_CHUNK)
+                    if not chunk:
+                        break
+                    sock.sendall(len(chunk).to_bytes(4, "big") + chunk)
+            sock.sendall((0).to_bytes(4, "big"))
+            response = sock.recv(4096).decode("utf-8", errors="replace")
+    except OSError as exc:
+        current_app.logger.warning("ClamAV scan unavailable for %s: %s", os.path.basename(path), exc)
+        return "scan_error"
+    if "FOUND" in response:
+        return "infected"
+    if "OK" in response:
+        return "clean"
+    current_app.logger.warning("Unrecognized ClamAV response for %s: %r", os.path.basename(path), response)
+    return "scan_error"
 
 
 def csv_response(csv_text, filename):
@@ -4709,18 +4764,26 @@ def create_app(test_config=None):
     def dashboard():
         visible_requests = visible_catalog_request_query(current_user)
         ticket_query = visible_ticket_query(current_user)
-        counts = {
-            "incident": ticket_query.filter_by(kind="incident").count(),
-            "request": visible_requests.count(),
-            "change": ticket_query.filter_by(kind="change").count(),
-        }
-        open_ticket_query = ticket_query.filter(Ticket.state.notin_(["Resolved", "Closed", "Cancelled"]))
-        open_count = (
-            open_ticket_query.count()
-            + visible_requests.filter(
-                CatalogRequest.state.notin_(["Closed Complete", "Closed Incomplete", "Cancelled"])
-            ).count()
-        )
+        terminal_states = ("Resolved", "Closed", "Cancelled")
+        # A single (kind, priority, state) fetch replaces what used to be five
+        # separate COUNT() round trips (incident/change/open/P1/P2) on the
+        # single highest-traffic page in the app; only three narrow columns
+        # are pulled, and the aggregation happens in Python instead of SQL.
+        ticket_rows = ticket_query.with_entities(Ticket.kind, Ticket.priority, Ticket.state).all()
+        counts = {"incident": 0, "change": 0, "request": visible_requests.count()}
+        open_count = 0
+        incident_priority_counts = {"p1": 0, "p2": 0}
+        for kind, priority, state in ticket_rows:
+            if kind in counts:
+                counts[kind] += 1
+            if state not in terminal_states:
+                open_count += 1
+                if kind == "incident" and priority in ("P1", "P2"):
+                    incident_priority_counts[priority.lower()] += 1
+        open_ticket_query = ticket_query.filter(Ticket.state.notin_(terminal_states))
+        open_count += visible_requests.filter(
+            CatalogRequest.state.notin_(["Closed Complete", "Closed Incomplete", "Cancelled"])
+        ).count()
         show_recent = setting_bool("DASHBOARD_SHOW_RECENT", True)
         show_my_assigned = setting_bool("DASHBOARD_SHOW_MY_ASSIGNED", True)
         show_sla_widgets = setting_bool("DASHBOARD_SHOW_SLA_WIDGETS", True)
@@ -4733,11 +4796,6 @@ def create_app(test_config=None):
             .order_by(Ticket.priority, Ticket.updated_at.desc()).limit(8).all()
             if show_my_assigned else []
         )
-        open_incident_query = open_ticket_query.filter(Ticket.kind == "incident")
-        incident_priority_counts = {
-            "p1": open_incident_query.filter(Ticket.priority == "P1").count(),
-            "p2": open_incident_query.filter(Ticket.priority == "P2").count(),
-        }
         sla_at_risk_hours = setting_int("SLA_AT_RISK_HOURS", 4)
         sla_breached, sla_at_risk, sla_tickets = [], [], {}
         if show_sla_widgets:
@@ -8623,9 +8681,24 @@ def create_app(test_config=None):
         stored = f"{uuid.uuid4().hex}-{original}"
         path = os.path.join(app.config["UPLOAD_FOLDER"], stored)
         upload.save(path)
+        scan_status = scan_attachment(path)
+        if scan_status == "infected":
+            os.remove(path)
+            audit("attach-blocked", ticket.number, f"{original} (malware scan positive)")
+            current_app.logger.warning(
+                "Rejected infected attachment upload: ticket=%s file=%s user=%s",
+                ticket.number, original, current_user.id,
+            )
+            flash("That file was rejected by malware scanning and was not attached.", "error")
+            return redirect(url_for("ticket_detail", ticket_id=ticket_id))
+        sha256 = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                sha256.update(chunk)
         db.session.add(FileAttachment(ticket_id=ticket_id, uploaded_by_id=current_user.id,
                                       original_name=original, stored_name=stored,
-                                      mime_type=verified_mime_type, size_bytes=os.path.getsize(path)))
+                                      mime_type=verified_mime_type, size_bytes=os.path.getsize(path),
+                                      sha256=sha256.hexdigest(), scan_status=scan_status))
         log_history(
             "ticket", ticket.id, "Attachment uploaded",
             details=f"{original} ({os.path.getsize(path)} bytes)",

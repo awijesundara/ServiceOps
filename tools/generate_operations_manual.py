@@ -11,6 +11,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import (
     Image, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
+from reportlab.platypus.tableofcontents import TableOfContents
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "docs" / "OPERATIONS_MANUAL.md"
@@ -45,7 +46,17 @@ styles = {
     "caption": ParagraphStyle("ManualCaption", parent=base["BodyText"], fontSize=8.3, leading=11,
                               textColor=MUTED, alignment=1, spaceBefore=4, spaceAfter=12,
                               fontName="Helvetica-Oblique"),
+    "toc_h2": ParagraphStyle("ManualTOCChapter", fontName="Helvetica-Bold", fontSize=10.5,
+                             leading=15, textColor=TEAL, spaceBefore=6),
+    "toc_h3": ParagraphStyle("ManualTOCSection", fontName="Helvetica", fontSize=9.3,
+                             leading=13, textColor=INK, leftIndent=11, spaceBefore=1),
+    "toc_title": ParagraphStyle("ManualTOCTitle", parent=base["Heading1"], fontName="Helvetica-Bold",
+                                fontSize=18, leading=23, textColor=TEAL, spaceBefore=15, spaceAfter=8),
 }
+
+# Paragraph style names (not the dict keys above) that mark chapter/section
+# headings for the outline pane and the in-document table of contents.
+TOC_LEVELS = {"ManualChapter": 0, "ManualSection": 1}
 
 IMAGE_RE = re.compile(r"^!\[(.*?)\]\((.*?)\)$")
 
@@ -100,6 +111,24 @@ def table_flowable(rows):
     return table
 
 
+class ManualDocTemplate(SimpleDocTemplate):
+    """Adds PDF outline (bookmark pane) entries and drives the in-document
+    Table of Contents by watching chapter/section paragraphs as they're laid
+    out, since page numbers aren't known until the flowables are placed."""
+
+    def afterFlowable(self, flowable):
+        if not isinstance(flowable, Paragraph):
+            return
+        level = TOC_LEVELS.get(flowable.style.name)
+        if level is None:
+            return
+        text = flowable.getPlainText()
+        key = f"toc-{id(flowable)}-{self.page}"
+        self.canv.bookmarkPage(key)
+        self.canv.addOutlineEntry(text, key, level=level, closed=False)
+        self.notify("TOCEntry", (level, text, self.page, key))
+
+
 def footer(canvas, doc):
     canvas.saveState()
     canvas.setStrokeColor(AMBER)
@@ -115,6 +144,9 @@ def footer(canvas, doc):
 def build():
     story, paragraph, code, table_rows = [], [], [], []
     in_code = False
+    toc = TableOfContents()
+    toc.levelStyles = [styles["toc_h2"], styles["toc_h3"]]
+    toc_inserted = False
 
     def flush_paragraph():
         if paragraph:
@@ -150,6 +182,8 @@ def build():
             flowable = image_flowable(image_match.group(1), image_match.group(2))
             if flowable:
                 story.append(flowable)
+            else:
+                print(f"WARNING: screenshot not found, skipped in PDF: docs/{image_match.group(2)}")
         elif line.startswith("# "):
             flush_paragraph()
             flush_table()
@@ -184,15 +218,20 @@ def build():
             flush_paragraph()
             flush_table()
             story.append(Paragraph(escape(line), styles["meta"]))
+            if not toc_inserted:
+                story.append(Paragraph("Contents", styles["toc_title"]))
+                story.append(toc)
+                story.append(PageBreak())
+                toc_inserted = True
         else:
             flush_table()
             paragraph.append(line)
     flush_paragraph()
     flush_table()
-    doc = SimpleDocTemplate(str(OUTPUT), pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm,
+    doc = ManualDocTemplate(str(OUTPUT), pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm,
                             topMargin=16 * mm, bottomMargin=20 * mm,
                             title="ServiceOps Complete Platform Manual", author="ServiceOps")
-    doc.build(story, onFirstPage=footer, onLaterPages=footer)
+    doc.multiBuild(story, onFirstPage=footer, onLaterPages=footer)
     print(OUTPUT)
 
 
