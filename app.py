@@ -10,6 +10,7 @@ import socket
 import re
 import secrets
 import smtplib
+from collections import defaultdict
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from email.message import EmailMessage
 from functools import wraps
@@ -33,7 +34,7 @@ from sqlalchemy import func
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from serviceops_core.security import role_has_action, validate_policy
 from serviceops_core.priority import calculate_priority, validate_priority_policy
@@ -170,6 +171,8 @@ class User(UserMixin, db.Model):
     locked_until = db.Column(db.DateTime(timezone=True))
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    manager_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    manager = db.relationship("User", remote_side=[id], foreign_keys=[manager_id])
 
     @property
     def is_active(self):
@@ -3560,6 +3563,25 @@ def create_app(test_config=None):
             response.headers["Content-Length"] = str(len(response.get_data()))
         return response
 
+    @app.errorhandler(RequestEntityTooLarge)
+    def request_entity_too_large(error):
+        max_mb = app.config.get("MAX_CONTENT_LENGTH", 20 * 1024 * 1024) // (1024 * 1024)
+        message = f"That file is too large. The maximum upload size is {max_mb} MB."
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "error": {
+                    "status": 413,
+                    "title": "Payload Too Large",
+                    "detail": message,
+                    "request_id": g.get("request_id"),
+                }
+            }), 413
+        flash(message, "error")
+        destination = request.referrer
+        if destination and destination.startswith(request.host_url):
+            return redirect(destination)
+        return redirect(url_for("dashboard"))
+
     @app.errorhandler(HTTPException)
     def http_error(error):
         if request.path.startswith("/api/"):
@@ -4735,7 +4757,23 @@ def create_app(test_config=None):
                 assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
                 eligible_ids = {agent.id for agent in ticket_team_agents(ticket)}
                 if assignee_id is not None and assignee_id not in eligible_ids:
-                    abort(400, description="The assignee must be an active member of the owning team.")
+                    flash("The assignee must be an active member of the owning team.", "error")
+                    return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+                impact = request.form.get("impact", ticket.impact)
+                urgency = request.form.get("urgency", ticket.urgency)
+                calculated = calculate_priority(impact, urgency)
+                requested_priority = request.form.get("priority", calculated)
+                reason = request.form.get("priority_override_reason", "").strip()
+                governed_priority_input = "impact" in request.form or "urgency" in request.form
+                if (
+                    governed_priority_input and requested_priority != calculated
+                    and (current_user.role not in ("manager", "admin") or len(reason) < 10)
+                ):
+                    flash(
+                        "Only a manager or administrator may override calculated priority, "
+                        "with a reason of at least 10 characters.", "error",
+                    )
+                    return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 before = {
                     "short description": ticket.title,
                     "description": ticket.description,
@@ -4754,23 +4792,29 @@ def create_app(test_config=None):
                     "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
                 }
                 transition_ticket(ticket, request.form["state"])
-                impact = request.form.get("impact", ticket.impact)
-                urgency = request.form.get("urgency", ticket.urgency)
-                calculated = calculate_priority(impact, urgency)
-                requested_priority = request.form.get("priority", calculated)
-                reason = request.form.get("priority_override_reason", "").strip()
-                governed_priority_input = "impact" in request.form or "urgency" in request.form
+                previous_override_reason = ticket.priority_override_reason
                 if governed_priority_input and requested_priority != calculated:
-                    if current_user.role not in ("manager", "admin") or len(reason) < 10:
-                        abort(400, description=(
-                            "Only a manager or administrator may override calculated priority, "
-                            "with a reason of at least 10 characters."
-                        ))
                     ticket.priority_overridden = True
                     ticket.priority_override_reason = reason
+                    if reason != previous_override_reason:
+                        log_history(
+                            "ticket", ticket.id, "Priority override reason recorded",
+                            "priority override reason",
+                            previous_override_reason or "None", reason,
+                            details=(
+                                f"{current_user.name} overrode priority to {requested_priority} "
+                                f"(calculated: {calculated}): {reason}"
+                            ),
+                        )
                 elif governed_priority_input:
                     ticket.priority_overridden = False
                     ticket.priority_override_reason = None
+                    if previous_override_reason:
+                        log_history(
+                            "ticket", ticket.id, "Priority override cleared",
+                            "priority override reason",
+                            previous_override_reason, "None",
+                        )
                 ticket.impact = impact
                 ticket.urgency = urgency
                 ticket.priority = requested_priority
@@ -5454,6 +5498,26 @@ def create_app(test_config=None):
             return redirect(url_for("assets"))
         return render_template("asset_form.html")
 
+    @app.get("/org-chart")
+    @login_required
+    def org_chart():
+        active_users = tenant_query(User).filter_by(active=True).all()
+        by_id = {u.id: u for u in active_users}
+        children = defaultdict(list)
+        roots = []
+        for u in active_users:
+            if u.manager_id and u.manager_id in by_id:
+                children[u.manager_id].append(u)
+            else:
+                roots.append(u)
+        for group in children.values():
+            group.sort(key=lambda u: u.name)
+        roots.sort(key=lambda u: u.name)
+        return render_template(
+            "org_chart.html", roots=roots, children=children,
+            can_edit=current_user.role == "admin",
+        )
+
     @app.get("/admin/users")
     @roles("admin")
     @require_action("security_administer")
@@ -5515,6 +5579,7 @@ def create_app(test_config=None):
             before = {
                 "name": user.name, "email": user.email, "role": user.role,
                 "active": user.active, "department": user.department,
+                "manager": user.manager.name if user.manager else "None",
             }
             user.name = request.form["name"].strip()[:120]
             user.email = request.form["email"].strip()[:160]
@@ -5528,11 +5593,51 @@ def create_app(test_config=None):
             user.timezone = request.form.get("timezone", "Asia/Tokyo")[:80]
             user.date_format = request.form.get("date_format", "system")[:40]
             user.calendar_integration = request.form.get("calendar_integration", "None")[:40]
+            manager_raw = request.form.get("manager_id", "")
+            if manager_raw:
+                manager_id = int(manager_raw)
+                if manager_id == user.id:
+                    flash("A user cannot be their own manager.", "error")
+                    return redirect(url_for("user_edit", user_id=user.id))
+                manager = tenant_query(User).filter_by(id=manager_id).first()
+                if not manager:
+                    flash("Select a valid manager.", "error")
+                    return redirect(url_for("user_edit", user_id=user.id))
+                walker = manager
+                seen = set()
+                while walker and walker.id not in seen:
+                    if walker.id == user.id:
+                        flash(
+                            f"Cannot set {manager.name} as manager: that would create a "
+                            "reporting-line loop.", "error",
+                        )
+                        return redirect(url_for("user_edit", user_id=user.id))
+                    seen.add(walker.id)
+                    walker = walker.manager
+                user.manager_id = manager_id
+            else:
+                user.manager_id = None
+            if user.manager and user.manager.name != before["manager"]:
+                log_history(
+                    "user", user.id, "Field changed", "manager",
+                    before["manager"], user.manager.name,
+                )
+            elif not user.manager and before["manager"] != "None":
+                log_history(
+                    "user", user.id, "Field changed", "manager",
+                    before["manager"], "None",
+                )
             audit("update", user.username, json.dumps({"before": before, "role": user.role, "active": user.active}))
             db.session.commit()
             flash("User record updated.", "success")
             return redirect(url_for("user_edit", user_id=user.id))
-        return render_template("user_form.html", user=user, self_service=False)
+        manager_choices = tenant_query(User).filter(
+            User.active.is_(True), User.id != user.id,
+        ).order_by(User.name).all()
+        return render_template(
+            "user_form.html", user=user, self_service=False,
+            manager_choices=manager_choices,
+        )
 
     @app.route("/profile", methods=["GET", "POST"])
     @login_required
