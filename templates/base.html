@@ -65,11 +65,11 @@
   </div>
 </aside>
 <header class="unified-nav">
-  <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation">☰</button>
-  <form action="{{ url_for('global_search') }}" class="global-search"><span>⌕</span><input name="q" placeholder="Search ServiceOps" aria-label="Search ServiceOps"></form>
+  <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation"><svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
+  <form action="{{ url_for('global_search') }}" class="global-search"><span><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span><input name="q" placeholder="Search ServiceOps" aria-label="Search ServiceOps"></form>
   <div class="nav-menus">
     <details>
-      <summary title="Favorites" aria-label="Favorites"><span data-favorite-star>{{ '★' if current_page_is_favorite else '☆' }}</span></summary>
+      <summary title="Favorites" aria-label="Favorites"><svg class="icon" data-favorite-star viewBox="0 0 24 24" data-active="{{ 'true' if current_page_is_favorite else 'false' }}"><polygon points="12 2.5 15.09 8.99 22.18 10.02 17.09 15.02 18.26 22.06 12 18.72 5.74 22.06 6.91 15.02 1.82 10.02 8.91 8.99"/></svg></summary>
       <div class="nav-popover">
         <h3>Favorites</h3>
         <button type="button" class="favorite-toggle" data-favorite>{{ 'Remove this page from favorites' if current_page_is_favorite else 'Add this page to favorites' }}</button>
@@ -78,15 +78,15 @@
       </div>
     </details>
     <details>
-      <summary title="Recently viewed pages" aria-label="Recently viewed pages">◷</summary>
+      <summary title="Recently viewed pages" aria-label="Recently viewed pages"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg></summary>
       <div class="nav-popover">
         <h3>Recently viewed</h3>
         {% for row in ui_history %}<a href="{{ row.url }}">{{ row.label }}</a>{% else %}<p>No recent pages.</p>{% endfor %}
       </div>
     </details>
-    <a class="nav-icon" href="{{ url_for('notifications') }}" title="Notifications" aria-label="Notifications">🔔︎{% if unread_notifications %}<b>{{ unread_notifications }}</b>{% endif %}</a>
-    <a class="nav-icon" href="{{ url_for('help_center') }}" title="Help" aria-label="Help">?</a>
-    <a class="nav-icon" href="{{ url_for('preferences') }}" title="Preferences" aria-label="Preferences">⚙</a>
+    <a class="nav-icon" href="{{ url_for('notifications') }}" title="Notifications" aria-label="Notifications"><svg class="icon" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>{% if unread_notifications %}<b>{{ unread_notifications }}</b>{% endif %}</a>
+    <a class="nav-icon" href="{{ url_for('help_center') }}" title="Help" aria-label="Help"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.9.4-1.5 1-1.5 2.2"/><line x1="12" y1="17.3" x2="12" y2="17.31"/></svg></a>
+    <a class="nav-icon" href="{{ url_for('preferences') }}" title="Preferences" aria-label="Preferences"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1z"/></svg></a>
   </div>
 </header>
 {% endif %}

@@ -61,7 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ? "Remove this page from favorites"
       : "Add this page to favorites";
     const star = document.querySelector("[data-favorite-star]");
-    if (star) star.textContent = result.active ? "★" : "☆";
+    if (star) star.setAttribute("data-active", result.active ? "true" : "false");
   });
   let dragged = null;
   document.querySelectorAll(".board-card[draggable=true]").forEach(card => {
