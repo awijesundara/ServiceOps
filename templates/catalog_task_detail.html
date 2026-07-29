@@ -15,12 +15,15 @@
       {% endif %}
     </div>
   </header>
+  {% include "_state_track.html" %}
   {% if not can_edit %}<div class="record-readonly-notice">Read only: operational updates are restricted to active members of {{ task.assignment_group.name if task.assignment_group else 'the assignment group' }}.</div>{% endif %}
   <form method="post" id="task-record-form" class="record-form" action="{{ url_for('catalog_task_update', task_id=task.id) }}">
     <input type="hidden" name="redirect_to" value="task">
     <div class="record-grid">
       <label><span>Number</span><input value="{{ task.number }}" disabled></label>
+      <label><span>Opened</span><input value="{{ (ritm.request.opened_at|usertime('%b %d, %Y %H:%M')) if ritm.request and ritm.request.opened_at else 'Not set' }}" disabled></label>
       <label><span>Approval</span><input value="{{ chain.state if chain else 'Not Yet Requested' }}" disabled></label>
+      <label><span>Opened by</span><input value="{{ ritm.request.requested_by.name if ritm.request else 'Unknown' }}" disabled></label>
       <label><span>Assignment group</span><input value="{{ task.assignment_group.name if task.assignment_group else 'Unassigned' }}" disabled></label>
       <label><span>Status</span><select name="state" {% if not can_edit or selectable_states|length < 2 %}disabled{% endif %}>{% for state in selectable_states %}<option {% if task.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select>{% if gate_block %}<small class="field-gate-note">{{ gate_block }}</small>{% endif %}</label>
       <label><span>Assigned to</span><input value="{{ task.assignee.name if task.assignee else 'Unassigned' }}" disabled></label>

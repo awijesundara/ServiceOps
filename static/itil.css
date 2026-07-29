@@ -13,25 +13,27 @@
 .list-workspace{margin:-12px -18px 24px;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow);overflow:hidden}.list-toolbar{display:flex;align-items:center;gap:12px;min-height:64px;padding:9px 14px;background:#f7f9fa;border-bottom:1px solid #cbd7da}.list-title{display:flex;align-items:center;gap:10px;min-width:180px}.list-title>div{display:grid}.list-title strong{font-size:16px;color:var(--brand-teal)}.list-title small{color:var(--muted);font-size:11px}.list-menu{display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);border-radius:3px;background:#fff}.list-search{display:flex;align-items:end;gap:8px;flex:1;margin-left:8px}.list-search label{display:grid;grid-template-columns:auto minmax(120px,190px);align-items:center;gap:8px;margin:0}.list-search label span{font-size:12px;color:var(--muted)}.list-search input{min-width:220px;max-width:420px}.list-search button{white-space:nowrap}.list-pagination{display:flex;align-items:center;gap:8px;margin-left:auto;white-space:nowrap}.list-pagination a{display:grid;place-items:center;width:30px;height:30px;border:1px solid var(--line);border-radius:3px;text-decoration:none;font-size:21px}.list-pagination a.disabled{pointer-events:none;opacity:.35}.list-pagination span{font-size:12px;color:var(--muted)}.list-breadcrumb{padding:10px 16px;border-bottom:1px solid var(--line);background:#fbfdfd;color:#496168;font-size:13px}.list-breadcrumb span{color:var(--brand-teal);font-weight:800}.task-list-scroll{overflow:auto}.task-list{min-width:1180px;margin:0}.task-list th{position:sticky;top:0;z-index:2;padding:11px 12px;background:#eef3f4;border-bottom:1px solid #aebfc3;color:#3f5157;white-space:nowrap}.task-list th::before{content:"≡";margin-right:5px;color:#6f848a}.task-list td{padding:11px 12px;border-bottom:1px solid #dce4e6;vertical-align:middle}.task-list tbody tr:hover{background:#f1f8f7}.record-number{font-weight:750;text-decoration:underline;text-underline-offset:2px}.priority-dot{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:#88a0a6}.priority-dot.p1{background:#dc3c30}.priority-dot.p2{background:#f0a122}.priority-dot.p3{background:#6c9fad}.priority-dot.p4{background:#96aaae}
 @media(max-width:900px){.list-toolbar{align-items:stretch;flex-wrap:wrap}.list-search{order:3;flex-basis:100%;margin-left:0}.list-pagination{margin-left:auto}.list-workspace{margin:0 0 20px}}@media(max-width:600px){.list-search{display:grid;grid-template-columns:1fr auto}.list-search label{grid-column:1/-1}.list-search input{min-width:0;width:100%}.list-title{min-width:0}.list-title small{display:none}}
 
-/* Org chart: classic connector-line tree, similar to ServiceNow's org chart view. */
-.org-chart-panel{margin:-12px -18px 24px;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow);padding:20px}
-.org-chart-scroll{overflow-x:auto;padding:10px 4px 20px}
-ul.org-tree,.org-tree ul{display:flex;justify-content:center;padding-top:22px;position:relative}
-.org-tree ul{margin-top:0}
-.org-tree li{display:flex;flex-direction:column;align-items:center;list-style:none;position:relative;padding:22px 10px 0}
-.org-tree li::before,.org-tree li::after{content:"";position:absolute;top:0;width:50%;height:22px;border-top:2px solid #b9c7cb}
-.org-tree li::before{left:0;border-right:2px solid #b9c7cb}
-.org-tree li::after{right:0}
-.org-tree li:only-child{padding-top:0}
-.org-tree li:only-child::before,.org-tree li:only-child::after{display:none}
-.org-tree li:first-child::before{border:0}
-.org-tree li:last-child::after{border:0}
-.org-tree>li{padding-top:0}
-.org-tree>li::before,.org-tree>li::after{display:none}
-.org-tree li>ul::before{content:"";position:absolute;top:0;left:50%;width:0;height:22px;border-left:2px solid #b9c7cb}
-.org-card{display:grid;justify-items:center;gap:2px;min-width:120px;max-width:150px;padding:10px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;box-shadow:var(--shadow)}
-.org-card:hover{border-color:var(--brand-teal)}
-.org-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;margin-bottom:4px}
-.org-card a,.org-card strong{font-size:12.5px;font-weight:700;color:var(--brand-teal);text-decoration:none;text-align:center}
-.org-card a:hover{text-decoration:underline}
-.org-card small{color:var(--muted);font-size:11px;text-align:center}
+/* Org chart v2: vertical indented tree. Avoids the old flex/connector-line
+   design's tendency to clip or misalign nodes once subtrees are asymmetric. */
+.org2-panel{margin:-12px -18px 24px;padding:22px clamp(12px,3vw,28px)}
+ul.org2-tree,.org2-children{list-style:none;margin:0;padding:0}
+.org2-children{margin-left:26px;padding-left:22px;border-left:2px solid #dfe7e9}
+.org2-tree>li{margin-bottom:4px}
+.org2-tree li{position:relative}
+.org2-row{display:flex;align-items:center;gap:8px;padding:5px 0}
+.org2-toggle{flex:0 0 auto;width:16px;text-align:center;color:#9aabb0;font-size:11px;user-select:none}
+.org2-toggle-leaf{color:#c7d1d5}
+.org2-card{display:flex;align-items:center;gap:12px;flex:1 1 auto;min-width:0;padding:9px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;box-shadow:var(--shadow);transition:border-color .12s ease}
+.org2-card:hover{border-color:var(--brand-teal)}
+.org2-avatar{width:38px;height:38px;flex:0 0 auto;border-radius:50%;object-fit:cover}
+.org2-info{display:grid;gap:1px;min-width:0}
+.org2-info a,.org2-info strong{font-size:13px;font-weight:700;color:var(--brand-teal);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.org2-info a:hover{text-decoration:underline}
+.org2-info small{color:var(--muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.org2-count{flex:0 0 auto;color:var(--muted);font-size:11px;white-space:nowrap}
+.org2-role-admin{background:#fdebea;color:#9d2a22}
+.org2-role-manager{background:#fff0da;color:#9b5d00}
+.org2-role-agent{background:#edf3f2;color:#45625c}
+.org2-tree.org2-collapsed .org2-children{display:none}
+.org2-toggle[data-org2-toggle]{cursor:pointer}
+@media(max-width:650px){.org2-panel{margin:0 0 20px;padding:16px}.org2-children{margin-left:14px;padding-left:12px}.org2-card{flex-wrap:wrap}.org2-count{flex-basis:100%;margin-left:50px}}

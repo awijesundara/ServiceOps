@@ -5,6 +5,8 @@
   <header class="list-toolbar">
     <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ kind|title }}s</strong><small>{{ total }} records</small></div></div>
     <a class="primary button" href="{{ url_for('ticket_new', kind=kind) }}">New</a>
+    <a class="button" href="{{ url_for('tickets_export', kind=kind, q=q, state=state) }}">⬇ CSV</a>
+    <button type="button" class="button" data-print-page>🖶 Print</button>
     <form class="list-search">
       <label><span>Search</span><select name="state"><option value="">All states</option>{% for s in ['New','In Progress','Pending','Resolved','Closed','Cancelled'] %}<option {% if state==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
       <input name="q" value="{{ q }}" placeholder="Number or short description" aria-label="Search {{ kind }} records">

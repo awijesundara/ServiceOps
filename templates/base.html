@@ -6,17 +6,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ instance_name|default('ServiceOps') }}{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='1.27.18') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v='1.27.18') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v='1.27.18') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v='1.27.18') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v='1.27.18') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v='1.27.18') }}">
-  <script src="{{ url_for('static', filename='platform.js', v='1.27.18') }}" defer></script>
-  <script src="{{ url_for('static', filename='lookup.js', v='1.27.18') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='1.27.21') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v='1.27.21') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v='1.27.21') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v='1.27.21') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v='1.27.21') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v='1.27.21') }}">
+  <script src="{{ url_for('static', filename='platform.js', v='1.27.21') }}" defer></script>
+  <script src="{{ url_for('static', filename='lookup.js', v='1.27.21') }}" defer></script>
 </head>
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
 {% if current_user.is_authenticated %}
+<script src="{{ url_for('static', filename='nav-init.js', v='1.27.21') }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active</div>{% endif %}
 <aside class="sidebar">
   <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo">{% else %}<span class="company-mark">{{ company_name[:2]|upper }}</span>{% endif %}<span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span></a>
@@ -24,14 +25,14 @@
     <small>WORKSPACE</small>
     <a href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}class="active" aria-current="page"{% endif %}>Dashboard</a>
     <a href="{{ url_for('task_board') }}" {% if nav_active('task_board') %}class="active" aria-current="page"{% endif %}>Visual task board</a>
-    {% if current_user.role in ['agent','manager','admin'] %}<a href="{{ url_for('my_work_tasks') }}" {% if nav_active('my_work_tasks') %}class="active" aria-current="page"{% endif %}>My tasks</a>{% endif %}
+    {% if current_user.role in ['agent','manager','admin'] %}<a href="{{ url_for('my_work_tasks') }}" {% if nav_active('my_work_tasks') %}class="active" aria-current="page"{% endif %}>My tasks{% if my_open_tasks_count %}<span class="nav-badge" title="{{ my_open_tasks_count }} open task{{ 's' if my_open_tasks_count != 1 }} assigned to you">{{ my_open_tasks_count if my_open_tasks_count < 100 else '99+' }}</span>{% endif %}</a>{% endif %}
     <a href="{{ url_for('tickets', kind='incident') }}" {% if nav_active('tickets', kind='incident') %}class="active" aria-current="page"{% endif %}>Incidents</a>
     <a href="{{ url_for('requests_list') }}" {% if nav_active('requests_list') %}class="active" aria-current="page"{% endif %}>Service requests</a>
     {% if current_user.role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}" {% if nav_active('tickets', kind='change') %}class="active" aria-current="page"{% endif %}>Changes</a>{% endif %}
     <a href="{{ url_for('catalog') }}" {% if nav_active('catalog') %}class="active" aria-current="page"{% endif %}>Service catalog</a>
     <a href="{{ url_for('knowledge') }}" {% if nav_active('knowledge') %}class="active" aria-current="page"{% endif %}>Knowledge</a>
     <a href="{{ url_for('modules') }}" {% if nav_active('modules') %}class="active" aria-current="page"{% endif %}>All workspaces</a>
-    <a href="{{ url_for('approval_chains') }}" {% if nav_active('approval_chains') %}class="active" aria-current="page"{% endif %}>My approvals</a>
+    <a href="{{ url_for('approval_chains') }}" {% if nav_active('approval_chains') %}class="active" aria-current="page"{% endif %}>My approvals{% if pending_approvals_count %}<span class="nav-badge" title="{{ pending_approvals_count }} approval{{ 's' if pending_approvals_count != 1 }} waiting on you">{{ pending_approvals_count if pending_approvals_count < 100 else '99+' }}</span>{% endif %}</a>
     <a href="{{ url_for('notifications') }}" {% if nav_active('notifications') %}class="active" aria-current="page"{% endif %}>Notifications</a>
     <a href="{{ url_for('org_chart') }}" {% if nav_active('org_chart') %}class="active" aria-current="page"{% endif %}>Org chart</a>
     {% if current_user.role in ['manager','admin'] %}
@@ -59,6 +60,7 @@
     <a href="{{ url_for('change_password') }}" {% if nav_active('change_password') %}class="active" aria-current="page"{% endif %}>Change password</a>
     {% endif %}
   </nav>
+  <script src="{{ url_for('static', filename='nav-init.js', v='1.27.21') }}"></script>
   <div class="profile">
     {{ user_avatar(current_user) }}
     <a href="{{ url_for('profile') }}"><strong>{{ current_user.name }}</strong><small>{{ current_user.role }}</small></a>

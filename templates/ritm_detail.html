@@ -10,10 +10,13 @@
     </div>
     <div class="record-actions"><span class="badge">{{ ritm.state }}</span></div>
   </header>
+  {% include "_state_track.html" %}
   <div class="record-form">
     <div class="record-grid">
       <label><span>Number</span><input value="{{ ritm.number }}" disabled></label>
+      <label><span>Opened</span><input value="{{ (req.opened_at|usertime('%b %d, %Y %H:%M')) if req.opened_at else 'Not set' }}" disabled></label>
       <label><span>Request</span><a class="record-parent-link" href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></label>
+      <label><span>Opened by</span><input value="{{ req.requested_by.name }}" disabled></label>
       <label><span>Item</span><input value="{{ ritm.item.name }}" disabled></label>
       <label><span>Stage</span><input value="{{ ritm.stage }}" disabled></label>
       <label><span>Requested for</span><input value="{{ req.requested_for.name }}" disabled></label>

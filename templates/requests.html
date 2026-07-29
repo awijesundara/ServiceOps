@@ -4,6 +4,8 @@
   <header class="list-toolbar">
     <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Requests</strong><small>{{ total }} records</small></div></div>
     <a class="primary button" href="{{ url_for('catalog') }}">Open catalog</a>
+    <a class="button" href="{{ url_for('requests_export', q=q) }}">⬇ CSV</a>
+    <button type="button" class="button" data-print-page>🖶 Print</button>
     <form class="list-search">
       <input name="q" value="{{ q }}" placeholder="REQ number" aria-label="Search requests">
       <button>Search</button>

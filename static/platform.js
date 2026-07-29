@@ -34,11 +34,29 @@ document.addEventListener("DOMContentLoaded", () => {
     const data = new URLSearchParams({url: path, label: document.title});
     fetch("/ui/history", {method: "POST", headers: csrfHeaders, body: data});
   }
-  document.querySelector("[data-nav-toggle]")?.addEventListener("click", () => body.classList.toggle("nav-collapsed"));
+  document.querySelector("[data-nav-toggle]")?.addEventListener("click", () => {
+    const collapsed = body.classList.toggle("nav-collapsed");
+    localStorage.setItem("navCollapsed", collapsed ? "1" : "0");
+  });
+  document.querySelectorAll("[data-print-page]").forEach(button => {
+    button.addEventListener("click", () => window.print());
+  });
+  document.querySelectorAll(".org2-toggle:not(.org2-toggle-leaf)").forEach(toggle => {
+    toggle.setAttribute("data-org2-toggle", "");
+    toggle.addEventListener("click", () => {
+      const li = toggle.closest("li");
+      const kids = li?.querySelector(":scope > .org2-children");
+      if (!kids) return;
+      const collapsed = kids.style.display === "none";
+      kids.style.display = collapsed ? "" : "none";
+      toggle.textContent = collapsed ? "▾" : "▸";
+    });
+  });
+  // Initial scroll position is restored synchronously by nav-init.js (loaded
+  // before this deferred script runs) so the sidebar never visibly jumps
+  // after paint; this listener only needs to keep saving it going forward.
   const sidebarNav = document.querySelector(".sidebar nav");
   if (sidebarNav) {
-    const savedScroll = sessionStorage.getItem("sidebarNavScrollTop");
-    if (savedScroll) sidebarNav.scrollTop = parseInt(savedScroll, 10) || 0;
     sidebarNav.addEventListener("scroll", () => {
       sessionStorage.setItem("sidebarNavScrollTop", String(sidebarNav.scrollTop));
     });
