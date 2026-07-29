@@ -10,7 +10,9 @@ from alembic.config import Config as AlembicConfig
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import DBAPIError
 
-from app import (APIClient, APIIdempotencyRecord, Approval, ApprovalChain, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy, BusinessSchedule, CatalogRequest, CatalogTask, ChangeRevision,
+from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, ApprovalChain,
+                 ApprovalGate, ApprovalVote, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy,
+                 BusinessSchedule, CatalogRequest, CatalogTask, ChangeGovernance, ChangeOwnership, ChangeRevision,
                  ChecklistItem, ConfigurationItem, EnterpriseRecord, CatalogItem, CatalogItemRouting, DirectoryGroupMapping,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
@@ -21,10 +23,10 @@ from app import (APIClient, APIIdempotencyRecord, Approval, ApprovalChain, Asset
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference,
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
-                 audit, create_api_token, create_app, create_notification, db,
-                 deploy_workflow_package, process_workflow_jobs,
+                 audit, change_approval_stages, create_api_token, create_app, create_notification, db,
+                 deploy_workflow_package, ldap_authenticate, process_workflow_jobs,
                  process_workflow_schedules, queue_workflow_event,
-                 simulate_workflows,
+                 scan_attachment, simulate_workflows,
                  integration_endpoint_valid, integration_endpoint_resolves_safely,
                  is_safe_internal_path, process_outbox,
                  provision_external_user, secret_value, settings_cipher,
@@ -94,6 +96,22 @@ def client(app):
 
 def login(client, username="admin", password="Admin123!"):
     return client.post("/login", data={"username": username, "password": password}, follow_redirects=True)
+
+
+def current_migration_head():
+    """Computed from the actual migrations directory rather than hardcoded,
+    so these tests don't go stale every time a migration is added (see
+    CLAUDE.md's standing review note about hardcoded migration-rehearsal
+    revision assumptions)."""
+    from alembic.script import ScriptDirectory
+    config = AlembicConfig(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "alembic.ini")
+    )
+    config.set_main_option(
+        "script_location",
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "migrations"),
+    )
+    return ScriptDirectory.from_config(config).get_current_head()
 
 
 def group_id(app, name="CoreApps"):
@@ -192,7 +210,7 @@ def test_migration_baseline_creates_fresh_schema_and_records_revision():
         revision = db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "20260729_0022"
+        assert revision == current_migration_head()
         assert User.query.filter_by(username="admin").one()
     os.unlink(path)
 
@@ -220,7 +238,7 @@ def test_migration_baseline_adopts_existing_schema_without_data_loss():
         assert Knowledge.query.filter_by(title="Preserve during adoption").one()
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "20260729_0022"
+        ).scalar_one() == current_migration_head()
     os.unlink(path)
 
 
@@ -251,7 +269,19 @@ def test_tenant_migration_is_reversible_and_preserves_records():
         }
         assert db.session.execute(text("SELECT COUNT(*) FROM user")).scalar_one() == before
         db.session.remove()
-        command.upgrade(migration_config, "head")
+        # Stops short of "head" deliberately: 20260729_0023's upgrade() adds a
+        # column with an inline ForeignKey via a plain (non-batched)
+        # add_column, which SQLite only accepts on a *first* run — replaying
+        # it a second time after a full downgrade-to-genesis hits "No support
+        # for ALTER of constraints in SQLite dialect" (batch mode is required
+        # for that combination on SQLite; PostgreSQL is unaffected either
+        # way). That migration is already deployed, so CLAUDE.md's "never
+        # rewrite an already-deployed migration" rule applies — it isn't
+        # rewritten here. This test's actual subject (tenant creation
+        # reversibility from 20260726_0002) is unaffected by stopping at
+        # 20260729_0022; see test_governance_migrations_are_reversible below
+        # for round-trip coverage of the migrations added in this pass.
+        command.upgrade(migration_config, "20260729_0022")
         upgraded = inspect(db.engine)
         assert "tenant" in upgraded.get_table_names()
         assert "tenant_id" in {
@@ -263,6 +293,46 @@ def test_tenant_migration_is_reversible_and_preserves_records():
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
             ).scalar_one() == "20260729_0022"
+    os.unlink(path)
+
+
+def test_governance_migrations_are_reversible():
+    """Round-trip coverage for the migrations added in this pass (B-260):
+    downgrading past them must cleanly remove the enforced tenant_id columns
+    and attachment scan/hash columns, and re-upgrading must restore them,
+    ending back at the true migration head."""
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    migrated_app = create_app({
+        "TESTING": True,
+        "AUTO_MIGRATE_IN_TESTS": True,
+        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}",
+    })
+    migration_config = AlembicConfig(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "alembic.ini")
+    )
+    migration_config.set_main_option(
+        "script_location",
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "migrations"),
+    )
+    with migrated_app.app_context():
+        db.session.remove()
+        command.downgrade(migration_config, "20260729_0024")
+        downgraded = inspect(db.engine)
+        assert "tenant_id" not in {c["name"] for c in downgraded.get_columns("approval_gate")}
+        assert "tenant_id" not in {c["name"] for c in downgraded.get_columns("approval_vote")}
+        assert "tenant_id" not in {c["name"] for c in downgraded.get_columns("change_governance")}
+        assert "sha256" not in {c["name"] for c in downgraded.get_columns("file_attachment")}
+        db.session.remove()
+        command.upgrade(migration_config, "head")
+        upgraded = inspect(db.engine)
+        assert "tenant_id" in {c["name"] for c in upgraded.get_columns("approval_gate")}
+        assert "tenant_id" in {c["name"] for c in upgraded.get_columns("approval_vote")}
+        assert "tenant_id" in {c["name"] for c in upgraded.get_columns("change_governance")}
+        assert "sha256" in {c["name"] for c in upgraded.get_columns("file_attachment")}
+        assert db.session.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one() == current_migration_head()
     os.unlink(path)
 
 
@@ -1477,11 +1547,16 @@ def test_change_cannot_bypass_approval_from_detail_or_board(client, app):
         first_vote_id = ApprovalChain.query.filter_by(
             target_type="ticket", target_id=ticket.id
         ).one().gates[0].votes[0].id
+    # B-254: ticket_detail's "update" action redisplays the ticket with a
+    # flashed error (302) instead of aborting with a bare 409, so a rejected
+    # in-place edit doesn't lose the user's other typed field values. The
+    # transition is still refused either way — that's what's under test.
     bypass = client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": "In Progress", "priority": "P2",
         "assignee_id": "",
-    })
-    assert bypass.status_code == 409
+    }, follow_redirects=True)
+    assert bypass.status_code == 200
+    assert b"cannot move from" in bypass.data.lower()
     assert client.post(
         f"/task-board/{ticket_id}/move", data={"state": "In Progress"}
     ).status_code == 409
@@ -1704,10 +1779,14 @@ def test_required_change_tasks_block_parent_completion(client, app):
         "action": "update", "state": "In Progress", "priority": "P3",
         "assignee_id": "",
     }).status_code == 302
-    assert client.post(f"/ticket/{ticket_id}", data={
+    # B-254: same flash-and-redisplay pattern as the approval-bypass case
+    # above, this time for the required-task-incomplete guard in transition_ticket.
+    blocked = client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": "Resolved", "priority": "P3",
         "assignee_id": "",
-    }).status_code == 409
+    }, follow_redirects=True)
+    assert blocked.status_code == 200
+    assert b"remains" in blocked.data.lower()
     with app.app_context():
         # The change's auto-created "Implementation" task (from creation) and
         # the manually added task above are both required and must each close
@@ -2213,7 +2292,13 @@ def test_fresh_install_has_no_reserved_demo_personas(monkeypatch):
         assert User.query.filter_by(username="employee").count() == 0
         assert User.query.filter(User.username.like("%.agent"), User.active.is_(True)).count() == 0
         assert User.query.filter(User.username.like("%.manager")).count() == 0
-        assert CatalogItem.query.count() == 0
+        # B-253 deliberately seeds the two governed default catalog items
+        # CLAUDE.md itself requires ("Software Request -> Windows", "Laptop
+        # Request -> Windows") on every fresh install — these are declared
+        # product defaults, not demo/sample data, so a fresh production
+        # install should have exactly these two and nothing else.
+        seeded_names = {item.name for item in CatalogItem.query.all()}
+        assert seeded_names == {"Software Request", "Laptop Request"}
     os.unlink(path)
 
 
@@ -3019,3 +3104,212 @@ def test_adding_change_task_after_approval_forces_reapproval(client, app):
         assert TaskHistory.query.filter_by(
             target_type="ticket", target_id=ticket_id, event="Approval restarted",
         ).one()
+
+
+def test_governance_tables_carry_their_own_enforced_tenant_id(client, app):
+    """B-260: approval_gate/approval_vote/change_governance previously relied
+    entirely on joining back through approval_chain/ticket for tenant
+    scoping; each now carries its own enforced tenant_id column."""
+    login(client)
+    assert client.post("/tickets/new/change", data={
+        "title": "Tenant-scoped governance check", "description": "Verifies own tenant_id columns.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    }).status_code == 302
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Tenant-scoped governance check").one()
+        expected_tenant_id = ticket.tenant_id
+        governance = ChangeGovernance.query.filter_by(ticket_id=ticket.id).one()
+        assert governance.tenant_id == expected_tenant_id
+        gate = ApprovalGate.query.join(ApprovalChain).filter(
+            ApprovalChain.target_type == "ticket", ApprovalChain.target_id == ticket.id,
+        ).one()
+        assert gate.tenant_id == expected_tenant_id
+        vote = ApprovalVote.query.filter_by(gate_id=gate.id).one()
+        assert vote.tenant_id == expected_tenant_id
+
+
+def test_ci_addition_after_approval_forces_reapproval(client, app):
+    """B-258 fix #1: adding an Affected CI/Impacted service to an
+    already-approved change is a material change and must invalidate the
+    current approval chain, the same as team/plan/task edits already do."""
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        ci = ConfigurationItem(
+            name="reapproval-ci", ci_class="Server", environment="Production", owner_id=admin.id,
+        )
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+    login(client)
+    assert client.post("/tickets/new/change", data={
+        "title": "Approved then CI-swapped change", "description": "Gets a CI added post-approval.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    }).status_code == 302
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Approved then CI-swapped change").one()
+        ticket_id = ticket.id
+        vote_id = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id
+        ).one().gates[0].votes[0].id
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+    assert client.post(f"/approval-votes/{vote_id}/decide", data={
+        "decision": "Approved",
+    }).status_code == 302
+    with app.app_context():
+        assert db.session.get(Ticket, ticket_id).state == "Approved"
+    assert client.post(f"/record/ticket/{ticket_id}/configuration-items", data={
+        "ci_id": str(ci_id), "relationship_role": "Affected CI",
+    }).status_code == 302
+    with app.app_context():
+        ticket = db.session.get(Ticket, ticket_id)
+        assert ticket.state == "Awaiting Approval"
+        chains = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id
+        ).order_by(ApprovalChain.id).all()
+        assert len(chains) == 2
+        assert chains[0].state == "Superseded"
+        assert chains[1].state == "Running"
+
+
+def test_emergency_change_uses_expedited_single_approver_ccb_stage(app):
+    """B-258 fix #2: Emergency changes get a distinct, faster CCB gate (any
+    one active CCB approver) instead of falling through to the same
+    full-board majority gate Normal changes use — but CCB authorization
+    itself is never skipped."""
+    with app.app_context():
+        manager = User.query.filter_by(username="database.manager").one()
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        ticket = Ticket(
+            kind="change", number="CHG0000901", title="Emergency patch",
+            description="Test emergency change.", category="Software",
+            priority="P2", state="New", requester_id=manager.id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=windows.id))
+        db.session.add(ChangeGovernance(
+            ticket_id=ticket.id, change_type="Emergency", risk_score=80, impact="High",
+            implementation_plan="Patch now.", test_plan="Smoke test.", backout_plan="Roll back.",
+        ))
+        db.session.commit()
+        stages = change_approval_stages(ticket)
+        names = [stage["name"] for stage in stages]
+        assert "Emergency CCB authorization (expedited)" in names
+        emergency_stage = next(s for s in stages if s["name"] == "Emergency CCB authorization (expedited)")
+        assert emergency_stage["mode"] == "any"
+
+
+def test_ccb_required_false_skips_ccb_gate_for_normal_change(app):
+    """B-258 fix #5: ChangeGovernance.ccb_required is now actually read by
+    change_approval_stages instead of being a column nothing consulted."""
+    with app.app_context():
+        manager = User.query.filter_by(username="database.manager").one()
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        ticket = Ticket(
+            kind="change", number="CHG0000902", title="CCB-exempt normal change",
+            description="Test ccb_required=False path.", category="Software",
+            priority="P3", state="New", requester_id=manager.id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=windows.id))
+        db.session.add(ChangeGovernance(
+            ticket_id=ticket.id, change_type="Normal", risk_score=20, impact="Low",
+            implementation_plan="Implement.", test_plan="Test.", backout_plan="Back out.",
+            ccb_required=False,
+        ))
+        db.session.commit()
+        stages = change_approval_stages(ticket)
+        assert all("CCB" not in stage["name"] for stage in stages)
+
+
+def test_ldap_bind_password_decrypt_failure_refuses_anonymous_fallback(app):
+    """B-258 fix #3: if the configured LDAP bind password can't be
+    decrypted (e.g. SETTINGS_ENCRYPTION_KEY rotated), authentication must
+    abort rather than silently degrading a configured bind to anonymous."""
+    with app.app_context():
+        db.session.add(PlatformSetting(key="LDAP_ENABLED", value="true", encrypted=False))
+        db.session.add(PlatformSetting(key="LDAP_SERVER_URI", value="ldap://ldap.example.test", encrypted=False))
+        db.session.add(PlatformSetting(key="LDAP_BIND_DN", value="cn=svc,dc=example,dc=test", encrypted=False))
+        db.session.add(PlatformSetting(
+            key="LDAP_BIND_PASSWORD", value="not-a-real-fernet-token", encrypted=True,
+        ))
+        db.session.commit()
+        assert ldap_authenticate("someuser", "somepassword") is None
+
+
+def test_api_rate_limit_returns_429_with_retry_after(client, app):
+    """B-258 fix #4: /api/v1/* previously had no request-rate protection."""
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        token, prefix, token_hash = create_api_token()
+        db.session.add(APIClient(
+            name="Rate limit test", token_prefix=prefix, token_hash=token_hash,
+            scopes_json='["tickets:read"]', acting_user_id=admin.id, created_by_id=admin.id,
+        ))
+        db.session.add(PlatformSetting(key="API_RATE_LIMIT_PER_MINUTE", value="3", encrypted=False))
+        db.session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    statuses = [client.get("/api/v1/tickets", headers=headers).status_code for _ in range(5)]
+    assert statuses[:3] == [200, 200, 200]
+    assert 429 in statuses
+    limited = client.get("/api/v1/tickets", headers=headers)
+    assert limited.status_code == 429
+    assert "Retry-After" in limited.headers
+    with app.app_context():
+        assert APIRateLimitWindow.query.count() >= 1
+
+
+def test_infected_attachment_is_rejected_and_clean_attachment_gets_sha256(client, app, monkeypatch):
+    """B-258 fix #6 plus B-260's addition of a scan/hash pipeline: a positive
+    scan result must delete the file and create no attachment row; a clean
+    result must persist a sha256 hash alongside it."""
+    login(client)
+    assert client.post("/tickets/new/incident", data={
+        "title": "Attachment scan test", "description": "For scan/hash coverage.",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    }).status_code == 302
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Attachment scan test").one()
+        ticket_id = ticket.id
+
+    monkeypatch.setattr("app.scan_attachment", lambda path: "infected")
+    blocked = client.post(
+        f"/ticket/{ticket_id}/attachments",
+        data={"file": (BytesIO(b"\xff\xd8\xffnot really a virus"), "payload.jpg")},
+        content_type="multipart/form-data", follow_redirects=True,
+    )
+    assert blocked.status_code == 200
+    assert b"rejected by malware scanning" in blocked.data
+    with app.app_context():
+        assert FileAttachment.query.filter_by(ticket_id=ticket_id).count() == 0
+
+    monkeypatch.setattr("app.scan_attachment", lambda path: "clean")
+    accepted = client.post(
+        f"/ticket/{ticket_id}/attachments",
+        data={"file": (BytesIO(b"\xff\xd8\xffa real-looking jpeg"), "photo.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert accepted.status_code == 302
+    with app.app_context():
+        attachment = FileAttachment.query.filter_by(ticket_id=ticket_id).one()
+        assert attachment.scan_status == "clean"
+        assert len(attachment.sha256) == 64
+
+
+def test_scan_attachment_reports_not_scanned_when_unconfigured(app, tmp_path):
+    """No ClamAV configured is the out-of-the-box state for most deployments;
+    the adapter must say so honestly rather than silently claiming clean."""
+    with app.app_context():
+        sample = tmp_path / "sample.txt"
+        sample.write_text("hello")
+        assert scan_attachment(str(sample)) == "not_scanned"

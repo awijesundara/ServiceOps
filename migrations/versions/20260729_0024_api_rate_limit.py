@@ -29,5 +29,11 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_index("ix_api_rate_limit_window_client", table_name="api_rate_limit_window")
+    # Dropping the table implicitly drops its indexes on both Postgres and
+    # SQLite; an explicit op.drop_index() first is unnecessary and, on
+    # SQLite, fails with "no such index" because SQLite folded this named
+    # index into the unique constraint's own implicit index at creation time.
+    # upgrade() above is unchanged — this migration is already deployed, and
+    # only its never-yet-executed downgrade() path is being made to actually
+    # work, not rewritten in a way that changes what upgrade() already did.
     op.drop_table("api_rate_limit_window")
