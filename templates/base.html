@@ -6,14 +6,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ instance_name|default('ServiceOps') }}{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='1.27.11') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v='1.27.11') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v='1.27.11') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v='1.27.11') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v='1.27.11') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v='1.27.11') }}">
-  <script src="{{ url_for('static', filename='platform.js', v='1.27.11') }}" defer></script>
-  <script src="{{ url_for('static', filename='lookup.js', v='1.27.11') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='1.27.18') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v='1.27.18') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v='1.27.18') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v='1.27.18') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v='1.27.18') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v='1.27.18') }}">
+  <script src="{{ url_for('static', filename='platform.js', v='1.27.18') }}" defer></script>
+  <script src="{{ url_for('static', filename='lookup.js', v='1.27.18') }}" defer></script>
 </head>
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
 {% if current_user.is_authenticated %}

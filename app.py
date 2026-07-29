@@ -239,6 +239,19 @@ class Comment(db.Model):
     author = db.relationship("User")
 
 
+class TaskNote(db.Model):
+    """Polymorphic activity note, used for CTASK/PTASK work notes and
+    SCTASK internal/customer-visible (RITM) commentary."""
+    id = db.Column(db.Integer, primary_key=True)
+    target_type = db.Column(db.String(30), nullable=False, index=True)
+    target_id = db.Column(db.Integer, nullable=False, index=True)
+    visibility = db.Column(db.String(20), nullable=False, default="internal")
+    body = db.Column(db.Text, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    author = db.relationship("User")
+
+
 class Knowledge(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(180), nullable=False)
@@ -1911,13 +1924,12 @@ def record_url(record):
         return url_for("ticket_detail", ticket_id=record.id)
     if isinstance(record, EnterpriseRecord):
         return url_for("enterprise_detail", record_id=record.id)
-    if isinstance(record, (CatalogRequest, RequestedItem, CatalogTask)):
-        request_id = (
-            record.id if isinstance(record, CatalogRequest)
-            else record.request_id if isinstance(record, RequestedItem)
-            else record.requested_item.request_id
-        )
-        return url_for("request_detail", request_id=request_id)
+    if isinstance(record, CatalogRequest):
+        return url_for("request_detail", request_id=record.id)
+    if isinstance(record, RequestedItem):
+        return url_for("ritm_detail", ritm_id=record.id)
+    if isinstance(record, CatalogTask):
+        return url_for("catalog_task_detail", task_id=record.id)
     if isinstance(record, Knowledge):
         return url_for("knowledge")
     if isinstance(record, OperationalTask):
@@ -2182,10 +2194,31 @@ def transition_enterprise(record, new_state):
     record.state = new_state
 
 
+def ritm_linked_change(ritm):
+    """The Change Request linked to this RITM via record_link_add, if any.
+    SCTASKs belong to the RITM, not the Change — this is a related record,
+    not a parent-child relationship."""
+    link = RecordLink.query.filter_by(
+        source_type="ritm", source_id=ritm.id, link_type="requested_item_change",
+    ).first()
+    if not link:
+        return None
+    return db.session.get(Ticket, link.target_id)
+
+
 def transition_catalog_task(task, new_state):
     chain = approval_chain_for("ritm", task.requested_item_id)
     if chain and chain.state != "Approved":
         abort(409, description="Fulfillment cannot start until the requested item is approved.")
+    if new_state == "Work in Progress":
+        linked_change = ritm_linked_change(task.requested_item)
+        if linked_change and linked_change.state in ("New", "Awaiting Approval"):
+            abort(409, description=(
+                f"{task.number} cannot start production work: it is linked to "
+                f"{linked_change.number}, which is not yet approved and authorized. "
+                "Coordination on this task (details, scheduling) is fine — set it to "
+                "Pending until the change is authorized."
+            ))
     control = task.flow_control
     if (
         control and control.execution_mode == "Sequential"
@@ -2203,10 +2236,61 @@ def transition_catalog_task(task, new_state):
     task.state = new_state
 
 
+def change_task_gate_block(task, new_state):
+    """Enforce the change-task unlocking model: Planning may proceed before
+    approval; Implementation/Testing stay Pending until the change is
+    authorized and any predecessor implementation is done; Review stays
+    Pending until implementation and testing are complete."""
+    if task.task_kind != "change" or new_state in ("Pending", "Cancelled"):
+        return None
+    if task.task_type == "Planning":
+        return None
+    ticket = db.session.get(Ticket, task.parent_id)
+    if not ticket:
+        return None
+    siblings = OperationalTask.query.filter_by(
+        parent_type="ticket", parent_id=ticket.id, task_kind="change",
+    ).all()
+    if task.task_type == "Implementation":
+        chain = approval_chain_for("ticket", ticket.id)
+        if chain and chain.state != "Approved":
+            return (
+                f"{task.number} is an Implementation task and must stay Pending until "
+                f"{ticket.number} has received all approvals for the current authorization gate."
+            )
+    elif task.task_type == "Testing":
+        implementation_tasks = [t for t in siblings if t.task_type == "Implementation"]
+        if implementation_tasks and not any(
+            t.state == "Closed Complete" for t in implementation_tasks
+        ):
+            return (
+                f"{task.number} is a Testing task and must stay Pending until at least one "
+                "Implementation task is Closed Complete."
+            )
+    elif task.task_type == "Review":
+        prerequisite_tasks = [
+            t for t in siblings
+            if t.task_type in ("Implementation", "Testing") and t.required and t.id != task.id
+        ]
+        incomplete = [
+            t for t in prerequisite_tasks
+            if t.state not in ("Closed Complete", "Closed Incomplete", "Cancelled")
+        ]
+        if incomplete:
+            return (
+                f"{task.number} is a Review task and must stay Pending until all required "
+                "Implementation and Testing tasks are complete."
+            )
+    return None
+
+
 def transition_operational_task(task, new_state):
     allowed = OPERATIONAL_TASK_TRANSITIONS.get(task.state, (task.state,))
     if new_state not in allowed:
         abort(409, description=f"{task.number} cannot move from {task.state} to {new_state}.")
+    block = change_task_gate_block(task, new_state)
+    if block:
+        abort(409, description=block)
     task.state = new_state
 
 
@@ -2279,6 +2363,24 @@ def require_ticket_team_access(ticket):
             f"Only active members of {group.name if group else 'the owning team'} "
             f"can update {ticket.number}."
         ))
+
+
+TICKET_LOCKED_STATES = ("Resolved", "Closed", "Cancelled")
+
+
+def ticket_locked_for_edits(ticket):
+    return ticket.state in TICKET_LOCKED_STATES
+
+
+def require_ticket_not_locked(ticket):
+    if ticket_locked_for_edits(ticket):
+        flash(
+            f"{ticket.number} is {ticket.state} and locked: only comments and notes "
+            "can be added. Reopen it first to make other changes.",
+            "error",
+        )
+        return False
+    return True
 
 
 def ticket_team_agents(ticket):
@@ -4695,7 +4797,7 @@ def create_app(test_config=None):
                     title="Implementation", task_type="Implementation",
                     sequence=1, assignment_group_id=owning_group.id,
                     planned_start=governance.planned_start, planned_end=governance.planned_end,
-                    required=True, work_notes=implementation_notes,
+                    required=True, work_notes=implementation_notes, state="Pending",
                 )
                 db.session.add(initial_task)
                 db.session.flush()
@@ -4729,6 +4831,9 @@ def create_app(test_config=None):
             abort(403, description="You are not involved in this ticket or its assigned work.")
         if request.method == "POST":
             action = request.form.get("action")
+            if action not in ("comment", "reopen") and ticket_locked_for_edits(ticket):
+                require_ticket_not_locked(ticket)
+                return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             if action == "comment":
                 if not role_has_action(current_user.role, "comment_public"):
                     abort(403)
@@ -4737,6 +4842,24 @@ def create_app(test_config=None):
                     db.session.add(Comment(ticket_id=ticket.id, user_id=current_user.id, body=body))
                     log_history("ticket", ticket.id, "Comment added", details=body[:500])
                     audit("comment", ticket.number)
+            elif action == "reopen":
+                if not role_has_action(current_user.role, "resolve"):
+                    abort(403)
+                require_ticket_team_access(ticket)
+                if ticket.state not in ("Resolved", "Closed"):
+                    flash(f"{ticket.number} is not Resolved or Closed.", "error")
+                    return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+                before_state = ticket.state
+                transition_ticket(ticket, "In Progress")
+                log_history(
+                    "ticket", ticket.id, "State changed", "state",
+                    before_state, ticket.state,
+                    details=f"Reopened by {current_user.name}.",
+                )
+                audit("reopen", ticket.number, f"{before_state} -> In Progress")
+                db.session.commit()
+                flash(f"{ticket.number} reopened.", "success")
+                return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             elif action == "quick_resolve":
                 if not role_has_action(current_user.role, "resolve"):
                     abort(403)
@@ -4946,7 +5069,13 @@ def create_app(test_config=None):
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
         agents = ticket_team_agents(ticket)
         owning_group = ticket_owning_group(ticket)
-        can_manage_ticket = user_can_manage_ticket(current_user, ticket)
+        ticket_locked = ticket_locked_for_edits(ticket)
+        can_manage_ticket = user_can_manage_ticket(current_user, ticket) and not ticket_locked
+        can_reopen = (
+            ticket.state in ("Resolved", "Closed")
+            and user_can_manage_ticket(current_user, ticket)
+            and role_has_action(current_user.role, "resolve")
+        )
         internal_view = role_has_action(current_user.role, "comment_internal")
         chains = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         slas = TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).all()
@@ -4964,7 +5093,8 @@ def create_app(test_config=None):
             ticket=ticket, agents=agents, chains=chains, slas=slas,
             state_track=build_state_track(ticket.kind, ticket.state),
             ticket_state_options=allowed_ticket_states(ticket), owning_group=owning_group,
-            can_manage_ticket=can_manage_ticket, related=related_records("ticket", ticket.id),
+            can_manage_ticket=can_manage_ticket, ticket_locked=ticket_locked, can_reopen=can_reopen,
+            related=related_records("ticket", ticket.id),
             relation_labels=RELATION_LABELS, work_tasks=work_tasks,
             work_task_states=OPERATIONAL_TASK_TRANSITIONS, history=history,
             internal_view=internal_view,
@@ -5017,34 +5147,39 @@ def create_app(test_config=None):
             abort(404)
         require_ticket_team_access(ticket)
         governance = ticket.change_governance
+
+        def plan_form_error(message):
+            flash(message, "error")
+            return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+
         if ticket.state in ("In Progress", "Pending", "Resolved", "Closed", "Cancelled"):
-            abort(409, description=(
+            return plan_form_error(
                 "The change plan is locked once implementation has started or the change is closed. "
                 "Reopen the change to New/Awaiting Approval before revising the plan."
-            ))
+            )
         try:
             risk_score = max(0, min(100, int(request.form.get("risk_score", "50"))))
             planned_start = parse_form_datetime(request.form.get("planned_start"))
             planned_end = parse_form_datetime(request.form.get("planned_end"))
             ci_id = int(request.form["ci_id"]) if request.form.get("ci_id") else None
         except (TypeError, ValueError):
-            abort(400, description="Change plan dates, risk, or CI are invalid.")
+            return plan_form_error("Change plan dates, risk, or CI are invalid.")
         if not planned_start or not planned_end:
-            abort(400, description="Planned start and planned end are required for a change.")
+            return plan_form_error("Planned start and planned end are required for a change.")
         if planned_end <= planned_start:
-            abort(400, description="Planned end must be later than planned start.")
+            return plan_form_error("Planned end must be later than planned start.")
         if ci_id and not tenant_query(ConfigurationItem).filter(ConfigurationItem.id == ci_id).first():
-            abort(400, description="The selected configuration item does not exist.")
+            return plan_form_error("The selected configuration item does not exist.")
         if ci_id:
             conflicts = _conflict_descriptions(
                 ticket.tenant_id, {ci_id}, planned_start, planned_end,
                 exclude_governance_id=governance.id, exclude_ticket_id=ticket.id,
             )
             if conflicts:
-                abort(400, description=(
+                return plan_form_error(
                     f"This revision conflicts with {'; '.join(conflicts)}. "
                     "Reschedule the planned window or select a different configuration item."
-                ))
+                )
         required_text = {
             "Short description": request.form.get("title", "").strip(),
             "Description": request.form.get("description", "").strip(),
@@ -5054,7 +5189,7 @@ def create_app(test_config=None):
         }
         missing = [label for label, value in required_text.items() if not value]
         if missing:
-            abort(400, description=f"Required change-plan fields are missing: {', '.join(missing)}.")
+            return plan_form_error(f"Required change-plan fields are missing: {', '.join(missing)}.")
         before = {
             "short description": ticket.title,
             "description": ticket.description,
@@ -5116,6 +5251,8 @@ def create_app(test_config=None):
         if ticket.kind != "incident":
             abort(404)
         require_ticket_team_access(ticket)
+        if not require_ticket_not_locked(ticket):
+            return redirect(url_for("ticket_detail", ticket_id=ticket.id))
         profile = ticket.major_incident_profile
         if not profile:
             profile = MajorIncidentProfile(ticket_id=ticket.id)
@@ -5154,6 +5291,10 @@ def create_app(test_config=None):
             if source.kind == "change" and source.state not in ("New", "Awaiting Approval"):
                 abort(409, description=(
                     f"{source.number} is locked: related records can only be linked before a change is approved."
+                ))
+            if source.kind != "change" and ticket_locked_for_edits(source):
+                abort(409, description=(
+                    f"{source.number} is {source.state} and locked: only comments and notes can be added."
                 ))
         elif isinstance(source, EnterpriseRecord):
             if not user_can_manage_enterprise_record(current_user, source):
@@ -5321,6 +5462,7 @@ def create_app(test_config=None):
             assignment_group_id=group.id,
             planned_start=planned_start, planned_end=planned_end,
             required=bool(request.form.get("required")),
+            state="Open" if task_type == "Planning" else "Pending",
         )
         db.session.add(task)
         db.session.flush()
@@ -5374,12 +5516,57 @@ def create_app(test_config=None):
         ).all()
         allowed_states = OPERATIONAL_TASK_TRANSITIONS.get(task.state, (task.state,))
         closing_state = "Closed Complete" if "Closed Complete" in allowed_states else task.state
+        gate_block = None
+        selectable_states = [task.state]
+        for candidate in allowed_states:
+            if candidate == task.state:
+                continue
+            block = change_task_gate_block(task, candidate)
+            if block:
+                gate_block = gate_block or block
+            else:
+                selectable_states.append(candidate)
+        notes = TaskNote.query.filter_by(
+            target_type="operational_task", target_id=task.id
+        ).order_by(TaskNote.created_at.desc()).all()
+        siblings = OperationalTask.query.filter_by(
+            parent_type=task.parent_type, parent_id=task.parent_id,
+        ).filter(OperationalTask.id != task.id).order_by(OperationalTask.sequence, OperationalTask.id).all()
+        ci_links = TaskCI.query.filter_by(
+            target_type=task.parent_type, target_id=task.parent_id
+        ).order_by(TaskCI.relationship_role).all()
+        approval_votes = []
+        if task.task_kind == "change":
+            chain = approval_chain_for("ticket", task.parent_id)
+            if chain:
+                approval_votes = [vote for gate in chain.gates for vote in gate.votes]
         return render_template(
             "operational_task_detail.html", task=task, parent=parent,
             parent_url=record_url(parent), can_edit=can_edit, agents=agents,
             work_task_states=OPERATIONAL_TASK_TRANSITIONS, history=history,
-            closing_state=closing_state,
+            closing_state=closing_state, notes=notes, siblings=siblings,
+            ci_links=ci_links, approval_votes=approval_votes,
+            selectable_states=selectable_states, gate_block=gate_block,
         )
+
+    @app.post("/operational-task/<int:task_id>/notes")
+    @roles("agent", "manager", "admin")
+    def operational_task_note_add(task_id):
+        task = db.get_or_404(OperationalTask, task_id)
+        if not user_in_group(current_user, task.assignment_group):
+            abort(403, description=(
+                f"Only active members of {task.assignment_group.name} can update {task.number}."
+            ))
+        body = request.form.get("body", "").strip()
+        if body:
+            db.session.add(TaskNote(
+                target_type="operational_task", target_id=task.id,
+                visibility="internal", body=body, user_id=current_user.id,
+            ))
+            log_history(task.parent_type, task.parent_id, f"{task.number} note added", details=body[:500])
+            audit("note", task.number, body[:120])
+            db.session.commit()
+        return redirect(url_for("operational_task_detail", task_id=task.id))
 
     @app.post("/operational-task/<int:task_id>")
     @roles("agent", "manager", "admin")
@@ -5389,19 +5576,29 @@ def create_app(test_config=None):
             abort(403, description=(
                 f"Only active members of {task.assignment_group.name} can update {task.number}."
             ))
+        assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
+        if assignee_id:
+            assignee = db.session.get(User, assignee_id)
+            if not assignee or not user_in_group(assignee, task.assignment_group):
+                flash("The assignee must belong to the task assignment group.", "error")
+                return redirect(url_for("operational_task_detail", task_id=task.id))
+        else:
+            assignee = None
+        requested_state = request.form.get("state", task.state)
+        if requested_state != task.state:
+            if requested_state not in OPERATIONAL_TASK_TRANSITIONS.get(task.state, (task.state,)):
+                flash(f"{task.number} cannot move from {task.state} to {requested_state}.", "error")
+                return redirect(url_for("operational_task_detail", task_id=task.id))
+            gate_block = change_task_gate_block(task, requested_state)
+            if gate_block:
+                flash(gate_block, "error")
+                return redirect(url_for("operational_task_detail", task_id=task.id))
         before = {
             "state": task.state,
             "assigned to": task.assignee.name if task.assignee else "Unassigned",
             "work notes": task.work_notes,
         }
-        assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
-        if assignee_id:
-            assignee = db.session.get(User, assignee_id)
-            if not assignee or not user_in_group(assignee, task.assignment_group):
-                abort(400, description="The assignee must belong to the task assignment group.")
-        else:
-            assignee = None
-        transition_operational_task(task, request.form["state"])
+        transition_operational_task(task, requested_state)
         task.assignee_id = assignee_id
         task.work_notes = request.form.get("work_notes", "").strip()
         parent = record_reference(task.parent_type, task.parent_id)
@@ -5480,9 +5677,26 @@ def create_app(test_config=None):
     @app.get("/assets")
     @roles("agent", "manager", "admin")
     def assets():
+        query = tenant_query(Asset)
+        q = request.args.get("q", "").strip()
+        if q:
+            query = query.filter(db.or_(
+                Asset.asset_tag.ilike(f"%{q}%"), Asset.name.ilike(f"%{q}%"),
+                Asset.serial_number.ilike(f"%{q}%"),
+            ))
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            page = 1
+        per_page = 50
+        total = query.count()
+        pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, pages)
+        rows = query.order_by(Asset.asset_tag).offset(
+            (page - 1) * per_page
+        ).limit(per_page).all()
         return render_template(
-            "assets.html",
-            assets=tenant_query(Asset).order_by(Asset.asset_tag).all(),
+            "assets.html", assets=rows, q=q, page=page, pages=pages, total=total,
         )
 
     @app.route("/assets/new", methods=["GET", "POST"])
@@ -6110,10 +6324,30 @@ def create_app(test_config=None):
     @roles("admin")
     @require_action("report")
     def audit_log():
-        integrity = verify_audit_chain(current_user.tenant_id)
+        # Integrity verification walks and HMAC-checks the entire tenant audit
+        # history; running it on every page view does not scale as the log
+        # grows, so it only runs when explicitly requested.
+        integrity = verify_audit_chain(current_user.tenant_id) if request.args.get("verify") == "1" else None
+        query = tenant_query(Audit)
+        q = request.args.get("q", "").strip()
+        if q:
+            query = query.filter(db.or_(
+                Audit.action.ilike(f"%{q}%"), Audit.target.ilike(f"%{q}%"),
+            ))
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            page = 1
+        per_page = 100
+        total = query.count()
+        pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, pages)
+        rows = query.order_by(Audit.created_at.desc()).offset(
+            (page - 1) * per_page
+        ).limit(per_page).all()
         return render_template(
             "audit.html",
-            rows=tenant_query(Audit).order_by(Audit.created_at.desc()).limit(250).all(),
+            rows=rows, q=q, page=page, pages=pages, total=total,
             integrity=integrity,
             keys=AuditIntegrityKey.query.filter_by(
                 tenant_id=current_user.tenant_id
@@ -6323,7 +6557,12 @@ def create_app(test_config=None):
                     "risk": record.risk,
                     "assigned to": record.assignee.name if record.assignee else "Unassigned",
                 }
-                transition_enterprise(record, request.form["state"])
+                try:
+                    transition_enterprise(record, request.form["state"])
+                except HTTPException as error:
+                    db.session.rollback()
+                    flash(error.description or "That change could not be made.", "error")
+                    return redirect(url_for("enterprise_detail", record_id=record.id))
                 record.priority = request.form["priority"]
                 record.risk = request.form["risk"]
                 record.assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
@@ -6672,7 +6911,23 @@ def create_app(test_config=None):
     @login_required
     def requests_list():
         query = visible_catalog_request_query(current_user)
-        return render_template("requests.html", requests=query.order_by(CatalogRequest.opened_at.desc()).all())
+        q = request.args.get("q", "").strip()
+        if q:
+            query = query.filter(CatalogRequest.number.ilike(f"%{q}%"))
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            page = 1
+        per_page = 50
+        total = query.count()
+        pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, pages)
+        rows = query.order_by(CatalogRequest.opened_at.desc()).offset(
+            (page - 1) * per_page
+        ).limit(per_page).all()
+        return render_template(
+            "requests.html", requests=rows, q=q, page=page, pages=pages, total=total,
+        )
 
     @app.get("/request/<int:request_id>")
     @login_required
@@ -6680,45 +6935,51 @@ def create_app(test_config=None):
         req = tenant_record_or_404(CatalogRequest, request_id)
         if not user_can_view_catalog_request(current_user, req):
             abort(403, description="You are not involved in this request or its fulfillment.")
-        chains = {}
-        slas = {}
-        task_state_options = {}
-        catalog_task_permissions = {}
-        catalog_task_create_permissions = {}
-        for ritm in req.items:
-            catalog_task_create_permissions[ritm.id] = user_can_manage_ritm(
-                current_user, ritm
-            )
-            chains[ritm.id] = ApprovalChain.query.filter_by(target_type="ritm", target_id=ritm.id).all()
-            slas[ritm.id] = TaskSLA.query.filter_by(target_type="ritm", target_id=ritm.id).all()
-            for task in ritm.tasks:
-                task_state_options[task.id] = CATALOG_TASK_TRANSITIONS.get(
-                    task.state, (task.state,)
-                )
-                catalog_task_permissions[task.id] = user_in_group(
-                    current_user, task.assignment_group
-                )
         return render_template(
-            "request_detail.html", req=req, chains=chains, slas=slas,
-            task_state_options=task_state_options,
-            teams=tenant_query(SupportGroup).filter_by(
-                group_type="IT Fulfillment", active=True
-            ).order_by(SupportGroup.name).all(),
+            "request_detail.html", req=req,
             catalog_items=tenant_query(CatalogItem).filter_by(active=True).order_by(
                 CatalogItem.category, CatalogItem.name
             ).all(),
-            related_by_ritm={
-                ritm.id: related_records("ritm", ritm.id) for ritm in req.items
-            },
-            history_by_ritm={
-                ritm.id: TaskHistory.query.filter_by(
-                    target_type="ritm", target_id=ritm.id
-                ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).all()
-                for ritm in req.items
-            },
-            catalog_task_permissions=catalog_task_permissions,
             can_add_request_item=user_can_add_request_item(current_user, req),
-            catalog_task_create_permissions=catalog_task_create_permissions,
+        )
+
+    @app.get("/ritm/<int:ritm_id>")
+    @login_required
+    def ritm_detail(ritm_id):
+        ritm = db.get_or_404(RequestedItem, ritm_id)
+        req = ritm.request
+        if req.tenant_id != current_user.tenant_id:
+            abort(404)
+        if not user_can_view_catalog_request(current_user, req):
+            abort(403, description="You are not involved in this request or its fulfillment.")
+        can_manage = user_can_manage_ritm(current_user, ritm)
+        chains = ApprovalChain.query.filter_by(target_type="ritm", target_id=ritm.id).all()
+        slas = TaskSLA.query.filter_by(target_type="ritm", target_id=ritm.id).all()
+        task_state_options = {
+            task.id: CATALOG_TASK_TRANSITIONS.get(task.state, (task.state,))
+            for task in ritm.tasks
+        }
+        catalog_task_permissions = {
+            task.id: user_in_group(current_user, task.assignment_group)
+            for task in ritm.tasks
+        }
+        try:
+            variables = json.loads(ritm.variables_json or "{}")
+        except (TypeError, ValueError):
+            variables = {}
+        return render_template(
+            "ritm_detail.html", ritm=ritm, req=req, chains=chains, slas=slas,
+            variables=variables,
+            task_state_options=task_state_options,
+            catalog_task_permissions=catalog_task_permissions,
+            can_manage=can_manage,
+            teams=tenant_query(SupportGroup).filter_by(
+                group_type="IT Fulfillment", active=True
+            ).order_by(SupportGroup.name).all(),
+            related=related_records("ritm", ritm.id),
+            history=TaskHistory.query.filter_by(
+                target_type="ritm", target_id=ritm.id
+            ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).all(),
         )
 
     @app.post("/request/<int:request_id>/items")
@@ -6814,6 +7075,115 @@ def create_app(test_config=None):
         db.session.commit()
         return redirect(url_for("request_detail", request_id=ritm.request_id))
 
+    def user_can_view_catalog_task(user, task):
+        ritm = task.requested_item
+        return (
+            user_can_view_catalog_request(user, ritm.request)
+            or user_in_group(user, task.assignment_group)
+        )
+
+    @app.get("/catalog-task/<int:task_id>")
+    @login_required
+    def catalog_task_detail(task_id):
+        task = db.get_or_404(CatalogTask, task_id)
+        if not user_can_view_catalog_task(current_user, task):
+            abort(403, description="You are not involved in this catalog task or its fulfillment.")
+        ritm = task.requested_item
+        can_edit = user_in_group(current_user, task.assignment_group)
+        member_ids = {member.user_id for member in task.assignment_group.members} if task.assignment_group else set()
+        if task.assignment_group and task.assignment_group.manager_id:
+            member_ids.add(task.assignment_group.manager_id)
+        agents = User.query.filter(
+            User.id.in_(member_ids), User.active.is_(True),
+            User.role.in_(["agent", "manager", "admin"]),
+        ).order_by(User.name).all() if member_ids else []
+        history = TaskHistory.query.filter_by(
+            target_type="ritm", target_id=ritm.id
+        ).filter(TaskHistory.details.contains(task.number)).order_by(
+            TaskHistory.created_at.desc(), TaskHistory.id.desc()
+        ).all()
+        internal_notes = TaskNote.query.filter_by(
+            target_type="catalog_task", target_id=task.id, visibility="internal"
+        ).order_by(TaskNote.created_at.desc()).all() if can_edit else []
+        ritm_comments = TaskNote.query.filter_by(
+            target_type="ritm", target_id=ritm.id, visibility="customer"
+        ).order_by(TaskNote.created_at.desc()).all()
+        try:
+            variables = json.loads(ritm.variables_json or "{}")
+        except (TypeError, ValueError):
+            variables = {}
+        siblings = CatalogTask.query.filter_by(
+            requested_item_id=ritm.id
+        ).filter(CatalogTask.id != task.id).order_by(CatalogTask.sequence, CatalogTask.id).all()
+        ci_links = TaskCI.query.filter_by(
+            target_type="ritm", target_id=ritm.id
+        ).order_by(TaskCI.relationship_role).all()
+        chain = approval_chain_for("ritm", ritm.id)
+        approval_votes = [vote for gate in chain.gates for vote in gate.votes] if chain else []
+        allowed_states = CATALOG_TASK_TRANSITIONS.get(task.state, (task.state,))
+        gate_block = None
+        selectable_states = [task.state]
+        linked_change = ritm_linked_change(ritm)
+        for candidate in allowed_states:
+            if candidate == task.state:
+                continue
+            if candidate == "Work in Progress" and linked_change and linked_change.state in ("New", "Awaiting Approval"):
+                gate_block = (
+                    f"{task.number} cannot start production work: it is linked to "
+                    f"{linked_change.number}, which is not yet approved and authorized. "
+                    "Coordination on this task (details, scheduling) is fine — set it to "
+                    "Pending until the change is authorized."
+                )
+                continue
+            selectable_states.append(candidate)
+        return render_template(
+            "catalog_task_detail.html", task=task, ritm=ritm,
+            can_edit=can_edit, agents=agents, history=history,
+            work_task_states=CATALOG_TASK_TRANSITIONS,
+            internal_notes=internal_notes, ritm_comments=ritm_comments,
+            variables=variables, siblings=siblings, ci_links=ci_links,
+            approval_votes=approval_votes, chain=chain,
+            selectable_states=selectable_states, gate_block=gate_block,
+        )
+
+    @app.post("/catalog-task/<int:task_id>/notes")
+    @login_required
+    def catalog_task_note_add(task_id):
+        task = db.get_or_404(CatalogTask, task_id)
+        if not user_can_view_catalog_task(current_user, task):
+            abort(403)
+        ritm = task.requested_item
+        visibility = request.form.get("visibility")
+        body = request.form.get("body", "").strip()
+        if visibility not in ("internal", "customer"):
+            abort(400, description="Select a valid note visibility.")
+        if visibility == "internal" and not user_in_group(current_user, task.assignment_group):
+            abort(403, description=(
+                f"Only active members of {task.assignment_group.name if task.assignment_group else 'the assignment group'} "
+                "can add internal work notes."
+            ))
+        if body:
+            if visibility == "internal":
+                db.session.add(TaskNote(
+                    target_type="catalog_task", target_id=task.id,
+                    visibility="internal", body=body, user_id=current_user.id,
+                ))
+                log_history("ritm", ritm.id, f"{task.number} note added", details=body[:500])
+            else:
+                db.session.add(TaskNote(
+                    target_type="ritm", target_id=ritm.id,
+                    visibility="customer", body=body, user_id=current_user.id,
+                ))
+                log_history("ritm", ritm.id, "Customer-visible comment added", details=body[:500])
+                create_notification(
+                    ritm.request.requested_for_id, f"New comment on {ritm.number}",
+                    body[:500], tenant_id=task.assignment_group.tenant_id if task.assignment_group else current_user.tenant_id,
+                    target_type="ritm", target_id=ritm.id,
+                )
+            audit("note", task.number, body[:120])
+            db.session.commit()
+        return redirect(url_for("catalog_task_detail", task_id=task.id))
+
     @app.post("/catalog-task/<int:task_id>")
     @roles("agent", "manager", "admin")
     def catalog_task_update(task_id):
@@ -6824,7 +7194,12 @@ def create_app(test_config=None):
                 f"can update {task.number}."
             ))
         before = {"state": task.state, "work notes": task.work_notes}
-        transition_catalog_task(task, request.form["state"])
+        try:
+            transition_catalog_task(task, request.form.get("state", task.state))
+        except HTTPException as error:
+            db.session.rollback()
+            flash(error.description or "That change could not be made.", "error")
+            return redirect(request.referrer or url_for("request_detail", request_id=task.requested_item.request_id))
         task.work_notes = request.form.get("work_notes", "")
         task.assignee_id = current_user.id
         ritm = task.requested_item
@@ -6846,6 +7221,9 @@ def create_app(test_config=None):
         }, event=f"{task.number} updated")
         audit("update", task.number, task.state)
         db.session.commit()
+        redirect_target = request.form.get("redirect_to")
+        if redirect_target == "task":
+            return redirect(url_for("catalog_task_detail", task_id=task.id))
         return redirect(url_for("request_detail", request_id=ritm.request_id))
 
     @app.route("/itil/administration", methods=["GET", "POST"])
@@ -7166,13 +7544,25 @@ def create_app(test_config=None):
     @app.get("/notifications")
     @login_required
     def notifications():
-        rows = tenant_query(Notification).filter_by(
-            user_id=current_user.id
-        ).order_by(Notification.created_at.desc()).all()
+        query = tenant_query(Notification).filter_by(user_id=current_user.id)
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            page = 1
+        per_page = 50
+        total = query.count()
+        pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, pages)
+        rows = query.order_by(Notification.created_at.desc()).offset(
+            (page - 1) * per_page
+        ).limit(per_page).all()
         notification_urls = {
             row.id: notification_target_url(row.target_type, row.target_id) for row in rows
         }
-        return render_template("notifications.html", rows=rows, notification_urls=notification_urls)
+        return render_template(
+            "notifications.html", rows=rows, notification_urls=notification_urls,
+            page=page, pages=pages, total=total,
+        )
 
     @app.post("/notifications/<int:notification_id>/read")
     @login_required
@@ -7524,6 +7914,8 @@ def create_app(test_config=None):
     def checklist_add(ticket_id):
         ticket = tenant_record_or_404(Ticket, ticket_id)
         require_ticket_team_access(ticket)
+        if not require_ticket_not_locked(ticket):
+            return redirect(url_for("ticket_detail", ticket_id=ticket_id))
         text = request.form.get("text", "").strip()
         if text:
             position = ChecklistItem.query.filter_by(ticket_id=ticket_id).count()
@@ -7541,6 +7933,8 @@ def create_app(test_config=None):
         item = db.get_or_404(ChecklistItem, item_id)
         ticket = tenant_record_or_404(Ticket, item.ticket_id)
         require_ticket_team_access(ticket)
+        if not require_ticket_not_locked(ticket):
+            return redirect(url_for("ticket_detail", ticket_id=item.ticket_id))
         item.completed = not item.completed
         log_history(
             "ticket", ticket.id, "Checklist item updated",
