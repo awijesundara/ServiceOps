@@ -217,8 +217,11 @@ class Ticket(db.Model):
     assignee_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    deleted_at = db.Column(db.DateTime(timezone=True))
+    deleted_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     requester = db.relationship("User", foreign_keys=[requester_id])
     assignee = db.relationship("User", foreign_keys=[assignee_id])
+    deleted_by = db.relationship("User", foreign_keys=[deleted_by_id])
     service_offering = db.relationship("ServiceOffering", foreign_keys=[service_offering_id])
     comments = db.relationship("Comment", cascade="all, delete-orphan", backref="ticket")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
@@ -2354,50 +2357,70 @@ def supersede_change_approval(ticket, changed_fields):
     return chain
 
 
+def _conflict_descriptions(tenant_id, ci_ids, planned_start, planned_end, exclude_governance_id=None, exclude_ticket_id=None):
+    """Core schedule/CI overlap check shared by pre-creation and post-creation
+    conflict detection. Returns human-readable conflict description strings."""
+    conflicts = []
+    if not (ci_ids and planned_start and planned_end):
+        return conflicts
+    overlapping_query = ChangeGovernance.query.join(
+        Ticket, ChangeGovernance.ticket_id == Ticket.id
+    ).filter(
+        Ticket.tenant_id == tenant_id,
+        Ticket.state.notin_(["Cancelled", "Rejected"]),
+        ChangeGovernance.planned_start.isnot(None),
+        ChangeGovernance.planned_end.isnot(None),
+        ChangeGovernance.planned_start < planned_end,
+        ChangeGovernance.planned_end > planned_start,
+    )
+    if exclude_governance_id is not None:
+        overlapping_query = overlapping_query.filter(ChangeGovernance.id != exclude_governance_id)
+    for other in overlapping_query.all():
+        other_ci_ids = {
+            link.ci_id for link in TaskCI.query.filter_by(
+                target_type="ticket", target_id=other.ticket_id
+            ).all()
+        }
+        if other.ci_id:
+            other_ci_ids.add(other.ci_id)
+        if ci_ids.intersection(other_ci_ids):
+            conflicts.append(f"{other.ticket.number} (overlapping change)")
+    incident_query = Ticket.query.filter(
+        Ticket.tenant_id == tenant_id,
+        Ticket.kind == "incident",
+        Ticket.state.notin_(["Resolved", "Closed", "Cancelled"]),
+    ).join(
+        TaskCI, db.and_(TaskCI.target_type == "ticket", TaskCI.target_id == Ticket.id)
+    ).filter(TaskCI.ci_id.in_(ci_ids))
+    if exclude_ticket_id is not None:
+        incident_query = incident_query.filter(Ticket.id != exclude_ticket_id)
+    for incident in incident_query.all():
+        conflicts.append(f"{incident.number} (open incident on same CI)")
+    return conflicts
+
+
+def precreate_change_conflicts(tenant_id, ci_id, planned_start, planned_end):
+    """Checked while a change is still being filled out, before it exists, so the
+    submitter is warned and blocked instead of discovering the conflict afterward."""
+    ci_ids = {ci_id} if ci_id else set()
+    return _conflict_descriptions(tenant_id, ci_ids, planned_start, planned_end)
+
+
 def run_change_conflict_detection(ticket, governance):
     """Flags scheduling conflicts against other changes and open incidents/problems
     sharing a CI during the same window. Tenant-scoped: joins through Ticket so a
     change in one tenant never leaks into another tenant's conflict check."""
-    conflicts = []
-    if governance.planned_start and governance.planned_end:
-        current_ci_ids = {
-            link.ci_id for link in TaskCI.query.filter_by(
-                target_type="ticket", target_id=ticket.id
-            ).all()
-        }
-        if governance.ci_id:
-            current_ci_ids.add(governance.ci_id)
-        overlapping = ChangeGovernance.query.join(
-            Ticket, ChangeGovernance.ticket_id == Ticket.id
-        ).filter(
-            ChangeGovernance.id != governance.id,
-            Ticket.tenant_id == ticket.tenant_id,
-            ChangeGovernance.planned_start.isnot(None),
-            ChangeGovernance.planned_end.isnot(None),
-            ChangeGovernance.planned_start < governance.planned_end,
-            ChangeGovernance.planned_end > governance.planned_start,
+    current_ci_ids = {
+        link.ci_id for link in TaskCI.query.filter_by(
+            target_type="ticket", target_id=ticket.id
         ).all()
-        for other in overlapping:
-            other_ci_ids = {
-                link.ci_id for link in TaskCI.query.filter_by(
-                    target_type="ticket", target_id=other.ticket_id
-                ).all()
-            }
-            if other.ci_id:
-                other_ci_ids.add(other.ci_id)
-            if current_ci_ids.intersection(other_ci_ids):
-                conflicts.append(f"{other.ticket.number} (overlapping change)")
-        if current_ci_ids:
-            open_incidents = Ticket.query.filter(
-                Ticket.tenant_id == ticket.tenant_id,
-                Ticket.kind == "incident",
-                Ticket.id != ticket.id,
-                Ticket.state.notin_(["Resolved", "Closed", "Cancelled"]),
-            ).join(
-                TaskCI, db.and_(TaskCI.target_type == "ticket", TaskCI.target_id == Ticket.id)
-            ).filter(TaskCI.ci_id.in_(current_ci_ids)).all()
-            for incident in open_incidents:
-                conflicts.append(f"{incident.number} (open incident on same CI)")
+    }
+    if governance.ci_id:
+        current_ci_ids.add(governance.ci_id)
+    conflicts = _conflict_descriptions(
+        ticket.tenant_id, current_ci_ids, governance.planned_start, governance.planned_end,
+        exclude_governance_id=governance.id, exclude_ticket_id=ticket.id,
+    )
     governance.conflict_status = (
         f"Conflict: {', '.join(conflicts)}" if conflicts else "No conflict"
     )[:500]
@@ -4311,7 +4334,7 @@ def create_app(test_config=None):
         show_my_assigned = setting_bool("DASHBOARD_SHOW_MY_ASSIGNED", True)
         show_sla_widgets = setting_bool("DASHBOARD_SHOW_SLA_WIDGETS", True)
         recent = (
-            visible_tickets().order_by(Ticket.updated_at.desc()).limit(8).all()
+            visible_tickets().filter(Ticket.deleted_at.is_(None)).order_by(Ticket.updated_at.desc()).limit(8).all()
             if show_recent else []
         )
         my_assigned = (
@@ -4458,7 +4481,7 @@ def create_app(test_config=None):
     def tickets(kind):
         if kind not in ("incident", "change"):
             abort(404)
-        query = visible_tickets().filter_by(kind=kind)
+        query = visible_tickets().filter_by(kind=kind).filter(Ticket.deleted_at.is_(None))
         q = request.args.get("q", "").strip()
         state = request.args.get("state", "").strip()
         if q:
@@ -4590,6 +4613,13 @@ def create_app(test_config=None):
                     return render_form("The selected configuration item is invalid.")
                 if not tenant_query(ConfigurationItem).filter_by(id=ci_id).first():
                     return render_form("The selected configuration item does not exist.")
+            if kind == "change" and ci_id:
+                conflicts = precreate_change_conflicts(current_user.tenant_id, ci_id, planned_start, planned_end)
+                if conflicts:
+                    return render_form(
+                        f"This change cannot be created: it conflicts with {'; '.join(conflicts)}. "
+                        "Reschedule the planned window or select a different configuration item."
+                    )
             try:
                 risk_score = max(0, min(100, int(request.form.get("risk_score", "50"))))
             except (TypeError, ValueError):
@@ -4908,6 +4938,33 @@ def create_app(test_config=None):
             ).order_by(ServiceOffering.name).all(),
         )
 
+    @app.post("/change/<int:ticket_id>/delete")
+    @roles("agent", "manager", "admin")
+    def change_delete(ticket_id):
+        ticket = tenant_record_or_404(Ticket, ticket_id)
+        if ticket.kind != "change":
+            abort(404)
+        require_ticket_team_access(ticket)
+        if ticket.deleted_at:
+            abort(409, description=f"{ticket.number} has already been deleted.")
+        if ticket.state not in ("New", "Awaiting Approval"):
+            abort(409, description=(
+                f"{ticket.number} cannot be deleted once it has progressed past approval. "
+                "Cancel it through the normal state transition instead."
+            ))
+        cancel_approval_chain(approval_chain_for("ticket", ticket.id))
+        ticket.state = "Cancelled"
+        ticket.deleted_at = now()
+        ticket.deleted_by_id = current_user.id
+        log_history(
+            "ticket", ticket.id, "Change deleted",
+            details=f"Soft-deleted by {current_user.name}; retained as Cancelled for the audit trail.",
+        )
+        audit("delete", ticket.number, f"soft-deleted by {current_user.name}")
+        db.session.commit()
+        flash(f"{ticket.number} was deleted. It remains available for audit as a Cancelled change.")
+        return redirect(url_for("tickets", kind="change"))
+
     @app.post("/change/<int:ticket_id>/plan")
     @roles("agent", "manager", "admin")
     def change_plan_update(ticket_id):
@@ -4934,6 +4991,16 @@ def create_app(test_config=None):
             abort(400, description="Planned end must be later than planned start.")
         if ci_id and not tenant_query(ConfigurationItem).filter(ConfigurationItem.id == ci_id).first():
             abort(400, description="The selected configuration item does not exist.")
+        if ci_id:
+            conflicts = _conflict_descriptions(
+                ticket.tenant_id, {ci_id}, planned_start, planned_end,
+                exclude_governance_id=governance.id, exclude_ticket_id=ticket.id,
+            )
+            if conflicts:
+                abort(400, description=(
+                    f"This revision conflicts with {'; '.join(conflicts)}. "
+                    "Reschedule the planned window or select a different configuration item."
+                ))
         required_text = {
             "Short description": request.form.get("title", "").strip(),
             "Description": request.form.get("description", "").strip(),
@@ -5040,6 +5107,10 @@ def create_app(test_config=None):
             abort(404)
         if isinstance(source, Ticket):
             require_ticket_team_access(source)
+            if source.kind == "change" and source.state not in ("New", "Awaiting Approval"):
+                abort(409, description=(
+                    f"{source.number} is locked: related records can only be linked before a change is approved."
+                ))
         elif isinstance(source, EnterpriseRecord):
             if not user_can_manage_enterprise_record(current_user, source):
                 abort(403)

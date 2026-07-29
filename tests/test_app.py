@@ -192,7 +192,7 @@ def test_migration_baseline_creates_fresh_schema_and_records_revision():
         revision = db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "20260729_0019"
+        assert revision == "20260729_0020"
         assert User.query.filter_by(username="admin").one()
     os.unlink(path)
 
@@ -220,7 +220,7 @@ def test_migration_baseline_adopts_existing_schema_without_data_loss():
         assert Knowledge.query.filter_by(title="Preserve during adoption").one()
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "20260729_0019"
+        ).scalar_one() == "20260729_0020"
     os.unlink(path)
 
 
@@ -262,7 +262,7 @@ def test_tenant_migration_is_reversible_and_preserves_records():
         )).scalar_one() == before
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
-            ).scalar_one() == "20260729_0019"
+            ).scalar_one() == "20260729_0020"
     os.unlink(path)
 
 
@@ -2434,7 +2434,7 @@ def test_change_task_requires_dates_within_parent_window(client, app):
     }).status_code == 302
 
 
-def test_change_conflict_detection_flags_overlapping_change_and_open_incident(client, app):
+def test_change_creation_blocks_on_open_incident_conflict(client, app):
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
         ci = ConfigurationItem(
@@ -2450,6 +2450,31 @@ def test_change_conflict_detection_flags_overlapping_change_and_open_incident(cl
         "category": "Software", "priority": "P2", "group_id": group_id(app),
         "ci_id": str(ci_id),
     }).status_code == 302
+    blocked = client.post("/tickets/new/change", data={
+        "title": "Change during open incident", "description": "Should be blocked.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.", "ci_id": str(ci_id),
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    })
+    assert blocked.status_code == 400
+    assert b"open incident" in blocked.data.lower()
+    with app.app_context():
+        assert Ticket.query.filter_by(title="Change during open incident").first() is None
+
+
+def test_change_creation_blocks_on_overlapping_change_conflict(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        ci = ConfigurationItem(
+            name="second-app-server", ci_class="Server",
+            environment="Production", owner_id=admin.id,
+        )
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+    login(client)
     assert client.post("/tickets/new/change", data={
         "title": "First maintenance window", "description": "First change on the CI.",
         "category": "Software", "priority": "P3", "change_type": "Standard",
@@ -2460,19 +2485,21 @@ def test_change_conflict_detection_flags_overlapping_change_and_open_incident(cl
     }).status_code == 302
     with app.app_context():
         first = Ticket.query.filter_by(title="First maintenance window").one()
-        assert "open incident" in first.change_governance.conflict_status.lower()
-    assert client.post("/tickets/new/change", data={
+        assert first.change_governance.conflict_status == "No conflict"
+        first_number = first.number
+    blocked = client.post("/tickets/new/change", data={
         "title": "Second overlapping window", "description": "Overlaps the first change.",
         "category": "Software", "priority": "P3", "change_type": "Standard",
         "risk_score": "20", "impact": "Low", "group_id": group_id(app),
         "implementation_plan": "Implement.", "test_plan": "Test.",
         "backout_plan": "Back out.", "ci_id": str(ci_id),
         "planned_start": "2026-08-01T12:00", "planned_end": "2026-08-01T18:00",
-    }).status_code == 302
+    })
+    assert blocked.status_code == 400
+    assert b"overlapping change" in blocked.data.lower()
+    assert first_number.encode() in blocked.data
     with app.app_context():
-        second = Ticket.query.filter_by(title="Second overlapping window").one()
-        assert "overlapping change" in second.change_governance.conflict_status.lower()
-        assert first.number in second.change_governance.conflict_status
+        assert Ticket.query.filter_by(title="Second overlapping window").first() is None
 
 
 def test_adding_change_task_after_approval_forces_reapproval(client, app):
