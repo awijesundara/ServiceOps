@@ -5,6 +5,7 @@
 
 <section class="panel table-panel">
 <h2>Open incidents & changes{% if priority %} <small>· {{ priority }}</small>{% endif %}</h2>
+{% if open_tickets_truncated %}<p class="muted">Showing the first {{ open_tickets|length }} — use <a href="{{ url_for('tickets', kind='incident') }}">Incidents</a> or <a href="{{ url_for('tickets', kind='change') }}">Changes</a> with filters to see the rest.</p>{% endif %}
 <table>
   <thead><tr><th>Number</th><th>Summary</th><th>State</th><th>Priority</th><th>Updated</th></tr></thead>
   <tbody>
@@ -26,6 +27,7 @@
 {% if not priority %}
 <section class="panel table-panel">
 <h2>Open service requests</h2>
+{% if open_requests_truncated %}<p class="muted">Showing the first {{ open_requests|length }} open requests.</p>{% endif %}
 <table>
   <thead><tr><th>Request</th><th>Requested for</th><th>State</th><th>Opened</th></tr></thead>
   <tbody>

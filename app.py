@@ -66,6 +66,13 @@ def parse_form_datetime(value):
     return parsed
 
 
+def parse_form_date(value):
+    """Parses a date-only form value (YYYY-MM-DD) into a date, or None."""
+    if not value:
+        return None
+    return datetime.strptime(value, "%Y-%m-%d").date()
+
+
 def align_tz(value, reference):
     """Matches value's tz-awareness to reference's. SQLite silently drops
     tzinfo on round-trip (unlike Postgres), so a value fresh off request.form
@@ -575,11 +582,27 @@ class ConfigurationItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(160), nullable=False)
     ci_class = db.Column(db.String(80), nullable=False)
+    description = db.Column(db.Text)
     environment = db.Column(db.String(30), nullable=False, default="Production")
     operational_status = db.Column(db.String(40), nullable=False, default="Operational")
+    lifecycle_state = db.Column(db.String(30), nullable=False, default="In Use")
+    business_criticality = db.Column(db.String(20), nullable=False, default="Medium")
     ip_address = db.Column(db.String(60))
+    serial_number = db.Column(db.String(120))
+    vendor = db.Column(db.String(120))
+    model = db.Column(db.String(120))
+    location = db.Column(db.String(160))
+    cost_center = db.Column(db.String(80))
+    discovery_source = db.Column(db.String(40), nullable=False, default="Manual")
+    install_date = db.Column(db.Date)
+    warranty_expiry_date = db.Column(db.Date)
+    attributes = db.Column(db.JSON, nullable=False, default=dict)
     owner_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    support_group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"))
     owner = db.relationship("User")
+    support_group = db.relationship("SupportGroup")
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
@@ -588,8 +611,13 @@ class CIRelationship(db.Model):
     parent_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False)
     child_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False)
     relationship_type = db.Column(db.String(60), nullable=False, default="Depends on")
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     parent = db.relationship("ConfigurationItem", foreign_keys=[parent_id])
     child = db.relationship("ConfigurationItem", foreign_keys=[child_id])
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    __table_args__ = (
+        db.UniqueConstraint("parent_id", "child_id", "relationship_type", name="uq_ci_relationship"),
+    )
 
 
 class Notification(db.Model):
@@ -1948,23 +1976,52 @@ def notification_target_url(target_type, target_id):
 
 
 def find_record_by_number(number):
+    """Looks up any ITIL record by its display number, strictly scoped to the
+    caller's tenant. Every branch must filter by tenant before returning a
+    record — this function is a cross-record-type lookup used for linking,
+    and an unscoped branch here is a cross-tenant existence oracle."""
     normalized = (number or "").strip().upper()
+    tenant_id = current_user.tenant_id if current_user.is_authenticated else None
+    if tenant_id is None:
+        return None
     if normalized.startswith(("INC", "CHG")):
-        return Ticket.query.filter(func.upper(Ticket.number) == normalized).first()
+        return Ticket.query.filter(
+            func.upper(Ticket.number) == normalized, Ticket.tenant_id == tenant_id,
+        ).first()
     if normalized.startswith("PRB"):
         return EnterpriseRecord.query.filter(
             EnterpriseRecord.domain == "problem",
             func.upper(EnterpriseRecord.number) == normalized,
+            EnterpriseRecord.tenant_id == tenant_id,
         ).first()
     if normalized.startswith("REQ"):
-        return CatalogRequest.query.filter(func.upper(CatalogRequest.number) == normalized).first()
+        return CatalogRequest.query.filter(
+            func.upper(CatalogRequest.number) == normalized, CatalogRequest.tenant_id == tenant_id,
+        ).first()
     if normalized.startswith("RITM"):
-        return RequestedItem.query.filter(func.upper(RequestedItem.number) == normalized).first()
+        return RequestedItem.query.join(CatalogRequest).filter(
+            func.upper(RequestedItem.number) == normalized, CatalogRequest.tenant_id == tenant_id,
+        ).first()
     if normalized.startswith("SCTASK"):
-        return CatalogTask.query.filter(func.upper(CatalogTask.number) == normalized).first()
+        return CatalogTask.query.join(RequestedItem).join(CatalogRequest).filter(
+            func.upper(CatalogTask.number) == normalized, CatalogRequest.tenant_id == tenant_id,
+        ).first()
     if normalized.startswith(("CTASK", "PTASK")):
-        return OperationalTask.query.filter(func.upper(OperationalTask.number) == normalized).first()
+        task = OperationalTask.query.filter(func.upper(OperationalTask.number) == normalized).first()
+        if not task:
+            return None
+        if task.parent_type == "ticket":
+            parent = db.session.get(Ticket, task.parent_id)
+        elif task.parent_type == "enterprise":
+            parent = db.session.get(EnterpriseRecord, task.parent_id)
+        else:
+            parent = None
+        if not parent or parent.tenant_id != tenant_id:
+            return None
+        return task
     if normalized.startswith("KB") and normalized[2:].isdigit():
+        # Knowledge is not currently tenant-scoped; single-tenant deployments
+        # are unaffected, but this remains a gap if multi-tenant KB ships.
         return db.session.get(Knowledge, int(normalized[2:]))
     return None
 
@@ -3257,6 +3314,23 @@ def seed_itil(admin):
         db.session.add(ccb)
     db.session.flush()
     windows = SupportGroup.query.filter_by(name="Windows").first()
+    if windows and not CatalogItem.query.first():
+        # Administrator-configurable defaults per governed catalog routing:
+        # these are starting points, not hard-coded routing logic — an admin
+        # can change or deactivate them at any time via /admin/catalog.
+        db.session.add_all([
+            CatalogItem(
+                name="Laptop Request", category="Hardware",
+                description="Request a standard-issue laptop for a new or replacement device.",
+                delivery_days=5, approval_required=True,
+            ),
+            CatalogItem(
+                name="Software Request", category="Access",
+                description="Request installation or license access for approved software.",
+                delivery_days=2, approval_required=True,
+            ),
+        ])
+        db.session.flush()
     if windows:
         for item in CatalogItem.query.all():
             normalized = f"{item.name} {item.category}".lower()
@@ -4427,14 +4501,26 @@ def create_app(test_config=None):
         )
         if priority:
             open_ticket_query = open_ticket_query.filter_by(priority=priority)
-        open_tickets = open_ticket_query.order_by(Ticket.priority, Ticket.updated_at.desc()).all()
+        # Capped to keep this route bounded for tenants with a large open-work
+        # backlog; use /tickets/<kind> with pagination and filters to see the
+        # rest.
+        open_work_limit = 200
+        open_tickets = open_ticket_query.order_by(
+            Ticket.priority, Ticket.updated_at.desc()
+        ).limit(open_work_limit + 1).all()
+        open_tickets_truncated = len(open_tickets) > open_work_limit
+        open_tickets = open_tickets[:open_work_limit]
         open_requests = visible_catalog_request_query(current_user).filter(
             CatalogRequest.state.notin_(["Closed Complete", "Closed Incomplete", "Cancelled"])
-        ).order_by(CatalogRequest.opened_at.desc()).all()
+        ).order_by(CatalogRequest.opened_at.desc()).limit(open_work_limit + 1).all()
+        open_requests_truncated = len(open_requests) > open_work_limit
+        open_requests = open_requests[:open_work_limit]
         if priority:
             open_requests = []
+            open_requests_truncated = False
         return render_template(
             "open_work.html", open_tickets=open_tickets, open_requests=open_requests, priority=priority,
+            open_tickets_truncated=open_tickets_truncated, open_requests_truncated=open_requests_truncated,
         )
 
     @app.get("/")
@@ -4620,13 +4706,34 @@ def create_app(test_config=None):
         total = query.count()
         pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, pages)
-        rows = query.order_by(Ticket.updated_at.desc()).offset(
+        rows = query.options(
+            db.joinedload(Ticket.requester), db.joinedload(Ticket.assignee),
+        ).order_by(Ticket.updated_at.desc()).offset(
             (page - 1) * per_page
         ).limit(per_page).all()
+        # Batch-fetch owning groups for this page instead of one query per row
+        # (ticket_owning_group() issues its own query per call).
+        row_ids = [row.id for row in rows]
+        assignment_groups = {
+            a.ticket_id: a.group
+            for a in TicketAssignmentGroup.query.filter(
+                TicketAssignmentGroup.ticket_id.in_(row_ids)
+            ).options(db.joinedload(TicketAssignmentGroup.group)).all()
+        } if row_ids else {}
+        ownership_groups = {
+            o.ticket_id: o.group
+            for o in ChangeOwnership.query.filter(
+                ChangeOwnership.ticket_id.in_(row_ids)
+            ).options(db.joinedload(ChangeOwnership.group)).all()
+        } if row_ids else {}
+        owning_groups = {
+            row.id: ownership_groups.get(row.id) if row.kind == "change" else assignment_groups.get(row.id)
+            for row in rows
+        }
         return render_template(
             "tickets.html", tickets=rows, kind=kind, q=q, state=state,
             page=page, pages=pages, total=total,
-            owning_groups={row.id: ticket_owning_group(row) for row in rows},
+            owning_groups=owning_groups,
         )
 
     @app.route("/tickets/new/<kind>", methods=["GET", "POST"])
@@ -6079,7 +6186,11 @@ def create_app(test_config=None):
     @roles("admin")
     @require_action("configure")
     def integrations_process():
-        count = process_outbox()
+        # Capped tightly: this runs synchronously in the request thread, and
+        # each event may make an SMTP/webhook call with its own network
+        # timeout. The background tools/outbox_worker.py is the primary,
+        # unbounded drain path; this route is a manual nudge, not a bulk tool.
+        count = process_outbox(limit=5)
         audit("integration process", "Outbox", f"{count} event(s)")
         db.session.commit()
         flash(f"Processed {count} outbox event(s).", "success")
@@ -6766,11 +6877,7 @@ def create_app(test_config=None):
         cis = tenant_query(ConfigurationItem).order_by(
             ConfigurationItem.ci_class, ConfigurationItem.name
         ).all()
-        ci_ids = [ci.id for ci in cis]
-        relationships = CIRelationship.query.filter(
-            CIRelationship.parent_id.in_(ci_ids),
-            CIRelationship.child_id.in_(ci_ids),
-        ).all()
+        relationships = tenant_query(CIRelationship).all()
         visible_cis = [ci for ci in cis if not status or ci.operational_status == status] if status else cis
         return render_template("cmdb.html", cis=cis, visible_cis=visible_cis, relationships=relationships, status=status)
 
@@ -6778,41 +6885,75 @@ def create_app(test_config=None):
     @roles("admin")
     def ci_new():
         if request.method == "POST":
-            ci = ConfigurationItem(name=request.form["name"], ci_class=request.form["ci_class"],
-                                   environment=request.form["environment"], operational_status=request.form["operational_status"],
-                                   ip_address=request.form.get("ip_address"), owner_id=current_user.id)
+            install_date = request.form.get("install_date") or None
+            warranty_expiry_date = request.form.get("warranty_expiry_date") or None
+            support_group_id = request.form.get("support_group_id") or None
+            ci = ConfigurationItem(
+                name=request.form["name"].strip(), ci_class=request.form["ci_class"].strip(),
+                description=request.form.get("description", "").strip() or None,
+                environment=request.form["environment"], operational_status=request.form["operational_status"],
+                lifecycle_state=request.form.get("lifecycle_state", "In Use"),
+                business_criticality=request.form.get("business_criticality", "Medium"),
+                ip_address=request.form.get("ip_address", "").strip() or None,
+                serial_number=request.form.get("serial_number", "").strip() or None,
+                vendor=request.form.get("vendor", "").strip() or None,
+                model=request.form.get("model", "").strip() or None,
+                location=request.form.get("location", "").strip() or None,
+                cost_center=request.form.get("cost_center", "").strip() or None,
+                discovery_source=request.form.get("discovery_source", "Manual"),
+                install_date=parse_form_date(install_date),
+                warranty_expiry_date=parse_form_date(warranty_expiry_date),
+                support_group_id=int(support_group_id) if support_group_id else None,
+                owner_id=current_user.id,
+            )
             db.session.add(ci)
             audit("create", "CI", ci.name)
             db.session.commit()
+            flash(f"{ci.name} created.", "success")
             return redirect(url_for("cmdb"))
-        return render_template("ci_form.html")
+        support_groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
+        return render_template("ci_form.html", support_groups=support_groups)
 
     @app.route("/cmdb/<int:ci_id>/edit", methods=["GET", "POST"])
     @roles("admin")
     def ci_edit(ci_id):
         ci = tenant_record_or_404(ConfigurationItem, ci_id)
         if request.method == "POST":
-            before = {
-                "name": ci.name, "class": ci.ci_class, "environment": ci.environment,
-                "status": ci.operational_status, "IP address": ci.ip_address or "",
-            }
+            tracked_fields = [
+                "name", "ci_class", "environment", "operational_status", "lifecycle_state",
+                "business_criticality", "ip_address", "serial_number", "vendor", "model",
+                "location", "cost_center",
+            ]
+            before = {field: getattr(ci, field) or "" for field in tracked_fields}
             ci.name = request.form["name"].strip()
             ci.ci_class = request.form["ci_class"].strip()
+            ci.description = request.form.get("description", "").strip() or None
             ci.environment = request.form["environment"]
             ci.operational_status = request.form["operational_status"]
+            ci.lifecycle_state = request.form.get("lifecycle_state", "In Use")
+            ci.business_criticality = request.form.get("business_criticality", "Medium")
             ci.ip_address = request.form.get("ip_address", "").strip() or None
+            ci.serial_number = request.form.get("serial_number", "").strip() or None
+            ci.vendor = request.form.get("vendor", "").strip() or None
+            ci.model = request.form.get("model", "").strip() or None
+            ci.location = request.form.get("location", "").strip() or None
+            ci.cost_center = request.form.get("cost_center", "").strip() or None
+            ci.discovery_source = request.form.get("discovery_source", ci.discovery_source)
+            ci.install_date = parse_form_date(request.form.get("install_date") or None)
+            ci.warranty_expiry_date = parse_form_date(request.form.get("warranty_expiry_date") or None)
+            support_group_id = request.form.get("support_group_id")
+            ci.support_group_id = int(support_group_id) if support_group_id else None
             owner_id = request.form.get("owner_id")
             ci.owner_id = int(owner_id) if owner_id else None
-            log_field_changes("ci", ci.id, before, {
-                "name": ci.name, "class": ci.ci_class, "environment": ci.environment,
-                "status": ci.operational_status, "IP address": ci.ip_address or "",
-            })
+            after = {field: getattr(ci, field) or "" for field in tracked_fields}
+            log_field_changes("ci", ci.id, before, after)
             audit("update", "CI", ci.name)
             db.session.commit()
             flash(f"{ci.name} updated.", "success")
             return redirect(url_for("cmdb"))
         owners = tenant_query(User).filter_by(active=True).order_by(User.name).all()
-        return render_template("ci_form.html", ci=ci, owners=owners)
+        support_groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
+        return render_template("ci_form.html", ci=ci, owners=owners, support_groups=support_groups)
 
     @app.post("/cmdb/relationships")
     @roles("admin")
@@ -6822,7 +6963,9 @@ def create_app(test_config=None):
         if parent.id == child.id:
             abort(400, description="A configuration item cannot depend on itself.")
         relationship_type = request.form.get("relationship_type", "Depends on").strip()[:60] or "Depends on"
-        existing = CIRelationship.query.filter_by(parent_id=parent.id, child_id=child.id).first()
+        existing = tenant_query(CIRelationship).filter_by(
+            parent_id=parent.id, child_id=child.id, relationship_type=relationship_type,
+        ).first()
         if not existing:
             db.session.add(CIRelationship(parent_id=parent.id, child_id=child.id, relationship_type=relationship_type))
             audit("create", "CI relationship", f"{parent.name} — {relationship_type} → {child.name}")
@@ -6833,12 +6976,7 @@ def create_app(test_config=None):
     @app.post("/cmdb/relationships/<int:relationship_id>/delete")
     @roles("admin")
     def ci_relationship_delete(relationship_id):
-        relationship = db.get_or_404(CIRelationship, relationship_id)
-        if (
-            relationship.parent.tenant_id != current_user.tenant_id
-            or relationship.child.tenant_id != current_user.tenant_id
-        ):
-            abort(404)
+        relationship = tenant_record_or_404(CIRelationship, relationship_id)
         audit("delete", "CI relationship", f"{relationship.parent.name} — {relationship.child.name}")
         db.session.delete(relationship)
         db.session.commit()
