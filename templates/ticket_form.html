@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}New {{ kind }} · {{ instance_name }}{% endblock %}
 {% block content %}
+{% if form %}<div class="flash error">{{ form_error }}</div>{% endif %}
 {% if kind == 'incident' %}
+{% set f = form %}
 <section class="record-shell">
   <header class="record-toolbar">
     <div class="record-identity">
@@ -17,48 +19,51 @@
   <form method="post" id="incident-create-form" class="record-form">
     <div class="record-grid">
       <label><span>Number</span><input value="Assigned on creation" disabled></label>
-      <label><span>Contact type</span><select name="contact_type"><option>Self-service</option><option>Phone</option><option>Email</option><option>Chat</option><option>Monitoring</option></select></label>
+      <label><span>Contact type</span><select name="contact_type">{% for opt in ['Self-service','Phone','Email','Chat','Monitoring'] %}<option {% if (f and f.get('contact_type')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
       <label class="required-field"><span>Caller</span><input value="{{ current_user.name }} · {{ current_user.email }}" disabled></label>
       <label><span>State</span><input value="New" disabled></label>
-      <label><span>Category</span><select name="category"><option>General</option><option>Access</option><option>Hardware</option><option>Software</option><option>Network</option><option>Security</option></select></label>
-      <label><span>Impact</span><select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if value == 'Medium' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-      <label><span>Subcategory</span><input name="subcategory" maxlength="80" placeholder="Select or describe the affected area"></label>
-      <label><span>Urgency</span><select name="urgency" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if value == 'Medium' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-      <label><span>Service offering</span><select name="service_offering_id"><option value="">Not selected</option>{% for offering in service_offerings %}<option value="{{ offering.id }}">{{ offering.name }}</option>{% endfor %}</select></label>
-      <label><span>Priority</span><input value="Calculated from impact and urgency" disabled></label>
+      <label><span>Category</span><select name="category">{% for opt in ['General','Access','Hardware','Software','Network','Security'] %}<option {% if (f and f.get('category')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
+      <label class="required-field"><span>Impact</span><select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('impact')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label><span>Subcategory</span><input name="subcategory" maxlength="80" placeholder="Select or describe the affected area" value="{{ f.get('subcategory','') if f else '' }}"></label>
+      <label class="required-field"><span>Urgency</span><select name="urgency" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('urgency')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label><span>Service offering</span><select name="service_offering_id"><option value="">Not selected</option>{% for offering in service_offerings %}<option value="{{ offering.id }}" {% if f and f.get('service_offering_id')==offering.id|string %}selected{% endif %}>{{ offering.name }}</option>{% endfor %}</select></label>
+      <label><span>Priority<span class="info-tip" tabindex="0" data-tip="Priority is calculated automatically from impact and urgency.">i</span></span><input value="Calculated from impact and urgency" disabled></label>
       <label><span>Configuration item</span><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off"><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div></label>
-      <label class="required-field"><span>Assignment group</span><select name="group_id" required><option value="">Select an IT team</option>{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label>
-      <label><span>Notify</span><select name="notify"><option>Email</option><option>In-app only</option><option>Do not notify</option></select></label>
+      <label class="required-field"><span>Assignment group</span><select name="group_id" required><option value="">Select an IT team</option>{% for team in teams %}<option value="{{ team.id }}" {% if f and f.get('group_id')==team.id|string %}selected{% endif %}>{{ team.name }}</option>{% endfor %}</select></label>
+      <label><span>Notify</span><select name="notify">{% for opt in ['Email','In-app only','Do not notify'] %}<option {% if (f and f.get('notify')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
       <label><span>Assigned to</span><input value="Unassigned until the owning team accepts it" disabled></label>
     </div>
     <div class="record-long-fields">
-      <label class="required-field"><span>Short description</span><input name="title" maxlength="180" required autofocus></label>
-      <label class="required-field"><span>Description</span><textarea name="description" rows="7" required></textarea></label>
+      <label class="required-field"><span>Short description</span><input name="title" maxlength="180" required autofocus value="{{ f.get('title','') if f else '' }}"></label>
+      <label class="required-field"><span>Description</span><textarea name="description" rows="7" required>{{ f.get('description','') if f else '' }}</textarea></label>
     </div>
     <footer class="record-footer-actions"><a class="button" href="{{ url_for('tickets', kind='incident') }}">Cancel</a><button class="primary">Create incident</button></footer>
   </form>
 </section>
 {% else %}
+{% set f = form %}
 <header class="page-head"><div><p class="eyebrow">NEW RECORD</p><h1>Create {{ kind }}</h1><p>Provide the details needed to route and resolve this work.</p></div></header>
 {% include "_state_track.html" %}
 <form method="post" class="panel form-grid">
-  <label class="wide">Short description<input name="title" maxlength="180" required autofocus></label>
-  <label>Category<select name="category"><option>General</option><option>Access</option><option>Hardware</option><option>Software</option><option>Network</option><option>Security</option></select></label>
-  <label>Impact<select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if value == 'Medium' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-  <label>Urgency<select name="urgency" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if value == 'Medium' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select><small>Priority is calculated from impact and urgency.</small></label>
-  <label class="wide">Description<textarea name="description" rows="8" required></textarea></label>
-  <label>Owning IT team<select name="group_id" required><option value="">Select a team</option>{% for team in teams %}<option value="{{ team.id }}" {% if kind == 'change' and not team.manager %}disabled{% endif %}>{{ team.name }}{% if kind == 'change' %} — {{ team.manager.name if team.manager else "manager not configured" }}{% endif %}</option>{% endfor %}</select></label>
+  <label class="wide required-field"><span>Short description</span><input name="title" maxlength="180" required autofocus value="{{ f.get('title','') if f else '' }}"></label>
+  <label><span>Category</span><select name="category">{% for opt in ['General','Access','Hardware','Software','Network','Security'] %}<option {% if (f and f.get('category')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
+  <label class="required-field"><span>Impact</span><select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('impact')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <label class="required-field"><span>Urgency<span class="info-tip" tabindex="0" data-tip="Priority is calculated automatically from impact and urgency.">i</span></span><select name="urgency" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('urgency')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <label class="wide required-field"><span>Description</span><textarea name="description" rows="8" required>{{ f.get('description','') if f else '' }}</textarea></label>
+  <label class="required-field"><span>Owning IT team</span><select name="group_id" required><option value="">Select a team</option>{% for team in teams %}<option value="{{ team.id }}" {% if kind == 'change' and not team.manager %}disabled{% endif %} {% if f and f.get('group_id')==team.id|string %}selected{% endif %}>{{ team.name }}{% if kind == 'change' %} — {{ team.manager.name if team.manager else "manager not configured" }}{% endif %}</option>{% endfor %}</select></label>
   {% if kind == 'change' %}
   {% if change_freeze_message %}<div class="wide flash">{{ change_freeze_message }}</div>{% endif %}
-  <label><span>Change type<span class="info-tip" tabindex="0" data-tip="Standard changes use a pre-authorized template. Normal changes require team-manager and CCB approval. Emergency changes use an accelerated but still auditable route — being submitted late is not, by itself, a valid emergency justification.">i</span></span><select name="change_type"><option>Normal</option><option>Standard</option><option>Emergency</option></select></label>
-  <label><span>Impact<span class="info-tip" tabindex="0" data-tip="How much of the business or how many users are affected if this change goes wrong.">i</span></span><select name="impact"><option>Low</option><option selected>Medium</option><option>High</option></select></label>
-  <label><span>Risk score<span class="info-tip" tabindex="0" data-tip="0-100 estimate of how likely this change is to cause an incident, based on scope, complexity, and rollback difficulty. Higher scores may require additional approval scrutiny.">i</span></span><input type="number" min="0" max="100" name="risk_score" value="50"></label>
-  <label>Configuration item<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off"><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div></label>
-  <label>Planned start<input type="datetime-local" name="planned_start" required></label>
-  <label>Planned end<input type="datetime-local" name="planned_end" required></label>
-  <label class="wide">Implementation plan<textarea name="implementation_plan" rows="4" required></textarea></label>
-  <label class="wide">Test plan<textarea name="test_plan" rows="4" required></textarea></label>
-  <label class="wide">Backout plan<textarea name="backout_plan" rows="4" required></textarea></label>
+  <label><span>Change type<span class="info-tip" tabindex="0" data-tip="Standard changes use a pre-authorized template. Normal changes require team-manager and CCB approval. Emergency changes use an accelerated but still auditable route — being submitted late is not, by itself, a valid emergency justification.">i</span></span><select name="change_type">{% for opt in ['Normal','Standard','Emergency'] %}<option {% if (f and f.get('change_type')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
+  <label><span>Impact<span class="info-tip" tabindex="0" data-tip="How much of the business or how many users are affected if this change goes wrong.">i</span></span><select name="impact">{% for opt in ['Low','Medium','High'] %}<option {% if (f and f.get('impact')==opt) or (not f and opt=='Medium') %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
+  <label><span>Risk score<span class="info-tip" tabindex="0" data-tip="0-100 estimate of how likely this change is to cause an incident, based on scope, complexity, and rollback difficulty. Higher scores may require additional approval scrutiny.">i</span></span><input type="number" min="0" max="100" name="risk_score" value="{{ f.get('risk_score','50') if f else '50' }}"></label>
+  <label><span>Configuration item</span><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off"><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div></label>
+  <div class="wide field-pair">
+    <label class="required-field"><span>Planned start</span><input type="datetime-local" name="planned_start" required value="{{ f.get('planned_start','') if f else '' }}"></label>
+    <label class="required-field"><span>Planned end</span><input type="datetime-local" name="planned_end" required value="{{ f.get('planned_end','') if f else '' }}"></label>
+  </div>
+  <label class="wide required-field"><span>Implementation plan<span class="info-tip" tabindex="0" data-tip="Locked once the change is submitted. Changing it later requires a new approval cycle.">i</span></span><textarea name="implementation_plan" rows="4" required>{{ f.get('implementation_plan','') if f else '' }}</textarea></label>
+  <label class="wide required-field"><span>Test plan<span class="info-tip" tabindex="0" data-tip="Locked once the change is submitted. Changing it later requires a new approval cycle.">i</span></span><textarea name="test_plan" rows="4" required>{{ f.get('test_plan','') if f else '' }}</textarea></label>
+  <label class="wide required-field"><span>Backout plan<span class="info-tip" tabindex="0" data-tip="Locked once the change is submitted. Changing it later requires a new approval cycle.">i</span></span><textarea name="backout_plan" rows="4" required>{{ f.get('backout_plan','') if f else '' }}</textarea></label>
   {% endif %}
   <div class="wide actions"><a class="button" href="{{ url_for('tickets', kind=kind) }}">Cancel</a><button class="primary">Create {{ kind }}</button></div>
 </form>

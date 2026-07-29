@@ -14,7 +14,7 @@
       <td>{{ t.title }}</td>
       <td><span class="badge">{{ t.state }}</span></td>
       <td><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td>
-      <td>{{ t.updated_at.strftime('%b %d, %H:%M') }}</td>
+      <td>{{ (t.updated_at|usertime('%b %d, %H:%M')) }}</td>
     </tr>
     {% else %}
     <tr><td colspan="5" class="empty">No open incidents or changes.</td></tr>
@@ -34,7 +34,7 @@
       <td><a href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></td>
       <td>{{ req.requested_for.name }}</td>
       <td><span class="badge">{{ req.state }}</span></td>
-      <td>{{ req.opened_at.strftime('%b %d, %H:%M') }}</td>
+      <td>{{ (req.opened_at|usertime('%b %d, %H:%M')) }}</td>
     </tr>
     {% else %}
     <tr><td colspan="4" class="empty">No open service requests.</td></tr>

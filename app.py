@@ -14,9 +14,11 @@ from datetime import date, datetime, time as dt_time, timedelta, timezone
 from email.message import EmailMessage
 from functools import wraps
 from urllib.parse import urljoin, urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 from flask import Flask, Response, abort, current_app, flash, g, has_request_context, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from markupsafe import Markup, escape
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_sqlalchemy import SQLAlchemy
 from authlib.integrations.flask_client import OAuth
@@ -158,6 +160,8 @@ class User(UserMixin, db.Model):
     timezone = db.Column(db.String(80), nullable=False, default="Asia/Tokyo")
     date_format = db.Column(db.String(40), nullable=False, default="system")
     calendar_integration = db.Column(db.String(40), nullable=False, default="None")
+    avatar_path = db.Column(db.String(255))
+    location = db.Column(db.String(120), nullable=False, default="")
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(30), nullable=False, default="requester")
     active = db.Column(db.Boolean, default=True, nullable=False)
@@ -935,7 +939,7 @@ class ChangeGovernance(db.Model):
     planned_start = db.Column(db.DateTime(timezone=True))
     planned_end = db.Column(db.DateTime(timezone=True))
     ci_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"))
-    conflict_status = db.Column(db.String(40), nullable=False, default="Not Run")
+    conflict_status = db.Column(db.String(500), nullable=False, default="Not Run")
     ccb_required = db.Column(db.Boolean, nullable=False, default=True)
     ticket = db.relationship("Ticket", backref=db.backref("change_governance", uselist=False))
     ci = db.relationship("ConfigurationItem")
@@ -2394,7 +2398,9 @@ def run_change_conflict_detection(ticket, governance):
             ).filter(TaskCI.ci_id.in_(current_ci_ids)).all()
             for incident in open_incidents:
                 conflicts.append(f"{incident.number} (open incident on same CI)")
-    governance.conflict_status = f"Conflict: {', '.join(conflicts)}" if conflicts else "No conflict"
+    governance.conflict_status = (
+        f"Conflict: {', '.join(conflicts)}" if conflicts else "No conflict"
+    )[:500]
     log_history(
         "ticket", ticket.id, "Conflict detection completed",
         details=governance.conflict_status,
@@ -3567,6 +3573,32 @@ def create_app(test_config=None):
             return False
         return all(request.view_args.get(key) == value for key, value in params.items())
 
+    @app.template_filter("usertime")
+    def usertime_filter(value, fmt="%b %d, %H:%M"):
+        if value is None:
+            return ""
+        tz_name = getattr(current_user, "timezone", None) if current_user.is_authenticated else None
+        try:
+            tz = ZoneInfo(tz_name) if tz_name else ZoneInfo("UTC")
+        except (ZoneInfoNotFoundError, ValueError):
+            tz = ZoneInfo("UTC")
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(tz).strftime(fmt)
+
+    def user_avatar_html(user, css_class="avatar"):
+        if user is None:
+            return Markup(f'<div class="{escape(css_class)}" title="System">S</div>')
+        if getattr(user, "avatar_path", None):
+            return Markup(
+                f'<img class="{escape(css_class)}" src="{escape(url_for("profile_avatar", user_id=user.id))}" '
+                f'alt="{escape(user.name)}" title="{escape(user.name)}">'
+            )
+        initial = escape(user.name[0].upper()) if user.name else "?"
+        return Markup(f'<div class="{escape(css_class)}" title="{escape(user.name)}">{initial}</div>')
+
+    app.jinja_env.globals["user_avatar"] = user_avatar_html
+
     @app.context_processor
     def ui_context():
         platform_context = {
@@ -4466,60 +4498,107 @@ def create_app(test_config=None):
         }
         if kind == "change" and current_user.role == "requester" and not eligible_it_team_ids:
             abort(403)
+
+        def render_form(error=None):
+            teams_query = tenant_query(SupportGroup).filter_by(
+                group_type="IT Fulfillment", active=True
+            )
+            if kind == "change" and current_user.role != "admin":
+                if eligible_it_team_ids:
+                    teams_query = teams_query.filter(SupportGroup.id.in_(eligible_it_team_ids))
+                else:
+                    teams_query = teams_query.filter(SupportGroup.id == -1)
+            return render_template(
+                "ticket_form.html", kind=kind, teams=teams_query.order_by(SupportGroup.name).all(),
+                state_track=build_state_track(kind, "New"),
+                default_priority=setting_value("DEFAULT_TICKET_PRIORITY", "P3"),
+                change_freeze_message=setting_value("CHANGE_FREEZE_MESSAGE", ""),
+                service_offerings=tenant_query(ServiceOffering).filter_by(
+                    status="Operational"
+                ).order_by(ServiceOffering.name).all(),
+                form=request.form if error else None, form_error=error,
+            ), (400 if error else 200)
+
         if request.method == "POST":
             contact_type = request.form.get("contact_type", "Self-service")
             notify = request.form.get("notify", "Email")
             if contact_type not in {
                 "Self-service", "Phone", "Email", "Chat", "Monitoring"
             }:
-                abort(400, description="Select a valid contact type.")
+                return render_form("Select a valid contact type.")
             if notify not in {"Email", "In-app only", "Do not notify"}:
-                abort(400, description="Select a valid notification preference.")
+                return render_form("Select a valid notification preference.")
             offering = None
             if request.form.get("service_offering_id"):
-                offering = tenant_record_or_404(
-                    ServiceOffering, int(request.form["service_offering_id"])
-                )
+                offering = tenant_query(ServiceOffering).filter_by(
+                    id=int(request.form["service_offering_id"])
+                ).first()
+                if not offering:
+                    return render_form("Select a valid service offering.")
                 if offering.status != "Operational":
-                    abort(400, description="Select an operational service offering.")
+                    return render_form("Select an operational service offering.")
             try:
                 group_id = int(request.form.get("group_id", ""))
             except (TypeError, ValueError):
-                abort(400, description="Select a valid owning IT team.")
+                return render_form("Select a valid owning IT team.")
             owning_group = db.session.get(SupportGroup, group_id)
             if (
                 not owning_group
                 or not owning_group.active
                 or owning_group.group_type != "IT Fulfillment"
             ):
-                abort(400, description="Select an active IT fulfillment team.")
+                return render_form("Select an active IT fulfillment team.")
             if (
                 kind == "change"
                 and current_user.role != "admin"
                 and owning_group.id not in eligible_it_team_ids
             ):
-                abort(403, description=(
-                    "You can submit changes only for IT fulfillment teams you belong to."
-                ))
+                return render_form("You can submit changes only for IT fulfillment teams you belong to.")
             if kind == "change" and (
                 not owning_group.manager
                 or not owning_group.manager.active
             ):
-                abort(409, description=(
-                    "The selected team must have an active manager before a change can be submitted."
-                ))
+                return render_form("The selected team must have an active manager before a change can be submitted.")
             if kind == "change":
                 if not request.form.get("planned_start") or not request.form.get("planned_end"):
-                    abort(400, description="Planned start and planned end are required for a change.")
+                    return render_form("Planned start and planned end are required for a change.")
                 planned_start = parse_form_datetime(request.form["planned_start"])
                 planned_end = parse_form_datetime(request.form["planned_end"])
+                if not planned_start or not planned_end:
+                    return render_form("Planned start and planned end must be valid dates.")
                 if planned_end <= planned_start:
-                    abort(400, description="Planned end must be later than planned start.")
+                    return render_form("Planned end must be later than planned start.")
+            title = request.form.get("title", "").strip()
+            description = request.form.get("description", "").strip()
+            if not title:
+                return render_form("Short description is required.")
+            if not description:
+                return render_form("Description is required.")
+            if kind == "change":
+                for label, field in (
+                    ("Implementation plan", "implementation_plan"),
+                    ("Test plan", "test_plan"),
+                    ("Backout plan", "backout_plan"),
+                ):
+                    if not request.form.get(field, "").strip():
+                        return render_form(f"{label} is required.")
+            ci_id = None
+            if request.form.get("ci_id"):
+                try:
+                    ci_id = int(request.form["ci_id"])
+                except (TypeError, ValueError):
+                    return render_form("The selected configuration item is invalid.")
+                if not tenant_query(ConfigurationItem).filter_by(id=ci_id).first():
+                    return render_form("The selected configuration item does not exist.")
+            try:
+                risk_score = max(0, min(100, int(request.form.get("risk_score", "50"))))
+            except (TypeError, ValueError):
+                return render_form("Risk score must be a number between 0 and 100.")
             impact = request.form.get("impact", "Medium")
             urgency = request.form.get("urgency", "Medium")
             priority = calculate_priority(impact, urgency)
             ticket = Ticket(number=next_number(kind), kind=kind,
-                            title=request.form["title"].strip(), description=request.form["description"].strip(),
+                            title=title, description=description,
                             category=request.form.get("category", "General"), priority=priority,
                             impact=impact, urgency=urgency,
                             subcategory=request.form.get("subcategory", "").strip(),
@@ -4528,24 +4607,21 @@ def create_app(test_config=None):
                             requester_id=current_user.id)
             db.session.add(ticket)
             db.session.flush()
-            if kind == "incident" and request.form.get("ci_id"):
-                ci = tenant_record_or_404(
-                    ConfigurationItem, int(request.form["ci_id"])
-                )
+            if kind == "incident" and ci_id:
                 db.session.add(TaskCI(
-                    target_type="ticket", target_id=ticket.id, ci_id=ci.id,
+                    target_type="ticket", target_id=ticket.id, ci_id=ci_id,
                     relationship_role="Primary CI",
                 ))
             attach_slas("ticket", ticket.id, ticket.priority)
             if kind == "change":
                 governance = ChangeGovernance(ticket_id=ticket.id, change_type=request.form.get("change_type", "Normal"),
-                                              risk_score=int(request.form.get("risk_score", 50)),
+                                              risk_score=risk_score,
                                               impact=request.form.get("impact", "Medium"),
-                                              implementation_plan=request.form.get("implementation_plan", ""),
-                                              test_plan=request.form.get("test_plan", ""),
-                                              backout_plan=request.form.get("backout_plan", ""),
+                                              implementation_plan=request.form.get("implementation_plan", "").strip(),
+                                              test_plan=request.form.get("test_plan", "").strip(),
+                                              backout_plan=request.form.get("backout_plan", "").strip(),
                                               planned_start=planned_start, planned_end=planned_end,
-                                              ci_id=int(request.form["ci_id"]) if request.form.get("ci_id") else None)
+                                              ci_id=ci_id)
                 db.session.add(governance)
                 db.session.flush()
                 db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=owning_group.id))
@@ -4591,24 +4667,7 @@ def create_app(test_config=None):
                 "error" if conflicts else "success",
             )
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
-        teams_query = tenant_query(SupportGroup).filter_by(
-            group_type="IT Fulfillment", active=True
-        )
-        if kind == "change" and current_user.role != "admin":
-            if eligible_it_team_ids:
-                teams_query = teams_query.filter(SupportGroup.id.in_(eligible_it_team_ids))
-            else:
-                teams_query = teams_query.filter(SupportGroup.id == -1)
-        teams = teams_query.order_by(SupportGroup.name).all()
-        return render_template(
-            "ticket_form.html", kind=kind, teams=teams,
-            state_track=build_state_track(kind, "New"),
-            default_priority=setting_value("DEFAULT_TICKET_PRIORITY", "P3"),
-            change_freeze_message=setting_value("CHANGE_FREEZE_MESSAGE", ""),
-            service_offerings=tenant_query(ServiceOffering).filter_by(
-                status="Operational"
-            ).order_by(ServiceOffering.name).all(),
-        )
+        return render_form()
 
     @app.route("/ticket/<int:ticket_id>", methods=["GET", "POST"])
     @login_required
@@ -4820,17 +4879,6 @@ def create_app(test_config=None):
         work_tasks = OperationalTask.query.filter_by(
             parent_type="ticket", parent_id=ticket.id
         ).order_by(OperationalTask.sequence, OperationalTask.id).all()
-        task_agents = {}
-        task_permissions = {}
-        for task in work_tasks:
-            member_ids = {member.user_id for member in task.assignment_group.members}
-            if task.assignment_group.manager_id:
-                member_ids.add(task.assignment_group.manager_id)
-            task_agents[task.id] = User.query.filter(
-                User.id.in_(member_ids), User.active.is_(True),
-                User.role.in_(["agent", "manager", "admin"]),
-            ).order_by(User.name).all() if member_ids else []
-            task_permissions[task.id] = user_in_group(current_user, task.assignment_group)
         history = TaskHistory.query.filter_by(
             target_type="ticket", target_id=ticket.id
         ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).all()
@@ -4855,7 +4903,6 @@ def create_app(test_config=None):
                 SupportGroup.active.is_(True),
                 SupportGroup.id != (owning_group.id if owning_group else -1),
             ).order_by(SupportGroup.name).all(),
-            task_agents=task_agents, task_permissions=task_permissions,
             service_offerings=tenant_query(ServiceOffering).filter_by(
                 status="Operational"
             ).order_by(ServiceOffering.name).all(),
@@ -4869,6 +4916,11 @@ def create_app(test_config=None):
             abort(404)
         require_ticket_team_access(ticket)
         governance = ticket.change_governance
+        if ticket.state in ("In Progress", "Pending", "Resolved", "Closed", "Cancelled"):
+            abort(409, description=(
+                "The change plan is locked once implementation has started or the change is closed. "
+                "Reopen the change to New/Awaiting Approval before revising the plan."
+            ))
         try:
             risk_score = max(0, min(100, int(request.form.get("risk_score", "50"))))
             planned_start = parse_form_datetime(request.form.get("planned_start"))
@@ -5177,6 +5229,43 @@ def create_app(test_config=None):
             )
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
+    @app.get("/operational-task/<int:task_id>")
+    @login_required
+    def operational_task_detail(task_id):
+        task = db.get_or_404(OperationalTask, task_id)
+        parent = record_reference(task.parent_type, task.parent_id)
+        if not parent:
+            abort(404)
+        if isinstance(parent, Ticket):
+            can_view = user_can_view_ticket(current_user, parent)
+        elif isinstance(parent, EnterpriseRecord):
+            can_view = user_can_view_enterprise_record(current_user, parent)
+        else:
+            can_view = False
+        if not can_view:
+            abort(403)
+        can_edit = user_in_group(current_user, task.assignment_group)
+        member_ids = {member.user_id for member in task.assignment_group.members}
+        if task.assignment_group.manager_id:
+            member_ids.add(task.assignment_group.manager_id)
+        agents = User.query.filter(
+            User.id.in_(member_ids), User.active.is_(True),
+            User.role.in_(["agent", "manager", "admin"]),
+        ).order_by(User.name).all() if member_ids else []
+        history = TaskHistory.query.filter_by(
+            target_type=task.parent_type, target_id=task.parent_id
+        ).filter(TaskHistory.details.contains(task.number)).order_by(
+            TaskHistory.created_at.desc(), TaskHistory.id.desc()
+        ).all()
+        allowed_states = OPERATIONAL_TASK_TRANSITIONS.get(task.state, (task.state,))
+        closing_state = "Closed Complete" if "Closed Complete" in allowed_states else task.state
+        return render_template(
+            "operational_task_detail.html", task=task, parent=parent,
+            parent_url=record_url(parent), can_edit=can_edit, agents=agents,
+            work_task_states=OPERATIONAL_TASK_TRANSITIONS, history=history,
+            closing_state=closing_state,
+        )
+
     @app.post("/operational-task/<int:task_id>")
     @roles("agent", "manager", "admin")
     def operational_task_update(task_id):
@@ -5208,7 +5297,7 @@ def create_app(test_config=None):
         }, event=f"{task.number} updated")
         audit("update", task.number, task.state)
         db.session.commit()
-        return redirect(record_url(parent))
+        return redirect(url_for("operational_task_detail", task_id=task.id))
 
     @app.get("/knowledge")
     @login_required
@@ -5362,6 +5451,7 @@ def create_app(test_config=None):
             user.active = bool(request.form.get("active"))
             user.title = request.form.get("title", "").strip()[:120]
             user.department = request.form.get("department", "").strip()[:120]
+            user.location = request.form.get("location", "").strip()[:120]
             user.business_phone = request.form.get("business_phone", "").strip()[:40]
             user.mobile_phone = request.form.get("mobile_phone", "").strip()[:40]
             user.timezone = request.form.get("timezone", "Asia/Tokyo")[:80]
@@ -5377,19 +5467,61 @@ def create_app(test_config=None):
     @login_required
     def profile():
         user = tenant_query(User).filter_by(id=current_user.id).first_or_404()
+        directory_identity = ExternalIdentity.query.filter_by(
+            user_id=user.id, provider="ldap"
+        ).first()
+        email_managed_externally = directory_identity is not None
         if request.method == "POST":
             user.name = request.form["name"].strip()[:120]
-            user.email = request.form["email"].strip()[:160]
+            if not email_managed_externally:
+                user.email = request.form["email"].strip()[:160]
             user.title = request.form.get("title", "").strip()[:120]
+            user.location = request.form.get("location", "").strip()[:120]
             user.business_phone = request.form.get("business_phone", "").strip()[:40]
             user.mobile_phone = request.form.get("mobile_phone", "").strip()[:40]
             user.timezone = request.form.get("timezone", "Asia/Tokyo")[:80]
             user.date_format = request.form.get("date_format", "system")[:40]
+            avatar = request.files.get("avatar")
+            if avatar and avatar.filename:
+                header = avatar.stream.read(8)
+                avatar.stream.seek(0)
+                if header[:8] == b"\x89PNG\r\n\x1a\n":
+                    ext = "png"
+                elif header[:3] == b"\xff\xd8\xff":
+                    ext = "jpg"
+                else:
+                    ext = None
+                if not ext:
+                    flash("Profile picture must be a PNG or JPEG image.", "error")
+                    return redirect(url_for("profile"))
+                if request.content_length and request.content_length > 5 * 1024 * 1024:
+                    flash("Profile picture must be smaller than 5 MB.", "error")
+                    return redirect(url_for("profile"))
+                avatar_dir = os.path.join(app.config["UPLOAD_FOLDER"], "avatars")
+                os.makedirs(avatar_dir, exist_ok=True)
+                stored = f"user-{user.id}.{ext}"
+                avatar.save(os.path.join(avatar_dir, stored))
+                user.avatar_path = stored
             audit("update", user.username, "Self-service profile updated")
             db.session.commit()
             flash("Profile updated.", "success")
             return redirect(url_for("profile"))
-        return render_template("user_form.html", user=user, self_service=True)
+        teams = [membership.group.name for membership in GroupMember.query.filter_by(
+            user_id=user.id
+        ).join(SupportGroup).filter(SupportGroup.active.is_(True)).all()]
+        return render_template(
+            "user_form.html", user=user, self_service=True,
+            email_managed_externally=email_managed_externally, teams=teams,
+        )
+
+    @app.get("/profile/avatar/<int:user_id>")
+    @login_required
+    def profile_avatar(user_id):
+        user = tenant_query(User).filter_by(id=user_id).first_or_404()
+        if not user.avatar_path:
+            abort(404)
+        avatar_dir = os.path.join(app.config["UPLOAD_FOLDER"], "avatars")
+        return send_from_directory(avatar_dir, user.avatar_path)
 
     @app.get("/admin")
     @roles("admin")
@@ -6861,14 +6993,36 @@ def create_app(test_config=None):
         rows = tenant_query(Notification).filter_by(
             user_id=current_user.id
         ).order_by(Notification.created_at.desc()).all()
-        tenant_query(Notification).filter_by(
-            user_id=current_user.id, read=False
-        ).update({"read": True})
-        db.session.commit()
         notification_urls = {
             row.id: notification_target_url(row.target_type, row.target_id) for row in rows
         }
         return render_template("notifications.html", rows=rows, notification_urls=notification_urls)
+
+    @app.post("/notifications/<int:notification_id>/read")
+    @login_required
+    def notification_mark_read(notification_id):
+        row = tenant_query(Notification).filter_by(
+            id=notification_id, user_id=current_user.id
+        ).first_or_404()
+        row.read = True
+        db.session.commit()
+        return redirect(notification_target_url(row.target_type, row.target_id) or url_for("notifications"))
+
+    @app.post("/notifications/read-all")
+    @login_required
+    def notifications_mark_all_read():
+        tenant_query(Notification).filter_by(
+            user_id=current_user.id, read=False
+        ).update({"read": True})
+        db.session.commit()
+        return redirect(url_for("notifications"))
+
+    @app.post("/notifications/clear")
+    @login_required
+    def notifications_clear():
+        tenant_query(Notification).filter_by(user_id=current_user.id).delete()
+        db.session.commit()
+        return redirect(url_for("notifications"))
 
     @app.get("/analytics")
     @roles("agent", "manager", "admin")

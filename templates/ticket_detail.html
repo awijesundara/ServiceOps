@@ -10,7 +10,7 @@
       <div><strong>{{ ticket.kind|title }}</strong><small>{{ ticket.number }}</small></div>
     </div>
     <div class="record-actions">
-      <span class="record-updated">Updated {{ ticket.updated_at.strftime('%b %d, %H:%M') }}</span>
+      <span class="record-updated">Updated {{ (ticket.updated_at|usertime('%b %d, %H:%M')) }}</span>
       {% if can_manage_ticket %}<button class="button" type="submit" form="task-record-form">Update</button>{% endif %}
     </div>
   </header>
@@ -49,13 +49,13 @@
   <div class="event-stream">
     {% for event in history %}
     <article class="event-entry">
-      <div class="event-marker">{{ event.actor.name[0] if event.actor else 'S' }}</div>
-      <div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ event.created_at.strftime('%b %d, %Y · %H:%M:%S') }}</time></div><small>{{ event.actor.name if event.actor else 'System' }}</small>
+      {{ user_avatar(event.actor, 'event-marker') }}
+      <div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ event.actor.name if event.actor else 'System' }}</small>
       {% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span aria-hidden="true">→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}
       {% if event.details %}<p>{{ event.details }}</p>{% endif %}</div>
     </article>
     {% endfor %}
-    <article class="event-entry"><div class="event-marker">{{ ticket.requester.name[0] }}</div><div class="event-body"><div><strong>Opened</strong><time>{{ ticket.created_at.strftime('%b %d, %Y · %H:%M:%S') }}</time></div><small>{{ ticket.requester.name }}</small><p>{{ ticket.kind|title }} {{ ticket.number }} opened as {{ ticket.priority }} · {{ ticket.impact }} impact.</p></div></article>
+    <article class="event-entry">{{ user_avatar(ticket.requester, 'event-marker') }}<div class="event-body"><div><strong>Opened</strong><time>{{ (ticket.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ ticket.requester.name }}</small><p>{{ ticket.kind|title }} {{ ticket.number }} opened as {{ ticket.priority }} · {{ ticket.impact }} impact.</p></div></article>
   </div>
 </section>
 {% endif %}
@@ -63,13 +63,13 @@
 <div class="incident-support-grid" id="notes">
   <section class="panel">
     <header class="section-heading"><div><h2>Activity and work notes</h2><p>Conversation and resolution evidence</p></div></header>
-    {% for c in ticket.comments|sort(attribute='created_at', reverse=true) %}<article class="comment"><div class="avatar">{{ c.author.name[0] }}</div><div><strong>{{ c.author.name }}</strong><small>{{ c.created_at.strftime('%b %d, %H:%M') }}</small><p>{{ c.body }}</p></div></article>{% else %}<p class="muted">No comments yet.</p>{% endfor %}
+    {% for c in ticket.comments|sort(attribute='created_at', reverse=true) %}<article class="comment">{{ user_avatar(c.author) }}<div><strong>{{ c.author.name }}</strong><small>{{ (c.created_at|usertime('%b %d, %H:%M')) }}</small><p>{{ c.body }}</p></div></article>{% else %}<p class="muted">No comments yet.</p>{% endfor %}
     <form method="post" class="comment-box"><input type="hidden" name="action" value="comment"><textarea name="body" rows="3" placeholder="Add a work note or comment…" required></textarea><button class="primary">Post comment</button></form>
   </section>
 
   <section class="panel">
     <header class="section-heading"><div><h2>Service commitments</h2><p>Active SLA definitions and breach targets</p></div></header>
-    {% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ sla.stage }}{% if sla.breached %} · BREACHED{% endif %}</small></div><div><span>Breach target</span><strong>{{ sla.breach_at.strftime('%b %d, %H:%M') }}</strong></div></div>{% else %}<p class="muted">No active service commitments.</p>{% endfor %}
+    {% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ sla.stage }}{% if sla.breached %} · BREACHED{% endif %}</small></div><div><span>Breach target</span><strong>{{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</strong></div></div>{% else %}<p class="muted">No active service commitments.</p>{% endfor %}
   </section>
   {% if can_manage_ticket and reassignable_teams %}
   <details class="panel" style="grid-column:1/-1"><summary>Reassign to another team</summary>
@@ -152,7 +152,7 @@
     <dt>Risk score</dt><dd>{{ ticket.change_governance.risk_score }}</dd>
     <dt>Impact</dt><dd>{{ ticket.change_governance.impact }}</dd>
     <dt>Primary CI</dt><dd>{{ ticket.change_governance.ci.name if ticket.change_governance.ci else 'Not selected' }}</dd>
-    <dt>Schedule</dt><dd>{{ ticket.change_governance.planned_start.strftime('%b %d %H:%M') if ticket.change_governance.planned_start else 'Not scheduled' }} → {{ ticket.change_governance.planned_end.strftime('%b %d %H:%M') if ticket.change_governance.planned_end else '—' }}</dd>
+    <dt>Schedule</dt><dd>{{ (ticket.change_governance.planned_start|usertime('%b %d %H:%M')) if ticket.change_governance.planned_start else 'Not scheduled' }} → {{ (ticket.change_governance.planned_end|usertime('%b %d %H:%M')) if ticket.change_governance.planned_end else '—' }}</dd>
     <dt>Conflicts</dt><dd>{{ ticket.change_governance.conflict_status }}</dd>
   </dl>
   <p class="muted">Implementation, test, and backout plans are recorded on the change's first task — see <a href="#gov-change-tasks">Change Tasks</a>.</p>
@@ -191,7 +191,7 @@
     <a class="active" href="#gov-affected-cis">Affected CIs</a>
     <a href="#gov-impacted-services">Impacted Services/CIs</a>
     <a href="#gov-approvers">Approvers ({{ approver_votes|length }})</a>
-    <a href="#gov-change-tasks">Change Tasks</a>
+    <a href="#gov-change-tasks">Change Tasks ({{ work_tasks|length }})</a>
     <a href="#gov-problems">Problems</a>
     <a href="#gov-incidents-fixed">Incidents Fixed By Change</a>
     <a href="#gov-incidents-caused">Incidents Caused By Change</a>
@@ -218,38 +218,36 @@
         <td>{{ vote.approver.name }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}" class="approval-actions"><input name="comments" placeholder="Decision comments"><button name="decision" value="Rejected">Reject</button><button class="primary" name="decision" value="Approved">Approve</button></form>{% endif %}</td>
         <td>{{ gate.sequence }}. {{ gate.name }}</td>
         <td>{{ vote.comments or '—' }}</td>
-        <td>{{ chain.created_at.strftime('%m-%d-%Y %I:%M %p') }}</td>
+        <td>{{ (chain.created_at|usertime('%m-%d-%Y %I:%M %p')) }}</td>
       </tr>{% else %}<tr><td colspan="5" class="empty">No approval chain on this change.</td></tr>{% endfor %}
     </tbody></table>
   </div>
 
   <div id="gov-change-tasks" class="table-panel">
-    {% for task in work_tasks %}
-    <article class="timeline">
-      <strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · Required{% endif %}</strong>
-      <span class="badge">{{ task.state }}</span><p>{{ task.title }}</p>
-      <small>{{ task.assignment_group.name }} · {{ task.assignee.name if task.assignee else 'Unassigned' }}</small>
-      {% if task_permissions[task.id] %}
-      <form method="post" action="{{ url_for('operational_task_update', task_id=task.id) }}" class="form-grid">
-        <label>State<select name="state">{% for state in work_task_states[task.state] %}<option {% if task.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
-        <label>Assigned to<select name="assignee_id"><option value="">Unassigned</option>{% for user in task_agents[task.id] %}<option value="{{ user.id }}" {% if task.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
-        <label class="wide">Work notes<textarea name="work_notes" rows="2">{{ task.work_notes }}</textarea></label>
-        <div class="wide actions"><button>Update {{ task.number }}</button></div>
-      </form>
-      {% endif %}
-    </article>
-    {% else %}<p class="muted">No change tasks yet.</p>{% endfor %}
+    <table><thead><tr><th>Number</th><th>Type</th><th>Title</th><th>State</th><th>Assignment group</th><th>Assigned to</th><th>Planned window</th><th>Required</th></tr></thead><tbody>
+      {% for task in work_tasks %}<tr>
+        <td><a href="{{ url_for('operational_task_detail', task_id=task.id) }}">{{ task.number }}</a></td>
+        <td>{{ task.task_type }}</td>
+        <td>{{ task.title }}</td>
+        <td><span class="badge">{{ task.state }}</span></td>
+        <td>{{ task.assignment_group.name }}</td>
+        <td>{{ task.assignee.name if task.assignee else 'Unassigned' }}</td>
+        <td>{{ (task.planned_start|usertime('%b %d %H:%M')) if task.planned_start else '—' }} → {{ (task.planned_end|usertime('%b %d %H:%M')) if task.planned_end else '—' }}</td>
+        <td>{{ 'Yes' if task.required else 'No' }}</td>
+      </tr>
+      {% else %}<tr><td colspan="8" class="empty">No change tasks yet.</td></tr>{% endfor %}
+    </tbody></table>
     {% if can_manage_ticket %}
     <details><summary>Add change task</summary>
       <p class="muted">Dates must fall within the change's planned window. If this change has already been sent for approval, adding a task is a material change — it will return {{ ticket.number }} to Awaiting Approval and notify approvers again.</p>
       <form method="post" action="{{ url_for('change_task_add', ticket_id=ticket.id) }}" class="form-grid">
-        <label class="wide">Task summary<input name="title" required></label>
-        <label>Type<select name="task_type"><option>Planning</option><option>Implementation</option><option>Testing</option><option>Review</option></select></label>
-        <label>Assignment group<select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label>
-        <label>Planned start<input type="datetime-local" name="planned_start" required></label>
-        <label>Planned end<input type="datetime-local" name="planned_end" required></label>
+        <label class="wide required-field"><span>Task summary</span><input name="title" required></label>
+        <label><span>Type</span><select name="task_type"><option>Planning</option><option>Implementation</option><option>Testing</option><option>Review</option></select></label>
+        <label><span>Assignment group</span><select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label>
+        <label class="required-field"><span>Planned start</span><input type="datetime-local" name="planned_start" required></label>
+        <label class="required-field"><span>Planned end</span><input type="datetime-local" name="planned_end" required></label>
         <label class="check wide"><input type="checkbox" name="required" value="1" checked> Required before the parent change can complete</label>
-        <div class="wide actions"><button>Add CTASK</button></div>
+        <div class="wide actions"><button class="primary">Add CTASK</button></div>
       </form>
     </details>
     {% endif %}
@@ -275,7 +273,7 @@
 
   <div id="gov-task-slas" class="table-panel">
     <table><thead><tr><th>SLA definition</th><th>Stage</th><th>Breach target</th></tr></thead><tbody>
-      {% for sla in slas %}<tr><td>{{ sla.definition.name }}</td><td>{{ sla.stage }}{% if sla.breached %} · BREACHED{% endif %}</td><td>{{ sla.breach_at.strftime('%b %d, %H:%M') }}</td></tr>{% else %}<tr><td colspan="3" class="empty">No task SLAs.</td></tr>{% endfor %}
+      {% for sla in slas %}<tr><td>{{ sla.definition.name }}</td><td>{{ sla.stage }}{% if sla.breached %} · BREACHED{% endif %}</td><td>{{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</td></tr>{% else %}<tr><td colspan="3" class="empty">No task SLAs.</td></tr>{% endfor %}
     </tbody></table>
   </div>
 
