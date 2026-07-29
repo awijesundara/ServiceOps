@@ -18,7 +18,7 @@ COPY . .
 # they seed well-known weak passwords and sample operational records, and
 # must only be reachable from a developer checkout (or Dockerfile.test), not
 # from `docker exec` against a running production container.
-RUN rm -f /app/tools/load_test_fixture.py /app/tools/load_demo_dataset.py
+RUN rm -f /app/tools/load_test_fixture.py /app/tools/load_demo_dataset.py /app/tools/capture_screenshots.py
 RUN mkdir -p /app/uploads && chmod 755 /app/tools/container-entrypoint.sh /app/tools/gunicorn-entrypoint.sh && chown -R app:app /app
 USER app
 EXPOSE 8080
