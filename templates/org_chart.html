@@ -1,31 +1,34 @@
 {% extends "base.html" %}
 {% block title %}Org chart · {{ instance_name }}{% endblock %}
 {% block content %}
-{% macro render_node(user) %}
+{% macro render_node(user, depth) %}
 <li>
-  <div class="org-card">
-    {{ user_avatar(user, 'org-avatar') }}
-    {% if can_edit %}<a href="{{ url_for('user_edit', user_id=user.id) }}">{{ user.name }}</a>{% else %}<strong>{{ user.name }}</strong>{% endif %}
-    <small>{{ user.title or user.role|capitalize }}</small>
+  <div class="org2-row">
+    {% if children.get(user.id) %}<span class="org2-toggle" aria-hidden="true">▾</span>{% else %}<span class="org2-toggle org2-toggle-leaf" aria-hidden="true">·</span>{% endif %}
+    <div class="org2-card">
+      {{ user_avatar(user, 'org2-avatar') }}
+      <div class="org2-info">
+        {% if can_edit %}<a href="{{ url_for('user_edit', user_id=user.id) }}">{{ user.name }}</a>{% else %}<strong>{{ user.name }}</strong>{% endif %}
+        <small>{{ user.title or user.role|capitalize }}{% if user.department %} · {{ user.department }}{% endif %}</small>
+      </div>
+      {% if children.get(user.id) %}<span class="org2-count">{{ children[user.id]|length }} report{{ 's' if children[user.id]|length != 1 }}</span>{% endif %}
+      <span class="badge org2-role-{{ user.role }}">{{ user.role|capitalize }}</span>
+    </div>
   </div>
   {% if children.get(user.id) %}
-  <ul>
-    {% for child in children[user.id] %}{{ render_node(child) }}{% endfor %}
+  <ul class="org2-children">
+    {% for child in children[user.id] %}{{ render_node(child, depth + 1) }}{% endfor %}
   </ul>
   {% endif %}
 </li>
 {% endmacro %}
-<section class="panel org-chart-panel">
-  <header class="section-heading">
-    <div><h2>Org Chart</h2><p>Reporting hierarchy across the organization, based on each user's manager.</p></div>
-    {% if can_edit %}<a class="button" href="{{ url_for('users') }}">Edit reporting lines</a>{% endif %}
-  </header>
+<header class="page-head"><div><p class="eyebrow">ORGANIZATION</p><h1>Org chart</h1><p>Reporting hierarchy across the organization, based on each user's manager.</p></div>
+{% if can_edit %}<a class="button" href="{{ url_for('users') }}">Edit reporting lines</a>{% endif %}</header>
+<section class="panel org2-panel">
   {% if roots %}
-  <div class="org-chart-scroll">
-    <ul class="org-tree">
-      {% for root in roots %}{{ render_node(root) }}{% endfor %}
-    </ul>
-  </div>
+  <ul class="org2-tree">
+    {% for root in roots %}{{ render_node(root, 0) }}{% endfor %}
+  </ul>
   {% else %}
   <p class="muted">No active users yet. {% if can_edit %}Set a manager on a user's record to build the chart.{% endif %}</p>
   {% endif %}

@@ -1,0 +1,8 @@
+{# Reusable export controls: a CSV download and a print/PDF trigger.
+   Pass csv_url for the CSV link; the print button always works via the
+   browser's print dialog ("Save as PDF" is a standard print-destination
+   choice, so this needs no extra PDF-rendering dependency in the app). #}
+<div class="export-toolbar no-print">
+  {% if csv_url %}<a class="button" href="{{ csv_url }}">⬇ Export CSV</a>{% endif %}
+  <button type="button" class="button" data-print-page>🖶 Print / Save as PDF</button>
+</div>

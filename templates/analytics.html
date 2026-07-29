@@ -1,8 +1,81 @@
 {% extends "base.html" %}
 {% block title %}Analytics · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">PLATFORM ANALYTICS</p><h1>Operational performance</h1><p>Live measures across service and enterprise workflows.</p></div></header>
-<section class="stats"><a href="{{ url_for('analytics_overdue') }}"><span>Overdue work</span><strong>{{ overdue }}</strong><small>Past due and still open →</small></a>{% for p,count in priority_counts.items() %}<a href="{{ url_for('open_work', priority=p) }}"><span>{{ p }} tickets</span><strong>{{ count }}</strong><small>View open {{ p }} tickets →</small></a>{% endfor %}</section>
-<div class="analytics-grid"><section class="panel"><h2>Ticket state distribution</h2>{% for label,value in ticket_states.items() %}<div class="metric"><span>{{ label }}</span><div><i style="width:{{ [value*12,100]|min }}%"></i></div><strong>{{ value }}</strong></div>{% else %}<p class="muted">No ticket data yet.</p>{% endfor %}</section>
-<section class="panel"><h2>Enterprise workload</h2>{% for key,module in modules.items() %}<div class="metric"><span>{{ module.name }}</span><div><i style="width:{{ [domain_counts.get(key,0)*12,100]|min }}%"></i></div><strong>{{ domain_counts.get(key,0) }}</strong></div>{% endfor %}</section></div>
+<header class="page-head"><div><p class="eyebrow">PLATFORM ANALYTICS</p><h1>Operational performance</h1><p>SLA compliance, resolution speed, backlog health, and workload distribution across the service desk.</p></div></header>
+{% set csv_url = None %}
+{% include "_export_toolbar.html" %}
+
+<section class="stats">
+  <a href="{{ url_for('open_work') }}"><span>Open work</span><strong>{{ open_count }}</strong><small>Incidents & changes not yet resolved →</small></a>
+  <a href="{{ url_for('dashboard') }}" class="{% if sla_breached_open %}stat-alert{% endif %}"><span>SLA breached (open)</span><strong>{{ sla_breached_open }}</strong>{% if sla_at_risk_open %}<small class="stat-alert-text">{{ sla_at_risk_open }} more at risk</small>{% else %}<small>Needs escalation →</small>{% endif %}</a>
+  <span><span>SLA compliance (30d)</span><strong>{{ (sla_compliance_pct ~ '%') if sla_compliance_pct is not none else '—' }}</strong><small>Resolved tickets that met their SLA</small></span>
+  <a href="{{ url_for('analytics_overdue') }}"><span>Overdue investigations</span><strong>{{ overdue_investigations }}</strong><small>Problems / events past due →</small></a>
+</section>
+
+<div class="analytics-grid">
+  <section class="panel">
+    <h2>Created vs. resolved <small class="muted">· last 14 days</small></h2>
+    <div class="trend-chart">
+      {% for point in volume_trend %}
+      <div class="trend-col" title="{{ point.day.strftime('%b %d') }}: {{ point.created }} created, {{ point.resolved }} resolved">
+        <div class="trend-bars">
+          <i class="trend-created" style="height:{{ (point.created / trend_max * 100)|round(1) }}%"></i>
+          <i class="trend-resolved" style="height:{{ (point.resolved / trend_max * 100)|round(1) }}%"></i>
+        </div>
+        <small>{{ point.day.strftime('%d') }}</small>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="trend-legend"><span><i class="trend-created"></i> Created</span><span><i class="trend-resolved"></i> Resolved</span></div>
+  </section>
+
+  <section class="panel">
+    <h2>Open backlog age</h2>
+    {% for label, count in aging_buckets.items() %}
+    <div class="metric"><span>{{ label }}</span><div><i style="width:{{ (count / ((aging_buckets.values()|sum) or 1) * 100)|round(1) }}%"></i></div><strong>{{ count }}</strong></div>
+    {% endfor %}
+    {% if (aging_buckets.values()|sum) == 0 %}<p class="muted">No open tickets right now.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Mean time to resolve <small class="muted">· incidents, last 30 days</small></h2>
+    <table><thead><tr><th>Priority</th><th>Avg. hours to resolve</th></tr></thead><tbody>
+      {% for priority, hours in mttr_by_priority.items() %}
+      <tr><td><span class="priority {{ priority|lower }}">{{ priority }}</span></td><td>{% if hours is not none %}{{ hours }}h{% else %}<span class="muted">No resolved {{ priority }} incidents</span>{% endif %}</td></tr>
+      {% endfor %}
+    </tbody></table>
+  </section>
+
+  <section class="panel">
+    <h2>Change success rate <small class="muted">· last 30 days</small></h2>
+    {% if change_success_pct is not none %}
+    <div class="metric"><span>Closed successfully</span><div><i style="width:{{ change_success_pct }}%"></i></div><strong>{{ change_success_pct }}%</strong></div>
+    <p class="muted">{{ change_total }} change{{ 's' if change_total != 1 }} reached a final outcome (closed or cancelled) in this window.</p>
+    {% else %}<p class="muted">No changes reached a final outcome in the last 30 days.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Open priority mix</h2>
+    {% for label,value in priority_counts.items() %}<div class="metric"><span class="priority {{ label|lower }}">{{ label }}</span><div><i style="width:{{ (value / ((priority_counts.values()|sum) or 1) * 100)|round(1) }}%"></i></div><strong>{{ value }}</strong></div>{% else %}<p class="muted">No open ticket data yet.</p>{% endfor %}
+  </section>
+
+  <section class="panel">
+    <h2>Ticket state distribution</h2>
+    {% for label,value in ticket_states.items() %}<div class="metric"><span>{{ label }}</span><div><i style="width:{{ (value / ((ticket_states.values()|sum) or 1) * 100)|round(1) }}%"></i></div><strong>{{ value }}</strong></div>{% else %}<p class="muted">No ticket data yet.</p>{% endfor %}
+  </section>
+
+  <section class="panel">
+    <h2>Enterprise workload</h2>
+    {% for key,module in modules.items() %}<div class="metric"><span>{{ module.name }}</span><div><i style="width:{{ (domain_counts.get(key,0) / ((domain_counts.values()|sum) or 1) * 100)|round(1) }}%"></i></div><strong>{{ domain_counts.get(key,0) }}</strong></div>{% endfor %}
+  </section>
+
+  <section class="panel table-panel">
+    <h2>Busiest teams <small class="muted">· open incidents & changes</small></h2>
+    {% if top_groups %}
+    <table><thead><tr><th>Team</th><th>Open volume</th></tr></thead><tbody>
+      {% for row in top_groups %}<tr><td>{{ row.group.name }}</td><td><div class="metric" style="margin:0"><div><i style="width:{{ (row.count / top_groups_max * 100)|round(1) }}%"></i></div><strong>{{ row.count }}</strong></div></td></tr>{% endfor %}
+    </tbody></table>
+    {% else %}<p class="muted">No open work assigned to a team yet.</p>{% endif %}
+  </section>
+</div>
 {% endblock %}

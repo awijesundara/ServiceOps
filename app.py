@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import os
 import ssl
@@ -10,7 +12,7 @@ import socket
 import re
 import secrets
 import smtplib
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from email.message import EmailMessage
 from functools import wraps
@@ -1947,6 +1949,16 @@ def record_title(record):
     return getattr(record, "title", getattr(record, "name", "Related record"))
 
 
+def csv_response(csv_text, filename):
+    """Wrap a CSV string as a downloadable attachment. Used by every
+    'Export CSV' button across the app so list/report exports behave
+    consistently (UTF-8 BOM for Excel, no caching of exported data)."""
+    response = Response("﻿" + csv_text, mimetype="text/csv")
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 def record_url(record):
     if isinstance(record, Ticket):
         return url_for("ticket_detail", ticket_id=record.id)
@@ -2101,6 +2113,8 @@ STATE_TRACK_ORDER = {
     "request": ["New", "In Progress", "Pending", "Resolved", "Closed"],
     "change": ["New", "Awaiting Approval", "Approved", "In Progress", "Pending", "Resolved", "Closed"],
     "problem": ["New", "Open", "In Progress", "Pending", "Resolved", "Completed", "Closed"],
+    "ritm": ["Awaiting Approval", "Open", "Closed Complete"],
+    "catalog_task": ["Open", "Work in Progress", "Pending", "Closed Complete"],
 }
 
 
@@ -3850,6 +3864,21 @@ def create_app(test_config=None):
             "unread_notifications": tenant_query(Notification).filter_by(
                 user_id=current_user.id, read=False
             ).count(),
+            "pending_approvals_count": ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
+                ApprovalVote.approver_id == current_user.id,
+                ApprovalVote.state == "Requested",
+                ApprovalChain.tenant_id == current_user.tenant_id,
+            ).count(),
+            "my_open_tasks_count": (
+                OperationalTask.query.filter(
+                    OperationalTask.assignee_id == current_user.id,
+                    OperationalTask.state.notin_(["Closed Complete", "Closed Incomplete", "Cancelled"]),
+                ).count()
+                + CatalogTask.query.filter(
+                    CatalogTask.assignee_id == current_user.id,
+                    CatalogTask.state.notin_(["Closed Complete", "Closed Incomplete", "Closed Skipped"]),
+                ).count()
+            ),
         }
 
     @app.get("/health")
@@ -4523,6 +4552,38 @@ def create_app(test_config=None):
             open_tickets_truncated=open_tickets_truncated, open_requests_truncated=open_requests_truncated,
         )
 
+    @app.get("/work/open/export.csv")
+    @login_required
+    def open_work_export():
+        priority = request.args.get("priority", "").strip()
+        open_ticket_query = visible_ticket_query(current_user).filter(
+            Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])
+        )
+        if priority:
+            open_ticket_query = open_ticket_query.filter_by(priority=priority)
+        export_limit = 5000
+        tickets_rows = open_ticket_query.order_by(
+            Ticket.priority, Ticket.updated_at.desc()
+        ).limit(export_limit).all()
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(["Type", "Number", "Title", "State", "Priority", "Assignee", "Updated"])
+        for ticket in tickets_rows:
+            writer.writerow([
+                ticket.kind.capitalize(), ticket.number, ticket.title, ticket.state, ticket.priority,
+                ticket.assignee.name if ticket.assignee else "Unassigned",
+                usertime_filter(ticket.updated_at, "%Y-%m-%d %H:%M"),
+            ])
+        if not priority:
+            for req in visible_catalog_request_query(current_user).filter(
+                CatalogRequest.state.notin_(["Closed Complete", "Closed Incomplete", "Cancelled"])
+            ).order_by(CatalogRequest.opened_at.desc()).limit(export_limit).all():
+                writer.writerow([
+                    "Request", req.number, f"Request for {req.requested_for.name}", req.state, "",
+                    req.requested_by.name if req.requested_by else "", usertime_filter(req.opened_at, "%Y-%m-%d %H:%M"),
+                ])
+        return csv_response(buffer.getvalue(), "open-work.csv")
+
     @app.get("/")
     @login_required
     def dashboard():
@@ -4594,46 +4655,163 @@ def create_app(test_config=None):
     def visible_tickets():
         return visible_ticket_query(current_user)
 
+    TERMINAL_TICKET_STATES = ["Resolved", "Closed", "Cancelled"]
+    TERMINAL_TASK_STATES = ["Closed Complete", "Closed Incomplete", "Closed Skipped", "Cancelled"]
+
+    def manager_portal_groups():
+        if current_user.role == "admin":
+            return tenant_query(SupportGroup).filter(
+                SupportGroup.group_type == "IT Fulfillment",
+                SupportGroup.active.is_(True),
+            ).order_by(SupportGroup.name).all()
+        return tenant_query(SupportGroup).filter(
+            SupportGroup.group_type == "IT Fulfillment",
+            SupportGroup.active.is_(True),
+            SupportGroup.manager_id == current_user.id,
+        ).order_by(SupportGroup.name).all()
+
+    def manager_portal_context():
+        """Team and per-member workload/SLA snapshot for the manager portal,
+        shared by the HTML view and the CSV export so both stay consistent."""
+        groups = manager_portal_groups()
+        group_ids = [group.id for group in groups]
+        memberships = GroupMember.query.filter(
+            GroupMember.group_id.in_(group_ids)
+        ).options(db.joinedload(GroupMember.user)).all() if group_ids else []
+        member_ids = sorted({m.user_id for m in memberships})
+
+        open_ticket_rows = Ticket.query.filter(
+            Ticket.assignee_id.in_(member_ids),
+            Ticket.state.notin_(TERMINAL_TICKET_STATES),
+        ).with_entities(Ticket.id, Ticket.assignee_id, Ticket.kind).all() if member_ids else []
+        open_ticket_ids_by_member = defaultdict(list)
+        open_incidents_by_member = Counter()
+        open_changes_by_member = Counter()
+        for ticket_id, assignee_id, kind in open_ticket_rows:
+            open_ticket_ids_by_member[assignee_id].append(ticket_id)
+            if kind == "incident":
+                open_incidents_by_member[assignee_id] += 1
+            elif kind == "change":
+                open_changes_by_member[assignee_id] += 1
+
+        thirty_days_ago = now() - timedelta(days=30)
+        resolved_30d_by_member = Counter()
+        if member_ids:
+            for assignee_id, count in db.session.query(
+                Ticket.assignee_id, func.count(Ticket.id)
+            ).filter(
+                Ticket.assignee_id.in_(member_ids),
+                Ticket.state.in_(TERMINAL_TICKET_STATES),
+                Ticket.updated_at >= thirty_days_ago,
+            ).group_by(Ticket.assignee_id).all():
+                resolved_30d_by_member[assignee_id] = count
+
+        open_tasks_by_member = Counter()
+        if member_ids:
+            for model in (OperationalTask, CatalogTask):
+                for assignee_id, count in db.session.query(
+                    model.assignee_id, func.count(model.id)
+                ).filter(
+                    model.assignee_id.in_(member_ids),
+                    model.state.notin_(TERMINAL_TASK_STATES),
+                ).group_by(model.assignee_id).all():
+                    open_tasks_by_member[assignee_id] += count
+
+        sla_at_risk_hours = setting_int("SLA_AT_RISK_HOURS", 4)
+        breach_horizon = now() + timedelta(hours=sla_at_risk_hours)
+        all_open_ticket_ids = [row[0] for row in open_ticket_rows]
+        sla_breached_by_member = Counter()
+        sla_at_risk_by_member = Counter()
+        if all_open_ticket_ids:
+            ticket_to_member = {
+                ticket_id: assignee_id for ticket_id, assignee_id, _ in open_ticket_rows
+            }
+            sla_rows = TaskSLA.query.filter(
+                TaskSLA.target_type == "ticket",
+                TaskSLA.target_id.in_(all_open_ticket_ids),
+                TaskSLA.stage == "In Progress",
+            ).all()
+            for row in sla_rows:
+                assignee_id = ticket_to_member.get(row.target_id)
+                if assignee_id is None:
+                    continue
+                if row.breached:
+                    sla_breached_by_member[assignee_id] += 1
+                else:
+                    breach_at = row.breach_at if row.breach_at.tzinfo else row.breach_at.replace(tzinfo=timezone.utc)
+                    if breach_at <= breach_horizon:
+                        sla_at_risk_by_member[assignee_id] += 1
+
+        team_rows = []
+        member_rows_by_group = {}
+        for group in groups:
+            group_members = sorted(
+                (m for m in memberships if m.group_id == group.id),
+                key=lambda m: m.user.name,
+            )
+            member_rows = []
+            for membership in group_members:
+                user = membership.user
+                member_rows.append({
+                    "user": user,
+                    "role_in_group": membership.role,
+                    "status": "Active" if user.active else "Inactive",
+                    "open_incidents": open_incidents_by_member.get(user.id, 0),
+                    "open_changes": open_changes_by_member.get(user.id, 0),
+                    "open_tasks": open_tasks_by_member.get(user.id, 0),
+                    "resolved_30d": resolved_30d_by_member.get(user.id, 0),
+                    "sla_breached": sla_breached_by_member.get(user.id, 0),
+                    "sla_at_risk": sla_at_risk_by_member.get(user.id, 0),
+                })
+            member_rows_by_group[group.id] = member_rows
+            team_rows.append({
+                "group": group,
+                "open_incidents": sum(row["open_incidents"] for row in member_rows),
+                "open_changes": sum(row["open_changes"] for row in member_rows),
+                "open_tasks": sum(row["open_tasks"] for row in member_rows),
+                "sla_breached": sum(row["sla_breached"] for row in member_rows),
+                "member_count": len(member_rows),
+            })
+        return team_rows, member_rows_by_group
+
     @app.get("/manager/portal")
     @roles("manager", "admin")
     def manager_portal():
-        if current_user.role == "admin":
-            groups = tenant_query(SupportGroup).filter(
-                SupportGroup.group_type == "IT Fulfillment",
-                SupportGroup.active.is_(True),
-            ).order_by(SupportGroup.name).all()
-        else:
-            groups = tenant_query(SupportGroup).filter(
-                SupportGroup.group_type == "IT Fulfillment",
-                SupportGroup.active.is_(True),
-                SupportGroup.manager_id == current_user.id,
-            ).order_by(SupportGroup.name).all()
-        team_rows = []
-        for group in groups:
-            open_changes = db.session.query(func.count(Ticket.id)).join(
-                ChangeOwnership, ChangeOwnership.ticket_id == Ticket.id
-            ).filter(
-                ChangeOwnership.group_id == group.id,
-                Ticket.state.notin_(["Resolved", "Closed", "Cancelled"]),
-            ).scalar() or 0
-            open_incidents = db.session.query(func.count(Ticket.id)).join(
-                TicketAssignmentGroup, TicketAssignmentGroup.ticket_id == Ticket.id
-            ).filter(
-                TicketAssignmentGroup.group_id == group.id,
-                Ticket.kind == "incident",
-                Ticket.state.notin_(["Resolved", "Closed", "Cancelled"]),
-            ).scalar() or 0
-            open_tasks = db.session.query(func.count(OperationalTask.id)).filter(
-                OperationalTask.assignment_group_id == group.id,
-                OperationalTask.state.notin_(["Closed Complete", "Closed Incomplete", "Closed Skipped"]),
-            ).scalar() or 0
-            team_rows.append({
-                "group": group,
-                "open_changes": open_changes,
-                "open_incidents": open_incidents,
-                "open_tasks": open_tasks,
-            })
-        return render_template("manager_portal.html", team_rows=team_rows)
+        team_rows, member_rows_by_group = manager_portal_context()
+        return render_template(
+            "manager_portal.html", team_rows=team_rows,
+            member_rows_by_group=member_rows_by_group,
+        )
+
+    @app.get("/manager/portal/export.csv")
+    @roles("manager", "admin")
+    def manager_portal_export():
+        team_rows, member_rows_by_group = manager_portal_context()
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow([
+            "Team", "Team manager", "Member", "Username", "Role", "Status",
+            "Open incidents", "Open changes", "Open tasks",
+            "Resolved (30 days)", "SLA breached", "SLA at risk",
+        ])
+        for row in team_rows:
+            group = row["group"]
+            members = member_rows_by_group.get(group.id, [])
+            if not members:
+                writer.writerow([
+                    group.name, group.manager.name if group.manager else "Unassigned",
+                    "", "", "", "", "", "", "", "", "", "",
+                ])
+                continue
+            for member in members:
+                writer.writerow([
+                    group.name, group.manager.name if group.manager else "Unassigned",
+                    member["user"].name, member["user"].username, member["role_in_group"],
+                    member["status"], member["open_incidents"], member["open_changes"],
+                    member["open_tasks"], member["resolved_30d"],
+                    member["sla_breached"], member["sla_at_risk"],
+                ])
+        return csv_response(buffer.getvalue(), "manager-portal-team-performance.csv")
 
     @app.get("/work/tasks")
     @login_required
@@ -4735,6 +4913,34 @@ def create_app(test_config=None):
             page=page, pages=pages, total=total,
             owning_groups=owning_groups,
         )
+
+    @app.get("/tickets/<kind>/export.csv")
+    @login_required
+    def tickets_export(kind):
+        if kind not in ("incident", "change"):
+            abort(404)
+        query = visible_tickets().filter_by(kind=kind).filter(Ticket.deleted_at.is_(None))
+        q = request.args.get("q", "").strip()
+        state = request.args.get("state", "").strip()
+        if q:
+            query = query.filter(db.or_(Ticket.number.ilike(f"%{q}%"), Ticket.title.ilike(f"%{q}%")))
+        if state:
+            query = query.filter_by(state=state)
+        export_limit = 5000
+        rows = query.options(
+            db.joinedload(Ticket.requester), db.joinedload(Ticket.assignee),
+        ).order_by(Ticket.updated_at.desc()).limit(export_limit).all()
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(["Number", "Title", "State", "Priority", "Requester", "Assignee", "Updated"])
+        for ticket in rows:
+            writer.writerow([
+                ticket.number, ticket.title, ticket.state, ticket.priority,
+                ticket.requester.name if ticket.requester else "",
+                ticket.assignee.name if ticket.assignee else "Unassigned",
+                usertime_filter(ticket.updated_at, "%Y-%m-%d %H:%M"),
+            ])
+        return csv_response(buffer.getvalue(), f"{kind}-tickets.csv")
 
     @app.route("/tickets/new/<kind>", methods=["GET", "POST"])
     @login_required
@@ -4972,7 +5178,12 @@ def create_app(test_config=None):
                     abort(403)
                 require_ticket_team_access(ticket)
                 before_state = ticket.state
-                transition_ticket(ticket, "Resolved")
+                try:
+                    transition_ticket(ticket, "Resolved")
+                except HTTPException as error:
+                    db.session.rollback()
+                    flash(error.description or "That change could not be made.", "error")
+                    return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 log_history(
                     "ticket", ticket.id, "State changed", "state",
                     before_state, ticket.state,
@@ -5021,7 +5232,12 @@ def create_app(test_config=None):
                     ),
                     "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
                 }
-                transition_ticket(ticket, request.form["state"])
+                try:
+                    transition_ticket(ticket, request.form["state"])
+                except HTTPException as error:
+                    db.session.rollback()
+                    flash(error.description or "That change could not be made.", "error")
+                    return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 previous_override_reason = ticket.priority_override_reason
                 if governed_priority_input and requested_priority != calculated:
                     ticket.priority_overridden = True
@@ -6833,6 +7049,17 @@ def create_app(test_config=None):
         item = tenant_record_or_404(CatalogItem, item_id)
         if not item.active:
             abort(404)
+        if item.approval_required:
+            manager = tenant_query(User).filter_by(role="admin", active=True).first()
+            fulfillment = tenant_query(SupportGroup).filter_by(name="Service Desk", active=True).first()
+            fulfillment_approver_ids = [member.user_id for member in fulfillment.members] if fulfillment else []
+            if not manager or not fulfillment_approver_ids:
+                flash(
+                    f"{item.name} cannot be requested yet: no active administrator or "
+                    "Service Desk team member is configured to approve it. Contact an administrator.",
+                    "error",
+                )
+                return redirect(url_for("catalog"))
         req = CatalogRequest(number=sequence_number(CatalogRequest, "REQ"), requested_by_id=current_user.id,
                              requested_for_id=current_user.id)
         db.session.add(req)
@@ -6846,16 +7073,10 @@ def create_app(test_config=None):
         db.session.flush()
         attach_slas("ritm", ritm.id, None)
         if item.approval_required:
-            manager = tenant_query(User).filter_by(
-                role="admin", active=True
-            ).first()
-            fulfillment = tenant_query(SupportGroup).filter_by(
-                name="Service Desk"
-            ).first()
             stages = [
                 {"name": "Manager approval", "mode": "all", "approver_ids": [manager.id]},
                 {"name": "Fulfillment authorization", "mode": "any",
-                 "approver_ids": [member.user_id for member in fulfillment.members]},
+                 "approver_ids": fulfillment_approver_ids},
             ]
             create_approval_chain(f"{ritm.number} service fulfillment", "ritm", ritm.id, stages)
         else:
@@ -6880,6 +7101,29 @@ def create_app(test_config=None):
         relationships = tenant_query(CIRelationship).all()
         visible_cis = [ci for ci in cis if not status or ci.operational_status == status] if status else cis
         return render_template("cmdb.html", cis=cis, visible_cis=visible_cis, relationships=relationships, status=status)
+
+    @app.get("/cmdb/export.csv")
+    @roles("agent", "manager", "admin")
+    def cmdb_export():
+        status = request.args.get("status", "").strip()
+        cis = tenant_query(ConfigurationItem).order_by(ConfigurationItem.ci_class, ConfigurationItem.name).all()
+        if status:
+            cis = [ci for ci in cis if ci.operational_status == status]
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow([
+            "Name", "Class", "Environment", "Operational status", "Lifecycle state",
+            "Business criticality", "IP address", "Serial number", "Vendor", "Model",
+            "Location", "Cost center", "Owning team", "Owner",
+        ])
+        for ci in cis:
+            writer.writerow([
+                ci.name, ci.ci_class, ci.environment, ci.operational_status, ci.lifecycle_state,
+                ci.business_criticality, ci.ip_address or "", ci.serial_number or "", ci.vendor or "",
+                ci.model or "", ci.location or "", ci.cost_center or "",
+                ci.support_group.name if ci.support_group else "", ci.owner.name if ci.owner else "",
+            ])
+        return csv_response(buffer.getvalue(), "cmdb.csv")
 
     @app.route("/cmdb/new", methods=["GET", "POST"])
     @roles("admin")
@@ -7067,6 +7311,26 @@ def create_app(test_config=None):
             "requests.html", requests=rows, q=q, page=page, pages=pages, total=total,
         )
 
+    @app.get("/requests/export.csv")
+    @login_required
+    def requests_export():
+        query = visible_catalog_request_query(current_user)
+        q = request.args.get("q", "").strip()
+        if q:
+            query = query.filter(CatalogRequest.number.ilike(f"%{q}%"))
+        export_limit = 5000
+        rows = query.order_by(CatalogRequest.opened_at.desc()).limit(export_limit).all()
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(["Number", "Requested for", "Requested by", "State", "Items", "Opened"])
+        for req in rows:
+            writer.writerow([
+                req.number, req.requested_for.name if req.requested_for else "",
+                req.requested_by.name if req.requested_by else "", req.state, len(req.items),
+                usertime_filter(req.opened_at, "%Y-%m-%d %H:%M"),
+            ])
+        return csv_response(buffer.getvalue(), "requests.csv")
+
     @app.get("/request/<int:request_id>")
     @login_required
     def request_detail(request_id):
@@ -7111,6 +7375,7 @@ def create_app(test_config=None):
             task_state_options=task_state_options,
             catalog_task_permissions=catalog_task_permissions,
             can_manage=can_manage,
+            state_track=build_state_track("ritm", ritm.state),
             teams=tenant_query(SupportGroup).filter_by(
                 group_type="IT Fulfillment", active=True
             ).order_by(SupportGroup.name).all(),
@@ -7282,6 +7547,7 @@ def create_app(test_config=None):
             variables=variables, siblings=siblings, ci_links=ci_links,
             approval_votes=approval_votes, chain=chain,
             selectable_states=selectable_states, gate_block=gate_block,
+            state_track=build_state_track("catalog_task", task.state),
         )
 
     @app.post("/catalog-task/<int:task_id>/notes")
@@ -7731,23 +7997,149 @@ def create_app(test_config=None):
     @app.get("/analytics")
     @roles("agent", "manager", "admin")
     def analytics():
-        ticket_ids = [row.id for row in visible_ticket_query(current_user).all()]
-        record_ids = [row.id for row in visible_enterprise_record_query(current_user).all()]
+        ticket_query = visible_ticket_query(current_user)
+        ticket_ids = [row.id for row in ticket_query.with_entities(Ticket.id).all()]
+        record_ids = [row.id for row in visible_enterprise_record_query(current_user).with_entities(EnterpriseRecord.id).all()]
+
         ticket_states = dict(db.session.query(Ticket.state, func.count(Ticket.id)).filter(
             Ticket.id.in_(ticket_ids)
-        ).group_by(Ticket.state).all())
+        ).group_by(Ticket.state).all()) if ticket_ids else {}
         domain_counts = dict(db.session.query(EnterpriseRecord.domain, func.count(EnterpriseRecord.id)).filter(
             EnterpriseRecord.id.in_(record_ids)
-        ).group_by(EnterpriseRecord.domain).all())
+        ).group_by(EnterpriseRecord.domain).all()) if record_ids else {}
         priority_counts = dict(db.session.query(Ticket.priority, func.count(Ticket.id)).filter(
-            Ticket.id.in_(ticket_ids)
-        ).group_by(Ticket.priority).all())
-        overdue = EnterpriseRecord.query.filter(
+            Ticket.id.in_(ticket_ids), Ticket.state.notin_(TERMINAL_TICKET_STATES),
+        ).group_by(Ticket.priority).all()) if ticket_ids else {}
+        overdue_investigations = EnterpriseRecord.query.filter(
             EnterpriseRecord.id.in_(record_ids), EnterpriseRecord.due_at < now(),
             EnterpriseRecord.state.notin_(["Closed", "Resolved", "Completed"])
-        ).count()
-        return render_template("analytics.html", ticket_states=ticket_states, domain_counts=domain_counts,
-                               priority_counts=priority_counts, overdue=overdue, modules=DOMAIN_CONFIG)
+        ).count() if record_ids else 0
+
+        open_ticket_ids = [
+            row.id for row in ticket_query.filter(Ticket.state.notin_(TERMINAL_TICKET_STATES)).with_entities(Ticket.id).all()
+        ]
+        open_count = len(open_ticket_ids)
+
+        # SLA exposure on currently open work, and 30-day compliance on resolved work,
+        # both driven off TaskSLA the same way the dashboard's own SLA widgets are.
+        sla_at_risk_hours = setting_int("SLA_AT_RISK_HOURS", 4)
+        breach_horizon = now() + timedelta(hours=sla_at_risk_hours)
+        sla_breached_open = sla_at_risk_open = 0
+        if open_ticket_ids:
+            for row in TaskSLA.query.filter(
+                TaskSLA.target_type == "ticket", TaskSLA.target_id.in_(open_ticket_ids),
+                TaskSLA.stage == "In Progress",
+            ).all():
+                if row.breached:
+                    sla_breached_open += 1
+                else:
+                    breach_at = row.breach_at if row.breach_at.tzinfo else row.breach_at.replace(tzinfo=timezone.utc)
+                    if breach_at <= breach_horizon:
+                        sla_at_risk_open += 1
+
+        thirty_days_ago = now() - timedelta(days=30)
+        resolved_30d = ticket_query.filter(
+            Ticket.state.in_(TERMINAL_TICKET_STATES), Ticket.updated_at >= thirty_days_ago,
+        ).with_entities(Ticket.id, Ticket.kind, Ticket.priority, Ticket.created_at, Ticket.updated_at).all()
+        resolved_30d_ids = [row.id for row in resolved_30d]
+        sla_by_ticket = defaultdict(bool)
+        if resolved_30d_ids:
+            for row in TaskSLA.query.filter(
+                TaskSLA.target_type == "ticket", TaskSLA.target_id.in_(resolved_30d_ids),
+            ).all():
+                sla_by_ticket[row.target_id] = sla_by_ticket[row.target_id] or row.breached
+        tickets_with_sla = [row for row in resolved_30d if row.id in sla_by_ticket]
+        sla_compliance_pct = (
+            round(100 * sum(1 for row in tickets_with_sla if not sla_by_ticket[row.id]) / len(tickets_with_sla))
+            if tickets_with_sla else None
+        )
+
+        # MTTR proxy: created→updated_at span for incidents that reached a terminal
+        # state in the last 30 days. There is no dedicated resolved_at column, so
+        # this mirrors the same updated_at convention already used for the manager
+        # portal's "resolved in 30 days" metric.
+        mttr_by_priority = {}
+        for priority in ("P1", "P2", "P3", "P4"):
+            spans = [
+                (row.updated_at - row.created_at).total_seconds() / 3600
+                for row in resolved_30d if row.kind == "incident" and row.priority == priority
+            ]
+            mttr_by_priority[priority] = round(sum(spans) / len(spans), 1) if spans else None
+
+        # 14-day created-vs-resolved volume trend.
+        today = now().date()
+        volume_trend = []
+        window_start = today - timedelta(days=13)
+        created_counts = Counter()
+        for row in ticket_query.filter(Ticket.created_at >= window_start).with_entities(Ticket.created_at).all():
+            created_counts[row.created_at.date()] += 1
+        resolved_counts = Counter()
+        for row in resolved_30d:
+            if row.updated_at.date() >= window_start:
+                resolved_counts[row.updated_at.date()] += 1
+        for offset in range(14):
+            day = window_start + timedelta(days=offset)
+            volume_trend.append({"day": day, "created": created_counts.get(day, 0), "resolved": resolved_counts.get(day, 0)})
+        trend_max = max([1] + [max(d["created"], d["resolved"]) for d in volume_trend])
+
+        # Backlog aging: how long currently-open tickets have been sitting.
+        aging_buckets = {"0-1 day": 0, "1-3 days": 0, "3-7 days": 0, "7+ days": 0}
+        for row in ticket_query.filter(Ticket.state.notin_(TERMINAL_TICKET_STATES)).with_entities(Ticket.created_at).all():
+            age_days = (now() - row.created_at).total_seconds() / 86400
+            if age_days <= 1:
+                aging_buckets["0-1 day"] += 1
+            elif age_days <= 3:
+                aging_buckets["1-3 days"] += 1
+            elif age_days <= 7:
+                aging_buckets["3-7 days"] += 1
+            else:
+                aging_buckets["7+ days"] += 1
+
+        # Change success rate: of changes that reached a terminal outcome in the
+        # last 30 days, the share that closed out rather than being cancelled.
+        change_outcomes = Counter(
+            row.state for row in ticket_query.filter(
+                Ticket.kind == "change", Ticket.state.in_(["Closed", "Cancelled"]),
+                Ticket.updated_at >= thirty_days_ago,
+            ).with_entities(Ticket.state).all()
+        )
+        change_total = change_outcomes.get("Closed", 0) + change_outcomes.get("Cancelled", 0)
+        change_success_pct = round(100 * change_outcomes.get("Closed", 0) / change_total) if change_total else None
+
+        # Top assignment groups by open ticket volume.
+        open_rows = ticket_query.filter(Ticket.state.notin_(TERMINAL_TICKET_STATES)).with_entities(Ticket.id, Ticket.kind).all()
+        incident_ids = [r.id for r in open_rows if r.kind == "incident"]
+        change_ids = [r.id for r in open_rows if r.kind == "change"]
+        group_counts = Counter()
+        if incident_ids:
+            for group_id, count in db.session.query(TicketAssignmentGroup.group_id, func.count(TicketAssignmentGroup.id)).filter(
+                TicketAssignmentGroup.ticket_id.in_(incident_ids)
+            ).group_by(TicketAssignmentGroup.group_id).all():
+                group_counts[group_id] += count
+        if change_ids:
+            for group_id, count in db.session.query(ChangeOwnership.group_id, func.count(ChangeOwnership.id)).filter(
+                ChangeOwnership.ticket_id.in_(change_ids)
+            ).group_by(ChangeOwnership.group_id).all():
+                group_counts[group_id] += count
+        top_groups = []
+        if group_counts:
+            groups_by_id = {g.id: g for g in SupportGroup.query.filter(SupportGroup.id.in_(group_counts.keys())).all()}
+            top_groups = sorted(
+                ({"group": groups_by_id[gid], "count": count} for gid, count in group_counts.items() if gid in groups_by_id),
+                key=lambda row: row["count"], reverse=True,
+            )[:8]
+        top_groups_max = max([1] + [row["count"] for row in top_groups])
+
+        return render_template(
+            "analytics.html", ticket_states=ticket_states, domain_counts=domain_counts,
+            priority_counts=priority_counts, overdue_investigations=overdue_investigations,
+            modules=DOMAIN_CONFIG, open_count=open_count,
+            sla_breached_open=sla_breached_open, sla_at_risk_open=sla_at_risk_open,
+            sla_compliance_pct=sla_compliance_pct, mttr_by_priority=mttr_by_priority,
+            volume_trend=volume_trend, trend_max=trend_max, aging_buckets=aging_buckets,
+            change_success_pct=change_success_pct, change_total=change_total,
+            top_groups=top_groups, top_groups_max=top_groups_max,
+        )
 
     @app.get("/analytics/overdue")
     @roles("agent", "manager", "admin")
