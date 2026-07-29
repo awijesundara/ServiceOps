@@ -33,6 +33,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from ldap3 import ALL, SUBTREE, Connection, Server, Tls
 from ldap3.utils.conv import escape_filter_chars
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -395,6 +396,20 @@ class APIIdempotencyRecord(db.Model):
             "api_client_id", "idempotency_key",
             name="uq_api_idempotency_client_key",
         ),
+    )
+
+
+class APIRateLimitWindow(db.Model):
+    """Per-client, per-minute request counter backing REST API rate limiting.
+    DB-backed (not in-process) because the app runs multiple gunicorn workers,
+    so an in-memory counter would undercount and let each worker allow its own
+    full quota."""
+    id = db.Column(db.Integer, primary_key=True)
+    api_client_id = db.Column(db.Integer, db.ForeignKey("api_client.id"), nullable=False, index=True)
+    window_start = db.Column(db.DateTime(timezone=True), nullable=False)
+    request_count = db.Column(db.Integer, nullable=False, default=0)
+    __table_args__ = (
+        db.UniqueConstraint("api_client_id", "window_start", name="uq_api_rate_limit_window"),
     )
 
 
@@ -1434,10 +1449,43 @@ def authenticate_api_request():
         abort(401, description="The API token is invalid or revoked.")
     if not client.acting_user.active or client.acting_user.tenant_id != client.tenant_id:
         abort(403, description="The API identity is inactive or invalid.")
+    enforce_api_rate_limit(client)
     client.last_used_at = now()
     g.api_client = client
     g.api_user = client.acting_user
     db.session.commit()
+
+
+def enforce_api_rate_limit(client):
+    limit = setting_int("API_RATE_LIMIT_PER_MINUTE", 120)
+    window_start = now().replace(second=0, microsecond=0)
+    row = APIRateLimitWindow.query.filter_by(
+        api_client_id=client.id, window_start=window_start
+    ).with_for_update().first()
+    if not row:
+        try:
+            with db.session.begin_nested():
+                row = APIRateLimitWindow(api_client_id=client.id, window_start=window_start, request_count=0)
+                db.session.add(row)
+                db.session.flush()
+        except IntegrityError:
+            # Another concurrent worker created this minute's row first (this
+            # app runs multiple gunicorn workers) — re-fetch instead of
+            # treating the race as an error.
+            row = APIRateLimitWindow.query.filter_by(
+                api_client_id=client.id, window_start=window_start
+            ).with_for_update().one()
+        # Bound table growth here rather than requiring a separate cleanup
+        # job: prune old windows for this client whenever a new one starts.
+        APIRateLimitWindow.query.filter(
+            APIRateLimitWindow.api_client_id == client.id,
+            APIRateLimitWindow.window_start < window_start - timedelta(hours=1),
+        ).delete()
+    row.request_count += 1
+    if row.request_count > limit:
+        db.session.commit()
+        g.rate_limit_retry_after = 60 - now().second
+        abort(429, description=f"Rate limit of {limit} requests/minute exceeded for this API client.")
 
 
 def require_api_scope(scope):
@@ -1570,6 +1618,7 @@ SETTING_DEFINITIONS = {
         {"key": "AUDIT_STREAM_ENABLED", "label": "Stream audit events to SIEM", "type": "bool", "default": "false", "live": True},
         {"key": "LOGIN_MAX_ATTEMPTS", "label": "Failed logins before lockout", "type": "int", "default": "5", "min": 3, "max": 20, "live": True},
         {"key": "LOGIN_LOCKOUT_MINUTES", "label": "Lockout duration in minutes", "type": "int", "default": "15", "min": 1, "max": 1440, "live": True},
+        {"key": "API_RATE_LIMIT_PER_MINUTE", "label": "REST API requests per minute (per client)", "type": "int", "default": "120", "min": 10, "max": 6000, "live": True},
     ],
     "workflow": [
         {"key": "DEFAULT_TICKET_PRIORITY", "label": "Default ticket priority", "type": "choice", "choices": ["P1", "P2", "P3", "P4"], "default": "P3", "live": True},
@@ -1947,6 +1996,46 @@ def record_title(record):
     if isinstance(record, RequestedItem):
         return record.item.name
     return getattr(record, "title", getattr(record, "name", "Related record"))
+
+
+ATTACHMENT_ALLOWED_TYPES = {
+    "png": (b"\x89PNG\r\n\x1a\n", "image/png"),
+    "jpg": (b"\xff\xd8\xff", "image/jpeg"),
+    "jpeg": (b"\xff\xd8\xff", "image/jpeg"),
+    "gif": (b"GIF8", "image/gif"),
+    "pdf": (b"%PDF-", "application/pdf"),
+    # Office Open XML formats (docx/xlsx/pptx) and plain .zip all share the
+    # ZIP local-file-header signature; the extension still narrows what's
+    # accepted, this only rules out a non-ZIP file masquerading with one of
+    # these extensions.
+    "docx": (b"PK\x03\x04", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    "xlsx": (b"PK\x03\x04", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    "zip": (b"PK\x03\x04", "application/zip"),
+    # No reliable magic-byte signature for plain text; extension allowlisting
+    # plus the existing content-disposition/attachment download behavior
+    # (never rendered inline) is the control for these.
+    "txt": (None, "text/plain"),
+    "csv": (None, "text/csv"),
+    "log": (None, "text/plain"),
+}
+
+
+def validate_attachment_upload(upload):
+    """Returns (extension, mime_type) if the upload is an allowed attachment
+    type, or None if it should be rejected. Extension-only allowlisting is not
+    enough on its own — a disallowed type could be relabeled with an allowed
+    extension — so this cross-checks the file's actual magic bytes wherever
+    the format has one, rejecting a mismatch even if the extension looks fine."""
+    ext = upload.filename.rsplit(".", 1)[-1].lower() if "." in upload.filename else ""
+    if ext not in ATTACHMENT_ALLOWED_TYPES:
+        return None
+    signature, mime_type = ATTACHMENT_ALLOWED_TYPES[ext]
+    if signature:
+        header = upload.stream.read(len(signature))
+        upload.stream.seek(0)
+        if header != signature:
+            return None
+    return ext, mime_type
 
 
 def csv_response(csv_text, filename):
@@ -2479,7 +2568,7 @@ def change_approval_stages(ticket):
         "mode": "all",
         "approver_ids": [ownership.group.manager_id],
     }]
-    if governance.change_type != "Standard":
+    if governance.change_type != "Standard" and governance.ccb_required:
         ccb = SupportGroup.query.filter_by(name="Change Control Board").first()
         ccb_ids = [
             member.user_id for member in (ccb.members if ccb else [])
@@ -2489,10 +2578,21 @@ def change_approval_stages(ticket):
             abort(409, description=(
                 "CCB membership must be configured before a non-standard change can be submitted."
             ))
-        stages.append({
-            "name": "CCB weekly authorization", "mode": "majority",
-            "approver_ids": ccb_ids,
-        })
+        if governance.change_type == "Emergency":
+            # Accelerated but still auditable: one active CCB approver can
+            # authorize immediately instead of waiting on the full board's
+            # scheduled majority review (CLAUDE.md: "Submitted late" is not an
+            # emergency justification — this only shortens the quorum required,
+            # it never skips CCB authorization or the audit trail).
+            stages.append({
+                "name": "Emergency CCB authorization (expedited)", "mode": "any",
+                "approver_ids": ccb_ids,
+            })
+        else:
+            stages.append({
+                "name": "CCB weekly authorization", "mode": "majority",
+                "approver_ids": ccb_ids,
+            })
     return stages
 
 
@@ -3520,8 +3620,26 @@ def ldap_authenticate(username, password):
     tls = Tls(validate=validate, ca_certs_file=os.getenv("LDAP_CA_CERT") or None)
     server = Server(host, port=port, use_ssl=use_ssl, tls=tls, get_info=ALL,
                     connect_timeout=int(os.getenv("LDAP_TIMEOUT", "8")))
-    service = Connection(server, user=setting_value("LDAP_BIND_DN") or None,
-                         password=setting_value("LDAP_BIND_PASSWORD") or None,
+    bind_dn = setting_value("LDAP_BIND_DN") or None
+    bind_password = None
+    if bind_dn:
+        # Resolve the bind password directly rather than through setting_value(),
+        # which silently falls back to "" (anonymous bind) if decryption fails —
+        # a key-rotation or config mistake must not silently degrade a configured
+        # authenticated bind into an anonymous one.
+        password_row = db.session.get(PlatformSetting, "LDAP_BIND_PASSWORD")
+        if password_row and password_row.encrypted:
+            try:
+                bind_password = settings_cipher().decrypt(password_row.value.encode()).decode() or None
+            except (InvalidToken, ValueError):
+                current_app.logger.error(
+                    "LDAP bind password could not be decrypted; refusing to fall back "
+                    "to an anonymous bind for a configured bind DN."
+                )
+                return None
+        elif password_row:
+            bind_password = password_row.value or None
+    service = Connection(server, user=bind_dn, password=bind_password,
                          auto_bind=False, receive_timeout=int(os.getenv("LDAP_TIMEOUT", "8")))
     service.open()
     if not use_ssl and setting_bool("LDAP_START_TLS", True):
@@ -4385,6 +4503,8 @@ def create_app(test_config=None):
     @app.after_request
     def security_headers(response):
         response.headers["X-Request-ID"] = g.get("request_id", str(uuid.uuid4()))
+        if g.get("rate_limit_retry_after") is not None:
+            response.headers["Retry-After"] = str(g.rate_limit_retry_after)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -5738,6 +5858,11 @@ def create_app(test_config=None):
                 details=f"{role}: {ci.name}",
             )
             audit("link CI", record_number(target), f"{role}: {ci.name}")
+            # Affected CIs/impacted services are a material-change field (CLAUDE.md
+            # governance rules): adding one to an already-approved change must
+            # invalidate the current approval chain, the same as team/plan edits do.
+            if isinstance(target, Ticket) and target.kind == "change":
+                supersede_change_approval(target, [role.lower()])
             db.session.commit()
         return redirect(record_url(target))
 
@@ -8486,12 +8611,21 @@ def create_app(test_config=None):
         original = secure_filename(upload.filename)
         if not original:
             abort(400, description="The attachment filename is invalid.")
+        validated = validate_attachment_upload(upload)
+        if not validated:
+            flash(
+                "That file type isn't allowed. Accepted attachment types: "
+                + ", ".join(sorted(ATTACHMENT_ALLOWED_TYPES)) + ".",
+                "error",
+            )
+            return redirect(url_for("ticket_detail", ticket_id=ticket_id))
+        _, verified_mime_type = validated
         stored = f"{uuid.uuid4().hex}-{original}"
         path = os.path.join(app.config["UPLOAD_FOLDER"], stored)
         upload.save(path)
         db.session.add(FileAttachment(ticket_id=ticket_id, uploaded_by_id=current_user.id,
                                       original_name=original, stored_name=stored,
-                                      mime_type=upload.mimetype, size_bytes=os.path.getsize(path)))
+                                      mime_type=verified_mime_type, size_bytes=os.path.getsize(path)))
         log_history(
             "ticket", ticket.id, "Attachment uploaded",
             details=f"{original} ({os.path.getsize(path)} bytes)",
