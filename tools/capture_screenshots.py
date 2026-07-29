@@ -10,6 +10,7 @@ import os
 import sys
 import time
 
+from PIL import Image as PILImage
 from playwright.sync_api import sync_playwright
 
 BASE_URL = os.environ.get("SERVICEOPS_URL", "http://127.0.0.1:8080")
@@ -42,6 +43,17 @@ PAGES = [
     ("audit_log", "/admin/audit"),
     ("itil_admin", "/itil/administration"),
 ]
+
+
+def capture(page, path):
+    """Takes a full-page screenshot, then re-saves it quantized to a 256-color
+    PNG palette. UI screenshots are almost entirely flat chrome/background
+    colors plus sharp text — nothing that needs a 24-bit true-color palette —
+    so this cuts file size by roughly 60% with no visible quality loss, unlike
+    switching to JPEG which would blur text edges."""
+    page.screenshot(path=path, full_page=True)
+    with PILImage.open(path) as img:
+        img.convert("RGB").quantize(colors=256, method=PILImage.MEDIANCUT).save(path, optimize=True)
 
 
 def main():
@@ -80,7 +92,7 @@ def main():
             try:
                 page.goto(f"{BASE_URL}{path}", wait_until="networkidle", timeout=15000)
                 time.sleep(0.3)
-                page.screenshot(path=os.path.join(OUT_DIR, f"{name}.png"), full_page=True)
+                capture(page, os.path.join(OUT_DIR, f"{name}.png"))
                 print(f"captured {name}")
             except Exception as exc:
                 print(f"FAILED {name}: {exc}")
@@ -89,7 +101,7 @@ def main():
             try:
                 page.goto(f"{BASE_URL}{ticket_id}", wait_until="networkidle", timeout=15000)
                 time.sleep(0.3)
-                page.screenshot(path=os.path.join(OUT_DIR, "incident_detail.png"), full_page=True)
+                capture(page, os.path.join(OUT_DIR, "incident_detail.png"))
                 print("captured incident_detail")
             except Exception as exc:
                 print(f"FAILED incident_detail: {exc}")
@@ -98,14 +110,14 @@ def main():
             try:
                 page.goto(f"{BASE_URL}{req_href}", wait_until="networkidle", timeout=15000)
                 time.sleep(0.3)
-                page.screenshot(path=os.path.join(OUT_DIR, "request_detail.png"), full_page=True)
+                capture(page, os.path.join(OUT_DIR, "request_detail.png"))
                 print("captured request_detail")
                 ritm_link = page.query_selector('a[href*="/ritm/"]')
                 if ritm_link:
                     ritm_href = ritm_link.get_attribute("href")
                     page.goto(f"{BASE_URL}{ritm_href}", wait_until="networkidle", timeout=15000)
                     time.sleep(0.3)
-                    page.screenshot(path=os.path.join(OUT_DIR, "ritm_detail.png"), full_page=True)
+                    capture(page, os.path.join(OUT_DIR, "ritm_detail.png"))
                     print("captured ritm_detail")
             except Exception as exc:
                 print(f"FAILED request/ritm detail: {exc}")

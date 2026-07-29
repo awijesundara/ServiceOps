@@ -79,15 +79,42 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_constraint("uq_ci_relationship", "ci_relationship", type_="unique")
-    op.drop_column("ci_relationship", "created_at")
-    op.drop_index("ix_ci_relationship_tenant_id", table_name="ci_relationship")
-    op.drop_constraint("fk_ci_relationship_tenant", "ci_relationship", type_="foreignkey")
-    op.drop_column("ci_relationship", "tenant_id")
+    # upgrade() above is unchanged — this migration is already deployed, and
+    # only its never-yet-executed downgrade() path is being made to actually
+    # work (batch mode: SQLite has no ALTER-based constraint/FK-column-drop
+    # support outside the copy-and-move/batch strategy; PostgreSQL behavior
+    # is unchanged). Constraint/index names are looked up through the
+    # inspector rather than hardcoded, because SQLite doesn't reliably
+    # preserve/reflect the name Alembic assigned at creation time (see the
+    # identical pattern in 20260726_0002's downgrade).
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    tenant_fks = [
+        fk["name"] for fk in inspector.get_foreign_keys("ci_relationship")
+        if fk["name"] and "tenant_id" in fk.get("constrained_columns", ())
+    ]
+    tenant_indexes = [
+        ix["name"] for ix in inspector.get_indexes("ci_relationship")
+        if ix["name"] and "tenant_id" in ix.get("column_names", ())
+    ]
+    unique_constraints = [
+        uc["name"] for uc in inspector.get_unique_constraints("ci_relationship")
+        if uc["name"] and set(uc.get("column_names", ())) == {"parent_id", "child_id", "relationship_type"}
+    ]
+    with op.batch_alter_table("ci_relationship") as batch:
+        for uc_name in unique_constraints:
+            batch.drop_constraint(uc_name, type_="unique")
+        for ix_name in tenant_indexes:
+            batch.drop_index(ix_name)
+        for fk_name in tenant_fks:
+            batch.drop_constraint(fk_name, type_="foreignkey")
+        batch.drop_column("created_at")
+        batch.drop_column("tenant_id")
 
-    for column in [
-        "updated_at", "created_at", "support_group_id", "attributes", "warranty_expiry_date",
-        "install_date", "discovery_source", "cost_center", "location", "model", "vendor",
-        "serial_number", "business_criticality", "lifecycle_state", "description",
-    ]:
-        op.drop_column("configuration_item", column)
+    with op.batch_alter_table("configuration_item") as batch:
+        for column in [
+            "updated_at", "created_at", "support_group_id", "attributes", "warranty_expiry_date",
+            "install_date", "discovery_source", "cost_center", "location", "model", "vendor",
+            "serial_number", "business_criticality", "lifecycle_state", "description",
+        ]:
+            batch.drop_column(column)
