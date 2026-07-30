@@ -21,7 +21,7 @@ Operations:
   ./serviceops rehearse-migrations [ROW_COUNT]
   ./serviceops rehearse-upgrade
   ./serviceops retire-bootstrap-secret
-  ./serviceops update | config
+  ./serviceops update [IMAGE_REF] | update kubernetes [IMAGE_TAG] | config
 EOF
 }
 
@@ -35,6 +35,9 @@ if [[ "$command" == "install" ]]; then
     kubernetes|k8s) exec "$ROOT_DIR/tools/install/kubernetes.sh" "$@" ;;
     *) echo "Unknown installation target: $target" >&2; usage; exit 2 ;;
   esac
+fi
+if [[ "$command" == "update" && ( "${2:-}" == "kubernetes" || "${2:-}" == "k8s" ) ]]; then
+  exec "$ROOT_DIR/tools/safe_update_k8s.sh" "${3:-}"
 fi
 [[ "$command" == "help" || "$command" == "--help" || "$command" == "-h" || -z "$command" ]] && {
   usage
@@ -145,9 +148,7 @@ case "$command" in
     exec "$ROOT_DIR/tools/rehearse-upgrade.sh"
     ;;
   update)
-    "$0" backup || true
-    "${COMPOSE[@]}" up --build -d
-    "$0" health
+    exec "$ROOT_DIR/tools/safe_update.sh" "${2:-}"
     ;;
   *) usage; exit 2 ;;
 esac
