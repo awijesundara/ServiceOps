@@ -202,3 +202,22 @@ def test_session_verifies_against_configured_internal_ca(app):
         with open(session.verify) as handle:
             assert handle.read() == pem.strip()
         os.unlink(session.verify)
+
+
+def test_session_skips_verification_when_insecure_opt_in_is_set(app):
+    with app.app_context():
+        db.session.add(PlatformSetting(key="NETBOX_TLS_INSECURE", value="true", encrypted=False))
+        db.session.commit()
+        session = _netbox_session("https://netbox.example.com", "token")
+        assert session.verify is False
+
+
+def test_ca_cert_takes_priority_over_insecure_opt_in(app):
+    with app.app_context():
+        pem = "-----BEGIN CERTIFICATE-----\nMIIB...fake...\n-----END CERTIFICATE-----\n"
+        db.session.add(PlatformSetting(key="NETBOX_CA_CERT", value=pem, encrypted=False))
+        db.session.add(PlatformSetting(key="NETBOX_TLS_INSECURE", value="true", encrypted=False))
+        db.session.commit()
+        session = _netbox_session("https://netbox.example.com", "token")
+        assert session.verify != False  # noqa: E712 - CA path wins, not blanket bypass
+        os.unlink(session.verify)

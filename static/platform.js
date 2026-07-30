@@ -180,6 +180,32 @@ document.addEventListener("DOMContentLoaded", () => {
     tabActivators[id](id);
     document.getElementById(id)?.scrollIntoView({block: "start"});
   });
+  document.getElementById("ci-attr-add")?.addEventListener("click", () => {
+    const container = document.querySelector(".ci-attr-rows");
+    if (!container) return;
+    const row = document.createElement("div");
+    row.className = "ci-attr-row";
+    const keyInput = document.createElement("input");
+    keyInput.name = "attr_key";
+    keyInput.placeholder = "Field name";
+    const valueInput = document.createElement("input");
+    valueInput.name = "attr_value";
+    valueInput.placeholder = "Value";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "link-button ci-attr-remove";
+    remove.setAttribute("aria-label", "Remove field");
+    remove.textContent = "✕";
+    row.append(keyInput, valueInput, remove);
+    container.appendChild(row);
+    keyInput.focus();
+  });
+  document.addEventListener("click", (event) => {
+    const remove = event.target.closest(".ci-attr-remove");
+    if (!remove) return;
+    event.preventDefault();
+    remove.closest(".ci-attr-row")?.remove();
+  });
   document.querySelectorAll("[data-pref-tab]").forEach(button => {
     button.addEventListener("click", () => {
       const selected = button.dataset.prefTab;
