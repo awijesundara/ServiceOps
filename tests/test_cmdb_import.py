@@ -7,7 +7,7 @@ import tempfile
 
 import pytest
 
-from app import ConfigurationItem, SupportGroup, create_app, db
+from app import ConfigurationItem, SupportGroup, SupportGroupAlias, create_app, db
 from serviceops_core.cmdb_import import CmdbImportError, import_ci_rows, parse_ci_rows
 
 
@@ -114,6 +114,39 @@ def test_owning_team_reused_across_rows(app):
         result = import_ci_rows(rows, 1)
         assert result["teams_created"] == []
         assert SupportGroup.query.filter_by(name="Core apps").count() == 1
+
+
+def test_owning_team_alias_resolves_to_existing_group_instead_of_duplicating(app):
+    with app.app_context():
+        # "DBA" -> "Database" is seeded by default (seed_itil); staff use
+        # both names interchangeably, so the import must not spawn a
+        # duplicate "DBA" support group.
+        database_group = SupportGroup.query.filter_by(name="Database").one()
+        assert SupportGroupAlias.query.filter_by(alias="DBA").count() == 1
+        rows = parse_ci_rows(
+            "Host,System Owner,Serial Number\nsrv-db-01.example.com,DBA,XYZ001\n"
+        )
+        result = import_ci_rows(rows, 1)
+        assert result["teams_created"] == []
+        ci = ConfigurationItem.query.filter_by(name="srv-db-01.example.com").one()
+        assert ci.support_group_id == database_group.id
+        assert SupportGroup.query.filter_by(name="DBA").count() == 0
+
+
+def test_owning_team_custom_alias_can_be_added_via_admin(app):
+    with app.app_context():
+        team = SupportGroup(name="Site Reliability", tenant_id=1)
+        db.session.add(team)
+        db.session.flush()
+        db.session.add(SupportGroupAlias(alias="SRE", group_id=team.id, tenant_id=1))
+        db.session.commit()
+        rows = parse_ci_rows(
+            "Host,System Owner,Serial Number\nsrv-sre-01.example.com,SRE,XYZ002\n"
+        )
+        result = import_ci_rows(rows, 1)
+        assert result["teams_created"] == []
+        ci = ConfigurationItem.query.filter_by(name="srv-sre-01.example.com").one()
+        assert ci.support_group_id == team.id
 
 
 def test_blank_hostname_row_is_skipped_and_reported(app):

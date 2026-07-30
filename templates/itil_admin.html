@@ -110,6 +110,47 @@
 <section class="panel admin-section">
   <div class="panel-head">
     <div>
+      <h2>Team name aliases</h2>
+      <p>Add alternate names staff use for a team (e.g. "DBA" for "Database"). Anywhere a team name is resolved from free text — CSV/spreadsheet import's Owner column, for example — the alias resolves to the same team instead of creating a duplicate.</p>
+    </div>
+  </div>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="action" value="add_support_group_alias">
+    <label>Alias
+      <input name="alias" placeholder="DBA" maxlength="160" required>
+    </label>
+    <label>ServiceOps team
+      <select name="group_id" required>
+        {% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <div class="wide actions"><button class="primary">Save alias</button></div>
+  </form>
+  <table>
+    <thead><tr><th>Alias</th><th>Resolves to</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for group_alias in support_group_aliases %}
+      <tr>
+        <td><code>{{ group_alias.alias }}</code></td>
+        <td>{{ group_alias.group.name }}</td>
+        <td>
+          <form method="post">
+            <input type="hidden" name="action" value="delete_support_group_alias">
+            <input type="hidden" name="alias_id" value="{{ group_alias.id }}">
+            <button class="button">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">No team name aliases configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel admin-section">
+  <div class="panel-head">
+    <div>
       <h2>LDAP directory sync</h2>
       <p>Manually pull title, department, division, employee ID/type, manager chain, and AD-group team membership from the directory for users who have already signed in through AD/LDAP at least once. This does not run on a schedule &mdash; trigger it manually whenever the directory changes.</p>
     </div>
