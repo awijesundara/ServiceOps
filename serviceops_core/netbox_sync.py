@@ -121,6 +121,49 @@ def _ip_of(record):
     return address.split("/")[0]
 
 
+def _oob_ip_of(record):
+    address = _first_attr(record, "oob_ip", "address")
+    return address.split("/")[0] if address else None
+
+
+def _ipv6_of(record):
+    address = _first_attr(record, "primary_ip6", "address")
+    return address.split("/")[0] if address else None
+
+
+def _extra_attributes(record, *, fields=()):
+    """Everything NetBox has on this record beyond the handful of columns
+    ConfigurationItem has dedicated fields for -- rack position, role,
+    platform, custom fields, tags, comments, etc. Kept under a "NetBox: "
+    prefix in ConfigurationItem.attributes so it never collides with fields
+    a CSV import captured for the same CI, and so a re-sync can safely
+    refresh only the NetBox-owned keys without touching the rest."""
+    attributes = {}
+
+    def add(label, value):
+        if value not in (None, "", []):
+            attributes[f"NetBox: {label}"] = value
+
+    for label, keys in fields:
+        add(label, _first_attr(record, *keys))
+
+    add("Out-of-band IP", _oob_ip_of(record))
+    add("Primary IPv6", _ipv6_of(record))
+    tags = [tag.get("name") for tag in (record.get("tags") or []) if tag.get("name")]
+    if tags:
+        add("Tags", ", ".join(tags))
+    add("Comments", (record.get("comments") or "").strip() or None)
+
+    for key, value in (record.get("custom_fields") or {}).items():
+        if isinstance(value, dict):
+            value = value.get("label") or value.get("value")
+        if isinstance(value, list):
+            value = ", ".join(str(item) for item in value)
+        add(key.replace("_", " ").title(), value)
+
+    return attributes
+
+
 def _map_device(record, ci_class):
     status_value = _first_attr(record, "status", "value")
     return {
@@ -133,6 +176,15 @@ def _map_device(record, ci_class):
         "location": _location_of(record),
         "operational_status": STATUS_MAP.get(status_value, "Operational"),
         "netbox_id": str(record["id"]),
+        "attributes": _extra_attributes(record, fields=(
+            ("Region", ("site", "region", "name")),
+            ("Rack", ("rack", "name")),
+            ("Position", ("position",)),
+            ("Tenant", ("tenant", "name")),
+            ("Role", ("role", "name")),
+            ("Platform", ("platform", "name")),
+            ("Status", ("status", "label")),
+        )),
     }
 
 
@@ -148,6 +200,15 @@ def _map_vm(record):
         "location": _first_attr(record, "cluster", "name"),
         "operational_status": STATUS_MAP.get(status_value, "Operational"),
         "netbox_id": str(record["id"]),
+        "attributes": _extra_attributes(record, fields=(
+            ("Tenant", ("tenant", "name")),
+            ("Role", ("role", "name")),
+            ("Platform", ("platform", "name")),
+            ("vCPUs", ("vcpus",)),
+            ("Memory (MB)", ("memory",)),
+            ("Disk (GB)", ("disk",)),
+            ("Status", ("status", "label")),
+        )),
     }
 
 
@@ -165,6 +226,11 @@ def _upsert(mapped, tenant_id, summary):
         ).first()
         matched_by_serial = ci is not None
 
+    # NetBox's extra fields (rack, role, custom fields, ...) are namespaced
+    # "NetBox: " in attributes so a re-sync can refresh just those keys
+    # without clobbering anything a CSV import stored there.
+    netbox_attributes = mapped.get("attributes") or {}
+
     if ci:
         for field in HARDWARE_FIELDS:
             value = mapped.get(field)
@@ -175,6 +241,8 @@ def _upsert(mapped, tenant_id, summary):
         ci.external_source = "netbox"
         ci.external_id = mapped["netbox_id"]
         ci.discovery_source = "API"
+        preserved = {k: v for k, v in (ci.attributes or {}).items() if not k.startswith("NetBox: ")}
+        ci.attributes = {**preserved, **netbox_attributes}
         summary["cis_updated"] += 1
         if matched_by_serial:
             summary["cis_matched_by_serial"] += 1
@@ -186,7 +254,7 @@ def _upsert(mapped, tenant_id, summary):
             model=mapped["model"], ip_address=mapped["ip_address"],
             location=mapped["location"], discovery_source="API",
             external_source="netbox", external_id=mapped["netbox_id"],
-            tenant_id=tenant_id,
+            tenant_id=tenant_id, attributes=netbox_attributes,
         ))
         summary["cis_created"] += 1
 

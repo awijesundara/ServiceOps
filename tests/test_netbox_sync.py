@@ -148,6 +148,53 @@ def test_adopts_existing_manual_ci_by_serial_number(app, monkeypatch):
         assert ci.external_id == "101"
 
 
+def test_extra_netbox_fields_are_captured_as_attributes(app, monkeypatch):
+    with app.app_context():
+        device = make_device(101, "srv-01", serial="ABC123")
+        device.update({
+            "rack": {"name": "9D05"}, "position": 2.0,
+            "tenant": {"name": "CoreApps"}, "role": {"name": "server:linux"},
+            "platform": {"name": "CentOS Linux 7"},
+            "status": {"value": "active", "label": "Active"},
+            "oob_ip": {"address": "10.68.88.51/24"},
+            "tags": [{"name": "env:dev"}],
+            "comments": "handles batch jobs",
+            "custom_fields": {"end_of_support": "2022-11-18", "environment": "Development", "empty_field": None},
+        })
+        factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
+        sync_from_netbox(1, session_factory=factory)
+        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        assert ci.attributes["NetBox: Rack"] == "9D05"
+        assert ci.attributes["NetBox: Position"] == 2.0
+        assert ci.attributes["NetBox: Tenant"] == "CoreApps"
+        assert ci.attributes["NetBox: Role"] == "server:linux"
+        assert ci.attributes["NetBox: Platform"] == "CentOS Linux 7"
+        assert ci.attributes["NetBox: Out-of-band IP"] == "10.68.88.51"
+        assert ci.attributes["NetBox: Tags"] == "env:dev"
+        assert ci.attributes["NetBox: Comments"] == "handles batch jobs"
+        assert ci.attributes["NetBox: End Of Support"] == "2022-11-18"
+        assert ci.attributes["NetBox: Environment"] == "Development"
+        assert "NetBox: Empty Field" not in ci.attributes
+
+
+def test_resync_refreshes_netbox_attributes_without_dropping_csv_attributes(app, monkeypatch):
+    with app.app_context():
+        device = make_device(101, "srv-01", serial="ABC123")
+        device["rack"] = {"name": "9D05"}
+        factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
+        sync_from_netbox(1, session_factory=factory)
+        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        ci.attributes = {**ci.attributes, "Builder": "William Yao"}
+        db.session.commit()
+
+        device["rack"] = {"name": "9D06"}
+        factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
+        sync_from_netbox(1, session_factory=factory)
+        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        assert ci.attributes["NetBox: Rack"] == "9D06"
+        assert ci.attributes["Builder"] == "William Yao"
+
+
 def test_one_bad_record_does_not_abort_the_batch(app, monkeypatch):
     with app.app_context():
         good = make_device(101, "srv-01", serial="ABC123")
