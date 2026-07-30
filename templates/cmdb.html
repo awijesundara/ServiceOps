@@ -4,20 +4,40 @@
 <header class="page-head"><div><p class="eyebrow">IT OPERATIONS</p><h1>CMDB & service map<span class="info-tip" tabindex="0" data-tip="CMDB = Configuration Management Database: the system of record for every CI (Configuration Item) — a server, application, or service — and how they depend on one another.">i</span></h1><p>Configuration items and the dependencies that connect business services.</p></div>{% if current_user.role=='admin' %}<a class="button" href="{{ url_for('cmdb_import') }}">⇪ Import</a> <a class="primary button" href="{{ url_for('ci_new') }}">+ New CI</a>{% endif %}</header>
 {% set csv_url = url_for('cmdb_export', status=status) %}
 {% include "_export_toolbar.html" %}
-<section class="stats"><a href="#configuration-items"><span>Configuration items</span><strong>{{ cis|length }}</strong><small>Across all classes →</small></a><a href="#service-relationships"><span>Relationships</span><strong>{{ relationships|length }}</strong><small>Mapped dependencies →</small></a><a href="{{ url_for('cmdb', status='Operational') }}"><span>Operational</span><strong>{{ cis|selectattr('operational_status','equalto','Operational')|list|length }}</strong><small>View healthy CIs →</small></a></section>
-<section class="panel" id="configuration-items"><h2>Configuration items{% if status %} <small>· filtered to {{ status }} <a href="{{ url_for('cmdb') }}">(clear)</a></small>{% endif %}</h2><table><thead><tr><th>Name</th><th>Class</th><th>Environment</th><th>Status</th><th>Lifecycle</th><th>Criticality</th><th>Location</th><th>Owning team</th><th>Owner</th>{% if current_user.role=='admin' %}<th></th>{% endif %}</tr></thead><tbody>{% for ci in visible_cis %}<tr><td><strong>{{ ci.name }}</strong>{% if ci.serial_number %}<br><small class="muted">S/N {{ ci.serial_number }}</small>{% endif %}</td><td>{{ ci.ci_class }}</td><td>{{ ci.environment }}</td><td><span class="badge">{{ ci.operational_status }}</span></td><td>{{ ci.lifecycle_state }}</td><td>{{ ci.business_criticality }}</td><td>{{ ci.location or '—' }}</td><td>{{ ci.support_group.name if ci.support_group else 'Unassigned' }}</td><td>{{ ci.owner.name if ci.owner else 'Unassigned' }}</td>{% if current_user.role=='admin' %}<td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}">Edit</a></td>{% endif %}</tr>{% else %}<tr><td colspan="10" class="empty">No configuration items{% if status %} with this status{% endif %}.</td></tr>{% endfor %}</tbody></table>
-<hr><h2 id="service-relationships">Service relationships</h2>
+<section class="stats"><a href="#configuration-items"><span>Configuration items</span><strong>{{ cis_total }}</strong><small>Across all classes →</small></a><a href="#service-relationships"><span>Relationships</span><strong>{{ relationships|length }}</strong><small>Mapped dependencies →</small></a><a href="{{ url_for('cmdb', status='Operational') }}"><span>Operational</span><strong>{{ operational_total }}</strong><small>View healthy CIs →</small></a></section>
+<section class="list-workspace" id="configuration-items">
+  <header class="list-toolbar">
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Configuration items</strong><small>{{ total }} records{% if status %} · filtered to {{ status }} <a href="{{ url_for('cmdb', q=q) }}">(clear)</a>{% endif %}</small></div></div>
+    <form class="list-search">
+      {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+      <input name="q" value="{{ q }}" placeholder="Name, serial, IP, model, vendor, location" aria-label="Search configuration items">
+      <button>Search</button>
+    </form>
+    <nav class="list-pagination" aria-label="Pagination">
+      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('cmdb', q=q, status=status, page=page-1) }}">‹</a>
+      <span>Page {{ page }} of {{ pages }}</span>
+      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('cmdb', q=q, status=status, page=page+1) }}">›</a>
+    </nav>
+  </header>
+  <div class="task-list-scroll">
+  <table class="task-list"><thead><tr><th>Name</th><th>Class</th><th>Environment</th><th>Status</th><th>Lifecycle</th><th>Criticality</th><th>Location</th><th>Owning team</th>{% if current_user.role=='admin' %}<th></th>{% endif %}</tr></thead><tbody>
+    {% for ci in visible_cis %}<tr><td><strong>{{ ci.name }}</strong>{% if ci.serial_number %}<br><small class="muted">S/N {{ ci.serial_number }}</small>{% endif %}</td><td>{{ ci.ci_class }}</td><td>{{ ci.environment }}</td><td><span class="badge">{{ ci.operational_status }}</span></td><td>{{ ci.lifecycle_state }}</td><td>{{ ci.business_criticality }}</td><td>{{ ci.location or '—' }}</td><td>{{ ci.support_group.name if ci.support_group else 'Unassigned' }}</td>{% if current_user.role=='admin' %}<td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}">Edit</a></td>{% endif %}</tr>
+    {% else %}<tr><td colspan="9" class="empty">No matching configuration items{% if status %} with this status{% endif %}.</td></tr>{% endfor %}
+  </tbody></table>
+  </div>
+</section>
+<section class="panel" id="service-relationships">
+<h2>Service relationships</h2>
 {% for rel in relationships %}<div class="relation"><strong>{{ rel.parent.name }}</strong><span>— {{ rel.relationship_type }} →</span><strong>{{ rel.child.name }}</strong>{% if current_user.role=='admin' %}<form method="post" action="{{ url_for('ci_relationship_delete', relationship_id=rel.id) }}"><button class="link-button" aria-label="Remove relationship">✕</button></form>{% endif %}</div>{% else %}<p class="muted">No relationships mapped yet.</p>{% endfor %}
 {% if current_user.role=='admin' %}
 <details><summary>Add relationship</summary>
   <form method="post" action="{{ url_for('ci_relationship_add') }}" class="form-grid">
-    <label>Parent CI<select name="parent_id" required>{% for ci in cis %}<option value="{{ ci.id }}">{{ ci.name }}</option>{% endfor %}</select></label>
+    <label>Parent CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="parent_id"><div class="lookup-results" hidden></div></div></label>
     <label>Relationship<input name="relationship_type" value="Depends on"></label>
-    <label>Child CI<select name="child_id" required>{% for ci in cis %}<option value="{{ ci.id }}">{{ ci.name }}</option>{% endfor %}</select></label>
+    <label>Child CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="child_id"><div class="lookup-results" hidden></div></div></label>
     <div class="wide actions"><button class="primary">Link CIs</button></div>
   </form>
 </details>
 {% endif %}
 </section>
 {% endblock %}
-
