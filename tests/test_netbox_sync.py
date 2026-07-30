@@ -10,7 +10,7 @@ import tempfile
 import pytest
 
 from app import ConfigurationItem, PlatformSetting, Tenant, create_app, db
-from serviceops_core.netbox_sync import NetboxSyncError, sync_from_netbox
+from serviceops_core.netbox_sync import NetboxSyncError, _netbox_session, sync_from_netbox
 
 
 @pytest.fixture()
@@ -184,3 +184,21 @@ def test_missing_or_invalid_tenant_id_fails_closed(app, monkeypatch):
             sync_from_netbox(None)
         with pytest.raises(NetboxSyncError):
             sync_from_netbox(999999)
+
+
+def test_session_verifies_with_default_bundle_when_no_ca_cert_configured(app):
+    with app.app_context():
+        session = _netbox_session("https://netbox.example.com", "token")
+        assert session.verify is True
+
+
+def test_session_verifies_against_configured_internal_ca(app):
+    with app.app_context():
+        pem = "-----BEGIN CERTIFICATE-----\nMIIB...fake...\n-----END CERTIFICATE-----\n"
+        db.session.add(PlatformSetting(key="NETBOX_CA_CERT", value=pem, encrypted=False))
+        db.session.commit()
+        session = _netbox_session("https://netbox.example.com", "token")
+        assert session.verify != True  # noqa: E712 - must be a path, not the bool default
+        with open(session.verify) as handle:
+            assert handle.read() == pem.strip()
+        os.unlink(session.verify)

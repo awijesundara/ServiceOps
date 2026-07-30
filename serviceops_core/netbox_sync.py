@@ -12,6 +12,9 @@ business criticality, ...) are left untouched here; those are populated by
 serviceops_core/cmdb_import.py (CSV/spreadsheet import), which in turn never
 overwrites hardware fields on a netbox-sourced CI.
 """
+import os
+import tempfile
+
 import requests
 
 DEVICES_PATH = "/api/dcim/devices/"
@@ -40,13 +43,36 @@ class NetboxSyncError(RuntimeError):
 def _netbox_session(base_url, token):
     """Build a requests.Session for talking to NetBox. Isolated in its own
     function so tests can monkeypatch it with a fake, matching the
-    app.ldap_server_and_service_connection mocking convention."""
+    app.ldap_server_and_service_connection mocking convention.
+
+    Certificate verification is always on -- there is no "skip TLS
+    verification" escape hatch here, since that would defeat the point of
+    using https at all. An internal NetBox instance served from a corporate
+    CA that isn't in the public trust store (the common case for on-prem
+    tools) is handled by letting an admin paste that CA's certificate into
+    the NETBOX_CA_CERT setting; requests is pointed at it via `verify=`
+    instead of falling back to the default public CA bundle."""
+    import app as core_app
+
     session = requests.Session()
     session.headers.update({
         "Authorization": f"Token {token}",
         "Accept": "application/json",
     })
+    ca_cert = core_app.setting_value("NETBOX_CA_CERT", "").strip()
+    if ca_cert:
+        session.verify = _write_ca_bundle(ca_cert)
     return session
+
+
+def _write_ca_bundle(pem_text):
+    """Writes an admin-supplied CA certificate (PEM) to a private temp file
+    and returns its path, for use as requests' `verify=`. The caller
+    (sync_from_netbox) removes this file once the sync finishes."""
+    fd, path = tempfile.mkstemp(prefix="netbox-ca-", suffix=".pem")
+    with os.fdopen(fd, "w") as handle:
+        handle.write(pem_text)
+    return path
 
 
 def _get(session, base_url, path, params=None):
@@ -221,6 +247,12 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
         summary["errors"].append(f"NetBox request failed: {type(error).__name__}: {error}")
     finally:
         session.close()
+        ca_bundle_path = getattr(session, "verify", None)
+        if isinstance(ca_bundle_path, str) and ca_bundle_path.startswith(tempfile.gettempdir()):
+            try:
+                os.unlink(ca_bundle_path)
+            except OSError:
+                pass
 
     if dry_run:
         db.session.rollback()
