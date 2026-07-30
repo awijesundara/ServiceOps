@@ -28,10 +28,13 @@ SAMPLE_CSV = (
 )
 
 
-def test_parse_ci_rows_maps_known_headers_and_ignores_unknown():
+def test_parse_ci_rows_maps_known_headers_and_keeps_unknown_as_attributes():
     csv_text = "Host,Some Unrecognized Column,System Owner\nsrv-01,junk,Core apps\n"
     rows = parse_ci_rows(csv_text)
-    assert rows == [{"name": "srv-01", "owning_team_name": "Core apps"}]
+    assert rows == [{
+        "name": "srv-01", "owning_team_name": "Core apps",
+        "extra_attributes": {"Some Unrecognized Column": "junk"},
+    }]
 
 
 def test_parse_ci_rows_raises_on_empty_input():
@@ -157,6 +160,19 @@ def test_decommissioned_state_updates_existing_ci_on_resync(app):
         ci = ConfigurationItem.query.filter_by(name="srv-01.example.com").one()
         assert ci.operational_status == "Retired"
         assert ci.lifecycle_state == "Retired"
+
+
+def test_unrecognized_columns_are_kept_as_attributes(app):
+    with app.app_context():
+        rows = parse_ci_rows(
+            "Host,System Owner,Builder,CPUs,RAM (GB)\n"
+            "srv-01.example.com,Core apps,William Yao,16,128\n"
+        )
+        result = import_ci_rows(rows, 1)
+        assert result["cis_created"] == 1
+        ci = ConfigurationItem.query.filter_by(name="srv-01.example.com").one()
+        assert ci.vendor is None
+        assert ci.attributes == {"Builder": "William Yao", "CPUs": "16", "RAM (GB)": "128"}
 
 
 def test_dry_run_does_not_commit(app):
