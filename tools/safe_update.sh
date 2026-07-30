@@ -12,6 +12,31 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
 [[ -f "$ENV_FILE" ]] || { echo "ServiceOps is not installed. Missing .env." >&2; exit 2; }
 
+# .env is `source`d directly as bash below, not parsed as plain key=value
+# pairs. A value containing shell-special characters (&, #, (, ), {, },
+# spaces, ...) left unquoted breaks that `source` with a cryptic "syntax
+# error near unexpected token" pointing at a line number with no
+# explanation. Catch it here with an actionable message instead.
+validate_env_file() {
+  local file="$1" line_num=0 key value bad=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line_num=$((line_num + 1))
+    [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]] && continue
+    [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    [[ -z "$value" ]] && continue
+    [[ "$value" == \"*\" || "$value" == \'*\' ]] && continue
+    if [[ "$value" =~ [\&\#\(\)\;\|\<\>\$\'\`[:space:]] ]]; then
+      echo "✗ $file line $line_num: ${key}'s value contains a shell-special character (this file is sourced by bash) and must be double-quoted." >&2
+      echo "  Change it to: ${key}=\"${value}\"" >&2
+      bad=1
+    fi
+  done <"$file"
+  [[ "$bad" -eq 0 ]] || { echo "Fix the line(s) above, then retry." >&2; exit 2; }
+}
+validate_env_file "$ENV_FILE"
+
 set -a
 source "$ENV_FILE"
 set +a
