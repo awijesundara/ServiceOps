@@ -21,5 +21,8 @@
 {% if ci and (ci.ci_class|lower) in personal_asset_classes %}<label class="wide">Owner<select name="owner_id"><option value="">Unassigned</option>{% for user in owners %}<option value="{{ user.id }}" {% if ci.owner_id==user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>{% endfor %}</select></label>
 {% elif ci and ci.owner_id %}<label class="wide">Owner<select name="owner_id"><option value="">Unassigned</option>{% for user in owners %}<option value="{{ user.id }}" {% if ci.owner_id==user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>{% endfor %}</select></label><p class="muted wide">Owner is only meaningful for personally-assigned assets (laptops, phones). For servers, switches, and applications the owning support group above is what matters.</p>
 {% endif %}
-{% if ci and ci.attributes %}<div class="wide"><strong>Additional imported fields</strong><table><tbody>{% for key, value in ci.attributes.items() %}<tr><td>{{ key }}</td><td>{{ value }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+<div class="wide"><strong>Additional imported fields</strong><p class="muted">Free-form fields captured from spreadsheet imports (CPUs, RAM, Builder, iDRAC, DNS, …). Edit or remove them, or add your own.</p>
+  <div class="ci-attr-rows">{% for key, value in (ci.attributes if ci else {}).items() %}<div class="ci-attr-row"><input name="attr_key" value="{{ key }}" placeholder="Field name"><input name="attr_value" value="{{ value }}" placeholder="Value"><button type="button" class="link-button ci-attr-remove" aria-label="Remove field">✕</button></div>{% endfor %}</div>
+  <button type="button" class="button" id="ci-attr-add">+ Add field</button>
+</div>
 <div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">Cancel</a><button class="primary">{{ 'Save changes' if ci else 'Create CI' }}</button></div></form>{% endblock %}

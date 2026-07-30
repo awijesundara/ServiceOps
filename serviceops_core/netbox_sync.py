@@ -45,13 +45,13 @@ def _netbox_session(base_url, token):
     function so tests can monkeypatch it with a fake, matching the
     app.ldap_server_and_service_connection mocking convention.
 
-    Certificate verification is always on -- there is no "skip TLS
-    verification" escape hatch here, since that would defeat the point of
-    using https at all. An internal NetBox instance served from a corporate
-    CA that isn't in the public trust store (the common case for on-prem
-    tools) is handled by letting an admin paste that CA's certificate into
-    the NETBOX_CA_CERT setting; requests is pointed at it via `verify=`
-    instead of falling back to the default public CA bundle."""
+    Certificate verification is on by default. An internal NetBox instance
+    served from a corporate CA that isn't in the public trust store (the
+    common case for on-prem tools) should be handled by pasting that CA's
+    certificate into the NETBOX_CA_CERT setting -- that's the secure fix and
+    takes priority here. NETBOX_TLS_INSECURE is a separate, explicit
+    admin-opt-in escape hatch for when the CA can't be obtained; it disables
+    verification entirely and is deliberately not the default."""
     import app as core_app
 
     session = requests.Session()
@@ -62,6 +62,10 @@ def _netbox_session(base_url, token):
     ca_cert = core_app.setting_value("NETBOX_CA_CERT", "").strip()
     if ca_cert:
         session.verify = _write_ca_bundle(ca_cert)
+    elif core_app.setting_bool("NETBOX_TLS_INSECURE"):
+        session.verify = False
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     return session
 
 
