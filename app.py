@@ -212,6 +212,17 @@ class PlatformSetting(db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
+class LdapSyncState(db.Model):
+    """Per-tenant scheduler bookkeeping for the LDAP directory sync
+    (serviceops_core.ldap_sync.sync_directory), so the background worker can
+    tell whether a tenant's sync is due without ever defaulting to a global
+    or tenant-1 last-run value. One row per tenant, created on first run."""
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), primary_key=True)
+    last_run_at = db.Column(db.DateTime(timezone=True))
+    last_status = db.Column(db.String(20))
+    last_error = db.Column(db.Text)
+
+
 class Ticket(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     number = db.Column(db.String(24), unique=True, index=True, nullable=False)
@@ -1626,6 +1637,8 @@ SETTING_DEFINITIONS = {
             }),
             "live": True,
         },
+        {"key": "LDAP_SYNC_ENABLED", "label": "Enable scheduled LDAP directory sync", "type": "bool", "default": "false", "live": True},
+        {"key": "LDAP_SYNC_INTERVAL_MINUTES", "label": "LDAP directory sync interval (minutes)", "type": "int", "default": "60", "min": 5, "max": 10080, "live": True},
         {"key": "KEYCLOAK_ENABLED", "label": "Enable Keycloak", "type": "bool", "default": "false", "live": False},
         {"key": "KEYCLOAK_DISCOVERY_URL", "label": "Keycloak discovery URL", "type": "url", "default": "", "live": False},
         {"key": "KEYCLOAK_CLIENT_ID", "label": "Keycloak client ID", "type": "text", "default": "", "live": False},
@@ -3167,6 +3180,62 @@ def process_workflow_schedules(limit=50):
         schedule.next_run_at = next_run
         processed += 1
     db.session.commit()
+    return processed
+
+
+def process_ldap_sync_schedule(limit=50):
+    """Run the LDAP directory sync (serviceops_core.ldap_sync.sync_directory)
+    for each active, LDAP-enabled tenant whose scheduled interval has
+    elapsed. Tenant iteration is explicit and tenant-scoped: there is no
+    global/default sync, matching the fail-closed tenant policy. One
+    tenant's failure is caught and logged (no secrets) and never blocks or
+    crashes the pass for other tenants."""
+    if not setting_bool("LDAP_ENABLED") or not setting_bool("LDAP_SYNC_ENABLED"):
+        return 0
+    interval = timedelta(minutes=max(setting_int("LDAP_SYNC_INTERVAL_MINUTES", 60), 1))
+    current = now()
+    processed = 0
+    tenants = Tenant.query.filter_by(active=True).order_by(Tenant.id).limit(limit).all()
+    for tenant in tenants:
+        try:
+            state = db.session.get(LdapSyncState, tenant.id)
+            if state and state.last_run_at:
+                last_run = state.last_run_at
+                comparison_now = current
+                if last_run.tzinfo is None:
+                    comparison_now = current.replace(tzinfo=None)
+                if comparison_now - last_run < interval:
+                    continue
+            if not state:
+                state = LdapSyncState(tenant_id=tenant.id)
+                db.session.add(state)
+            from serviceops_core.ldap_sync import sync_directory, DirectorySyncError
+            try:
+                summary = sync_directory(tenant.id, dry_run=False)
+                state.last_run_at = current
+                state.last_status = "ok" if not summary.get("errors") else "partial"
+                state.last_error = None
+            except DirectorySyncError as error:
+                state.last_run_at = current
+                state.last_status = "skipped"
+                state.last_error = str(error)
+            db.session.commit()
+            processed += 1
+        except Exception as error:  # noqa: BLE001 - one tenant's failure must never block others
+            db.session.rollback()
+            current_app.logger.error(
+                "LDAP scheduled sync failed for tenant %s: %s", tenant.id, type(error).__name__
+            )
+            try:
+                state = db.session.get(LdapSyncState, tenant.id) or LdapSyncState(tenant_id=tenant.id)
+                state.last_run_at = current
+                state.last_status = "error"
+                state.last_error = type(error).__name__
+                db.session.add(state)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+            processed += 1
     return processed
 
 

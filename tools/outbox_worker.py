@@ -3,8 +3,8 @@ import signal
 import time
 
 from app import (
-    create_app, process_outbox, process_sla_breaches, process_workflow_jobs,
-    process_workflow_schedules,
+    create_app, process_ldap_sync_schedule, process_outbox, process_sla_breaches,
+    process_workflow_jobs, process_workflow_schedules,
 )
 
 running = True
@@ -23,6 +23,7 @@ with app.app_context():
         processed = (
             process_sla_breaches() + process_workflow_schedules()
             + process_workflow_jobs() + process_outbox()
+            + process_ldap_sync_schedule()
         )
         if not processed:
             time.sleep(5)
