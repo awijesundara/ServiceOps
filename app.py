@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.13"
+APP_VERSION = "1.29.14"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -9016,6 +9016,7 @@ def create_app(test_config=None):
             "value": ci.id,
             "label": ci.name,
             "description": f"{ci.ci_class} · {ci.environment} · {ci.operational_status}",
+            "owning_team": ci.support_group.name if ci.support_group else None,
         } for ci in rows])
 
     @app.get("/internal/lookup/cis/browse")
@@ -9051,6 +9052,7 @@ def create_app(test_config=None):
                 "id": ci.id, "name": ci.name, "ci_class": ci.ci_class,
                 "environment": ci.environment, "ip_address": ci.ip_address or "—",
                 "status": ci.operational_status,
+                "owning_team": ci.support_group.name if ci.support_group else None,
             } for ci in rows],
             "classes": classes, "environments": environments,
         })

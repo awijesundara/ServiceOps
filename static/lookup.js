@@ -43,6 +43,24 @@ function initLookup(container) {
     browseButton.addEventListener("click", () => openCIBrowser(input, hidden));
     container.appendChild(browseButton);
   }
+  if (url.includes("/lookup/cis") && hidden) {
+    const owningTeamHint = document.createElement("p");
+    owningTeamHint.className = "lookup-owning-team muted";
+    owningTeamHint.hidden = true;
+    container.insertAdjacentElement("afterend", owningTeamHint);
+    hidden.addEventListener("lookup:change", (event) => {
+      const item = event.detail;
+      if (item && item.owning_team) {
+        owningTeamHint.textContent = `Owning team: ${item.owning_team}`;
+        owningTeamHint.hidden = false;
+      } else if (item && item.value) {
+        owningTeamHint.textContent = "Owning team: Unassigned";
+        owningTeamHint.hidden = false;
+      } else {
+        owningTeamHint.hidden = true;
+      }
+    });
+  }
   let items = [];
   let activeIndex = -1;
   let debounceTimer = null;
@@ -87,6 +105,7 @@ function initLookup(container) {
     if (hidden) {
       input.value = item.label;
       hidden.value = item.value;
+      hidden.dispatchEvent(new CustomEvent("lookup:change", {bubbles: true, detail: item}));
     } else {
       input.value = item.value;
     }
@@ -98,7 +117,10 @@ function initLookup(container) {
   }
 
   input.addEventListener("input", () => {
-    if (hidden) hidden.value = "";
+    if (hidden) {
+      hidden.value = "";
+      hidden.dispatchEvent(new CustomEvent("lookup:change", {bubbles: true, detail: null}));
+    }
     const q = input.value.trim();
     clearTimeout(debounceTimer);
     if (q.length < 2) {
@@ -201,7 +223,13 @@ function renderCIBrowserResults(payload) {
     row.addEventListener("click", () => {
       if (ciBrowserTarget) {
         ciBrowserTarget.input.value = ci.name;
-        if (ciBrowserTarget.hidden) ciBrowserTarget.hidden.value = ci.id;
+        if (ciBrowserTarget.hidden) {
+          ciBrowserTarget.hidden.value = ci.id;
+          ciBrowserTarget.hidden.dispatchEvent(new CustomEvent("lookup:change", {
+            bubbles: true,
+            detail: {value: ci.id, label: ci.name, owning_team: ci.owning_team},
+          }));
+        }
       }
       modal.close ? modal.close() : modal.removeAttribute("open");
     });
