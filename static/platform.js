@@ -200,6 +200,24 @@ document.addEventListener("DOMContentLoaded", () => {
     container.appendChild(row);
     keyInput.focus();
   });
+  const ccbCheckbox = document.getElementById("ci-require-ccb");
+  if (ccbCheckbox) {
+    const envSelect = document.querySelector('select[name="environment"]');
+    const classInput = document.querySelector('input[name="ci_class"]');
+    const criticalitySelect = document.querySelector('select[name="business_criticality"]');
+    const syncCcbCheckbox = () => {
+      const isProduction = envSelect && envSelect.value === "Production";
+      const isManagement = classInput && classInput.value.toLowerCase().includes("management");
+      const isCritical = criticalitySelect && criticalitySelect.value === "Critical";
+      const forced = Boolean(isProduction || isManagement || isCritical);
+      ccbCheckbox.disabled = forced;
+      if (forced) ccbCheckbox.checked = true;
+    };
+    envSelect?.addEventListener("change", syncCcbCheckbox);
+    classInput?.addEventListener("input", syncCcbCheckbox);
+    criticalitySelect?.addEventListener("change", syncCcbCheckbox);
+    syncCcbCheckbox();
+  }
   document.addEventListener("click", (event) => {
     const remove = event.target.closest(".ci-attr-remove");
     if (!remove) return;

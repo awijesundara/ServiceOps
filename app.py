@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.10"
+APP_VERSION = "1.29.11"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -2707,6 +2707,18 @@ def ticket_team_agents(ticket):
 def ccb_required_environments():
     raw = setting_value("CCB_REQUIRED_ENVIRONMENTS", "Production")
     return {value.strip() for value in raw.split(",") if value.strip()}
+
+
+def ci_always_requires_ccb(ci_class, environment, business_criticality):
+    """Whether a CI's characteristics alone mandate CCB approval on any
+    change against it, independent of the admin-configurable
+    CCB_REQUIRED_ENVIRONMENTS setting: Production environment, a
+    Management-class CI, or Critical business criticality."""
+    return (
+        (environment or "") == "Production"
+        or "management" in (ci_class or "").casefold()
+        or (business_criticality or "") == "Critical"
+    )
 
 
 def change_requires_ccb(governance):
@@ -7623,12 +7635,15 @@ def create_app(test_config=None):
             install_date = request.form.get("install_date") or None
             warranty_expiry_date = request.form.get("warranty_expiry_date") or None
             support_group_id = request.form.get("support_group_id") or None
+            ci_class = request.form["ci_class"].strip()
+            environment = request.form["environment"]
+            business_criticality = request.form.get("business_criticality", "Medium")
             ci = ConfigurationItem(
-                name=request.form["name"].strip(), ci_class=request.form["ci_class"].strip(),
+                name=request.form["name"].strip(), ci_class=ci_class,
                 description=request.form.get("description", "").strip() or None,
-                environment=request.form["environment"], operational_status=request.form["operational_status"],
+                environment=environment, operational_status=request.form["operational_status"],
                 lifecycle_state=request.form.get("lifecycle_state", "In Use"),
-                business_criticality=request.form.get("business_criticality", "Medium"),
+                business_criticality=business_criticality,
                 ip_address=request.form.get("ip_address", "").strip() or None,
                 serial_number=request.form.get("serial_number", "").strip() or None,
                 vendor=request.form.get("vendor", "").strip() or None,
@@ -7641,7 +7656,10 @@ def create_app(test_config=None):
                 support_group_id=int(support_group_id) if support_group_id else None,
                 owner_id=current_user.id,
                 attributes=_ci_attributes_from_form(),
-                require_ccb_approval=request.form.get("require_ccb_approval") == "on",
+                require_ccb_approval=(
+                    ci_always_requires_ccb(ci_class, environment, business_criticality)
+                    or request.form.get("require_ccb_approval") == "on"
+                ),
             )
             db.session.add(ci)
             audit("create", "CI", ci.name)
@@ -7693,7 +7711,10 @@ def create_app(test_config=None):
             owner_id = request.form.get("owner_id")
             ci.owner_id = int(owner_id) if owner_id else None
             ci.attributes = _ci_attributes_from_form()
-            ci.require_ccb_approval = request.form.get("require_ccb_approval") == "on"
+            ci.require_ccb_approval = (
+                ci_always_requires_ccb(ci.ci_class, ci.environment, ci.business_criticality)
+                or request.form.get("require_ccb_approval") == "on"
+            )
             after = {field: getattr(ci, field) or "" for field in tracked_fields}
             log_field_changes("ci", ci.id, before, after)
             audit("update", "CI", ci.name)

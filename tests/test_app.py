@@ -1256,6 +1256,51 @@ def test_ci_form_rejects_duplicate_hostname_and_serial(client, app):
         assert ConfigurationItem.query.count() == 1
 
 
+def test_production_management_and_critical_cis_always_require_ccb(client, app):
+    """CCB approval is auto-forced (and can't be unchecked) for Production,
+    Management-class, or Critical-criticality CIs -- the "always require
+    CCB" checkbox is only meaningful as an override for other CIs."""
+    login(client)
+    client.post("/cmdb/new", data={
+        "name": "prod-srv.example.com", "ci_class": "Server", "environment": "Production",
+        "operational_status": "Operational",
+    }, follow_redirects=True)
+    client.post("/cmdb/new", data={
+        "name": "mgmt-switch.example.com", "ci_class": "Management Switch", "environment": "Development",
+        "operational_status": "Operational",
+    }, follow_redirects=True)
+    client.post("/cmdb/new", data={
+        "name": "critical-app.example.com", "ci_class": "Business Application", "environment": "Staging",
+        "operational_status": "Operational", "business_criticality": "Critical",
+    }, follow_redirects=True)
+    client.post("/cmdb/new", data={
+        "name": "dev-box.example.com", "ci_class": "Server", "environment": "Development",
+        "operational_status": "Operational",
+    }, follow_redirects=True)
+    with app.app_context():
+        assert ConfigurationItem.query.filter_by(name="prod-srv.example.com").one().require_ccb_approval is True
+        assert ConfigurationItem.query.filter_by(name="mgmt-switch.example.com").one().require_ccb_approval is True
+        assert ConfigurationItem.query.filter_by(name="critical-app.example.com").one().require_ccb_approval is True
+        dev_ci = ConfigurationItem.query.filter_by(name="dev-box.example.com").one()
+        assert dev_ci.require_ccb_approval is False
+        dev_id = dev_ci.id
+    # Editing the Dev CI without ticking the override keeps it false...
+    client.post(f"/cmdb/{dev_id}/edit", data={
+        "name": "dev-box.example.com", "ci_class": "Server", "environment": "Development",
+        "operational_status": "Operational",
+    }, follow_redirects=True)
+    with app.app_context():
+        assert ConfigurationItem.query.get(dev_id).require_ccb_approval is False
+    # ...but switching its environment to Production forces it on, even
+    # without the checkbox being ticked.
+    client.post(f"/cmdb/{dev_id}/edit", data={
+        "name": "dev-box.example.com", "ci_class": "Server", "environment": "Production",
+        "operational_status": "Operational",
+    }, follow_redirects=True)
+    with app.app_context():
+        assert ConfigurationItem.query.get(dev_id).require_ccb_approval is True
+
+
 def test_catalog_approval_chain_creates_fulfillment_task(client, app):
     login(client)
     client.post("/catalog/1/order", data={"details": "Engineering laptop"}, follow_redirects=True)
