@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# Safe, verified update for a Docker Compose ServiceOps deployment (bundled or external database).
+#
+# Steps: resolve the candidate image -> verify its provenance -> rehearse the
+# migration against an isolated copy of the real data (bundled mode only) ->
+# take a real backup -> apply the update -> verify health and migration head
+# -> automatically roll back the image (and offer to restore the backup) if
+# any verification step fails.
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="$ROOT_DIR/.env"
+[[ -f "$ENV_FILE" ]] || { echo "ServiceOps is not installed. Missing .env." >&2; exit 2; }
+
+set -a
+source "$ENV_FILE"
+set +a
+MODE="${DEPLOYMENT_MODE:-bundled}"
+if [[ "$MODE" == "external" ]]; then
+  COMPOSE_FILE="$ROOT_DIR/compose.external-db.yaml"
+else
+  COMPOSE_FILE="$ROOT_DIR/compose.yaml"
+fi
+COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+
+CURRENT_IMAGE="${SERVICEOPS_IMAGE:?SERVICEOPS_IMAGE is required}"
+TARGET_IMAGE="${1:-$CURRENT_IMAGE}"
+
+echo "Current image: $CURRENT_IMAGE"
+echo "Target image:  $TARGET_IMAGE"
+
+echo "Pulling candidate image for inspection..."
+if ! docker pull "$TARGET_IMAGE"; then
+  docker image inspect "$TARGET_IMAGE" >/dev/null 2>&1 || {
+    echo "✗ $TARGET_IMAGE is not pullable and not present locally." >&2
+    exit 1
+  }
+  echo "Registry pull failed; using the locally-present image (build-from-source deployment)." >&2
+fi
+
+if [[ -n "${SERVICEOPS_GITHUB_ORGANIZATION:-}" ]] && command -v gh >/dev/null 2>&1; then
+  digest="$(docker inspect --format='{{index .RepoDigests 0}}' "$TARGET_IMAGE" 2>/dev/null | sed -E 's/^.*@//')"
+  if [[ -n "$digest" ]]; then
+    repo="${TARGET_IMAGE%%:*}"
+    repo="${repo%%@*}"
+    if gh attestation verify "oci://${repo}@${digest}" --repo "${SERVICEOPS_GITHUB_ORGANIZATION}/serviceops" >/dev/null; then
+      echo "✓ Candidate image provenance verified"
+    else
+      echo "✗ Candidate image failed GitHub provenance verification. Refusing to update." >&2
+      exit 1
+    fi
+  fi
+else
+  echo "Skipping provenance verification: set SERVICEOPS_GITHUB_ORGANIZATION and install gh to enable it." >&2
+fi
+
+migration_head() {
+  "${COMPOSE[@]}" exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA \
+    -c "SELECT version_num FROM alembic_version" 2>/dev/null | tr -d '[:space:]'
+}
+
+current_head="$(migration_head)"
+echo "Current migration head: ${current_head:-unknown}"
+
+if [[ "$MODE" == "bundled" ]]; then
+  echo "Rehearsing the migration against an isolated copy of the production database..."
+  SERVICEOPS_IMAGE="$TARGET_IMAGE" "$ROOT_DIR/tools/rehearse-upgrade.sh"
+else
+  echo "External database mode: skipping isolated rehearsal. Verify migrations in a staging database first." >&2
+fi
+
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+echo "Taking a pre-update backup..."
+"$ROOT_DIR/serviceops" backup "pre-update-$stamp"
+rollback_dump="$ROOT_DIR/backups/serviceops-pre-update-$stamp.dump"
+
+tmp_env="$(mktemp "$ROOT_DIR/.env.update.XXXXXX")"
+awk -v img="$TARGET_IMAGE" '
+  /^SERVICEOPS_IMAGE=/ { print "SERVICEOPS_IMAGE=" img; next }
+  { print }
+' "$ENV_FILE" >"$tmp_env"
+chmod 600 "$tmp_env"
+cp "$ENV_FILE" "$ENV_FILE.pre-update-bak"
+
+# `docker compose up --wait` has been observed to return success while the
+# container is still in the "starting" health state rather than blocking
+# for the full healthcheck cycle, so container health is polled explicitly
+# below instead of trusting that exit code alone.
+wait_for_health() {
+  local service="$1" deadline=$((SECONDS + 150)) cid status
+  cid="$("${COMPOSE[@]}" ps -q "$service")"
+  [[ -n "$cid" ]] || return 1
+  while (( SECONDS < deadline )); do
+    status="$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$cid" 2>/dev/null)"
+    case "$status" in
+      healthy|no-healthcheck) return 0 ;;
+      unhealthy) return 1 ;;
+    esac
+    sleep 5
+  done
+  return 1
+}
+
+rolled_back=false
+roll_back() {
+  echo "Update failed verification. Rolling back image to $CURRENT_IMAGE..." >&2
+  mv "$ENV_FILE.pre-update-bak" "$ENV_FILE"
+  "${COMPOSE[@]}" up -d --force-recreate app worker || true
+  if wait_for_health app; then
+    echo "Rollback image is healthy." >&2
+  else
+    echo "✗ Rollback image did NOT become healthy. Manual intervention required immediately." >&2
+  fi
+  echo "Restore the pre-update database backup if the failure could have touched data:" >&2
+  echo "  ./serviceops restore $rollback_dump" >&2
+  rolled_back=true
+}
+
+mv "$tmp_env" "$ENV_FILE"
+# `set -a; source .env` above exported SERVICEOPS_IMAGE with the OLD value
+# into this shell's environment. Docker Compose prefers a real environment
+# variable over the same key in --env-file, so every compose call below
+# would otherwise keep silently using the old image even though .env now
+# points at the target -- unset it so compose re-reads the updated file.
+unset SERVICEOPS_IMAGE
+
+echo "Pulling and applying the update..."
+"${COMPOSE[@]}" pull app worker || docker image inspect "$TARGET_IMAGE" >/dev/null 2>&1
+# --force-recreate is required: when `pull` above fails to reach the
+# registry (offline/build-from-source), plain `up -d` silently leaves the
+# OLD container running instead of swapping to the locally-tagged target
+# image, and still exits 0 -- a false-positive "update applied" with nothing
+# actually changed. The `|| true` keeps a failed/unhealthy recreation (e.g.
+# a dependent service refusing to start because app is unhealthy) from
+# aborting the script via `set -e` before wait_for_health/roll_back below
+# get a chance to run.
+"${COMPOSE[@]}" up -d --force-recreate app worker || true
+
+echo "Verifying application health..."
+if ! wait_for_health app || ! "$ROOT_DIR/serviceops" health >/dev/null 2>&1; then
+  roll_back
+  exit 1
+fi
+
+new_head="$(migration_head)"
+echo "New migration head: ${new_head:-unknown}"
+if [[ -z "$new_head" ]]; then
+  roll_back
+  exit 1
+fi
+
+rm -f "$ENV_FILE.pre-update-bak"
+echo "Update to $TARGET_IMAGE completed and verified."
+echo "Pre-update backup retained at: $rollback_dump"
