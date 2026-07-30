@@ -6,7 +6,7 @@
 {% if netbox_enabled %}
 <section class="panel" id="netbox-sync">
   <h2>Sync from NetBox</h2>
-  <p class="muted">NetBox is treated as the source of truth for hardware fields (name, serial number, vendor, model, IP address, location) — these are always overwritten on matched CIs.</p>
+  <p class="muted">NetBox is treated as the source of truth for hardware fields (name, serial number, vendor, model, IP address, location) — these are always overwritten on matched CIs. If NetBox's certificate is issued by an internal/corporate CA rather than a public one, paste that CA's certificate into the "NetBox CA certificate" setting under <a href="{{ url_for('system_settings') }}#settings-cmdb_import">Admin → Settings → CMDB import</a> — TLS verification stays on either way, it just needs to trust your CA.</p>
   {% if netbox_sync_result %}
   <div class="callout"><strong>{{ 'Preview' if netbox_sync_result.dry_run else 'Applied' }}:</strong>
     {{ netbox_sync_result.devices_seen }} devices seen ·
