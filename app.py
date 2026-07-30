@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.11"
+APP_VERSION = "1.29.12"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -2704,9 +2704,38 @@ def ticket_team_agents(ticket):
     ).order_by(User.name).all()
 
 
+# Canonical environment labels, plus the nicknames staff actually type/paste
+# (spreadsheet imports, the public API) that must resolve to the same
+# environment rather than being tracked as distinct values -- "Prod" and
+# "Production" are the same environment, not two different ones.
+CANONICAL_ENVIRONMENTS = ("Production", "Staging", "Development", "Test")
+ENVIRONMENT_ALIASES = {
+    "prod": "Production", "production": "Production", "prd": "Production",
+    "dev": "Development", "development": "Development",
+    "uat": "Staging", "staging": "Staging", "stage": "Staging",
+    "test": "Test", "qa": "Test",
+}
+
+
+def normalize_environment(value):
+    """Maps a free-text environment value (e.g. "Prod", "UAT") to its
+    canonical label ("Production", "Staging"). Unrecognized values are
+    returned trimmed but otherwise unchanged, rather than discarded --
+    normalization only collapses *known* synonyms, it never invents data."""
+    if not value:
+        return value
+    stripped = value.strip()
+    return ENVIRONMENT_ALIASES.get(stripped.casefold(), stripped)
+
+
+def ci_class_is_management(ci_class):
+    text = (ci_class or "").casefold()
+    return "management" in text or "mgmt" in text
+
+
 def ccb_required_environments():
     raw = setting_value("CCB_REQUIRED_ENVIRONMENTS", "Production")
-    return {value.strip() for value in raw.split(",") if value.strip()}
+    return {normalize_environment(value) for value in raw.split(",") if value.strip()}
 
 
 def ci_always_requires_ccb(ci_class, environment, business_criticality):
@@ -2715,8 +2744,8 @@ def ci_always_requires_ccb(ci_class, environment, business_criticality):
     CCB_REQUIRED_ENVIRONMENTS setting: Production environment, a
     Management-class CI, or Critical business criticality."""
     return (
-        (environment or "") == "Production"
-        or "management" in (ci_class or "").casefold()
+        normalize_environment(environment) == "Production"
+        or ci_class_is_management(ci_class)
         or (business_criticality or "") == "Critical"
     )
 
@@ -2729,7 +2758,7 @@ def change_requires_ccb(governance):
         return True
     if ci.require_ccb_approval:
         return True
-    return ci.environment in ccb_required_environments()
+    return normalize_environment(ci.environment) in ccb_required_environments()
 
 
 def change_approval_stages(ticket):
@@ -3668,6 +3697,59 @@ def resolve_support_group_by_name(name, tenant_id):
         func.lower(SupportGroupAlias.alias) == name.casefold(),
     ).first()
     return alias.group if alias else None
+
+
+# Every model that references a SupportGroup by foreign key. Consulted by
+# merge_support_group_into so merging a duplicate team (e.g. a leftover
+# "DBA" group that predates the "DBA" -> "Database" alias) reassigns every
+# record that pointed at it, instead of leaving orphaned references behind.
+SUPPORT_GROUP_FK_MODELS = (
+    (MonitoringSource, "assignment_group_id"),
+    (CatalogItemRouting, "support_group_id"),
+    (ConfigurationItem, "support_group_id"),
+    (DirectoryGroupMapping, "support_group_id"),
+    (DirectoryManagedMembership, "group_id"),
+    (ServiceOffering, "support_group_id"),
+    (CatalogTask, "assignment_group_id"),
+    (ChangeOwnership, "group_id"),
+    (TicketAssignmentGroup, "group_id"),
+    (OperationalTask, "assignment_group_id"),
+)
+
+
+def merge_support_group_into(source, target):
+    """Reassigns every reference to `source` support group over to `target`
+    (CIs, change/ticket ownership, catalog routing, AD mappings, monitoring
+    sources, ...), merges membership without duplicating rows, and deletes
+    `source`. Used to fix a team that got duplicated under two names (e.g.
+    a "DBA" group created before "DBA" was registered as an alias of
+    "Database") -- adding the alias alone doesn't move records that already
+    point at the duplicate. Caller commits."""
+    if source.id == target.id:
+        return 0
+    moved = 0
+    for model, field in SUPPORT_GROUP_FK_MODELS:
+        column = getattr(model, field)
+        moved += model.query.filter(column == source.id).update(
+            {field: target.id}, synchronize_session=False
+        )
+    for membership in GroupMember.query.filter_by(group_id=source.id).all():
+        exists = GroupMember.query.filter_by(
+            group_id=target.id, user_id=membership.user_id, role=membership.role
+        ).first()
+        if exists:
+            db.session.delete(membership)
+        else:
+            membership.group_id = target.id
+            moved += 1
+    SupportGroupAlias.query.filter_by(group_id=source.id).update(
+        {"group_id": target.id}, synchronize_session=False
+    )
+    if not target.manager_id and source.manager_id:
+        target.manager_id = source.manager_id
+    db.session.flush()
+    db.session.delete(source)
+    return moved
 
 
 def seed_itil(admin):
@@ -4729,8 +4811,8 @@ def create_app(test_config=None):
         name = str(body.get("name", "")).strip()[:160]
         if not name:
             abort(400, description="name is required.")
-        environment = str(body.get("environment", "Production"))
-        if environment not in ("Production", "Staging", "Development", "Test"):
+        environment = normalize_environment(str(body.get("environment", "Production")))
+        if environment not in CANONICAL_ENVIRONMENTS:
             abort(400, description="environment must be Production, Staging, Development or Test.")
         operational_status = str(body.get("operational_status", "Operational"))
         if operational_status not in ("Operational", "Degraded", "Down", "Maintenance", "Retired"):
@@ -7636,7 +7718,7 @@ def create_app(test_config=None):
             warranty_expiry_date = request.form.get("warranty_expiry_date") or None
             support_group_id = request.form.get("support_group_id") or None
             ci_class = request.form["ci_class"].strip()
-            environment = request.form["environment"]
+            environment = normalize_environment(request.form["environment"])
             business_criticality = request.form.get("business_criticality", "Medium")
             ci = ConfigurationItem(
                 name=request.form["name"].strip(), ci_class=ci_class,
@@ -7693,7 +7775,7 @@ def create_app(test_config=None):
             ci.name = request.form["name"].strip()
             ci.ci_class = request.form["ci_class"].strip()
             ci.description = request.form.get("description", "").strip() or None
-            ci.environment = request.form["environment"]
+            ci.environment = normalize_environment(request.form["environment"])
             ci.operational_status = request.form["operational_status"]
             ci.lifecycle_state = request.form.get("lifecycle_state", "In Use")
             ci.business_criticality = request.form.get("business_criticality", "Medium")
@@ -8303,7 +8385,28 @@ def create_app(test_config=None):
                 else:
                     db.session.add(SupportGroupAlias(alias=alias, group_id=group.id))
                 audit("configure", "Team name alias", f"{alias} -> {group.name}")
-                flash(f'"{alias}" now resolves to {group.name}.', "success")
+                # If a real SupportGroup with this exact name already exists
+                # (e.g. it was created by an import before this alias was
+                # registered), it's a duplicate of the target team -- merge
+                # it in now so existing CIs/tickets/etc. that point at the
+                # duplicate resolve correctly instead of erroring with
+                # "team requires an active manager" or splitting approvals.
+                duplicate_group = SupportGroup.query.filter(
+                    SupportGroup.tenant_id == current_user.tenant_id,
+                    SupportGroup.id != group.id,
+                    func.lower(SupportGroup.name) == alias.casefold(),
+                ).first()
+                if duplicate_group:
+                    moved = merge_support_group_into(duplicate_group, group)
+                    audit("merge", "Support group",
+                          f"{duplicate_group.name} -> {group.name} ({moved} records)")
+                    flash(
+                        f'"{alias}" now resolves to {group.name}. It also found an existing '
+                        f'"{duplicate_group.name}" team and merged it into {group.name} '
+                        f"({moved} records reassigned).", "success",
+                    )
+                else:
+                    flash(f'"{alias}" now resolves to {group.name}.', "success")
             elif action == "delete_support_group_alias":
                 group_alias = tenant_record_or_404(SupportGroupAlias, int(request.form["alias_id"]))
                 audit("delete", "Team name alias", group_alias.alias)
