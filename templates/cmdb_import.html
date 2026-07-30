@@ -46,7 +46,7 @@
     {{ preview.cis_updated }} would be updated ·
     {{ preview.fields_skipped_netbox_owned }} NetBox-owned fields would be preserved ·
     {{ preview.errors|length }} errors
-    {% if preview.unmatched_owners %}<p>Owners not found in ServiceOps: {{ preview.unmatched_owners|join(', ') }}</p>{% endif %}
+    {% if preview.teams_created %}<p>New owning teams created: {{ preview.teams_created|join(', ') }}</p>{% endif %}
     {% if preview.errors %}<ul>{% for error in preview.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
   </div>
   <form method="post" class="actions">
