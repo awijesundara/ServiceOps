@@ -6,9 +6,8 @@ import os
 import tempfile
 
 import pytest
-from werkzeug.security import generate_password_hash
 
-from app import ConfigurationItem, User, create_app, db
+from app import ConfigurationItem, SupportGroup, create_app, db
 from serviceops_core.cmdb_import import CmdbImportError, import_ci_rows, parse_ci_rows
 
 
@@ -24,15 +23,15 @@ def app():
 
 
 SAMPLE_CSV = (
-    "Host,Owner,Desc of application,Serial Number,Vendor,Model,Location\n"
-    "srv-01.example.com,Jane Doe,Core app server,ABC123,Dell,R640,CC1 / 9D-Row\n"
+    "Host,System Owner,Desc of application,Serial Number,Vendor,Model,Location\n"
+    "srv-01.example.com,Core apps,Core app server,ABC123,Dell,R640,CC1 / 9D-Row\n"
 )
 
 
 def test_parse_ci_rows_maps_known_headers_and_ignores_unknown():
-    csv_text = "Host,Some Unrecognized Column,Owner\nsrv-01,junk,Jane Doe\n"
+    csv_text = "Host,Some Unrecognized Column,System Owner\nsrv-01,junk,Core apps\n"
     rows = parse_ci_rows(csv_text)
-    assert rows == [{"name": "srv-01", "owner_name": "Jane Doe"}]
+    assert rows == [{"name": "srv-01", "owning_team_name": "Core apps"}]
 
 
 def test_parse_ci_rows_raises_on_empty_input():
@@ -61,8 +60,8 @@ def test_netbox_owned_ci_only_gets_non_hardware_fields_updated(app):
         ))
         db.session.commit()
         rows = parse_ci_rows(
-            "Host,Owner,Desc of application,Serial Number,Vendor,Model,Location\n"
-            "srv-01.example.com,Jane Doe,Core app server,ZZZ999,HP,DL380,Somewhere Else\n"
+            "Host,System Owner,Desc of application,Serial Number,Vendor,Model,Location\n"
+            "srv-01.example.com,Core apps,Core app server,ZZZ999,HP,DL380,Somewhere Else\n"
         )
         result = import_ci_rows(rows, 1)
         assert result["cis_updated"] == 1
@@ -82,8 +81,8 @@ def test_csv_sourced_ci_gets_all_fields_updated_on_resync(app):
         rows = parse_ci_rows(SAMPLE_CSV)
         import_ci_rows(rows, 1)
         updated_rows = parse_ci_rows(
-            "Host,Owner,Desc of application,Serial Number,Vendor,Model,Location\n"
-            "srv-01.example.com,Jane Doe,Updated app description,DEF456,HP,DL380,New Location\n"
+            "Host,System Owner,Desc of application,Serial Number,Vendor,Model,Location\n"
+            "srv-01.example.com,Core apps,Updated app description,DEF456,HP,DL380,New Location\n"
         )
         result = import_ci_rows(updated_rows, 1)
         assert result["cis_updated"] == 1
@@ -94,36 +93,70 @@ def test_csv_sourced_ci_gets_all_fields_updated_on_resync(app):
         assert ci.description == "Updated app description"
 
 
-def test_owner_resolved_by_name(app):
+def test_owning_team_auto_created_from_name(app):
     with app.app_context():
-        db.session.add(User(
-            username="jane", name="Jane Doe", email="jane@test.invalid",
-            password_hash=generate_password_hash("Password123!"), role="agent", tenant_id=1,
-        ))
+        rows = parse_ci_rows(SAMPLE_CSV)
+        result = import_ci_rows(rows, 1)
+        assert result["teams_created"] == ["Core apps"]
+        ci = ConfigurationItem.query.filter_by(name="srv-01.example.com").one()
+        assert ci.support_group is not None
+        assert ci.support_group.name == "Core apps"
+
+
+def test_owning_team_reused_across_rows(app):
+    with app.app_context():
+        db.session.add(SupportGroup(name="Core apps", tenant_id=1))
         db.session.commit()
         rows = parse_ci_rows(SAMPLE_CSV)
         result = import_ci_rows(rows, 1)
-        assert result["unmatched_owners"] == []
-        ci = ConfigurationItem.query.filter_by(name="srv-01.example.com").one()
-        assert ci.owner is not None
-        assert ci.owner.name == "Jane Doe"
-
-
-def test_unmatched_owner_is_reported_not_errored(app):
-    with app.app_context():
-        rows = parse_ci_rows(SAMPLE_CSV)
-        result = import_ci_rows(rows, 1)
-        assert result["unmatched_owners"] == ["Jane Doe"]
-        assert result["errors"] == []
-        assert result["cis_created"] == 1
+        assert result["teams_created"] == []
+        assert SupportGroup.query.filter_by(name="Core apps").count() == 1
 
 
 def test_blank_hostname_row_is_skipped_and_reported(app):
     with app.app_context():
-        rows = parse_ci_rows("Host,Owner\n,Jane Doe\n")
+        rows = parse_ci_rows("Host,System Owner\n,Core apps\n")
         result = import_ci_rows(rows, 1)
         assert result["cis_created"] == 0
         assert len(result["errors"]) == 1
+
+
+def test_decommissioned_state_sets_retired_regardless_of_source_tab(app):
+    with app.app_context():
+        rows = parse_ci_rows(
+            "Host,State,System Owner\n"
+            "srv-old.example.com,Decomm'd,Core apps\n"
+        )
+        result = import_ci_rows(rows, 1)
+        assert result["cis_created"] == 1
+        ci = ConfigurationItem.query.filter_by(name="srv-old.example.com").one()
+        assert ci.operational_status == "Retired"
+        assert ci.lifecycle_state == "Retired"
+
+
+def test_live_state_does_not_override_status(app):
+    with app.app_context():
+        rows = parse_ci_rows("Host,State\nsrv-live.example.com,Live\n")
+        result = import_ci_rows(rows, 1)
+        assert result["cis_created"] == 1
+        ci = ConfigurationItem.query.filter_by(name="srv-live.example.com").one()
+        assert ci.operational_status == "Operational"
+        assert ci.lifecycle_state == "In Use"
+
+
+def test_decommissioned_state_updates_existing_ci_on_resync(app):
+    with app.app_context():
+        db.session.add(ConfigurationItem(
+            name="srv-01.example.com", ci_class="Server",
+            external_source="csv", tenant_id=1,
+        ))
+        db.session.commit()
+        rows = parse_ci_rows("Host,State\nsrv-01.example.com,Decommissioned\n")
+        result = import_ci_rows(rows, 1)
+        assert result["cis_updated"] == 1
+        ci = ConfigurationItem.query.filter_by(name="srv-01.example.com").one()
+        assert ci.operational_status == "Retired"
+        assert ci.lifecycle_state == "Retired"
 
 
 def test_dry_run_does_not_commit(app):
