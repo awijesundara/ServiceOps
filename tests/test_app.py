@@ -18,13 +18,14 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
                  MonitoringEvent, MonitoringSource, Notification, OperationalTask,
                  OutboxEvent, ProblemProfile, RecordLink, ScheduleHoliday, SLADefinition,
-                 RequestedItem, PlatformSetting, ServiceOffering, SupportGroup,
+                 RequestedItem, PlatformSetting, ServiceOffering, SupportGroup, SupportGroupAlias,
                  TaskCI, TaskHistory, TaskNote, TaskSLA,
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference,
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
                  audit, change_approval_stages, create_api_token, create_app, create_notification, db,
-                 deploy_workflow_package, ldap_authenticate, process_workflow_jobs,
+                 deploy_workflow_package, ldap_authenticate, merge_support_group_into,
+                 normalize_environment, process_workflow_jobs,
                  process_workflow_schedules, queue_workflow_event,
                  scan_attachment, simulate_workflows,
                  integration_endpoint_valid, integration_endpoint_resolves_safely,
@@ -332,6 +333,76 @@ def test_governance_migrations_are_reversible():
         assert "tenant_id" in {c["name"] for c in upgraded.get_columns("approval_vote")}
         assert "tenant_id" in {c["name"] for c in upgraded.get_columns("change_governance")}
         assert "sha256" in {c["name"] for c in upgraded.get_columns("file_attachment")}
+        assert db.session.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one() == current_migration_head()
+    os.unlink(path)
+
+
+def test_alias_duplicate_merge_migration_fixes_preexisting_duplicate_team():
+    """Rehearses the exact production bug: a "DBA" SupportGroup and a CI
+    pointing at it exist from before the "DBA" -> "Database" alias/merge
+    migrations (20260731_0031-0033) were introduced. Re-running migrations
+    from that point to head must merge "DBA" into "Database" so the CI's
+    change approval no longer errors on a managerless team."""
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    migrated_app = create_app({
+        "TESTING": True,
+        "AUTO_MIGRATE_IN_TESTS": True,
+        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}",
+    })
+    migration_config = AlembicConfig(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "alembic.ini")
+    )
+    migration_config.set_main_option(
+        "script_location",
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "migrations"),
+    )
+    with migrated_app.app_context():
+        db.session.remove()
+        command.downgrade(migration_config, "20260730_0029")
+        database_group_id = db.session.execute(text(
+            "SELECT id FROM support_group WHERE name = 'Database'"
+        )).scalar_one()
+        db.session.execute(text(
+            "INSERT INTO support_group (name, group_type, active, tenant_id) "
+            "VALUES ('DBA', 'IT Fulfillment', 1, 1)"
+        ))
+        dba_group_id = db.session.execute(text(
+            "SELECT id FROM support_group WHERE name = 'DBA'"
+        )).scalar_one()
+        db.session.execute(text(
+            "INSERT INTO configuration_item "
+            "(name, ci_class, environment, operational_status, lifecycle_state, "
+            " business_criticality, discovery_source, attributes, support_group_id, "
+            " tenant_id, created_at, updated_at) "
+            "VALUES ('doj-pcd3pgs02.dc.japannext.co.jp', 'Server', 'Production', "
+            " 'Operational', 'In Use', 'Medium', 'Import', '{}', :group_id, 1, "
+            " CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        ), {"group_id": dba_group_id})
+        db.session.commit()
+        db.session.remove()
+        # The "DBA" -> "Database" alias itself is seeded by app startup code
+        # (seed_itil), not by a migration -- insert it directly once its
+        # table exists, mirroring what a real upgrade-then-restart does.
+        command.upgrade(migration_config, "20260731_0031")
+        db.session.execute(text(
+            "INSERT INTO support_group_alias (alias, group_id, tenant_id, created_at) "
+            "VALUES ('DBA', :group_id, 1, CURRENT_TIMESTAMP)"
+        ), {"group_id": database_group_id})
+        db.session.commit()
+        db.session.remove()
+        command.upgrade(migration_config, "head")
+        remaining_dba = db.session.execute(text(
+            "SELECT COUNT(*) FROM support_group WHERE name = 'DBA'"
+        )).scalar_one()
+        assert remaining_dba == 0
+        ci_group = db.session.execute(text(
+            "SELECT support_group_id FROM configuration_item "
+            "WHERE name = 'doj-pcd3pgs02.dc.japannext.co.jp'"
+        )).scalar_one()
+        assert ci_group == database_group_id
         assert db.session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one() == current_migration_head()
@@ -1299,6 +1370,68 @@ def test_production_management_and_critical_cis_always_require_ccb(client, app):
     }, follow_redirects=True)
     with app.app_context():
         assert ConfigurationItem.query.get(dev_id).require_ccb_approval is True
+
+
+def test_environment_synonyms_normalize_to_canonical_label(client, app):
+    with app.app_context():
+        assert normalize_environment("Prod") == "Production"
+        assert normalize_environment("prod") == "Production"
+        assert normalize_environment("UAT") == "Staging"
+        assert normalize_environment("Dev") == "Development"
+        assert normalize_environment("Production") == "Production"
+        assert normalize_environment("Some Custom Env") == "Some Custom Env"
+    login(client)
+    client.post("/cmdb/new", data={
+        "name": "prod-alias.example.com", "ci_class": "Server", "environment": "Production",
+        "operational_status": "Operational",
+    }, follow_redirects=True)
+    with app.app_context():
+        ci = ConfigurationItem.query.filter_by(name="prod-alias.example.com").one()
+        assert ci.environment == "Production"
+
+
+def test_management_class_synonym_mgmt_triggers_ccb(client, app):
+    login(client)
+    client.post("/cmdb/new", data={
+        "name": "mgmt-abbrev.example.com", "ci_class": "MGMT Console", "environment": "Development",
+        "operational_status": "Operational",
+    }, follow_redirects=True)
+    with app.app_context():
+        ci = ConfigurationItem.query.filter_by(name="mgmt-abbrev.example.com").one()
+        assert ci.require_ccb_approval is True
+
+
+def test_adding_alias_for_existing_duplicate_team_merges_it(client, app):
+    """This is the exact bug reported in production: a "DBA" SupportGroup
+    already existed (predating the alias feature) with a CI pointing at it
+    and no manager. Registering the "DBA" -> "Database" alias must not just
+    change future lookups -- it must merge the existing duplicate team so
+    the CI's change approval resolves to Database's manager instead of
+    erroring on "The DBA team requires an active manager."."""
+    with app.app_context():
+        database_manager_id = User.query.filter_by(username="database.manager").one().id
+        database_group = SupportGroup.query.filter_by(name="Database").one()
+        dba_group = SupportGroup(name="DBA", group_type="IT Fulfillment", tenant_id=1)
+        db.session.add(dba_group)
+        db.session.flush()
+        ci = ConfigurationItem(
+            name="doj-pcd3pgs02.dc.japannext.co.jp", ci_class="Server",
+            environment="Production", support_group_id=dba_group.id,
+        )
+        db.session.add(ci)
+        db.session.commit()
+        ci_id, dba_id, database_id = ci.id, dba_group.id, database_group.id
+
+    login(client)
+    client.post("/itil/administration", data={
+        "action": "add_support_group_alias", "alias": "DBA", "group_id": str(database_id),
+    }, follow_redirects=True)
+
+    with app.app_context():
+        ci = db.session.get(ConfigurationItem, ci_id)
+        assert ci.support_group_id == database_id
+        assert SupportGroup.query.get(dba_id) is None
+        assert SupportGroup.query.filter_by(name="Database").one().manager_id == database_manager_id
 
 
 def test_catalog_approval_chain_creates_fulfillment_task(client, app):

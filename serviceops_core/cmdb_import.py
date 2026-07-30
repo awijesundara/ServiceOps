@@ -154,6 +154,8 @@ def _apply_row(row, ci, is_netbox_owned):
     """Sets fields on `ci` from `row`, skipping NETBOX_OWNED_FIELDS when
     `is_netbox_owned` is True. Returns the count of fields that were skipped
     for that reason."""
+    import app as core_app
+
     skipped = 0
     for field, value in row.items():
         if field in ("owning_team_name", "state_raw", "extra_attributes"):
@@ -167,6 +169,8 @@ def _apply_row(row, ci, is_netbox_owned):
             except ValueError:
                 pass
             continue
+        if field == "environment":
+            value = core_app.normalize_environment(value)
         setattr(ci, field, value)
 
     state_raw = row.get("state_raw")
