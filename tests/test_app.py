@@ -622,6 +622,15 @@ def test_durable_smtp_signed_webhook_and_teams_delivery(monkeypatch, app):
     assert not integration_endpoint_valid("https://127.0.0.1/hook")
     assert not integration_endpoint_valid("https://169.254.169.254/latest/meta-data")
     assert integration_endpoint_valid("https://hooks.example.test/serviceops")
+    # Private-network addresses stay rejected by default (webhooks are
+    # arbitrary user-supplied targets) but are allowed opt-in for trusted,
+    # admin-configured integrations like NetBox that are normally
+    # self-hosted internally; loopback/link-local/metadata targets are
+    # still rejected either way.
+    assert not integration_endpoint_valid("https://10.0.0.5/api")
+    assert integration_endpoint_valid("https://10.0.0.5/api", allow_private_network=True)
+    assert not integration_endpoint_valid("https://127.0.0.1/hook", allow_private_network=True)
+    assert not integration_endpoint_valid("https://169.254.169.254/latest/meta-data", allow_private_network=True)
     smtp_messages = []
     webhook_calls = []
 

@@ -180,12 +180,17 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
     token = core_app.setting_value("NETBOX_API_TOKEN", "")
     if not base_url or not token:
         raise NetboxSyncError("NetBox base URL and API token must both be configured.")
-    if not core_app.integration_endpoint_valid(base_url):
-        raise NetboxSyncError("NetBox base URL failed safety validation (must be a public https host).")
+    # allow_private_network=True: NetBox is a trusted, admin-configured
+    # integration (unlike a per-automation-rule webhook URL) and is almost
+    # always self-hosted on the internal network, so unlike the general
+    # webhook/export SSRF guard this only blocks loopback/link-local/
+    # multicast/reserved targets, not ordinary RFC1918 addresses.
+    if not core_app.integration_endpoint_valid(base_url, allow_private_network=True):
+        raise NetboxSyncError("NetBox base URL failed safety validation (must be an https host).")
     # DNS-rebinding re-check (see app.integration_endpoint_resolves_safely) is done
     # once here, immediately before the sync's network calls begin, rather than on
     # every paginated request -- the target host doesn't change page-to-page.
-    if not core_app.integration_endpoint_resolves_safely(base_url):
+    if not core_app.integration_endpoint_resolves_safely(base_url, allow_private_network=True):
         raise NetboxSyncError("NetBox base URL failed DNS safety validation.")
 
     summary = {
