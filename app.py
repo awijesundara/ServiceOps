@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.8"
+APP_VERSION = "1.29.9"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -645,6 +645,10 @@ class ConfigurationItem(db.Model):
     # manually-created CIs.
     external_source = db.Column(db.String(20))
     external_id = db.Column(db.String(120))
+    # Forces CCB authorization on changes against this CI even when its
+    # environment isn't in CCB_REQUIRED_ENVIRONMENTS (e.g. a Dev box that's
+    # still business-critical enough to need board sign-off).
+    require_ccb_approval = db.Column(db.Boolean, nullable=False, default=False)
 
 
 class CIRelationship(db.Model):
@@ -1687,6 +1691,12 @@ SETTING_DEFINITIONS = {
         {"key": "SMTP_PASSWORD", "label": "SMTP password", "type": "secret", "default": "", "live": True},
         {"key": "SMTP_FROM", "label": "SMTP from address", "type": "email", "default": "", "live": True},
     ],
+    "change_governance": [
+        {
+            "key": "CCB_REQUIRED_ENVIRONMENTS", "type": "text", "default": "Production", "live": True,
+            "label": "Environments that require CCB approval (comma-separated, e.g. Production, Staging)",
+        },
+    ],
     "cmdb_import": [
         {"key": "NETBOX_ENABLED", "label": "Enable NetBox sync", "type": "bool", "default": "false", "live": True},
         {"key": "NETBOX_BASE_URL", "label": "NetBox base URL", "type": "url", "default": "", "live": True},
@@ -2677,6 +2687,22 @@ def ticket_team_agents(ticket):
     ).order_by(User.name).all()
 
 
+def ccb_required_environments():
+    raw = setting_value("CCB_REQUIRED_ENVIRONMENTS", "Production")
+    return {value.strip() for value in raw.split(",") if value.strip()}
+
+
+def change_requires_ccb(governance):
+    if not governance.ccb_required:
+        return False
+    ci = governance.ci
+    if ci is None:
+        return True
+    if ci.require_ccb_approval:
+        return True
+    return ci.environment in ccb_required_environments()
+
+
 def change_approval_stages(ticket):
     ownership = ticket.change_ownership
     governance = ticket.change_governance
@@ -2687,7 +2713,17 @@ def change_approval_stages(ticket):
         "mode": "all",
         "approver_ids": [ownership.group.manager_id],
     }]
-    if governance.change_type != "Standard" and governance.ccb_required:
+    ci = governance.ci
+    ci_group = ci.support_group if ci else None
+    if ci_group and ci_group.id != ownership.group_id:
+        if not ci_group.manager or not ci_group.manager.active:
+            abort(409, description=f"The {ci_group.name} team (owner of {ci.name}) requires an active manager.")
+        stages.append({
+            "name": f"{ci_group.name} manager assessment (CI owner)",
+            "mode": "all",
+            "approver_ids": [ci_group.manager_id],
+        })
+    if governance.change_type != "Standard" and change_requires_ccb(governance):
         ccb = SupportGroup.query.filter_by(name="Change Control Board").first()
         ccb_ids = [
             member.user_id for member in (ccb.members if ccb else [])
@@ -7561,6 +7597,7 @@ def create_app(test_config=None):
                 support_group_id=int(support_group_id) if support_group_id else None,
                 owner_id=current_user.id,
                 attributes=_ci_attributes_from_form(),
+                require_ccb_approval=request.form.get("require_ccb_approval") == "on",
             )
             db.session.add(ci)
             audit("create", "CI", ci.name)
@@ -7612,6 +7649,7 @@ def create_app(test_config=None):
             owner_id = request.form.get("owner_id")
             ci.owner_id = int(owner_id) if owner_id else None
             ci.attributes = _ci_attributes_from_form()
+            ci.require_ccb_approval = request.form.get("require_ccb_approval") == "on"
             after = {field: getattr(ci, field) or "" for field in tracked_fields}
             log_field_changes("ci", ci.id, before, after)
             audit("update", "CI", ci.name)
