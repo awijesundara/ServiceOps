@@ -117,6 +117,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           DIGEST: ${{ steps.image.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}@${DIGEST}"
           gh attestation verify "oci://${REGISTRY}/${IMAGE_NAME}@${DIGEST}" --repo "${GITHUB_REPOSITORY}"
