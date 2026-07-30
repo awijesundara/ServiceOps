@@ -635,6 +635,11 @@ class ConfigurationItem(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    # Populated by bulk import (serviceops_core/netbox_sync.py, cmdb_import.py) so a
+    # re-run matches existing rows instead of creating duplicates. Null for
+    # manually-created CIs.
+    external_source = db.Column(db.String(20))
+    external_id = db.Column(db.String(120))
 
 
 class CIRelationship(db.Model):
@@ -1676,6 +1681,11 @@ SETTING_DEFINITIONS = {
         {"key": "SMTP_USERNAME", "label": "SMTP username", "type": "text", "default": "", "live": True},
         {"key": "SMTP_PASSWORD", "label": "SMTP password", "type": "secret", "default": "", "live": True},
         {"key": "SMTP_FROM", "label": "SMTP from address", "type": "email", "default": "", "live": True},
+    ],
+    "cmdb_import": [
+        {"key": "NETBOX_ENABLED", "label": "Enable NetBox sync", "type": "bool", "default": "false", "live": True},
+        {"key": "NETBOX_BASE_URL", "label": "NetBox base URL", "type": "url", "default": "", "live": True},
+        {"key": "NETBOX_API_TOKEN", "label": "NetBox API token", "type": "secret", "default": "", "live": True},
     ],
 }
 
@@ -7481,6 +7491,110 @@ def create_app(test_config=None):
         owners = tenant_query(User).filter_by(active=True).order_by(User.name).all()
         support_groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
         return render_template("ci_form.html", ci=ci, owners=owners, support_groups=support_groups)
+
+    @app.route("/cmdb/import", methods=["GET", "POST"])
+    @roles("admin")
+    def cmdb_import():
+        from serviceops_core.cmdb_import import CmdbImportError, import_ci_rows, parse_ci_rows
+
+        preview = None
+        csv_text = ""
+        if request.method == "POST":
+            action = request.form.get("action", "preview")
+            if action == "preview":
+                upload = request.files.get("file")
+                sheet_url = request.form.get("sheet_url", "").strip()
+                pasted = request.form.get("csv_text", "")
+                if upload and upload.filename:
+                    csv_text = upload.read().decode("utf-8-sig", errors="replace")
+                elif sheet_url:
+                    if "docs.google.com/spreadsheets/d/" not in sheet_url:
+                        flash("Enter a valid Google Sheets URL.", "error")
+                        return render_template("cmdb_import.html", preview=None, csv_text="",
+                                                netbox_enabled=setting_bool("NETBOX_ENABLED"),
+                                                netbox_sync_result=session.pop("netbox_sync_result", None))
+                    sheet_id = sheet_url.split("/d/")[1].split("/")[0]
+                    gid = "0"
+                    if "gid=" in sheet_url:
+                        gid = sheet_url.split("gid=")[1].split("&")[0].split("#")[0] or "0"
+                    export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+                    if not integration_endpoint_valid(export_url) or not integration_endpoint_resolves_safely(export_url):
+                        flash("That sheet URL could not be reached safely.", "error")
+                        return render_template("cmdb_import.html", preview=None, csv_text="",
+                                                netbox_enabled=setting_bool("NETBOX_ENABLED"),
+                                                netbox_sync_result=session.pop("netbox_sync_result", None))
+                    try:
+                        response = requests.get(export_url, timeout=15, allow_redirects=False)
+                        response.raise_for_status()
+                        csv_text = response.text
+                    except requests.RequestException as error:
+                        flash(f"Could not fetch the sheet: {error}", "error")
+                        return render_template("cmdb_import.html", preview=None, csv_text="",
+                                                netbox_enabled=setting_bool("NETBOX_ENABLED"),
+                                                netbox_sync_result=session.pop("netbox_sync_result", None))
+                else:
+                    csv_text = pasted
+                try:
+                    rows = parse_ci_rows(csv_text)
+                    preview = import_ci_rows(rows, tenant_context_id(), dry_run=True)
+                except CmdbImportError as error:
+                    flash(str(error), "error")
+            elif action == "apply":
+                csv_text = request.form.get("csv_text", "")
+                try:
+                    rows = parse_ci_rows(csv_text)
+                    result = import_ci_rows(rows, tenant_context_id(), dry_run=False)
+                except CmdbImportError as error:
+                    flash(str(error), "error")
+                else:
+                    audit(
+                        "configure", "CMDB import",
+                        f"{result['cis_created']} created, {result['cis_updated']} updated, "
+                        f"{result['fields_skipped_netbox_owned']} NetBox-owned fields preserved, "
+                        f"{len(result['errors'])} errors",
+                    )
+                    flash(
+                        f"CMDB import applied: {result['cis_created']} created, "
+                        f"{result['cis_updated']} updated, {len(result['errors'])} errors.",
+                        "success" if not result["errors"] else "warning",
+                    )
+                    return redirect(url_for("cmdb"))
+            else:
+                abort(400)
+        return render_template(
+            "cmdb_import.html", preview=preview, csv_text=csv_text,
+            netbox_enabled=setting_bool("NETBOX_ENABLED"),
+            netbox_sync_result=session.pop("netbox_sync_result", None),
+        )
+
+    @app.post("/cmdb/import/netbox")
+    @roles("admin")
+    def cmdb_import_netbox():
+        from serviceops_core.netbox_sync import NetboxSyncError, sync_from_netbox
+
+        dry_run = bool(request.form.get("dry_run"))
+        try:
+            result = sync_from_netbox(tenant_context_id(), dry_run=dry_run)
+        except NetboxSyncError as error:
+            flash(f"NetBox sync could not run: {error}", "error")
+        else:
+            audit(
+                "configure", "NetBox CMDB sync",
+                f"{'Preview' if dry_run else 'Applied'}: "
+                f"{result['devices_seen']} devices seen, {result['cis_created']} created, "
+                f"{result['cis_updated']} updated, {len(result['errors'])} errors",
+            )
+            session["netbox_sync_result"] = result
+            flash(
+                (
+                    "NetBox sync preview: " if dry_run else "NetBox sync applied: "
+                ) + (
+                    f"{result['devices_seen']} devices seen, {result['cis_created']} created, "
+                    f"{result['cis_updated']} updated, {len(result['errors'])} errors."
+                ),
+                "success" if not result["errors"] else "warning",
+            )
+        return redirect(url_for("cmdb_import"))
 
     @app.post("/cmdb/relationships")
     @roles("admin")
