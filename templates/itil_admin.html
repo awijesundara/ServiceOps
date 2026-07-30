@@ -61,6 +61,15 @@
       {% endfor %}
     </tbody>
   </table>
+  <div class="panel-head" style="margin-top: 1.5rem;">
+    <div>
+      <p>Spelling/formatting variants of the same team (e.g. "CoreApps", "Core apps", "SSD Team") are detected and merged automatically on every CSV import. Use this to sweep for them on demand — a spreadsheet-imported "Core apps" and the existing "CoreApps" merge into one team; nothing is asked, since this only ever collapses format variants, never genuinely different names (that's what aliases above are for).</p>
+    </div>
+  </div>
+  <form method="post" class="actions">
+    <input type="hidden" name="action" value="merge_duplicate_teams">
+    <button class="primary">Clean up duplicate teams now</button>
+  </form>
 </section>
 
 <section class="panel admin-section">

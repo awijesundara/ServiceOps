@@ -98,22 +98,28 @@ def test_csv_sourced_ci_gets_all_fields_updated_on_resync(app):
 
 def test_owning_team_auto_created_from_name(app):
     with app.app_context():
-        rows = parse_ci_rows(SAMPLE_CSV)
+        rows = parse_ci_rows(
+            "Host,System Owner,Desc of application,Serial Number,Vendor,Model,Location\n"
+            "srv-01.example.com,Platform Enablement,Core app server,ABC123,Dell,R640,CC1 / 9D-Row\n"
+        )
         result = import_ci_rows(rows, 1)
-        assert result["teams_created"] == ["Core apps"]
+        assert result["teams_created"] == ["Platform Enablement"]
         ci = ConfigurationItem.query.filter_by(name="srv-01.example.com").one()
         assert ci.support_group is not None
-        assert ci.support_group.name == "Core apps"
+        assert ci.support_group.name == "Platform Enablement"
 
 
 def test_owning_team_reused_across_rows(app):
     with app.app_context():
-        db.session.add(SupportGroup(name="Core apps", tenant_id=1))
+        db.session.add(SupportGroup(name="Platform Enablement", tenant_id=1))
         db.session.commit()
-        rows = parse_ci_rows(SAMPLE_CSV)
+        rows = parse_ci_rows(
+            "Host,System Owner,Desc of application,Serial Number,Vendor,Model,Location\n"
+            "srv-01.example.com,Platform Enablement,Core app server,ABC123,Dell,R640,CC1 / 9D-Row\n"
+        )
         result = import_ci_rows(rows, 1)
         assert result["teams_created"] == []
-        assert SupportGroup.query.filter_by(name="Core apps").count() == 1
+        assert SupportGroup.query.filter_by(name="Platform Enablement").count() == 1
 
 
 def test_owning_team_alias_resolves_to_existing_group_instead_of_duplicating(app):
@@ -147,6 +153,39 @@ def test_owning_team_custom_alias_can_be_added_via_admin(app):
         assert result["teams_created"] == []
         ci = ConfigurationItem.query.filter_by(name="srv-sre-01.example.com").one()
         assert ci.support_group_id == team.id
+
+
+def test_owning_team_spelling_variant_reuses_existing_group(app):
+    """The CSV's Owner column says "Core apps" but the team already exists
+    as "CoreApps" (seeded by default) -- these are the same team spelled
+    differently and must not spawn a second group."""
+    with app.app_context():
+        assert SupportGroup.query.filter_by(name="CoreApps").count() == 1
+        rows = parse_ci_rows(SAMPLE_CSV)
+        result = import_ci_rows(rows, 1)
+        assert result["teams_created"] == []
+        assert SupportGroup.query.filter_by(name="CoreApps").count() == 1
+        assert SupportGroup.query.filter_by(name="Core apps").count() == 0
+        ci = ConfigurationItem.query.filter_by(name="srv-01.example.com").one()
+        assert ci.support_group.name == "CoreApps"
+
+
+def test_import_sweeps_up_preexisting_spelling_duplicate_teams(app):
+    """If two spelling-variant teams already exist (e.g. from earlier,
+    less careful imports), importing anything at all triggers the
+    duplicate-team cleanup sweep, collapsing them."""
+    with app.app_context():
+        # "CoreApps" is already seeded by default; add the spelling variant.
+        db.session.add(SupportGroup(name="Core apps", tenant_id=1))
+        db.session.commit()
+        rows = parse_ci_rows(
+            "Host,System Owner\nother-srv.example.com,CoreApps\n"
+        )
+        result = import_ci_rows(rows, 1)
+        assert result["teams_merged"] >= 1
+        assert SupportGroup.query.filter(
+            SupportGroup.name.in_(["CoreApps", "Core apps"])
+        ).count() == 1
 
 
 def test_blank_hostname_row_is_skipped_and_reported(app):
