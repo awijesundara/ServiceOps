@@ -48,6 +48,11 @@ from serviceops_core.workflow import (
 )
 from serviceops_core.projections import project_document, validate_projection_policy
 
+# Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
+# release; shown in the UI (sidebar, login page, /health) so operators can
+# confirm which build is actually running without SSHing into the host.
+APP_VERSION = "1.29.0"
+
 db = SQLAlchemy()
 login_manager = LoginManager()
 login_manager.login_view = "login"
@@ -4128,6 +4133,7 @@ def create_app(test_config=None):
             "support_email": setting_value("SUPPORT_EMAIL", ""),
             "has_company_logo": os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png")),
             "test_fixture_active": setting_bool("TEST_FIXTURE_ACTIVE"),
+            "app_version": APP_VERSION,
         }
         if not current_user.is_authenticated:
             return platform_context
@@ -4167,7 +4173,7 @@ def create_app(test_config=None):
     @app.get("/health")
     def health():
         db.session.execute(db.select(func.count(User.id))).scalar()
-        return jsonify(status="ok")
+        return jsonify(status="ok", version=APP_VERSION)
 
     @app.get("/live")
     def live():

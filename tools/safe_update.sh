@@ -29,6 +29,31 @@ TARGET_IMAGE="${1:-$CURRENT_IMAGE}"
 echo "Current image: $CURRENT_IMAGE"
 echo "Target image:  $TARGET_IMAGE"
 
+# `--force-recreate --remove-orphans` below only cleans up containers that
+# belong to THIS compose project. A container bound to the same host port
+# under a *different* COMPOSE_PROJECT_NAME (e.g. a stray `serviceops_fresh`
+# stack from manual experimentation) is invisible to that flag by design --
+# Compose deliberately never touches another project's containers. Without
+# this check, that scenario surfaces only as a generic "address already in
+# use" failure deep inside `up -d`, which the `|| true` below would then let
+# through silently, misleadingly failing the health check instead.
+check_port_conflict() {
+  local port="${APP_PORT:-8080}" bind="${BIND_ADDRESS:-127.0.0.1}"
+  local project="${COMPOSE_PROJECT_NAME:-serviceops}"
+  local conflict
+  conflict="$(docker ps --format '{{.ID}}\t{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Ports}}' \
+    | awk -F'\t' -v port=":$port->" -v proj="$project" '
+        $4 ~ port && $3 != proj { print $2 " (project: " ($3 == "" ? "unknown" : $3) ")" }
+      ')"
+  if [[ -n "$conflict" ]]; then
+    echo "✗ Port ${bind}:${port} is already bound by a container outside this compose project:" >&2
+    echo "  $conflict" >&2
+    echo "  Stop it first (e.g. \`docker stop <container>\` or \`docker compose -p <project> down\`) before retrying the update." >&2
+    exit 1
+  fi
+}
+check_port_conflict
+
 echo "Pulling candidate image for inspection..."
 if ! docker pull "$TARGET_IMAGE"; then
   docker image inspect "$TARGET_IMAGE" >/dev/null 2>&1 || {
@@ -122,7 +147,7 @@ rolled_back=false
 roll_back() {
   echo "Update failed verification. Rolling back image to $CURRENT_IMAGE..." >&2
   mv "$ENV_FILE.pre-update-bak" "$ENV_FILE"
-  "${COMPOSE[@]}" up -d --force-recreate app worker || true
+  "${COMPOSE[@]}" up -d --force-recreate --remove-orphans app worker || true
   if wait_for_health app; then
     echo "Rollback image is healthy." >&2
   else
@@ -155,7 +180,7 @@ echo "Pulling and applying the update..."
 # a dependent service refusing to start because app is unhealthy) from
 # aborting the script via `set -e` before wait_for_health/roll_back below
 # get a chance to run.
-"${COMPOSE[@]}" up -d --force-recreate app worker || true
+"${COMPOSE[@]}" up -d --force-recreate --remove-orphans app worker || true
 
 echo "Verifying application health..."
 if ! wait_for_health app || ! "$ROOT_DIR/serviceops" health >/dev/null 2>&1; then
