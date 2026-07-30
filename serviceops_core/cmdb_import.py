@@ -141,10 +141,7 @@ def _resolve_owning_team(team_name, tenant_id, created):
 
     if not team_name:
         return None
-    group = core_app.SupportGroup.query.filter(
-        core_app.SupportGroup.tenant_id == tenant_id,
-        core_app.func.lower(core_app.SupportGroup.name) == team_name.casefold(),
-    ).first()
+    group = core_app.resolve_support_group_by_name(team_name, tenant_id)
     if not group:
         group = core_app.SupportGroup(name=team_name, tenant_id=tenant_id)
         db.session.add(group)

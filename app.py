@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.9"
+APP_VERSION = "1.29.10"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -706,6 +706,23 @@ class DirectoryGroupMapping(db.Model):
     active = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     support_group = db.relationship("SupportGroup")
+
+
+class SupportGroupAlias(db.Model):
+    """Alternate name staff use for a support group (e.g. "DBA" for the
+    "Database" team). Consulted by free-text team resolution -- CSV import's
+    Owner column, and anywhere else a team name arrives as a string rather
+    than a support_group_id -- before falling back to an exact-name match or
+    auto-creating a new (likely duplicate) group."""
+    id = db.Column(db.Integer, primary_key=True)
+    alias = db.Column(db.String(160), nullable=False)
+    group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    group = db.relationship("SupportGroup")
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "alias", name="uq_support_group_alias_tenant_alias"),
+    )
 
 
 class DirectoryManagedMembership(db.Model):
@@ -3620,6 +3637,27 @@ def create_catalog_task(ritm):
     return task
 
 
+def resolve_support_group_by_name(name, tenant_id):
+    """Case-insensitive lookup of a SupportGroup by its name or a configured
+    alias (SupportGroupAlias) -- e.g. "DBA" resolves to the "Database" team.
+    Used wherever a team is looked up from free text (CSV import's Owner
+    column, etc.) instead of a support_group_id dropdown, so nicknames don't
+    silently spawn duplicate groups."""
+    if not name:
+        return None
+    group = SupportGroup.query.filter(
+        SupportGroup.tenant_id == tenant_id,
+        func.lower(SupportGroup.name) == name.casefold(),
+    ).first()
+    if group:
+        return group
+    alias = SupportGroupAlias.query.filter(
+        SupportGroupAlias.tenant_id == tenant_id,
+        func.lower(SupportGroupAlias.alias) == name.casefold(),
+    ).first()
+    return alias.group if alias else None
+
+
 def seed_itil(admin):
     if not SupportGroup.query.filter_by(name="Service Desk").first():
         service_desk = SupportGroup(name="Service Desk", group_type="Fulfillment")
@@ -3638,6 +3676,12 @@ def seed_itil(admin):
         ccb = SupportGroup(name="Change Control Board", group_type="CCB Approval")
         db.session.add(ccb)
     db.session.flush()
+    database_group = SupportGroup.query.filter_by(name="Database").first()
+    if database_group and not SupportGroupAlias.query.filter(
+        func.lower(SupportGroupAlias.alias) == "dba",
+        SupportGroupAlias.tenant_id == database_group.tenant_id,
+    ).first():
+        db.session.add(SupportGroupAlias(alias="DBA", group_id=database_group.id, tenant_id=database_group.tenant_id))
     windows = SupportGroup.query.filter_by(name="Windows").first()
     if windows and not CatalogItem.query.first():
         # Administrator-configurable defaults per governed catalog routing:
@@ -8224,6 +8268,26 @@ def create_app(test_config=None):
                 mapping.active = False
                 audit("disable", "AD team mapping", mapping.directory_group)
                 flash("AD group mapping disabled. Memberships reconcile at next login.", "success")
+            elif action == "add_support_group_alias":
+                alias = request.form.get("alias", "").strip()
+                group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
+                if not alias or len(alias) > 160:
+                    abort(400)
+                existing = SupportGroupAlias.query.filter(
+                    SupportGroupAlias.tenant_id == current_user.tenant_id,
+                    func.lower(SupportGroupAlias.alias) == alias.casefold(),
+                ).first()
+                if existing:
+                    existing.group_id = group.id
+                else:
+                    db.session.add(SupportGroupAlias(alias=alias, group_id=group.id))
+                audit("configure", "Team name alias", f"{alias} -> {group.name}")
+                flash(f'"{alias}" now resolves to {group.name}.', "success")
+            elif action == "delete_support_group_alias":
+                group_alias = tenant_record_or_404(SupportGroupAlias, int(request.form["alias_id"]))
+                audit("delete", "Team name alias", group_alias.alias)
+                db.session.delete(group_alias)
+                flash("Team name alias removed.", "success")
             elif action == "set_manager":
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
                 if group.group_type != "IT Fulfillment":
@@ -8524,6 +8588,9 @@ def create_app(test_config=None):
             ccb=ccb, ccb_approver_ids=ccb_approver_ids,
             directory_mappings=DirectoryGroupMapping.query.order_by(
                 DirectoryGroupMapping.directory_group
+            ).all(),
+            support_group_aliases=tenant_query(SupportGroupAlias).order_by(
+                SupportGroupAlias.alias
             ).all(),
             services=tenant_query(ServiceOffering).all(),
             sla_definitions=tenant_query(SLADefinition).all(),
