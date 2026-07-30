@@ -120,9 +120,11 @@ def group_id(app, name="CoreApps"):
 
 
 def test_health(client):
+    from app import APP_VERSION
+
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json == {"status": "ok"}
+    assert response.json == {"status": "ok", "version": APP_VERSION}
     assert client.get("/live").json == {"status": "alive"}
     assert client.get("/ready").json == {"status": "ready"}
 
