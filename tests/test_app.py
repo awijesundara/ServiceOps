@@ -3293,6 +3293,95 @@ def test_ccb_required_false_skips_ccb_gate_for_normal_change(app):
         assert all("CCB" not in stage["name"] for stage in stages)
 
 
+def test_change_gets_ci_owner_manager_approval_when_different_from_assignment_group(client, app):
+    """The change is assigned to the executing team (e.g. Unix) but the CI
+    it targets is owned by a different team (e.g. DBA) — that team's manager
+    must also approve, not just the executing team's manager."""
+    with app.app_context():
+        database = SupportGroup.query.filter_by(name="Database").one()
+        ci = ConfigurationItem(
+            name="dci2bo03.dc.japannext.co.jp", ci_class="Server",
+            environment="Production", support_group_id=database.id,
+        )
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+    login(client)
+    client.post("/tickets/new/change", data={
+        "title": "Patch the DB host", "description": "Apply a patch.",
+        "category": "Software", "priority": "P2", "change_type": "Normal",
+        "risk_score": "60", "impact": "High",
+        "implementation_plan": "Patch it.", "test_plan": "Verify it.",
+        "backout_plan": "Roll back.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+        "group_id": group_id(app, "Unix"), "ci_id": str(ci_id),
+    })
+    with app.app_context():
+        ticket = Ticket.query.filter_by(kind="change").one()
+        chain = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).one()
+        names = [gate.name for gate in chain.gates]
+        assert "Unix manager assessment" in names
+        assert "Database manager assessment (CI owner)" in names
+
+
+def test_ccb_only_required_for_environments_in_setting_by_default(app):
+    """Only Production (the default CCB_REQUIRED_ENVIRONMENTS) goes to CCB;
+    a Normal change against a Development CI should skip the CCB gate."""
+    with app.app_context():
+        manager = User.query.filter_by(username="database.manager").one()
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        ci = ConfigurationItem(name="dev-box-01", ci_class="Server", environment="Development")
+        db.session.add(ci)
+        db.session.flush()
+        ticket = Ticket(
+            kind="change", number="CHG0000903", title="Dev change",
+            description="Test environment-based CCB gating.", category="Software",
+            priority="P3", state="New", requester_id=manager.id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=windows.id))
+        db.session.add(ChangeGovernance(
+            ticket_id=ticket.id, change_type="Normal", risk_score=20, impact="Low",
+            implementation_plan="Implement.", test_plan="Test.", backout_plan="Back out.",
+            ci_id=ci.id,
+        ))
+        db.session.commit()
+        stages = change_approval_stages(ticket)
+        assert all("CCB" not in stage["name"] for stage in stages)
+
+
+def test_ci_require_ccb_approval_override_forces_ccb_for_non_production(app):
+    """The per-CI 'always require CCB' override forces the CCB gate even for
+    an environment that isn't in CCB_REQUIRED_ENVIRONMENTS (custom cases like
+    a business-critical UAT box)."""
+    with app.app_context():
+        manager = User.query.filter_by(username="database.manager").one()
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        ci = ConfigurationItem(
+            name="uat-critical-01", ci_class="Server", environment="Staging",
+            require_ccb_approval=True,
+        )
+        db.session.add(ci)
+        db.session.flush()
+        ticket = Ticket(
+            kind="change", number="CHG0000904", title="UAT change",
+            description="Test per-CI CCB override.", category="Software",
+            priority="P3", state="New", requester_id=manager.id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=windows.id))
+        db.session.add(ChangeGovernance(
+            ticket_id=ticket.id, change_type="Normal", risk_score=20, impact="Low",
+            implementation_plan="Implement.", test_plan="Test.", backout_plan="Back out.",
+            ci_id=ci.id,
+        ))
+        db.session.commit()
+        stages = change_approval_stages(ticket)
+        assert any("CCB" in stage["name"] for stage in stages)
+
+
 def test_ldap_bind_password_decrypt_failure_refuses_anonymous_fallback(app):
     """B-258 fix #3: if the configured LDAP bind password can't be
     decrypted (e.g. SETTINGS_ENCRYPTION_KEY rotated), authentication must
