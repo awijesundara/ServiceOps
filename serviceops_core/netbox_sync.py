@@ -20,6 +20,59 @@ import requests
 DEVICES_PATH = "/api/dcim/devices/"
 VMS_PATH = "/api/virtualization/virtual-machines/"
 
+
+def _format_interface(record):
+    label = record.get("name") or "?"
+    bits = []
+    type_label = _first_attr(record, "type", "label")
+    if type_label:
+        bits.append(type_label)
+    mac = record.get("mac_address") or _first_attr(record, "primary_mac_address", "mac_address")
+    if mac:
+        bits.append(mac)
+    parent = _first_attr(record, "lag", "name")
+    if parent:
+        bits.append(f"in {parent}")
+    if record.get("enabled") is False:
+        bits.append("disabled")
+    return f"{label} ({', '.join(bits)})" if bits else label
+
+
+def _format_port(record):
+    label = record.get("name") or "?"
+    type_label = _first_attr(record, "type", "label")
+    return f"{label} ({type_label})" if type_label else label
+
+
+def _format_power_port(record):
+    label = record.get("name") or "?"
+    bits = []
+    type_label = _first_attr(record, "type", "label")
+    if type_label:
+        bits.append(type_label)
+    watts = record.get("maximum_draw")
+    if watts:
+        bits.append(f"{watts}W")
+    return f"{label} ({', '.join(bits)})" if bits else label
+
+
+def _format_inventory_item(record):
+    label = record.get("name") or "?"
+    role = _first_attr(record, "role", "name")
+    return f"{label} ({role})" if role else label
+
+
+# Per-device components pulled in bulk (one full paginated fetch per type,
+# grouped by device id in memory) rather than one request per device -- a
+# NetBox instance can have thousands of devices, so an N+1 fetch pattern
+# here would make every sync prohibitively slow.
+COMPONENT_ENDPOINTS = (
+    ("/api/dcim/interfaces/", "Interfaces", _format_interface),
+    ("/api/dcim/console-ports/", "Console Ports", _format_port),
+    ("/api/dcim/power-ports/", "Power Ports", _format_power_port),
+    ("/api/dcim/inventory-items/", "Inventory Items", _format_inventory_item),
+)
+
 STATUS_MAP = {
     "active": "Operational",
     "offline": "Retired",
@@ -95,6 +148,28 @@ def _paginate(session, base_url, path):
         if not payload.get("next"):
             return
         params["offset"] += params["limit"]
+
+
+def _fetch_all_components(session, base_url):
+    """Fetches interfaces/console ports/power ports/inventory items for every
+    device and groups the formatted summaries by device id. Each component
+    type is fetched independently -- if the API token lacks permission for
+    one (e.g. inventory items), that type is skipped rather than aborting
+    the whole sync."""
+    grouped = {}
+    for path, label, formatter in COMPONENT_ENDPOINTS:
+        by_device = {}
+        try:
+            for record in _paginate(session, base_url, path):
+                device_id = str(_first_attr(record, "device", "id") or "")
+                if not device_id:
+                    continue
+                by_device.setdefault(device_id, []).append(formatter(record))
+        except requests.RequestException:
+            continue
+        for device_id, items in by_device.items():
+            grouped.setdefault(device_id, {})[f"NetBox: {label}"] = "; ".join(items)
+    return grouped
 
 
 def _first_attr(record, *keys):
@@ -225,6 +300,14 @@ def _upsert(mapped, tenant_id, summary):
             tenant_id=tenant_id, serial_number=mapped["serial_number"],
         ).first()
         matched_by_serial = ci is not None
+    # Hostname is unique too (see uq_ci_tenant_name), so a device with no
+    # serial number (common for VMs/blades) still adopts an existing CI of
+    # the same name -- e.g. one a CSV import or manual entry created --
+    # instead of creating a second CI with the same hostname.
+    if not ci:
+        ci = core_app.ConfigurationItem.query.filter_by(
+            tenant_id=tenant_id, name=mapped["name"],
+        ).first()
 
     # NetBox's extra fields (rack, role, custom fields, ...) are namespaced
     # "NetBox: " in attributes so a re-sync can refresh just those keys
@@ -303,10 +386,14 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
 
     session = session_factory(base_url, token)
     try:
-        for record in _paginate(session, base_url, DEVICES_PATH):
+        devices = list(_paginate(session, base_url, DEVICES_PATH))
+        components_by_device = _fetch_all_components(session, base_url) if devices else {}
+        for record in devices:
             summary["devices_seen"] += 1
             try:
-                _upsert(_map_device(record, "Server"), tenant_id, summary)
+                mapped = _map_device(record, "Server")
+                mapped["attributes"].update(components_by_device.get(mapped["netbox_id"], {}))
+                _upsert(mapped, tenant_id, summary)
             except Exception as error:  # noqa: BLE001 - isolate one bad record from the whole sync
                 summary["errors"].append(f"device {record.get('name', record.get('id'))}: {type(error).__name__}")
         for record in _paginate(session, base_url, VMS_PATH):

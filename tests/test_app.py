@@ -1233,6 +1233,29 @@ def test_ci_additional_fields_are_editable_and_exported(client, app):
     assert "16" in rows[-1] and "64" in rows[-1]
 
 
+def test_ci_form_rejects_duplicate_hostname_and_serial(client, app):
+    login(client)
+    client.post("/cmdb/new", data={
+        "name": "dup-srv.example.com", "ci_class": "Server", "environment": "Production",
+        "operational_status": "Operational", "serial_number": "SN-001",
+    }, follow_redirects=True)
+    with app.app_context():
+        assert ConfigurationItem.query.filter_by(name="dup-srv.example.com").count() == 1
+
+    # Same hostname, different case -> rejected, no second row created.
+    client.post("/cmdb/new", data={
+        "name": "DUP-SRV.example.com", "ci_class": "Server", "environment": "Production",
+        "operational_status": "Operational",
+    }, follow_redirects=True)
+    # Different hostname, same serial -> also rejected.
+    client.post("/cmdb/new", data={
+        "name": "another-srv.example.com", "ci_class": "Server", "environment": "Production",
+        "operational_status": "Operational", "serial_number": "SN-001",
+    }, follow_redirects=True)
+    with app.app_context():
+        assert ConfigurationItem.query.count() == 1
+
+
 def test_catalog_approval_chain_creates_fulfillment_task(client, app):
     login(client)
     client.post("/catalog/1/order", data={"details": "Engineering laptop"}, follow_redirects=True)
