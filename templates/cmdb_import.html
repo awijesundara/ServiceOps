@@ -28,7 +28,7 @@
 
 <section class="panel" id="spreadsheet-import">
   <h2>Import from spreadsheet</h2>
-  <p class="muted">Upload a CSV, paste CSV text, or point at a published Google Sheet (File → Share → Publish to web, or a link shared as "Anyone with the link can view"). Recognized columns: Host/Name, Owner, Description, Environment, Serial Number, Vendor/Builder, Model, Location, Cost Center, Business Criticality, Lifecycle State, Install/Built/Shipped Date, End of Support/Warranty Expiry, IP Address. Fields on CIs synced from NetBox that NetBox already owns are left untouched.</p>
+  <p class="muted">Upload a CSV, paste CSV text, or point at a published Google Sheet (File → Share → Publish to web, or a link shared as "Anyone with the link can view"). Recognized columns: Host/Name, Owner/System Owner (resolved to an owning support team, not an individual), Description, Environment, Serial Number, Vendor, Model, Location, Cost Center, Business Criticality, Lifecycle State, Install/Shipped Date, End of Support/Warranty Expiry, IP Address, State/Status (decommissioned rows are detected automatically). Any other column in the sheet (CPUs, RAM, Builder, iDRAC, DNS, …) is kept as-is on the CI's Additional imported fields. Fields on CIs synced from NetBox that NetBox already owns are left untouched.</p>
 
   {% if not preview %}
   <form method="post" enctype="multipart/form-data" class="form-grid">

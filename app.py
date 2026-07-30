@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.1"
+APP_VERSION = "1.29.2"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -8741,11 +8741,18 @@ def create_app(test_config=None):
                                                              EnterpriseRecord.title.ilike(pattern))).limit(20):
                 results.append({"type": DOMAIN_CONFIG[row.domain]["name"], "label": f"{row.number} · {row.title}",
                                 "url": url_for("enterprise_detail", record_id=row.id), "meta": row.state})
-            for row in tenant_query(ConfigurationItem).filter(
-                ConfigurationItem.name.ilike(pattern)
-            ).limit(20):
-                results.append({"type": "Configuration item", "label": row.name, "url": url_for("cmdb"),
-                                "meta": row.ci_class})
+            for row in tenant_query(ConfigurationItem).filter(db.or_(
+                ConfigurationItem.name.ilike(pattern),
+                ConfigurationItem.serial_number.ilike(pattern),
+                ConfigurationItem.ip_address.ilike(pattern),
+                ConfigurationItem.model.ilike(pattern),
+                ConfigurationItem.vendor.ilike(pattern),
+                ConfigurationItem.description.ilike(pattern),
+                ConfigurationItem.location.ilike(pattern),
+            )).limit(20):
+                ci_url = url_for("ci_edit", ci_id=row.id) if current_user.role == "admin" else url_for("cmdb")
+                results.append({"type": "Configuration item", "label": row.name,
+                                "url": ci_url, "meta": row.ci_class})
             for row in CatalogRequest.query.filter(
                 CatalogRequest.id.in_(visible_request_ids),
                 CatalogRequest.number.ilike(pattern),

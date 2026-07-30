@@ -24,6 +24,12 @@ Decommission state is read from whatever state/status column is present
 the source tab name is never inspected, only the cell value on each row --
 so a row is recognized as decommissioned regardless of which tab it was
 exported from.
+
+Any spreadsheet column that isn't recognized by COLUMN_ALIASES (e.g. "CPUs",
+"RAM (GB)", "Builder", "iDRAC", "DNS", "Checker") is not dropped -- it's kept
+verbatim, under its original header text, in ConfigurationItem.attributes
+(a JSON column), so nothing the sheet contains is silently lost even though
+this importer only has dedicated model columns for the common fields.
 """
 import csv
 import io
@@ -51,7 +57,6 @@ COLUMN_ALIASES = {
     "team": "owning_team_name",
     "serial number": "serial_number",
     "vendor": "vendor",
-    "builder": "vendor",
     "model": "model",
     "location": "location",
     "cost center": "cost_center",
@@ -100,10 +105,13 @@ def parse_ci_rows(csv_text):
     if not reader.fieldnames:
         raise CmdbImportError("CSV data has no header row.")
     header_map = {}
+    unmapped_headers = []
     for header in reader.fieldnames:
         field = COLUMN_ALIASES.get(header.strip().lower())
         if field:
             header_map[header] = field
+        elif header.strip():
+            unmapped_headers.append(header)
     rows = []
     for raw_row in reader:
         row = {}
@@ -111,6 +119,13 @@ def parse_ci_rows(csv_text):
             value = (raw_row.get(header) or "").strip()
             if value:
                 row[field] = value
+        extra = {}
+        for header in unmapped_headers:
+            value = (raw_row.get(header) or "").strip()
+            if value:
+                extra[header.strip()] = value
+        if extra:
+            row["extra_attributes"] = extra
         rows.append(row)
     return rows
 
@@ -144,7 +159,7 @@ def _apply_row(row, ci, is_netbox_owned):
     for that reason."""
     skipped = 0
     for field, value in row.items():
-        if field in ("owning_team_name", "state_raw"):
+        if field in ("owning_team_name", "state_raw", "extra_attributes"):
             continue
         if is_netbox_owned and field in NETBOX_OWNED_FIELDS:
             skipped += 1
@@ -161,6 +176,10 @@ def _apply_row(row, ci, is_netbox_owned):
     if state_raw and _normalize_state(state_raw) in DECOMMISSIONED_STATE_VALUES:
         ci.operational_status = "Retired"
         ci.lifecycle_state = "Retired"
+
+    extra = row.get("extra_attributes")
+    if extra:
+        ci.attributes = {**(ci.attributes or {}), **extra}
 
     return skipped
 
