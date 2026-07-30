@@ -1473,6 +1473,24 @@ def test_support_group_dedup_key_ignores_case_whitespace_and_team_suffix(app):
         assert support_group_dedup_key("DBA") != support_group_dedup_key("Database")
 
 
+def test_ci_lookup_includes_owning_team_for_ticket_form_confirmation(client, app):
+    with app.app_context():
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        db.session.add(ConfigurationItem(
+            name="lookup-owning-team.example.com", ci_class="Server",
+            environment="Production", support_group_id=windows.id,
+        ))
+        db.session.add(ConfigurationItem(
+            name="lookup-no-owner.example.com", ci_class="Server", environment="Production",
+        ))
+        db.session.commit()
+    login(client)
+    with_owner = client.get("/internal/lookup/cis?q=lookup-owning-team").get_json()
+    assert with_owner[0]["owning_team"] == "Windows"
+    without_owner = client.get("/internal/lookup/cis?q=lookup-no-owner").get_json()
+    assert without_owner[0]["owning_team"] is None
+
+
 def test_catalog_approval_chain_creates_fulfillment_task(client, app):
     login(client)
     client.post("/catalog/1/order", data={"details": "Engineering laptop"}, follow_redirects=True)
