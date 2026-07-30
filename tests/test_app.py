@@ -1206,6 +1206,33 @@ def test_catalog_request_and_cmdb(client, app):
     assert client.get("/cmdb").status_code == 200
 
 
+def test_ci_additional_fields_are_editable_and_exported(client, app):
+    login(client)
+    client.post("/cmdb/new", data={
+        "name": "srv-attrs.example.com", "ci_class": "Server", "environment": "Production",
+        "operational_status": "Operational", "attr_key": ["CPUs", "Builder"], "attr_value": ["8", "William Yao"],
+    }, follow_redirects=True)
+    with app.app_context():
+        ci = ConfigurationItem.query.filter_by(name="srv-attrs.example.com").one()
+        assert ci.attributes == {"CPUs": "8", "Builder": "William Yao"}
+        ci_id = ci.id
+    edit_page = client.get(f"/cmdb/{ci_id}/edit")
+    assert b"William Yao" in edit_page.data
+    client.post(f"/cmdb/{ci_id}/edit", data={
+        "name": "srv-attrs.example.com", "ci_class": "Server", "environment": "Production",
+        "operational_status": "Operational", "attr_key": ["CPUs", "RAM (GB)"], "attr_value": ["16", "64"],
+    }, follow_redirects=True)
+    with app.app_context():
+        ci = ConfigurationItem.query.filter_by(name="srv-attrs.example.com").one()
+        # Builder was dropped, CPUs updated, RAM (GB) added -- the form's
+        # submitted rows fully replace the stored attribute set.
+        assert ci.attributes == {"CPUs": "16", "RAM (GB)": "64"}
+    export = client.get("/cmdb/export.csv")
+    rows = export.data.decode().splitlines()
+    assert "CPUs" in rows[0] and "RAM (GB)" in rows[0]
+    assert "16" in rows[-1] and "64" in rows[-1]
+
+
 def test_catalog_approval_chain_creates_fulfillment_task(client, app):
     login(client)
     client.post("/catalog/1/order", data={"details": "Engineering laptop"}, follow_redirects=True)

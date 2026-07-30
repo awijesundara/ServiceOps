@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.5"
+APP_VERSION = "1.29.6"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -1694,6 +1694,10 @@ SETTING_DEFINITIONS = {
         {
             "key": "NETBOX_CA_CERT", "type": "text", "default": "", "live": True,
             "label": "NetBox CA certificate (PEM, only needed if NetBox uses an internal CA)",
+        },
+        {
+            "key": "NETBOX_TLS_INSECURE", "type": "bool", "default": "false", "live": True,
+            "label": "Skip NetBox TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
         },
     ],
 }
@@ -7467,21 +7471,46 @@ def create_app(test_config=None):
         cis = tenant_query(ConfigurationItem).order_by(ConfigurationItem.ci_class, ConfigurationItem.name).all()
         if status:
             cis = [ci for ci in cis if ci.operational_status == status]
+        # Attribute keys vary per CI (they come from whatever columns a CSV
+        # import happened to have), so the export's extra columns are the
+        # union of every key seen across the CIs being exported, in first-
+        # seen order -- that way nothing captured on import is left out of
+        # the export.
+        attribute_keys = []
+        seen_keys = set()
+        for ci in cis:
+            for key in (ci.attributes or {}):
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    attribute_keys.append(key)
         buffer = io.StringIO()
         writer = csv.writer(buffer)
         writer.writerow([
             "Name", "Class", "Environment", "Operational status", "Lifecycle state",
             "Business criticality", "IP address", "Serial number", "Vendor", "Model",
-            "Location", "Cost center", "Owning team", "Owner",
+            "Location", "Cost center", "Owning team", "Owner", *attribute_keys,
         ])
         for ci in cis:
+            attributes = ci.attributes or {}
             writer.writerow([
                 ci.name, ci.ci_class, ci.environment, ci.operational_status, ci.lifecycle_state,
                 ci.business_criticality, ci.ip_address or "", ci.serial_number or "", ci.vendor or "",
                 ci.model or "", ci.location or "", ci.cost_center or "",
                 ci.support_group.name if ci.support_group else "", ci.owner.name if ci.owner else "",
+                *[attributes.get(key, "") for key in attribute_keys],
             ])
         return csv_response(buffer.getvalue(), "cmdb.csv")
+
+    def _ci_attributes_from_form():
+        keys = request.form.getlist("attr_key")
+        values = request.form.getlist("attr_value")
+        attributes = {}
+        for key, value in zip(keys, values):
+            key = key.strip()
+            value = value.strip()
+            if key and value:
+                attributes[key] = value
+        return attributes
 
     @app.route("/cmdb/new", methods=["GET", "POST"])
     @roles("admin")
@@ -7507,6 +7536,7 @@ def create_app(test_config=None):
                 warranty_expiry_date=parse_form_date(warranty_expiry_date),
                 support_group_id=int(support_group_id) if support_group_id else None,
                 owner_id=current_user.id,
+                attributes=_ci_attributes_from_form(),
             )
             db.session.add(ci)
             audit("create", "CI", ci.name)
@@ -7547,6 +7577,7 @@ def create_app(test_config=None):
             ci.support_group_id = int(support_group_id) if support_group_id else None
             owner_id = request.form.get("owner_id")
             ci.owner_id = int(owner_id) if owner_id else None
+            ci.attributes = _ci_attributes_from_form()
             after = {field: getattr(ci, field) or "" for field in tracked_fields}
             log_field_changes("ci", ci.id, before, after)
             audit("update", "CI", ci.name)
