@@ -108,6 +108,42 @@
 </section>
 
 <section class="panel admin-section">
+  <div class="panel-head">
+    <div>
+      <h2>LDAP directory sync</h2>
+      <p>Manually pull title, department, division, employee ID/type, manager chain, and AD-group team membership from the directory for users who have already signed in through AD/LDAP at least once. This does not run on a schedule &mdash; trigger it manually whenever the directory changes.</p>
+    </div>
+  </div>
+  {% if not ldap_enabled %}
+  <p class="muted">AD/LDAP is not enabled. Configure it under Authentication settings first.</p>
+  {% else %}
+  <form method="post" class="actions">
+    <input type="hidden" name="action" value="sync_directory">
+    <label><input type="checkbox" name="dry_run" value="1" checked> Preview only (no changes saved)</label>
+    <button class="primary">Run directory sync</button>
+  </form>
+  {% if ldap_sync_result %}
+  <table>
+    <thead><tr><th>Directory entries</th><th>Users updated</th><th>Managers resolved</th><th>Memberships added</th><th>Memberships removed</th><th>Unmatched</th><th>Errors</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>{{ ldap_sync_result.directory_entries }}</td>
+        <td>{{ ldap_sync_result.users_updated }}</td>
+        <td>{{ ldap_sync_result.managers_resolved }}</td>
+        <td>{{ ldap_sync_result.memberships_added }}</td>
+        <td>{{ ldap_sync_result.memberships_removed }}</td>
+        <td>{{ ldap_sync_result.users_unmatched }}</td>
+        <td>{{ ldap_sync_result.errors|length }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% if ldap_sync_result.dry_run %}<p class="muted">This was a preview; no changes were saved.</p>{% endif %}
+  {% for error in ldap_sync_result.errors %}<p class="muted">{{ error }}</p>{% endfor %}
+  {% endif %}
+  {% endif %}
+</section>
+
+<section class="panel admin-section">
   <div class="panel-head"><div><h2>Team managers</h2><p>The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.</p></div></div>
   <table>
     <thead><tr><th>Team</th><th>Current manager</th><th>Manager assignment</th><th>Members</th></tr></thead>

@@ -1,0 +1,223 @@
+"""Tests for the generic LDAP directory sync (serviceops_core/ldap_sync.py).
+
+These mock the LDAP directory entirely (no live LDAP server required) by
+monkeypatching app.ldap_server_and_service_connection, matching the same
+approach used elsewhere in this test suite for other network dependencies
+(see test_durable_smtp_signed_webhook_and_teams_delivery for SMTP/webhook
+mocking).
+"""
+import os
+import tempfile
+
+import pytest
+from werkzeug.security import generate_password_hash
+
+from app import (DirectoryGroupMapping, DirectoryManagedMembership, ExternalIdentity,
+                  GroupMember, PlatformSetting, SupportGroup, Tenant, User, create_app, db)
+from serviceops_core.ldap_sync import DirectorySyncError, sync_directory
+
+
+@pytest.fixture()
+def app():
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}"})
+    with app.app_context():
+        db.session.commit()
+    yield app
+    os.unlink(path)
+
+
+@pytest.fixture()
+def client(app):
+    return app.test_client()
+
+
+def login(client, username="admin", password="Admin123!"):
+    return client.post("/login", data={"username": username, "password": password}, follow_redirects=True)
+
+
+class FakeEntry:
+    def __init__(self, dn, attrs):
+        self.entry_dn = dn
+        self._attrs = attrs
+
+    @property
+    def entry_attributes_as_dict(self):
+        return self._attrs
+
+
+class FakeConnection:
+    def __init__(self, entries):
+        self._entries = entries
+        self.entries = []
+
+    def search(self, base_dn, search_filter, search_scope=None, attributes=None):
+        self.entries = self._entries
+        return True
+
+    def unbind(self):
+        pass
+
+
+def enable_ldap(entries):
+    existing = db.session.get(PlatformSetting, "LDAP_ENABLED")
+    if existing:
+        existing.value = "true"
+    else:
+        db.session.add(PlatformSetting(key="LDAP_ENABLED", value="true", encrypted=False))
+    db.session.commit()
+
+    def fake_bind():
+        return object(), FakeConnection(entries)
+
+    return fake_bind
+
+
+def provision_ldap_user(username, dn, tenant_id=1, **extra):
+    user = User(
+        username=username, name=username, email=f"{username}@test.invalid",
+        password_hash=generate_password_hash("Password123!"), role="agent",
+        tenant_id=tenant_id, **extra,
+    )
+    db.session.add(user)
+    db.session.flush()
+    db.session.add(ExternalIdentity(provider="ldap", subject=dn, user_id=user.id))
+    db.session.commit()
+    return user
+
+
+def test_manager_dn_resolves_to_manager_id(app, monkeypatch):
+    with app.app_context():
+        alice_dn = "CN=Alice,OU=Users,DC=example,DC=com"
+        bob_dn = "CN=Bob,OU=Users,DC=example,DC=com"
+        alice = provision_ldap_user("alice", alice_dn)
+        bob = provision_ldap_user("bob", bob_dn)
+        entries = [
+            FakeEntry(alice_dn, {"manager": [bob_dn]}),
+            FakeEntry(bob_dn, {}),
+        ]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+        result = sync_directory(1)
+        db.session.refresh(alice)
+        assert alice.manager_id == bob.id
+        assert result["managers_resolved"] == 1
+        assert result["users_unmatched"] == 0
+
+
+def test_group_membership_sync_adds_membership_and_managed_row(app, monkeypatch):
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        db.session.add(DirectoryGroupMapping(directory_group="gg_unix", support_group_id=unix.id))
+        db.session.commit()
+        dn = "CN=Carol,OU=Users,DC=example,DC=com"
+        carol = provision_ldap_user("carol", dn)
+        entries = [FakeEntry(dn, {"memberOf": ["CN=gg_unix,OU=Groups,DC=example,DC=com"]})]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+        result = sync_directory(1)
+        assert result["memberships_added"] == 1
+        assert GroupMember.query.filter_by(user_id=carol.id, group_id=unix.id, role="member").one()
+        assert DirectoryManagedMembership.query.filter_by(user_id=carol.id, group_id=unix.id).one()
+
+
+def test_second_sync_run_no_duplicate_removes_stale_keeps_manual(app, monkeypatch):
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        db.session.add(DirectoryGroupMapping(directory_group="gg_unix", support_group_id=unix.id))
+        db.session.commit()
+        dn = "CN=Carol,OU=Users,DC=example,DC=com"
+        carol = provision_ldap_user("carol", dn)
+        # A manually-added membership to a different team (no DirectoryManagedMembership row).
+        db.session.add(GroupMember(group_id=windows.id, user_id=carol.id, role="member"))
+        db.session.commit()
+
+        entries = [FakeEntry(dn, {"memberOf": ["CN=gg_unix,OU=Groups,DC=example,DC=com"]})]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+        result1 = sync_directory(1)
+        assert result1["memberships_added"] == 1
+        assert GroupMember.query.filter_by(user_id=carol.id).count() == 2  # unix (synced) + windows (manual)
+
+        # Run again with identical directory state: no duplicate membership rows.
+        entries2 = [FakeEntry(dn, {"memberOf": ["CN=gg_unix,OU=Groups,DC=example,DC=com"]})]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries2))
+        result2 = sync_directory(1)
+        assert result2["memberships_added"] == 0
+        assert result2["memberships_removed"] == 0
+        assert GroupMember.query.filter_by(user_id=carol.id, group_id=unix.id).count() == 1
+
+        # Now the directory no longer reports gg_unix membership: sync should remove
+        # the synced Unix membership but leave the manually-added Windows membership.
+        entries3 = [FakeEntry(dn, {"memberOf": []})]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries3))
+        result3 = sync_directory(1)
+        assert result3["memberships_removed"] == 1
+        assert GroupMember.query.filter_by(user_id=carol.id, group_id=unix.id).count() == 0
+        assert GroupMember.query.filter_by(user_id=carol.id, group_id=windows.id).count() == 1
+        assert DirectoryManagedMembership.query.filter_by(user_id=carol.id).count() == 0
+
+
+def test_tenant_isolation_never_mutates_other_tenant(app, monkeypatch):
+    with app.app_context():
+        db.session.add(Tenant(id=2, slug="other", name="Other Org"))
+        db.session.commit()
+        dn1 = "CN=Dave,OU=Users,DC=example,DC=com"
+        dn2 = "CN=Erin,OU=Users,DC=example,DC=com"
+        dave = provision_ldap_user("dave", dn1, tenant_id=1, title="Old Title 1")
+        # Give tenant 2 its own admin/base user so User(tenant_id=2) isn't orphaned.
+        User.query.filter_by(username="admin").first()
+        erin = provision_ldap_user("erin", dn2, tenant_id=2, title="Old Title 2")
+        entries = [
+            FakeEntry(dn1, {"title": ["New Title 1"]}),
+            FakeEntry(dn2, {"title": ["New Title 2"]}),
+        ]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+        result = sync_directory(1)
+        db.session.refresh(dave)
+        db.session.refresh(erin)
+        assert dave.title == "New Title 1"
+        assert erin.title == "Old Title 2"  # tenant 2 untouched by a tenant-1 sync
+        assert result["users_unmatched"] == 1  # erin's entry present in directory but out of tenant scope
+
+
+def test_sparse_entries_do_not_null_existing_values(app, monkeypatch):
+    with app.app_context():
+        dn = "CN=Frank,OU=Users,DC=example,DC=com"
+        frank = provision_ldap_user("frank", dn, title="Existing Title", department="Existing Dept")
+        entries = [FakeEntry(dn, {})]  # no title/department attributes present at all
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+        sync_directory(1)
+        db.session.refresh(frank)
+        assert frank.title == "Existing Title"
+        assert frank.department == "Existing Dept"
+
+
+def test_missing_or_invalid_tenant_id_fails_closed(app, monkeypatch):
+    with app.app_context():
+        db.session.add(PlatformSetting(key="LDAP_ENABLED", value="true", encrypted=False))
+        db.session.commit()
+        with pytest.raises(DirectorySyncError):
+            sync_directory(None)
+        with pytest.raises(DirectorySyncError):
+            sync_directory(0)
+        with pytest.raises(DirectorySyncError):
+            sync_directory(999999)  # tenant does not exist
+
+
+def test_admin_route_triggers_directory_sync_preview(client, app, monkeypatch):
+    with app.app_context():
+        dn = "CN=Grace,OU=Users,DC=example,DC=com"
+        provision_ldap_user("grace", dn, title="Old Title")
+        entries = [FakeEntry(dn, {"title": ["New Title"]})]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+    login(client)
+    response = client.post(
+        "/itil/administration",
+        data={"action": "sync_directory", "dry_run": "1"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    with app.app_context():
+        grace = User.query.filter_by(username="grace").one()
+        # dry_run must not persist changes
+        assert grace.title == "Old Title"
