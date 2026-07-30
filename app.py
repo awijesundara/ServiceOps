@@ -3855,6 +3855,15 @@ def create_app(test_config=None):
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         UPLOAD_FOLDER=os.getenv("UPLOAD_FOLDER", os.path.join(app.instance_path, "uploads")),
         MAX_CONTENT_LENGTH=20 * 1024 * 1024,
+        # Werkzeug's own default here is 500_000 bytes and is enforced
+        # independently of MAX_CONTENT_LENGTH -- it caps a single non-file
+        # form field's size, not just uploaded files. The CMDB CSV import's
+        # preview-then-apply flow round-trips the pasted/uploaded CSV through
+        # a plain hidden field (see cmdb_import route, templates/cmdb_import.html),
+        # so anything past ~488 KiB tripped this silently with a misleading
+        # "file too large" message even though MAX_UPLOAD_MB was nowhere near
+        # hit. Tied to the same admin-configurable MAX_UPLOAD_MB setting below.
+        MAX_FORM_MEMORY_SIZE=20 * 1024 * 1024,
         DEPLOYMENT_PROFILE="production",
         LDAP_ENABLED=env_bool("LDAP_ENABLED"),
         KEYCLOAK_ENABLED=env_bool("KEYCLOAK_ENABLED"),
@@ -3949,6 +3958,7 @@ def create_app(test_config=None):
         app.config["LDAP_ENABLED"] = setting_bool("LDAP_ENABLED")
         app.config["KEYCLOAK_ENABLED"] = setting_bool("KEYCLOAK_ENABLED")
         app.config["MAX_CONTENT_LENGTH"] = int(setting_value("MAX_UPLOAD_MB", "20")) * 1024 * 1024
+        app.config["MAX_FORM_MEMORY_SIZE"] = app.config["MAX_CONTENT_LENGTH"]
         if app.config["KEYCLOAK_ENABLED"]:
             oauth.register(
                 name="keycloak",
