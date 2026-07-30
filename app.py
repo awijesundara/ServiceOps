@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.12"
+APP_VERSION = "1.29.13"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -3678,12 +3678,28 @@ def create_catalog_task(ritm):
     return task
 
 
+_SUPPORT_GROUP_SUFFIX_RE = re.compile(r"\bteams?\b")
+_SUPPORT_GROUP_NON_ALNUM_RE = re.compile(r"[^a-z0-9]")
+
+
+def support_group_dedup_key(name):
+    """Normalizes a team name for duplicate detection: case, whitespace,
+    punctuation, and a trailing "team"/"teams" word are all ignored, so
+    "CoreApps", "Core apps", and "CoreApps team" collapse to the same key.
+    This is deliberately narrow (spelling/formatting variants only) -- it
+    never treats genuinely different words (e.g. "DBA" vs "Database") as
+    the same team; that distinction is what SupportGroupAlias is for."""
+    text = _SUPPORT_GROUP_SUFFIX_RE.sub("", (name or "").casefold())
+    return _SUPPORT_GROUP_NON_ALNUM_RE.sub("", text)
+
+
 def resolve_support_group_by_name(name, tenant_id):
-    """Case-insensitive lookup of a SupportGroup by its name or a configured
-    alias (SupportGroupAlias) -- e.g. "DBA" resolves to the "Database" team.
-    Used wherever a team is looked up from free text (CSV import's Owner
-    column, etc.) instead of a support_group_id dropdown, so nicknames don't
-    silently spawn duplicate groups."""
+    """Case-insensitive lookup of a SupportGroup by its name, a configured
+    alias (SupportGroupAlias, e.g. "DBA" -> "Database"), or a
+    spelling/formatting variant (e.g. "Core apps" -> "CoreApps"). Used
+    wherever a team is looked up from free text (CSV import's Owner column,
+    etc.) instead of a support_group_id dropdown, so nicknames and format
+    variants don't silently spawn duplicate groups."""
     if not name:
         return None
     group = SupportGroup.query.filter(
@@ -3696,7 +3712,15 @@ def resolve_support_group_by_name(name, tenant_id):
         SupportGroupAlias.tenant_id == tenant_id,
         func.lower(SupportGroupAlias.alias) == name.casefold(),
     ).first()
-    return alias.group if alias else None
+    if alias:
+        return alias.group
+    key = support_group_dedup_key(name)
+    if not key:
+        return None
+    for candidate in SupportGroup.query.filter_by(tenant_id=tenant_id).all():
+        if support_group_dedup_key(candidate.name) == key:
+            return candidate
+    return None
 
 
 # Every model that references a SupportGroup by foreign key. Consulted by
@@ -3750,6 +3774,28 @@ def merge_support_group_into(source, target):
     db.session.flush()
     db.session.delete(source)
     return moved
+
+
+def find_and_merge_duplicate_groups(tenant_id):
+    """Clusters every SupportGroup in a tenant by support_group_dedup_key
+    and merges each cluster (e.g. "SSD", "SSD Team") into one canonical
+    group, so dropdowns never show spelling/formatting duplicates of the
+    same team. The canonical pick is whichever cluster member already has
+    a manager (else the oldest / lowest id, as the likely original).
+    Returns the number of duplicate groups merged away."""
+    clusters = {}
+    for group in SupportGroup.query.filter_by(tenant_id=tenant_id).order_by(SupportGroup.id).all():
+        clusters.setdefault(support_group_dedup_key(group.name), []).append(group)
+    merged = 0
+    for members in clusters.values():
+        if len(members) < 2:
+            continue
+        canonical = sorted(members, key=lambda g: (g.manager_id is None, g.id))[0]
+        for duplicate in members:
+            if duplicate.id != canonical.id:
+                merge_support_group_into(duplicate, canonical)
+                merged += 1
+    return merged
 
 
 def seed_itil(admin):
@@ -8412,6 +8458,13 @@ def create_app(test_config=None):
                 audit("delete", "Team name alias", group_alias.alias)
                 db.session.delete(group_alias)
                 flash("Team name alias removed.", "success")
+            elif action == "merge_duplicate_teams":
+                merged = find_and_merge_duplicate_groups(current_user.tenant_id)
+                audit("merge", "Support groups", f"{merged} duplicate teams merged")
+                flash(
+                    f"Merged {merged} duplicate team name(s)." if merged
+                    else "No duplicate team names found.", "success",
+                )
             elif action == "set_manager":
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
                 if group.group_type != "IT Fulfillment":
