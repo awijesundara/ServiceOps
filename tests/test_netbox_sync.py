@@ -39,10 +39,15 @@ class FakeSession:
     """Serves one page of results per endpoint path, ignoring pagination
     params (tests use small fixed device/VM lists)."""
 
-    def __init__(self, devices=None, vms=None):
+    def __init__(self, devices=None, vms=None, interfaces=None, console_ports=None,
+                 power_ports=None, inventory_items=None):
         self._pages = {
             "/api/dcim/devices/": {"results": devices or [], "next": None},
             "/api/virtualization/virtual-machines/": {"results": vms or [], "next": None},
+            "/api/dcim/interfaces/": {"results": interfaces or [], "next": None},
+            "/api/dcim/console-ports/": {"results": console_ports or [], "next": None},
+            "/api/dcim/power-ports/": {"results": power_ports or [], "next": None},
+            "/api/dcim/inventory-items/": {"results": inventory_items or [], "next": None},
         }
 
     def get(self, url, params=None, timeout=None):
@@ -55,7 +60,8 @@ class FakeSession:
         pass
 
 
-def enable_netbox(devices=None, vms=None, monkeypatch=None):
+def enable_netbox(devices=None, vms=None, monkeypatch=None, interfaces=None,
+                   console_ports=None, power_ports=None, inventory_items=None):
     for key, value in (
         ("NETBOX_ENABLED", "true"),
         ("NETBOX_BASE_URL", "https://netbox.example.com"),
@@ -76,7 +82,10 @@ def enable_netbox(devices=None, vms=None, monkeypatch=None):
         monkeypatch.setattr(core_app, "integration_endpoint_resolves_safely", lambda url, **kwargs: True)
 
     def fake_session_factory(base_url, token):
-        return FakeSession(devices=devices, vms=vms)
+        return FakeSession(
+            devices=devices, vms=vms, interfaces=interfaces, console_ports=console_ports,
+            power_ports=power_ports, inventory_items=inventory_items,
+        )
 
     return fake_session_factory
 
@@ -193,6 +202,49 @@ def test_resync_refreshes_netbox_attributes_without_dropping_csv_attributes(app,
         ci = ConfigurationItem.query.filter_by(external_id="101").one()
         assert ci.attributes["NetBox: Rack"] == "9D06"
         assert ci.attributes["Builder"] == "William Yao"
+
+
+def test_device_components_are_captured_as_attribute_summaries(app, monkeypatch):
+    with app.app_context():
+        device = make_device(101, "srv-01", serial="ABC123")
+        interfaces = [
+            {"device": {"id": 101}, "name": "bond0", "type": {"label": "Link Aggregation Group (LAG)"}},
+            {"device": {"id": 101}, "name": "em1", "type": {"label": "SFP+ (10GE)"},
+             "mac_address": "AA:BB:CC:DD:EE:FF", "lag": {"name": "bond0"}, "enabled": False},
+            {"device": {"id": 999}, "name": "other-device-nic"},
+        ]
+        console_ports = [{"device": {"id": 101}, "name": "Serial", "type": {"label": "DE-9"}}]
+        power_ports = [{"device": {"id": 101}, "name": "Power 1", "type": {"label": "C14"}, "maximum_draw": 750}]
+        inventory_items = [{"device": {"id": 101}, "name": "onload-dkms", "role": {"name": "pkg:rpm"}}]
+        factory = enable_netbox(
+            devices=[device], monkeypatch=monkeypatch, interfaces=interfaces,
+            console_ports=console_ports, power_ports=power_ports, inventory_items=inventory_items,
+        )
+        sync_from_netbox(1, session_factory=factory)
+        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        assert ci.attributes["NetBox: Interfaces"] == (
+            "bond0 (Link Aggregation Group (LAG)); em1 (SFP+ (10GE), AA:BB:CC:DD:EE:FF, in bond0, disabled)"
+        )
+        assert ci.attributes["NetBox: Console Ports"] == "Serial (DE-9)"
+        assert ci.attributes["NetBox: Power Ports"] == "Power 1 (C14, 750W)"
+        assert ci.attributes["NetBox: Inventory Items"] == "onload-dkms (pkg:rpm)"
+
+
+def test_device_without_serial_adopts_existing_ci_by_name(app, monkeypatch):
+    with app.app_context():
+        db.session.add(ConfigurationItem(
+            name="srv-01", ci_class="Server", tenant_id=1, external_source="csv",
+        ))
+        db.session.commit()
+        device = make_device(101, "srv-01", serial="")
+        factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
+        result = sync_from_netbox(1, session_factory=factory)
+        assert result["cis_created"] == 0
+        assert result["cis_updated"] == 1
+        assert ConfigurationItem.query.filter_by(name="srv-01").count() == 1
+        ci = ConfigurationItem.query.filter_by(name="srv-01").one()
+        assert ci.external_source == "netbox"
+        assert ci.external_id == "101"
 
 
 def test_one_bad_record_does_not_abort_the_batch(app, monkeypatch):

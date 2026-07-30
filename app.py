@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.7"
+APP_VERSION = "1.29.8"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -7512,10 +7512,34 @@ def create_app(test_config=None):
                 attributes[key] = value
         return attributes
 
+    def _ci_duplicate_of(name, serial_number, exclude_id=None):
+        """Hostname and serial number are each supposed to identify exactly
+        one physical/virtual asset, so a second CI with the same name or
+        serial within a tenant is almost always a mistake (a re-created
+        record, a copy-pasted form) rather than a legitimate second CI.
+        Returns the existing CI it collides with, or None."""
+        query = tenant_query(ConfigurationItem)
+        if exclude_id:
+            query = query.filter(ConfigurationItem.id != exclude_id)
+        conditions = [func.lower(ConfigurationItem.name) == name.casefold()]
+        if serial_number:
+            conditions.append(ConfigurationItem.serial_number == serial_number)
+        return query.filter(db.or_(*conditions)).first()
+
     @app.route("/cmdb/new", methods=["GET", "POST"])
     @roles("admin")
     def ci_new():
         if request.method == "POST":
+            name = request.form["name"].strip()
+            serial_number = request.form.get("serial_number", "").strip() or None
+            duplicate = _ci_duplicate_of(name, serial_number)
+            if duplicate:
+                flash(
+                    f"{duplicate.name} already exists in the CMDB (matched by "
+                    f"{'serial number' if duplicate.serial_number == serial_number else 'name'}) "
+                    "— edit that record instead of creating a duplicate.", "error",
+                )
+                return redirect(url_for("ci_edit", ci_id=duplicate.id))
             install_date = request.form.get("install_date") or None
             warranty_expiry_date = request.form.get("warranty_expiry_date") or None
             support_group_id = request.form.get("support_group_id") or None
@@ -7551,6 +7575,16 @@ def create_app(test_config=None):
     def ci_edit(ci_id):
         ci = tenant_record_or_404(ConfigurationItem, ci_id)
         if request.method == "POST":
+            name = request.form["name"].strip()
+            serial_number = request.form.get("serial_number", "").strip() or None
+            duplicate = _ci_duplicate_of(name, serial_number, exclude_id=ci.id)
+            if duplicate:
+                flash(
+                    f"{duplicate.name} already has this "
+                    f"{'serial number' if duplicate.serial_number == serial_number else 'name'} "
+                    "— resolve the conflict before saving.", "error",
+                )
+                return redirect(url_for("ci_edit", ci_id=ci.id))
             tracked_fields = [
                 "name", "ci_class", "environment", "operational_status", "lifecycle_state",
                 "business_criticality", "ip_address", "serial_number", "vendor", "model",
