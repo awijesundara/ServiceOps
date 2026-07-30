@@ -54,12 +54,21 @@ else
   echo "Skipping provenance verification: set SERVICEOPS_GITHUB_ORGANIZATION and install gh to enable it." >&2
 fi
 
+# Queries through the app container's own DATABASE_URL rather than execing
+# into a `db` service directly: compose.external-db.yaml has no `db`
+# service (the database is external), so this must work identically in
+# both bundled and external mode.
 migration_head() {
-  "${COMPOSE[@]}" exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA \
-    -c "SELECT version_num FROM alembic_version" 2>/dev/null | tr -d '[:space:]'
+  "${COMPOSE[@]}" exec -T app python -c "
+from app import create_app, db
+from sqlalchemy import text
+app = create_app()
+with app.app_context():
+    print(db.session.execute(text('SELECT version_num FROM alembic_version')).scalar())
+" 2>/dev/null | tr -d '[:space:]'
 }
 
-current_head="$(migration_head)"
+current_head="$(migration_head || true)"
 echo "Current migration head: ${current_head:-unknown}"
 
 if [[ "$MODE" == "bundled" ]]; then
@@ -70,9 +79,17 @@ else
 fi
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-echo "Taking a pre-update backup..."
-"$ROOT_DIR/serviceops" backup "pre-update-$stamp"
-rollback_dump="$ROOT_DIR/backups/serviceops-pre-update-$stamp.dump"
+rollback_dump=""
+if [[ "$MODE" == "bundled" ]]; then
+  echo "Taking a pre-update backup..."
+  "$ROOT_DIR/serviceops" backup "pre-update-$stamp"
+  rollback_dump="$ROOT_DIR/backups/serviceops-pre-update-$stamp.dump"
+else
+  # `./serviceops backup` refuses to run in external mode (it isn't this
+  # tool's database to snapshot), so calling it unconditionally would abort
+  # the whole update under `set -e` before the image is ever touched.
+  echo "External database mode: ensure a provider-side snapshot/backup exists before proceeding." >&2
+fi
 
 tmp_env="$(mktemp "$ROOT_DIR/.env.update.XXXXXX")"
 awk -v img="$TARGET_IMAGE" '
@@ -111,8 +128,12 @@ roll_back() {
   else
     echo "✗ Rollback image did NOT become healthy. Manual intervention required immediately." >&2
   fi
-  echo "Restore the pre-update database backup if the failure could have touched data:" >&2
-  echo "  ./serviceops restore $rollback_dump" >&2
+  if [[ -n "$rollback_dump" ]]; then
+    echo "Restore the pre-update database backup if the failure could have touched data:" >&2
+    echo "  ./serviceops restore $rollback_dump" >&2
+  else
+    echo "External database mode: restore the provider-side snapshot taken before this update if the failure could have touched data." >&2
+  fi
   rolled_back=true
 }
 
@@ -142,7 +163,7 @@ if ! wait_for_health app || ! "$ROOT_DIR/serviceops" health >/dev/null 2>&1; the
   exit 1
 fi
 
-new_head="$(migration_head)"
+new_head="$(migration_head || true)"
 echo "New migration head: ${new_head:-unknown}"
 if [[ -z "$new_head" ]]; then
   roll_back
@@ -151,4 +172,6 @@ fi
 
 rm -f "$ENV_FILE.pre-update-bak"
 echo "Update to $TARGET_IMAGE completed and verified."
-echo "Pre-update backup retained at: $rollback_dump"
+if [[ -n "$rollback_dump" ]]; then
+  echo "Pre-update backup retained at: $rollback_dump"
+fi
