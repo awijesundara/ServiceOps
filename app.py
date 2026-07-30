@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.4"
+APP_VERSION = "1.29.5"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -1691,6 +1691,10 @@ SETTING_DEFINITIONS = {
         {"key": "NETBOX_ENABLED", "label": "Enable NetBox sync", "type": "bool", "default": "false", "live": True},
         {"key": "NETBOX_BASE_URL", "label": "NetBox base URL", "type": "url", "default": "", "live": True},
         {"key": "NETBOX_API_TOKEN", "label": "NetBox API token", "type": "secret", "default": "", "live": True},
+        {
+            "key": "NETBOX_CA_CERT", "type": "text", "default": "", "live": True,
+            "label": "NetBox CA certificate (PEM, only needed if NetBox uses an internal CA)",
+        },
     ],
 }
 
