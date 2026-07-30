@@ -166,6 +166,9 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(160), unique=True, nullable=False)
     title = db.Column(db.String(120), nullable=False, default="")
     department = db.Column(db.String(120), nullable=False, default="")
+    division = db.Column(db.String(120))
+    employee_id = db.Column(db.String(80))
+    employee_type = db.Column(db.String(80))
     business_phone = db.Column(db.String(40), nullable=False, default="")
     mobile_phone = db.Column(db.String(40), nullable=False, default="")
     timezone = db.Column(db.String(80), nullable=False, default="Asia/Tokyo")
@@ -1614,6 +1617,15 @@ SETTING_DEFINITIONS = {
         {"key": "LDAP_START_TLS", "label": "Use LDAP StartTLS", "type": "bool", "default": "true", "live": True},
         {"key": "LDAP_VALIDATE_CERT", "label": "Validate LDAP certificate", "type": "bool", "default": "true", "live": True},
         {"key": "LDAP_ROLE_MAPPINGS", "label": "LDAP group role mappings", "type": "json", "default": "{}", "live": True},
+        {
+            "key": "LDAP_ATTR_MAP", "label": "LDAP directory attribute map", "type": "json",
+            "default": json.dumps({
+                "title": "title", "department": "department", "division": "division",
+                "employee_id": "employeeID", "employee_type": "employeeType", "manager": "manager",
+                "email": "mail", "display_name": "displayName", "username": "sAMAccountName",
+            }),
+            "live": True,
+        },
         {"key": "KEYCLOAK_ENABLED", "label": "Enable Keycloak", "type": "bool", "default": "false", "live": False},
         {"key": "KEYCLOAK_DISCOVERY_URL", "label": "Keycloak discovery URL", "type": "url", "default": "", "live": False},
         {"key": "KEYCLOAK_CLIENT_ID", "label": "Keycloak client ID", "type": "text", "default": "", "live": False},
@@ -3664,10 +3676,18 @@ def provision_external_user(provider, subject, username, name, email, role, grou
     return user
 
 
-def ldap_authenticate(username, password):
-    if not password or not setting_bool("LDAP_ENABLED"):
-        return None
+class LdapBindError(RuntimeError):
+    """Raised when a service-account LDAP bind cannot be established."""
+
+
+def ldap_server_and_service_connection():
+    """Build the ldap3 Server plus a bound service-account Connection, shared by
+    interactive login (ldap_authenticate) and the directory sync job. Raises
+    LdapBindError rather than returning a half-usable connection so callers
+    never mistake a failed bind for "no directory configured"."""
     uri = setting_value("LDAP_SERVER_URI", "")
+    if not uri:
+        raise LdapBindError("LDAP_SERVER_URI is not configured.")
     use_ssl = uri.lower().startswith("ldaps://")
     host = uri.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
     port = int(os.getenv("LDAP_PORT", "636" if use_ssl else "389"))
@@ -3691,7 +3711,7 @@ def ldap_authenticate(username, password):
                     "LDAP bind password could not be decrypted; refusing to fall back "
                     "to an anonymous bind for a configured bind DN."
                 )
-                return None
+                raise LdapBindError("LDAP bind password could not be decrypted.")
         elif password_row:
             bind_password = password_row.value or None
     service = Connection(server, user=bind_dn, password=bind_password,
@@ -3699,9 +3719,20 @@ def ldap_authenticate(username, password):
     service.open()
     if not use_ssl and setting_bool("LDAP_START_TLS", True):
         if not service.start_tls():
-            return None
+            raise LdapBindError("LDAP StartTLS negotiation failed.")
     if not service.bind():
+        raise LdapBindError("LDAP service-account bind failed.")
+    return server, service
+
+
+def ldap_authenticate(username, password):
+    if not password or not setting_bool("LDAP_ENABLED"):
         return None
+    try:
+        server, service = ldap_server_and_service_connection()
+    except LdapBindError:
+        return None
+    use_ssl = bool(server.ssl)
     safe_username = escape_filter_chars(username)
     search_filter = setting_value(
         "LDAP_USER_FILTER", "(&(objectClass=user)(sAMAccountName={username}))"
@@ -8077,6 +8108,44 @@ def create_app(test_config=None):
                 audit("create", f"SLA definition: {name}",
                       f"{duration} minutes; {schedule.name if schedule else '24x7'}")
                 flash(f"SLA definition {name} created.", "success")
+            elif action == "sync_directory":
+                # This action manages its own transaction (sync_directory commits
+                # or rolls back internally) so it is handled separately from the
+                # generic commit-and-redirect flow below.
+                from serviceops_core.ldap_sync import DirectorySyncError, sync_directory
+                dry_run = bool(request.form.get("dry_run"))
+                try:
+                    result = sync_directory(tenant_context_id(), dry_run=dry_run)
+                except DirectorySyncError as error:
+                    flash(f"Directory sync could not run: {error}", "error")
+                except LdapBindError as error:
+                    flash(f"Directory sync could not bind to LDAP: {error}", "error")
+                else:
+                    audit(
+                        "configure", "LDAP directory sync",
+                        f"{'Preview' if dry_run else 'Applied'}: "
+                        f"{result['users_updated']} users updated, "
+                        f"{result['managers_resolved']} managers resolved, "
+                        f"{result['memberships_added']} memberships added, "
+                        f"{result['memberships_removed']} memberships removed, "
+                        f"{result['users_unmatched']} unmatched, "
+                        f"{len(result['errors'])} errors",
+                    )
+                    session["ldap_sync_result"] = result
+                    flash(
+                        (
+                            "Directory sync preview: " if dry_run else "Directory sync applied: "
+                        ) + (
+                            f"{result['users_updated']} users updated, "
+                            f"{result['managers_resolved']} managers resolved, "
+                            f"{result['memberships_added']} memberships added, "
+                            f"{result['memberships_removed']} memberships removed, "
+                            f"{result['users_unmatched']} unmatched entries, "
+                            f"{len(result['errors'])} errors."
+                        ),
+                        "success" if not result["errors"] else "warning",
+                    )
+                return redirect(url_for("itil_admin"))
             else:
                 abort(400)
             db.session.commit()
@@ -8114,6 +8183,8 @@ def create_app(test_config=None):
                 CatalogItem.category, CatalogItem.name
             ).all(),
             fulfillment_groups=fulfillment_groups,
+            ldap_enabled=setting_bool("LDAP_ENABLED"),
+            ldap_sync_result=session.pop("ldap_sync_result", None),
         )
 
     @app.post("/change/<int:ticket_id>/conflicts")
