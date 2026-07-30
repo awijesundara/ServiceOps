@@ -61,7 +61,7 @@ mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 
 case "$command" in
-  start) "${COMPOSE[@]}" up -d ;;
+  start) "${COMPOSE[@]}" up -d --remove-orphans ;;
   stop) "${COMPOSE[@]}" stop ;;
   restart) "${COMPOSE[@]}" restart; "$0" health ;;
   status) "${COMPOSE[@]}" ps ;;
@@ -98,7 +98,7 @@ case "$command" in
     ' "$ENV_FILE" >"$retired_file"
     chmod 600 "$retired_file"
     mv "$retired_file" "$ENV_FILE"
-    "${COMPOSE[@]}" up -d --force-recreate app worker
+    "${COMPOSE[@]}" up -d --force-recreate --remove-orphans app worker
     "$0" health
     "${COMPOSE[@]}" exec -T app sh -c 'test -z "${ADMIN_PASSWORD:-}" && test -z "${ADMIN_PASSWORD_FILE:-}"'
     echo "Bootstrap administrator secret retired from the steady-state containers."
