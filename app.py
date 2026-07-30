@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.2"
+APP_VERSION = "1.29.3"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -7404,12 +7404,41 @@ def create_app(test_config=None):
     @roles("agent", "manager", "admin")
     def cmdb():
         status = request.args.get("status", "").strip()
-        cis = tenant_query(ConfigurationItem).order_by(
+        q = request.args.get("q", "").strip()
+        query = tenant_query(ConfigurationItem)
+        if status:
+            query = query.filter(ConfigurationItem.operational_status == status)
+        if q:
+            pattern = f"%{q}%"
+            query = query.filter(db.or_(
+                ConfigurationItem.name.ilike(pattern),
+                ConfigurationItem.serial_number.ilike(pattern),
+                ConfigurationItem.ip_address.ilike(pattern),
+                ConfigurationItem.model.ilike(pattern),
+                ConfigurationItem.vendor.ilike(pattern),
+                ConfigurationItem.location.ilike(pattern),
+                ConfigurationItem.description.ilike(pattern),
+            ))
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            page = 1
+        per_page = 50
+        total = query.count()
+        pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, pages)
+        visible_cis = query.order_by(
             ConfigurationItem.ci_class, ConfigurationItem.name
-        ).all()
+        ).offset((page - 1) * per_page).limit(per_page).all()
+        cis_total = tenant_query(ConfigurationItem).count()
+        operational_total = tenant_query(ConfigurationItem).filter(
+            ConfigurationItem.operational_status == "Operational"
+        ).count()
         relationships = tenant_query(CIRelationship).all()
-        visible_cis = [ci for ci in cis if not status or ci.operational_status == status] if status else cis
-        return render_template("cmdb.html", cis=cis, visible_cis=visible_cis, relationships=relationships, status=status)
+        return render_template(
+            "cmdb.html", visible_cis=visible_cis, relationships=relationships, status=status,
+            q=q, page=page, pages=pages, total=total, cis_total=cis_total, operational_total=operational_total,
+        )
 
     @app.get("/cmdb/export.csv")
     @roles("agent", "manager", "admin")
