@@ -203,6 +203,7 @@ def import_ci_rows(rows, tenant_id, dry_run=False):
         "cis_updated": 0,
         "fields_skipped_netbox_owned": 0,
         "teams_created": [],
+        "teams_merged": 0,
         "errors": [],
     }
     teams_created = set()
@@ -252,6 +253,11 @@ def import_ci_rows(rows, tenant_id, dry_run=False):
     if dry_run:
         db.session.rollback()
     else:
+        # Sweeps up any spelling/formatting-variant duplicate teams (e.g.
+        # this import created "Core apps" while "CoreApps" already existed
+        # under a different owner name) so dropdowns never accumulate
+        # near-duplicates from repeated imports.
+        summary["teams_merged"] = core_app.find_and_merge_duplicate_groups(tenant_id)
         db.session.commit()
 
     return summary

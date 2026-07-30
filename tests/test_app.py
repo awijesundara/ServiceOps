@@ -24,8 +24,8 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
                  audit, change_approval_stages, create_api_token, create_app, create_notification, db,
-                 deploy_workflow_package, ldap_authenticate, merge_support_group_into,
-                 normalize_environment, process_workflow_jobs,
+                 deploy_workflow_package, find_and_merge_duplicate_groups, ldap_authenticate,
+                 merge_support_group_into, normalize_environment, process_workflow_jobs,
                  process_workflow_schedules, queue_workflow_event,
                  scan_attachment, simulate_workflows,
                  integration_endpoint_valid, integration_endpoint_resolves_safely,
@@ -1432,6 +1432,45 @@ def test_adding_alias_for_existing_duplicate_team_merges_it(client, app):
         assert ci.support_group_id == database_id
         assert SupportGroup.query.get(dba_id) is None
         assert SupportGroup.query.filter_by(name="Database").one().manager_id == database_manager_id
+
+
+def test_spelling_variant_teams_merge_into_one_canonical_group(client, app):
+    """"SSD", "SSD Team", "Unix", "Unix Team", "CoreApps", "Core apps",
+    "CoreApps team" are all the same team spelled differently -- the
+    duplicate-team cleanup must collapse each cluster into one group,
+    preferring whichever already has a manager as canonical."""
+    with app.app_context():
+        ssd = SupportGroup.query.filter_by(name="SSD").one()
+        ssd.manager_id = User.query.filter_by(username="database.manager").one().id
+        db.session.add(SupportGroup(name="SSD Team", group_type="IT Fulfillment", tenant_id=1))
+        db.session.add(SupportGroup(name="Core apps", group_type="IT Fulfillment", tenant_id=1))
+        db.session.add(SupportGroup(name="CoreApps team", group_type="IT Fulfillment", tenant_id=1))
+        db.session.commit()
+        ssd_manager_id = ssd.manager_id
+
+    login(client)
+    response = client.post("/itil/administration", data={
+        "action": "merge_duplicate_teams",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+
+    with app.app_context():
+        assert SupportGroup.query.filter_by(name="SSD Team").first() is None
+        assert SupportGroup.query.filter_by(name="Core apps").first() is None
+        assert SupportGroup.query.filter_by(name="CoreApps team").first() is None
+        remaining_ssd = SupportGroup.query.filter_by(name="SSD").one()
+        assert remaining_ssd.manager_id == ssd_manager_id
+        assert SupportGroup.query.filter_by(name="CoreApps").one()
+
+
+def test_support_group_dedup_key_ignores_case_whitespace_and_team_suffix(app):
+    with app.app_context():
+        from app import support_group_dedup_key
+        assert support_group_dedup_key("CoreApps") == support_group_dedup_key("Core apps")
+        assert support_group_dedup_key("CoreApps") == support_group_dedup_key("CoreApps team")
+        assert support_group_dedup_key("SSD") == support_group_dedup_key("SSD Team")
+        assert support_group_dedup_key("Unix") == support_group_dedup_key("Unix Team")
+        assert support_group_dedup_key("DBA") != support_group_dedup_key("Database")
 
 
 def test_catalog_approval_chain_creates_fulfillment_task(client, app):
