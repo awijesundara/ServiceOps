@@ -73,7 +73,7 @@ def enable_netbox(devices=None, vms=None, monkeypatch=None):
     # actual HTTP calls are mocked too via session_factory below.
     if monkeypatch is not None:
         import app as core_app
-        monkeypatch.setattr(core_app, "integration_endpoint_resolves_safely", lambda url: True)
+        monkeypatch.setattr(core_app, "integration_endpoint_resolves_safely", lambda url, **kwargs: True)
 
     def fake_session_factory(base_url, token):
         return FakeSession(devices=devices, vms=vms)

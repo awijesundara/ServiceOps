@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.3"
+APP_VERSION = "1.29.4"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -1753,7 +1753,23 @@ def create_notification(user_id, title, body, tenant_id=None, target_type=None, 
     return notification
 
 
-def integration_endpoint_valid(endpoint):
+def _integration_address_allowed(address, allow_private_network):
+    """True if `address` is safe to connect to. Loopback/link-local/multicast/
+    reserved/unspecified addresses are always rejected (they'd point the
+    request at the app's own host or network infrastructure regardless of
+    who configured the endpoint). Ordinary private-network addresses
+    (RFC1918 etc.) are rejected too UNLESS `allow_private_network` is set --
+    that's opt-in, for trusted admin-configured integrations that are
+    expected to live on the internal network (e.g. a self-hosted NetBox),
+    as opposed to arbitrary user-supplied targets like webhook URLs."""
+    if address.is_loopback or address.is_link_local or address.is_multicast or address.is_reserved or address.is_unspecified:
+        return False
+    if address.is_global:
+        return True
+    return allow_private_network and address.is_private
+
+
+def integration_endpoint_valid(endpoint, allow_private_network=False):
     parsed = urlparse(endpoint)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username:
         return False
@@ -1762,16 +1778,16 @@ def integration_endpoint_valid(endpoint):
         return False
     try:
         address = ipaddress.ip_address(hostname)
-        if not address.is_global:
+        if not _integration_address_allowed(address, allow_private_network):
             return False
     except ValueError:
         pass
     return True
 
 
-def integration_endpoint_resolves_safely(endpoint):
+def integration_endpoint_resolves_safely(endpoint, allow_private_network=False):
     """Re-resolve the endpoint's hostname and reject it if any A/AAAA record is
-    non-global. A literal-IP/hostname string check alone (integration_endpoint_valid)
+    disallowed. A literal-IP/hostname string check alone (integration_endpoint_valid)
     cannot catch a public-looking hostname that resolves to a private address
     (DNS rebinding) -- this closes that gap at delivery time, immediately before
     the connection is made."""
@@ -1780,7 +1796,7 @@ def integration_endpoint_resolves_safely(endpoint):
         return False
     try:
         address = ipaddress.ip_address(hostname)
-        return address.is_global
+        return _integration_address_allowed(address, allow_private_network)
     except ValueError:
         pass
     try:
@@ -1792,7 +1808,7 @@ def integration_endpoint_resolves_safely(endpoint):
     for info in infos:
         raw_address = info[4][0]
         try:
-            if not ipaddress.ip_address(raw_address).is_global:
+            if not _integration_address_allowed(ipaddress.ip_address(raw_address), allow_private_network):
                 return False
         except ValueError:
             return False
