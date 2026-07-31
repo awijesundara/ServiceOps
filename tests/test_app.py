@@ -3950,3 +3950,25 @@ def test_assets_list_supports_servicenow_style_filter(client, app):
     assert b"AST-101" in filtered.data
     assert b"AST-100" not in filtered.data
     assert b"Status is Retired" in filtered.data
+
+
+def test_module_records_searchable_by_imported_source_ticket_number(client, app):
+    """RT (or any future external source) imports stamp external_id on the
+    EnterpriseRecord -- staff who only know the original RT ticket number
+    must still be able to find the record by it."""
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        db.session.add(EnterpriseRecord(
+            number="EVT0009999", domain="event", record_type="RT Ticket",
+            title="Imported from RT", description="Imported from RT",
+            requester_id=admin.id, external_source="rt", external_id="48055",
+        ))
+        db.session.commit()
+
+    found = client.get("/module/event?q=48055")
+    assert b"Imported from RT" in found.data
+    with app.app_context():
+        detail_id = EnterpriseRecord.query.filter_by(external_id="48055").one().id
+    detail = client.get(f"/enterprise/{detail_id}")
+    assert b"RT #48055" in detail.data

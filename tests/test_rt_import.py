@@ -36,12 +36,15 @@ class FakeResponse:
 
 
 class FakeRTSession:
-    def __init__(self, tickets, queues, users, history=None, transactions=None):
+    def __init__(self, tickets, queues, users, history=None, transactions=None,
+                 transaction_attachments=None, attachment_meta=None):
         self.tickets = {str(t["id"]): t for t in tickets}
         self.queues = queues
         self.users = users
         self.history = history or {}
         self.transactions = transactions or {}
+        self.transaction_attachments = transaction_attachments or {}
+        self.attachment_meta = attachment_meta or {}
 
     def get(self, url, params=None, timeout=None):
         if url.endswith("/REST/2.0/tickets"):
@@ -58,9 +61,15 @@ class FakeRTSession:
         for user_id, contact in self.users.items():
             if url.endswith(f"/REST/2.0/user/{user_id}"):
                 return FakeResponse(contact)
+        for txn_id, items in self.transaction_attachments.items():
+            if url.endswith(f"/REST/2.0/transaction/{txn_id}/attachments"):
+                return FakeResponse({"items": items})
         for txn_id, txn in self.transactions.items():
             if url.endswith(f"/REST/2.0/transaction/{txn_id}"):
                 return FakeResponse(txn)
+        for att_id, meta in self.attachment_meta.items():
+            if url.endswith(f"/REST/2.0/attachment/{att_id}"):
+                return FakeResponse(meta)
         return FakeResponse({"items": []})
 
     def close(self):
@@ -169,6 +178,57 @@ def test_correspondence_folded_into_description(app, monkeypatch):
         record = EnterpriseRecord.query.filter_by(external_source="rt", external_id="404").one()
         assert "Initial message body" in record.description
         assert "Dan" in record.description
+
+
+def test_correspondence_falls_back_to_attachment_body_and_notes_status_changes(app, monkeypatch):
+    """Reproduces the real-world case: a Correspond transaction with no
+    inline Content (its body lives in an attachment instead), a
+    file-only Correspond transaction (no text body at all, just a
+    spreadsheet), and a Status transaction -- all of RT's history, not
+    just the first message, must show up in the imported description."""
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+        ticket = make_ticket(606, "Full history", status="closed", requestor_ids=["9"])
+        factory = enable_rt(
+            monkeypatch, tickets=[ticket], queues={"1": "General"},
+            users={
+                "9": {"EmailAddress": "dan@example.test", "RealName": "Dan"},
+                "10": {"EmailAddress": "robert@example.test", "RealName": "Robert Murray"},
+            },
+            history={"606": [{"id": "77"}, {"id": "78"}, {"id": "79"}]},
+            transactions={
+                "77": {"Type": "Create", "Content": "Original request text", "Creator": {"id": "9"}},
+                "78": {"Type": "Correspond", "Content": "", "Creator": {"id": "10"}},
+                "79": {"Type": "Status", "OldValue": "new", "NewValue": "closed", "Creator": {"id": "10"}},
+            },
+            transaction_attachments={"78": [{"id": "501"}]},
+            attachment_meta={"501": {
+                "Filename": "form.xlsx",
+                "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "Content": "",
+            }},
+        )
+        result = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
+        record = EnterpriseRecord.query.filter_by(external_source="rt", external_id="606").one()
+        assert "Original request text" in record.description
+        assert "form.xlsx" in record.description
+        assert "Status changed from 'new' to 'closed'" in record.description
+        assert record.state == "Closed"
+        assert result["comments_imported"] == 2
+
+
+def test_unrecognized_status_reports_error_instead_of_silently_defaulting(app, monkeypatch):
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+        ticket = make_ticket(707, "Weird status", status="triaging", requestor_ids=["9"])
+        factory = enable_rt(
+            monkeypatch, tickets=[ticket], queues={"1": "General"},
+            users={"9": {"EmailAddress": "gail@example.test", "RealName": "Gail"}},
+        )
+        result = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
+        record = EnterpriseRecord.query.filter_by(external_source="rt", external_id="707").one()
+        assert record.state == "New"
+        assert any("Unrecognized RT status" in error for error in result["errors"])
 
 
 def test_rt_import_disabled_raises(app):
