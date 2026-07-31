@@ -22,6 +22,30 @@ function showToast(message, category) {
 }
 window.showToast = showToast;
 
+// Plain <form method="post"> submits reload the page and the browser resets
+// scroll to the top; on long admin/config pages with many independent forms
+// that means every save loses your place. Remember where you were per-page
+// and restore it once, instead of forcing the user to scroll back down.
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+(() => {
+  const key = `scrollY:${location.pathname}`;
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (form instanceof HTMLFormElement && form.method.toLowerCase() !== "get") {
+      sessionStorage.setItem(key, String(window.scrollY));
+    }
+  });
+  const saved = sessionStorage.getItem(key);
+  if (saved !== null) {
+    sessionStorage.removeItem(key);
+    const y = parseInt(saved, 10);
+    if (!Number.isNaN(y)) {
+      requestAnimationFrame(() => window.scrollTo(0, y));
+      setTimeout(() => window.scrollTo(0, y), 0);
+    }
+  }
+})();
+
 document.addEventListener("DOMContentLoaded", () => {
   if ("serviceWorker" in navigator && window.isSecureContext) {
     navigator.serviceWorker.register("/service-worker.js", { scope: "/" });
