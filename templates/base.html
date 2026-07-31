@@ -6,19 +6,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ instance_name|default('ServiceOps') }}{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='1.29.14') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v='1.29.14') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v='1.29.14') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v='1.29.14') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v='1.29.14') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v='1.29.14') }}">
-  <script src="{{ url_for('static', filename='platform.js', v='1.29.14') }}" defer></script>
-  <script src="{{ url_for('static', filename='lookup.js', v='1.29.14') }}" defer></script>
-  <script src="{{ url_for('static', filename='select-enhance.js', v='1.29.14') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='1.29.15') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v='1.29.15') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v='1.29.15') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v='1.29.15') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v='1.29.15') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v='1.29.15') }}">
+  <script src="{{ url_for('static', filename='platform.js', v='1.29.15') }}" defer></script>
+  <script src="{{ url_for('static', filename='lookup.js', v='1.29.15') }}" defer></script>
+  <script src="{{ url_for('static', filename='select-enhance.js', v='1.29.15') }}" defer></script>
 </head>
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
 {% if current_user.is_authenticated %}
-<script src="{{ url_for('static', filename='nav-init.js', v='1.29.14') }}"></script>
+<script src="{{ url_for('static', filename='nav-init.js', v='1.29.15') }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active</div>{% endif %}
 <aside class="sidebar">
   <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo">{% else %}<span class="company-mark">{{ company_name[:2]|upper }}</span>{% endif %}<span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span></a>
@@ -61,7 +61,7 @@
     <a href="{{ url_for('change_password') }}" {% if nav_active('change_password') %}class="active" aria-current="page"{% endif %}>Change password</a>
     {% endif %}
   </nav>
-  <script src="{{ url_for('static', filename='nav-init.js', v='1.29.14') }}"></script>
+  <script src="{{ url_for('static', filename='nav-init.js', v='1.29.15') }}"></script>
   <div class="profile">
     {{ user_avatar(current_user) }}
     <a href="{{ url_for('profile') }}"><strong>{{ current_user.name }}</strong><small>{{ current_user.role }}</small></a>

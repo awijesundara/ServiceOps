@@ -139,6 +139,21 @@ def test_owning_team_alias_resolves_to_existing_group_instead_of_duplicating(app
         assert SupportGroup.query.filter_by(name="DBA").count() == 0
 
 
+def test_owning_team_dba_team_alias_resolves_to_database(app):
+    with app.app_context():
+        # Staff also write "DBA Team" (not just "DBA") -- seeded by
+        # seed_itil alongside the "DBA" alias.
+        database_group = SupportGroup.query.filter_by(name="Database").one()
+        assert SupportGroupAlias.query.filter_by(alias="DBA Team").count() == 1
+        rows = parse_ci_rows(
+            "Host,System Owner,Serial Number\nsrv-db-02.example.com,DBA Team,XYZ003\n"
+        )
+        result = import_ci_rows(rows, 1)
+        assert result["teams_created"] == []
+        ci = ConfigurationItem.query.filter_by(name="srv-db-02.example.com").one()
+        assert ci.support_group_id == database_group.id
+
+
 def test_owning_team_custom_alias_can_be_added_via_admin(app):
     with app.app_context():
         team = SupportGroup(name="Site Reliability", tenant_id=1)
