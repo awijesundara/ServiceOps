@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ item.number }} · Improvement · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">CONTINUAL IMPROVEMENT</p><h1>{{ item.number }} · {{ item.title }}</h1>{% if source_url %}<p>Raised from <a href="{{ source_url }}">{{ source_label }}</a></p>{% else %}<p>Raised manually by {{ item.created_by.name }}</p>{% endif %}</div><a class="button" href="{{ url_for('improvements') }}">← Back to register</a></header>
+
+<form method="post" class="record-form">
+  <div class="record-grid">
+    <label><span>Number</span><input value="{{ item.number }}" disabled></label>
+    <label><span>Status</span><select name="status">{% for state in states %}<option {% if item.status==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
+    <label><span>Owner</span><select name="owner_id"><option value="">Unassigned</option>{% for user in agents %}<option value="{{ user.id }}" {% if item.owner_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+    <label><span>Raised by</span><input value="{{ item.created_by.name }}" disabled></label>
+    <label><span>Raised on</span><input value="{{ (item.created_at|usertime('%b %d, %Y · %H:%M')) }}" disabled></label>
+    <label><span>Last updated</span><input value="{{ (item.updated_at|usertime('%b %d, %Y · %H:%M')) }}" disabled></label>
+  </div>
+  <div class="record-long-fields">
+    <label><span>Description</span><textarea rows="4" disabled>{{ item.description }}</textarea></label>
+    <label><span>Expected outcome</span><textarea name="expected_outcome" rows="3">{{ item.expected_outcome }}</textarea></label>
+    <label><span>Measured result</span><textarea name="measured_result" rows="3" placeholder="Once the change lands, record what actually happened.">{{ item.measured_result }}</textarea></label>
+  </div>
+  <footer class="record-footer-actions"><button class="primary">Save</button></footer>
+</form>
+{% endblock %}

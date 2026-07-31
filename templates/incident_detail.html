@@ -56,6 +56,17 @@
 </nav>
 <section class="panel event-history-panel" id="event-history">
   <header class="section-heading"><div><p class="eyebrow">EVENT STREAM</p><h2>Event history</h2></div><span>{{ history|length }} events</span></header>
+  {% if can_manage_ticket %}
+  <details><summary>Raise as a continual-improvement item</summary>
+    <form method="post" action="{{ url_for('improvement_new') }}" class="form-grid">
+      <input type="hidden" name="source_type" value="ticket"><input type="hidden" name="source_id" value="{{ ticket.id }}">
+      <input type="hidden" name="redirect_to" value="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">
+      <label class="wide required-field"><span>Title</span><input name="title" maxlength="200" required value="Improvement from {{ ticket.number }}: "></label>
+      <label class="wide"><span>Description</span><textarea name="description" rows="2"></textarea></label>
+      <div class="wide actions"><button>Raise improvement</button></div>
+    </form>
+  </details>
+  {% endif %}
   <div class="event-stream">
     {% for event in history %}
     <article class="event-entry">
