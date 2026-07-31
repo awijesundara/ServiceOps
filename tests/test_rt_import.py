@@ -457,3 +457,43 @@ def test_already_imported_change_is_not_reimported_as_event(app, monkeypatch):
         assert second["already_imported"] == 1
         assert second["records_created"] == 0
         assert Ticket.query.filter_by(external_source="rt", external_id="811").count() == 1
+
+
+def test_custom_fields_are_captured_on_imported_event(app, monkeypatch):
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+        ticket = make_ticket(501, "Update OME to the newest version", requestor_ids=["9"])
+        ticket["CustomFields"] = [
+            {"name": "Project", "values": ["Data Center Management"]},
+            {"name": "Environment", "values": ["Dev", "Test"]},
+            {"name": "Approved by", "values": []},
+        ]
+        factory = enable_rt(
+            monkeypatch, tickets=[ticket], queues={"1": "General"},
+            users={"9": {"EmailAddress": "alice@example.test", "RealName": "Alice"}},
+        )
+        import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
+
+        record = EnterpriseRecord.query.filter_by(external_source="rt", external_id="501").one()
+        custom_fields = record.metadata_dict["rt_custom_fields"]
+        assert custom_fields["Project"] == "Data Center Management"
+        assert custom_fields["Environment"] == "Dev, Test"
+        # A custom field with no value set on the RT side shouldn't show up
+        # as an empty row.
+        assert "Approved by" not in custom_fields
+
+
+def test_custom_fields_are_folded_into_description_for_imported_changes(app, monkeypatch):
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+        ticket = make_ticket(502, "[CR] Patch the database cluster", requestor_ids=["9"])
+        ticket["CustomFields"] = [{"name": "Location", "values": ["CC1 5A-2b"]}]
+        factory = enable_rt(
+            monkeypatch, tickets=[ticket], queues={"1": "General"},
+            users={"9": {"EmailAddress": "alice@example.test", "RealName": "Alice"}},
+        )
+        import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
+
+        ticket_row = Ticket.query.filter_by(external_source="rt", external_id="502").one()
+        assert "RT custom fields" in ticket_row.description
+        assert "Location: CC1 5A-2b" in ticket_row.description

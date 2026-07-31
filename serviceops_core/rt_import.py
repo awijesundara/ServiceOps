@@ -48,6 +48,7 @@ built specifically so a human can eyeball a handful before ever committing.
 """
 import base64
 import hashlib
+import json
 import os
 import re
 import tempfile
@@ -557,6 +558,29 @@ def _already_imported(rt_id, tenant_id):
     return False
 
 
+def _custom_fields(detail):
+    """RT's REST2.0 ticket endpoint omits CustomFields unless explicitly
+    requested (fields=CustomFields, same "sparse fieldset" behavior as
+    attachment Content elsewhere in this module) -- returns a flat
+    {name: "value" or "value1, value2"} dict, skipping fields with no value
+    set so an unfilled custom field on the RT side doesn't show up as an
+    empty row after import."""
+    result = {}
+    for field in detail.get("CustomFields") or []:
+        name = field.get("name")
+        values = [v for v in (field.get("values") or []) if v]
+        if name and values:
+            result[name] = ", ".join(values)
+    return result
+
+
+def _format_custom_fields_block(custom_fields):
+    if not custom_fields:
+        return ""
+    lines = "\n".join(f"- {name}: {value}" for name, value in custom_fields.items())
+    return f"RT custom fields:\n{lines}"
+
+
 def _set_created_at(row, detail):
     import app as core_app
 
@@ -571,6 +595,7 @@ def _create_event_record(rt_id, tenant_id, title, description, detail, requester
     import app as core_app
     from app import db
 
+    custom_fields = _custom_fields(detail)
     record = core_app.EnterpriseRecord(
         number=core_app.next_enterprise_number("event"),
         domain="event", record_type="RT Ticket",
@@ -580,6 +605,7 @@ def _create_event_record(rt_id, tenant_id, title, description, detail, requester
         risk="Medium", requester_id=requester.id,
         assignee_id=(assignee.id if assignee else None),
         support_group_id=group.id,
+        metadata_json=json.dumps({"rt_custom_fields": custom_fields}, sort_keys=True) if custom_fields else "{}",
         tenant_id=tenant_id, external_source="rt", external_id=rt_id,
     )
     _set_created_at(record, detail)
@@ -631,12 +657,17 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
     # ticket, which adds up fast against a slow RT instance. History is
     # only needed when actually importing (dry runs skip correspondence
     # entirely to keep the preview fast), so it's only requested then.
+    # CustomFields is omitted from RT's default ticket representation unless
+    # explicitly requested, the same "sparse fieldset" behavior that made
+    # attachment Content silently vanish earlier -- fields=CustomFields adds
+    # it without dropping any of the normally-included fields.
+    detail_params = {"fields": "CustomFields"}
     history = None
     if dry_run:
-        detail = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}")
+        detail = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}", params=detail_params)
     else:
         with ThreadPoolExecutor(max_workers=2) as pool:
-            detail_future = pool.submit(_get, session, base_url, f"/REST/2.0/ticket/{rt_id}")
+            detail_future = pool.submit(_get, session, base_url, f"/REST/2.0/ticket/{rt_id}", params=detail_params)
             history_future = pool.submit(
                 _get, session, base_url, f"/REST/2.0/ticket/{rt_id}/history", params={"per_page": 200},
             )
@@ -687,9 +718,15 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
             enterprise_record=(None if is_change else row),
             summary=summary, history=history,
         )
-        if log:
-            max_len = 20000 if is_change else 60000
-            row.description = f"{title}\n\n{log}"[:max_len]
+        if is_change:
+            # Ticket has no JSON metadata column the way EnterpriseRecord
+            # does, so custom fields go into the description text instead --
+            # and unlike event records, they need to show up even when there's
+            # no correspondence log at all.
+            parts = [title, _format_custom_fields_block(_custom_fields(detail)), log]
+            row.description = "\n\n".join(part for part in parts if part)[:20000]
+        elif log:
+            row.description = f"{title}\n\n{log}"[:60000]
     summary["preview"].append({
         "rt_id": rt_id, "type": "Change" if is_change else "IT operations event",
         "number": row.number, "title": title,
