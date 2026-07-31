@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.39"
+APP_VERSION = "1.29.40"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -3670,11 +3670,15 @@ def capture_kpi_snapshots(tenant_id):
             ))
 
     terminal_states = ("Resolved", "Closed", "Cancelled")
+    # Customer-facing compliance only counts real SLAs -- an OLA (internal
+    # team-to-team) or UC (external supplier) breach is tracked and still
+    # notifies, but folding it into the number reported to the business
+    # overstates what the business itself was actually promised.
     resolved_slas = TaskSLA.query.join(
         Ticket, db.and_(TaskSLA.target_type == "ticket", TaskSLA.target_id == Ticket.id)
-    ).filter(
+    ).join(SLADefinition, TaskSLA.definition_id == SLADefinition.id).filter(
         Ticket.tenant_id == tenant_id, Ticket.state.in_(terminal_states),
-        Ticket.updated_at >= thirty_days_ago,
+        Ticket.updated_at >= thirty_days_ago, SLADefinition.agreement_type == "SLA",
     ).all()
     if resolved_slas:
         upsert("sla_compliance_pct", round(
@@ -6861,10 +6865,18 @@ def create_app(test_config=None):
         lessons-learned artifact, not just whatever the live coordination
         log happened to capture while the incident was still active."""
         ticket = tenant_record_or_404(Ticket, ticket_id)
-        if ticket.kind != "incident" or not ticket.major_incident_profile:
+        if ticket.kind != "incident":
+            abort(404)
+        # A structured review is expected of any P1, not only ones formally
+        # walked through the "propose major incident" flow -- most P1s never
+        # get declared major but still warrant documented lessons learned.
+        if not ticket.major_incident_profile and ticket.priority != "P1":
             abort(404)
         require_ticket_team_access(ticket)
         profile = ticket.major_incident_profile
+        if not profile:
+            profile = MajorIncidentProfile(ticket_id=ticket.id, status="Resolved")
+            db.session.add(profile)
         before = {
             "what went well": profile.review_what_went_well,
             "what went poorly": profile.review_what_went_poorly,
@@ -8776,6 +8788,7 @@ def create_app(test_config=None):
                 "location", "cost_center",
             ]
             before = {field: getattr(ci, field) or "" for field in tracked_fields}
+            before["attributes"] = json.dumps(ci.attributes or {}, sort_keys=True)
             ci.name = request.form["name"].strip()
             ci.ci_class = request.form["ci_class"].strip()
             ci.description = request.form.get("description", "").strip() or None
@@ -8802,6 +8815,7 @@ def create_app(test_config=None):
                 or request.form.get("require_ccb_approval") == "on"
             )
             after = {field: getattr(ci, field) or "" for field in tracked_fields}
+            after["attributes"] = json.dumps(ci.attributes or {}, sort_keys=True)
             log_field_changes("ci", ci.id, before, after)
             audit("update", "CI", ci.name)
             db.session.commit()
@@ -9906,11 +9920,15 @@ def create_app(test_config=None):
         # both driven off TaskSLA the same way the dashboard's own SLA widgets are.
         sla_at_risk_hours = setting_int("SLA_AT_RISK_HOURS", 4)
         breach_horizon = now() + timedelta(hours=sla_at_risk_hours)
+        # Only customer-facing SLAs count toward the headline breach/at-risk/compliance
+        # widgets; OLA and UC agreements are internal/supplier commitments that still
+        # breach and notify (see attach_slas/process_sla_breaches) but shouldn't be
+        # blended into what's reported as the business's own SLA performance.
         sla_breached_open = sla_at_risk_open = 0
         if open_ticket_ids:
-            for row in TaskSLA.query.filter(
+            for row in TaskSLA.query.join(SLADefinition, TaskSLA.definition_id == SLADefinition.id).filter(
                 TaskSLA.target_type == "ticket", TaskSLA.target_id.in_(open_ticket_ids),
-                TaskSLA.stage == "In Progress",
+                TaskSLA.stage == "In Progress", SLADefinition.agreement_type == "SLA",
             ).all():
                 if row.breached:
                     sla_breached_open += 1
@@ -9926,8 +9944,9 @@ def create_app(test_config=None):
         resolved_30d_ids = [row.id for row in resolved_30d]
         sla_by_ticket = defaultdict(bool)
         if resolved_30d_ids:
-            for row in TaskSLA.query.filter(
+            for row in TaskSLA.query.join(SLADefinition, TaskSLA.definition_id == SLADefinition.id).filter(
                 TaskSLA.target_type == "ticket", TaskSLA.target_id.in_(resolved_30d_ids),
+                SLADefinition.agreement_type == "SLA",
             ).all():
                 sla_by_ticket[row.target_id] = sla_by_ticket[row.target_id] or row.breached
         tickets_with_sla = [row for row in resolved_30d if row.id in sla_by_ticket]
@@ -10069,10 +10088,37 @@ def create_app(test_config=None):
             "fcr_pct": "First contact resolution %",
             "csat_avg": "CSAT avg (out of 5)",
         }
+        # 30 days of daily snapshots were already captured (capture_kpi_snapshots)
+        # but only ever rendered as a flat date-sorted table -- turn it into a
+        # per-metric trend so the point of snapshotting (spotting movement) is
+        # actually visible, not just archived.
+        kpi_series = {key: [] for key in kpi_metric_labels}
+        for row in sorted(kpi_history_rows, key=lambda r: r.snapshot_date):
+            if row.metric_name in kpi_series:
+                kpi_series[row.metric_name].append({"date": row.snapshot_date.isoformat(), "value": row.metric_value})
+        kpi_trends = []
+        spark_w, spark_h = 240, 48
+        for key, label in kpi_metric_labels.items():
+            points = kpi_series[key]
+            latest = points[-1]["value"] if points else None
+            previous = points[-2]["value"] if len(points) > 1 else None
+            values = [p["value"] for p in points]
+            lo, hi = (min(values), max(values)) if values else (0, 0)
+            spread = (hi - lo) or 1
+            step = spark_w / max(1, len(values) - 1) if len(values) > 1 else 0
+            spark_points = " ".join(
+                f"{round(i * step, 1)},{round(spark_h - ((v - lo) / spread) * spark_h, 1)}"
+                for i, v in enumerate(values)
+            ) if len(values) > 1 else ""
+            kpi_trends.append({
+                "key": key, "label": label, "points": points, "latest": latest,
+                "delta": (round(latest - previous, 1) if latest is not None and previous is not None else None),
+                "spark_points": spark_points,
+            })
 
         return render_template(
             "analytics.html", ticket_states=ticket_states, domain_counts=domain_counts,
-            kpi_history_rows=kpi_history_rows, kpi_metric_labels=kpi_metric_labels,
+            kpi_history_rows=kpi_history_rows, kpi_metric_labels=kpi_metric_labels, kpi_trends=kpi_trends,
             priority_counts=priority_counts, overdue_investigations=overdue_investigations,
             modules=DOMAIN_CONFIG, open_count=open_count,
             sla_breached_open=sla_breached_open, sla_at_risk_open=sla_at_risk_open,
