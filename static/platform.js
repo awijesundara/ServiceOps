@@ -22,6 +22,38 @@ function showToast(message, category) {
 }
 window.showToast = showToast;
 
+// Click-to-enlarge for image attachments: a small inline thumbnail (see
+// .attachment-thumb) opens the full image in an in-page overlay instead of
+// a new tab, per user request for a less disruptive preview.
+function openLightbox(src, title) {
+  const overlay = document.getElementById("lightbox-overlay");
+  if (!overlay) return;
+  overlay.querySelector(".lightbox-img").src = src;
+  overlay.querySelector(".lightbox-caption").textContent = title || "";
+  overlay.hidden = false;
+  document.body.classList.add("lightbox-open");
+}
+function closeLightbox() {
+  const overlay = document.getElementById("lightbox-overlay");
+  if (!overlay) return;
+  overlay.hidden = true;
+  overlay.querySelector(".lightbox-img").src = "";
+  document.body.classList.remove("lightbox-open");
+}
+document.addEventListener("click", (event) => {
+  const trigger = event.target.closest("[data-lightbox-src]");
+  if (trigger) {
+    event.preventDefault();
+    event.stopPropagation();
+    openLightbox(trigger.dataset.lightboxSrc, trigger.dataset.lightboxTitle);
+    return;
+  }
+  if (event.target.closest(".lightbox-close") || event.target.id === "lightbox-overlay") closeLightbox();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeLightbox();
+});
+
 // Plain <form method="post"> submits reload the page and the browser resets
 // scroll to the top; on long admin/config pages with many independent forms
 // that means every save loses your place. Remember where you were per-page
