@@ -2,6 +2,7 @@
 {% block title %}{{ ticket.number }} · {{ ticket.title }} · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set primary_ci_link = (ci_links|selectattr('relationship_role','equalto','Primary CI')|first) %}
+{% set display_ci = ticket.change_governance.ci if ticket.change_governance and ticket.change_governance.ci else (primary_ci_link.ci if primary_ci_link else None) %}
 <section class="record-shell task-record-shell">
   <header class="record-toolbar">
     <div class="record-identity">
@@ -36,7 +37,8 @@
       <label class="required-field"><span>Assignment group</span><input value="{{ owning_group.name if owning_group else 'Not assigned' }}" disabled></label>
       <label><span>Team manager</span><input value="{{ owning_group.manager.name if owning_group and owning_group.manager else 'Not assigned' }}" disabled></label>
       <label><span>Priority</span><select name="priority" {% if not can_manage_ticket %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
-      <label><span>Configuration item</span><input value="{{ ticket.change_governance.ci.name if ticket.change_governance and ticket.change_governance.ci else (primary_ci_link.ci.name if primary_ci_link else 'Not selected') }}" disabled></label>
+      <label><span>Configuration item</span><input value="{{ display_ci.name if display_ci else 'Not selected' }}" disabled></label>
+      <label><span>CI owning team</span><input value="{{ display_ci.support_group.name if display_ci and display_ci.support_group else 'Unassigned' }}" disabled></label>
       <label><span>Assigned to</span><select name="assignee_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">Unassigned</option>{% for user in agents %}<option value="{{ user.id }}" {% if ticket.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
     </div>
     <div class="record-long-fields">
@@ -167,7 +169,7 @@
   {% if can_manage_ticket %}
   <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
     <input type="hidden" name="relationship_role" value="Primary CI">
-    <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required value="{{ primary_ci_link.ci.name if primary_ci_link else '' }}"><input type="hidden" name="ci_id" value="{{ primary_ci_link.ci_id if primary_ci_link else '' }}"><div class="lookup-results" hidden></div></div>
+    <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required value="{{ primary_ci_link.ci.name if primary_ci_link else '' }}"><input type="hidden" name="ci_id" value="{{ primary_ci_link.ci_id if primary_ci_link else '' }}" data-owning-team="{{ primary_ci_link.ci.support_group.name if primary_ci_link and primary_ci_link.ci.support_group else '' }}"><div class="lookup-results" hidden></div></div>
     <button>{{ 'Change primary CI' if primary_ci_link else 'Set primary CI' }}</button>
   </form>
   {% endif %}
@@ -212,7 +214,7 @@
       <label>Change type<select name="change_type">{% for value in ['Standard','Normal','Emergency'] %}<option {% if ticket.change_governance.change_type==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label>Impact<select name="impact">{% for value in ['Low','Medium','High'] %}<option {% if ticket.change_governance.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label>Risk score<input type="number" min="0" max="100" name="risk_score" value="{{ ticket.change_governance.risk_score }}"></label>
-      <label>Primary CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" value="{{ ticket.change_governance.ci.name if ticket.change_governance.ci else '' }}"><input type="hidden" name="ci_id" value="{{ ticket.change_governance.ci_id or '' }}"><div class="lookup-results" hidden></div></div></label>
+      <label>Primary CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" value="{{ ticket.change_governance.ci.name if ticket.change_governance.ci else '' }}"><input type="hidden" name="ci_id" value="{{ ticket.change_governance.ci_id or '' }}" data-owning-team="{{ ticket.change_governance.ci.support_group.name if ticket.change_governance.ci and ticket.change_governance.ci.support_group else '' }}"><div class="lookup-results" hidden></div></div></label>
       <label>Planned start<input type="datetime-local" name="planned_start" value="{{ ticket.change_governance.planned_start.strftime('%Y-%m-%dT%H:%M') if ticket.change_governance.planned_start else '' }}" required></label>
       <label>Planned end<input type="datetime-local" name="planned_end" value="{{ ticket.change_governance.planned_end.strftime('%Y-%m-%dT%H:%M') if ticket.change_governance.planned_end else '' }}" required></label>
       <label class="wide">Implementation plan<textarea name="implementation_plan" rows="4" required>{{ ticket.change_governance.implementation_plan }}</textarea></label>
