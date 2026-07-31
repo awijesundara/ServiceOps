@@ -52,8 +52,20 @@ import os
 import re
 import tempfile
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
+
+# RT's own web UI does one round trip per transaction and per attachment
+# too, but it's rendering one ticket a human is looking at -- a bulk import
+# doing that sequentially for every ticket in a batch is what made 10
+# tickets take ~10 minutes against a real (slow) RT instance. These GETs
+# are independent reads with no ordering dependency between them, so
+# fetching a ticket's transactions (and each transaction's attachments) in
+# parallel is a straightforward, safe speedup. Kept modest -- this is
+# concurrency against one admin-configured RT instance during an admin-
+# triggered import, not something that needs to be tuned per deployment.
+_CONCURRENCY = 8
 
 # RT ships with new/open/stalled/resolved/rejected/deleted by default, but
 # almost every real deployment (this one included) customizes its lifecycle
@@ -159,6 +171,27 @@ def _get(session, base_url, path, params=None):
     response = session.get(url, params=params, timeout=15)
     response.raise_for_status()
     return response.json()
+
+
+def _fetch_many(session, base_url, path_template, ids):
+    """Fetches `path_template.format(id)` for each id in `ids` concurrently
+    (bounded by _CONCURRENCY) and returns {id: json_or_None} -- None marks
+    an id that failed to fetch, same as the sequential try/except-continue
+    pattern used elsewhere in this module, just parallelized."""
+    results = {}
+    if not ids:
+        return results
+
+    def fetch(item_id):
+        try:
+            return item_id, _get(session, base_url, path_template.format(item_id))
+        except requests.RequestException:
+            return item_id, None
+
+    with ThreadPoolExecutor(max_workers=min(_CONCURRENCY, len(ids))) as pool:
+        for item_id, payload in pool.map(fetch, ids):
+            results[item_id] = payload
+    return results
 
 
 def _paginate_ticket_ids(session, base_url, query):
@@ -391,11 +424,11 @@ def _transaction_body(session, base_url, transaction_id, transaction, actor_user
     body = content
     imported_filenames = []
     skipped_filenames = []
-    for item in listing.get("items", []):
-        attachment_id = item.get("id")
-        try:
-            meta = _get(session, base_url, f"/REST/2.0/attachment/{attachment_id}")
-        except requests.RequestException:
+    attachment_ids = [item.get("id") for item in listing.get("items", []) if item.get("id")]
+    metas = _fetch_many(session, base_url, "/REST/2.0/attachment/{}", attachment_ids)
+    for attachment_id in attachment_ids:
+        meta = metas.get(attachment_id)
+        if not meta:
             continue
         content_type = (meta.get("ContentType") or "").lower()
         filename = meta.get("Filename")
@@ -422,7 +455,7 @@ def _transaction_body(session, base_url, transaction_id, transaction, actor_user
     return body, notes
 
 
-def _correspondence_log(session, base_url, rt_id, tenant_id, actor_user_id, ticket, enterprise_record, summary):
+def _correspondence_log(session, base_url, rt_id, tenant_id, actor_user_id, cache, ticket, enterprise_record, summary):
     """Fetches RT's full transaction history and formats every
     Create/Correspond/Comment message (falling back to attachment content
     when a transaction doesn't inline its own body) plus every status
@@ -431,31 +464,30 @@ def _correspondence_log(session, base_url, rt_id, tenant_id, actor_user_id, tick
     model the way Ticket does, so there's nowhere else to put this. Real
     file attachments found along the way are imported as FileAttachment
     rows against `ticket` or `enterprise_record` (whichever this RT ticket
-    routed to)."""
+    routed to). Transactions are fetched concurrently, and creator lookups
+    go through `cache` (the same one used for Queue/Owner) since a handful
+    of people usually account for all the back-and-forth on a ticket --
+    without the cache, a 20-message thread between the same two people did
+    20 redundant user lookups instead of 2."""
     try:
         history = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}/history", params={"per_page": 200})
     except requests.RequestException as error:
         summary["errors"].append(f"RT #{rt_id}: could not fetch history: {type(error).__name__}")
         return ""
+    transaction_ids = [item.get("id") for item in history.get("items", []) if item.get("id")]
+    transactions_by_id = _fetch_many(session, base_url, "/REST/2.0/transaction/{}", transaction_ids)
     entries = []
-    for item in history.get("items", []):
-        transaction_id = item.get("id")
-        try:
-            transaction = _get(session, base_url, f"/REST/2.0/transaction/{transaction_id}")
-        except requests.RequestException:
+    for transaction_id in transaction_ids:
+        transaction = transactions_by_id.get(transaction_id)
+        if not transaction:
             continue
         txn_type = transaction.get("Type")
         created = transaction.get("Created") or ""
-        creator = transaction.get("Creator")
-        creator_label = "Unknown"
-        if isinstance(creator, dict):
-            creator_id = _ref_id(creator)
-            if creator_id:
-                try:
-                    contact = _get(session, base_url, f"/REST/2.0/user/{creator_id}")
-                    creator_label = contact.get("RealName") or contact.get("EmailAddress") or "Unknown"
-                except requests.RequestException:
-                    pass
+        creator_contact = cache.user_contact(transaction.get("Creator"))
+        creator_label = (
+            (creator_contact.get("name") or creator_contact.get("email"))
+            if creator_contact else None
+        ) or "Unknown"
 
         if txn_type in COMMENT_TRANSACTION_TYPES:
             body, notes = _transaction_body(
@@ -601,7 +633,7 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
         # correspondence log -- which imports them as a side effect -- runs
         # after creation and updates the description in place.
         log = _correspondence_log(
-            session, base_url, rt_id, tenant_id, actor_user_id,
+            session, base_url, rt_id, tenant_id, actor_user_id, cache,
             ticket=(row if is_change else None),
             enterprise_record=(None if is_change else row),
             summary=summary,
