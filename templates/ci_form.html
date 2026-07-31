@@ -30,6 +30,14 @@
 <div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">Cancel</a><button class="primary">{{ 'Save changes' if ci else 'Create CI' }}</button></div></form>
 {% if ci %}
 <section class="panel">
+  <h2>Services this CI supports<span class="info-tip" tabindex="0" data-tip="Business services mapped to this CI in ITIL configuration → Service offerings. Used for impact analysis (what breaks if this CI goes down) and change risk.">i</span></h2>
+  {% if ci.service_links %}
+  <div class="related-links">
+    {% for link in ci.service_links %}<a class="attachment" href="{{ url_for('itil_admin') }}#service-offerings"><strong>{{ link.service_offering.name }}</strong><span>{{ link.relationship_role }} · {{ link.service_offering.criticality }} criticality</span></a>{% endfor %}
+  </div>
+  {% else %}<p class="muted">Not mapped to any business service yet. Add it under ITIL configuration → Service offerings.</p>{% endif %}
+</section>
+<section class="panel">
   <h2>Change history</h2>
   <div class="event-stream">
     {% for event in history %}<article class="event-entry">{{ user_avatar(event.actor, 'event-marker') }}<div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ event.actor.name if event.actor else 'System' }}</small>{% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span>→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}</div></article>{% else %}<p class="muted">No changes recorded yet.</p>{% endfor %}
