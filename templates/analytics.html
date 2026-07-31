@@ -48,10 +48,29 @@
 
   <section class="panel">
     <h2>Change success rate <small class="muted">· last 30 days</small></h2>
-    {% if change_success_pct is not none %}
-    <div class="metric"><span>Closed successfully</span><div><i style="width:{{ change_success_pct }}%"></i></div><strong>{{ change_success_pct }}%</strong></div>
+    {% if pir_success_pct is not none %}
+    <div class="metric"><span>Reviewed as successful<span class="info-tip" tabindex="0" data-tip="Based on the recorded post-implementation review outcome, not just whether the ticket reached Closed.">i</span></span><div><i style="width:{{ pir_success_pct }}%"></i></div><strong>{{ pir_success_pct }}%</strong></div>
+    <p class="muted">{{ pir_total }} change{{ 's' if pir_total != 1 }} reviewed in this window.</p>
+    {% elif change_success_pct is not none %}
+    <div class="metric"><span>Closed successfully<span class="info-tip" tabindex="0" data-tip="No post-implementation reviews recorded yet in this window -- falling back to a ticket-state proxy (Closed vs Cancelled), which can't tell a clean close from one that later caused an incident.">i</span></span><div><i style="width:{{ change_success_pct }}%"></i></div><strong>{{ change_success_pct }}%</strong></div>
     <p class="muted">{{ change_total }} change{{ 's' if change_total != 1 }} reached a final outcome (closed or cancelled) in this window.</p>
     {% else %}<p class="muted">No changes reached a final outcome in the last 30 days.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>First contact resolution <small class="muted">· incidents, last 30 days</small></h2>
+    {% if fcr_pct is not none %}
+    <div class="metric"><span>Resolved without reopening</span><div><i style="width:{{ fcr_pct }}%"></i></div><strong>{{ fcr_pct }}%</strong></div>
+    <p class="muted">{{ fcr_total }} incident{{ 's' if fcr_total != 1 }} resolved in this window.</p>
+    {% else %}<p class="muted">No incidents resolved in the last 30 days.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Customer satisfaction <small class="muted">· last 30 days</small></h2>
+    {% if csat_avg is not none %}
+    <div class="metric"><span>Average rating</span><div><i style="width:{{ (csat_avg / 5 * 100)|round(1) }}%"></i></div><strong>{{ csat_avg }}/5</strong></div>
+    <p class="muted">{{ csat_count }} rating{{ 's' if csat_count != 1 }} submitted in this window.</p>
+    {% else %}<p class="muted">No satisfaction ratings submitted in the last 30 days.</p>{% endif %}
   </section>
 
   <section class="panel">
@@ -76,6 +95,15 @@
       {% for row in top_groups %}<tr><td>{{ row.group.name }}</td><td><div class="metric" style="margin:0"><div><i style="width:{{ (row.count / top_groups_max * 100)|round(1) }}%"></i></div><strong>{{ row.count }}</strong></div></td></tr>{% endfor %}
     </tbody></table>
     {% else %}<p class="muted">No open work assigned to a team yet.</p>{% endif %}
+  </section>
+
+  <section class="panel table-panel">
+    <h2>KPI history <small class="muted">· nightly snapshots, last 30 days</small></h2>
+    {% if kpi_history_rows %}
+    <table><thead><tr><th>Date</th><th>Metric</th><th>Value</th></tr></thead><tbody>
+      {% for row in kpi_history_rows %}<tr><td>{{ row.snapshot_date.strftime('%b %d, %Y') }}</td><td>{{ kpi_metric_labels.get(row.metric_name, row.metric_name) }}</td><td>{{ row.metric_value }}</td></tr>{% endfor %}
+    </tbody></table>
+    {% else %}<p class="muted">No snapshots captured yet — the background worker records one set of metrics per day, so trend data starts accumulating from today onward.</p>{% endif %}
   </section>
 </div>
 {% endblock %}

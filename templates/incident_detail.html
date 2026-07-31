@@ -21,6 +21,7 @@
     </div>
   </header>
   {% if ticket_locked %}<div class="record-readonly-notice">{{ ticket.number }} is {{ ticket.state }} and locked: only comments and notes can be added.{% if can_reopen %} Use Reopen to make other changes.{% endif %}</div>{% endif %}
+  {% include "_csat_prompt.html" %}
   {% include "_state_track.html" %}
   <form method="post" id="incident-record-form" class="record-form">
     <input type="hidden" name="action" value="update">
