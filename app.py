@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.34"
+APP_VERSION = "1.29.35"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -339,6 +339,34 @@ class KpiSnapshotState(db.Model):
     same shape as LdapSyncState below."""
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), primary_key=True)
     last_run_at = db.Column(db.DateTime(timezone=True))
+
+
+class RTImportJob(db.Model):
+    """A queued/running/finished RT import run. RT import can take many
+    minutes against a real (often slow) RT instance -- running it inline
+    inside a web request routinely exceeded gunicorn's worker timeout,
+    which kills the entire worker process (and every other request it was
+    serving) mid-import, not just that one request. The web route now only
+    ever enqueues a row here and returns immediately; the background
+    worker (process_rt_import_jobs, tools/outbox_worker.py) does the
+    actual work with no request-timeout ceiling."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    search_query = db.Column(db.String(500), nullable=False)
+    record_limit = db.Column(db.Integer)
+    dry_run = db.Column(db.Boolean, nullable=False, default=False)
+    status = db.Column(db.String(20), nullable=False, default="Pending")
+    result_json = db.Column(db.Text)
+    error = db.Column(db.Text)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    started_at = db.Column(db.DateTime(timezone=True))
+    finished_at = db.Column(db.DateTime(timezone=True))
+    actor = db.relationship("User")
+
+    @property
+    def result(self):
+        return json.loads(self.result_json) if self.result_json else None
 
 
 class LdapSyncState(db.Model):
@@ -3718,6 +3746,43 @@ def process_kpi_snapshot_schedule(limit=50):
             current_app.logger.error(
                 "KPI snapshot capture failed for tenant %s: %s", tenant.id, type(error).__name__
             )
+    return processed
+
+
+def process_rt_import_jobs(limit=1):
+    """Runs queued RT import jobs (see RTImportJob) in the background
+    worker, outside any web-request timeout. Processes at most `limit` per
+    call -- one at a time by default, since these are slow, infrequent
+    admin-triggered runs, not something that needs parallelism, and a
+    single stuck RT instance shouldn't block the rest of the worker loop
+    from noticing it should give up on it."""
+    from serviceops_core.rt_import import RTImportError, import_from_rt
+
+    jobs = RTImportJob.query.filter_by(status="Pending").order_by(RTImportJob.id).limit(limit).all()
+    processed = 0
+    for job in jobs:
+        job.status = "Running"
+        job.started_at = now()
+        db.session.commit()
+        try:
+            result = import_from_rt(
+                job.tenant_id, job.actor_user_id, dry_run=job.dry_run,
+                query=job.search_query, limit=job.record_limit,
+            )
+        except RTImportError as error:
+            job.status = "Failed"
+            job.error = str(error)
+        except Exception as error:  # noqa: BLE001 - a bad RT response must not crash the worker loop
+            db.session.rollback()
+            job = db.session.get(RTImportJob, job.id)
+            job.status = "Failed"
+            job.error = f"{type(error).__name__}: {error}"
+        else:
+            job.status = "Completed"
+            job.result_json = json.dumps(result)
+        job.finished_at = now()
+        db.session.commit()
+        processed += 1
     return processed
 
 
@@ -8844,8 +8909,6 @@ def create_app(test_config=None):
     @app.route("/tickets/import/rt", methods=["GET", "POST"])
     @roles("admin")
     def rt_import():
-        from serviceops_core.rt_import import RTImportError, import_from_rt
-
         if request.method == "POST":
             dry_run = bool(request.form.get("dry_run"))
             query = request.form.get("query", "").strip() or "id > 0"
@@ -8854,33 +8917,30 @@ def create_app(test_config=None):
                 limit = int(limit_raw) if limit_raw else None
             except ValueError:
                 limit = None
-            try:
-                result = import_from_rt(
-                    tenant_context_id(), current_user.id, dry_run=dry_run, query=query, limit=limit,
-                )
-            except RTImportError as error:
-                flash(f"RT import could not run: {error}", "error")
-            else:
-                audit(
-                    "configure", "RT ticket import",
-                    f"{'Preview' if dry_run else 'Applied'}: query={query!r} "
-                    f"{result['tickets_seen']} seen, {result['records_created']} created, "
-                    f"{result['already_imported']} already imported, {len(result['errors'])} errors",
-                )
-                session["rt_import_result"] = result
-                flash(
-                    (
-                        "RT import preview: " if dry_run else "RT import applied: "
-                    ) + (
-                        f"{result['tickets_seen']} tickets seen, {result['records_created']} created, "
-                        f"{result['already_imported']} already imported, {len(result['errors'])} errors."
-                    ),
-                    "success" if not result["errors"] else "warning",
-                )
+            if not setting_bool("RT_ENABLED"):
+                flash("RT import is not enabled.", "error")
+                return redirect(url_for("rt_import"))
+            # Enqueue only -- RT import can take many minutes against a real
+            # (often slow) instance, and running it inline here routinely
+            # exceeded gunicorn's worker timeout, which kills the whole
+            # worker process (and every other in-flight request on it), not
+            # just this one. The background worker does the actual work.
+            job = RTImportJob(
+                tenant_id=tenant_context_id(), actor_user_id=current_user.id,
+                search_query=query, record_limit=limit, dry_run=dry_run,
+            )
+            db.session.add(job)
+            audit("configure", "RT ticket import queued",
+                  f"{'Preview' if dry_run else 'Apply'}: query={query!r}"
+                  + (f" limit={limit}" if limit else ""))
+            db.session.commit()
+            flash(f"RT import queued (job #{job.id}). This runs in the background.", "success")
             return redirect(url_for("rt_import"))
+        recent_jobs = RTImportJob.query.filter_by(
+            tenant_id=tenant_context_id()
+        ).order_by(RTImportJob.id.desc()).limit(10).all()
         return render_template(
-            "rt_import.html", rt_enabled=setting_bool("RT_ENABLED"),
-            rt_import_result=session.pop("rt_import_result", None),
+            "rt_import.html", rt_enabled=setting_bool("RT_ENABLED"), recent_jobs=recent_jobs,
         )
 
     @app.post("/cmdb/relationships")
