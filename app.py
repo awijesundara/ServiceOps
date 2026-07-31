@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.20"
+APP_VERSION = "1.29.21"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -357,6 +357,11 @@ class Ticket(db.Model):
     service_offering = db.relationship("ServiceOffering", foreign_keys=[service_offering_id])
     comments = db.relationship("Comment", cascade="all, delete-orphan", backref="ticket")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    # Populated by bulk import (serviceops_core/rt_import.py) so a re-run
+    # matches existing rows instead of creating duplicates. Null for
+    # tickets created normally through the app.
+    external_source = db.Column(db.String(20))
+    external_id = db.Column(db.String(120))
 
 
 class Comment(db.Model):
@@ -1828,6 +1833,11 @@ SETTING_DEFINITIONS = {
             "key": "NETBOX_TLS_INSECURE", "type": "bool", "default": "false", "live": True,
             "label": "Skip NetBox TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
         },
+    ],
+    "rt_import": [
+        {"key": "RT_ENABLED", "label": "Enable Request Tracker (RT) import", "type": "bool", "default": "false", "live": True},
+        {"key": "RT_BASE_URL", "label": "RT base URL", "type": "url", "default": "", "live": True},
+        {"key": "RT_API_TOKEN", "label": "RT API token", "type": "secret", "default": "", "live": True},
     ],
 }
 
@@ -8255,6 +8265,48 @@ def create_app(test_config=None):
                 "success" if not result["errors"] else "warning",
             )
         return redirect(url_for("cmdb_import"))
+
+    @app.route("/tickets/import/rt", methods=["GET", "POST"])
+    @roles("admin")
+    def rt_import():
+        from serviceops_core.rt_import import RTImportError, import_from_rt
+
+        if request.method == "POST":
+            dry_run = bool(request.form.get("dry_run"))
+            query = request.form.get("query", "").strip() or "id > 0"
+            limit_raw = request.form.get("limit", "").strip()
+            try:
+                limit = int(limit_raw) if limit_raw else None
+            except ValueError:
+                limit = None
+            try:
+                result = import_from_rt(
+                    tenant_context_id(), current_user.id, dry_run=dry_run, query=query, limit=limit,
+                )
+            except RTImportError as error:
+                flash(f"RT import could not run: {error}", "error")
+            else:
+                audit(
+                    "configure", "RT ticket import",
+                    f"{'Preview' if dry_run else 'Applied'}: query={query!r} "
+                    f"{result['tickets_seen']} seen, {result['tickets_created']} created, "
+                    f"{result['already_imported']} already imported, {len(result['errors'])} errors",
+                )
+                session["rt_import_result"] = result
+                flash(
+                    (
+                        "RT import preview: " if dry_run else "RT import applied: "
+                    ) + (
+                        f"{result['tickets_seen']} tickets seen, {result['tickets_created']} created, "
+                        f"{result['already_imported']} already imported, {len(result['errors'])} errors."
+                    ),
+                    "success" if not result["errors"] else "warning",
+                )
+            return redirect(url_for("rt_import"))
+        return render_template(
+            "rt_import.html", rt_enabled=setting_bool("RT_ENABLED"),
+            rt_import_result=session.pop("rt_import_result", None),
+        )
 
     @app.post("/cmdb/relationships")
     @roles("admin")
