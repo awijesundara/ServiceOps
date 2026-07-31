@@ -31,7 +31,7 @@
 </section>
 
 <nav class="record-section-tabs" aria-label="{{ record.record_type }} sections">
-  <a class="active" href="#related-records">Related records</a><a href="#investigation">{{ 'Problem analysis' if record.domain == 'problem' else 'Fulfillment' }}</a>{% if record.approvals %}<a href="#approvals">Approvers</a>{% endif %}<a href="#attachments">Attachments ({{ record.attachments|length }})</a><a href="#event-history">Event history</a>
+  <a class="active" href="#related-records">Related records</a><a href="#affected-cis">Affected CIs</a><a href="#investigation">{{ 'Problem analysis' if record.domain == 'problem' else 'Fulfillment' }}</a>{% if record.approvals %}<a href="#approvals">Approvers</a>{% endif %}<a href="#attachments">Attachments ({{ record.attachments|length }})</a><a href="#event-history">Event history</a>
 </nav>
 
 <section class="panel event-history-panel" id="event-history">
@@ -40,13 +40,14 @@
 </section>
 
 <section class="panel incident-related-panel" id="related-records">
-  <header class="section-heading"><div><h2>Related records and affected services</h2><p>Problems, changes, requests, CIs and service impact</p></div></header>
+  <header class="section-heading"><div><h2>Related records</h2><p>Problems, changes, requests, and knowledge articles</p></div></header>
 
   {% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ item.label }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">No related records.</p>{% endfor %}
   {% if can_manage_record %}<form method="post" action="{{ url_for('record_link_add', source_type='enterprise', source_id=record.id) }}" class="inline-form"><select name="link_type"><option value="related_incident">Related incident</option><option value="problem_change">Permanent or temporary fix change</option><option value="knowledge_article">Knowledge article</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_records') }}"><input type="text" name="target_number" class="lookup-search" placeholder="Search INC, CHG or KB…" autocomplete="off" required><div class="lookup-results" hidden></div></div><button>Link record</button></form>{% endif %}
+</section>
 
-  <hr>
-  <h3>Affected CIs and impacted services</h3>
+<section class="panel" id="affected-cis">
+  <header class="section-heading"><div><h2>Affected CIs and impacted services</h2></div></header>
   {% if can_manage_record and record.domain != 'problem' %}<form method="post" action="{{ url_for('task_ci_add', target_type='enterprise', target_id=record.id) }}" class="inline-form"><input type="hidden" name="relationship_role" value="Primary CI"><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required value="{{ primary_ci_link.ci.name if primary_ci_link else '' }}"><input type="hidden" name="ci_id" value="{{ primary_ci_link.ci_id if primary_ci_link else '' }}" data-owning-team="{{ primary_ci_link.ci.support_group.name if primary_ci_link and primary_ci_link.ci.support_group else '' }}"><div class="lookup-results" hidden></div></div><button>{{ 'Change primary CI' if primary_ci_link else 'Set primary CI' }}</button></form>{% endif %}
   {% for link in ci_links if link.relationship_role != 'Primary CI' %}<div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div><span class="badge">{{ link.relationship_role }}</span></div>{% else %}<p class="muted">No additional CI relationships.</p>{% endfor %}
   {% if can_manage_record %}<form method="post" action="{{ url_for('task_ci_add', target_type='enterprise', target_id=record.id) }}" class="inline-form"><select name="relationship_role"><option>Affected CI</option><option>Impacted service</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div><button>Link CI</button></form>{% endif %}
