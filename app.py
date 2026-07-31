@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.19"
+APP_VERSION = "1.29.20"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -4080,6 +4080,17 @@ def normalize_user_role_from_assignments(user):
     return user.role
 
 
+def user_is_local(user):
+    """True if `user` authenticates with a local ServiceOps password rather
+    than an external identity provider (LDAP, SSO). Externally-provisioned
+    users have no usable local password -- provision_external_user() sets
+    password_hash to a random, never-communicated value -- so the in-app
+    change-password flow must only be offered to local accounts."""
+    if user is None or not getattr(user, "id", None):
+        return False
+    return ExternalIdentity.query.filter_by(user_id=user.id).first() is None
+
+
 def provision_external_user(provider, subject, username, name, email, role, groups=None):
     identity = ExternalIdentity.query.filter_by(provider=provider, subject=subject).first()
     if identity:
@@ -4507,6 +4518,7 @@ def create_app(test_config=None):
         return platform_context | {
             "ui_preference": preference,
             "ui_favorites": favorites,
+            "current_user_is_local": user_is_local(current_user),
             "ui_history": RecentView.query.filter_by(user_id=current_user.id).order_by(RecentView.viewed_at.desc()).limit(12).all(),
             "current_page_url": current_page_url,
             "current_page_is_favorite": any(favorite.url == current_page_url for favorite in favorites),
@@ -5150,6 +5162,8 @@ def create_app(test_config=None):
     @app.route("/profile/password", methods=["GET", "POST"])
     @login_required
     def change_password():
+        if not user_is_local(current_user):
+            abort(403, description="Your password is managed by your organization's login provider, not ServiceOps.")
         if request.method == "POST":
             current_password = request.form.get("current_password", "")
             new_password = request.form.get("new_password", "")
@@ -6739,11 +6753,22 @@ def create_app(test_config=None):
     def assets():
         query = tenant_query(Asset)
         q = request.args.get("q", "").strip()
+        raw_filter = request.args.get("filter", "")
+        conditions = parse_list_filter_param(raw_filter)
         if q:
             query = query.filter(db.or_(
                 Asset.asset_tag.ilike(f"%{q}%"), Asset.name.ilike(f"%{q}%"),
                 Asset.serial_number.ilike(f"%{q}%"),
             ))
+        field_spec = {
+            "asset_tag": {"label": "Asset tag", "type": "text", "column": Asset.asset_tag},
+            "name": {"label": "Name", "type": "text", "column": Asset.name},
+            "asset_type": {"label": "Type", "type": "text", "column": Asset.asset_type},
+            "status": {"label": "Status", "type": "choice", "column": Asset.status,
+                      "options": [(s, s) for s in ["In stock", "In use", "In repair", "Retired"]]},
+            "serial_number": {"label": "Serial", "type": "text", "column": Asset.serial_number},
+        }
+        query = apply_filter_conditions(query, conditions, field_spec)
         try:
             page = max(1, int(request.args.get("page", "1")))
         except ValueError:
@@ -6755,8 +6780,14 @@ def create_app(test_config=None):
         rows = query.order_by(Asset.asset_tag).offset(
             (page - 1) * per_page
         ).limit(per_page).all()
+        breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec)
+        client_fields = {
+            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            for key, spec in field_spec.items()
+        }
         return render_template(
-            "assets.html", assets=rows, q=q, page=page, pages=pages, total=total,
+            "assets.html", assets=rows, q=q, raw_filter=raw_filter, breadcrumb_parts=breadcrumb_parts,
+            filter_fields=client_fields, page=page, pages=pages, total=total,
         )
 
     @app.route("/assets/new", methods=["GET", "POST"])
@@ -6812,6 +6843,8 @@ def create_app(test_config=None):
             ).all()
         }
         search = request.args.get("q", "").strip()
+        raw_filter = request.args.get("filter", "")
+        conditions = parse_list_filter_param(raw_filter)
         user_query = tenant_query(User)
         if search:
             pattern = f"%{search}%"
@@ -6819,9 +6852,36 @@ def create_app(test_config=None):
                 User.username.ilike(pattern), User.name.ilike(pattern),
                 User.email.ilike(pattern), User.department.ilike(pattern),
             ))
+        field_spec = {
+            "username": {"label": "User ID", "type": "text", "column": User.username},
+            "name": {"label": "Name", "type": "text", "column": User.name},
+            "email": {"label": "Email", "type": "text", "column": User.email},
+            "role": {"label": "Role", "type": "choice", "column": User.role,
+                    "options": [(r, r) for r in ["requester", "agent", "manager", "admin"]]},
+            "department": {"label": "Department", "type": "text", "column": User.department},
+            "active": {"label": "Active", "type": "choice",
+                      "options": [("true", "true"), ("false", "false")]},
+        }
+
+        def active_filter_handler(query, op, value):
+            if op == "eq":
+                return query.filter(User.active.is_(value == "true"))
+            if op == "ne":
+                return query.filter(User.active.is_(value != "true"))
+            return query
+
+        user_query = apply_filter_conditions(
+            user_query, conditions, field_spec, extra_handlers={"active": active_filter_handler}
+        )
+        breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec)
+        client_fields = {
+            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            for key, spec in field_spec.items()
+        }
         return render_template(
             "users.html",
             users=user_query.order_by(User.name).all(), search=search,
+            raw_filter=raw_filter, breadcrumb_parts=breadcrumb_parts, filter_fields=client_fields,
             memberships=memberships, directory_managed=directory_managed,
         )
 
@@ -7848,11 +7908,33 @@ def create_app(test_config=None):
         flash(f"{item.name} requested as {req.number} / {ritm.number}.", "success")
         return redirect(url_for("request_detail", request_id=req.id))
 
+    def cmdb_filter_field_spec():
+        support_groups = SupportGroup.query.filter_by(
+            tenant_id=tenant_context_id()
+        ).order_by(SupportGroup.name).all()
+        return {
+            "name": {"label": "Name", "type": "text", "column": ConfigurationItem.name},
+            "ci_class": {"label": "Class", "type": "text", "column": ConfigurationItem.ci_class},
+            "environment": {"label": "Environment", "type": "choice", "column": ConfigurationItem.environment,
+                            "options": [(v, v) for v in ["Production", "Staging", "Development", "Test"]]},
+            "operational_status": {"label": "Status", "type": "choice", "column": ConfigurationItem.operational_status,
+                                   "options": [(v, v) for v in ["Operational", "Degraded", "Down", "Maintenance", "Retired"]]},
+            "lifecycle_state": {"label": "Lifecycle", "type": "choice", "column": ConfigurationItem.lifecycle_state,
+                                "options": [(v, v) for v in ["Planned", "In Use", "Maintenance", "Retired", "Disposed"]]},
+            "business_criticality": {"label": "Criticality", "type": "choice", "column": ConfigurationItem.business_criticality,
+                                     "options": [(v, v) for v in ["Critical", "High", "Medium", "Low"]]},
+            "location": {"label": "Location", "type": "text", "column": ConfigurationItem.location},
+            "support_group_id": {"label": "Owning team", "type": "choice", "column": ConfigurationItem.support_group_id,
+                                 "options": [(str(g.id), g.name) for g in support_groups]},
+        }
+
     @app.get("/cmdb")
     @roles("agent", "manager", "admin")
     def cmdb():
         status = request.args.get("status", "").strip()
         q = request.args.get("q", "").strip()
+        raw_filter = request.args.get("filter", "")
+        conditions = parse_list_filter_param(raw_filter)
         query = tenant_query(ConfigurationItem)
         if status:
             query = query.filter(ConfigurationItem.operational_status == status)
@@ -7867,6 +7949,8 @@ def create_app(test_config=None):
                 ConfigurationItem.location.ilike(pattern),
                 ConfigurationItem.description.ilike(pattern),
             ))
+        field_spec = cmdb_filter_field_spec()
+        query = apply_filter_conditions(query, conditions, field_spec)
         try:
             page = max(1, int(request.args.get("page", "1")))
         except ValueError:
@@ -7883,18 +7967,29 @@ def create_app(test_config=None):
             ConfigurationItem.operational_status == "Operational"
         ).count()
         relationships = tenant_query(CIRelationship).all()
+        value_labels = {("support_group_id", key): label
+                        for key, label in field_spec["support_group_id"]["options"]}
+        breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec, value_labels)
+        client_fields = {
+            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            for key, spec in field_spec.items()
+        }
         return render_template(
             "cmdb.html", visible_cis=visible_cis, relationships=relationships, status=status,
-            q=q, page=page, pages=pages, total=total, cis_total=cis_total, operational_total=operational_total,
+            q=q, raw_filter=raw_filter, breadcrumb_parts=breadcrumb_parts, filter_fields=client_fields,
+            page=page, pages=pages, total=total, cis_total=cis_total, operational_total=operational_total,
         )
 
     @app.get("/cmdb/export.csv")
     @roles("agent", "manager", "admin")
     def cmdb_export():
         status = request.args.get("status", "").strip()
-        cis = tenant_query(ConfigurationItem).order_by(ConfigurationItem.ci_class, ConfigurationItem.name).all()
+        conditions = parse_list_filter_param(request.args.get("filter", ""))
+        query = tenant_query(ConfigurationItem)
         if status:
-            cis = [ci for ci in cis if ci.operational_status == status]
+            query = query.filter(ConfigurationItem.operational_status == status)
+        query = apply_filter_conditions(query, conditions, cmdb_filter_field_spec())
+        cis = query.order_by(ConfigurationItem.ci_class, ConfigurationItem.name).all()
         # Attribute keys vary per CI (they come from whatever columns a CSV
         # import happened to have), so the export's extra columns are the
         # union of every key seen across the CIs being exported, in first-

@@ -32,7 +32,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  scan_attachment, simulate_workflows,
                  integration_endpoint_valid, integration_endpoint_resolves_safely,
                  is_safe_internal_path, process_outbox,
-                 provision_external_user, secret_value, settings_cipher,
+                 provision_external_user, secret_value, settings_cipher, user_is_local,
                  rotate_audit_integrity_key, tenant_context_id, TenantResolutionError,
                  verify_audit_chain)
 from werkzeug.security import generate_password_hash
@@ -3855,3 +3855,98 @@ def test_module_records_list_supports_servicenow_style_filter(client, app):
     assert b"Filterable problem A" in filtered.data
     assert b"Filterable problem B" not in filtered.data
     assert b"Priority is P1" in filtered.data
+
+
+def test_change_password_is_local_users_only(client, app):
+    """Externally-provisioned (LDAP/SSO) accounts have no usable local
+    password -- provision_external_user() stamps a random, never-shared
+    hash -- so the in-app change-password flow must be hidden and blocked
+    for them, while local accounts keep full access to it."""
+    with app.app_context():
+        external_user = provision_external_user(
+            "ldap", "cn=bob,dc=example,dc=test", "bob", "Bob External",
+            "bob@example.test", "agent",
+        )
+        db.session.commit()
+        external_id = external_user.id
+        assert user_is_local(external_user) is False
+        admin = User.query.filter_by(username="admin").one()
+        assert user_is_local(admin) is True
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(external_id)
+        sess["_fresh"] = True
+        sess["_auth_version"] = 1
+    blocked = client.get("/profile/password")
+    assert blocked.status_code == 403
+    own_profile = client.get("/profile")
+    assert b"Change password" not in own_profile.data
+    client.get("/logout")
+
+    login(client)
+    allowed = client.get("/profile/password")
+    assert allowed.status_code == 200
+    own_admin_profile = client.get("/profile")
+    assert b"Change password" in own_admin_profile.data
+
+
+def test_cmdb_list_supports_servicenow_style_filter(client, app):
+    with app.app_context():
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        db.session.add(ConfigurationItem(
+            name="cmdb-filter-prod.example.com", ci_class="Server",
+            environment="Production", business_criticality="Critical",
+            support_group_id=windows.id,
+        ))
+        db.session.add(ConfigurationItem(
+            name="cmdb-filter-dev.example.com", ci_class="Server",
+            environment="Development", business_criticality="Low",
+        ))
+        db.session.commit()
+        windows_id = windows.id
+    login(client)
+
+    by_env = client.get("/cmdb?filter=" + quote(json.dumps(
+        [{"field": "environment", "op": "eq", "value": "Production"}]
+    )))
+    assert b"cmdb-filter-prod.example.com" in by_env.data
+    assert b"cmdb-filter-dev.example.com" not in by_env.data
+    assert b"Environment is Production" in by_env.data
+
+    by_team = client.get("/cmdb?filter=" + quote(json.dumps(
+        [{"field": "support_group_id", "op": "eq", "value": str(windows_id)}]
+    )))
+    assert b"cmdb-filter-prod.example.com" in by_team.data
+    assert b"cmdb-filter-dev.example.com" not in by_team.data
+    assert b"Owning team is Windows" in by_team.data
+
+
+def test_users_list_supports_servicenow_style_filter(client, app):
+    login(client)
+    with app.app_context():
+        db.session.add(User(
+            username="filter.manager", name="Filter Manager", email="filter.manager@test.invalid",
+            password_hash=generate_password_hash("Manager123!"), role="manager", department="Ops",
+        ))
+        db.session.commit()
+
+    filtered = client.get("/admin/users?filter=" + quote(json.dumps(
+        [{"field": "role", "op": "eq", "value": "manager"}]
+    )))
+    assert b"filter.manager" in filtered.data
+    assert b"Role is manager" in filtered.data
+
+
+def test_assets_list_supports_servicenow_style_filter(client, app):
+    login(client)
+    with app.app_context():
+        db.session.add(Asset(asset_tag="AST-100", name="Filter laptop", asset_type="Laptop", status="In use"))
+        db.session.add(Asset(asset_tag="AST-101", name="Filter server", asset_type="Server", status="Retired"))
+        db.session.commit()
+
+    filtered = client.get("/assets?filter=" + quote(json.dumps(
+        [{"field": "status", "op": "eq", "value": "Retired"}]
+    )))
+    assert b"AST-101" in filtered.data
+    assert b"AST-100" not in filtered.data
+    assert b"Status is Retired" in filtered.data
