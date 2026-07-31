@@ -1,0 +1,14 @@
+{% if ticket.requester_id == current_user.id and ticket.state in ('Resolved', 'Closed') %}
+{% if ticket.csat_rating %}
+<div class="record-readonly-notice">You rated this {{ ticket.csat_rating }}/5. Thanks for the feedback!</div>
+{% else %}
+<div class="record-readonly-notice">
+  <form method="post" action="{{ url_for('ticket_satisfaction_update', ticket_id=ticket.id) }}" class="inline-form">
+    <span>How did we do?</span>
+    {% for value in [1,2,3,4,5] %}<label class="check"><input type="radio" name="rating" value="{{ value }}" required> {{ value }}</label>{% endfor %}
+    <input name="comment" placeholder="Optional comment">
+    <button class="button">Submit rating</button>
+  </form>
+</div>
+{% endif %}
+{% endif %}
