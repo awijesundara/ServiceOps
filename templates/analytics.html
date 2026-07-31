@@ -100,9 +100,27 @@
   <section class="panel table-panel">
     <h2>KPI history <small class="muted">· nightly snapshots, last 30 days</small></h2>
     {% if kpi_history_rows %}
+    <div class="kpi-trend-grid">
+      {% for trend in kpi_trends %}
+      <div class="kpi-trend-card">
+        <div class="kpi-trend-head">
+          <span>{{ trend.label }}</span>
+          {% if trend.delta is not none %}<span class="kpi-trend-delta {{ 'up' if trend.delta > 0 else ('down' if trend.delta < 0 else '') }}">{{ '%+.1f'|format(trend.delta) }}</span>{% endif %}
+        </div>
+        <strong class="kpi-trend-value">{{ trend.latest if trend.latest is not none else '—' }}</strong>
+        {% if trend.spark_points %}
+        <svg class="kpi-sparkline" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true">
+          <polyline points="{{ trend.spark_points }}" fill="none" />
+        </svg>
+        {% else %}<p class="muted" style="margin:8px 0 0">Not enough snapshots yet for a trend line.</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <details style="margin-top:16px"><summary class="muted">Show raw snapshot values</summary>
     <table><thead><tr><th>Date</th><th>Metric</th><th>Value</th></tr></thead><tbody>
       {% for row in kpi_history_rows %}<tr><td>{{ row.snapshot_date.strftime('%b %d, %Y') }}</td><td>{{ kpi_metric_labels.get(row.metric_name, row.metric_name) }}</td><td>{{ row.metric_value }}</td></tr>{% endfor %}
     </tbody></table>
+    </details>
     {% else %}<p class="muted">No snapshots captured yet — the background worker records one set of metrics per day, so trend data starts accumulating from today onward.</p>{% endif %}
   </section>
 </div>

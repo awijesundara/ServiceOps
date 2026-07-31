@@ -79,10 +79,10 @@
   </details>
   {% endif %}
 
-  {% if major %}
+  {% if major or ticket.priority == 'P1' %}
   <hr>
-  <h3>Post-incident review<span class="info-tip" tabindex="0" data-tip="A structured after-the-fact review, separate from the live coordination log above — ITIL 4 continual improvement expects documented lessons learned and follow-up actions.">i</span></h3>
-  {% if major.reviewed_at %}
+  <h3>Post-incident review<span class="info-tip" tabindex="0" data-tip="A structured after-the-fact review, separate from the live coordination log above — ITIL 4 continual improvement expects documented lessons learned and follow-up actions. Available for any P1 incident, not only ones formally declared a major incident.">i</span></h3>
+  {% if major and major.reviewed_at %}
   <dl class="governance-grid">
     <dt>Reviewed by</dt><dd>{{ major.reviewed_by.name }} · {{ (major.reviewed_at|usertime('%b %d, %Y · %H:%M')) }}</dd>
   </dl>
@@ -91,11 +91,11 @@
   <p><b>Follow-up actions:</b> {{ major.review_follow_up_actions or 'None recorded' }}</p>
   {% else %}<p class="muted">Not reviewed yet.</p>{% endif %}
   {% if can_manage_ticket %}
-  <details {% if not major.reviewed_at %}open{% endif %}><summary>{{ 'Update review' if major.reviewed_at else 'Record review' }}</summary>
+  <details {% if not major or not major.reviewed_at %}open{% endif %}><summary>{{ 'Update review' if major and major.reviewed_at else 'Record review' }}</summary>
     <form method="post" action="{{ url_for('major_incident_review_update', ticket_id=ticket.id) }}" class="form-grid">
-      <label class="wide">What went well<textarea name="what_went_well" rows="2">{{ major.review_what_went_well }}</textarea></label>
-      <label class="wide">What went poorly<textarea name="what_went_poorly" rows="2">{{ major.review_what_went_poorly }}</textarea></label>
-      <label class="wide">Follow-up actions<textarea name="follow_up_actions" rows="2">{{ major.review_follow_up_actions }}</textarea></label>
+      <label class="wide">What went well<textarea name="what_went_well" rows="2">{{ major.review_what_went_well if major else '' }}</textarea></label>
+      <label class="wide">What went poorly<textarea name="what_went_poorly" rows="2">{{ major.review_what_went_poorly if major else '' }}</textarea></label>
+      <label class="wide">Follow-up actions<textarea name="follow_up_actions" rows="2">{{ major.review_follow_up_actions if major else '' }}</textarea></label>
       <div class="wide actions"><button class="primary">Save review</button></div>
     </form>
   </details>
@@ -153,9 +153,14 @@
   {% endif %}
 </section>
 
+{% set impacted_services = (ci_links|map(attribute='ci.service_links')|sum(start=[])) %}
 <section class="panel" id="affected-cis">
   <header class="section-heading"><div><h2>Affected CIs and impacted services</h2></div></header>
   {% for link in ci_links if link.relationship_role != 'Primary CI' %}<div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div><span class="badge">{{ link.relationship_role }}</span></div>{% else %}<p class="muted">No additional CI or service relationships.</p>{% endfor %}
+  {% if impacted_services %}
+  <h3 style="margin:16px 0 8px;font-size:13px;color:var(--muted)">Business services realized by the linked CIs</h3>
+  {% for svc_link in impacted_services %}<div class="sla-row"><div><strong>{{ svc_link.service_offering.name }}</strong><small>via {{ svc_link.ci.name }}</small></div><span class="badge">{{ svc_link.service_offering.criticality }}</span></div>{% endfor %}
+  {% endif %}
   {% if can_manage_ticket %}<form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form"><select name="relationship_role"><option>Affected CI</option><option>Impacted service</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div><button>Link CI</button></form>{% endif %}
 </section>
 
