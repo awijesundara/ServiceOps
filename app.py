@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.37"
+APP_VERSION = "1.29.38"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -2424,6 +2424,7 @@ ATTACHMENT_ALLOWED_TYPES = {
 
 
 PREVIEWABLE_ATTACHMENT_TYPES = {"image/png", "image/jpeg", "image/gif", "application/pdf"}
+IMAGE_ATTACHMENT_TYPES = {"image/png", "image/jpeg", "image/gif"}
 
 
 def validate_attachment_upload(upload):
@@ -4892,6 +4893,7 @@ def create_app(test_config=None):
 
     app.jinja_env.globals["user_avatar"] = user_avatar_html
     app.jinja_env.globals["PREVIEWABLE_ATTACHMENT_TYPES"] = PREVIEWABLE_ATTACHMENT_TYPES
+    app.jinja_env.globals["IMAGE_ATTACHMENT_TYPES"] = IMAGE_ATTACHMENT_TYPES
 
     @app.context_processor
     def ui_context():
@@ -8611,6 +8613,17 @@ def create_app(test_config=None):
             ConfigurationItem.operational_status == "Operational"
         ).count()
         relationships = tenant_query(CIRelationship).all()
+        # CIs pulled in from NetBox/CSV carry many more fields than the default
+        # table shows (attributes is a free-form JSON bag); surface whatever keys
+        # actually appear on this page so users can opt into columns beyond the
+        # fixed set via the "Columns" picker, instead of that data being hidden.
+        extra_attribute_keys = sorted({
+            key for ci in visible_cis for key in (ci.attributes or {}).keys()
+        })
+        default_hidden_columns = [
+            "ip_address", "vendor", "model", "cost_center", "discovery_source",
+            "owner", "install_date", "warranty_expiry_date",
+        ] + [f"attr:{key}" for key in extra_attribute_keys]
         value_labels = {("support_group_id", key): label
                         for key, label in field_spec["support_group_id"]["options"]}
         breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec, value_labels)
@@ -8622,7 +8635,8 @@ def create_app(test_config=None):
             "cmdb.html", visible_cis=visible_cis, relationships=relationships, status=status,
             q=q, raw_filter=raw_filter, breadcrumb_parts=breadcrumb_parts, filter_fields=client_fields,
             page=page, pages=pages, total=total, cis_total=cis_total, operational_total=operational_total,
-            ci_relationship_types=CI_RELATIONSHIP_TYPES,
+            ci_relationship_types=CI_RELATIONSHIP_TYPES, extra_attribute_keys=extra_attribute_keys,
+            default_hidden_columns=default_hidden_columns,
         )
 
     @app.get("/cmdb/export.csv")
