@@ -5,10 +5,25 @@
   <header class="list-toolbar">
     <div class="list-title"><span class="list-menu">☰</span><div><strong>{{ config.name }}</strong><small>{{ total }} records · {{ config.types|join(' · ') }}</small></div></div>
     <a class="primary button" href="{{ url_for('enterprise_new', domain=domain) }}">New</a>
-    <form class="list-search"><label><span>State</span><select name="state"><option value="">All states</option>{% for s in ['New','Open','In Progress','Awaiting Approval','Approved','Pending','Resolved','Closed','Rejected'] %}<option {% if state==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label><label><span>Priority</span><select name="priority"><option value="">All priorities</option>{% for p in ['P1','P2','P3','P4'] %}<option {% if priority==p %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></label><input name="q" value="{{ q }}" placeholder="Number or short description"><button>Search</button></form>
-    <nav class="list-pagination"><a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('module_records', domain=domain, q=q, state=state, priority=priority, page=page-1) }}">‹</a><span>Page {{ page }} of {{ pages }}</span><a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('module_records', domain=domain, q=q, state=state, priority=priority, page=page+1) }}">›</a></nav>
+    <form class="list-search">
+      <input type="hidden" name="filter" value="{{ raw_filter }}">
+      <input name="q" value="{{ q }}" placeholder="Number or short description">
+      <button>Search</button>
+      <div class="list-filter" data-filter-fields='{{ filter_fields|tojson }}' data-filter-value='{{ raw_filter or "[]" }}'>
+        <button type="button" class="list-filter-toggle">▽ Filter</button>
+        <div class="list-filter-builder" hidden>
+          <div class="list-filter-rows"></div>
+          <div class="list-filter-actions">
+            <button type="button" class="list-filter-add">+ Add condition</button>
+            <button type="submit" class="primary">Run</button>
+            <button type="button" class="list-filter-clear">Clear filter</button>
+          </div>
+        </div>
+      </div>
+    </form>
+    <nav class="list-pagination"><a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('module_records', domain=domain, q=q, filter=raw_filter, page=page-1) }}">‹</a><span>Page {{ page }} of {{ pages }}</span><a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('module_records', domain=domain, q=q, filter=raw_filter, page=page+1) }}">›</a></nav>
   </header>
-  <div class="list-breadcrumb"><span>▽</span> All{% if state %} › State = {{ state }}{% endif %}{% if priority %} › Priority = {{ priority }}{% endif %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
+  <div class="list-breadcrumb"><span>▽</span> All{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
   <div class="task-list-scroll"><table class="task-list"><thead><tr><th>Number</th><th>Opened</th><th>Type</th><th>Short description</th><th>Requester</th><th>Priority</th><th>State</th><th>Risk</th><th>Assigned to</th><th>Updated</th></tr></thead><tbody>
   {% for r in records %}<tr><td><a class="record-number" href="{{ url_for('enterprise_detail', record_id=r.id) }}">{{ r.number }}</a></td><td>{{ (r.created_at|usertime('%Y-%m-%d %H:%M')) }}</td><td>{{ r.record_type }}</td><td>{{ r.title }}</td><td>{{ r.requester.name }}</td><td><span class="priority-dot {{ r.priority|lower }}"></span><span class="priority {{ r.priority|lower }}">{{ r.priority }}</span></td><td><span class="badge">{{ r.state }}</span></td><td>{{ r.risk }}</td><td>{{ r.assignee.name if r.assignee else 'Unassigned' }}</td><td>{{ (r.updated_at|usertime('%Y-%m-%d %H:%M')) }}</td></tr>{% else %}<tr><td colspan="10" class="empty">No records yet.</td></tr>{% endfor %}
   </tbody></table></div>

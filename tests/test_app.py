@@ -3,6 +3,7 @@ import os
 import re
 import tempfile
 from io import BytesIO
+from urllib.parse import quote
 
 import pytest
 from alembic import command
@@ -3796,23 +3797,61 @@ def test_ticket_list_filters_by_priority_category_and_assignment_group(client, a
         "group_id": group_id(app, "Windows"),
     })
 
-    by_priority = client.get("/tickets/incident?priority=P1")
+    def filter_url(conditions):
+        return "/tickets/incident?filter=" + quote(json.dumps(conditions))
+
+    by_priority = client.get(filter_url([{"field": "priority", "op": "eq", "value": "P1"}]))
     assert b"Unix disk cleanup" in by_priority.data
     assert b"Windows login issue" not in by_priority.data
+    assert b"Priority is P1" in by_priority.data
 
-    by_category = client.get("/tickets/incident?category=Access")
+    by_category = client.get(filter_url([{"field": "category", "op": "eq", "value": "Access"}]))
     assert b"Windows login issue" in by_category.data
     assert b"Unix disk cleanup" not in by_category.data
 
     with app.app_context():
         unix_id = SupportGroup.query.filter_by(name="Unix").one().id
-    by_group = client.get(f"/tickets/incident?group_id={unix_id}")
+    by_group = client.get(filter_url([{"field": "group", "op": "eq", "value": str(unix_id)}]))
     assert b"Unix disk cleanup" in by_group.data
     assert b"Windows login issue" not in by_group.data
+    assert b"Assignment group is Unix" in by_group.data
 
-    combined = client.get("/tickets/incident?priority=P1&category=Hardware")
+    combined = client.get(filter_url([
+        {"field": "priority", "op": "eq", "value": "P1"},
+        {"field": "category", "op": "eq", "value": "Hardware"},
+    ]))
     assert b"Unix disk cleanup" in combined.data
     assert b"Windows login issue" not in combined.data
-    mismatched = client.get("/tickets/incident?priority=P1&category=Access")
+    mismatched = client.get(filter_url([
+        {"field": "priority", "op": "eq", "value": "P1"},
+        {"field": "category", "op": "eq", "value": "Access"},
+    ]))
     assert b"Unix disk cleanup" not in mismatched.data
     assert b"Windows login issue" not in mismatched.data
+
+    contains = client.get(filter_url([{"field": "title", "op": "contains", "value": "disk"}]))
+    assert b"Unix disk cleanup" in contains.data
+    assert b"Windows login issue" not in contains.data
+
+
+def test_module_records_list_supports_servicenow_style_filter(client, app):
+    login(client)
+    client.post("/module/problem/new", data={
+        "record_type": "Root cause analysis",
+        "title": "Filterable problem A", "description": "For filter coverage",
+        "priority": "P1", "risk": "High",
+    }, follow_redirects=True)
+    client.post("/module/problem/new", data={
+        "record_type": "Root cause analysis",
+        "title": "Filterable problem B", "description": "For filter coverage",
+        "priority": "P3", "risk": "Low",
+    }, follow_redirects=True)
+
+    filtered = client.get(
+        "/module/problem?filter=" + quote(json.dumps(
+            [{"field": "priority", "op": "eq", "value": "P1"}]
+        ))
+    )
+    assert b"Filterable problem A" in filtered.data
+    assert b"Filterable problem B" not in filtered.data
+    assert b"Priority is P1" in filtered.data
