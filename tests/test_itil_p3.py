@@ -6,8 +6,8 @@ compliance number.
 from datetime import timedelta
 
 from app import (
-    CIRelationship, ConfigurationItem, MajorIncidentProfile, SLADefinition,
-    TaskSLA, Ticket, User, capture_kpi_snapshots, ci_impact_set, db, now,
+    ChangeFreezeWindow, CIRelationship, ConfigurationItem, MajorIncidentProfile,
+    SLADefinition, TaskSLA, Ticket, User, capture_kpi_snapshots, ci_impact_set, db, now,
 )
 from tests.test_app import app, client, group_id, login
 
@@ -149,3 +149,47 @@ def test_ola_breach_is_excluded_from_customer_facing_sla_compliance(client, app)
         # Only the SLA (met, not breached) counts -- the breached OLA is excluded,
         # so compliance should read 100%, not 50%.
         assert row.metric_value == 100.0
+
+
+def test_change_freeze_window_blocks_standard_change_but_not_emergency(client, app):
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        ci = ConfigurationItem(name="freeze-test-ci", ci_class="Server", environment="Production", owner_id=admin.id, tenant_id=1)
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+
+    created = client.post("/itil/administration", data={
+        "action": "create_change_freeze", "title": "Year-end freeze",
+        "starts_at": "2026-08-01T00:00", "ends_at": "2026-08-10T00:00",
+        "reason": "Peak season.",
+    })
+    assert created.status_code == 302
+    with app.app_context():
+        assert ChangeFreezeWindow.query.filter_by(title="Year-end freeze").count() == 1
+
+    blocked = client.post("/tickets/new/change", data={
+        "title": "Standard change during freeze", "description": "Should be blocked.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.", "ci_id": str(ci_id),
+        "planned_start": "2026-08-03T09:00", "planned_end": "2026-08-03T17:00",
+    })
+    assert blocked.status_code == 400
+    assert b"change freeze" in blocked.data.lower()
+    with app.app_context():
+        assert Ticket.query.filter_by(title="Standard change during freeze").first() is None
+
+    allowed = client.post("/tickets/new/change", data={
+        "title": "Emergency change during freeze", "description": "Should be allowed.",
+        "category": "Software", "priority": "P1", "change_type": "Emergency",
+        "risk_score": "70", "impact": "High", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.", "ci_id": str(ci_id),
+        "planned_start": "2026-08-03T09:00", "planned_end": "2026-08-03T17:00",
+    })
+    assert allowed.status_code == 302
+    with app.app_context():
+        assert Ticket.query.filter_by(title="Emergency change during freeze").first() is not None
