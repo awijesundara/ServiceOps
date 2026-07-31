@@ -478,7 +478,8 @@ def _transaction_body(session, base_url, transaction_id, transaction, actor_user
     return body, notes
 
 
-def _correspondence_log(session, base_url, rt_id, tenant_id, actor_user_id, cache, ticket, enterprise_record, summary):
+def _correspondence_log(session, base_url, rt_id, tenant_id, actor_user_id, cache, ticket, enterprise_record,
+                        summary, history=None):
     """Fetches RT's full transaction history and formats every
     Create/Correspond/Comment message (falling back to attachment content
     when a transaction doesn't inline its own body) plus every status
@@ -491,12 +492,17 @@ def _correspondence_log(session, base_url, rt_id, tenant_id, actor_user_id, cach
     go through `cache` (the same one used for Queue/Owner) since a handful
     of people usually account for all the back-and-forth on a ticket --
     without the cache, a 20-message thread between the same two people did
-    20 redundant user lookups instead of 2."""
-    try:
-        history = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}/history", params={"per_page": 200})
-    except requests.RequestException as error:
-        summary["errors"].append(f"RT #{rt_id}: could not fetch history: {type(error).__name__}")
-        return ""
+    20 redundant user lookups instead of 2.
+
+    `history` lets a caller pass an already-fetched history payload (see
+    _import_one_ticket, which fetches it concurrently with the ticket
+    detail) so it isn't fetched twice."""
+    if history is None:
+        try:
+            history = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}/history", params={"per_page": 200})
+        except requests.RequestException as error:
+            summary["errors"].append(f"RT #{rt_id}: could not fetch history: {type(error).__name__}")
+            return ""
     transaction_ids = [item.get("id") for item in history.get("items", []) if item.get("id")]
     transactions_by_id = _fetch_many(session, base_url, "/REST/2.0/transaction/{}", transaction_ids)
     entries = []
@@ -620,7 +626,27 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
         summary["already_imported"] += 1
         return
 
-    detail = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}")
+    # Detail and history are independent reads -- fetching them together
+    # instead of one after the other shaves a full round trip off every
+    # ticket, which adds up fast against a slow RT instance. History is
+    # only needed when actually importing (dry runs skip correspondence
+    # entirely to keep the preview fast), so it's only requested then.
+    history = None
+    if dry_run:
+        detail = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}")
+    else:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            detail_future = pool.submit(_get, session, base_url, f"/REST/2.0/ticket/{rt_id}")
+            history_future = pool.submit(
+                _get, session, base_url, f"/REST/2.0/ticket/{rt_id}/history", params={"per_page": 200},
+            )
+            detail = detail_future.result()
+            try:
+                history = history_future.result()
+            except requests.RequestException as error:
+                summary["errors"].append(f"RT #{rt_id}: could not fetch history: {type(error).__name__}")
+                history = {"items": []}
+
     queue_name = cache.queue_name(detail.get("Queue")) or "RT Import"
     group = _resolve_or_create_group(queue_name, tenant_id, summary)
 
@@ -659,7 +685,7 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
             session, base_url, rt_id, tenant_id, actor_user_id, cache,
             ticket=(row if is_change else None),
             enterprise_record=(None if is_change else row),
-            summary=summary,
+            summary=summary, history=history,
         )
         if log:
             max_len = 20000 if is_change else 60000
