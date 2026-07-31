@@ -87,7 +87,7 @@
 {% endif %}
 {% if internal_view %}
 <nav class="record-section-tabs" aria-label="{{ ticket.kind|title }} sections">
-  <a class="active" href="#notes">Notes</a>{% if not ticket.change_governance %}<a href="#related-records">Related records</a>{% endif %}{% if ticket.change_governance %}<a href="#governance">Change governance</a>
+  <a class="active" href="#notes">Notes</a>{% if not ticket.change_governance %}<a href="#related-records">Related records</a><a href="#affected-cis">Affected CIs</a>{% endif %}{% if ticket.change_governance %}<a href="#governance">Change governance</a>
   <a href="#gov-affected-cis">Affected CIs</a>
   <a href="#gov-impacted-services">Impacted Services/CIs</a>
   <a href="#gov-approvers">Approvers ({{ approver_votes|length }})</a>
@@ -152,7 +152,7 @@
 
 {% if not ticket.change_governance %}
 <section class="panel incident-related-panel" id="related-records">
-  <header class="section-heading"><div><h2>Related records and affected services</h2><p>Problems, changes, requests, CIs and service impact</p></div></header>
+  <header class="section-heading"><div><h2>Related records</h2><p>Problems, changes, requests, and knowledge articles</p></div></header>
   {% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ item.label }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">No related records.</p>{% endfor %}
   {% if can_manage_ticket %}
   <form method="post" action="{{ url_for('record_link_add', source_type='ticket', source_id=ticket.id) }}" class="inline-form">
@@ -165,9 +165,10 @@
     <button>Link record</button>
   </form>
   {% endif %}
+</section>
 
-  <hr>
-  <h3>Affected CIs and impacted services</h3>
+<section class="panel" id="affected-cis">
+  <header class="section-heading"><div><h2>Affected CIs and impacted services</h2></div></header>
   {% if can_manage_ticket %}
   <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
     <input type="hidden" name="relationship_role" value="Primary CI">
