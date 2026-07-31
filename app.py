@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.49"
+APP_VERSION = "1.29.50"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -288,6 +288,10 @@ class User(UserMixin, db.Model):
     failed_login_count = db.Column(db.Integer, nullable=False, default=0)
     locked_until = db.Column(db.DateTime(timezone=True))
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    # GDPR Art. 17 (right to erasure): set when an admin scrubs this account's
+    # personal data. Distinct from `active` -- deactivation alone retains
+    # name/email/phone/department indefinitely, which is not erasure.
+    erased_at = db.Column(db.DateTime(timezone=True))
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     manager_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     manager = db.relationship("User", remote_side=[id], foreign_keys=[manager_id])
@@ -897,13 +901,19 @@ class Notification(db.Model):
 
 class SupportGroup(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), unique=True, nullable=False)
+    # Uniqueness is scoped to (tenant_id, name) -- not name alone -- so a
+    # second tenant can have its own "Service Desk"/"Change Control Board"
+    # instead of colliding with tenant 1's (see migration 20260731_0049).
+    name = db.Column(db.String(120), nullable=False)
     group_type = db.Column(db.String(40), nullable=False, default="Fulfillment")
     manager_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     active = db.Column(db.Boolean, nullable=False, default=True)
     manager = db.relationship("User")
     members = db.relationship("GroupMember", cascade="all, delete-orphan", backref="group")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "name", name="uq_support_group_tenant_name"),
+    )
 
 
 class GroupMember(db.Model):
@@ -3223,7 +3233,7 @@ def change_approval_stages(ticket):
             "approver_ids": [ci_group.manager_id],
         })
     if governance.change_type != "Standard" and change_requires_ccb(governance):
-        ccb = SupportGroup.query.filter_by(name="Change Control Board").first()
+        ccb = SupportGroup.query.filter_by(name="Change Control Board", tenant_id=ticket.tenant_id).first()
         ccb_ids = [
             member.user_id for member in (ccb.members if ccb else [])
             if member.role == "CCB approver" and member.user.active
@@ -4134,7 +4144,7 @@ def catalog_fulfillment_group(item):
     route = item.fulfillment_route
     if route and route.active and route.support_group and route.support_group.active:
         return route.support_group
-    return SupportGroup.query.filter_by(name="Service Desk", active=True).first()
+    return SupportGroup.query.filter_by(name="Service Desk", active=True, tenant_id=item.tenant_id).first()
 
 
 def user_support_group_ids(user):
@@ -4502,24 +4512,32 @@ def find_and_merge_duplicate_groups(tenant_id):
 
 
 def seed_itil(admin):
-    if not SupportGroup.query.filter_by(name="Service Desk").first():
-        service_desk = SupportGroup(name="Service Desk", group_type="Fulfillment")
-        security = SupportGroup(name="Security Operations", group_type="Fulfillment")
+    # SupportGroup.name currently carries a database-wide unique constraint
+    # (not yet scoped to tenant_id), so a second tenant seeding "Service Desk"
+    # etc. would collide at the DB level. Filtering by tenant_id here at least
+    # makes seeding correctly detect "this tenant doesn't have one yet" instead
+    # of silently reusing another tenant's group id -- the collision (if any)
+    # then surfaces as a clear IntegrityError rather than cross-tenant reuse.
+    # A composite (tenant_id, name) unique constraint is the real fix and
+    # needs its own migration.
+    if not SupportGroup.query.filter_by(name="Service Desk", tenant_id=admin.tenant_id).first():
+        service_desk = SupportGroup(name="Service Desk", group_type="Fulfillment", tenant_id=admin.tenant_id)
+        security = SupportGroup(name="Security Operations", group_type="Fulfillment", tenant_id=admin.tenant_id)
         db.session.add_all([service_desk, security])
     team_names = ["CoreApps", "Database", "Network", "Windows", "Unix", "SSD"]
     for team_name in team_names:
-        group = SupportGroup.query.filter_by(name=team_name).first()
+        group = SupportGroup.query.filter_by(name=team_name, tenant_id=admin.tenant_id).first()
         if not group:
-            group = SupportGroup(name=team_name, group_type="IT Fulfillment")
+            group = SupportGroup(name=team_name, group_type="IT Fulfillment", tenant_id=admin.tenant_id)
             db.session.add(group)
         else:
             group.group_type = "IT Fulfillment"
-    ccb = SupportGroup.query.filter_by(name="Change Control Board").first()
+    ccb = SupportGroup.query.filter_by(name="Change Control Board", tenant_id=admin.tenant_id).first()
     if not ccb:
-        ccb = SupportGroup(name="Change Control Board", group_type="CCB Approval")
+        ccb = SupportGroup(name="Change Control Board", group_type="CCB Approval", tenant_id=admin.tenant_id)
         db.session.add(ccb)
     db.session.flush()
-    database_group = SupportGroup.query.filter_by(name="Database").first()
+    database_group = SupportGroup.query.filter_by(name="Database", tenant_id=admin.tenant_id).first()
     if database_group:
         for nickname in ("DBA", "DBA Team"):
             if not SupportGroupAlias.query.filter(
@@ -7684,8 +7702,13 @@ def create_app(test_config=None):
     @require_action("security_administer")
     def user_new():
         if request.method == "POST":
+            min_length = setting_int("PASSWORD_MIN_LENGTH", 14)
+            password = request.form["password"]
+            if len(password) < min_length:
+                flash(f"Password must contain at least {min_length} characters.", "error")
+                return render_template("user_form.html", user=None, self_service=False)
             user = User(username=request.form["username"], name=request.form["name"], email=request.form["email"],
-                        password_hash=generate_password_hash(request.form["password"]), role=request.form["role"],
+                        password_hash=generate_password_hash(password), role=request.form["role"],
                         title=request.form.get("title", "")[:120],
                         department=request.form.get("department", "")[:120],
                         business_phone=request.form.get("business_phone", "")[:40],
@@ -7766,6 +7789,73 @@ def create_app(test_config=None):
             "user_form.html", user=user, self_service=False,
             manager_choices=manager_choices,
         )
+
+    @app.post("/admin/users/<int:user_id>/erase")
+    @roles("admin")
+    @require_action("security_administer")
+    def user_erase(user_id):
+        """GDPR Art. 17 (right to erasure). Deactivating a user (the `active`
+        flag) retains name/email/phone/department/title indefinitely -- this
+        actually scrubs them, replacing personal fields with an opaque
+        placeholder so foreign keys (audit target, ticket requester, etc.)
+        keep resolving without exposing who the record used to belong to.
+        Only ever applied to an already-deactivated account, is irreversible,
+        and the audit entry records that erasure happened, not the erased
+        content -- logging the old name/email defeats the purpose."""
+        user = tenant_query(User).filter_by(id=user_id).first_or_404()
+        if user.id == current_user.id:
+            abort(400, description="You cannot erase your own account.")
+        if user.active:
+            abort(400, description="Deactivate this account before erasing its personal data.")
+        if user.erased_at:
+            abort(400, description="This account's personal data has already been erased.")
+        placeholder = f"erased-user-{user.id}"
+        user.name = f"Erased user #{user.id}"
+        user.username = placeholder
+        user.email = f"{placeholder}@erased.invalid"
+        user.title = ""
+        user.department = ""
+        user.division = None
+        user.employee_id = None
+        user.employee_type = None
+        user.business_phone = ""
+        user.mobile_phone = ""
+        user.location = ""
+        user.avatar_path = None
+        user.manager_id = None
+        user.password_hash = generate_password_hash(uuid.uuid4().hex)
+        user.auth_version += 1
+        user.erased_at = now()
+        ExternalIdentity.query.filter_by(user_id=user.id).delete()
+        audit("erase", placeholder, "Personal data erased (GDPR Art. 17)")
+        db.session.commit()
+        flash(f"{placeholder}'s personal data has been erased.", "success")
+        return redirect(url_for("users"))
+
+    @app.get("/profile/export")
+    @login_required
+    def profile_export():
+        """GDPR Art. 20 (data portability): a structured, machine-readable
+        export of this user's own account data -- distinct from the admin
+        audit-log export, which is operational, not a subject-access export."""
+        user = tenant_query(User).filter_by(id=current_user.id).first_or_404()
+        payload = {
+            "username": user.username, "name": user.name, "email": user.email,
+            "title": user.title, "department": user.department, "division": user.division,
+            "business_phone": user.business_phone, "mobile_phone": user.mobile_phone,
+            "location": user.location, "timezone": user.timezone, "role": user.role,
+            "manager": user.manager.name if user.manager else None,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "tickets_requested": [
+                {"number": row.number, "title": row.title, "state": row.state, "created_at": row.created_at.isoformat()}
+                for row in tenant_query(Ticket).filter_by(requester_id=user.id).order_by(Ticket.created_at.desc()).all()
+            ],
+        }
+        response = Response(
+            json.dumps(payload, indent=2, sort_keys=True), mimetype="application/json",
+        )
+        response.headers["Content-Disposition"] = f'attachment; filename="{user.username}-data-export.json"'
+        return response
 
     @app.route("/profile", methods=["GET", "POST"])
     @login_required
@@ -8462,7 +8552,9 @@ def create_app(test_config=None):
             if domain == "problem":
                 db.session.add(ProblemProfile(enterprise_record_id=record.id))
             if request.form.get("approval_required") and current_user.role != "requester":
-                admin = User.query.filter_by(role="admin", active=True).first()
+                admin = tenant_query(User).filter_by(role="admin", active=True).first()
+                if not admin:
+                    abort(409, description="No active administrator is configured to approve this record.")
                 db.session.add(Approval(enterprise_record_id=record.id, approver_id=admin.id))
                 create_notification(
                     admin.id, f"Approval requested: {record.number}",
@@ -9438,9 +9530,9 @@ def create_app(test_config=None):
         db.session.flush()
         attach_slas("ritm", ritm.id, None)
         if item.approval_required:
-            manager = User.query.filter_by(role="admin", active=True).first()
-            fulfillment = SupportGroup.query.filter_by(name="Service Desk").first()
-            approvers = [member.user_id for member in fulfillment.members if member.user.active]
+            manager = tenant_query(User).filter_by(role="admin", active=True).first()
+            fulfillment = tenant_query(SupportGroup).filter_by(name="Service Desk").first()
+            approvers = [member.user_id for member in fulfillment.members if member.user.active] if fulfillment else []
             if not manager or not approvers:
                 abort(409, description="Request approval and fulfillment approvers must be configured.")
             create_approval_chain(
@@ -9780,7 +9872,7 @@ def create_app(test_config=None):
                 flash(f"{group.name} manager updated.", "success")
             elif action == "set_ccb_authority":
                 user = tenant_record_or_404(User, int(request.form["user_id"]))
-                ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
+                ccb = tenant_query(SupportGroup).filter_by(name="Change Control Board").one()
                 membership = GroupMember.query.filter_by(
                     group_id=ccb.id, user_id=user.id
                 ).first()
