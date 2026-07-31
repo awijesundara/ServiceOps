@@ -1,12 +1,18 @@
-# ServiceOps complete platform manual
+# ServiceOps platform manual
 
-Version 1.27.22 · Visual walkthrough edition
+*A guide to using and administering ServiceOps — what it does, who does what,
+and how each workspace works. For installing, deploying, and operating the
+infrastructure underneath it, see [DEPLOYMENT.md](DEPLOYMENT.md); for the
+engineering/architecture record, see
+[ENGINEERING_REFERENCE.md](ENGINEERING_REFERENCE.md).*
 
-See `docs/MASTER_REFERENCE.md` for a single merged document that also
-includes the governed backlog, traceability matrix, ITIL hierarchy
-reference, BP-001 blueprint traceability, REST API reference, and a fresh
-whole-application audit alongside this manual — useful as one-stop context
-for an AI agent or new engineer.
+**In this manual:**
+
+1. [Purpose and operating model](#1-purpose-and-operating-model) — what ServiceOps is for
+2. [Roles and teams](#2-roles-and-teams) — who can do what
+3. [End-user guide](#3-end-user-guide) — how each capability works, in depth
+   - [3A. Visual walkthrough](#3a-visual-walkthrough) — every workspace, screenshotted
+   - [3B. Common task walkthroughs](#3b-common-task-walkthroughs) — step-by-step for the four tasks people do most
 
 ## 1. Purpose and operating model
 
@@ -788,366 +794,36 @@ in-flight ticket.
    **Print / Save as PDF** to produce a printable report for a status
    meeting — both reflect exactly what's on screen.
 
-## 4. Deployment decision
 
-| Environment | Application | Database | Upload storage |
-|---|---|---|---|
-| Single server | Docker Compose | Bundled PostgreSQL | Docker volume |
-| Single production server | Docker Compose behind HTTPS proxy | Bundled or external PostgreSQL | Docker volume with backups |
-| Enterprise production | Kubernetes/Helm, 3+ replicas | Managed HA PostgreSQL | RWX CSI volume or object-storage extension |
-
-Production Kubernetes must use an externally operated, highly available PostgreSQL service.
-
-## 5. Docker installation
-
-Run `./serviceops install web`, open `http://127.0.0.1:8090`, configure the profile,
-database, identity providers, and listener, validate all checks, confirm, and
-deploy. Keep the terminal open until the browser reports a healthy deployment.
-
-Use `./serviceops status`, `health`, `logs`, `backup`, `restore`, and
-`doctor` for lifecycle operations. Put Caddy, NGINX, or an enterprise load
-balancer in front of the loopback-bound application and terminate TLS there.
-
-## 6. Kubernetes prerequisites
-
-- Kubernetes 1.27 or newer with at least three worker nodes for HA.
-- Helm 3, kubectl, a default-deny-capable CNI, and a CSI storage provider.
-- A private image registry and immutable ServiceOps image tag or digest.
-- External HA PostgreSQL with TLS, automated backups, and point-in-time recovery.
-- RWX upload storage when application replicas exceed one.
-- An ingress controller, DNS, and automated TLS certificate management.
-- Metrics Server for HPA; cluster monitoring and log aggregation.
-- A secrets controller or external vault for steady-state secret rotation.
-
-## 7. Kubernetes installation
-
-1. Build, scan, sign, and push an immutable image.
-2. Copy `deploy/kubernetes/values-production.example.yaml` to
-   `deploy/kubernetes/values-production.yaml`.
-3. Set registry, immutable tag, ingress, storage class, replicas, identity
-   endpoints, and role mappings.
-4. Run `./serviceops install kubernetes --preflight`.
-5. Run `./serviceops install kubernetes`.
-6. Confirm rollout, Helm test, ingress TLS, login, record creation, upload,
-   approval, notification, and audit behavior.
-
-The installer labels the namespace for Restricted Pod Security, creates secrets
-from a protected temporary file, uses `helm upgrade --install --atomic --wait`,
-waits for rollout, and runs the packaged `/ready` test.
-
-## 8. Kubernetes chart controls
-
-- Non-root UID/GID, RuntimeDefault seccomp, all capabilities dropped.
-- Read-only root filesystem and disabled service-account-token mounts.
-- Startup, readiness, and liveness probes with distinct semantics.
-- Rolling update with zero unavailable replicas.
-- Topology spreading across zones and hosts.
-- PodDisruptionBudget and optional HPA.
-- Resource requests and limits.
-- NetworkPolicy for ingress and required egress ports.
-- Persistent upload claim and optional ingress/TLS.
-- JSON schema validation and a Helm test hook.
-
-Tune topology keys to the labels present in the target cluster. A PDB protects
-only against voluntary disruptions; it does not protect against node, zone, or
-application failure.
-
-## 9. Identity configuration
-
-### Local administrator
-
-Keep local authentication enabled for one vaulted break-glass administrator.
-Test it quarterly under an approved access procedure. Rotate after every use.
-
-### AD/LDAP
-
-Use LDAPS or StartTLS, certificate validation, a least-privilege read-only bind
-identity, a narrow base DN, an escaped username filter, and explicit group-role
-mappings. Validate bind, search, user bind, disabled-user behavior, group
-mapping, certificate expiry, and directory outage behavior.
-
-### Keycloak
-
-Use a confidential OIDC client, authorization-code flow, exact HTTPS redirect
-URI, short-lived tokens, approved realm-role claims, client-secret rotation,
-and restrictive redirect/web-origin settings. Validate login, logout, expired
-session, revoked user, missing email, role changes, and provider outage.
-
-### LDAP directory synchronization
-
-In addition to interactive AD/LDAP login (which creates the `ExternalIdentity`
-row for a user on first login), ServiceOps can periodically enrich already
-LDAP-provisioned user records from the directory: profile fields (`title`,
-`department`, `division`, `employee_id`, `employee_type`), the manager
-reporting chain (`User.manager_id`), and AD-group-driven team membership.
-This is implemented in `serviceops_core/ldap_sync.py::sync_directory` and
-does **not** create new users — only accounts that already authenticated via
-LDAP at least once are matched and updated, by directory DN.
-
-Two ways to run it:
-
-- **Manual**: Administration → System settings → "Sync from LDAP" panel
-  triggers an immediate synchronous run (with a dry-run preview option) for
-  the current tenant and shows a result summary (entries read, users
-  updated, managers resolved, memberships added/removed, unmatched entries,
-  errors).
-- **Scheduled**: the `worker` container's existing in-process polling loop
-  (`tools/outbox_worker.py`, the same loop that already processes SLA
-  breaches, workflow schedules/jobs, and the outbox) also calls
-  `app.process_ldap_sync_schedule()` on every pass. For each **active**
-  tenant with both `LDAP_ENABLED` and `LDAP_SYNC_ENABLED` set, it checks a
-  per-tenant `ldap_sync_state` table row and runs `sync_directory(tenant.id)`
-  once the configured interval has elapsed since that tenant's last run. A
-  failure syncing one tenant is logged (no secrets) and never blocks or
-  crashes the sync of other tenants or the rest of the worker loop. There is
-  no default or fallback tenant — iteration is always by explicit,
-  individually-flagged tenant, consistent with the platform's fail-closed
-  tenant policy.
-
-Relevant settings (Administration → System settings → Authentication):
-
-| Setting | Purpose |
-|---|---|
-| `LDAP_ATTR_MAP` | JSON map from ServiceOps profile/manager/email/username fields to the directory's actual attribute names (e.g. AD `employeeID` vs. an OpenLDAP equivalent). Defaults match typical Active Directory attributes. |
-| `LDAP_SYNC_ENABLED` | Enables the scheduled sync for this tenant. Default off; manual sync is always available regardless of this flag. |
-| `LDAP_SYNC_INTERVAL_MINUTES` | Minimum minutes between scheduled sync runs per tenant (5–10080). Default 60. |
-
-Operational notes:
-
-- Directory attributes that are absent or empty are never used to null out
-  existing ServiceOps values (sparse directory entries do not erase data).
-- A manager DN outside the search filter/base DN is left unresolved rather
-  than failing the whole sync.
-- All directory attribute names are admin-configurable; nothing about a
-  specific company's schema is hard-coded.
-- This does not populate org-chart/manager data for interactively-created
-  local accounts that have never authenticated via LDAP.
-
-## 10. Post-deployment system settings
-
-Administrators can open **Administration → System settings** after deployment
-to change the platform name, company name, PNG logo, primary and accent colors,
-support identity, display defaults, LDAP, Keycloak, encrypted provider secrets,
-security limits, workflow defaults, and notification identity.
-
-Each field is marked either **Live** or **Restart required**. Live settings are
-read from PostgreSQL by every request. Restart-required identity-client changes
-must be followed by a complete Compose restart or Kubernetes rollout so every
-application instance receives the same client configuration.
-
-Database topology, replicas, storage, ingress, and TLS remain controlled by
-Compose or Helm and are displayed read-only. This prevents one pod from
-silently diverging from the declared infrastructure.
-
-Sensitive values are encrypted before storage and are never returned to the
-browser. Set a durable `SETTINGS_ENCRYPTION_KEY` during installation; changing
-or losing that key makes existing encrypted settings unreadable.
-
-### Priority and SLA policy
-
-Ticket priority is calculated from impact and urgency using the validated,
-Git-backed `config/priority_matrix.json`. Agents cannot silently override the
-result. A manager or administrator may select a different priority only while
-supplying an auditable reason of at least ten characters.
-
-Administrators manage business calendars and SLA definitions under
-**ITIL configuration**. Calendars use IANA timezone names, explicit business
-weekdays and opening hours, plus named excluded holiday dates. An SLA without a
-calendar remains a 24x7 wall-clock commitment. A calendar change applies to
-future SLA attachments; it does not silently rewrite targets already in flight.
-
-The worker detects newly breached commitments, writes one breach event to the
-SLA evidence stream, records the breach in the ticket history, and notifies the
-owning-team manager and assigned engineer through the durable outbox. Monitor
-the worker continuously; a stopped worker delays escalation but does not lose
-the stored target or breach state.
-
-### Declarative workflow operations
-
-Workflow source is controlled in `config/workflows.json`. On startup ServiceOps
-validates the package and publishes a new immutable PostgreSQL runtime version
-only when the canonical specification changes. Administrators can inspect the
-deployed hash and versions, redeploy the packaged source, and run a mutation-free
-simulation under **Administration → Workflows**.
-
-The supported foundation accepts `ticket.state_entry` events, equality,
-inequality, membership and empty-value conditions over explicitly allowed
-ticket fields, plus three actions: add ticket history, notify the requester,
-and notify the owning-team manager. Arbitrary administrator scripts and
-unsupported fields/actions fail package validation.
-
-State transitions enqueue a unique correlated job in the same transaction as
-the operational change. The worker claims jobs using PostgreSQL coordination,
-records the exact published version and masked structured input/output, and
-commits actions atomically. Failures use bounded exponential retry and enter
-`Dead` after five attempts. Monitor both workflow jobs and execution evidence
-from the administration page; investigate dead jobs before replaying them.
-
-Release 1.13.0 extends the runtime with durable waits, per-action execution
-evidence, manual/API/SLA-breach triggers, per-workflow rate limits, controlled
-dead-job replay, and safe terminal compensation. A wait commits its cursor and
-resume timestamp to PostgreSQL; after restart the worker continues at the next
-action and does not repeat completed steps.
-
-API workflow triggers require the explicit `workflows:execute` scope, the
-acting user's operational permission for the ticket, and an idempotency key.
-Rate-limited jobs are delayed without consuming a failure attempt. Failed jobs
-retry five times; compensation runs only after the terminal failure and is
-currently restricted to an auditable ticket-history action because delivered
-notifications cannot truthfully be undone.
-
-Release 1.13.0 does not yet claim scheduled recurrence, reusable subflows,
-general rollback, broad record mutation, concurrency quotas, or complete
-multi-environment configuration promotion. Those remain governed backlog work.
-
-Release 1.14.0 adds reusable subflows to workflow package schema v2. Subflow
-references are validated before deployment, unknown dependencies fail closed,
-and dependency cycles are rejected. Valid subflows are expanded into the
-immutable published workflow specification, so runtime execution never depends
-on mutable external fragments.
-
-Administrators configure recurring ticket schedules under
-**Administration → Workflows**. Each schedule is tenant-scoped, targets one
-ticket, uses a bounded minute interval, and can be enabled or disabled without
-deleting its evidence. Concurrent workers claim due schedules with PostgreSQL
-row locking. The event and next-run advancement commit together. If the system
-was offline for several intervals, it emits one event and advances directly to
-the next future interval instead of creating a catch-up storm.
-
-Calendar expressions, blackout windows, package dependencies, per-tenant
-concurrency quotas and production-scale scheduler failure testing remain
-governed backlog work.
-
-### Bootstrap credential retirement
-
-ServiceOps reads `ADMIN_PASSWORD_FILE` before the legacy `ADMIN_PASSWORD`
-environment value. Kubernetes separates the bootstrap credential from runtime
-secrets and never injects it into workers. Compose workers likewise receive no
-bootstrap administrator credential.
-
-After the first successful installation:
-
-1. Sign in as the local administrator.
-2. Use **Administration → Change password** to rotate the initial credential
-   into a unique vault-managed password. This increments the account
-   authentication version and invalidates every other browser session.
-3. Store the new credential in the organizational emergency-access vault.
-4. Run `./serviceops retire-bootstrap-secret`, verify the active administrator,
-   type the explicit confirmation, and wait for the recreated containers to
-   pass health checks.
-5. Run `./serviceops doctor`; the worker-secret isolation check must pass.
-
-The retirement operation clears only bootstrap injection from `.env`; it does
-not erase or reset the administrator's salted password hash in PostgreSQL.
-
-### Release evidence
-
-Tagged releases run `.github/workflows/supply-chain.yml`. Every referenced
-GitHub Action is pinned to a full commit SHA. The gate runs the complete test
-suite, builds with maximum provenance, blocks fixable HIGH and CRITICAL
-operating-system or library vulnerabilities, generates a CycloneDX image SBOM,
-and publishes only after successful validation. The resulting digest is signed
-keylessly with GitHub OIDC and receives GitHub SLSA build-provenance and SBOM
-attestations. Registry digest inspection and `gh attestation verify` must both
-succeed.
-
-Kubernetes values must provide `image.digest`; application, worker and
-migration workloads use `repository@sha256:digest`, never a mutable tag. The
-installer requires `SERVICEOPS_GITHUB_ORGANIZATION`, installs the pinned
-Sigstore Policy Controller and GitHub trust policy, and labels the ServiceOps
-namespace for enforcement. Unsigned or untrusted matching organization images
-are rejected at admission. Run `python tools/verify_supply_chain.py` locally
-to detect release-policy drift.
-
-Runtime Python and bundled PostgreSQL base images are pinned by digest and
-Python dependencies use exact versions. Generate the release record with:
-
-```bash
-python tools/release_evidence.py \
-  --version 1.26.3 \
-  --image serviceops-app:1.26.3 \
-  --output release-evidence/serviceops-1.26.3.json
-```
-
-The output records Git state, SHA-256 hashes for non-ignored source files, a
-combined manifest hash, image reference and CycloneDX component inventory. A
-dirty-tree marker is evidence, not approval. External vulnerability scanning,
-image signing, provenance publication, registry verification and admission
-enforcement remain required before organizational production approval.
-
-## 11. Security operations
-
-- Enforce TLS externally and enable HSTS only after HTTPS is proven.
-- Store secrets in a vault; never commit `.env`, values secrets, or kubeconfig.
-- Restrict namespace RBAC and database privileges.
-- Scan source, dependencies, image, manifests, and exposed endpoints in CI.
-- Sign images and enforce admission verification where supported.
-- Forward application, ingress, Kubernetes audit, database, and identity logs.
-- Alert on repeated login failures, admin changes, approval anomalies, SLA
-  breaches, crash loops, readiness loss, saturation, and storage pressure.
-- Patch base images and dependencies under change control.
-
-## 12. Backup and recovery
-
-Back up PostgreSQL and uploads as one recovery set. Encrypt backups, store them
-outside the cluster, apply retention and immutability, and record restore test
-evidence. For managed PostgreSQL enable PITR. Snapshotting a running database
-volume alone is not a proven logical backup.
-
-Quarterly recovery test:
-
-1. Run `./serviceops rehearse-recovery` and `./serviceops rehearse-pitr`; retain
-   both evidence records.
-2. Restore into an isolated environment.
-3. Restore database to the selected recovery point.
-4. Restore uploads from the matching recovery set.
-5. Deploy the matching immutable application version.
-6. Validate counts, attachments, identities, approvals, audit, and critical
-   workflows.
-7. Record actual RPO/RTO and corrective actions.
-
-The logical recovery command deliberately reports `pitr_proven=false`:
-`pg_dump` cannot be replayed with WAL. The separate PITR rehearsal uses
-`pg_basebackup`, continuous WAL archiving, and a named recovery target on
-disposable clusters, and reports `pitr_proven=true` only after boundary and
-ServiceOps integrity checks pass.
-
-## 13. Upgrades and rollback
-
-Run `./serviceops rehearse-upgrade` first. It creates a verified rollback set
-and validates the candidate image and migration against an isolated clone while
-the source remains healthy. Back up first. Review release notes and schema compatibility. Render and lint
-the Helm chart, deploy to staging, run workflow regression and load tests, then
-use `helm upgrade --install --atomic --wait`. Observe error rate, latency,
-readiness, database health, and queues. `--atomic` rolls Kubernetes resources
-back when the upgrade fails, but database schema/data rollback still requires a
-release-specific tested procedure.
-
-## 14. Monitoring and SLOs
-
-Monitor availability, request rate, latency percentiles, HTTP errors, worker
-saturation, pod restarts, readiness, CPU/memory throttling, database connection
-usage, query latency, replication/backup health, volume capacity, login errors,
-notification failures, and SLA breach rate. Define business-approved SLOs and
-page only on actionable symptoms.
-
-## 15. Incident response
-
-Declare severity and incident commander, preserve evidence, stabilize service,
-communicate on a fixed cadence, use tested rollback/failover, validate recovery,
-and create a blameless problem record with corrective actions. Never delete
-audit or operational evidence during response.
-
-## 16. Production acceptance checklist
-
-- [ ] Immutable, scanned image from trusted registry
-- [ ] External HA PostgreSQL with TLS, PITR, and restore test
-- [ ] Three or more application replicas across failure domains
-- [ ] RWX persistent uploads and tested restore
-- [ ] TLS ingress, DNS, HSTS, security headers
-- [ ] Restricted Pod Security and least-privilege RBAC
-- [ ] Network policies validated with the actual CNI and endpoint topology
-- [ ] LDAP/Keycloak end-to-end tests and vaulted break-glass account
-- [ ] Monitoring, logs, alert routing, dashboards, and runbooks
-- [ ] Load, soak, failover, node-drain, rollback, and disaster-recovery tests
-- [ ] Security review, penetration test, and formal go-live approval
+## 4. Deploying and operating ServiceOps
+
+Installing, configuring identity providers, running in Docker or Kubernetes,
+backups, upgrades, monitoring, and incident response are all covered in
+[DEPLOYMENT.md](DEPLOYMENT.md) — that document is the single source for
+infrastructure and operations so this manual can stay focused on the
+product itself. A few pointers specific to day-to-day administration inside
+the app, once it's already running:
+
+- **Settings that take effect immediately vs. need a restart** — every field
+  under **Administration → System settings** is marked **Live** (read fresh
+  from the database on every request) or **Restart required** (an
+  identity-provider or similar change that must reach every running instance
+  consistently, so it needs a full restart/rollout to take effect
+  everywhere). This matters most in a multi-replica Kubernetes deployment.
+- **Priority is calculated, not typed in** — every ticket's priority comes
+  from impact × urgency via `config/priority_matrix.json`. A manager or
+  administrator can override it, but only with a written reason of at least
+  ten characters, so every override is explainable later.
+- **SLAs run against business calendars** — configured under
+  **ITIL configuration**, using IANA timezone names and named holidays. An
+  SLA with no calendar attached is a plain 24×7 wall-clock commitment.
+  Changing a calendar affects future SLA attachments, not ones already in
+  flight.
+- **Workflow automation** is configured in `config/workflows.json` and
+  managed from **Administration → Workflows**, where you can inspect the
+  deployed version, redeploy it, and dry-run a simulation before it touches
+  real tickets.
+- **Rotate the bootstrap administrator password** the first time you sign
+  in, from **Administration → Change password** — see
+  [DEPLOYMENT.md](DEPLOYMENT.md#security-checklist) for the full credential
+  retirement procedure.
