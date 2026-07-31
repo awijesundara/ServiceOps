@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.41"
+APP_VERSION = "1.29.42"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -1263,6 +1263,24 @@ class ChangeGovernance(db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     ticket = db.relationship("Ticket", backref=db.backref("change_governance", uselist=False))
     ci = db.relationship("ConfigurationItem")
+
+
+class ChangeFreezeWindow(db.Model):
+    """A real blackout window: while active, Standard/Normal changes whose
+    planned window falls inside it are blocked at submission (see
+    active_change_freeze() and its call site in the change-creation route).
+    Only Emergency changes are exempt, matching ITIL 4 change-enablement
+    practice -- previously CHANGE_FREEZE_MESSAGE was a banner with no
+    enforcement behind it at all."""
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(160), nullable=False)
+    starts_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    ends_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    reason = db.Column(db.Text, default="")
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    created_by = db.relationship("User")
 
 
 CHANGE_PIR_OUTCOMES = ["Successful", "Successful with issues", "Failed", "Backed out"]
@@ -3256,6 +3274,19 @@ def precreate_change_conflicts(tenant_id, ci_id, planned_start, planned_end):
     return _conflict_descriptions(tenant_id, ci_ids, planned_start, planned_end)
 
 
+def active_change_freeze(tenant_id, planned_start, planned_end):
+    """Returns the first ChangeFreezeWindow whose range overlaps the given
+    planned window, or None. Overlap uses the same open-interval test as
+    _conflict_descriptions' change-overlap check."""
+    if not (planned_start and planned_end):
+        return None
+    return ChangeFreezeWindow.query.filter(
+        ChangeFreezeWindow.tenant_id == tenant_id,
+        ChangeFreezeWindow.starts_at < planned_end,
+        ChangeFreezeWindow.ends_at > planned_start,
+    ).order_by(ChangeFreezeWindow.starts_at).first()
+
+
 def run_change_conflict_detection(ticket, governance):
     """Flags scheduling conflicts against other changes and open incidents/problems
     sharing a CI during the same window. Tenant-scoped: joins through Ticket so a
@@ -4931,6 +4962,7 @@ def create_app(test_config=None):
     app.jinja_env.globals["user_avatar"] = user_avatar_html
     app.jinja_env.globals["PREVIEWABLE_ATTACHMENT_TYPES"] = PREVIEWABLE_ATTACHMENT_TYPES
     app.jinja_env.globals["IMAGE_ATTACHMENT_TYPES"] = IMAGE_ATTACHMENT_TYPES
+    app.jinja_env.globals["now"] = now
 
     @app.context_processor
     def ui_context():
@@ -6231,6 +6263,15 @@ def create_app(test_config=None):
                     return render_form(
                         f"This change cannot be created: it conflicts with {'; '.join(conflicts)}. "
                         "Reschedule the planned window or select a different configuration item."
+                    )
+            change_type_input = request.form.get("change_type", "Normal")
+            if kind == "change" and change_type_input != "Emergency":
+                freeze = active_change_freeze(current_user.tenant_id, planned_start, planned_end)
+                if freeze:
+                    return render_form(
+                        f"This change cannot be created: it falls inside the change freeze "
+                        f"\"{freeze.title}\" ({freeze.starts_at.strftime('%b %d')}–{freeze.ends_at.strftime('%b %d, %Y')}"
+                        f"{': ' + freeze.reason if freeze.reason else ''}). Only Emergency changes are permitted during a freeze."
                     )
             calculated_risk_score = calculate_change_risk_score(
                 request.form.get("change_type", "Normal"),
@@ -9059,6 +9100,16 @@ def create_app(test_config=None):
         decision = request.form.get("decision")
         if decision not in ("Approved", "Rejected"):
             abort(400)
+        if decision == "Approved" and vote.gate.chain.target_type == "ticket":
+            target = db.session.get(Ticket, vote.gate.chain.target_id)
+            governance = target.change_governance if target else None
+            if governance and governance.change_type != "Emergency":
+                freeze = active_change_freeze(current_user.tenant_id, governance.planned_start, governance.planned_end)
+                if freeze:
+                    abort(409, description=(
+                        f"Cannot approve: this change's planned window falls inside the "
+                        f'change freeze "{freeze.title}". Only Emergency changes can be approved during a freeze.'
+                    ))
         decide_vote(vote, decision, request.form.get("comments", "").strip())
         log_history(
             vote.gate.chain.target_type, vote.gate.chain.target_id,
@@ -9758,6 +9809,25 @@ def create_app(test_config=None):
                 audit("create", f"SLA definition: {name}",
                       f"{agreement_type}; {duration} minutes; {schedule.name if schedule else '24x7'}")
                 flash(f"{agreement_type} definition {name} created.", "success")
+            elif action == "create_change_freeze":
+                title = request.form.get("title", "").strip()
+                starts_at = parse_form_datetime(request.form.get("starts_at", ""))
+                ends_at = parse_form_datetime(request.form.get("ends_at", ""))
+                if not title or not starts_at or not ends_at:
+                    abort(400, description="Freeze title, start and end are required.")
+                if ends_at <= starts_at:
+                    abort(400, description="Freeze end must be later than its start.")
+                db.session.add(ChangeFreezeWindow(
+                    title=title, starts_at=starts_at, ends_at=ends_at,
+                    reason=request.form.get("reason", "").strip(), created_by_id=current_user.id,
+                ))
+                audit("create", f"Change freeze: {title}", f"{starts_at.isoformat()} – {ends_at.isoformat()}")
+                flash(f"Change freeze \"{title}\" created. Standard/Normal changes cannot be scheduled inside it.", "success")
+            elif action == "delete_change_freeze":
+                window = tenant_record_or_404(ChangeFreezeWindow, int(request.form["window_id"]))
+                audit("delete", f"Change freeze: {window.title}")
+                db.session.delete(window)
+                flash("Change freeze removed.", "success")
             elif action == "link_service_ci":
                 service = tenant_record_or_404(ServiceOffering, int(request.form["service_offering_id"]))
                 ci = tenant_record_or_404(ConfigurationItem, int(request.form["ci_id"]))
@@ -9863,6 +9933,9 @@ def create_app(test_config=None):
             fulfillment_groups=fulfillment_groups,
             ldap_enabled=setting_bool("LDAP_ENABLED"),
             ldap_sync_result=session.pop("ldap_sync_result", None),
+            change_freeze_windows=tenant_query(ChangeFreezeWindow).order_by(
+                ChangeFreezeWindow.starts_at.desc()
+            ).all(),
         )
 
     @app.post("/change/<int:ticket_id>/conflicts")
