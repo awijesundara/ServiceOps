@@ -30,12 +30,72 @@
       <span>Page {{ page }} of {{ pages }}</span>
       <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('cmdb', q=q, status=status, filter=raw_filter, page=page+1) }}">›</a>
     </nav>
+    <div class="columns-picker" data-columns-key="cmdb" data-columns-target="#cmdb-table" data-columns-default-hidden='{{ default_hidden_columns|tojson }}'>
+      <button type="button" class="columns-picker-toggle">☰ Columns</button>
+      <div class="columns-picker-panel" hidden>
+        <p class="muted" style="margin:0 0 4px">Choose what shows in the table — CIs pulled from NetBox/CSV carry more fields than fit by default.</p>
+        <label><input type="checkbox" value="ci_class"> Class</label>
+        <label><input type="checkbox" value="environment"> Environment</label>
+        <label><input type="checkbox" value="operational_status"> Status</label>
+        <label><input type="checkbox" value="lifecycle_state"> Lifecycle</label>
+        <label><input type="checkbox" value="business_criticality"> Criticality</label>
+        <label><input type="checkbox" value="location"> Location</label>
+        <label><input type="checkbox" value="support_group"> Owning team</label>
+        <label><input type="checkbox" value="ip_address"> IP address</label>
+        <label><input type="checkbox" value="vendor"> Vendor</label>
+        <label><input type="checkbox" value="model"> Model</label>
+        <label><input type="checkbox" value="cost_center"> Cost center</label>
+        <label><input type="checkbox" value="discovery_source"> Discovery source</label>
+        <label><input type="checkbox" value="owner"> Owner</label>
+        <label><input type="checkbox" value="install_date"> Install date</label>
+        <label><input type="checkbox" value="warranty_expiry_date"> Warranty expiry</label>
+        {% for key in extra_attribute_keys %}<label><input type="checkbox" value="attr:{{ key }}"> {{ key }}</label>{% endfor %}
+      </div>
+    </div>
   </header>
   <div class="list-breadcrumb"><span>▽</span> All{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
   <div class="task-list-scroll">
-  <table class="task-list"><thead><tr><th>Name</th><th>Class</th><th>Environment</th><th>Status</th><th>Lifecycle</th><th>Criticality</th><th>Location</th><th>Owning team</th>{% if current_user.role=='admin' %}<th></th>{% endif %}</tr></thead><tbody>
-    {% for ci in visible_cis %}<tr><td><strong>{{ ci.name }}</strong>{% if ci.serial_number %}<br><small class="muted">S/N {{ ci.serial_number }}</small>{% endif %}</td><td>{{ ci.ci_class }}</td><td>{{ ci.environment }}</td><td><span class="badge">{{ ci.operational_status }}</span></td><td>{{ ci.lifecycle_state }}</td><td>{{ ci.business_criticality }}</td><td>{{ ci.location or '—' }}</td><td>{{ ci.support_group.name if ci.support_group else 'Unassigned' }}</td>{% if current_user.role=='admin' %}<td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}">Edit</a></td>{% endif %}</tr>
-    {% else %}<tr><td colspan="9" class="empty">No matching configuration items{% if status %} with this status{% endif %}.</td></tr>{% endfor %}
+  <table class="task-list" id="cmdb-table"><thead><tr>
+    <th>Name</th>
+    <th data-col="ci_class">Class</th>
+    <th data-col="environment">Environment</th>
+    <th data-col="operational_status">Status</th>
+    <th data-col="lifecycle_state">Lifecycle</th>
+    <th data-col="business_criticality">Criticality</th>
+    <th data-col="location">Location</th>
+    <th data-col="support_group">Owning team</th>
+    <th data-col="ip_address">IP address</th>
+    <th data-col="vendor">Vendor</th>
+    <th data-col="model">Model</th>
+    <th data-col="cost_center">Cost center</th>
+    <th data-col="discovery_source">Discovery source</th>
+    <th data-col="owner">Owner</th>
+    <th data-col="install_date">Install date</th>
+    <th data-col="warranty_expiry_date">Warranty expiry</th>
+    {% for key in extra_attribute_keys %}<th data-col="attr:{{ key }}">{{ key }}</th>{% endfor %}
+    {% if current_user.role=='admin' %}<th></th>{% endif %}
+  </tr></thead><tbody>
+    {% for ci in visible_cis %}<tr>
+      <td><strong>{{ ci.name }}</strong>{% if ci.serial_number %}<br><small class="muted">S/N {{ ci.serial_number }}</small>{% endif %}</td>
+      <td data-col="ci_class">{{ ci.ci_class }}</td>
+      <td data-col="environment">{{ ci.environment }}</td>
+      <td data-col="operational_status"><span class="badge">{{ ci.operational_status }}</span></td>
+      <td data-col="lifecycle_state">{{ ci.lifecycle_state }}</td>
+      <td data-col="business_criticality">{{ ci.business_criticality }}</td>
+      <td data-col="location">{{ ci.location or '—' }}</td>
+      <td data-col="support_group">{{ ci.support_group.name if ci.support_group else 'Unassigned' }}</td>
+      <td data-col="ip_address">{{ ci.ip_address or '—' }}</td>
+      <td data-col="vendor">{{ ci.vendor or '—' }}</td>
+      <td data-col="model">{{ ci.model or '—' }}</td>
+      <td data-col="cost_center">{{ ci.cost_center or '—' }}</td>
+      <td data-col="discovery_source">{{ ci.discovery_source }}</td>
+      <td data-col="owner">{{ ci.owner.name if ci.owner else '—' }}</td>
+      <td data-col="install_date">{{ ci.install_date.strftime('%Y-%m-%d') if ci.install_date else '—' }}</td>
+      <td data-col="warranty_expiry_date">{{ ci.warranty_expiry_date.strftime('%Y-%m-%d') if ci.warranty_expiry_date else '—' }}</td>
+      {% for key in extra_attribute_keys %}<td data-col="attr:{{ key }}">{{ (ci.attributes or {}).get(key) or '—' }}</td>{% endfor %}
+      {% if current_user.role=='admin' %}<td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}">Edit</a></td>{% endif %}
+    </tr>
+    {% else %}<tr><td colspan="{{ 17 + extra_attribute_keys|length }}" class="empty">No matching configuration items{% if status %} with this status{% endif %}.</td></tr>{% endfor %}
   </tbody></table>
   </div>
 </section>
