@@ -6,9 +6,10 @@ compliance number.
 from datetime import timedelta
 
 from app import (
-    ChangeFreezeWindow, CIRelationship, ConfigurationItem, MajorIncidentProfile,
-    ServiceOffering, ServiceOfferingCI, ServiceOutage, SLADefinition, TaskSLA,
-    Ticket, User, capture_kpi_snapshots, ci_impact_set, db, now, service_availability_pct,
+    ChangeFreezeWindow, CIRelationship, ConfigurationItem, EnterpriseRecord,
+    MajorIncidentProfile, ServiceOffering, ServiceOfferingCI, ServiceOutage,
+    SLADefinition, TaskSLA, Ticket, User, capture_kpi_snapshots, ci_impact_set,
+    db, now, service_availability_pct,
 )
 from tests.test_app import app, client, group_id, login
 
@@ -261,3 +262,35 @@ def test_service_availability_pct_merges_overlapping_outages(app):
         expected_downtime = 6 * 3600
         expected_pct = round(100 * (1 - expected_downtime / window_seconds), 3)
         assert pct == expected_pct
+
+
+def test_enterprise_record_visible_to_fulfillment_team_member_not_just_admin(client, app):
+    """RT-imported records (and any EnterpriseRecord) previously fell through
+    visible_enterprise_record_query's cracks: it checked requester/assignee/
+    approval/task-assignment-group but never the record's own support_group_id,
+    and had no "IT Fulfillment members see everything" shortcut the way
+    visible_ticket_query does -- so an owning team could never see their own
+    imported tickets unless one happened to already have an OperationalTask.
+    """
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        record = EnterpriseRecord(
+            number="EVT0009301", domain="event", record_type="RT Ticket",
+            title="Dev servers unavailable", description="Imported from RT",
+            requester_id=admin.id, support_group_id=group_id(app), tenant_id=1,
+        )
+        db.session.add(record)
+        db.session.commit()
+        record_id = record.id
+
+    login(client, username="database.manager", password="Manager123!")
+    detail = client.get(f"/enterprise/{record_id}")
+    assert detail.status_code == 200
+    assert b"Dev servers unavailable" in detail.data
+
+    listing = client.get("/module/event")
+    assert b"Dev servers unavailable" in listing.data
+
+    search = client.get("/ui/search?q=EVT0009301")
+    assert search.status_code == 200
+    assert b"EVT0009301" in search.data
