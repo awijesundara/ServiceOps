@@ -51,9 +51,107 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.17"
+APP_VERSION = "1.29.18"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
+
+# Generic ServiceNow-style list filtering: a list view declares which
+# columns are filterable (FilterField) and the client posts back a JSON
+# array of {field, op, value} conditions (see static/list-filter.js). All
+# lists share this one implementation instead of each route inventing its
+# own ad hoc query params.
+FILTER_OPERATOR_LABELS = {
+    "eq": "is", "ne": "is not", "contains": "contains",
+    "starts_with": "starts with", "is_empty": "is empty",
+    "is_not_empty": "is not empty", "before": "before", "after": "after",
+}
+FILTER_OPERATORS_BY_TYPE = {
+    "text": ["contains", "eq", "starts_with", "is_empty", "is_not_empty"],
+    "choice": ["eq", "ne", "is_empty", "is_not_empty"],
+    "date": ["before", "after"],
+}
+FILTER_MAX_CONDITIONS = 8
+
+
+def parse_list_filter_param(raw):
+    """Parses the `filter` query param (a JSON array of {field, op, value})
+    into a validated list of condition dicts. Malformed input is dropped
+    silently -- worst case is an unfiltered list, never a 500."""
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    conditions = []
+    for item in parsed[:FILTER_MAX_CONDITIONS]:
+        if not isinstance(item, dict):
+            continue
+        field = str(item.get("field", "")).strip()
+        op = str(item.get("op", "")).strip()
+        value = str(item.get("value", "")).strip()
+        if not field or not op:
+            continue
+        conditions.append({"field": field, "op": op, "value": value})
+    return conditions
+
+
+def apply_filter_conditions(query, conditions, field_spec, extra_handlers=None):
+    """Applies a validated condition list to `query`. `field_spec` maps
+    field key -> {"column": InstrumentedAttribute, "type": "text"|"choice"|"date"}.
+    `extra_handlers` maps field key -> callable(query, op, value) -> query,
+    for fields that need a subquery instead of a plain column (e.g.
+    assignment group, which lives on a different table per ticket kind)."""
+    extra_handlers = extra_handlers or {}
+    for condition in conditions:
+        key, op, value = condition["field"], condition["op"], condition["value"]
+        if key in extra_handlers:
+            query = extra_handlers[key](query, op, value)
+            continue
+        spec = field_spec.get(key)
+        if not spec or op not in FILTER_OPERATORS_BY_TYPE.get(spec["type"], ()):
+            continue
+        column = spec["column"]
+        if op == "eq":
+            query = query.filter(column == value)
+        elif op == "ne":
+            query = query.filter(column != value)
+        elif op == "contains":
+            query = query.filter(column.ilike(f"%{value}%"))
+        elif op == "starts_with":
+            query = query.filter(column.ilike(f"{value}%"))
+        elif op == "is_empty":
+            query = query.filter(db.or_(column.is_(None), column == ""))
+        elif op == "is_not_empty":
+            query = query.filter(db.and_(column.isnot(None), column != ""))
+        elif op in ("before", "after"):
+            parsed_date = None
+            try:
+                parsed_date = datetime.fromisoformat(value)
+            except ValueError:
+                continue
+            query = query.filter(column < parsed_date if op == "before" else column > parsed_date)
+    return query
+
+
+def filter_conditions_breadcrumb(conditions, field_spec, value_labels=None):
+    """Human-readable "Field is Value" breadcrumb text for the active
+    filter, mirroring ServiceNow's list-view breadcrumb."""
+    value_labels = value_labels or {}
+    parts = []
+    for condition in conditions:
+        spec = field_spec.get(condition["field"])
+        if not spec:
+            continue
+        op_label = FILTER_OPERATOR_LABELS.get(condition["op"], condition["op"])
+        if condition["op"] in ("is_empty", "is_not_empty"):
+            parts.append(f"{spec['label']} {op_label}")
+        else:
+            shown_value = value_labels.get((condition["field"], condition["value"]), condition["value"])
+            parts.append(f"{spec['label']} {op_label} {shown_value}")
+    return parts
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -5211,38 +5309,63 @@ def create_app(test_config=None):
     def visible_tickets():
         return visible_ticket_query(current_user)
 
-    def ticket_list_query(kind, q="", state="", priority="", category="", group_id_filter=""):
+    TICKET_STATE_OPTIONS = ["New", "In Progress", "Pending", "Resolved", "Closed", "Cancelled"]
+
+    def ticket_filter_field_spec():
+        return {
+            "number": {"label": "Number", "type": "text", "column": Ticket.number},
+            "title": {"label": "Short description", "type": "text", "column": Ticket.title},
+            "priority": {"label": "Priority", "type": "choice", "column": Ticket.priority,
+                        "options": [(p, p) for p in ["P1", "P2", "P3", "P4"]]},
+            "state": {"label": "State", "type": "choice", "column": Ticket.state,
+                      "options": [(s, s) for s in TICKET_STATE_OPTIONS]},
+            "category": {"label": "Category", "type": "choice", "column": Ticket.category,
+                        "options": [(c, c) for c in TICKET_CATEGORY_OPTIONS]},
+            "opened": {"label": "Opened", "type": "date", "column": Ticket.created_at},
+            "updated": {"label": "Updated", "type": "date", "column": Ticket.updated_at},
+        }
+
+    def ticket_group_filter_handler(kind):
+        """Assignment group lives on TicketAssignmentGroup (incidents) or
+        ChangeOwnership (changes), not a plain Ticket column, so it needs a
+        subquery instead of the generic column-based filter path."""
+        link_model = ChangeOwnership if kind == "change" else TicketAssignmentGroup
+
+        def handler(query, op, value):
+            if op == "eq" and value:
+                try:
+                    group_id_value = int(value)
+                except ValueError:
+                    return query
+                return query.filter(Ticket.id.in_(
+                    db.session.query(link_model.ticket_id).filter(link_model.group_id == group_id_value)
+                ))
+            if op == "ne" and value:
+                try:
+                    group_id_value = int(value)
+                except ValueError:
+                    return query
+                return query.filter(~Ticket.id.in_(
+                    db.session.query(link_model.ticket_id).filter(link_model.group_id == group_id_value)
+                ))
+            if op == "is_empty":
+                return query.filter(~Ticket.id.in_(db.session.query(link_model.ticket_id)))
+            if op == "is_not_empty":
+                return query.filter(Ticket.id.in_(db.session.query(link_model.ticket_id)))
+            return query
+        return handler
+
+    def ticket_list_query(kind, q="", conditions=None):
         """Shared filtering for the ticket list view and its CSV export, so
-        both stay consistent. Filters by any of the list's visible columns
-        -- number/title search, state, priority, category, and assignment
-        group (Assignment group for incidents, owning team for changes)."""
+        both stay consistent: free-text search plus the generic filter
+        condition list (see apply_filter_conditions)."""
         query = visible_tickets().filter_by(kind=kind).filter(Ticket.deleted_at.is_(None))
         if q:
             query = query.filter(db.or_(Ticket.number.ilike(f"%{q}%"), Ticket.title.ilike(f"%{q}%")))
-        if state:
-            query = query.filter_by(state=state)
-        if priority:
-            query = query.filter_by(priority=priority)
-        if category:
-            query = query.filter_by(category=category)
-        if group_id_filter:
-            try:
-                group_id_value = int(group_id_filter)
-            except ValueError:
-                group_id_value = None
-            if group_id_value is not None:
-                if kind == "change":
-                    query = query.filter(Ticket.id.in_(
-                        db.session.query(ChangeOwnership.ticket_id).filter(
-                            ChangeOwnership.group_id == group_id_value
-                        )
-                    ))
-                else:
-                    query = query.filter(Ticket.id.in_(
-                        db.session.query(TicketAssignmentGroup.ticket_id).filter(
-                            TicketAssignmentGroup.group_id == group_id_value
-                        )
-                    ))
+        query = apply_filter_conditions(
+            query, conditions or [], ticket_filter_field_spec(),
+            extra_handlers={"group": ticket_group_filter_handler(kind)},
+        )
         return query
 
     TERMINAL_TICKET_STATES = ["Resolved", "Closed", "Cancelled"]
@@ -5460,12 +5583,9 @@ def create_app(test_config=None):
         if kind not in ("incident", "change"):
             abort(404)
         q = request.args.get("q", "").strip()
-        state = request.args.get("state", "").strip()
-        priority = request.args.get("priority", "").strip()
-        category = request.args.get("category", "").strip()
-        group_id_filter = request.args.get("group_id", "").strip()
-        query = ticket_list_query(kind, q=q, state=state, priority=priority,
-                                   category=category, group_id_filter=group_id_filter)
+        raw_filter = request.args.get("filter", "")
+        conditions = parse_list_filter_param(raw_filter)
+        query = ticket_list_query(kind, q=q, conditions=conditions)
         try:
             page = max(1, int(request.args.get("page", "1")))
         except ValueError:
@@ -5501,10 +5621,19 @@ def create_app(test_config=None):
         filter_groups = SupportGroup.query.filter_by(
             tenant_id=tenant_context_id()
         ).order_by(SupportGroup.name).all()
+        field_spec = ticket_filter_field_spec()
+        field_spec["group"] = {"label": "Assignment group", "type": "choice",
+                                "options": [(str(g.id), g.name) for g in filter_groups]}
+        value_labels = {("group", str(g.id)): g.name for g in filter_groups}
+        breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec, value_labels)
+        client_fields = {
+            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            for key, spec in field_spec.items()
+        }
         return render_template(
-            "tickets.html", tickets=rows, kind=kind, q=q, state=state,
-            priority=priority, category=category, group_id=group_id_filter,
-            filter_groups=filter_groups, category_options=TICKET_CATEGORY_OPTIONS,
+            "tickets.html", tickets=rows, kind=kind, q=q,
+            raw_filter=raw_filter, breadcrumb_parts=breadcrumb_parts,
+            filter_fields=client_fields,
             page=page, pages=pages, total=total,
             owning_groups=owning_groups,
         )
@@ -5515,12 +5644,8 @@ def create_app(test_config=None):
         if kind not in ("incident", "change"):
             abort(404)
         q = request.args.get("q", "").strip()
-        state = request.args.get("state", "").strip()
-        priority = request.args.get("priority", "").strip()
-        category = request.args.get("category", "").strip()
-        group_id_filter = request.args.get("group_id", "").strip()
-        query = ticket_list_query(kind, q=q, state=state, priority=priority,
-                                   category=category, group_id_filter=group_id_filter)
+        conditions = parse_list_filter_param(request.args.get("filter", ""))
+        query = ticket_list_query(kind, q=q, conditions=conditions)
         export_limit = 5000
         rows = query.options(
             db.joinedload(Ticket.requester), db.joinedload(Ticket.assignee),
@@ -7418,15 +7543,26 @@ def create_app(test_config=None):
             abort(404)
         query = visible_enterprise_record_query(current_user).filter_by(domain=domain)
         q = request.args.get("q", "").strip()
-        state = request.args.get("state", "").strip()
-        priority = request.args.get("priority", "").strip()
+        raw_filter = request.args.get("filter", "")
+        conditions = parse_list_filter_param(raw_filter)
         if q:
             query = query.filter(db.or_(EnterpriseRecord.number.ilike(f"%{q}%"),
                                         EnterpriseRecord.title.ilike(f"%{q}%")))
-        if state:
-            query = query.filter_by(state=state)
-        if priority:
-            query = query.filter_by(priority=priority)
+        field_spec = {
+            "number": {"label": "Number", "type": "text", "column": EnterpriseRecord.number},
+            "title": {"label": "Short description", "type": "text", "column": EnterpriseRecord.title},
+            "priority": {"label": "Priority", "type": "choice", "column": EnterpriseRecord.priority,
+                        "options": [(p, p) for p in ["P1", "P2", "P3", "P4"]]},
+            "state": {"label": "State", "type": "choice", "column": EnterpriseRecord.state,
+                      "options": [(s, s) for s in
+                                  ["New", "Open", "In Progress", "Awaiting Approval", "Approved",
+                                   "Pending", "Resolved", "Closed", "Rejected"]]},
+            "risk": {"label": "Risk", "type": "choice", "column": EnterpriseRecord.risk,
+                    "options": [(r, r) for r in ["Low", "Medium", "High", "Critical"]]},
+            "opened": {"label": "Opened", "type": "date", "column": EnterpriseRecord.created_at},
+            "updated": {"label": "Updated", "type": "date", "column": EnterpriseRecord.updated_at},
+        }
+        query = apply_filter_conditions(query, conditions, field_spec)
         try:
             page = max(1, int(request.args.get("page", "1")))
         except ValueError:
@@ -7438,9 +7574,15 @@ def create_app(test_config=None):
         rows = query.order_by(EnterpriseRecord.updated_at.desc()).offset(
             (page - 1) * per_page
         ).limit(per_page).all()
+        breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec)
+        client_fields = {
+            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            for key, spec in field_spec.items()
+        }
         return render_template(
             "module_records.html", domain=domain, config=config,
-            records=rows, q=q, state=state, priority=priority, page=page, pages=pages,
+            records=rows, q=q, raw_filter=raw_filter, breadcrumb_parts=breadcrumb_parts,
+            filter_fields=client_fields, page=page, pages=pages,
             total=total,
         )
 

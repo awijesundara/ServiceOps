@@ -5,23 +5,31 @@
   <header class="list-toolbar">
     <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ kind|title }}s</strong><small>{{ total }} records</small></div></div>
     <a class="primary button" href="{{ url_for('ticket_new', kind=kind) }}">New</a>
-    <a class="button" href="{{ url_for('tickets_export', kind=kind, q=q, state=state, priority=priority, category=category, group_id=group_id) }}">⬇ CSV</a>
+    <a class="button" href="{{ url_for('tickets_export', kind=kind, q=q, filter=raw_filter) }}">⬇ CSV</a>
     <button type="button" class="button" data-print-page>🖶 Print</button>
     <form class="list-search">
-      <label><span>State</span><select name="state"><option value="">All states</option>{% for s in ['New','In Progress','Pending','Resolved','Closed','Cancelled'] %}<option {% if state==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
-      <label><span>Priority</span><select name="priority"><option value="">All priorities</option>{% for p in ['P1','P2','P3','P4'] %}<option {% if priority==p %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
-      <label><span>Category</span><select name="category"><option value="">All categories</option>{% for c in category_options %}<option {% if category==c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
-      <label><span>Assignment group</span><select name="group_id"><option value="">All groups</option>{% for g in filter_groups %}<option value="{{ g.id }}" {% if group_id==g.id|string %}selected{% endif %}>{{ g.name }}</option>{% endfor %}</select></label>
+      <input type="hidden" name="filter" value="{{ raw_filter }}">
       <input name="q" value="{{ q }}" placeholder="Number or short description" aria-label="Search {{ kind }} records">
       <button>Search</button>
+      <div class="list-filter" data-filter-fields='{{ filter_fields|tojson }}' data-filter-value='{{ raw_filter or "[]" }}'>
+        <button type="button" class="list-filter-toggle">▽ Filter</button>
+        <div class="list-filter-builder" hidden>
+          <div class="list-filter-rows"></div>
+          <div class="list-filter-actions">
+            <button type="button" class="list-filter-add">+ Add condition</button>
+            <button type="submit" class="primary">Run</button>
+            <button type="button" class="list-filter-clear">Clear filter</button>
+          </div>
+        </div>
+      </div>
     </form>
     <nav class="list-pagination" aria-label="Pagination">
-      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('tickets', kind=kind, q=q, state=state, priority=priority, category=category, group_id=group_id, page=page-1) }}">‹</a>
+      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('tickets', kind=kind, q=q, filter=raw_filter, page=page-1) }}">‹</a>
       <span>Page {{ page }} of {{ pages }}</span>
-      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('tickets', kind=kind, q=q, state=state, priority=priority, category=category, group_id=group_id, page=page+1) }}">›</a>
+      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('tickets', kind=kind, q=q, filter=raw_filter, page=page+1) }}">›</a>
     </nav>
   </header>
-  <div class="list-breadcrumb"><span>▽</span> All{% if state %} › State = {{ state }}{% endif %}{% if priority %} › Priority = {{ priority }}{% endif %}{% if category %} › Category = {{ category }}{% endif %}{% if group_id %} › Assignment group = {{ (filter_groups|selectattr('id','equalto',group_id|int)|first).name if filter_groups|selectattr('id','equalto',group_id|int)|list else group_id }}{% endif %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
+  <div class="list-breadcrumb"><span>▽</span> All{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
   <div class="task-list-scroll">
     <table class="task-list">
       <thead><tr><th>Number</th><th>Opened</th><th>Short description</th><th>Caller</th><th>Priority</th><th>State</th><th>Category</th><th>Assignment group</th><th>Assigned to</th><th>Updated</th></tr></thead>
