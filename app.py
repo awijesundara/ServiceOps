@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.44"
+APP_VERSION = "1.29.45"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -4150,6 +4150,12 @@ def visible_catalog_request_query(user):
     query = query.filter(CatalogRequest.tenant_id == user.tenant_id)
     if user.role == "admin":
         return query
+    # Unlike tickets/enterprise records, catalog fulfillment is deliberately
+    # routing-scoped: a request routed to Windows must not be visible to Unix
+    # agents just because both are "IT Fulfillment" groups (see
+    # test_catalog_request_visibility_is_limited_to_participants_and_fulfillment_team
+    # and test_unrelated_team_cannot_view_or_mutate_catalog_request), so there's
+    # no "any fulfillment member sees everything" shortcut here on purpose.
     request_ids = {
         row[0] for row in db.session.query(CatalogRequest.id).filter(db.or_(
             CatalogRequest.requested_by_id == user.id,
@@ -4291,6 +4297,19 @@ def user_can_manage_enterprise_record(user, record):
         return False
     if record.requester_id == user.id or record.assignee_id == user.id:
         return True
+    # Mirrors user_can_manage_ticket(): the record's own owning team (not
+    # "any IT Fulfillment member," which is deliberately broader and reserved
+    # for *viewing*) can manage it -- previously only requester/assignee/an
+    # explicit OperationalTask assignment group counted, so the team a record
+    # was actually assigned to (support_group_id) couldn't act on it even
+    # after they were able to see it.
+    if record.support_group_id:
+        group = db.session.get(SupportGroup, record.support_group_id)
+        if group and (
+            group.manager_id == user.id
+            or GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first()
+        ):
+            return True
     group_ids = user_support_group_ids(user)
     return any(
         task.assignment_group_id in group_ids
