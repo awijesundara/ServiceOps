@@ -9,7 +9,21 @@
   </div>
 </header>
 
-<section class="panel admin-section">
+<div class="settings-workspace">
+  <nav class="settings-nav">
+    <a href="#catalog">Service catalog</a>
+    <a href="#directory-mapping">AD → team mapping</a>
+    <a href="#team-aliases">Team aliases</a>
+    <a href="#ldap-sync">LDAP sync</a>
+    <a href="#team-managers">Team managers</a>
+    <a href="#ccb">CCB approvers</a>
+    <a href="#change-freeze">Change freeze</a>
+    <a href="#governance-groups">Governance groups</a>
+    <a href="#service-offerings">Service offerings</a>
+    <a href="#sla">Calendars &amp; SLAs</a>
+  </nav>
+  <div class="settings-content">
+<section class="panel admin-section settings-section" id="catalog">
   <div class="panel-head">
     <div>
       <h2>Service catalog items and fulfillment routing</h2>
@@ -72,7 +86,7 @@
   </form>
 </section>
 
-<section class="panel admin-section">
+<section class="panel admin-section settings-section" id="directory-mapping">
   <div class="panel-head">
     <div>
       <h2>AD group → ServiceOps team</h2>
@@ -116,7 +130,7 @@
   </table>
 </section>
 
-<section class="panel admin-section">
+<section class="panel admin-section settings-section" id="team-aliases">
   <div class="panel-head">
     <div>
       <h2>Team name aliases</h2>
@@ -157,7 +171,7 @@
   </table>
 </section>
 
-<section class="panel admin-section">
+<section class="panel admin-section settings-section" id="ldap-sync">
   <div class="panel-head">
     <div>
       <h2>LDAP directory sync</h2>
@@ -193,7 +207,7 @@
   {% endif %}
 </section>
 
-<section class="panel admin-section">
+<section class="panel admin-section settings-section" id="team-managers">
   <div class="panel-head"><div><h2>Team managers</h2><p>The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.</p></div></div>
   <table>
     <thead><tr><th>Team</th><th>Current manager</th><th>Manager assignment</th><th>Members</th></tr></thead>
@@ -222,7 +236,7 @@
   </table>
 </section>
 
-<section class="panel admin-section">
+<section class="panel admin-section settings-section" id="ccb">
   <div class="panel-head"><div><h2>Change Control Board approvers</h2><p>Only users explicitly granted CCB approval authority are selected as voters for new non-standard changes. Removing authority does not rewrite historical decisions.</p></div></div>
   <table>
     <thead><tr><th>User</th><th>Platform role</th><th>Team memberships</th><th>CCB authority<span class="info-tip" tabindex="0" data-tip="Change Control Board approval authority. Only users granted this can vote on Normal/Emergency change approvals. Removing it does not alter past approval decisions.">i</span></th></tr></thead>
@@ -253,7 +267,7 @@
   </table>
 </section>
 
-<section class="panel admin-section">
+<section class="panel admin-section settings-section" id="change-freeze">
   <div class="panel-head"><div><h2>Change freeze windows</h2><p>While a window is active, Standard and Normal changes can't be scheduled or approved inside it — only Emergency changes are exempt. This actually blocks submission/approval, unlike a banner.</p></div></div>
   <form method="post" class="form-grid">
     <input type="hidden" name="action" value="create_change_freeze">
@@ -285,7 +299,7 @@
   </table>
 </section>
 
-<div class="analytics-grid">
+<div class="analytics-grid settings-section" id="governance-groups">
   <section class="panel">
     <h2>All governance groups</h2>
     {% for group in groups %}
@@ -295,7 +309,7 @@
     </article>
     {% endfor %}
   </section>
-  <section class="panel" id="service-offerings">
+  <section class="panel settings-section" id="service-offerings">
     <h2>Service offerings</h2>
     <p class="muted">Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk.</p>
     {% for service in services %}
@@ -319,7 +333,7 @@
   </section>
 </div>
 
-<section class="panel admin-section">
+<section class="panel admin-section settings-section" id="sla">
   <h2>Business calendars and SLA definitions</h2>
   <p>New work uses the selected timezone-aware calendar. Existing running SLA targets are preserved.</p>
   <details><summary>Add business schedule</summary>
@@ -356,4 +370,6 @@
     <tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td><span class="badge">{{ sla.agreement_type }}</span>{% if sla.counterparty %} {{ sla.counterparty }}{% endif %}</td><td>{{ sla.target_type }}</td><td>{{ sla.priority or "All" }}</td><td>{{ sla.duration_minutes }} minutes</td><td>{{ sla.schedule.name if sla.schedule else "24x7" }}</td><td>{{ sla.pause_states }}</td></tr>{% endfor %}</tbody>
   </table>
 </section>
+  </div>
+</div>
 {% endblock %}
