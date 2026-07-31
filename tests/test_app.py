@@ -3698,3 +3698,42 @@ def test_scan_attachment_reports_not_scanned_when_unconfigured(app, tmp_path):
         sample = tmp_path / "sample.txt"
         sample.write_text("hello")
         assert scan_attachment(str(sample)) == "not_scanned"
+
+
+def test_ticket_detail_pages_show_ci_owning_team(client, app):
+    """CMDB owning-team context must be visible on the ticket body itself
+    (not just the picker while filling the form), for changes, incidents,
+    and enterprise records alike."""
+    with app.app_context():
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        ci = ConfigurationItem(
+            name="detail-owning-team.example.com", ci_class="Server",
+            environment="Production", support_group_id=windows.id,
+        )
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+    login(client)
+
+    change = client.post("/tickets/new/change", data={
+        "title": "Owning team visibility check",
+        "description": "Confirm the CI owning team renders on the change body.",
+        "category": "Software", "change_type": "Normal",
+        "risk_score": "10", "impact": "Low", "urgency": "Low",
+        "implementation_plan": "n/a", "test_plan": "n/a", "backout_plan": "n/a",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+        "group_id": group_id(app), "ci_id": str(ci_id),
+    }, follow_redirects=True)
+    assert change.status_code == 200
+    assert b"CI owning team" in change.data
+    assert b"Windows" in change.data
+
+    incident = client.post("/tickets/new/incident", data={
+        "title": "Owning team visibility on incident",
+        "description": "Confirm the CI owning team renders on the incident body.",
+        "category": "Network", "contact_type": "Phone", "notify": "Email",
+        "impact": "Low", "urgency": "Low", "ci_id": str(ci_id),
+        "group_id": group_id(app, "Network"),
+    }, follow_redirects=True)
+    assert incident.status_code == 200
+    assert b'data-owning-team="Windows"' in incident.data

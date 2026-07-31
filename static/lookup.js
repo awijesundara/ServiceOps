@@ -48,18 +48,24 @@ function initLookup(container) {
     owningTeamHint.className = "lookup-owning-team muted";
     owningTeamHint.hidden = true;
     container.insertAdjacentElement("afterend", owningTeamHint);
+    const showOwningTeam = (owningTeam) => {
+      owningTeamHint.textContent = `Owning team: ${owningTeam || "Unassigned"}`;
+      owningTeamHint.hidden = false;
+    };
     hidden.addEventListener("lookup:change", (event) => {
       const item = event.detail;
-      if (item && item.owning_team) {
-        owningTeamHint.textContent = `Owning team: ${item.owning_team}`;
-        owningTeamHint.hidden = false;
-      } else if (item && item.value) {
-        owningTeamHint.textContent = "Owning team: Unassigned";
-        owningTeamHint.hidden = false;
+      if (item && (item.owning_team || item.value)) {
+        showOwningTeam(item.owning_team);
       } else {
         owningTeamHint.hidden = true;
       }
     });
+    // A CI already selected when the page loaded (editing an existing
+    // record) won't fire lookup:change, so show its owning team from the
+    // server-rendered data attribute immediately.
+    if (hidden.value && hidden.dataset.owningTeam !== undefined) {
+      showOwningTeam(hidden.dataset.owningTeam);
+    }
   }
   let items = [];
   let activeIndex = -1;
