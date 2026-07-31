@@ -6,12 +6,13 @@
 {% if rt_enabled %}
 <section class="panel" id="rt-import">
   <h2>Import tickets</h2>
-  <p class="muted">RT tickets are routine team-handled work, not ITIL incidents, so each one that hasn't already been imported becomes a new "IT operations events" record (type "RT Ticket"), not an Incident. RT Queue maps to an owning team (matched by name, or created if none matches — same as CSV CMDB import resolves team names), RT Requestor/Owner map to ServiceOps users by email (auto-created if not found), and RT Status/Priority map to the closest ServiceOps equivalent (an unrecognized status is reported as an error rather than silently guessed). Every correspondence message, status change, and file-attachment filename (the file itself isn't imported, just its name) from RT's full history is folded into the record's description as a dated log, in order — ServiceOps' generic record type has no separate comment thread the way Incidents do, so this is where it all lives. The RT ticket number is kept as a "Source ticket #" on the record and is searchable from this list's search box. A ticket already imported (matched by its RT ticket ID) is always skipped, never duplicated — safe to re-run after fixing a mapping problem, though a record already imported won't be retroactively corrected by a later re-run; fix it by hand or delete and re-import it. <strong>Run a preview first</strong> and check the sample rows below before applying anything. RT is not modified in any way — this only reads from it.</p>
+  <p class="muted">RT tickets are routine team-handled work, not ITIL incidents, so each one that hasn't already been imported becomes a new "IT operations events" record (type "RT Ticket"), not an Incident — <strong>except</strong> a ticket whose Subject contains the tag "[CR]" (case-insensitive), which imports as a ServiceOps Change instead, since that's this org's convention for a change request. Historical changes are inserted as already-decided records (no CCB/approval tasks are spun up for them — those already happened in RT). RT Queue maps to an owning team (matched by name, or created if none matches — same as CSV CMDB import resolves team names), RT Requestor/Owner map to ServiceOps users by email (auto-created if not found), and RT Status/Priority map to the closest ServiceOps equivalent (an unrecognized status is reported as an error rather than silently guessed). Every correspondence message, status change, and file-attachment filename (the file itself isn't imported, just its name) from RT's full history is folded into the description as a dated log, in order. The RT ticket number is kept as a "Source ticket #" (events) or shown in history (changes) and is searchable from the relevant list's search box. A ticket already imported (matched by its RT ticket ID, wherever it landed) is always skipped, never duplicated — safe to re-run after fixing a mapping problem, though a record already imported won't be retroactively corrected by a later re-run; fix it by hand or delete and re-import it. <strong>Run a preview first</strong> and check the sample rows below before applying anything. RT is not modified in any way — this only reads from it.</p>
   {% if rt_import_result %}
   <div class="callout">
     <strong>{{ 'Preview (nothing has been saved yet)' if rt_import_result.dry_run else 'Applied' }}:</strong>
     {{ rt_import_result.tickets_seen }} tickets seen ·
-    {{ rt_import_result.records_created }} {{ 'would be created' if rt_import_result.dry_run else 'created' }} ·
+    {{ rt_import_result.records_created }} {{ 'would be created' if rt_import_result.dry_run else 'created' }}
+    ({{ rt_import_result.events_created }} IT operations events, {{ rt_import_result.changes_created }} changes) ·
     {{ rt_import_result.already_imported }} already imported (skipped) ·
     {{ rt_import_result.teams_created }} new team(s) ·
     {{ rt_import_result.users_created }} new user(s) ·
@@ -22,8 +23,8 @@
   {% if rt_import_result.preview %}
   <div class="task-list-scroll">
     <table class="task-list">
-      <thead><tr><th>RT #</th><th>Number</th><th>Title</th><th>Queue → Team</th><th>State</th><th>Priority</th><th>Requester</th></tr></thead>
-      <tbody>{% for row in rt_import_result.preview %}<tr><td>{{ row.rt_id }}</td><td>{{ row.number }}</td><td>{{ row.title }}</td><td>{{ row.queue }}</td><td>{{ row.state }}</td><td>{{ row.priority }}</td><td>{{ row.requester or 'Unmatched' }}</td></tr>{% endfor %}</tbody>
+      <thead><tr><th>RT #</th><th>Type</th><th>Number</th><th>Title</th><th>Queue → Team</th><th>State</th><th>Priority</th><th>Requester</th></tr></thead>
+      <tbody>{% for row in rt_import_result.preview %}<tr><td>{{ row.rt_id }}</td><td>{{ row.type }}</td><td>{{ row.number }}</td><td>{{ row.title }}</td><td>{{ row.queue }}</td><td>{{ row.state }}</td><td>{{ row.priority }}</td><td>{{ row.requester or 'Unmatched' }}</td></tr>{% endfor %}</tbody>
     </table>
   </div>
   {% endif %}

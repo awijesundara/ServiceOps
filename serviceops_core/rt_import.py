@@ -12,14 +12,24 @@ failed.
 RT tickets are routine, team-handled work items rather than formal ITIL
 incidents, so each one becomes an "IT operations events" EnterpriseRecord
 (domain="event", record_type="RT Ticket") rather than a ServiceOps
-Incident. Its Queue maps to an owning team (EnterpriseRecord.support_group_id,
-matched/aliased/created the same way CSV CI import resolves team names),
-and each Requestor/Owner maps to a ServiceOps User by email, auto-creating
-a requester-role placeholder account when no match exists. Correspondence
-is folded into the record's description as a chronological log --
-EnterpriseRecord has no comment-thread or file-attachment model the way
-Ticket does, so there's nowhere else to put it; this is a known limitation
-versus importing as an Incident.
+Incident -- *except* a ticket whose Subject contains the literal tag
+"[CR]" (case-insensitive), which is this org's convention for a change
+request; those import as a ServiceOps Change (Ticket, kind="change") with
+a ChangeGovernance/ChangeOwnership row instead. Historical changes are
+inserted directly rather than going through the live approval-chain
+creation used by ticket_new() -- these already happened, so spinning up
+fresh CCB/approval tasks for them would be spurious and would notify
+approvers about years-old work.
+
+Either way, the RT Queue maps to an owning team (matched/aliased/created
+the same way CSV CI import resolves team names), and each Requestor/Owner
+maps to a ServiceOps User by email, auto-creating a requester-role
+placeholder account when no match exists. Correspondence is folded into
+the description as a chronological log for IT operations events (which
+have no comment-thread model the way Ticket does); Changes get the same
+log appended to their description too, for consistency and because a
+historical import has no natural place to "replay" as live comments
+either.
 
 IMPORTANT: RT REST2.0's exact JSON shape (custom field names, whether a
 Queue/Owner reference is inlined or requires a follow-up request) can vary
@@ -40,15 +50,30 @@ import requests
 # almost every real deployment (this one included) customizes its lifecycle
 # to add statuses like "closed". Unrecognized statuses are NOT silently
 # defaulted to "New" -- see _map_status -- because that actively misreports
-# a ticket that's actually finished as brand new.
-RT_STATUS_MAP = {
+# a ticket that's actually finished as brand new. EnterpriseRecord and
+# Ticket have different valid state vocabularies (EnterpriseRecord has
+# "Rejected", Ticket has "Cancelled" instead), so each import target gets
+# its own map.
+RT_STATUS_MAP_EVENT = {
     "new": "New", "open": "In Progress", "stalled": "Pending",
     "resolved": "Resolved", "rejected": "Rejected", "deleted": "Rejected",
+    "closed": "Closed",
+}
+RT_STATUS_MAP_CHANGE = {
+    "new": "New", "open": "In Progress", "stalled": "Pending",
+    "resolved": "Resolved", "rejected": "Cancelled", "deleted": "Cancelled",
     "closed": "Closed",
 }
 
 COMMENT_TRANSACTION_TYPES = {"Create", "Correspond", "Comment"}
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
+# This org's convention for tagging an RT ticket as a change request rather
+# than routine work, checked case-insensitively against the Subject.
+CHANGE_REQUEST_TAG = "[cr]"
+
+
+def _is_change_request(subject):
+    return CHANGE_REQUEST_TAG in (subject or "").lower()
 
 
 class RTImportError(RuntimeError):
@@ -72,14 +97,14 @@ def _map_priority(rt_priority):
     return "P4"
 
 
-def _map_status(rt_status, summary=None):
+def _map_status(rt_status, status_map, summary=None):
     key = (rt_status or "").strip().lower()
-    if key in RT_STATUS_MAP:
-        return RT_STATUS_MAP[key]
+    if key in status_map:
+        return status_map[key]
     if summary is not None:
         summary["errors"].append(
             f"Unrecognized RT status '{rt_status}' -- defaulted to New. "
-            "Add it to RT_STATUS_MAP in rt_import.py if your RT lifecycle uses it."
+            "Add it to the status map in rt_import.py if your RT lifecycle uses it."
         )
     return "New"
 
@@ -347,14 +372,90 @@ def _correspondence_log(session, base_url, rt_id, tenant_id, summary):
     return "\n\n".join(entries)
 
 
+def _already_imported(rt_id, tenant_id):
+    """Checks both possible target tables -- a ticket's routing (event vs.
+    change) depends on its Subject, which isn't known until after fetching
+    it, so the already-imported check has to cover wherever it might have
+    landed."""
+    import app as core_app
+
+    if core_app.EnterpriseRecord.query.filter_by(
+        tenant_id=tenant_id, external_source="rt", external_id=rt_id,
+    ).first():
+        return True
+    if core_app.Ticket.query.filter_by(
+        tenant_id=tenant_id, external_source="rt", external_id=rt_id,
+    ).first():
+        return True
+    return False
+
+
+def _set_created_at(row, detail):
+    import app as core_app
+
+    created = detail.get("Created")
+    if created:
+        parsed = core_app.parse_form_datetime(created.replace("T", " ").rstrip("Z"))
+        if parsed:
+            row.created_at = parsed
+
+
+def _create_event_record(rt_id, tenant_id, title, description, detail, requester, assignee, group, summary):
+    import app as core_app
+    from app import db
+
+    record = core_app.EnterpriseRecord(
+        number=core_app.next_enterprise_number("event"),
+        domain="event", record_type="RT Ticket",
+        title=title, description=description[:60000],
+        state=_map_status(detail.get("Status"), RT_STATUS_MAP_EVENT, summary),
+        priority=_map_priority(detail.get("Priority")),
+        risk="Medium", requester_id=requester.id,
+        assignee_id=(assignee.id if assignee else None),
+        support_group_id=group.id,
+        tenant_id=tenant_id, external_source="rt", external_id=rt_id,
+    )
+    _set_created_at(record, detail)
+    db.session.add(record)
+    db.session.flush()
+    return record
+
+
+def _create_change_ticket(rt_id, tenant_id, title, description, detail, requester, assignee, group, summary):
+    """Historical changes are inserted directly (Ticket + ChangeGovernance +
+    ChangeOwnership) rather than through ticket_new()'s live approval-chain
+    creation -- these already happened, so generating fresh CCB/approval
+    tasks and notifying today's approvers about years-old work would be
+    wrong. The record reflects RT's own status/history, not a re-run of
+    ServiceOps' governance workflow."""
+    import app as core_app
+    from app import db
+
+    ticket = core_app.Ticket(
+        number=core_app.sequence_number(core_app.Ticket, "CHG"),
+        kind="change", title=title, description=description[:20000],
+        state=_map_status(detail.get("Status"), RT_STATUS_MAP_CHANGE, summary),
+        priority=_map_priority(detail.get("Priority")),
+        category="General", requester_id=requester.id,
+        assignee_id=(assignee.id if assignee else None),
+        tenant_id=tenant_id, external_source="rt", external_id=rt_id,
+    )
+    _set_created_at(ticket, detail)
+    db.session.add(ticket)
+    db.session.flush()
+    db.session.add(core_app.ChangeGovernance(
+        ticket_id=ticket.id, change_type="Normal", ccb_required=False,
+        tenant_id=tenant_id,
+    ))
+    db.session.add(core_app.ChangeOwnership(ticket_id=ticket.id, group_id=group.id))
+    return ticket
+
+
 def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache, summary, dry_run):
     import app as core_app
     from app import db
 
-    existing = core_app.EnterpriseRecord.query.filter_by(
-        tenant_id=tenant_id, external_source="rt", external_id=rt_id,
-    ).first()
-    if existing:
+    if _already_imported(rt_id, tenant_id):
         summary["already_imported"] += 1
         return
 
@@ -385,28 +486,18 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
         if log:
             description = f"{title}\n\n{log}"
 
-    record = core_app.EnterpriseRecord(
-        number=core_app.next_enterprise_number("event"),
-        domain="event", record_type="RT Ticket",
-        title=title, description=description[:60000],
-        state=_map_status(detail.get("Status"), summary),
-        priority=_map_priority(detail.get("Priority")),
-        risk="Medium", requester_id=requester.id,
-        assignee_id=(assignee.id if assignee else None),
-        support_group_id=group.id,
-        tenant_id=tenant_id, external_source="rt", external_id=rt_id,
-    )
-    created = detail.get("Created")
-    if created:
-        parsed = core_app.parse_form_datetime(created.replace("T", " ").rstrip("Z"))
-        if parsed:
-            record.created_at = parsed
-    db.session.add(record)
-    db.session.flush()
+    is_change = _is_change_request(detail.get("Subject"))
+    if is_change:
+        row = _create_change_ticket(rt_id, tenant_id, title, description, detail, requester, assignee, group, summary)
+        summary["changes_created"] += 1
+    else:
+        row = _create_event_record(rt_id, tenant_id, title, description, detail, requester, assignee, group, summary)
+        summary["events_created"] += 1
     summary["records_created"] += 1
     summary["preview"].append({
-        "rt_id": rt_id, "number": record.number, "title": title,
-        "queue": queue_name, "state": record.state, "priority": record.priority,
+        "rt_id": rt_id, "type": "Change" if is_change else "IT operations event",
+        "number": row.number, "title": title,
+        "queue": queue_name, "state": row.state, "priority": row.priority,
         "requester": requester.email if requester else None,
     })
 
@@ -447,8 +538,8 @@ def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
 
     summary = {
         "tenant_id": tenant_id, "dry_run": bool(dry_run),
-        "tickets_seen": 0, "records_created": 0, "already_imported": 0,
-        "teams_created": 0, "users_created": 0, "comments_imported": 0,
+        "tickets_seen": 0, "records_created": 0, "events_created": 0, "changes_created": 0,
+        "already_imported": 0, "teams_created": 0, "users_created": 0, "comments_imported": 0,
         "errors": [], "preview": [],
     }
 
