@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.48"
+APP_VERSION = "1.29.49"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -1992,6 +1992,7 @@ SETTING_DEFINITIONS = {
     "security": [
         {"key": "ENABLE_HSTS", "label": "Enable HSTS", "type": "bool", "default": "false", "live": True},
         {"key": "SESSION_HOURS", "label": "Session lifetime in hours", "type": "int", "default": "8", "min": 1, "max": 168, "live": False},
+        {"key": "PASSWORD_MIN_LENGTH", "label": "Minimum local password length", "type": "int", "default": "14", "min": 8, "max": 64, "live": True},
         {"key": "MAX_UPLOAD_MB", "label": "Maximum upload size (MB)", "type": "int", "default": "20", "min": 1, "max": 500, "live": True},
         {"key": "AUDIT_STREAM_ENABLED", "label": "Stream audit events to SIEM", "type": "bool", "default": "false", "live": True},
         {"key": "LOGIN_MAX_ATTEMPTS", "label": "Failed logins before lockout", "type": "int", "default": "5", "min": 3, "max": 20, "live": True},
@@ -5806,8 +5807,9 @@ def create_app(test_config=None):
             confirmation = request.form.get("confirm_password", "")
             if not check_password_hash(current_user.password_hash, current_password):
                 abort(400, description="The current password is incorrect.")
-            if len(new_password) < 14:
-                abort(400, description="The new password must contain at least 14 characters.")
+            min_length = setting_int("PASSWORD_MIN_LENGTH", 14)
+            if len(new_password) < min_length:
+                abort(400, description=f"The new password must contain at least {min_length} characters.")
             if new_password != confirmation:
                 abort(400, description="The password confirmation does not match.")
             if check_password_hash(current_user.password_hash, new_password):

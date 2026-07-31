@@ -471,3 +471,24 @@ def test_enterprise_record_visibility_does_not_cross_tenant_boundary(app):
         db_manager = User.query.filter_by(username="database.manager").one()
         visible_ids = {row.id for row in visible_enterprise_record_query(db_manager).all()}
         assert their_record.id not in visible_ids
+
+
+def test_password_minimum_length_is_configurable(client, app):
+    from app import PlatformSetting
+
+    login(client)
+    with app.app_context():
+        db.session.add(PlatformSetting(key="PASSWORD_MIN_LENGTH", value="20", encrypted=False))
+        db.session.commit()
+
+    too_short = client.post("/profile/password", data={
+        "current_password": "Admin123!", "new_password": "Short1234567!", "confirm_password": "Short1234567!",
+    })
+    assert too_short.status_code == 400
+    assert b"20 characters" in too_short.data
+
+    long_enough = client.post("/profile/password", data={
+        "current_password": "Admin123!", "new_password": "ThisPasswordIsLongEnough1!",
+        "confirm_password": "ThisPasswordIsLongEnough1!",
+    })
+    assert long_enough.status_code in (200, 302)

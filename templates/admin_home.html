@@ -3,16 +3,20 @@
 <header class="page-head"><div><p class="eyebrow">PLATFORM ADMINISTRATION</p><h1>Administration home</h1><p>Configure security, people, service management, integrations, workflows, and platform operations.</p></div></header>
 <section class="admin-capability-grid">
   {% set cards = [
-    ('Guided setup','Validate installation and platform connections','system_settings','✓'),
-    ('System security','Identity, authentication, API clients and audit','api_clients_admin','◆'),
+    ('Guided setup','Branding, appearance, and instance-wide defaults','system_settings','✓'),
+    ('Authentication & security','Local login, AD/LDAP, Keycloak, lockout policy','system_settings#settings-authentication','◆'),
+    ('API clients','Manage REST API tokens and their scopes','api_clients_admin','⚿'),
+    ('Audit log','Every tracked change, exportable and signature-verified','audit_log','▤'),
     ('Service management','ITIL classifications, routing and approvals','itil_admin','↔'),
     ('User administration','Users, teams, directory mappings and roles','users','U'),
     ('Business logic','Governed workflows and lifecycle automation','workflows_admin','▶'),
     ('Data management','CMDB, services, assets and configuration','cmdb','▦'),
-    ('Diagnostics','Runtime settings and operational readiness','system_settings','⌁'),
     ('Email and integrations','SMTP, webhooks, monitoring and Teams','integrations_admin','✉'),
     ('Reporting and analytics','Operational workload and service metrics','analytics','◕')
   ] %}
-  {% for title, description, endpoint, icon in cards %}<a class="admin-capability-card" href="{{ url_for(endpoint) }}"><span>{{ icon }}</span><div><h2>{{ title }}</h2><p>{{ description }}</p></div></a>{% endfor %}
+  {% for title, description, endpoint, icon in cards %}
+  {% set base_endpoint, _, fragment = endpoint.partition('#') %}
+  <a class="admin-capability-card" href="{{ url_for(base_endpoint) }}{{ '#' + fragment if fragment }}"><span>{{ icon }}</span><div><h2>{{ title }}</h2><p>{{ description }}</p></div></a>
+  {% endfor %}
 </section>
 {% endblock %}
