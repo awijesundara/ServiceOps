@@ -46,7 +46,7 @@
 <details><summary>Add relationship</summary>
   <form method="post" action="{{ url_for('ci_relationship_add') }}" class="form-grid">
     <label>Parent CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="parent_id"><div class="lookup-results" hidden></div></div></label>
-    <label>Relationship<input name="relationship_type" value="Depends on"></label>
+    <label>Relationship<select name="relationship_type">{% for value in ci_relationship_types %}<option {% if value=='Depends on' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
     <label>Child CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="child_id"><div class="lookup-results" hidden></div></div></label>
     <div class="wide actions"><button class="primary">Link CIs</button></div>
   </form>

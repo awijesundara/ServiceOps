@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.33"
+APP_VERSION = "1.29.34"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -317,6 +317,30 @@ class PlatformSetting(db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
+class KpiSnapshot(db.Model):
+    """One captured value of a headline ITSM metric on a given day. /analytics
+    computes everything live from current data, which means it can only
+    ever show "right now" -- continual improvement runs on trend data, so a
+    nightly job (process_kpi_snapshot_schedule) writes each day's computed
+    metrics here instead."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    snapshot_date = db.Column(db.Date, nullable=False)
+    metric_name = db.Column(db.String(40), nullable=False)
+    metric_value = db.Column(db.Float, nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "snapshot_date", "metric_name", name="uq_kpi_snapshot"),
+    )
+
+
+class KpiSnapshotState(db.Model):
+    """Per-tenant scheduler bookkeeping for process_kpi_snapshot_schedule,
+    same shape as LdapSyncState below."""
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), primary_key=True)
+    last_run_at = db.Column(db.DateTime(timezone=True))
+
+
 class LdapSyncState(db.Model):
     """Per-tenant scheduler bookkeeping for the LDAP directory sync
     (serviceops_core.ldap_sync.sync_directory), so the background worker can
@@ -362,6 +386,12 @@ class Ticket(db.Model):
     # tickets created normally through the app.
     external_source = db.Column(db.String(20))
     external_id = db.Column(db.String(120))
+    # ITIL 4 service-desk CSAT -- one rating per ticket, submitted by the
+    # requester once it's Resolved/Closed. Nullable/unsubmitted is the
+    # normal, expected state for most tickets (most requesters never rate).
+    csat_rating = db.Column(db.Integer)
+    csat_comment = db.Column(db.Text)
+    csat_submitted_at = db.Column(db.DateTime(timezone=True))
 
 
 class Comment(db.Model):
@@ -763,6 +793,9 @@ class ConfigurationItem(db.Model):
     require_ccb_approval = db.Column(db.Boolean, nullable=False, default=False)
 
 
+CI_RELATIONSHIP_TYPES = ["Depends on", "Runs on", "Connects to", "Hosted on", "Backs up"]
+
+
 class CIRelationship(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     parent_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False)
@@ -922,7 +955,15 @@ class ServiceOffering(db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
+SLA_AGREEMENT_TYPES = ["SLA", "OLA", "UC"]
+
+
 class SLADefinition(db.Model):
+    """agreement_type distinguishes a customer-facing SLA from an internal
+    Operating Level Agreement (OLA, between two internal support teams) or
+    an external Underpinning Contract (UC, with a vendor) -- ITIL 4 service
+    level management treats these as distinct agreement types even though
+    they're tracked/breached the same mechanical way here."""
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(160), unique=True, nullable=False)
     target_type = db.Column(db.String(30), nullable=False)
@@ -931,6 +972,8 @@ class SLADefinition(db.Model):
     pause_states = db.Column(db.String(200), nullable=False, default="Pending,On Hold")
     active = db.Column(db.Boolean, nullable=False, default=True)
     schedule_id = db.Column(db.Integer, db.ForeignKey("business_schedule.id"))
+    agreement_type = db.Column(db.String(10), nullable=False, default="SLA")
+    counterparty = db.Column(db.String(160), default="")
     schedule = db.relationship("BusinessSchedule")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
@@ -3569,6 +3612,112 @@ def process_workflow_schedules(limit=50):
         schedule.next_run_at = next_run
         processed += 1
     db.session.commit()
+    return processed
+
+
+def capture_kpi_snapshots(tenant_id):
+    """Computes today's headline ITSM metrics for one tenant and writes/
+    updates a KpiSnapshot row per metric for today's date -- re-running on
+    the same day updates rather than duplicates, so a manual re-trigger is
+    safe. Mirrors the same 30-day-window metric definitions /analytics
+    uses (see the analytics() route) but scoped directly by tenant_id
+    rather than through visible_ticket_query(), since this runs outside a
+    request with no current_user."""
+    thirty_days_ago = now() - timedelta(days=30)
+    snapshot_date = now().date()
+
+    def upsert(metric_name, value):
+        if value is None:
+            return
+        row = KpiSnapshot.query.filter_by(
+            tenant_id=tenant_id, snapshot_date=snapshot_date, metric_name=metric_name,
+        ).first()
+        if row:
+            row.metric_value = value
+        else:
+            db.session.add(KpiSnapshot(
+                tenant_id=tenant_id, snapshot_date=snapshot_date,
+                metric_name=metric_name, metric_value=value,
+            ))
+
+    terminal_states = ("Resolved", "Closed", "Cancelled")
+    resolved_slas = TaskSLA.query.join(
+        Ticket, db.and_(TaskSLA.target_type == "ticket", TaskSLA.target_id == Ticket.id)
+    ).filter(
+        Ticket.tenant_id == tenant_id, Ticket.state.in_(terminal_states),
+        Ticket.updated_at >= thirty_days_ago,
+    ).all()
+    if resolved_slas:
+        upsert("sla_compliance_pct", round(
+            100 * sum(1 for row in resolved_slas if not row.breached) / len(resolved_slas), 1
+        ))
+
+    change_ticket_ids = [
+        row.id for row in Ticket.query.filter_by(tenant_id=tenant_id, kind="change")
+        .with_entities(Ticket.id).all()
+    ]
+    pir_rows = ChangePostImplementationReview.query.filter(
+        ChangePostImplementationReview.ticket_id.in_(change_ticket_ids),
+        ChangePostImplementationReview.reviewed_at >= thirty_days_ago,
+    ).all()
+    if pir_rows:
+        upsert("change_success_pct", round(
+            100 * sum(1 for row in pir_rows if row.outcome == "Successful") / len(pir_rows), 1
+        ))
+
+    resolved_incident_ids = [
+        row.id for row in Ticket.query.filter(
+            Ticket.tenant_id == tenant_id, Ticket.kind == "incident",
+            Ticket.state.in_(terminal_states), Ticket.updated_at >= thirty_days_ago,
+        ).with_entities(Ticket.id).all()
+    ]
+    if resolved_incident_ids:
+        reopened_ids = {
+            row.target_id for row in TaskHistory.query.filter(
+                TaskHistory.target_type == "ticket",
+                TaskHistory.target_id.in_(resolved_incident_ids),
+                TaskHistory.details.ilike("Reopened by%"),
+            ).with_entities(TaskHistory.target_id).all()
+        }
+        upsert("fcr_pct", round(
+            100 * (len(resolved_incident_ids) - len(reopened_ids)) / len(resolved_incident_ids), 1
+        ))
+
+    csat_ratings = [
+        row.csat_rating for row in Ticket.query.filter(
+            Ticket.tenant_id == tenant_id, Ticket.csat_rating.isnot(None),
+            Ticket.csat_submitted_at >= thirty_days_ago,
+        ).with_entities(Ticket.csat_rating).all()
+    ]
+    if csat_ratings:
+        upsert("csat_avg", round(sum(csat_ratings) / len(csat_ratings), 2))
+
+
+def process_kpi_snapshot_schedule(limit=50):
+    """Captures one day's worth of KPI snapshots per active tenant, once
+    every 24h -- same per-tenant due-interval and one-tenant-failure-
+    isolation shape as process_ldap_sync_schedule below."""
+    interval = timedelta(hours=24)
+    current = now()
+    processed = 0
+    tenants = Tenant.query.filter_by(active=True).order_by(Tenant.id).limit(limit).all()
+    for tenant in tenants:
+        try:
+            state = db.session.get(KpiSnapshotState, tenant.id)
+            if state and state.last_run_at and current - state.last_run_at < interval:
+                continue
+            if not state:
+                state = KpiSnapshotState(tenant_id=tenant.id)
+                db.session.add(state)
+            capture_kpi_snapshots(tenant.id)
+            state.last_run_at = current
+            db.session.commit()
+            processed += 1
+        except Exception as error:  # noqa: BLE001 - one tenant's failure must never block others
+            db.session.rollback()
+            current_app.logger.error(
+                "KPI snapshot capture failed for tenant %s: %s", tenant.id, type(error).__name__
+            )
     return processed
 
 
@@ -6574,6 +6723,32 @@ def create_app(test_config=None):
         flash(f"Post-implementation review saved for {ticket.number}.", "success")
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
+    @app.post("/ticket/<int:ticket_id>/satisfaction")
+    @login_required
+    def ticket_satisfaction_update(ticket_id):
+        """ITIL 4 service-desk CSAT: only the ticket's own requester can
+        rate it, and only once it's actually Resolved/Closed -- rating an
+        in-flight ticket wouldn't reflect a completed service interaction."""
+        ticket = tenant_record_or_404(Ticket, ticket_id)
+        if ticket.requester_id != current_user.id:
+            abort(403)
+        if ticket.state not in ("Resolved", "Closed"):
+            abort(409, description="This ticket isn't resolved yet.")
+        try:
+            rating = int(request.form.get("rating", ""))
+        except (TypeError, ValueError):
+            abort(400, description="Select a rating between 1 and 5.")
+        if rating < 1 or rating > 5:
+            abort(400, description="Select a rating between 1 and 5.")
+        ticket.csat_rating = rating
+        ticket.csat_comment = request.form.get("comment", "").strip()
+        ticket.csat_submitted_at = now()
+        log_history("ticket", ticket.id, "Satisfaction rating submitted", details=f"{rating}/5")
+        audit("csat", ticket.number, f"{rating}/5")
+        db.session.commit()
+        flash("Thanks for the feedback!", "success")
+        return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+
     @app.post("/incident/<int:ticket_id>/major-incident")
     @roles("agent", "manager", "admin")
     def major_incident_update(ticket_id):
@@ -8382,6 +8557,7 @@ def create_app(test_config=None):
             "cmdb.html", visible_cis=visible_cis, relationships=relationships, status=status,
             q=q, raw_filter=raw_filter, breadcrumb_parts=breadcrumb_parts, filter_fields=client_fields,
             page=page, pages=pages, total=total, cis_total=cis_total, operational_total=operational_total,
+            ci_relationship_types=CI_RELATIONSHIP_TYPES,
         )
 
     @app.get("/cmdb/export.csv")
@@ -8554,7 +8730,12 @@ def create_app(test_config=None):
             return redirect(url_for("cmdb"))
         owners = tenant_query(User).filter_by(active=True).order_by(User.name).all()
         support_groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
-        return render_template("ci_form.html", ci=ci, owners=owners, support_groups=support_groups)
+        history = TaskHistory.query.filter_by(
+            target_type="ci", target_id=ci.id
+        ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).limit(50).all()
+        return render_template(
+            "ci_form.html", ci=ci, owners=owners, support_groups=support_groups, history=history,
+        )
 
     @app.route("/cmdb/import", methods=["GET", "POST"])
     @roles("admin")
@@ -8709,7 +8890,9 @@ def create_app(test_config=None):
         child = tenant_record_or_404(ConfigurationItem, int(request.form["child_id"]))
         if parent.id == child.id:
             abort(400, description="A configuration item cannot depend on itself.")
-        relationship_type = request.form.get("relationship_type", "Depends on").strip()[:60] or "Depends on"
+        relationship_type = request.form.get("relationship_type", "Depends on")
+        if relationship_type not in CI_RELATIONSHIP_TYPES:
+            abort(400, description="Select a valid relationship type.")
         existing = tenant_query(CIRelationship).filter_by(
             parent_id=parent.id, child_id=child.id, relationship_type=relationship_type,
         ).first()
@@ -9437,14 +9620,20 @@ def create_app(test_config=None):
                     func.lower(SLADefinition.name) == name.casefold()
                 ).first():
                     abort(409, description="An SLA definition with that name already exists.")
+                agreement_type = request.form.get("agreement_type", "SLA")
+                if agreement_type not in SLA_AGREEMENT_TYPES:
+                    abort(400, description="Select a valid agreement type.")
+                counterparty = request.form.get("counterparty", "").strip()
                 db.session.add(SLADefinition(
                     name=name, target_type=target_type, priority=priority,
                     duration_minutes=duration, pause_states=pause_states,
                     schedule_id=schedule.id if schedule else None,
+                    agreement_type=agreement_type,
+                    counterparty=counterparty if agreement_type != "SLA" else "",
                 ))
                 audit("create", f"SLA definition: {name}",
-                      f"{duration} minutes; {schedule.name if schedule else '24x7'}")
-                flash(f"SLA definition {name} created.", "success")
+                      f"{agreement_type}; {duration} minutes; {schedule.name if schedule else '24x7'}")
+                flash(f"{agreement_type} definition {name} created.", "success")
             elif action == "link_service_ci":
                 service = tenant_record_or_404(ServiceOffering, int(request.form["service_offering_id"]))
                 ci = tenant_record_or_404(ConfigurationItem, int(request.form["ci_id"]))
@@ -9725,6 +9914,54 @@ def create_app(test_config=None):
         change_total = change_outcomes.get("Closed", 0) + change_outcomes.get("Cancelled", 0)
         change_success_pct = round(100 * change_outcomes.get("Closed", 0) / change_total) if change_total else None
 
+        # PIR-driven change success: unlike the state-based proxy above,
+        # this reflects the actual reviewed outcome (see
+        # ChangePostImplementationReview) -- "Closed" only tells you the
+        # ticket reached a terminal state, not whether the change worked.
+        change_ticket_ids = ticket_query.filter(Ticket.kind == "change").with_entities(Ticket.id).all()
+        pir_rows = ChangePostImplementationReview.query.filter(
+            ChangePostImplementationReview.ticket_id.in_([row.id for row in change_ticket_ids]),
+            ChangePostImplementationReview.reviewed_at >= thirty_days_ago,
+        ).with_entities(ChangePostImplementationReview.outcome).all()
+        pir_total = len(pir_rows)
+        pir_success_pct = (
+            round(100 * sum(1 for row in pir_rows if row.outcome == "Successful") / pir_total)
+            if pir_total else None
+        )
+
+        # First Contact Resolution proxy: incidents resolved in the last 30
+        # days that were never reopened. Not a strict "resolved on the very
+        # first interaction" measure (this app doesn't track interaction
+        # count), but a defensible, cheaply-computed FCR signal.
+        resolved_incident_ids = [
+            row.id for row in ticket_query.filter(
+                Ticket.kind == "incident", Ticket.state.in_(TERMINAL_TICKET_STATES),
+                Ticket.updated_at >= thirty_days_ago,
+            ).with_entities(Ticket.id).all()
+        ]
+        reopened_incident_ids = set()
+        if resolved_incident_ids:
+            reopened_incident_ids = {
+                row.target_id for row in TaskHistory.query.filter(
+                    TaskHistory.target_type == "ticket",
+                    TaskHistory.target_id.in_(resolved_incident_ids),
+                    TaskHistory.details.ilike("Reopened by%"),
+                ).with_entities(TaskHistory.target_id).all()
+            }
+        fcr_total = len(resolved_incident_ids)
+        fcr_pct = (
+            round(100 * (fcr_total - len(reopened_incident_ids)) / fcr_total) if fcr_total else None
+        )
+
+        # CSAT: average of ratings requesters submitted in the last 30 days.
+        csat_ratings = [
+            row.csat_rating for row in ticket_query.filter(
+                Ticket.csat_rating.isnot(None), Ticket.csat_submitted_at >= thirty_days_ago,
+            ).with_entities(Ticket.csat_rating).all()
+        ]
+        csat_count = len(csat_ratings)
+        csat_avg = round(sum(csat_ratings) / csat_count, 1) if csat_count else None
+
         # Top assignment groups by open ticket volume.
         open_rows = ticket_query.filter(Ticket.state.notin_(TERMINAL_TICKET_STATES)).with_entities(Ticket.id, Ticket.kind).all()
         incident_ids = [r.id for r in open_rows if r.kind == "incident"]
@@ -9749,14 +9986,28 @@ def create_app(test_config=None):
             )[:8]
         top_groups_max = max([1] + [row["count"] for row in top_groups])
 
+        kpi_history_rows = KpiSnapshot.query.filter_by(tenant_id=tenant_context_id()).filter(
+            KpiSnapshot.snapshot_date >= (now().date() - timedelta(days=30))
+        ).order_by(KpiSnapshot.snapshot_date.desc(), KpiSnapshot.metric_name).limit(120).all()
+        kpi_metric_labels = {
+            "sla_compliance_pct": "SLA compliance %",
+            "change_success_pct": "Change success % (reviewed)",
+            "fcr_pct": "First contact resolution %",
+            "csat_avg": "CSAT avg (out of 5)",
+        }
+
         return render_template(
             "analytics.html", ticket_states=ticket_states, domain_counts=domain_counts,
+            kpi_history_rows=kpi_history_rows, kpi_metric_labels=kpi_metric_labels,
             priority_counts=priority_counts, overdue_investigations=overdue_investigations,
             modules=DOMAIN_CONFIG, open_count=open_count,
             sla_breached_open=sla_breached_open, sla_at_risk_open=sla_at_risk_open,
             sla_compliance_pct=sla_compliance_pct, mttr_by_priority=mttr_by_priority,
             volume_trend=volume_trend, trend_max=trend_max, aging_buckets=aging_buckets,
             change_success_pct=change_success_pct, change_total=change_total,
+            pir_success_pct=pir_success_pct, pir_total=pir_total,
+            fcr_pct=fcr_pct, fcr_total=fcr_total,
+            csat_avg=csat_avg, csat_count=csat_count,
             top_groups=top_groups, top_groups_max=top_groups_max,
         )
 

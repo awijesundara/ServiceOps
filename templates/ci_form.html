@@ -27,4 +27,13 @@
   <div class="ci-attr-rows">{% for key, value in (ci.attributes if ci else {}).items() %}<div class="ci-attr-row"><input name="attr_key" value="{{ key }}" placeholder="Field name"><input name="attr_value" value="{{ value }}" placeholder="Value"><button type="button" class="link-button ci-attr-remove" aria-label="Remove field">✕</button></div>{% endfor %}</div>
   <button type="button" class="button" id="ci-attr-add">+ Add field</button>
 </div>
-<div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">Cancel</a><button class="primary">{{ 'Save changes' if ci else 'Create CI' }}</button></div></form>{% endblock %}
+<div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">Cancel</a><button class="primary">{{ 'Save changes' if ci else 'Create CI' }}</button></div></form>
+{% if ci %}
+<section class="panel">
+  <h2>Change history</h2>
+  <div class="event-stream">
+    {% for event in history %}<article class="event-entry">{{ user_avatar(event.actor, 'event-marker') }}<div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ event.actor.name if event.actor else 'System' }}</small>{% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span>→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}</div></article>{% else %}<p class="muted">No changes recorded yet.</p>{% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
