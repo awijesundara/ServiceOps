@@ -40,5 +40,20 @@
     <footer class="record-footer-actions"><button class="primary">{{ "Update user" if editing else "Create user" }}</button></footer>
   </form>
 </section>
-{% if editing %}<section class="panel related-links"><h2>Related links</h2>{% if self_service %}{% if current_user_is_local %}<a href="{{ url_for('change_password') }}">Change password</a>{% endif %}{% else %}<a href="{{ url_for('users') }}">Return to users</a>{% endif %}<a href="{{ url_for('notifications') }}">View notifications</a></section>{% endif %}
+{% if editing %}<section class="panel related-links"><h2>Related links</h2>{% if self_service %}{% if current_user_is_local %}<a href="{{ url_for('change_password') }}">Change password</a>{% endif %}<a href="{{ url_for('profile_export') }}">Download my data</a>{% else %}<a href="{{ url_for('users') }}">Return to users</a>{% endif %}<a href="{{ url_for('notifications') }}">View notifications</a></section>{% endif %}
+{% if editing and not self_service %}
+<section class="panel">
+  <h2>Data privacy<span class="info-tip" tabindex="0" data-tip="GDPR Article 17 — right to erasure. Scrubs name, email, phone, title, and department from this account, replacing them with an opaque placeholder. Tickets, audit history, and other records this person is linked to keep working by ID, but no longer show who they were. This does not remove that person's name/email from historical audit-log entries already written before erasure — those are preserved for security/legal-obligation purposes under Art. 17(3)(b).">i</span></h2>
+  {% if user.erased_at %}
+  <p class="muted">This account's personal data was erased on {{ (user.erased_at|usertime('%b %d, %Y · %H:%M')) }}.</p>
+  {% elif user.active %}
+  <p class="muted">Deactivate this account (uncheck "Active" above and save) before its personal data can be erased.</p>
+  {% else %}
+  <form method="post" action="{{ url_for('user_erase', user_id=user.id) }}" onsubmit="return confirm('Permanently erase {{ user.name }}\'s name, email, and other personal details? This cannot be undone.');">
+    <p class="muted">Permanently replaces this account's name, email, phone, title, and department with an anonymous placeholder. Cannot be undone.</p>
+    <button class="button">Erase personal data</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
 {% endblock %}
