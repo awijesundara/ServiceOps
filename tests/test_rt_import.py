@@ -250,6 +250,40 @@ def test_attachment_content_is_downloaded_and_saved_on_the_imported_event(app, m
             assert handle.read() == pdf_bytes
 
 
+def test_line_wrapped_base64_attachment_content_still_decodes(app, monkeypatch):
+    """Regression test: RT/Perl's MIME::Base64 wraps encoded Content at 76
+    characters with embedded newlines -- base64.b64decode(..., validate=True)
+    rejects that outright (newlines aren't in the base64 alphabet), which
+    was silently falling back to saving the base64 *text* as the file's
+    bytes. That made every real attachment fail its magic-byte check
+    against a real RT instance, regardless of file type."""
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+        pdf_bytes = b"%PDF-1.4 " + (b"x" * 100)
+        encoded = base64.b64encode(pdf_bytes).decode()
+        wrapped = "\n".join(encoded[i:i + 76] for i in range(0, len(encoded), 76)) + "\n"
+        ticket = make_ticket(905, "Ticket with line-wrapped attachment", requestor_ids=["9"])
+        factory = enable_rt(
+            monkeypatch, tickets=[ticket], queues={"1": "General"},
+            users={"9": {"EmailAddress": "moe@example.test", "RealName": "Moe"}},
+            history={"905": [{"id": "77"}]},
+            transactions={"77": {"Type": "Correspond", "Content": "", "Creator": {"id": "9"}}},
+            transaction_attachments={"77": [{"id": "604"}]},
+            attachment_meta={"604": {
+                "Filename": "wrapped.pdf",
+                "ContentType": "application/pdf",
+                "ContentEncoding": "base64",
+                "Content": wrapped,
+            }},
+        )
+        result = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
+        assert result["attachments_imported"] == 1
+        record = EnterpriseRecord.query.filter_by(external_source="rt", external_id="905").one()
+        attachment = FileAttachment.query.filter_by(enterprise_record_id=record.id).one()
+        with open(os.path.join(app.config["UPLOAD_FOLDER"], attachment.stored_name), "rb") as handle:
+            assert handle.read() == pdf_bytes
+
+
 def test_attachment_alongside_an_inline_text_body_is_still_imported(app, monkeypatch):
     """Regression test: RT's Create/Correspond transactions usually have
     BOTH an inline text Content AND a real file attachment (e.g. a reply
