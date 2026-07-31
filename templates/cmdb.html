@@ -2,7 +2,7 @@
 {% block title %}CMDB & service map · {{ instance_name }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">IT OPERATIONS</p><h1>CMDB & service map<span class="info-tip" tabindex="0" data-tip="CMDB = Configuration Management Database: the system of record for every CI (Configuration Item) — a server, application, or service — and how they depend on one another.">i</span></h1><p>Configuration items and the dependencies that connect business services.</p></div>{% if current_user.role=='admin' %}<a class="button" href="{{ url_for('cmdb_import') }}">⇪ Import</a> <a class="primary button" href="{{ url_for('ci_new') }}">+ New CI</a>{% endif %}</header>
-{% set csv_url = url_for('cmdb_export', status=status) %}
+{% set csv_url = url_for('cmdb_export', status=status, filter=raw_filter) %}
 {% include "_export_toolbar.html" %}
 <section class="stats"><a href="#configuration-items"><span>Configuration items</span><strong>{{ cis_total }}</strong><small>Across all classes →</small></a><a href="#service-relationships"><span>Relationships</span><strong>{{ relationships|length }}</strong><small>Mapped dependencies →</small></a><a href="{{ url_for('cmdb', status='Operational') }}"><span>Operational</span><strong>{{ operational_total }}</strong><small>View healthy CIs →</small></a></section>
 <section class="list-workspace" id="configuration-items">
@@ -10,15 +10,28 @@
     <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Configuration items</strong><small>{{ total }} records{% if status %} · filtered to {{ status }} <a href="{{ url_for('cmdb', q=q) }}">(clear)</a>{% endif %}</small></div></div>
     <form class="list-search">
       {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+      <input type="hidden" name="filter" value="{{ raw_filter }}">
       <input name="q" value="{{ q }}" placeholder="Name, serial, IP, model, vendor, location" aria-label="Search configuration items">
       <button>Search</button>
+      <div class="list-filter" data-filter-fields='{{ filter_fields|tojson }}' data-filter-value='{{ raw_filter or "[]" }}'>
+        <button type="button" class="list-filter-toggle">▽ Filter</button>
+        <div class="list-filter-builder" hidden>
+          <div class="list-filter-rows"></div>
+          <div class="list-filter-actions">
+            <button type="button" class="list-filter-add">+ Add condition</button>
+            <button type="submit" class="primary">Run</button>
+            <button type="button" class="list-filter-clear">Clear filter</button>
+          </div>
+        </div>
+      </div>
     </form>
     <nav class="list-pagination" aria-label="Pagination">
-      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('cmdb', q=q, status=status, page=page-1) }}">‹</a>
+      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('cmdb', q=q, status=status, filter=raw_filter, page=page-1) }}">‹</a>
       <span>Page {{ page }} of {{ pages }}</span>
-      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('cmdb', q=q, status=status, page=page+1) }}">›</a>
+      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('cmdb', q=q, status=status, filter=raw_filter, page=page+1) }}">›</a>
     </nav>
   </header>
+  <div class="list-breadcrumb"><span>▽</span> All{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
   <div class="task-list-scroll">
   <table class="task-list"><thead><tr><th>Name</th><th>Class</th><th>Environment</th><th>Status</th><th>Lifecycle</th><th>Criticality</th><th>Location</th><th>Owning team</th>{% if current_user.role=='admin' %}<th></th>{% endif %}</tr></thead><tbody>
     {% for ci in visible_cis %}<tr><td><strong>{{ ci.name }}</strong>{% if ci.serial_number %}<br><small class="muted">S/N {{ ci.serial_number }}</small>{% endif %}</td><td>{{ ci.ci_class }}</td><td>{{ ci.environment }}</td><td><span class="badge">{{ ci.operational_status }}</span></td><td>{{ ci.lifecycle_state }}</td><td>{{ ci.business_criticality }}</td><td>{{ ci.location or '—' }}</td><td>{{ ci.support_group.name if ci.support_group else 'Unassigned' }}</td>{% if current_user.role=='admin' %}<td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}">Edit</a></td>{% endif %}</tr>

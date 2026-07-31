@@ -40,5 +40,5 @@
     <footer class="record-footer-actions"><button class="primary">{{ "Update user" if editing else "Create user" }}</button></footer>
   </form>
 </section>
-{% if editing %}<section class="panel related-links"><h2>Related links</h2><a href="{{ url_for('change_password') if self_service else url_for('users') }}">{{ "Change password" if self_service else "Return to users" }}</a><a href="{{ url_for('notifications') }}">View notifications</a></section>{% endif %}
+{% if editing %}<section class="panel related-links"><h2>Related links</h2>{% if self_service %}{% if current_user_is_local %}<a href="{{ url_for('change_password') }}">Change password</a>{% endif %}{% else %}<a href="{{ url_for('users') }}">Return to users</a>{% endif %}<a href="{{ url_for('notifications') }}">View notifications</a></section>{% endif %}
 {% endblock %}
