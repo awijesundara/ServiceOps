@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.14"
+APP_VERSION = "1.29.15"
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -3817,11 +3817,15 @@ def seed_itil(admin):
         db.session.add(ccb)
     db.session.flush()
     database_group = SupportGroup.query.filter_by(name="Database").first()
-    if database_group and not SupportGroupAlias.query.filter(
-        func.lower(SupportGroupAlias.alias) == "dba",
-        SupportGroupAlias.tenant_id == database_group.tenant_id,
-    ).first():
-        db.session.add(SupportGroupAlias(alias="DBA", group_id=database_group.id, tenant_id=database_group.tenant_id))
+    if database_group:
+        for nickname in ("DBA", "DBA Team"):
+            if not SupportGroupAlias.query.filter(
+                func.lower(SupportGroupAlias.alias) == nickname.casefold(),
+                SupportGroupAlias.tenant_id == database_group.tenant_id,
+            ).first():
+                db.session.add(SupportGroupAlias(
+                    alias=nickname, group_id=database_group.id, tenant_id=database_group.tenant_id,
+                ))
     windows = SupportGroup.query.filter_by(name="Windows").first()
     if windows and not CatalogItem.query.first():
         # Administrator-configurable defaults per governed catalog routing:
