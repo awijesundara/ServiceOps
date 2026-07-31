@@ -28,7 +28,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  WorkflowSchedule,
                  audit, change_approval_stages, create_api_token, create_app, create_notification, db,
                  deploy_workflow_package, find_and_merge_duplicate_groups, ldap_authenticate,
-                 merge_support_group_into, normalize_environment, process_workflow_jobs,
+                 merge_support_group_into, normalize_environment, now, process_workflow_jobs,
                  process_workflow_schedules, queue_workflow_event,
                  scan_attachment, simulate_workflows,
                  integration_endpoint_valid, integration_endpoint_resolves_safely,
@@ -2604,6 +2604,32 @@ def test_visual_board_rejects_invalid_lifecycle_jump(client, app):
     ).status_code == 409
     with app.app_context():
         assert db.session.get(Ticket, ticket_id).state == "New"
+
+
+def test_task_board_drops_stale_resolved_and_closed_cards(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Old closed ticket", "description": "Should roll off the board",
+        "category": "Software", "priority": "P3",
+        "group_id": group_id(app),
+    })
+    client.post("/tickets/new/incident", data={
+        "title": "Recently closed ticket", "description": "Still on the board",
+        "category": "Software", "priority": "P3",
+        "group_id": group_id(app),
+    })
+    with app.app_context():
+        old = Ticket.query.filter_by(title="Old closed ticket").one()
+        recent = Ticket.query.filter_by(title="Recently closed ticket").one()
+        old.state = recent.state = "Closed"
+        db.session.commit()
+        old.updated_at = now() - timedelta(days=45)
+        recent.updated_at = now() - timedelta(days=5)
+        db.session.commit()
+
+    board = client.get("/task-board")
+    assert b"Old closed ticket" not in board.data
+    assert b"Recently closed ticket" in board.data
 
 
 def test_fresh_install_has_no_reserved_demo_personas(monkeypatch):
