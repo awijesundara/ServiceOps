@@ -4,15 +4,22 @@ into ServiceOps, via RT's REST2.0 JSON API.
 Design mirrors serviceops_core/netbox_sync.py: manual/admin-triggered,
 dry-run preview before anything commits, per-record error isolation so one
 bad RT ticket doesn't abort the whole batch, and idempotent re-runs via
-external_source="rt" / external_id=<RT ticket id> on Ticket -- a ticket
-already imported is skipped, never duplicated or overwritten, so fixing a
-mapping problem and re-running only picks up what previously failed.
+EnterpriseRecord.external_source="rt" / external_id=<RT ticket id> -- a
+ticket already imported is skipped, never duplicated or overwritten, so
+fixing a mapping problem and re-running only picks up what previously
+failed.
 
-Every RT ticket becomes a ServiceOps "incident" (RT has no first-class
-change-management concept); its Queue maps to an assignment team
-(SupportGroup, matched/aliased/created the same way CSV CI import resolves
-team names), and each Requestor/Owner maps to a ServiceOps User by email,
-auto-creating a requester-role placeholder account when no match exists.
+RT tickets are routine, team-handled work items rather than formal ITIL
+incidents, so each one becomes an "IT operations events" EnterpriseRecord
+(domain="event", record_type="RT Ticket") rather than a ServiceOps
+Incident. Its Queue maps to an owning team (EnterpriseRecord.support_group_id,
+matched/aliased/created the same way CSV CI import resolves team names),
+and each Requestor/Owner maps to a ServiceOps User by email, auto-creating
+a requester-role placeholder account when no match exists. Correspondence
+is folded into the record's description as a chronological log --
+EnterpriseRecord has no comment-thread or file-attachment model the way
+Ticket does, so there's nowhere else to put it; this is a known limitation
+versus importing as an Incident.
 
 IMPORTANT: RT REST2.0's exact JSON shape (custom field names, whether a
 Queue/Owner reference is inlined or requires a follow-up request) can vary
@@ -22,14 +29,22 @@ guessed field-expansion query syntax, but the very first dry run against a
 real instance should still be inspected -- the per-ticket preview rows are
 built specifically so a human can eyeball a handful before ever committing.
 """
-import io
+import os
+import tempfile
 
 import requests
 
 RT_STATUS_MAP = {
     "new": "New", "open": "In Progress", "stalled": "Pending",
-    "resolved": "Resolved", "rejected": "Cancelled", "deleted": "Cancelled",
+    "resolved": "Resolved", "rejected": "Rejected", "deleted": "Rejected",
 }
+
+COMMENT_TRANSACTION_TYPES = {"Create", "Correspond", "Comment"}
+
+
+class RTImportError(RuntimeError):
+    """Raised for conditions that must abort the whole import (e.g. not configured)."""
+
 
 # RT's default priority scale is 0-100 (0 = no priority set). This bucketing
 # is a reasonable default, not a guarantee it matches a customized scale --
@@ -52,27 +67,39 @@ def _map_status(rt_status):
     return RT_STATUS_MAP.get((rt_status or "").strip().lower(), "New")
 
 
-# Transaction types whose Content becomes a ServiceOps Comment (work note).
-COMMENT_TRANSACTION_TYPES = {"Create", "Correspond", "Comment"}
-# RT represents a ticket's message bodies as text/plain attachments too;
-# only genuine file attachments (not the message body itself) are imported
-# as FileAttachment rows.
-ATTACHMENT_SKIP_CONTENT_TYPES = ("text/plain", "multipart/")
-
-
-class RTImportError(RuntimeError):
-    """Raised for conditions that must abort the whole import (e.g. not configured)."""
+def _write_ca_bundle(pem_text):
+    fd, path = tempfile.mkstemp(prefix="rt-ca-", suffix=".pem")
+    with os.fdopen(fd, "w") as handle:
+        handle.write(pem_text)
+    return path
 
 
 def _rt_session(base_url, token):
     """Isolated in its own function so tests can monkeypatch it with a fake,
     matching the app.ldap_server_and_service_connection / netbox_sync._netbox_session
-    mocking convention used elsewhere in this codebase."""
+    mocking convention used elsewhere in this codebase.
+
+    Certificate verification is on by default. An internal RT instance
+    served from a corporate CA that isn't in the public trust store should
+    be handled by pasting that CA's certificate into the RT_CA_CERT
+    setting -- that's the secure fix and takes priority here.
+    RT_TLS_INSECURE is a separate, explicit admin-opt-in escape hatch for
+    when the CA can't be obtained; it disables verification entirely and is
+    deliberately not the default."""
+    import app as core_app
+
     session = requests.Session()
     session.headers.update({
         "Authorization": f"token {token}",
         "Accept": "application/json",
     })
+    ca_cert = core_app.setting_value("RT_CA_CERT", "").strip()
+    if ca_cert:
+        session.verify = _write_ca_bundle(ca_cert)
+    elif core_app.setting_bool("RT_TLS_INSECURE"):
+        session.verify = False
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     return session
 
 
@@ -200,15 +227,17 @@ def _resolve_or_create_group(queue_name, tenant_id, summary):
     return group
 
 
-def _import_comments(session, base_url, rt_id, ticket, actor_user_id, tenant_id, summary):
-    import app as core_app
-    from app import db
-
+def _correspondence_log(session, base_url, rt_id, tenant_id, summary):
+    """Fetches RT's Create/Correspond/Comment transactions and formats them
+    as a chronological plain-text log, for folding into the imported
+    record's description -- EnterpriseRecord has no comment-thread model
+    the way Ticket does, so there's nowhere else to put this."""
     try:
         history = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}/history", params={"per_page": 200})
     except requests.RequestException as error:
         summary["errors"].append(f"RT #{rt_id}: could not fetch history: {type(error).__name__}")
-        return
+        return ""
+    entries = []
     for item in history.get("items", []):
         transaction_id = item.get("id")
         try:
@@ -221,103 +250,26 @@ def _import_comments(session, base_url, rt_id, ticket, actor_user_id, tenant_id,
         if not content:
             continue
         creator = transaction.get("Creator")
-        author = None
+        creator_label = "Unknown"
         if isinstance(creator, dict):
-            contact = None
             creator_id = _ref_id(creator)
             if creator_id:
                 try:
                     contact = _get(session, base_url, f"/REST/2.0/user/{creator_id}")
+                    creator_label = contact.get("RealName") or contact.get("EmailAddress") or "Unknown"
                 except requests.RequestException:
-                    contact = None
-            if contact:
-                author = _resolve_or_create_user(
-                    contact.get("EmailAddress"), contact.get("RealName"), tenant_id, summary,
-                )
-        comment = core_app.Comment(
-            ticket_id=ticket.id, user_id=(author.id if author else actor_user_id), body=content[:20000],
-        )
-        db.session.add(comment)
-        created = transaction.get("Created")
-        if created:
-            parsed = core_app.parse_form_datetime(created.replace("T", " ").rstrip("Z"))
-            if parsed:
-                comment.created_at = parsed
+                    pass
+        created = transaction.get("Created") or ""
+        entries.append(f"--- {created} · {creator_label} ---\n{content}")
         summary["comments_imported"] += 1
-
-
-def _import_attachments(session, base_url, rt_id, ticket, actor_user_id, summary):
-    import app as core_app
-    from app import db
-    from flask import current_app
-    import os
-    import uuid
-    import hashlib
-
-    try:
-        listing = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}/attachments", params={"per_page": 100})
-    except requests.RequestException as error:
-        summary["errors"].append(f"RT #{rt_id}: could not list attachments: {type(error).__name__}")
-        return
-    for item in listing.get("items", []):
-        attachment_id = item.get("id")
-        try:
-            meta = _get(session, base_url, f"/REST/2.0/attachment/{attachment_id}")
-        except requests.RequestException:
-            continue
-        content_type = (meta.get("ContentType") or "").lower()
-        if content_type.startswith(ATTACHMENT_SKIP_CONTENT_TYPES):
-            continue
-        filename = meta.get("Filename")
-        content_b64 = meta.get("Content")
-        if not filename or not content_b64:
-            continue
-        try:
-            import base64
-            content_bytes = base64.b64decode(content_b64)
-        except Exception:  # noqa: BLE001 - malformed attachment payload, skip it
-            summary["errors"].append(f"RT #{rt_id}: attachment {filename} could not be decoded")
-            continue
-        upload = _InMemoryUpload(filename, content_bytes)
-        validated = core_app.validate_attachment_upload(upload)
-        if not validated:
-            summary["attachments_skipped"] += 1
-            continue
-        _, verified_mime_type = validated
-        stored = f"{uuid.uuid4().hex}-{filename}"
-        path = os.path.join(current_app.config["UPLOAD_FOLDER"], stored)
-        with open(path, "wb") as handle:
-            handle.write(content_bytes)
-        scan_status = core_app.scan_attachment(path)
-        if scan_status == "infected":
-            os.remove(path)
-            summary["attachments_skipped"] += 1
-            summary["errors"].append(f"RT #{rt_id}: attachment {filename} rejected by malware scan")
-            continue
-        sha256 = hashlib.sha256(content_bytes).hexdigest()
-        db.session.add(core_app.FileAttachment(
-            ticket_id=ticket.id, uploaded_by_id=actor_user_id,
-            original_name=filename, stored_name=stored, mime_type=verified_mime_type,
-            size_bytes=len(content_bytes), sha256=sha256, scan_status=scan_status,
-        ))
-        summary["attachments_imported"] += 1
-
-
-class _InMemoryUpload:
-    """Minimal adapter satisfying validate_attachment_upload()'s expected
-    interface (.filename, .stream.read/.seek) for bytes already fetched
-    from RT, instead of a real Werkzeug FileStorage from a browser upload."""
-
-    def __init__(self, filename, content_bytes):
-        self.filename = filename
-        self.stream = io.BytesIO(content_bytes)
+    return "\n\n".join(entries)
 
 
 def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache, summary, dry_run):
     import app as core_app
     from app import db
 
-    existing = core_app.Ticket.query.filter_by(
+    existing = core_app.EnterpriseRecord.query.filter_by(
         tenant_id=tenant_id, external_source="rt", external_id=rt_id,
     ).first()
     if existing:
@@ -345,43 +297,47 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
         assignee = _resolve_or_create_user(owner_contact["email"], owner_contact.get("name"), tenant_id, summary)
 
     title = (detail.get("Subject") or f"RT ticket #{rt_id}").strip()[:180]
-    ticket = core_app.Ticket(
-        number=core_app.sequence_number(core_app.Ticket, "INC"),
-        kind="incident", title=title,
-        description=title, state=_map_status(detail.get("Status")),
+    description = title
+    if not dry_run:
+        log = _correspondence_log(session, base_url, rt_id, tenant_id, summary)
+        if log:
+            description = f"{title}\n\n{log}"
+
+    record = core_app.EnterpriseRecord(
+        number=core_app.next_enterprise_number("event"),
+        domain="event", record_type="RT Ticket",
+        title=title, description=description[:60000],
+        state=_map_status(detail.get("Status")),
         priority=_map_priority(detail.get("Priority")),
-        category="General", requester_id=requester.id,
+        risk="Medium", requester_id=requester.id,
         assignee_id=(assignee.id if assignee else None),
+        support_group_id=group.id,
         tenant_id=tenant_id, external_source="rt", external_id=rt_id,
     )
     created = detail.get("Created")
     if created:
         parsed = core_app.parse_form_datetime(created.replace("T", " ").rstrip("Z"))
         if parsed:
-            ticket.created_at = parsed
-    db.session.add(ticket)
+            record.created_at = parsed
+    db.session.add(record)
     db.session.flush()
-    db.session.add(core_app.TicketAssignmentGroup(ticket_id=ticket.id, group_id=group.id))
-    summary["tickets_created"] += 1
+    summary["records_created"] += 1
     summary["preview"].append({
-        "rt_id": rt_id, "number": ticket.number, "title": title,
-        "queue": queue_name, "state": ticket.state, "priority": ticket.priority,
+        "rt_id": rt_id, "number": record.number, "title": title,
+        "queue": queue_name, "state": record.state, "priority": record.priority,
         "requester": requester.email if requester else None,
     })
-
-    if not dry_run:
-        _import_comments(session, base_url, rt_id, ticket, actor_user_id, tenant_id, summary)
-        _import_attachments(session, base_url, rt_id, ticket, actor_user_id, summary)
 
 
 def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
                    limit=None, session_factory=_rt_session):
     """Imports RT tickets matching `query` (RT TicketSQL, default "id > 0"
-    = everything) into ServiceOps for `tenant_id`, attributing system
-    actions (comment authorship fallback, attachment uploader) to
-    `actor_user_id` (the admin running the import). `limit` caps how many
-    NEW tickets are processed in one call, for testing a mapping against a
-    small batch before running the full import.
+    = everything) into ServiceOps for `tenant_id` as "IT operations events"
+    (EnterpriseRecord, domain="event"), attributing system actions (the
+    comment-authorship fallback) to `actor_user_id` (the admin running the
+    import). `limit` caps how many NEW records are processed in one call,
+    for testing a mapping against a small batch before running the full
+    import.
 
     Fails closed on missing tenant/configuration. dry_run performs the same
     matching/creation logic (so the preview reflects exactly what would
@@ -409,9 +365,8 @@ def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
 
     summary = {
         "tenant_id": tenant_id, "dry_run": bool(dry_run),
-        "tickets_seen": 0, "tickets_created": 0, "already_imported": 0,
-        "teams_created": 0, "users_created": 0,
-        "comments_imported": 0, "attachments_imported": 0, "attachments_skipped": 0,
+        "tickets_seen": 0, "records_created": 0, "already_imported": 0,
+        "teams_created": 0, "users_created": 0, "comments_imported": 0,
         "errors": [], "preview": [],
     }
 
@@ -419,7 +374,7 @@ def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
     cache = _RecordCache(session, base_url)
     try:
         for rt_id in _paginate_ticket_ids(session, base_url, query):
-            if limit is not None and summary["tickets_created"] >= limit:
+            if limit is not None and summary["records_created"] >= limit:
                 break
             summary["tickets_seen"] += 1
             try:
@@ -430,6 +385,12 @@ def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
         summary["errors"].append(f"RT request failed: {type(error).__name__}: {error}")
     finally:
         session.close()
+        ca_bundle_path = getattr(session, "verify", None)
+        if isinstance(ca_bundle_path, str) and ca_bundle_path.startswith(tempfile.gettempdir()):
+            try:
+                os.unlink(ca_bundle_path)
+            except OSError:
+                pass
 
     if dry_run:
         db.session.rollback()

@@ -1,6 +1,7 @@
 {% extends "base.html" %}{% block title %}Integrations · {{ instance_name }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">INTEGRATIONS</p><h1>Delivery and monitoring</h1><p>Durable SMTP, signed webhook, SIEM, Teams and monitoring adapters.</p></div><form method="post" action="{{ url_for('integrations_process') }}"><button>Process pending delivery</button></form></header>
+<section class="panel"><h2>Import from Request Tracker (RT)</h2><p class="muted">Pull tickets from an RT instance into ServiceOps as IT operations events, admin-only, with a dry-run preview before anything commits.</p><a class="button" href="{{ url_for('rt_import') }}">⇪ Import from RT</a></section>
 {% if revealed_secret %}<section class="panel"><h2>Copy the webhook signing secret now</h2><pre class="pre">{{ revealed_secret }}</pre></section>{% endif %}
 {% if revealed_token %}<section class="panel"><h2>Copy the monitoring credentials now</h2><p>Source ID: <code>{{ revealed_token.source_id }}</code></p><pre class="pre">{{ revealed_token.token }}</pre></section>{% endif %}
 <div class="detail-grid"><section class="panel"><h2>Connections</h2><table><thead><tr><th>Name</th><th>Kind</th><th>Endpoint</th><th>Status</th></tr></thead><tbody>{% for row in connections %}<tr><td>{{ row.name }}</td><td>{{ row.kind }}</td><td>{{ row.endpoint }}</td><td>{{ 'Active' if row.active else 'Disabled' }}</td></tr>{% else %}<tr><td colspan="4">No connections.</td></tr>{% endfor %}</tbody></table>

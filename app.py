@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.21"
+APP_VERSION = "1.29.22"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -665,14 +665,21 @@ class EnterpriseRecord(db.Model):
     risk = db.Column(db.String(20), nullable=False, default="Medium")
     requester_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     assignee_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    support_group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"))
     due_at = db.Column(db.DateTime(timezone=True))
     metadata_json = db.Column(db.Text, default="{}")
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     requester = db.relationship("User", foreign_keys=[requester_id])
     assignee = db.relationship("User", foreign_keys=[assignee_id])
+    support_group = db.relationship("SupportGroup")
     approvals = db.relationship("Approval", cascade="all, delete-orphan", backref="record")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    # Populated by bulk import (serviceops_core/rt_import.py) so a re-run
+    # matches existing rows instead of creating duplicates. Null for
+    # records created normally through the app.
+    external_source = db.Column(db.String(20))
+    external_id = db.Column(db.String(120))
 
 
 class Approval(db.Model):
@@ -1739,7 +1746,7 @@ DOMAIN_CONFIG = {
     "risk": {"name": "Risk & compliance", "prefix": "RSK", "types": ["Risk", "Control test", "Policy exception", "Audit finding"]},
     "portfolio": {"name": "Strategic portfolio", "prefix": "PRJ", "types": ["Demand", "Project", "Program", "Objective", "Agile epic"]},
     "field_service": {"name": "Field service", "prefix": "WO", "types": ["Work order", "Installation", "Repair", "Preventive maintenance"]},
-    "event": {"name": "IT operations events", "prefix": "EVT", "types": ["Alert", "Infrastructure event", "Service degradation"]},
+    "event": {"name": "IT operations events", "prefix": "EVT", "types": ["Alert", "Infrastructure event", "Service degradation", "RT Ticket"]},
     "release": {"name": "Releases", "prefix": "REL", "types": ["Release", "Deployment", "Readiness review"]},
 }
 
@@ -1838,6 +1845,14 @@ SETTING_DEFINITIONS = {
         {"key": "RT_ENABLED", "label": "Enable Request Tracker (RT) import", "type": "bool", "default": "false", "live": True},
         {"key": "RT_BASE_URL", "label": "RT base URL", "type": "url", "default": "", "live": True},
         {"key": "RT_API_TOKEN", "label": "RT API token", "type": "secret", "default": "", "live": True},
+        {
+            "key": "RT_CA_CERT", "type": "text", "default": "", "live": True,
+            "label": "RT CA certificate (PEM, only needed if RT uses an internal CA)",
+        },
+        {
+            "key": "RT_TLS_INSECURE", "type": "bool", "default": "false", "live": True,
+            "label": "Skip RT TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
+        },
     ],
 }
 
@@ -8289,7 +8304,7 @@ def create_app(test_config=None):
                 audit(
                     "configure", "RT ticket import",
                     f"{'Preview' if dry_run else 'Applied'}: query={query!r} "
-                    f"{result['tickets_seen']} seen, {result['tickets_created']} created, "
+                    f"{result['tickets_seen']} seen, {result['records_created']} created, "
                     f"{result['already_imported']} already imported, {len(result['errors'])} errors",
                 )
                 session["rt_import_result"] = result
@@ -8297,7 +8312,7 @@ def create_app(test_config=None):
                     (
                         "RT import preview: " if dry_run else "RT import applied: "
                     ) + (
-                        f"{result['tickets_seen']} tickets seen, {result['tickets_created']} created, "
+                        f"{result['tickets_seen']} tickets seen, {result['records_created']} created, "
                         f"{result['already_imported']} already imported, {len(result['errors'])} errors."
                     ),
                     "success" if not result["errors"] else "warning",
