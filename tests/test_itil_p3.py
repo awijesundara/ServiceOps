@@ -6,10 +6,10 @@ compliance number.
 from datetime import timedelta
 
 from app import (
-    MajorIncidentProfile, SLADefinition, TaskSLA, Ticket, User,
-    capture_kpi_snapshots, db, now,
+    CIRelationship, ConfigurationItem, MajorIncidentProfile, SLADefinition,
+    TaskSLA, Ticket, User, capture_kpi_snapshots, ci_impact_set, db, now,
 )
-from tests.test_app import app, client, login
+from tests.test_app import app, client, group_id, login
 
 
 def test_p1_incident_gets_post_incident_review_without_major_incident_declaration(client, app):
@@ -58,6 +58,52 @@ def test_non_p1_incident_without_major_declaration_cannot_be_reviewed(client, ap
         "what_went_well": "n/a",
     })
     assert response.status_code == 404
+
+
+def test_ci_impact_set_walks_dependency_chain_transitively(app):
+    with app.app_context():
+        db_ci = ConfigurationItem(name="db-01", ci_class="Database", tenant_id=1)
+        app_ci = ConfigurationItem(name="app-01", ci_class="Server", tenant_id=1)
+        web_ci = ConfigurationItem(name="web-01", ci_class="Server", tenant_id=1)
+        db.session.add_all([db_ci, app_ci, web_ci])
+        db.session.flush()
+        # app-01 depends on db-01; web-01 depends on app-01. db-01 going down
+        # should transitively impact web-01 even though they aren't linked directly.
+        db.session.add(CIRelationship(parent_id=app_ci.id, child_id=db_ci.id, relationship_type="Depends on", tenant_id=1))
+        db.session.add(CIRelationship(parent_id=web_ci.id, child_id=app_ci.id, relationship_type="Depends on", tenant_id=1))
+        db.session.commit()
+        impacted = ci_impact_set(1, {db_ci.id})
+        assert app_ci.id in impacted
+        assert web_ci.id in impacted
+
+
+def test_change_conflict_detection_reaches_a_dependent_ci_not_just_direct_links(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        host_ci = ConfigurationItem(name="hypervisor-01", ci_class="Server", environment="Production", owner_id=admin.id, tenant_id=1)
+        guest_ci = ConfigurationItem(name="guest-vm-01", ci_class="Virtual Machine", environment="Production", owner_id=admin.id, tenant_id=1)
+        db.session.add_all([host_ci, guest_ci])
+        db.session.flush()
+        # guest_vm "Runs on" the hypervisor -- guest is the parent, host is the child.
+        db.session.add(CIRelationship(parent_id=guest_ci.id, child_id=host_ci.id, relationship_type="Runs on", tenant_id=1))
+        db.session.commit()
+        host_id, guest_id = host_ci.id, guest_ci.id
+    login(client)
+    assert client.post("/tickets/new/incident", data={
+        "title": "Guest VM degraded", "description": "Ongoing incident on the dependent CI.",
+        "category": "Software", "priority": "P2", "group_id": group_id(app),
+        "ci_id": str(guest_id),
+    }).status_code == 302
+    blocked = client.post("/tickets/new/change", data={
+        "title": "Change on the underlying host", "description": "Should be blocked by the dependent CI's open incident.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "20", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.", "ci_id": str(host_id),
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    })
+    assert blocked.status_code == 400
+    assert b"depends on this" in blocked.data.lower()
 
 
 def test_ola_breach_is_excluded_from_customer_facing_sla_compliance(client, app):

@@ -30,6 +30,14 @@
 <div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">Cancel</a><button class="primary">{{ 'Save changes' if ci else 'Create CI' }}</button></div></form>
 {% if ci %}
 <section class="panel">
+  <h2>Impact analysis<span class="info-tip" tabindex="0" data-tip="Every CI that transitively depends on this one via CMDB relationships (Depends on, Runs on, Hosted on, Connects to, Backs up), walked up to 4 levels — i.e. what actually breaks if this CI goes down, not just what's directly linked.">i</span></h2>
+  {% if impacted_cis %}
+  <div class="related-links">
+    {% for other in impacted_cis %}<a class="attachment" href="{{ url_for('ci_edit', ci_id=other.id) }}"><strong>{{ other.name }}</strong><span>{{ other.ci_class }} · {{ other.environment }} · {{ other.business_criticality }} criticality</span></a>{% endfor %}
+  </div>
+  {% else %}<p class="muted">Nothing depends on this CI (directly or transitively) according to CMDB relationships yet.</p>{% endif %}
+</section>
+<section class="panel">
   <h2>Services this CI supports<span class="info-tip" tabindex="0" data-tip="Business services mapped to this CI in ITIL configuration → Service offerings. Used for impact analysis (what breaks if this CI goes down) and change risk.">i</span></h2>
   {% if ci.service_links %}
   <div class="related-links">

@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.40"
+APP_VERSION = "1.29.41"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -3174,12 +3174,37 @@ def supersede_change_approval(ticket, changed_fields):
     return chain
 
 
+def ci_impact_set(tenant_id, ci_ids, max_depth=4):
+    """Expand a set of CI ids to include everything that transitively depends on
+    them, by walking CIRelationship upward (if X 'Depends on'/'Runs on'/'Hosted
+    on'/etc. Y, X is the parent and Y the child -- so a CI going down impacts
+    every ancestor reachable from it, not just what's directly linked). This is
+    what lets change conflict detection and CI-page impact analysis answer
+    "what actually breaks if this CI goes down" instead of stopping at direct
+    links, which is otherwise the CMDB's biggest gap."""
+    result = set(ci_ids)
+    frontier = set(ci_ids)
+    for _ in range(max_depth):
+        if not frontier:
+            break
+        rows = CIRelationship.query.filter(
+            CIRelationship.tenant_id == tenant_id, CIRelationship.child_id.in_(frontier)
+        ).all()
+        next_frontier = {row.parent_id for row in rows} - result
+        if not next_frontier:
+            break
+        result |= next_frontier
+        frontier = next_frontier
+    return result
+
+
 def _conflict_descriptions(tenant_id, ci_ids, planned_start, planned_end, exclude_governance_id=None, exclude_ticket_id=None):
     """Core schedule/CI overlap check shared by pre-creation and post-creation
     conflict detection. Returns human-readable conflict description strings."""
     conflicts = []
     if not (ci_ids and planned_start and planned_end):
         return conflicts
+    impacted_ci_ids = ci_impact_set(tenant_id, ci_ids)
     overlapping_query = ChangeGovernance.query.join(
         Ticket, ChangeGovernance.ticket_id == Ticket.id
     ).filter(
@@ -3202,17 +3227,25 @@ def _conflict_descriptions(tenant_id, ci_ids, planned_start, planned_end, exclud
             other_ci_ids.add(other.ci_id)
         if ci_ids.intersection(other_ci_ids):
             conflicts.append(f"{other.ticket.number} (overlapping change)")
+        elif impacted_ci_ids.intersection(other_ci_ids):
+            conflicts.append(f"{other.ticket.number} (overlapping change on a dependent CI)")
     incident_query = Ticket.query.filter(
         Ticket.tenant_id == tenant_id,
         Ticket.kind == "incident",
         Ticket.state.notin_(["Resolved", "Closed", "Cancelled"]),
     ).join(
         TaskCI, db.and_(TaskCI.target_type == "ticket", TaskCI.target_id == Ticket.id)
-    ).filter(TaskCI.ci_id.in_(ci_ids))
+    ).filter(TaskCI.ci_id.in_(impacted_ci_ids))
     if exclude_ticket_id is not None:
         incident_query = incident_query.filter(Ticket.id != exclude_ticket_id)
     for incident in incident_query.all():
-        conflicts.append(f"{incident.number} (open incident on same CI)")
+        incident_ci_ids = {
+            link.ci_id for link in TaskCI.query.filter_by(target_type="ticket", target_id=incident.id).all()
+        }
+        if ci_ids.intersection(incident_ci_ids):
+            conflicts.append(f"{incident.number} (open incident on same CI)")
+        else:
+            conflicts.append(f"{incident.number} (open incident on a CI that depends on this one)")
     return conflicts
 
 
@@ -8826,8 +8859,11 @@ def create_app(test_config=None):
         history = TaskHistory.query.filter_by(
             target_type="ci", target_id=ci.id
         ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).limit(50).all()
+        impacted_ids = ci_impact_set(ci.tenant_id, {ci.id}) - {ci.id}
+        impacted_cis = ConfigurationItem.query.filter(ConfigurationItem.id.in_(impacted_ids)).all() if impacted_ids else []
         return render_template(
             "ci_form.html", ci=ci, owners=owners, support_groups=support_groups, history=history,
+            impacted_cis=impacted_cis,
         )
 
     @app.route("/cmdb/import", methods=["GET", "POST"])
