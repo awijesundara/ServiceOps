@@ -7,7 +7,8 @@ from datetime import timedelta
 
 from app import (
     ChangeFreezeWindow, CIRelationship, ConfigurationItem, MajorIncidentProfile,
-    SLADefinition, TaskSLA, Ticket, User, capture_kpi_snapshots, ci_impact_set, db, now,
+    ServiceOffering, ServiceOfferingCI, ServiceOutage, SLADefinition, TaskSLA,
+    Ticket, User, capture_kpi_snapshots, ci_impact_set, db, now, service_availability_pct,
 )
 from tests.test_app import app, client, group_id, login
 
@@ -193,3 +194,70 @@ def test_change_freeze_window_blocks_standard_change_but_not_emergency(client, a
     assert allowed.status_code == 302
     with app.app_context():
         assert Ticket.query.filter_by(title="Emergency change during freeze").first() is not None
+
+
+def test_critical_incident_opens_and_resolving_closes_a_service_outage(client, app):
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        ci = ConfigurationItem(name="payments-api-01", ci_class="Server", environment="Production", owner_id=admin.id, tenant_id=1)
+        db.session.add(ci)
+        db.session.flush()
+        service = ServiceOffering(name="Payments", owner_id=admin.id, criticality="High", tenant_id=1)
+        db.session.add(service)
+        db.session.flush()
+        db.session.add(ServiceOfferingCI(service_offering_id=service.id, ci_id=ci.id, relationship_role="Primary"))
+        db.session.commit()
+        ci_id, service_id = ci.id, service.id
+
+    created = client.post("/tickets/new/incident", data={
+        "title": "Payments API down", "description": "Critical outage.",
+        "category": "Software", "priority": "P1", "impact": "Critical", "urgency": "Critical",
+        "group_id": group_id(app), "ci_id": str(ci_id),
+    })
+    assert created.status_code == 302
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Payments API down").one()
+        ticket_id = ticket.id
+        outage = ServiceOutage.query.filter_by(service_offering_id=service_id, ticket_id=ticket_id).one()
+        assert outage.ended_at is None
+        # Backdate so there's measurable elapsed downtime to compute against --
+        # right at creation the outage is only microseconds old.
+        outage.started_at = now() - timedelta(hours=2)
+        db.session.commit()
+        assert service_availability_pct(service_id) < 100
+
+    resolved = client.post(f"/ticket/{ticket_id}", data={"action": "quick_resolve"})
+    assert resolved.status_code == 302
+    with app.app_context():
+        outage = ServiceOutage.query.filter_by(service_offering_id=service_id, ticket_id=ticket_id).one()
+        assert outage.ended_at is not None
+
+
+def test_service_availability_pct_merges_overlapping_outages(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        service = ServiceOffering(name="Overlap Service", owner_id=admin.id, tenant_id=1)
+        ci = ConfigurationItem(name="overlap-ci", ci_class="Server", tenant_id=1)
+        db.session.add_all([service, ci])
+        db.session.flush()
+        requester = admin
+        ticket1 = Ticket(number="INC0009201", kind="incident", title="A", description="d", category="Software",
+                          priority="P1", impact="Critical", urgency="Critical", requester_id=requester.id, tenant_id=1)
+        ticket2 = Ticket(number="INC0009202", kind="incident", title="B", description="d", category="Software",
+                          priority="P1", impact="Critical", urgency="Critical", requester_id=requester.id, tenant_id=1)
+        db.session.add_all([ticket1, ticket2])
+        db.session.flush()
+        start = now() - timedelta(hours=10)
+        # Two overlapping 4-hour outages, offset by 2 hours -- true downtime is
+        # 6 hours, not 8, if they're correctly merged rather than summed.
+        db.session.add(ServiceOutage(service_offering_id=service.id, ticket_id=ticket1.id, started_at=start, ended_at=start + timedelta(hours=4), tenant_id=1))
+        db.session.add(ServiceOutage(service_offering_id=service.id, ticket_id=ticket2.id, started_at=start + timedelta(hours=2), ended_at=start + timedelta(hours=6), tenant_id=1))
+        db.session.commit()
+        service_id = service.id
+
+        pct = service_availability_pct(service_id, days=1)
+        window_seconds = 24 * 3600
+        expected_downtime = 6 * 3600
+        expected_pct = round(100 * (1 - expected_downtime / window_seconds), 3)
+        assert pct == expected_pct
