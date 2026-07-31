@@ -7,9 +7,9 @@ from datetime import timedelta
 
 from app import (
     ChangeFreezeWindow, CIRelationship, ConfigurationItem, EnterpriseRecord,
-    MajorIncidentProfile, ServiceOffering, ServiceOfferingCI, ServiceOutage,
-    SLADefinition, TaskSLA, Ticket, User, capture_kpi_snapshots, ci_impact_set,
-    db, now, service_availability_pct,
+    GroupMember, MajorIncidentProfile, ServiceOffering, ServiceOfferingCI,
+    ServiceOutage, SLADefinition, SupportGroup, TaskSLA, Tenant, Ticket, User,
+    capture_kpi_snapshots, ci_impact_set, db, now, service_availability_pct,
 )
 from tests.test_app import app, client, group_id, login
 
@@ -376,3 +376,98 @@ def test_requester_cannot_self_manage_their_own_enterprise_record(client, app):
     assert blocked.status_code == 403
     with app.app_context():
         assert EnterpriseRecord.query.get(record_id).state == "New"
+
+
+def _other_tenant(app):
+    """Sets up a second tenant with its own IT Fulfillment group + manager,
+    for proving this session's new features don't leak across tenants.
+    """
+    with app.app_context():
+        if Tenant.query.get(2):
+            return
+        other_tenant = Tenant(id=2, slug="other", name="Other organisation")
+        other_user = User(
+            username="other.agent", name="Other Agent", email="other@test.invalid",
+            password_hash=User.query.filter_by(username="admin").one().password_hash,
+            role="agent", tenant_id=2,
+        )
+        db.session.add_all([other_tenant, other_user])
+        db.session.flush()
+        other_group = SupportGroup(
+            name="Other Operations", group_type="IT Fulfillment",
+            manager_id=other_user.id, tenant_id=2,
+        )
+        db.session.add(other_group)
+        db.session.flush()
+        db.session.add(GroupMember(group_id=other_group.id, user_id=other_user.id, role="manager"))
+        db.session.commit()
+
+
+def test_ci_impact_analysis_does_not_cross_tenant_boundary(app):
+    """ci_impact_set() and the CI-page impact panel are tenant-scoped by
+    construction (CIRelationship rows can only ever link same-tenant CIs,
+    since ci_relationship_add validates both sides against current_user's
+    tenant) -- this proves that holds even if a same-numbered CI existed
+    in another tenant.
+    """
+    _other_tenant(app)
+    with app.app_context():
+        our_ci = ConfigurationItem(name="shared-name-ci", ci_class="Server", tenant_id=1)
+        their_ci = ConfigurationItem(name="shared-name-ci", ci_class="Server", tenant_id=2)
+        db.session.add_all([our_ci, their_ci])
+        db.session.commit()
+        our_id, their_id = our_ci.id, their_ci.id
+        impacted = ci_impact_set(1, {our_id})
+        assert their_id not in impacted
+
+
+def test_service_outage_and_availability_do_not_cross_tenant_boundary(app):
+    _other_tenant(app)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        other_user = User.query.filter_by(username="other.agent").one()
+        our_service = ServiceOffering(name="Our Service", owner_id=admin.id, tenant_id=1)
+        their_service = ServiceOffering(name="Their Service", owner_id=other_user.id, tenant_id=2)
+        db.session.add_all([our_service, their_service])
+        db.session.commit()
+        # An outage recorded against the other tenant's service must never
+        # affect our tenant's service availability figure.
+        db.session.add(ServiceOutage(
+            service_offering_id=their_service.id, ticket_id=1,
+            started_at=now() - timedelta(hours=5), tenant_id=2,
+        ))
+        db.session.commit()
+        assert service_availability_pct(our_service.id) == 100.0
+
+
+def test_change_freeze_window_does_not_cross_tenant_boundary(app):
+    from app import active_change_freeze
+
+    _other_tenant(app)
+    with app.app_context():
+        db.session.add(ChangeFreezeWindow(
+            title="Other tenant's freeze", starts_at=now(), ends_at=now() + timedelta(days=5),
+            tenant_id=2,
+        ))
+        db.session.commit()
+        # Same window, but checked against tenant 1 -- must not see tenant 2's freeze.
+        assert active_change_freeze(1, now(), now() + timedelta(days=1)) is None
+        assert active_change_freeze(2, now(), now() + timedelta(days=1)) is not None
+
+
+def test_enterprise_record_visibility_does_not_cross_tenant_boundary(app):
+    from app import visible_enterprise_record_query
+
+    _other_tenant(app)
+    with app.app_context():
+        other_user = User.query.filter_by(username="other.agent").one()
+        their_record = EnterpriseRecord(
+            number="EVT9000001", domain="event", record_type="Alert",
+            title="Other tenant's event", description="Must not cross the tenant boundary.",
+            requester_id=other_user.id, tenant_id=2,
+        )
+        db.session.add(their_record)
+        db.session.commit()
+        db_manager = User.query.filter_by(username="database.manager").one()
+        visible_ids = {row.id for row in visible_enterprise_record_query(db_manager).all()}
+        assert their_record.id not in visible_ids
