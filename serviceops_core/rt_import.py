@@ -29,7 +29,14 @@ the description as a chronological log for IT operations events (which
 have no comment-thread model the way Ticket does); Changes get the same
 log appended to their description too, for consistency and because a
 historical import has no natural place to "replay" as live comments
-either.
+either. Real file attachments found along the way are downloaded and
+saved as FileAttachment rows against the imported record (Ticket gained
+this already; EnterpriseRecord gained an attachments relationship for
+this feature) -- going through the same extension/magic-byte allowlist
+and malware scan a normal browser upload gets, so an attachment that
+wouldn't be allowed in through the UI isn't allowed in through RT import
+either. One that's rejected (disallowed type, failed scan) is still noted
+by filename in the description log, just without the file itself.
 
 IMPORTANT: RT REST2.0's exact JSON shape (custom field names, whether a
 Queue/Owner reference is inlined or requires a follow-up request) can vary
@@ -40,9 +47,11 @@ real instance should still be inspected -- the per-ticket preview rows are
 built specifically so a human can eyeball a handful before ever committing.
 """
 import base64
+import hashlib
 import os
 import re
 import tempfile
+import uuid
 
 import requests
 
@@ -282,14 +291,71 @@ def _decode_attachment_content(raw):
         return raw
 
 
-def _transaction_body(session, base_url, transaction_id, transaction):
+def _decode_attachment_bytes(raw):
+    if not raw:
+        return b""
+    try:
+        return base64.b64decode(raw, validate=True)
+    except Exception:  # noqa: BLE001 - not valid base64, treat as already raw text
+        return raw.encode("utf-8", errors="replace")
+
+
+def _save_imported_attachment(filename, content_bytes, uploaded_by_id, ticket, enterprise_record, summary):
+    """Saves real RT attachment content as a FileAttachment, going through
+    the same magic-byte/extension allowlist and malware scan real uploads
+    get (save_ticket_attachment in app.py) -- RT's import path must not be
+    a way to smuggle a disallowed or infected file past those controls just
+    because it arrived via API instead of a browser upload."""
+    import app as core_app
+    from app import db
+    from flask import current_app
+
+    original = core_app.secure_filename(filename or "") or ""
+    if not original:
+        summary["errors"].append(f"Attachment '{filename}': invalid filename, not imported.")
+        return None
+    ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+    allowed = core_app.ATTACHMENT_ALLOWED_TYPES.get(ext)
+    if not allowed:
+        summary["errors"].append(f"Attachment '{original}': file type not allowed, not imported.")
+        return None
+    signature, mime_type = allowed
+    if signature and not content_bytes.startswith(signature):
+        summary["errors"].append(f"Attachment '{original}': content doesn't match its extension, not imported.")
+        return None
+    stored = f"{uuid.uuid4().hex}-{original}"
+    path = os.path.join(current_app.config["UPLOAD_FOLDER"], stored)
+    with open(path, "wb") as handle:
+        handle.write(content_bytes)
+    scan_status = core_app.scan_attachment(path)
+    if scan_status == "infected":
+        os.remove(path)
+        summary["errors"].append(f"Attachment '{original}': rejected by malware scan, not imported.")
+        return None
+    attachment = core_app.FileAttachment(
+        ticket_id=(ticket.id if ticket else None),
+        enterprise_record_id=(enterprise_record.id if enterprise_record else None),
+        uploaded_by_id=uploaded_by_id, original_name=original, stored_name=stored,
+        mime_type=mime_type, size_bytes=len(content_bytes), sha256=hashlib.sha256(content_bytes).hexdigest(),
+        scan_status=scan_status,
+    )
+    db.session.add(attachment)
+    summary["attachments_imported"] += 1
+    return attachment
+
+
+def _transaction_body(session, base_url, transaction_id, transaction, actor_user_id, ticket, enterprise_record, summary):
     """A transaction's message body isn't always inlined on the transaction
     object itself (RT's Create transaction tends to include it, Correspond
     often doesn't) -- when missing, fetch it from the transaction's
-    attachments instead, the same way RT's own web UI resolves it. Returns
-    (body_text, [filenames]) -- filenames covers real file attachments
-    (e.g. a spreadsheet) that have no text body of their own, so their
-    existence is at least noted even though the file itself isn't imported."""
+    attachments instead, the same way RT's own web UI resolves it. Any real
+    file attachment (not just the message body) found along the way is
+    imported as a FileAttachment against `ticket` or `enterprise_record`
+    (whichever this RT ticket routed to). Returns (body_text, [notes]) --
+    notes covers both attachments that were imported (so the log still
+    mentions them even when there's no text body) and ones that couldn't be
+    (disallowed type, failed scan, etc.), so nothing about the transaction
+    silently vanishes."""
     content = (transaction.get("Content") or "").strip()
     if content:
         return content, []
@@ -301,7 +367,8 @@ def _transaction_body(session, base_url, transaction_id, transaction):
     except requests.RequestException:
         return "", []
     body = ""
-    filenames = []
+    imported_filenames = []
+    skipped_filenames = []
     for item in listing.get("items", []):
         attachment_id = item.get("id")
         try:
@@ -310,23 +377,39 @@ def _transaction_body(session, base_url, transaction_id, transaction):
             continue
         content_type = (meta.get("ContentType") or "").lower()
         filename = meta.get("Filename")
-        if filename:
-            filenames.append(filename)
-        if not body and content_type.startswith("text/"):
-            text = _decode_attachment_content(meta.get("Content")).strip()
-            if content_type.startswith("text/html"):
-                text = _HTML_TAG_RE.sub("", text)
-            body = text
-    return body, filenames
+        if content_type.startswith("text/") and not filename:
+            if not body:
+                text = _decode_attachment_content(meta.get("Content")).strip()
+                if content_type.startswith("text/html"):
+                    text = _HTML_TAG_RE.sub("", text)
+                body = text
+            continue
+        if not filename:
+            continue
+        content_bytes = _decode_attachment_bytes(meta.get("Content"))
+        saved = _save_imported_attachment(filename, content_bytes, actor_user_id, ticket, enterprise_record, summary)
+        if saved:
+            imported_filenames.append(filename)
+        else:
+            skipped_filenames.append(filename)
+    notes = []
+    if imported_filenames:
+        notes.append(f"[Attachment(s): {', '.join(imported_filenames)}]")
+    if skipped_filenames:
+        notes.append(f"[Attachment(s) not imported: {', '.join(skipped_filenames)}]")
+    return body, notes
 
 
-def _correspondence_log(session, base_url, rt_id, tenant_id, summary):
+def _correspondence_log(session, base_url, rt_id, tenant_id, actor_user_id, ticket, enterprise_record, summary):
     """Fetches RT's full transaction history and formats every
     Create/Correspond/Comment message (falling back to attachment content
     when a transaction doesn't inline its own body) plus every status
     change into a chronological plain-text log, for folding into the
     imported record's description -- EnterpriseRecord has no comment-thread
-    model the way Ticket does, so there's nowhere else to put this."""
+    model the way Ticket does, so there's nowhere else to put this. Real
+    file attachments found along the way are imported as FileAttachment
+    rows against `ticket` or `enterprise_record` (whichever this RT ticket
+    routed to)."""
     try:
         history = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}/history", params={"per_page": 200})
     except requests.RequestException as error:
@@ -353,14 +436,15 @@ def _correspondence_log(session, base_url, rt_id, tenant_id, summary):
                     pass
 
         if txn_type in COMMENT_TRANSACTION_TYPES:
-            body, filenames = _transaction_body(session, base_url, transaction_id, transaction)
-            if not body and not filenames:
+            body, notes = _transaction_body(
+                session, base_url, transaction_id, transaction, actor_user_id, ticket, enterprise_record, summary,
+            )
+            if not body and not notes:
                 continue
             lines = [f"--- {created} · {creator_label} ({txn_type}) ---"]
             if body:
                 lines.append(body)
-            if filenames:
-                lines.append(f"[Attachment(s) not imported: {', '.join(filenames)}]")
+            lines.extend(notes)
             entries.append("\n".join(lines))
             summary["comments_imported"] += 1
         elif txn_type == "Status":
@@ -480,20 +564,29 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
         assignee = _resolve_or_create_user(owner_contact["email"], owner_contact.get("name"), tenant_id, summary)
 
     title = (detail.get("Subject") or f"RT ticket #{rt_id}").strip()[:180]
-    description = title
-    if not dry_run:
-        log = _correspondence_log(session, base_url, rt_id, tenant_id, summary)
-        if log:
-            description = f"{title}\n\n{log}"
-
     is_change = _is_change_request(detail.get("Subject"))
     if is_change:
-        row = _create_change_ticket(rt_id, tenant_id, title, description, detail, requester, assignee, group, summary)
+        row = _create_change_ticket(rt_id, tenant_id, title, title, detail, requester, assignee, group, summary)
         summary["changes_created"] += 1
     else:
-        row = _create_event_record(rt_id, tenant_id, title, description, detail, requester, assignee, group, summary)
+        row = _create_event_record(rt_id, tenant_id, title, title, detail, requester, assignee, group, summary)
         summary["events_created"] += 1
     summary["records_created"] += 1
+
+    if not dry_run:
+        # The row needs an id (for FileAttachment rows) before real
+        # attachments found in its history can be imported, so the
+        # correspondence log -- which imports them as a side effect -- runs
+        # after creation and updates the description in place.
+        log = _correspondence_log(
+            session, base_url, rt_id, tenant_id, actor_user_id,
+            ticket=(row if is_change else None),
+            enterprise_record=(None if is_change else row),
+            summary=summary,
+        )
+        if log:
+            max_len = 20000 if is_change else 60000
+            row.description = f"{title}\n\n{log}"[:max_len]
     summary["preview"].append({
         "rt_id": rt_id, "type": "Change" if is_change else "IT operations event",
         "number": row.number, "title": title,
@@ -540,7 +633,7 @@ def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
         "tenant_id": tenant_id, "dry_run": bool(dry_run),
         "tickets_seen": 0, "records_created": 0, "events_created": 0, "changes_created": 0,
         "already_imported": 0, "teams_created": 0, "users_created": 0, "comments_imported": 0,
-        "errors": [], "preview": [],
+        "attachments_imported": 0, "errors": [], "preview": [],
     }
 
     session = session_factory(base_url, token)

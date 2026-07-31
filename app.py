@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.24"
+APP_VERSION = "1.29.25"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -1351,7 +1351,11 @@ class ChecklistItem(db.Model):
 
 class FileAttachment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False)
+    # ticket_id is nullable because RT import (serviceops_core/rt_import.py)
+    # can also attach files to an EnterpriseRecord ("IT operations event")
+    # instead -- exactly one of ticket_id/enterprise_record_id is set.
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=True)
+    enterprise_record_id = db.Column(db.Integer, db.ForeignKey("enterprise_record.id"), nullable=True)
     comment_id = db.Column(db.Integer, db.ForeignKey("comment.id"), nullable=True)
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     original_name = db.Column(db.String(255), nullable=False)
@@ -1362,6 +1366,7 @@ class FileAttachment(db.Model):
     scan_status = db.Column(db.String(20), nullable=False, default="not_scanned")
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     ticket = db.relationship("Ticket", backref=db.backref("attachments", cascade="all, delete-orphan"))
+    enterprise_record = db.relationship("EnterpriseRecord", backref=db.backref("attachments", cascade="all, delete-orphan"))
     comment = db.relationship("Comment", backref=db.backref("attachments", cascade="all, delete-orphan"))
     uploaded_by = db.relationship("User")
 
@@ -9767,7 +9772,10 @@ def create_app(test_config=None):
     @login_required
     def attachment_download(attachment_id):
         attachment = db.get_or_404(FileAttachment, attachment_id)
-        if not user_can_view_ticket(current_user, attachment.ticket):
+        if attachment.enterprise_record_id:
+            if not user_can_view_enterprise_record(current_user, attachment.enterprise_record):
+                abort(403)
+        elif not user_can_view_ticket(current_user, attachment.ticket):
             abort(403)
         return send_from_directory(app.config["UPLOAD_FOLDER"], attachment.stored_name,
                                    as_attachment=True, download_name=attachment.original_name)
