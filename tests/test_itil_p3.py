@@ -322,3 +322,57 @@ def test_enterprise_record_owning_team_can_manage_not_just_view(client, app):
         assert EnterpriseRecord.query.get(record_id).state == "In Progress"
 
 
+
+
+def test_hr_record_not_leaked_to_unrelated_it_fulfillment_team(client, app):
+    """The "any IT Fulfillment member sees everything" shortcut added for
+    events/problems/releases must not extend to HR/Security/Risk/Customer --
+    those carry sensitive content unrelated to IT support, and Unix/Windows/
+    etc. are "IT Fulfillment" groups that have nothing to do with HR cases.
+    """
+    with app.app_context():
+        employee = User.query.filter_by(username="employee").one()
+        record = EnterpriseRecord(
+            number="HRC0009501", domain="hr", record_type="Benefits",
+            title="Confidential benefits question", description="d",
+            requester_id=employee.id, tenant_id=1,
+        )
+        db.session.add(record)
+        db.session.commit()
+        record_id = record.id
+
+    login(client, username="database.manager", password="Manager123!")
+    assert client.get(f"/enterprise/{record_id}").status_code == 403
+    listing = client.get("/module/hr")
+    assert b"Confidential benefits question" not in listing.data
+    search = client.get("/ui/search?q=HRC0009501", headers={"Accept": "application/json"})
+    assert search.json == {"results": []}
+
+
+def test_requester_cannot_self_manage_their_own_enterprise_record(client, app):
+    """Tickets never let the requester self-manage (only the owning team
+    can) -- an EnterpriseRecord shouldn't either, otherwise an agent who
+    files their own HR/security/risk case could set its own state/priority/
+    risk/assignee and bypass whoever is actually supposed to review it.
+    """
+    with app.app_context():
+        manager = User.query.filter_by(username="database.manager").one()
+        record = EnterpriseRecord(
+            number="HRC0009502", domain="hr", record_type="Benefits",
+            title="Self-filed benefits case", description="d",
+            requester_id=manager.id, tenant_id=1,
+        )
+        db.session.add(record)
+        db.session.commit()
+        record_id = record.id
+
+    login(client, username="database.manager", password="Manager123!")
+    detail = client.get(f"/enterprise/{record_id}")
+    assert detail.status_code == 200
+    assert b"disabled" in detail.data.lower()
+    blocked = client.post(f"/enterprise/{record_id}", data={
+        "action": "update", "state": "Resolved", "priority": "P1", "risk": "Critical",
+    })
+    assert blocked.status_code == 403
+    with app.app_context():
+        assert EnterpriseRecord.query.get(record_id).state == "New"
