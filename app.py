@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.50"
+APP_VERSION = "1.29.51"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -10799,8 +10799,13 @@ def create_app(test_config=None):
     @login_required
     def task_board():
         query = visible_tickets()
-        tickets_by_state = {state: query.filter_by(state=state).order_by(Ticket.priority, Ticket.updated_at.desc()).all()
-                            for state in ["New", "In Progress", "Pending", "Resolved", "Closed"]}
+        board_cutoff = now() - timedelta(days=30)
+        tickets_by_state = {}
+        for state in ["New", "In Progress", "Pending", "Resolved", "Closed"]:
+            state_query = query.filter_by(state=state)
+            if state in ("Resolved", "Closed"):
+                state_query = state_query.filter(Ticket.updated_at >= board_cutoff)
+            tickets_by_state[state] = state_query.order_by(Ticket.priority, Ticket.updated_at.desc()).all()
         manageable_ticket_ids = {
             ticket.id for tickets in tickets_by_state.values() for ticket in tickets
             if user_can_manage_ticket(current_user, ticket)
