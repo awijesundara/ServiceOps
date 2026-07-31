@@ -9,9 +9,11 @@ import tempfile
 
 import pytest
 
+import base64
+
 from app import (
-    ChangeGovernance, ChangeOwnership, EnterpriseRecord, PlatformSetting,
-    SupportGroup, Ticket, User, create_app, db,
+    ChangeGovernance, ChangeOwnership, EnterpriseRecord, FileAttachment,
+    PlatformSetting, SupportGroup, Ticket, User, create_app, db,
 )
 from serviceops_core.rt_import import RTImportError, import_from_rt
 
@@ -218,6 +220,58 @@ def test_correspondence_falls_back_to_attachment_body_and_notes_status_changes(a
         assert "Status changed from 'new' to 'closed'" in record.description
         assert record.state == "Closed"
         assert result["comments_imported"] == 2
+
+
+def test_attachment_content_is_downloaded_and_saved_on_the_imported_event(app, monkeypatch):
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+        pdf_bytes = b"%PDF-1.4 fake pdf content"
+        ticket = make_ticket(901, "Ticket with a real attachment", requestor_ids=["9"])
+        factory = enable_rt(
+            monkeypatch, tickets=[ticket], queues={"1": "General"},
+            users={"9": {"EmailAddress": "jill@example.test", "RealName": "Jill"}},
+            history={"901": [{"id": "77"}]},
+            transactions={"77": {"Type": "Correspond", "Content": "", "Creator": {"id": "9"}}},
+            transaction_attachments={"77": [{"id": "601"}]},
+            attachment_meta={"601": {
+                "Filename": "report.pdf",
+                "ContentType": "application/pdf",
+                "Content": base64.b64encode(pdf_bytes).decode(),
+            }},
+        )
+        result = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
+        assert result["attachments_imported"] == 1
+        record = EnterpriseRecord.query.filter_by(external_source="rt", external_id="901").one()
+        assert "report.pdf" in record.description
+        attachment = FileAttachment.query.filter_by(enterprise_record_id=record.id).one()
+        assert attachment.original_name == "report.pdf"
+        assert attachment.ticket_id is None
+        with open(os.path.join(app.config["UPLOAD_FOLDER"], attachment.stored_name), "rb") as handle:
+            assert handle.read() == pdf_bytes
+
+
+def test_disallowed_attachment_type_is_skipped_but_noted(app, monkeypatch):
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+        ticket = make_ticket(902, "Ticket with a disallowed attachment", requestor_ids=["9"])
+        factory = enable_rt(
+            monkeypatch, tickets=[ticket], queues={"1": "General"},
+            users={"9": {"EmailAddress": "ken@example.test", "RealName": "Ken"}},
+            history={"902": [{"id": "77"}]},
+            transactions={"77": {"Type": "Correspond", "Content": "", "Creator": {"id": "9"}}},
+            transaction_attachments={"77": [{"id": "602"}]},
+            attachment_meta={"602": {
+                "Filename": "script.sh",
+                "ContentType": "application/x-sh",
+                "Content": base64.b64encode(b"#!/bin/sh\necho hi").decode(),
+            }},
+        )
+        result = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
+        assert result["attachments_imported"] == 0
+        record = EnterpriseRecord.query.filter_by(external_source="rt", external_id="902").one()
+        assert "script.sh" in record.description
+        assert "not imported" in record.description
+        assert FileAttachment.query.filter_by(enterprise_record_id=record.id).count() == 0
 
 
 def test_unrecognized_status_reports_error_instead_of_silently_defaulting(app, monkeypatch):
