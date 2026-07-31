@@ -253,6 +253,38 @@
   </table>
 </section>
 
+<section class="panel admin-section">
+  <div class="panel-head"><div><h2>Change freeze windows</h2><p>While a window is active, Standard and Normal changes can't be scheduled or approved inside it — only Emergency changes are exempt. This actually blocks submission/approval, unlike a banner.</p></div></div>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="action" value="create_change_freeze">
+    <label class="wide">Title<input name="title" placeholder="Year-end code freeze" maxlength="160" required></label>
+    <label>Starts<input type="datetime-local" name="starts_at" required></label>
+    <label>Ends<input type="datetime-local" name="ends_at" required></label>
+    <label class="wide">Reason<textarea name="reason" rows="2" placeholder="Optional — shown to anyone blocked by this freeze"></textarea></label>
+    <div class="wide actions"><button class="primary">Create freeze window</button></div>
+  </form>
+  <table>
+    <thead><tr><th>Title</th><th>Window</th><th>Reason</th><th>Created by</th><th></th></tr></thead>
+    <tbody>
+      {% for window in change_freeze_windows %}
+      <tr>
+        <td><strong>{{ window.title }}</strong>{% if window.starts_at <= now() <= window.ends_at %}<br><span class="badge">Active now</span>{% endif %}</td>
+        <td>{{ (window.starts_at|usertime('%b %d, %Y %H:%M')) }} – {{ (window.ends_at|usertime('%b %d, %Y %H:%M')) }}</td>
+        <td>{{ window.reason or '—' }}</td>
+        <td>{{ window.created_by.name if window.created_by else 'System' }}</td>
+        <td>
+          <form method="post">
+            <input type="hidden" name="action" value="delete_change_freeze">
+            <input type="hidden" name="window_id" value="{{ window.id }}">
+            <button class="button">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}<tr><td colspan="5">No change freeze windows configured.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
 <div class="analytics-grid">
   <section class="panel">
     <h2>All governance groups</h2>
