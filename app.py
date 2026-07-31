@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.45"
+APP_VERSION = "1.29.46"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -4233,6 +4233,9 @@ def user_can_manage_ritm(user, ritm):
     )
 
 
+ENTERPRISE_DOMAINS_RESTRICTED_TO_OWNING_TEAM = {"hr", "security", "risk", "customer"}
+
+
 def visible_enterprise_record_query(user):
     query = EnterpriseRecord.query
     if not user.is_authenticated or not user.active:
@@ -4241,24 +4244,36 @@ def visible_enterprise_record_query(user):
     if user.role == "admin":
         return query
     group_ids = user_support_group_ids(user)
+    record_ids = set()
     # Mirrors visible_ticket_query(): a member of any active IT Fulfillment
-    # group is support staff and sees all records, the same as they see all
-    # tickets -- previously this shortcut only existed for tickets, so an
-    # imported/created EnterpriseRecord (events, problems, releases, etc.)
-    # owned by a member's own team was invisible to them unless they happened
-    # to be the requester/assignee or had a task on it.
+    # group is support staff and sees all IT-operational records, the same
+    # as they see all tickets -- previously this shortcut only existed for
+    # tickets, so an imported/created event/problem/release record owned by
+    # a member's own team was invisible to them unless they happened to be
+    # the requester/assignee or had a task on it.
+    #
+    # This must NOT extend to HR/Security/Risk/Customer domains: those carry
+    # sensitive content (benefits cases, security incidents, compliance
+    # findings) that has nothing to do with general IT fulfillment, and a
+    # blanket "any Unix/Windows/etc. agent sees everything" shortcut would
+    # leak that data tenant-wide. Those domains only ever fall through to the
+    # strict requester/assignee/approver/actual-owning-group checks below.
     if group_ids and SupportGroup.query.filter(
         SupportGroup.id.in_(group_ids),
         SupportGroup.group_type == "IT Fulfillment",
         SupportGroup.active.is_(True),
     ).first():
-        return query
-    record_ids = {
+        record_ids.update(
+            row[0] for row in db.session.query(EnterpriseRecord.id).filter(
+                EnterpriseRecord.domain.notin_(ENTERPRISE_DOMAINS_RESTRICTED_TO_OWNING_TEAM)
+            ).all()
+        )
+    record_ids.update(
         row[0] for row in db.session.query(EnterpriseRecord.id).filter(db.or_(
             EnterpriseRecord.requester_id == user.id,
             EnterpriseRecord.assignee_id == user.id,
         )).all()
-    }
+    )
     record_ids.update(
         row[0] for row in db.session.query(Approval.enterprise_record_id).filter(
             Approval.approver_id == user.id
@@ -4295,7 +4310,15 @@ def user_can_manage_enterprise_record(user, record):
         return True
     if user.role not in ("agent", "manager"):
         return False
-    if record.requester_id == user.id or record.assignee_id == user.id:
+    # Deliberately NOT granting manage rights just because requester_id ==
+    # user.id: tickets never let the requester self-manage (user_can_manage_ticket
+    # only checks the owning group), and an EnterpriseRecord shouldn't either --
+    # otherwise an agent who happens to file their own HR/security/risk case
+    # could set its own state/priority/risk/assignee, bypassing whichever team
+    # is actually supposed to review it. Being the assignee is still sufficient,
+    # since an assignment is itself an act of authority by someone who could
+    # already manage the record.
+    if record.assignee_id == user.id:
         return True
     # Mirrors user_can_manage_ticket(): the record's own owning team (not
     # "any IT Fulfillment member," which is deliberately broader and reserved
