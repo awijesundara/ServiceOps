@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Import from Request Tracker · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">INCIDENTS</p><h1>Import from Request Tracker (RT)</h1><p>Pull tickets from an RT instance into ServiceOps as incidents.</p></div><a class="button" href="{{ url_for('tickets', kind='incident') }}">← Back to Incidents</a></header>
+
+{% if rt_enabled %}
+<section class="panel" id="rt-import">
+  <h2>Import tickets</h2>
+  <p class="muted">Every RT ticket that hasn't already been imported becomes a new incident: RT Queue maps to an assignment team (matched by name, or created if none matches — same as CSV CMDB import resolves team names), RT Requestor/Owner map to ServiceOps users by email (auto-created if not found), RT Status/Priority map to the closest ServiceOps equivalent, and the ticket's correspondence and file attachments come across too. A ticket already imported (matched by its RT ticket ID) is always skipped, never duplicated — safe to re-run after fixing a mapping problem. <strong>Run a preview first</strong> and check the sample rows below before applying anything. RT is not modified in any way — this only reads from it.</p>
+  {% if rt_import_result %}
+  <div class="callout">
+    <strong>{{ 'Preview (nothing has been saved yet)' if rt_import_result.dry_run else 'Applied' }}:</strong>
+    {{ rt_import_result.tickets_seen }} tickets seen ·
+    {{ rt_import_result.tickets_created }} {{ 'would be created' if rt_import_result.dry_run else 'created' }} ·
+    {{ rt_import_result.already_imported }} already imported (skipped) ·
+    {{ rt_import_result.teams_created }} new team(s) ·
+    {{ rt_import_result.users_created }} new user(s) ·
+    {% if not rt_import_result.dry_run %}{{ rt_import_result.comments_imported }} comments · {{ rt_import_result.attachments_imported }} attachments ({{ rt_import_result.attachments_skipped }} skipped) ·{% endif %}
+    {{ rt_import_result.errors|length }} errors
+    {% if rt_import_result.errors %}<ul>{% for error in rt_import_result.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% if rt_import_result.preview %}
+  <div class="task-list-scroll">
+    <table class="task-list">
+      <thead><tr><th>RT #</th><th>Number</th><th>Title</th><th>Queue → Team</th><th>State</th><th>Priority</th><th>Requester</th></tr></thead>
+      <tbody>{% for row in rt_import_result.preview %}<tr><td>{{ row.rt_id }}</td><td>{{ row.number }}</td><td>{{ row.title }}</td><td>{{ row.queue }}</td><td>{{ row.state }}</td><td>{{ row.priority }}</td><td>{{ row.requester or 'Unmatched' }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% endif %}
+  <form method="post" class="form-grid">
+    <label class="wide">RT search query (RT's TicketSQL, e.g. <code>id &gt; 0</code> for everything, or <code>Queue = 'General' AND Created &gt; '2024-01-01'</code>)<input name="query" value="id > 0"></label>
+    <label>Limit to first N new tickets (leave blank for all — recommended for your first preview)<input type="number" name="limit" min="1" placeholder="e.g. 10"></label>
+    <label class="check wide"><input type="checkbox" name="dry_run" value="1" checked> Preview only (dry run) — nothing is saved</label>
+    <div class="wide actions"><button class="primary">Run import</button></div>
+  </form>
+</section>
+{% else %}
+<section class="panel"><h2>Import tickets</h2><p class="muted">RT import is not enabled. Configure it under <a href="{{ url_for('system_settings') }}#settings-rt_import">Admin → Settings → RT import</a>.</p></section>
+{% endif %}
+{% endblock %}
