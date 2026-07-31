@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.32"
+APP_VERSION = "1.29.33"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -1187,6 +1187,8 @@ class ChangeGovernance(db.Model):
     ci_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"))
     conflict_status = db.Column(db.String(500), nullable=False, default="Not Run")
     ccb_required = db.Column(db.Boolean, nullable=False, default=True)
+    risk_score_overridden = db.Column(db.Boolean, nullable=False, default=False)
+    risk_score_override_reason = db.Column(db.Text, default="")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     ticket = db.relationship("Ticket", backref=db.backref("change_governance", uselist=False))
     ci = db.relationship("ConfigurationItem")
@@ -1327,7 +1329,11 @@ class ChangeRevision(db.Model):
 
 
 class MajorIncidentProfile(db.Model):
-    """Major-incident coordination remains an extension of the parent INC."""
+    """Major-incident coordination remains an extension of the parent INC.
+    business_impact/communications are live-updated during the incident;
+    the review_* fields are a distinct after-the-fact artifact (ITIL 4
+    continual improvement expects a structured post-incident review, not
+    just whatever the live communications log happened to capture)."""
     id = db.Column(db.Integer, primary_key=True)
     ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), unique=True, nullable=False)
     status = db.Column(db.String(30), nullable=False, default="Proposed")
@@ -1335,10 +1341,16 @@ class MajorIncidentProfile(db.Model):
     communications = db.Column(db.Text, default="")
     coordinator_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     declared_at = db.Column(db.DateTime(timezone=True))
+    review_what_went_well = db.Column(db.Text, default="")
+    review_what_went_poorly = db.Column(db.Text, default="")
+    review_follow_up_actions = db.Column(db.Text, default="")
+    reviewed_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    reviewed_at = db.Column(db.DateTime(timezone=True))
     ticket = db.relationship(
         "Ticket", backref=db.backref("major_incident_profile", uselist=False)
     )
-    coordinator = db.relationship("User")
+    coordinator = db.relationship("User", foreign_keys=[coordinator_id])
+    reviewed_by = db.relationship("User", foreign_keys=[reviewed_by_id])
 
 
 IMPROVEMENT_STATES = ["Identified", "Assessed", "In Progress", "Done", "Rejected"]
@@ -2941,6 +2953,24 @@ ENVIRONMENT_ALIASES = {
     "uat": "Staging", "staging": "Staging", "stage": "Staging",
     "test": "Test", "qa": "Test",
 }
+
+
+def calculate_change_risk_score(change_type, ci):
+    """A transparent, repeatable starting point for change risk instead of
+    every change defaulting to the same manually-typed 50 regardless of
+    what's actually being changed -- ITIL 4 change enablement expects risk
+    assessment to be systematic, not just individual judgment with no
+    calculation trail. Still fully overridable: leaving the risk score
+    field blank on the change form uses this value; typing a different
+    number records it as an explicit override (ChangeGovernance.risk_score_overridden)
+    with an optional reason, so the starting point and the human decision
+    both stay visible."""
+    base = {"Standard": 15, "Normal": 40, "Emergency": 70}.get(change_type, 40)
+    if ci:
+        base += {"Critical": 30, "High": 15, "Medium": 0, "Low": -10}.get(ci.business_criticality, 0)
+        if normalize_environment(ci.environment) == "Production":
+            base += 15
+    return max(0, min(100, base))
 
 
 def normalize_environment(value):
@@ -5311,6 +5341,8 @@ def create_app(test_config=None):
     @app.post("/logout")
     @login_required
     def logout():
+        audit("logout", current_user.username)
+        db.session.commit()
         logout_user()
         session.clear()
         return redirect(url_for("login"))
@@ -5947,10 +5979,20 @@ def create_app(test_config=None):
                         f"This change cannot be created: it conflicts with {'; '.join(conflicts)}. "
                         "Reschedule the planned window or select a different configuration item."
                     )
-            try:
-                risk_score = max(0, min(100, int(request.form.get("risk_score", "50"))))
-            except (TypeError, ValueError):
-                return render_form("Risk score must be a number between 0 and 100.")
+            calculated_risk_score = calculate_change_risk_score(
+                request.form.get("change_type", "Normal"),
+                db.session.get(ConfigurationItem, ci_id) if ci_id else None,
+            )
+            risk_score_input = request.form.get("risk_score", "").strip()
+            if risk_score_input:
+                try:
+                    risk_score = max(0, min(100, int(risk_score_input)))
+                except (TypeError, ValueError):
+                    return render_form("Risk score must be a number between 0 and 100.")
+                risk_score_overridden = risk_score != calculated_risk_score
+            else:
+                risk_score = calculated_risk_score
+                risk_score_overridden = False
             impact = request.form.get("impact", "Medium")
             urgency = request.form.get("urgency", "Medium")
             priority = calculate_priority(impact, urgency)
@@ -5978,7 +6020,12 @@ def create_app(test_config=None):
                                               test_plan=request.form.get("test_plan", "").strip(),
                                               backout_plan=request.form.get("backout_plan", "").strip(),
                                               planned_start=planned_start, planned_end=planned_end,
-                                              ci_id=ci_id)
+                                              ci_id=ci_id,
+                                              risk_score_overridden=risk_score_overridden,
+                                              risk_score_override_reason=(
+                                                  request.form.get("risk_score_override_reason", "").strip()
+                                                  if risk_score_overridden else ""
+                                              ))
                 db.session.add(governance)
                 db.session.flush()
                 db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=owning_group.id))
@@ -6384,12 +6431,25 @@ def create_app(test_config=None):
                 "Reopen the change to New/Awaiting Approval before revising the plan."
             )
         try:
-            risk_score = max(0, min(100, int(request.form.get("risk_score", "50"))))
             planned_start = parse_form_datetime(request.form.get("planned_start"))
             planned_end = parse_form_datetime(request.form.get("planned_end"))
             ci_id = int(request.form["ci_id"]) if request.form.get("ci_id") else None
         except (TypeError, ValueError):
-            return plan_form_error("Change plan dates, risk, or CI are invalid.")
+            return plan_form_error("Change plan dates or CI are invalid.")
+        calculated_risk_score = calculate_change_risk_score(
+            request.form.get("change_type", governance.change_type),
+            db.session.get(ConfigurationItem, ci_id) if ci_id else None,
+        )
+        risk_score_input = request.form.get("risk_score", "").strip()
+        try:
+            if risk_score_input:
+                risk_score = max(0, min(100, int(risk_score_input)))
+                risk_score_overridden = risk_score != calculated_risk_score
+            else:
+                risk_score = calculated_risk_score
+                risk_score_overridden = False
+        except (TypeError, ValueError):
+            return plan_form_error("Risk score must be a number between 0 and 100.")
         if not planned_start or not planned_end:
             return plan_form_error("Planned start and planned end are required for a change.")
         if planned_end <= planned_start:
@@ -6433,6 +6493,10 @@ def create_app(test_config=None):
         ticket.description = request.form.get("description", "").strip()
         governance.change_type = request.form.get("change_type", "Normal")
         governance.risk_score = risk_score
+        governance.risk_score_overridden = risk_score_overridden
+        governance.risk_score_override_reason = (
+            request.form.get("risk_score_override_reason", "").strip() if risk_score_overridden else ""
+        )
         governance.impact = request.form.get("impact", "Medium")
         governance.implementation_plan = request.form.get("implementation_plan", "").strip()
         governance.test_plan = request.form.get("test_plan", "").strip()
@@ -6546,6 +6610,39 @@ def create_app(test_config=None):
         db.session.commit()
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
+    @app.post("/incident/<int:ticket_id>/major-incident/review")
+    @roles("agent", "manager", "admin")
+    def major_incident_review_update(ticket_id):
+        """A structured after-the-fact review, distinct from the live
+        business_impact/communications fields major_incident_update()
+        manages -- ITIL 4 continual improvement expects a documented
+        lessons-learned artifact, not just whatever the live coordination
+        log happened to capture while the incident was still active."""
+        ticket = tenant_record_or_404(Ticket, ticket_id)
+        if ticket.kind != "incident" or not ticket.major_incident_profile:
+            abort(404)
+        require_ticket_team_access(ticket)
+        profile = ticket.major_incident_profile
+        before = {
+            "what went well": profile.review_what_went_well,
+            "what went poorly": profile.review_what_went_poorly,
+            "follow-up actions": profile.review_follow_up_actions,
+        }
+        profile.review_what_went_well = request.form.get("what_went_well", "").strip()
+        profile.review_what_went_poorly = request.form.get("what_went_poorly", "").strip()
+        profile.review_follow_up_actions = request.form.get("follow_up_actions", "").strip()
+        profile.reviewed_by_id = current_user.id
+        profile.reviewed_at = now()
+        log_field_changes("ticket", ticket.id, before, {
+            "what went well": profile.review_what_went_well,
+            "what went poorly": profile.review_what_went_poorly,
+            "follow-up actions": profile.review_follow_up_actions,
+        }, event="Post-incident review recorded")
+        audit("review", ticket.number, "Post-incident review recorded")
+        db.session.commit()
+        flash(f"Post-incident review saved for {ticket.number}.", "success")
+        return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+
     @app.post("/record/<source_type>/<int:source_id>/relationships")
     @roles("agent", "manager", "admin")
     def record_link_add(source_type, source_id):
@@ -6610,6 +6707,7 @@ def create_app(test_config=None):
             ("incident", "problem"): {"underlying_problem"},
             ("incident", "change"): {"resolution_change", "caused_by_change"},
             ("incident", "request"): {"converted_request"},
+            ("incident", "knowledge"): {"knowledge_article"},
             ("problem", "incident"): {"related_incident"},
             ("problem", "change"): {"problem_change"},
             ("problem", "knowledge"): {"knowledge_article"},
@@ -7971,6 +8069,28 @@ def create_app(test_config=None):
             task_agents=task_agents, task_permissions=task_permissions,
             can_manage_record=can_manage_record,
         )
+
+    @app.get("/known-errors")
+    @roles("agent", "manager", "admin")
+    def known_errors():
+        """ITIL 4's Known Error Database, made real instead of just a flag on
+        a problem record -- searchable, so an agent triaging a new incident
+        can check "has this happened before" before starting from scratch."""
+        q = request.args.get("q", "").strip()
+        query = tenant_query(EnterpriseRecord).join(
+            ProblemProfile, ProblemProfile.enterprise_record_id == EnterpriseRecord.id
+        ).filter(
+            EnterpriseRecord.domain == "problem", ProblemProfile.known_error.is_(True),
+        )
+        if q:
+            like = f"%{q}%"
+            query = query.filter(db.or_(
+                EnterpriseRecord.title.ilike(like),
+                ProblemProfile.root_cause.ilike(like),
+                ProblemProfile.workaround.ilike(like),
+            ))
+        records = query.order_by(EnterpriseRecord.updated_at.desc()).all()
+        return render_template("known_errors.html", records=records, q=q)
 
     @app.post("/problem/<int:record_id>/analysis")
     @roles("agent", "manager", "admin")

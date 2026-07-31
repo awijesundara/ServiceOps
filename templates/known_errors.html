@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Known errors · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">PROBLEM MANAGEMENT</p><h1>Known errors</h1><p>Problems with a documented root cause and workaround — check here before starting a fresh investigation.</p></div></header>
+<form class="filters"><input name="q" value="{{ q }}" placeholder="Search title, root cause, or workaround…"><button>Search</button></form>
+<div class="task-list-scroll">
+  <table class="task-list">
+    <thead><tr><th>Number</th><th>Title</th><th>Primary CI</th><th>Root cause</th><th>Workaround</th><th>State</th></tr></thead>
+    <tbody>
+      {% for record in records %}
+      <tr>
+        <td><a href="{{ url_for('enterprise_detail', record_id=record.id) }}">{{ record.number }}</a></td>
+        <td>{{ record.title }}</td>
+        <td>{{ record.problem_profile.primary_ci.name if record.problem_profile.primary_ci else '—' }}</td>
+        <td>{{ record.problem_profile.root_cause or 'Not documented' }}</td>
+        <td>{{ record.problem_profile.workaround or 'Not documented' }}</td>
+        <td><span class="badge">{{ record.state }}</span></td>
+      </tr>
+      {% else %}<tr><td colspan="6" class="empty-table">No known errors documented yet — mark a problem's root-cause analysis as a known error to have it show up here.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
