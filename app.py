@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.43"
+APP_VERSION = "1.29.44"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -4234,6 +4234,19 @@ def visible_enterprise_record_query(user):
     query = query.filter(EnterpriseRecord.tenant_id == user.tenant_id)
     if user.role == "admin":
         return query
+    group_ids = user_support_group_ids(user)
+    # Mirrors visible_ticket_query(): a member of any active IT Fulfillment
+    # group is support staff and sees all records, the same as they see all
+    # tickets -- previously this shortcut only existed for tickets, so an
+    # imported/created EnterpriseRecord (events, problems, releases, etc.)
+    # owned by a member's own team was invisible to them unless they happened
+    # to be the requester/assignee or had a task on it.
+    if group_ids and SupportGroup.query.filter(
+        SupportGroup.id.in_(group_ids),
+        SupportGroup.group_type == "IT Fulfillment",
+        SupportGroup.active.is_(True),
+    ).first():
+        return query
     record_ids = {
         row[0] for row in db.session.query(EnterpriseRecord.id).filter(db.or_(
             EnterpriseRecord.requester_id == user.id,
@@ -4245,8 +4258,12 @@ def visible_enterprise_record_query(user):
             Approval.approver_id == user.id
         ).all()
     )
-    group_ids = user_support_group_ids(user)
     if group_ids:
+        record_ids.update(
+            row[0] for row in db.session.query(EnterpriseRecord.id).filter(
+                EnterpriseRecord.support_group_id.in_(group_ids)
+            ).all()
+        )
         record_ids.update(
             row[0] for row in db.session.query(OperationalTask.parent_id).filter(
                 OperationalTask.parent_type == "enterprise",
