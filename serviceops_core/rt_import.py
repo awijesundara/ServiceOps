@@ -264,6 +264,22 @@ def _resolve_or_create_user(email, name, tenant_id, summary):
     return user
 
 
+def _placeholder_requester(tenant_id, summary):
+    """RT tickets whose Requestor has no resolvable email (a deleted RT
+    user, a queue's auto-generated requestor, etc.) need *some* requester
+    since ServiceOps requires one -- but silently crediting the admin
+    account that happens to be running the import would misrepresent who
+    actually filed the ticket, and would look identical for every such
+    ticket regardless of who's running the import. A single, clearly-named
+    placeholder account (reused across every ticket and every import run,
+    same as an unmatched RT queue reuses one SupportGroup) makes the gap
+    visible and searchable instead."""
+    return _resolve_or_create_user(
+        "unresolved-rt-requester@rt-import.invalid", "RT Import (unresolved requester)",
+        tenant_id, summary,
+    )
+
+
 def _resolve_or_create_group(queue_name, tenant_id, summary):
     import app as core_app
     from app import db
@@ -355,18 +371,24 @@ def _transaction_body(session, base_url, transaction_id, transaction, actor_user
     notes covers both attachments that were imported (so the log still
     mentions them even when there's no text body) and ones that couldn't be
     (disallowed type, failed scan, etc.), so nothing about the transaction
-    silently vanishes."""
+    silently vanishes.
+
+    IMPORTANT: the attachment listing is fetched unconditionally, even when
+    `transaction.get("Content")` is already populated -- RT's Create and
+    Correspond transactions routinely have BOTH an inline text body AND one
+    or more real file attachments (e.g. a reply with a screenshot). Early-
+    returning on inline content (the original bug here) meant every
+    attachment on any transaction with a text body was silently skipped --
+    which in practice is most of them, since Content is usually present."""
     content = (transaction.get("Content") or "").strip()
-    if content:
-        return content, []
     try:
         listing = _get(
             session, base_url, f"/REST/2.0/transaction/{transaction_id}/attachments",
             params={"per_page": 20},
         )
     except requests.RequestException:
-        return "", []
-    body = ""
+        return content, []
+    body = content
     imported_filenames = []
     skipped_filenames = []
     for item in listing.get("items", []):
@@ -556,7 +578,7 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
     if requestor_emails:
         requester = _resolve_or_create_user(*requestor_emails[0], tenant_id, summary)
     if not requester:
-        requester = db.session.get(core_app.User, actor_user_id)
+        requester = _placeholder_requester(tenant_id, summary)
 
     assignee = None
     owner_contact = cache.user_contact(detail.get("Owner"))
