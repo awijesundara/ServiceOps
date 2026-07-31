@@ -9,7 +9,10 @@ import tempfile
 
 import pytest
 
-from app import EnterpriseRecord, PlatformSetting, SupportGroup, User, create_app, db
+from app import (
+    ChangeGovernance, ChangeOwnership, EnterpriseRecord, PlatformSetting,
+    SupportGroup, Ticket, User, create_app, db,
+)
 from serviceops_core.rt_import import RTImportError, import_from_rt
 
 
@@ -251,3 +254,70 @@ def test_unmatched_queue_reuses_existing_support_group_by_name(app, monkeypatch)
         result = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
         assert result["teams_created"] == 0
         assert SupportGroup.query.filter_by(name="Field Services").count() == 1
+
+
+def test_cr_tagged_subject_imports_as_change_not_event(app, monkeypatch):
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+        ticket = make_ticket(808, "[CR] Upgrade core switch firmware", status="resolved", requestor_ids=["9"])
+        factory = enable_rt(
+            monkeypatch, tickets=[ticket], queues={"1": "Network"},
+            users={"9": {"EmailAddress": "frank@example.test", "RealName": "Frank"}},
+        )
+        result = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
+        assert result["changes_created"] == 1
+        assert result["events_created"] == 0
+        assert EnterpriseRecord.query.filter_by(external_source="rt", external_id="808").count() == 0
+
+        change = Ticket.query.filter_by(external_source="rt", external_id="808").one()
+        assert change.kind == "change"
+        assert change.title == "[CR] Upgrade core switch firmware"
+        assert change.state == "Resolved"
+        governance = ChangeGovernance.query.filter_by(ticket_id=change.id).one()
+        assert governance.ccb_required is False
+        ownership = ChangeOwnership.query.filter_by(ticket_id=change.id).one()
+        assert ownership.group.name == "Network"
+
+
+def test_cr_tag_is_case_insensitive_and_checked_anywhere_in_subject(app, monkeypatch):
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+        ticket = make_ticket(809, "Firewall rule update [cr] batch 3", requestor_ids=["9"])
+        factory = enable_rt(
+            monkeypatch, tickets=[ticket], queues={"1": "General"},
+            users={"9": {"EmailAddress": "gina@example.test", "RealName": "Gina"}},
+        )
+        result = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
+        assert result["changes_created"] == 1
+
+
+def test_change_rejected_status_maps_to_cancelled_not_rejected(app, monkeypatch):
+    """Ticket.state uses "Cancelled", not "Rejected" (that's an
+    EnterpriseRecord-only state) -- the change-target status map must
+    differ from the event-target one."""
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+        ticket = make_ticket(810, "[CR] Abandoned change", status="rejected", requestor_ids=["9"])
+        factory = enable_rt(
+            monkeypatch, tickets=[ticket], queues={"1": "General"},
+            users={"9": {"EmailAddress": "hank@example.test", "RealName": "Hank"}},
+        )
+        import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
+        change = Ticket.query.filter_by(external_source="rt", external_id="810").one()
+        assert change.state == "Cancelled"
+
+
+def test_already_imported_change_is_not_reimported_as_event(app, monkeypatch):
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+        ticket = make_ticket(811, "[CR] Idempotency check", requestor_ids=["9"])
+        factory = enable_rt(
+            monkeypatch, tickets=[ticket], queues={"1": "General"},
+            users={"9": {"EmailAddress": "iris@example.test", "RealName": "Iris"}},
+        )
+        first = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
+        assert first["changes_created"] == 1
+        second = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
+        assert second["already_imported"] == 1
+        assert second["records_created"] == 0
+        assert Ticket.query.filter_by(external_source="rt", external_id="811").count() == 1
