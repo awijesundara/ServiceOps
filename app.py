@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.47"
+APP_VERSION = "1.29.48"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -738,6 +738,13 @@ class EnterpriseRecord(db.Model):
     # records created normally through the app.
     external_source = db.Column(db.String(20))
     external_id = db.Column(db.String(120))
+
+    @property
+    def metadata_dict(self):
+        try:
+            return json.loads(self.metadata_json) if self.metadata_json else {}
+        except (TypeError, ValueError):
+            return {}
 
 
 class Approval(db.Model):

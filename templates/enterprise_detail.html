@@ -30,9 +30,19 @@
   </form>
 </section>
 
+{% set rt_custom_fields = record.metadata_dict.get('rt_custom_fields') %}
 <nav class="record-section-tabs" aria-label="{{ record.record_type }} sections">
-  <a class="active" href="#related-records">Related records</a><a href="#affected-cis">Affected CIs</a><a href="#investigation">{{ 'Problem analysis' if record.domain == 'problem' else 'Fulfillment' }}</a>{% if record.approvals %}<a href="#approvals">Approvers</a>{% endif %}<a href="#attachments">Attachments ({{ record.attachments|length }})</a><a href="#event-history">Event history</a>
+  <a class="active" href="#related-records">Related records</a><a href="#affected-cis">Affected CIs</a><a href="#investigation">{{ 'Problem analysis' if record.domain == 'problem' else 'Fulfillment' }}</a>{% if record.approvals %}<a href="#approvals">Approvers</a>{% endif %}{% if rt_custom_fields %}<a href="#rt-custom-fields">Custom fields</a>{% endif %}<a href="#attachments">Attachments ({{ record.attachments|length }})</a><a href="#event-history">Event history</a>
 </nav>
+
+{% if rt_custom_fields %}
+<section class="panel" id="rt-custom-fields">
+  <header class="section-heading"><div><h2>Custom fields<span class="info-tip" tabindex="0" data-tip="Fields captured from RT's own custom-field configuration at import time (e.g. Project, Environment, Location, Approved by). Read-only — RT is the source of truth for these.">i</span></h2></div></header>
+  <dl class="governance-grid">
+    {% for key, value in rt_custom_fields.items() %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}
+  </dl>
+</section>
+{% endif %}
 
 <section class="panel event-history-panel" id="event-history">
   <header class="section-heading"><div><p class="eyebrow">ACTIVITY</p><h2>Event history</h2></div><span>{{ history|length }} events</span></header>
