@@ -6,20 +6,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ instance_name|default('ServiceOps') }}{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='1.29.32') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v='1.29.32') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v='1.29.32') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v='1.29.32') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v='1.29.32') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v='1.29.32') }}">
-  <script src="{{ url_for('static', filename='platform.js', v='1.29.32') }}" defer></script>
-  <script src="{{ url_for('static', filename='lookup.js', v='1.29.32') }}" defer></script>
-  <script src="{{ url_for('static', filename='select-enhance.js', v='1.29.32') }}" defer></script>
-  <script src="{{ url_for('static', filename='list-filter.js', v='1.29.32') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='1.29.33') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v='1.29.33') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v='1.29.33') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v='1.29.33') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v='1.29.33') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v='1.29.33') }}">
+  <script src="{{ url_for('static', filename='platform.js', v='1.29.33') }}" defer></script>
+  <script src="{{ url_for('static', filename='lookup.js', v='1.29.33') }}" defer></script>
+  <script src="{{ url_for('static', filename='select-enhance.js', v='1.29.33') }}" defer></script>
+  <script src="{{ url_for('static', filename='list-filter.js', v='1.29.33') }}" defer></script>
 </head>
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
 {% if current_user.is_authenticated %}
-<script src="{{ url_for('static', filename='nav-init.js', v='1.29.32') }}"></script>
+<script src="{{ url_for('static', filename='nav-init.js', v='1.29.33') }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active</div>{% endif %}
 <aside class="sidebar">
   <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo">{% else %}<span class="company-mark">{{ company_name[:2]|upper }}</span>{% endif %}<span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span></a>
@@ -44,6 +44,7 @@
     {% if current_user.role in ['agent','manager','admin'] %}
     <small>OPERATIONS</small>
     <a href="{{ url_for('module_records', domain='problem') }}" {% if nav_active('module_records', domain='problem') %}class="active" aria-current="page"{% endif %}>Problems</a>
+    <a href="{{ url_for('known_errors') }}" {% if nav_active('known_errors') %}class="active" aria-current="page"{% endif %}>Known errors</a>
     <a href="{{ url_for('module_records', domain='event') }}" {% if nav_active('module_records', domain='event') %}class="active" aria-current="page"{% endif %}>IT operations</a>
     <a href="{{ url_for('improvements') }}" {% if nav_active('improvements') %}class="active" aria-current="page"{% endif %}>Improvements</a>
     <a href="{{ url_for('cmdb') }}" {% if nav_active('cmdb') %}class="active" aria-current="page"{% endif %}>CMDB & service map<span class="info-tip" tabindex="0" data-tip="CMDB = Configuration Management Database: tracks every server, application, and service (CI = Configuration Item) and how they depend on one another.">i</span></a>
@@ -63,7 +64,7 @@
     {% if current_user_is_local %}<a href="{{ url_for('change_password') }}" {% if nav_active('change_password') %}class="active" aria-current="page"{% endif %}>Change password</a>{% endif %}
     {% endif %}
   </nav>
-  <script src="{{ url_for('static', filename='nav-init.js', v='1.29.32') }}"></script>
+  <script src="{{ url_for('static', filename='nav-init.js', v='1.29.33') }}"></script>
   <div class="profile">
     {{ user_avatar(current_user) }}
     <a href="{{ url_for('profile') }}"><strong>{{ current_user.name }}</strong><small>{{ current_user.role }}</small></a>

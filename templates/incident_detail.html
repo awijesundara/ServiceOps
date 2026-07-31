@@ -52,8 +52,53 @@
 
 {% if internal_view %}
 <nav class="record-section-tabs" aria-label="Incident sections">
-  <a class="active" href="#notes">Notes</a><a href="#related-records">Related records</a><a href="#affected-cis">Affected CIs</a><a href="#resolution-information">Resolution information</a><a href="#attachments">Attachments ({{ ticket.attachments|length }})</a><a href="#event-history">Event history</a>
+  <a class="active" href="#notes">Notes</a><a href="#related-records">Related records</a><a href="#affected-cis">Affected CIs</a><a href="#resolution-information">Resolution information</a><a href="#major-incident">Major incident</a><a href="#attachments">Attachments ({{ ticket.attachments|length }})</a><a href="#event-history">Event history</a>
 </nav>
+<section class="panel" id="major-incident">
+  {% set major = ticket.major_incident_profile %}
+  <header class="section-heading"><div><h2>Major incident coordination</h2></div></header>
+  {% if major %}
+  <dl class="governance-grid">
+    <dt>Status</dt><dd>{{ major.status }}</dd>
+    <dt>Coordinator</dt><dd>{{ major.coordinator.name if major.coordinator else 'Not assigned' }}</dd>
+    <dt>Business impact</dt><dd>{{ major.business_impact or 'Not documented' }}</dd>
+    <dt>Communications</dt><dd>{{ major.communications or 'Not documented' }}</dd>
+  </dl>
+  {% else %}<p class="muted">This remains a standard INC. Major incident status has not been proposed.</p>{% endif %}
+  {% if can_manage_ticket %}
+  <details><summary>{{ 'Update' if major else 'Propose' }} major incident</summary>
+    <form method="post" action="{{ url_for('major_incident_update', ticket_id=ticket.id) }}" class="form-grid">
+      <label>Status<select name="status">{% for value in ['Proposed','Accepted','Rejected','Resolved'] %}<option {% if major and major.status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label class="wide">Business impact<textarea name="business_impact" rows="3">{{ major.business_impact if major else '' }}</textarea></label>
+      <label class="wide">Coordination and communications<textarea name="communications" rows="3">{{ major.communications if major else '' }}</textarea></label>
+      <div class="wide actions"><button>Save major incident status</button></div>
+    </form>
+  </details>
+  {% endif %}
+
+  {% if major %}
+  <hr>
+  <h3>Post-incident review<span class="info-tip" tabindex="0" data-tip="A structured after-the-fact review, separate from the live coordination log above — ITIL 4 continual improvement expects documented lessons learned and follow-up actions.">i</span></h3>
+  {% if major.reviewed_at %}
+  <dl class="governance-grid">
+    <dt>Reviewed by</dt><dd>{{ major.reviewed_by.name }} · {{ (major.reviewed_at|usertime('%b %d, %Y · %H:%M')) }}</dd>
+  </dl>
+  <p><b>What went well:</b> {{ major.review_what_went_well or 'Not documented' }}</p>
+  <p><b>What went poorly:</b> {{ major.review_what_went_poorly or 'Not documented' }}</p>
+  <p><b>Follow-up actions:</b> {{ major.review_follow_up_actions or 'None recorded' }}</p>
+  {% else %}<p class="muted">Not reviewed yet.</p>{% endif %}
+  {% if can_manage_ticket %}
+  <details {% if not major.reviewed_at %}open{% endif %}><summary>{{ 'Update review' if major.reviewed_at else 'Record review' }}</summary>
+    <form method="post" action="{{ url_for('major_incident_review_update', ticket_id=ticket.id) }}" class="form-grid">
+      <label class="wide">What went well<textarea name="what_went_well" rows="2">{{ major.review_what_went_well }}</textarea></label>
+      <label class="wide">What went poorly<textarea name="what_went_poorly" rows="2">{{ major.review_what_went_poorly }}</textarea></label>
+      <label class="wide">Follow-up actions<textarea name="follow_up_actions" rows="2">{{ major.review_follow_up_actions }}</textarea></label>
+      <div class="wide actions"><button class="primary">Save review</button></div>
+    </form>
+  </details>
+  {% endif %}
+  {% endif %}
+</section>
 <section class="panel event-history-panel" id="event-history">
   <header class="section-heading"><div><p class="eyebrow">EVENT STREAM</p><h2>Event history</h2></div><span>{{ history|length }} events</span></header>
   {% if can_manage_ticket %}
@@ -99,8 +144,8 @@
   {% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ item.label }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">No related records.</p>{% endfor %}
   {% if can_manage_ticket %}
   <form method="post" action="{{ url_for('record_link_add', source_type='ticket', source_id=ticket.id) }}" class="inline-form">
-    <select name="link_type"><option value="parent_incident">Parent incident</option><option value="underlying_problem">Problem</option><option value="resolution_change">Change request</option><option value="caused_by_change">Caused by change</option><option value="converted_request">Service request</option></select>
-    <div class="lookup" data-lookup-url="{{ url_for('lookup_records') }}"><input type="text" name="target_number" class="lookup-search" placeholder="Search INC, PRB, CHG, REQ or RITM…" autocomplete="off" required><div class="lookup-results" hidden></div></div><button>Link record</button>
+    <select name="link_type"><option value="parent_incident">Parent incident</option><option value="underlying_problem">Problem</option><option value="resolution_change">Change request</option><option value="caused_by_change">Caused by change</option><option value="converted_request">Service request</option><option value="knowledge_article">Knowledge article</option></select>
+    <div class="lookup" data-lookup-url="{{ url_for('lookup_records') }}"><input type="text" name="target_number" class="lookup-search" placeholder="Search INC, PRB, CHG, REQ, RITM or KB…" autocomplete="off" required><div class="lookup-results" hidden></div></div><button>Link record</button>
   </form>
   {% endif %}
 </section>

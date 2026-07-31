@@ -214,7 +214,7 @@
   <dl class="governance-grid">
     <dt>Revision</dt><dd>v{{ ticket.change_revision.revision if ticket.change_revision else 1 }}</dd>
     <dt>Type</dt><dd>{{ ticket.change_governance.change_type }}</dd>
-    <dt>Risk score</dt><dd>{{ ticket.change_governance.risk_score }}</dd>
+    <dt>Risk score</dt><dd>{{ ticket.change_governance.risk_score }}{% if ticket.change_governance.risk_score_overridden %} <span class="badge">Overridden{% if ticket.change_governance.risk_score_override_reason %}: {{ ticket.change_governance.risk_score_override_reason }}{% endif %}</span>{% endif %}</dd>
     <dt>Schedule</dt><dd>{{ (ticket.change_governance.planned_start|usertime('%b %d %H:%M')) if ticket.change_governance.planned_start else 'Not scheduled' }} → {{ (ticket.change_governance.planned_end|usertime('%b %d %H:%M')) if ticket.change_governance.planned_end else '—' }}</dd>
   </dl>
   <p class="muted">Implementation, test, and backout plans are recorded on the change's first task — see <a href="#gov-change-tasks">Change Tasks</a>.</p>
@@ -227,7 +227,8 @@
       <label class="wide">Description<textarea name="description" rows="5" required>{{ ticket.description }}</textarea></label>
       <label>Change type<select name="change_type">{% for value in ['Standard','Normal','Emergency'] %}<option {% if ticket.change_governance.change_type==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label>Impact<select name="impact">{% for value in ['Low','Medium','High'] %}<option {% if ticket.change_governance.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-      <label>Risk score<input type="number" min="0" max="100" name="risk_score" value="{{ ticket.change_governance.risk_score }}"></label>
+      <label>Risk score<span class="info-tip" tabindex="0" data-tip="Change type/impact/CI edits above are used to auto-recalculate if you also clear this field — leave it as-is to keep the current score, or edit it directly to override.">i</span><input type="number" min="0" max="100" name="risk_score" value="{{ ticket.change_governance.risk_score }}"></label>
+      <label class="wide">Risk score override reason<input name="risk_score_override_reason" value="{{ ticket.change_governance.risk_score_override_reason }}" placeholder="Why does this differ from the calculated baseline?"></label>
       <label>Primary CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" value="{{ ticket.change_governance.ci.name if ticket.change_governance.ci else '' }}"><input type="hidden" name="ci_id" value="{{ ticket.change_governance.ci_id or '' }}" data-owning-team="{{ ticket.change_governance.ci.support_group.name if ticket.change_governance.ci and ticket.change_governance.ci.support_group else '' }}"><div class="lookup-results" hidden></div></div></label>
       <label>Planned start<input type="datetime-local" name="planned_start" value="{{ ticket.change_governance.planned_start.strftime('%Y-%m-%dT%H:%M') if ticket.change_governance.planned_start else '' }}" required></label>
       <label>Planned end<input type="datetime-local" name="planned_end" value="{{ ticket.change_governance.planned_end.strftime('%Y-%m-%dT%H:%M') if ticket.change_governance.planned_end else '' }}" required></label>
