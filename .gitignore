@@ -14,13 +14,9 @@ dist/
 # Internal planning/governance docs and release evidence: kept locally only.
 # The public repo ships the app plus the install/operations PDF.
 docs/BACKLOG.md
-docs/GOVERNANCE.md
-docs/MASTER_REFERENCE.md
-docs/TRACEABILITY_MATRIX.md
+docs/ENGINEERING_REFERENCE.md
 docs/DEPLOYMENT.md
 docs/DOCUMENTATION_INDEX.md
-docs/ITIL_TICKET_HIERARCHY.md
-docs/UI_CAPABILITY_MAPPING.md
-docs/blueprints/
+docs/archive/
 docs/screenshots/
 release-evidence/
