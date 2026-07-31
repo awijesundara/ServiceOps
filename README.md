@@ -57,12 +57,10 @@ ServiceOps implements broad, independently developed enterprise workflow capabil
 Controlled documentation:
 
 - [REST API reference](docs/API_REFERENCE.md) — authentication, scopes, examples and errors
-- [Operations manual](docs/OPERATIONS_MANUAL.md) — administration and product use
+- [Platform manual](docs/OPERATIONS_MANUAL.md) — administration and product use
 - [Deployment guide](docs/DEPLOYMENT.md) — Docker, Kubernetes, identity, backup and recovery
 - [Backlog](docs/BACKLOG.md) — authoritative completed and open work
-- [Governance](docs/GOVERNANCE.md) — decisions, readiness and non-deviation controls
-- [Traceability](docs/TRACEABILITY_MATRIX.md) — implementation evidence and capability boundaries
-- [UI reference mapping](docs/UI_CAPABILITY_MAPPING.md) — supplied PDF analysis
+- [Engineering reference](docs/ENGINEERING_REFERENCE.md) — governance, traceability, ITIL model and UI mapping
 
 The optional weak-password team fixture is strictly for an isolated disposable
 test database; its accounts and procedure are documented in the operations
