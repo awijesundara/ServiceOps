@@ -5,10 +5,24 @@
   <header class="list-toolbar">
     <div class="list-title"><span class="record-type-icon">U</span><div><strong>Users</strong><small>User administration</small></div></div>
     <a class="primary button" href="{{ url_for('user_new') }}">New</a>
-    <form method="get" class="list-search"><label for="user-search">Search users</label><input id="user-search" name="q" value="{{ search }}" placeholder="Name, username, email or department"><button>Search</button></form>
+    <form method="get" class="list-search">
+      <input type="hidden" name="filter" value="{{ raw_filter }}">
+      <label for="user-search">Search users</label><input id="user-search" name="q" value="{{ search }}" placeholder="Name, username, email or department"><button>Search</button>
+      <div class="list-filter" data-filter-fields='{{ filter_fields|tojson }}' data-filter-value='{{ raw_filter or "[]" }}'>
+        <button type="button" class="list-filter-toggle">▽ Filter</button>
+        <div class="list-filter-builder" hidden>
+          <div class="list-filter-rows"></div>
+          <div class="list-filter-actions">
+            <button type="button" class="list-filter-add">+ Add condition</button>
+            <button type="submit" class="primary">Run</button>
+            <button type="button" class="list-filter-clear">Clear filter</button>
+          </div>
+        </div>
+      </div>
+    </form>
     <a class="button" href="{{ url_for('admin_home') }}">Administration home</a>
   </header>
-  <div class="list-filter-summary"><span class="filter-icon">▽</span><strong>All users{% if search %} matching “{{ search }}”{% endif %}</strong><span>{{ users|length }} records</span></div>
+  <div class="list-breadcrumb"><span>▽</span> All{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if search %} › Search contains “{{ search }}”{% endif %}<span class="list-breadcrumb-count">{{ users|length }} records</span></div>
   <div class="table-scroll">
     <table class="record-list">
       <thead><tr><th>User ID</th><th>Name</th><th>Email</th><th>Active</th><th>Role</th><th>Department</th><th>Team memberships</th></tr></thead>
