@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.22"
+APP_VERSION = "1.29.23"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -7632,10 +7632,12 @@ def create_app(test_config=None):
         conditions = parse_list_filter_param(raw_filter)
         if q:
             query = query.filter(db.or_(EnterpriseRecord.number.ilike(f"%{q}%"),
-                                        EnterpriseRecord.title.ilike(f"%{q}%")))
+                                        EnterpriseRecord.title.ilike(f"%{q}%"),
+                                        EnterpriseRecord.external_id.ilike(f"%{q}%")))
         field_spec = {
             "number": {"label": "Number", "type": "text", "column": EnterpriseRecord.number},
             "title": {"label": "Short description", "type": "text", "column": EnterpriseRecord.title},
+            "external_id": {"label": "Source ticket # (e.g. RT)", "type": "text", "column": EnterpriseRecord.external_id},
             "priority": {"label": "Priority", "type": "choice", "column": EnterpriseRecord.priority,
                         "options": [(p, p) for p in ["P1", "P2", "P3", "P4"]]},
             "state": {"label": "State", "type": "choice", "column": EnterpriseRecord.state,
@@ -9502,7 +9504,8 @@ def create_app(test_config=None):
                                 "meta": row.category})
             for row in EnterpriseRecord.query.filter(EnterpriseRecord.id.in_(visible_enterprise_ids), db.or_(
                                                              EnterpriseRecord.number.ilike(pattern),
-                                                             EnterpriseRecord.title.ilike(pattern))).limit(20):
+                                                             EnterpriseRecord.title.ilike(pattern),
+                                                             EnterpriseRecord.external_id.ilike(pattern))).limit(20):
                 results.append({"type": DOMAIN_CONFIG[row.domain]["name"], "label": f"{row.number} · {row.title}",
                                 "url": url_for("enterprise_detail", record_id=row.id), "meta": row.state})
             for row in tenant_query(ConfigurationItem).filter(db.or_(

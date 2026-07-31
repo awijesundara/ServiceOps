@@ -29,17 +29,26 @@ guessed field-expansion query syntax, but the very first dry run against a
 real instance should still be inspected -- the per-ticket preview rows are
 built specifically so a human can eyeball a handful before ever committing.
 """
+import base64
 import os
+import re
 import tempfile
 
 import requests
 
+# RT ships with new/open/stalled/resolved/rejected/deleted by default, but
+# almost every real deployment (this one included) customizes its lifecycle
+# to add statuses like "closed". Unrecognized statuses are NOT silently
+# defaulted to "New" -- see _map_status -- because that actively misreports
+# a ticket that's actually finished as brand new.
 RT_STATUS_MAP = {
     "new": "New", "open": "In Progress", "stalled": "Pending",
     "resolved": "Resolved", "rejected": "Rejected", "deleted": "Rejected",
+    "closed": "Closed",
 }
 
 COMMENT_TRANSACTION_TYPES = {"Create", "Correspond", "Comment"}
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 class RTImportError(RuntimeError):
@@ -63,8 +72,16 @@ def _map_priority(rt_priority):
     return "P4"
 
 
-def _map_status(rt_status):
-    return RT_STATUS_MAP.get((rt_status or "").strip().lower(), "New")
+def _map_status(rt_status, summary=None):
+    key = (rt_status or "").strip().lower()
+    if key in RT_STATUS_MAP:
+        return RT_STATUS_MAP[key]
+    if summary is not None:
+        summary["errors"].append(
+            f"Unrecognized RT status '{rt_status}' -- defaulted to New. "
+            "Add it to RT_STATUS_MAP in rt_import.py if your RT lifecycle uses it."
+        )
+    return "New"
 
 
 def _write_ca_bundle(pem_text):
@@ -227,11 +244,64 @@ def _resolve_or_create_group(queue_name, tenant_id, summary):
     return group
 
 
+def _decode_attachment_content(raw):
+    """RT's attachment Content is base64-encoded for binary parts but is
+    sometimes sent as plain text for text/plain parts depending on version
+    -- try base64 first (the documented behavior) and fall back to using
+    the raw string as-is if it doesn't decode cleanly."""
+    if not raw:
+        return ""
+    try:
+        return base64.b64decode(raw, validate=True).decode("utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 - not valid base64, treat as already plain text
+        return raw
+
+
+def _transaction_body(session, base_url, transaction_id, transaction):
+    """A transaction's message body isn't always inlined on the transaction
+    object itself (RT's Create transaction tends to include it, Correspond
+    often doesn't) -- when missing, fetch it from the transaction's
+    attachments instead, the same way RT's own web UI resolves it. Returns
+    (body_text, [filenames]) -- filenames covers real file attachments
+    (e.g. a spreadsheet) that have no text body of their own, so their
+    existence is at least noted even though the file itself isn't imported."""
+    content = (transaction.get("Content") or "").strip()
+    if content:
+        return content, []
+    try:
+        listing = _get(
+            session, base_url, f"/REST/2.0/transaction/{transaction_id}/attachments",
+            params={"per_page": 20},
+        )
+    except requests.RequestException:
+        return "", []
+    body = ""
+    filenames = []
+    for item in listing.get("items", []):
+        attachment_id = item.get("id")
+        try:
+            meta = _get(session, base_url, f"/REST/2.0/attachment/{attachment_id}")
+        except requests.RequestException:
+            continue
+        content_type = (meta.get("ContentType") or "").lower()
+        filename = meta.get("Filename")
+        if filename:
+            filenames.append(filename)
+        if not body and content_type.startswith("text/"):
+            text = _decode_attachment_content(meta.get("Content")).strip()
+            if content_type.startswith("text/html"):
+                text = _HTML_TAG_RE.sub("", text)
+            body = text
+    return body, filenames
+
+
 def _correspondence_log(session, base_url, rt_id, tenant_id, summary):
-    """Fetches RT's Create/Correspond/Comment transactions and formats them
-    as a chronological plain-text log, for folding into the imported
-    record's description -- EnterpriseRecord has no comment-thread model
-    the way Ticket does, so there's nowhere else to put this."""
+    """Fetches RT's full transaction history and formats every
+    Create/Correspond/Comment message (falling back to attachment content
+    when a transaction doesn't inline its own body) plus every status
+    change into a chronological plain-text log, for folding into the
+    imported record's description -- EnterpriseRecord has no comment-thread
+    model the way Ticket does, so there's nowhere else to put this."""
     try:
         history = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}/history", params={"per_page": 200})
     except requests.RequestException as error:
@@ -244,11 +314,8 @@ def _correspondence_log(session, base_url, rt_id, tenant_id, summary):
             transaction = _get(session, base_url, f"/REST/2.0/transaction/{transaction_id}")
         except requests.RequestException:
             continue
-        if transaction.get("Type") not in COMMENT_TRANSACTION_TYPES:
-            continue
-        content = (transaction.get("Content") or "").strip()
-        if not content:
-            continue
+        txn_type = transaction.get("Type")
+        created = transaction.get("Created") or ""
         creator = transaction.get("Creator")
         creator_label = "Unknown"
         if isinstance(creator, dict):
@@ -259,9 +326,24 @@ def _correspondence_log(session, base_url, rt_id, tenant_id, summary):
                     creator_label = contact.get("RealName") or contact.get("EmailAddress") or "Unknown"
                 except requests.RequestException:
                     pass
-        created = transaction.get("Created") or ""
-        entries.append(f"--- {created} · {creator_label} ---\n{content}")
-        summary["comments_imported"] += 1
+
+        if txn_type in COMMENT_TRANSACTION_TYPES:
+            body, filenames = _transaction_body(session, base_url, transaction_id, transaction)
+            if not body and not filenames:
+                continue
+            lines = [f"--- {created} · {creator_label} ({txn_type}) ---"]
+            if body:
+                lines.append(body)
+            if filenames:
+                lines.append(f"[Attachment(s) not imported: {', '.join(filenames)}]")
+            entries.append("\n".join(lines))
+            summary["comments_imported"] += 1
+        elif txn_type == "Status":
+            old_value = transaction.get("OldValue") or "?"
+            new_value = transaction.get("NewValue") or "?"
+            entries.append(
+                f"--- {created} · {creator_label} ---\nStatus changed from '{old_value}' to '{new_value}'"
+            )
     return "\n\n".join(entries)
 
 
@@ -307,7 +389,7 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
         number=core_app.next_enterprise_number("event"),
         domain="event", record_type="RT Ticket",
         title=title, description=description[:60000],
-        state=_map_status(detail.get("Status")),
+        state=_map_status(detail.get("Status"), summary),
         priority=_map_priority(detail.get("Priority")),
         risk="Medium", requester_id=requester.id,
         assignee_id=(assignee.id if assignee else None),
