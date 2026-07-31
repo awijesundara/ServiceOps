@@ -52,7 +52,7 @@
 
 {% if internal_view %}
 <nav class="record-section-tabs" aria-label="Incident sections">
-  <a class="active" href="#notes">Notes</a><a href="#related-records">Related records</a><a href="#resolution-information">Resolution information</a><a href="#event-history">Event history</a>
+  <a class="active" href="#notes">Notes</a><a href="#related-records">Related records</a><a href="#resolution-information">Resolution information</a><a href="#attachments">Attachments ({{ ticket.attachments|length }})</a><a href="#event-history">Event history</a>
 </nav>
 <section class="panel event-history-panel" id="event-history">
   <header class="section-heading"><div><p class="eyebrow">EVENT STREAM</p><h2>Event history</h2></div><span>{{ history|length }} events</span></header>
@@ -98,14 +98,16 @@
 
 <div class="incident-support-grid" id="resolution-information">
   <section class="panel">
-    <h2>Attachments</h2>{% for attachment in ticket.attachments %}<a class="attachment" href="{{ url_for('attachment_download', attachment_id=attachment.id) }}"><strong>{{ attachment.original_name }}</strong><span>{{ (attachment.size_bytes / 1024)|round(1) }} KB · {{ attachment.uploaded_by.name }}{% if attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES %} · <a href="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" target="_blank" rel="noopener">Preview</a>{% endif %}</span></a>{% else %}<p class="muted">No attachments.</p>{% endfor %}
-    <form method="post" action="{{ url_for('attachment_upload', ticket_id=ticket.id) }}" enctype="multipart/form-data" class="inline-form"><input type="file" name="file" required><button>Upload</button></form>
-  </section>
-  <section class="panel">
     <h2>Checklist</h2>{% for item in ticket.checklist|sort(attribute='position') %}{% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_toggle', item_id=item.id) }}" class="checklist-row"><button aria-label="Toggle checklist item">{{ '✓' if item.completed else '○' }}</button><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></form>{% else %}<div class="checklist-row"><span>{{ '✓' if item.completed else '○' }}</span><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></div>{% endif %}{% else %}<p class="muted">No checklist items.</p>{% endfor %}
     {% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_add', ticket_id=ticket.id) }}" class="inline-form"><input name="text" placeholder="Add checklist item" required><button>Add</button></form>{% endif %}
   </section>
 </div>
+
+<section class="panel" id="attachments">
+  <header class="section-heading"><div><h2>Attachments</h2></div></header>
+  {% for attachment in ticket.attachments %}<a class="attachment" href="{{ url_for('attachment_download', attachment_id=attachment.id) }}"><strong>{{ attachment.original_name }}</strong><span>{{ (attachment.size_bytes / 1024)|round(1) }} KB · {{ attachment.uploaded_by.name }}{% if attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES %} · <a href="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" target="_blank" rel="noopener">Preview</a>{% endif %}</span></a>{% else %}<p class="muted">No attachments.</p>{% endfor %}
+  <form method="post" action="{{ url_for('attachment_upload', ticket_id=ticket.id) }}" enctype="multipart/form-data" class="inline-form"><input type="file" name="file" required><button>Upload</button></form>
+</section>
 
 {% if can_manage_ticket and reassignable_teams %}
 <details class="panel incident-reassign"><summary>Reassign incident to another team</summary><form method="post" class="inline-form"><input type="hidden" name="action" value="reassign_team"><select name="new_group_id" required><option value="">Select a team</option>{% for team in reassignable_teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select><button>Send to team</button></form></details>
