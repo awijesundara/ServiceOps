@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.27"
+APP_VERSION = "1.29.28"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -2238,21 +2238,41 @@ ATTACHMENT_ALLOWED_TYPES = {
     "jpg": (b"\xff\xd8\xff", "image/jpeg"),
     "jpeg": (b"\xff\xd8\xff", "image/jpeg"),
     "gif": (b"GIF8", "image/gif"),
+    "bmp": (b"BM", "image/bmp"),
     "pdf": (b"%PDF-", "application/pdf"),
-    # Office Open XML formats (docx/xlsx/pptx) and plain .zip all share the
-    # ZIP local-file-header signature; the extension still narrows what's
-    # accepted, this only rules out a non-ZIP file masquerading with one of
-    # these extensions.
+    # Office Open XML formats (docx/xlsx/pptx/xlsm) and plain .zip all
+    # share the ZIP local-file-header signature; the extension still
+    # narrows what's accepted, this only rules out a non-ZIP file
+    # masquerading with one of these extensions.
     "docx": (b"PK\x03\x04", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
     "xlsx": (b"PK\x03\x04", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    "pptx": (b"PK\x03\x04", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+    "xlsm": (b"PK\x03\x04", "application/vnd.ms-excel.sheet.macroEnabled.12"),
     "zip": (b"PK\x03\x04", "application/zip"),
+    # Legacy (pre-2007) Office formats and Outlook .msg all share the OLE
+    # Compound File signature.
+    "doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "application/msword"),
+    "xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "application/vnd.ms-excel"),
+    "ppt": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "application/vnd.ms-powerpoint"),
+    "msg": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "application/vnd.ms-outlook"),
+    "7z": (b"7z\xbc\xaf\x27\x1c", "application/x-7z-compressed"),
+    "rar": (b"Rar!\x1a\x07", "application/vnd.rar"),
+    "gz": (b"\x1f\x8b", "application/gzip"),
+    "rtf": (b"{\\rtf", "application/rtf"),
     # No reliable magic-byte signature for plain text; extension allowlisting
-    # plus the existing content-disposition/attachment download behavior
-    # (never rendered inline) is the control for these.
+    # plus a mime-type-gated inline-preview check (only png/jpeg/gif/pdf
+    # are ever served inline, everything else always forces a download) is
+    # the control for these.
     "txt": (None, "text/plain"),
     "csv": (None, "text/csv"),
     "log": (None, "text/plain"),
+    "json": (None, "application/json"),
+    "xml": (None, "application/xml"),
+    "eml": (None, "message/rfc822"),
 }
+
+
+PREVIEWABLE_ATTACHMENT_TYPES = {"image/png", "image/jpeg", "image/gif", "application/pdf"}
 
 
 def validate_attachment_upload(upload):
@@ -4522,6 +4542,7 @@ def create_app(test_config=None):
         return Markup(f'<div class="{escape(css_class)}" title="{escape(user.name)}">{initial}</div>')
 
     app.jinja_env.globals["user_avatar"] = user_avatar_html
+    app.jinja_env.globals["PREVIEWABLE_ATTACHMENT_TYPES"] = PREVIEWABLE_ATTACHMENT_TYPES
 
     @app.context_processor
     def ui_context():
@@ -9777,8 +9798,19 @@ def create_app(test_config=None):
                 abort(403)
         elif not user_can_view_ticket(current_user, attachment.ticket):
             abort(403)
-        return send_from_directory(app.config["UPLOAD_FOLDER"], attachment.stored_name,
-                                   as_attachment=True, download_name=attachment.original_name)
+        # Only the handful of types a browser renders safely natively
+        # (never HTML/SVG, which could execute script if opened inline)
+        # are ever served inline -- everything else always forces a
+        # download regardless of the `view` param.
+        inline = (
+            request.args.get("view") == "1"
+            and attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES
+        )
+        return send_from_directory(
+            app.config["UPLOAD_FOLDER"], attachment.stored_name,
+            as_attachment=not inline, download_name=attachment.original_name,
+            mimetype=attachment.mime_type if inline else None,
+        )
 
     @app.get("/help")
     @login_required

@@ -1173,6 +1173,35 @@ def test_only_owning_team_can_operationally_update_ticket(client, app):
         assert ticket.state == current_state
 
 
+def test_previewable_attachment_serves_inline_only_with_view_param(client, app):
+    login(client)
+    response = client.post("/tickets/new/incident", data={
+        "title": "Ticket for attachment preview", "description": "desc",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Ticket for attachment preview").one().id
+    pdf_bytes = b"%PDF-1.4 fake pdf content"
+    upload = client.post(
+        f"/ticket/{ticket_id}/attachments",
+        data={"file": (BytesIO(pdf_bytes), "report.pdf")},
+        content_type="multipart/form-data",
+    )
+    assert upload.status_code == 302
+    with app.app_context():
+        attachment_id = FileAttachment.query.filter_by(ticket_id=ticket_id).one().id
+
+    forced_download = client.get(f"/attachments/{attachment_id}")
+    assert forced_download.status_code == 200
+    assert "attachment" in forced_download.headers["Content-Disposition"]
+
+    inline = client.get(f"/attachments/{attachment_id}?view=1")
+    assert inline.status_code == 200
+    assert "inline" in inline.headers["Content-Disposition"]
+    assert inline.data == pdf_bytes
+
+
 def test_unrelated_team_cannot_view_or_mutate_catalog_request(client, app):
     with app.app_context():
         unix = SupportGroup.query.filter_by(name="Unix").one()
