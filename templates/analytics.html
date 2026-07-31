@@ -98,6 +98,22 @@
   </section>
 
   <section class="panel table-panel">
+    <h2>Service availability<span class="info-tip" tabindex="0" data-tip="Uptime over the trailing 30 days, computed from outage windows auto-derived from High/Critical impact incidents on each service's linked CIs. A service with no CI links or no incidents shows 100%.">i</span> <small class="muted">· trailing 30 days</small></h2>
+    {% if service_availability %}
+    <table><thead><tr><th>Service</th><th>Uptime</th><th>Status</th><th>Last outage</th></tr></thead><tbody>
+      {% for row in service_availability %}
+      <tr>
+        <td><strong>{{ row.service.name }}</strong><small>{{ row.service.criticality }} criticality</small></td>
+        <td><span class="{{ 'sla-breached-cell' if row.uptime_pct < 99 else ('sla-at-risk-cell' if row.uptime_pct < 99.9 else '') }}">{{ row.uptime_pct }}%</span></td>
+        <td>{% if row.open_outage %}<span class="badge" style="background:#fdebea;color:#9d2a22">Outage in progress</span>{% else %}<span class="badge">Healthy</span>{% endif %}</td>
+        <td>{% if row.last_outage %}{{ (row.last_outage.started_at|usertime('%b %d, %Y %H:%M')) }}{% if row.last_outage.ended_at %} – {{ (row.last_outage.ended_at|usertime('%H:%M')) }}{% endif %} · <a href="{{ url_for('ticket_detail', ticket_id=row.last_outage.ticket_id) }}">{{ row.last_outage.ticket.number }}</a>{% else %}No outages recorded{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody></table>
+    {% else %}<p class="muted">No business services configured yet. Add them under ITIL configuration → Service offerings.</p>{% endif %}
+  </section>
+
+  <section class="panel table-panel">
     <h2>KPI history <small class="muted">· nightly snapshots, last 30 days</small></h2>
     {% if kpi_history_rows %}
     <div class="kpi-trend-grid">
