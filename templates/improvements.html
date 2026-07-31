@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Continual improvement · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">CONTINUAL IMPROVEMENT</p><h1>Improvement register</h1><p>Improvement opportunities raised from incidents, problems, changes, and events — tracked with an owner and outcome, per ITIL 4's continual improvement practice.</p></div>
+  <a class="primary button" href="#raise-improvement">+ Raise improvement</a>
+</header>
+
+<form class="filters">
+  <select name="status" onchange="this.form.submit()">
+    <option value="">All statuses</option>
+    {% for state in states %}<option value="{{ state }}" {% if status_filter==state %}selected{% endif %}>{{ state }}</option>{% endfor %}
+  </select>
+</form>
+
+<div class="task-list-scroll">
+  <table class="task-list">
+    <thead><tr><th>Number</th><th>Title</th><th>Source</th><th>Status</th><th>Owner</th><th>Raised</th></tr></thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td><a href="{{ url_for('improvement_detail', item_id=item.id) }}">{{ item.number }}</a></td>
+        <td>{{ item.title }}</td>
+        <td>{{ item.source_type|title if item.source_type else 'Manual' }}</td>
+        <td><span class="badge">{{ item.status }}</span></td>
+        <td>{{ item.owner.name if item.owner else 'Unassigned' }}</td>
+        <td>{{ (item.created_at|usertime('%b %d, %Y')) }}</td>
+      </tr>
+      {% else %}<tr><td colspan="6" class="empty-table">No improvement items yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<section class="panel" id="raise-improvement">
+  <h2>Raise an improvement</h2>
+  <form method="post" action="{{ url_for('improvement_new') }}" class="form-grid">
+    <label class="wide required-field"><span>Title</span><input name="title" maxlength="200" required></label>
+    <label class="wide"><span>Description</span><textarea name="description" rows="3"></textarea></label>
+    <label class="wide"><span>Expected outcome</span><textarea name="expected_outcome" rows="2" placeholder="What would success look like?"></textarea></label>
+    <div class="wide actions"><button class="primary">Raise improvement</button></div>
+  </form>
+</section>
+{% endblock %}
