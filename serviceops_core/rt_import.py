@@ -173,7 +173,7 @@ def _get(session, base_url, path, params=None):
     return response.json()
 
 
-def _fetch_many(session, base_url, path_template, ids):
+def _fetch_many(session, base_url, path_template, ids, params=None):
     """Fetches `path_template.format(id)` for each id in `ids` concurrently
     (bounded by _CONCURRENCY) and returns {id: json_or_None} -- None marks
     an id that failed to fetch, same as the sequential try/except-continue
@@ -184,7 +184,7 @@ def _fetch_many(session, base_url, path_template, ids):
 
     def fetch(item_id):
         try:
-            return item_id, _get(session, base_url, path_template.format(item_id))
+            return item_id, _get(session, base_url, path_template.format(item_id), params=params)
         except requests.RequestException:
             return item_id, None
 
@@ -327,26 +327,30 @@ def _resolve_or_create_group(queue_name, tenant_id, summary):
     return group
 
 
-def _decode_attachment_content(raw):
-    """RT's attachment Content is base64-encoded for binary parts but is
-    sometimes sent as plain text for text/plain parts depending on version
-    -- try base64 first (the documented behavior) and fall back to using
-    the raw string as-is if it doesn't decode cleanly."""
-    if not raw:
-        return ""
-    try:
-        return base64.b64decode(raw, validate=True).decode("utf-8", errors="replace")
-    except Exception:  # noqa: BLE001 - not valid base64, treat as already plain text
-        return raw
-
-
-def _decode_attachment_bytes(raw):
+def _decode_attachment_bytes(raw, encoding=None):
+    """RT reports how Content is encoded via the attachment's
+    ContentEncoding field -- "base64" for binary parts, "quoted-printable"
+    for some mail-originated text parts, "none" (or absent) for plain text
+    -- rather than always being base64 regardless of version. Trusting
+    that field instead of guessing avoids corrupting the small share of
+    attachments that aren't base64, while still falling back to a base64
+    attempt (the common case) when no encoding is reported."""
     if not raw:
         return b""
+    encoding = (encoding or "").strip().lower()
+    if encoding == "quoted-printable":
+        import quopri
+        return quopri.decodestring(raw.encode("utf-8", errors="replace"))
+    if encoding == "none":
+        return raw.encode("utf-8", errors="replace")
     try:
         return base64.b64decode(raw, validate=True)
     except Exception:  # noqa: BLE001 - not valid base64, treat as already raw text
         return raw.encode("utf-8", errors="replace")
+
+
+def _decode_attachment_content(raw, encoding=None):
+    return _decode_attachment_bytes(raw, encoding).decode("utf-8", errors="replace")
 
 
 def _save_imported_attachment(filename, content_bytes, uploaded_by_id, ticket, enterprise_record, summary):
@@ -425,23 +429,33 @@ def _transaction_body(session, base_url, transaction_id, transaction, actor_user
     imported_filenames = []
     skipped_filenames = []
     attachment_ids = [item.get("id") for item in listing.get("items", []) if item.get("id")]
-    metas = _fetch_many(session, base_url, "/REST/2.0/attachment/{}", attachment_ids)
+    # RT's attachment endpoint omits the (potentially large) Content field
+    # by default, unless explicitly asked for -- without `fields=Content`,
+    # every real file downloads as an empty body and fails its magic-byte
+    # check regardless of type, which is what made every attachment (not
+    # just disallowed ones) show up as "content doesn't match its
+    # extension" against a real RT instance.
+    metas = _fetch_many(
+        session, base_url, "/REST/2.0/attachment/{}", attachment_ids,
+        params={"fields": "Content,ContentType,ContentEncoding,Filename"},
+    )
     for attachment_id in attachment_ids:
         meta = metas.get(attachment_id)
         if not meta:
             continue
         content_type = (meta.get("ContentType") or "").lower()
         filename = meta.get("Filename")
+        encoding = meta.get("ContentEncoding")
         if content_type.startswith("text/") and not filename:
             if not body:
-                text = _decode_attachment_content(meta.get("Content")).strip()
+                text = _decode_attachment_content(meta.get("Content"), encoding).strip()
                 if content_type.startswith("text/html"):
                     text = _HTML_TAG_RE.sub("", text)
                 body = text
             continue
         if not filename:
             continue
-        content_bytes = _decode_attachment_bytes(meta.get("Content"))
+        content_bytes = _decode_attachment_bytes(meta.get("Content"), encoding)
         saved = _save_imported_attachment(filename, content_bytes, actor_user_id, ticket, enterprise_record, summary)
         if saved:
             imported_filenames.append(filename)
