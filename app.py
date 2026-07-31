@@ -51,7 +51,9 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.16"
+APP_VERSION = "1.29.17"
+
+TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -1240,6 +1242,7 @@ class ChecklistItem(db.Model):
 class FileAttachment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False)
+    comment_id = db.Column(db.Integer, db.ForeignKey("comment.id"), nullable=True)
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     original_name = db.Column(db.String(255), nullable=False)
     stored_name = db.Column(db.String(255), unique=True, nullable=False)
@@ -1249,6 +1252,7 @@ class FileAttachment(db.Model):
     scan_status = db.Column(db.String(20), nullable=False, default="not_scanned")
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     ticket = db.relationship("Ticket", backref=db.backref("attachments", cascade="all, delete-orphan"))
+    comment = db.relationship("Comment", backref=db.backref("attachments", cascade="all, delete-orphan"))
     uploaded_by = db.relationship("User")
 
 
@@ -5207,6 +5211,40 @@ def create_app(test_config=None):
     def visible_tickets():
         return visible_ticket_query(current_user)
 
+    def ticket_list_query(kind, q="", state="", priority="", category="", group_id_filter=""):
+        """Shared filtering for the ticket list view and its CSV export, so
+        both stay consistent. Filters by any of the list's visible columns
+        -- number/title search, state, priority, category, and assignment
+        group (Assignment group for incidents, owning team for changes)."""
+        query = visible_tickets().filter_by(kind=kind).filter(Ticket.deleted_at.is_(None))
+        if q:
+            query = query.filter(db.or_(Ticket.number.ilike(f"%{q}%"), Ticket.title.ilike(f"%{q}%")))
+        if state:
+            query = query.filter_by(state=state)
+        if priority:
+            query = query.filter_by(priority=priority)
+        if category:
+            query = query.filter_by(category=category)
+        if group_id_filter:
+            try:
+                group_id_value = int(group_id_filter)
+            except ValueError:
+                group_id_value = None
+            if group_id_value is not None:
+                if kind == "change":
+                    query = query.filter(Ticket.id.in_(
+                        db.session.query(ChangeOwnership.ticket_id).filter(
+                            ChangeOwnership.group_id == group_id_value
+                        )
+                    ))
+                else:
+                    query = query.filter(Ticket.id.in_(
+                        db.session.query(TicketAssignmentGroup.ticket_id).filter(
+                            TicketAssignmentGroup.group_id == group_id_value
+                        )
+                    ))
+        return query
+
     TERMINAL_TICKET_STATES = ["Resolved", "Closed", "Cancelled"]
     TERMINAL_TASK_STATES = ["Closed Complete", "Closed Incomplete", "Closed Skipped", "Cancelled"]
 
@@ -5421,13 +5459,13 @@ def create_app(test_config=None):
     def tickets(kind):
         if kind not in ("incident", "change"):
             abort(404)
-        query = visible_tickets().filter_by(kind=kind).filter(Ticket.deleted_at.is_(None))
         q = request.args.get("q", "").strip()
         state = request.args.get("state", "").strip()
-        if q:
-            query = query.filter(db.or_(Ticket.number.ilike(f"%{q}%"), Ticket.title.ilike(f"%{q}%")))
-        if state:
-            query = query.filter_by(state=state)
+        priority = request.args.get("priority", "").strip()
+        category = request.args.get("category", "").strip()
+        group_id_filter = request.args.get("group_id", "").strip()
+        query = ticket_list_query(kind, q=q, state=state, priority=priority,
+                                   category=category, group_id_filter=group_id_filter)
         try:
             page = max(1, int(request.args.get("page", "1")))
         except ValueError:
@@ -5460,8 +5498,13 @@ def create_app(test_config=None):
             row.id: ownership_groups.get(row.id) if row.kind == "change" else assignment_groups.get(row.id)
             for row in rows
         }
+        filter_groups = SupportGroup.query.filter_by(
+            tenant_id=tenant_context_id()
+        ).order_by(SupportGroup.name).all()
         return render_template(
             "tickets.html", tickets=rows, kind=kind, q=q, state=state,
+            priority=priority, category=category, group_id=group_id_filter,
+            filter_groups=filter_groups, category_options=TICKET_CATEGORY_OPTIONS,
             page=page, pages=pages, total=total,
             owning_groups=owning_groups,
         )
@@ -5471,13 +5514,13 @@ def create_app(test_config=None):
     def tickets_export(kind):
         if kind not in ("incident", "change"):
             abort(404)
-        query = visible_tickets().filter_by(kind=kind).filter(Ticket.deleted_at.is_(None))
         q = request.args.get("q", "").strip()
         state = request.args.get("state", "").strip()
-        if q:
-            query = query.filter(db.or_(Ticket.number.ilike(f"%{q}%"), Ticket.title.ilike(f"%{q}%")))
-        if state:
-            query = query.filter_by(state=state)
+        priority = request.args.get("priority", "").strip()
+        category = request.args.get("category", "").strip()
+        group_id_filter = request.args.get("group_id", "").strip()
+        query = ticket_list_query(kind, q=q, state=state, priority=priority,
+                                   category=category, group_id_filter=group_id_filter)
         export_limit = 5000
         rows = query.options(
             db.joinedload(Ticket.requester), db.joinedload(Ticket.assignee),
@@ -5703,10 +5746,22 @@ def create_app(test_config=None):
                 if not role_has_action(current_user.role, "comment_public"):
                     abort(403)
                 body = request.form.get("body", "").strip()
+                upload = request.files.get("file")
                 if body:
-                    db.session.add(Comment(ticket_id=ticket.id, user_id=current_user.id, body=body))
+                    comment = Comment(ticket_id=ticket.id, user_id=current_user.id, body=body)
+                    db.session.add(comment)
+                    db.session.flush()
                     log_history("ticket", ticket.id, "Comment added", details=body[:500])
                     audit("comment", ticket.number)
+                    if upload and upload.filename:
+                        attachment, error = save_ticket_attachment(ticket, upload, comment_id=comment.id)
+                        if error:
+                            flash(error, "error")
+                        else:
+                            log_history(
+                                "ticket", ticket.id, "Attachment uploaded",
+                                details=f"{attachment.original_name} ({attachment.size_bytes} bytes)",
+                            )
             elif action == "reopen":
                 if not role_has_action(current_user.role, "resolve"):
                     abort(403)
@@ -7364,11 +7419,14 @@ def create_app(test_config=None):
         query = visible_enterprise_record_query(current_user).filter_by(domain=domain)
         q = request.args.get("q", "").strip()
         state = request.args.get("state", "").strip()
+        priority = request.args.get("priority", "").strip()
         if q:
             query = query.filter(db.or_(EnterpriseRecord.number.ilike(f"%{q}%"),
                                         EnterpriseRecord.title.ilike(f"%{q}%")))
         if state:
             query = query.filter_by(state=state)
+        if priority:
+            query = query.filter_by(priority=priority)
         try:
             page = max(1, int(request.args.get("page", "1")))
         except ValueError:
@@ -7382,7 +7440,7 @@ def create_app(test_config=None):
         ).limit(per_page).all()
         return render_template(
             "module_records.html", domain=domain, config=config,
-            records=rows, q=q, state=state, page=page, pages=pages,
+            records=rows, q=q, state=state, priority=priority, page=page, pages=pages,
             total=total,
         )
 
@@ -9335,27 +9393,24 @@ def create_app(test_config=None):
         db.session.commit()
         return redirect(url_for("ticket_detail", ticket_id=item.ticket_id))
 
-    @app.post("/ticket/<int:ticket_id>/attachments")
-    @login_required
-    def attachment_upload(ticket_id):
-        ticket = tenant_record_or_404(Ticket, ticket_id)
-        if not user_can_view_ticket(current_user, ticket):
-            abort(403)
-        upload = request.files.get("file")
+    def save_ticket_attachment(ticket, upload, comment_id=None):
+        """Validates, scans, and stores an uploaded file against a ticket,
+        optionally linking it to a specific comment (work note attachment).
+        Returns (attachment, None) on success or (None, flash_message) on
+        failure -- callers flash the message and redirect. Shared by the
+        dedicated attachment-upload route and the comment-with-attachment
+        flow so both get identical malware scanning and type validation."""
         if not upload or not upload.filename:
-            flash("Choose a file to upload.", "error")
-            return redirect(url_for("ticket_detail", ticket_id=ticket_id))
+            return None, "Choose a file to upload."
         original = secure_filename(upload.filename)
         if not original:
             abort(400, description="The attachment filename is invalid.")
         validated = validate_attachment_upload(upload)
         if not validated:
-            flash(
+            return None, (
                 "That file type isn't allowed. Accepted attachment types: "
-                + ", ".join(sorted(ATTACHMENT_ALLOWED_TYPES)) + ".",
-                "error",
+                + ", ".join(sorted(ATTACHMENT_ALLOWED_TYPES)) + "."
             )
-            return redirect(url_for("ticket_detail", ticket_id=ticket_id))
         _, verified_mime_type = validated
         stored = f"{uuid.uuid4().hex}-{original}"
         path = os.path.join(app.config["UPLOAD_FOLDER"], stored)
@@ -9368,21 +9423,36 @@ def create_app(test_config=None):
                 "Rejected infected attachment upload: ticket=%s file=%s user=%s",
                 ticket.number, original, current_user.id,
             )
-            flash("That file was rejected by malware scanning and was not attached.", "error")
-            return redirect(url_for("ticket_detail", ticket_id=ticket_id))
+            return None, "That file was rejected by malware scanning and was not attached."
         sha256 = hashlib.sha256()
         with open(path, "rb") as handle:
             for chunk in iter(lambda: handle.read(65536), b""):
                 sha256.update(chunk)
-        db.session.add(FileAttachment(ticket_id=ticket_id, uploaded_by_id=current_user.id,
-                                      original_name=original, stored_name=stored,
-                                      mime_type=verified_mime_type, size_bytes=os.path.getsize(path),
-                                      sha256=sha256.hexdigest(), scan_status=scan_status))
+        attachment = FileAttachment(
+            ticket_id=ticket.id, comment_id=comment_id, uploaded_by_id=current_user.id,
+            original_name=original, stored_name=stored,
+            mime_type=verified_mime_type, size_bytes=os.path.getsize(path),
+            sha256=sha256.hexdigest(), scan_status=scan_status,
+        )
+        db.session.add(attachment)
+        audit("attach", ticket.number, original)
+        return attachment, None
+
+    @app.post("/ticket/<int:ticket_id>/attachments")
+    @login_required
+    def attachment_upload(ticket_id):
+        ticket = tenant_record_or_404(Ticket, ticket_id)
+        if not user_can_view_ticket(current_user, ticket):
+            abort(403)
+        upload = request.files.get("file")
+        attachment, error = save_ticket_attachment(ticket, upload)
+        if error:
+            flash(error, "error")
+            return redirect(url_for("ticket_detail", ticket_id=ticket_id))
         log_history(
             "ticket", ticket.id, "Attachment uploaded",
-            details=f"{original} ({os.path.getsize(path)} bytes)",
+            details=f"{attachment.original_name} ({attachment.size_bytes} bytes)",
         )
-        audit("attach", ticket.number, original)
         db.session.commit()
         return redirect(url_for("ticket_detail", ticket_id=ticket_id))
 
