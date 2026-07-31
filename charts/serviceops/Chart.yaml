@@ -2,6 +2,6 @@ apiVersion: v2
 name: serviceops
 description: Production-oriented Helm chart for the ServiceOps IT service-management platform
 type: application
-version: 1.29.20
-appVersion: "1.29.20"
+version: 1.29.21
+appVersion: "1.29.21"
 kubeVersion: ">=1.27.0-0"
