@@ -344,7 +344,16 @@ def _decode_attachment_bytes(raw, encoding=None):
     if encoding == "none":
         return raw.encode("utf-8", errors="replace")
     try:
-        return base64.b64decode(raw, validate=True)
+        # validate=True rejects the input outright if it contains ANY
+        # character outside the base64 alphabet -- including the line-wrap
+        # newlines RT/Perl's MIME::Base64 inserts every 76 characters,
+        # which is exactly how RT returns Content. That was silently
+        # falling through to "treat as raw text" below, i.e. saving the
+        # base64 *text* itself as the file's bytes -- which of course
+        # never matches any real file's magic-byte signature, no matter
+        # the type. validate=False strips non-alphabet characters
+        # (whitespace/newlines) before decoding instead of rejecting them.
+        return base64.b64decode(raw, validate=False)
     except Exception:  # noqa: BLE001 - not valid base64, treat as already raw text
         return raw.encode("utf-8", errors="replace")
 

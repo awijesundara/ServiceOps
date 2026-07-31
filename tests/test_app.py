@@ -2,6 +2,7 @@ import json
 import os
 import re
 import tempfile
+import uuid
 from io import BytesIO
 from urllib.parse import quote
 
@@ -2672,6 +2673,38 @@ def test_ldap_group_mapping_synchronizes_team_membership(app):
         assert DirectoryManagedMembership.query.filter_by(
             user_id=user_id, group_id=unix.id
         ).count() == 0
+
+
+def test_ldap_login_adopts_a_preexisting_account_by_email_instead_of_duplicating_it(app):
+    """A user auto-created by an external bulk import (e.g.
+    serviceops_core/rt_import.py matching an RT Requestor by email) has no
+    ExternalIdentity yet. Their first real LDAP login must adopt that
+    existing account -- and pick up its team memberships via
+    sync_directory_team_memberships -- rather than creating a second,
+    disconnected account with a suffixed username that never gets any team
+    assignment."""
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        db.session.add(DirectoryGroupMapping(directory_group="gg_unix", support_group_id=unix.id))
+        preexisting = User(
+            username="bob", name="Bob", email="bob@example.test",
+            password_hash=generate_password_hash(uuid.uuid4().hex), role="requester",
+        )
+        db.session.add(preexisting)
+        db.session.commit()
+        preexisting_id = preexisting.id
+
+        user = provision_external_user(
+            "ldap", "CN=Bob,OU=Users,DC=example,DC=com", "bob", "Bob",
+            "bob@example.test", "agent",
+            groups=["CN=gg_unix,OU=Groups,DC=example,DC=com"],
+        )
+        db.session.commit()
+
+        assert user.id == preexisting_id
+        assert User.query.filter_by(username="bob").count() == 1
+        assert ExternalIdentity.query.filter_by(provider="ldap", user_id=preexisting_id).count() == 1
+        assert GroupMember.query.filter_by(user_id=preexisting_id, group_id=unix.id).count() == 1
 
 
 def test_admin_configures_ad_mapping_manager_and_ccb_authority(client, app):
