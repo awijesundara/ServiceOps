@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.42"
+APP_VERSION = "1.29.43"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -855,6 +855,24 @@ class ServiceOfferingCI(db.Model):
     __table_args__ = (
         db.UniqueConstraint("service_offering_id", "ci_id", name="uq_service_offering_ci"),
     )
+
+
+class ServiceOutage(db.Model):
+    """ITIL 4 availability management. Auto-derived from incidents (see
+    sync_service_outages) rather than a separate manual log: a High/Critical
+    impact incident on a CI opens an outage for every business service that
+    CI backs, and resolving/downgrading the incident closes it. Deriving
+    from incidents avoids asking agents to double-enter the same window,
+    and it's what makes an uptime % computable at all -- previously there
+    was no downtime history anywhere in the system."""
+    id = db.Column(db.Integer, primary_key=True)
+    service_offering_id = db.Column(db.Integer, db.ForeignKey("service_offering.id"), nullable=False, index=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False)
+    started_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    ended_at = db.Column(db.DateTime(timezone=True))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    service_offering = db.relationship("ServiceOffering")
+    ticket = db.relationship("Ticket")
 
 
 class Notification(db.Model):
@@ -2737,6 +2755,71 @@ def allowed_ticket_states(ticket):
     return TICKET_TRANSITIONS.get(ticket.state, (ticket.state,))
 
 
+def sync_service_outages(ticket):
+    """Idempotent -- safe to call on every incident create/update/transition.
+    Opens a ServiceOutage for each business service backed by the incident's
+    CI while it's open with High/Critical impact, and closes it otherwise."""
+    if ticket.kind != "incident":
+        return
+    terminal_states = ("Resolved", "Closed", "Cancelled")
+    ci_ids = {
+        link.ci_id for link in TaskCI.query.filter_by(target_type="ticket", target_id=ticket.id).all()
+    }
+    service_ids = set()
+    if ci_ids:
+        service_ids = {
+            row.service_offering_id for row in
+            ServiceOfferingCI.query.filter(ServiceOfferingCI.ci_id.in_(ci_ids)).all()
+        }
+    should_be_open = ticket.state not in terminal_states and ticket.impact in ("Critical", "High")
+    open_outages = ServiceOutage.query.filter_by(ticket_id=ticket.id, ended_at=None).all()
+    open_service_ids = {row.service_offering_id for row in open_outages}
+    if should_be_open:
+        for service_id in service_ids - open_service_ids:
+            db.session.add(ServiceOutage(
+                service_offering_id=service_id, ticket_id=ticket.id,
+                started_at=ticket.created_at or now(), tenant_id=ticket.tenant_id,
+            ))
+        for outage in open_outages:
+            if outage.service_offering_id not in service_ids:
+                outage.ended_at = now()
+    else:
+        for outage in open_outages:
+            outage.ended_at = now()
+
+
+def service_availability_pct(service_offering_id, days=30):
+    """Uptime % over the trailing window, merging overlapping outage
+    intervals so concurrent outages (e.g. two CIs backing the same service
+    both down at once) aren't double-counted as downtime."""
+    window_start = now() - timedelta(days=days)
+    window_end = now()
+    outages = ServiceOutage.query.filter(
+        ServiceOutage.service_offering_id == service_offering_id,
+        db.or_(ServiceOutage.ended_at.is_(None), ServiceOutage.ended_at > window_start),
+        ServiceOutage.started_at < window_end,
+    ).all()
+    def aware(value):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+    intervals = []
+    for outage in outages:
+        start = max(aware(outage.started_at), window_start)
+        end = min(aware(outage.ended_at) if outage.ended_at else window_end, window_end)
+        if end > start:
+            intervals.append((start, end))
+    intervals.sort()
+    merged = []
+    for start, end in intervals:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    downtime_seconds = sum((end - start).total_seconds() for start, end in merged)
+    total_seconds = (window_end - window_start).total_seconds()
+    return round(100 * (1 - downtime_seconds / total_seconds), 3) if total_seconds else 100.0
+
+
 def transition_ticket(ticket, new_state):
     if new_state not in allowed_ticket_states(ticket):
         abort(409, description=(
@@ -2765,6 +2848,8 @@ def transition_ticket(ticket, new_state):
     old_state = ticket.state
     ticket.state = new_state
     sync_slas("ticket", ticket.id, new_state)
+    if ticket.kind == "incident":
+        sync_service_outages(ticket)
     if new_state != old_state:
         queue_workflow_event(
             "ticket.state_entry", "ticket", ticket.id,
@@ -6305,6 +6390,8 @@ def create_app(test_config=None):
                     target_type="ticket", target_id=ticket.id, ci_id=ci_id,
                     relationship_role="Primary CI",
                 ))
+            if kind == "incident":
+                sync_service_outages(ticket)
             attach_slas("ticket", ticket.id, ticket.priority)
             if kind == "change":
                 governance = ChangeGovernance(ticket_id=ticket.id, change_type=request.form.get("change_type", "Normal"),
@@ -6567,6 +6654,10 @@ def create_app(test_config=None):
                             "ticket", ticket.id, "Field changed",
                             "configuration item", old_ci_name, "Not selected",
                         )
+                # transition_ticket() above already synced outages once, but that
+                # ran before impact/CI were updated to their new values for this
+                # request -- resync now that they're final.
+                sync_service_outages(ticket)
                 assignee = db.session.get(User, assignee_id) if assignee_id else None
                 log_field_changes("ticket", ticket.id, before, {
                     "short description": ticket.title,
@@ -10225,9 +10316,29 @@ def create_app(test_config=None):
                 "spark_points": spark_points,
             })
 
+        # Availability management: uptime % per business service over the
+        # trailing 30 days, derived from ServiceOutage (itself auto-derived
+        # from High/Critical incidents -- see sync_service_outages). This is
+        # the first place in the app an availability figure exists at all.
+        service_availability = []
+        for service in tenant_query(ServiceOffering).order_by(ServiceOffering.name).all():
+            open_outage = ServiceOutage.query.filter_by(
+                service_offering_id=service.id, ended_at=None
+            ).first()
+            last_outage = ServiceOutage.query.filter_by(
+                service_offering_id=service.id
+            ).order_by(ServiceOutage.started_at.desc()).first()
+            service_availability.append({
+                "service": service,
+                "uptime_pct": service_availability_pct(service.id),
+                "open_outage": open_outage,
+                "last_outage": last_outage,
+            })
+
         return render_template(
             "analytics.html", ticket_states=ticket_states, domain_counts=domain_counts,
             kpi_history_rows=kpi_history_rows, kpi_metric_labels=kpi_metric_labels, kpi_trends=kpi_trends,
+            service_availability=service_availability,
             priority_counts=priority_counts, overdue_investigations=overdue_investigations,
             modules=DOMAIN_CONFIG, open_count=open_count,
             sla_breached_open=sla_breached_open, sla_at_risk_open=sla_at_risk_open,
