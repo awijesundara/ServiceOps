@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.46"
+APP_VERSION = "1.29.47"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -2769,7 +2769,9 @@ def sync_service_outages(ticket):
     if ci_ids:
         service_ids = {
             row.service_offering_id for row in
-            ServiceOfferingCI.query.filter(ServiceOfferingCI.ci_id.in_(ci_ids)).all()
+            ServiceOfferingCI.query.filter(
+                ServiceOfferingCI.ci_id.in_(ci_ids), ServiceOfferingCI.tenant_id == ticket.tenant_id,
+            ).all()
         }
     should_be_open = ticket.state not in terminal_states and ticket.impact in ("Critical", "High")
     open_outages = ServiceOutage.query.filter_by(ticket_id=ticket.id, ended_at=None).all()
@@ -4265,30 +4267,40 @@ def visible_enterprise_record_query(user):
     ).first():
         record_ids.update(
             row[0] for row in db.session.query(EnterpriseRecord.id).filter(
-                EnterpriseRecord.domain.notin_(ENTERPRISE_DOMAINS_RESTRICTED_TO_OWNING_TEAM)
+                EnterpriseRecord.tenant_id == user.tenant_id,
+                EnterpriseRecord.domain.notin_(ENTERPRISE_DOMAINS_RESTRICTED_TO_OWNING_TEAM),
             ).all()
         )
     record_ids.update(
-        row[0] for row in db.session.query(EnterpriseRecord.id).filter(db.or_(
-            EnterpriseRecord.requester_id == user.id,
-            EnterpriseRecord.assignee_id == user.id,
-        )).all()
+        row[0] for row in db.session.query(EnterpriseRecord.id).filter(
+            EnterpriseRecord.tenant_id == user.tenant_id,
+            db.or_(
+                EnterpriseRecord.requester_id == user.id,
+                EnterpriseRecord.assignee_id == user.id,
+            ),
+        ).all()
     )
     record_ids.update(
-        row[0] for row in db.session.query(Approval.enterprise_record_id).filter(
-            Approval.approver_id == user.id
+        row[0] for row in db.session.query(Approval.enterprise_record_id).join(
+            EnterpriseRecord, EnterpriseRecord.id == Approval.enterprise_record_id
+        ).filter(
+            Approval.approver_id == user.id, EnterpriseRecord.tenant_id == user.tenant_id,
         ).all()
     )
     if group_ids:
         record_ids.update(
             row[0] for row in db.session.query(EnterpriseRecord.id).filter(
-                EnterpriseRecord.support_group_id.in_(group_ids)
+                EnterpriseRecord.tenant_id == user.tenant_id,
+                EnterpriseRecord.support_group_id.in_(group_ids),
             ).all()
         )
         record_ids.update(
-            row[0] for row in db.session.query(OperationalTask.parent_id).filter(
+            row[0] for row in db.session.query(OperationalTask.parent_id).join(
+                EnterpriseRecord, EnterpriseRecord.id == OperationalTask.parent_id
+            ).filter(
                 OperationalTask.parent_type == "enterprise",
                 OperationalTask.assignment_group_id.in_(group_ids),
+                EnterpriseRecord.tenant_id == user.tenant_id,
             ).all()
         )
     return (
@@ -9051,7 +9063,7 @@ def create_app(test_config=None):
             target_type="ci", target_id=ci.id
         ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).limit(50).all()
         impacted_ids = ci_impact_set(ci.tenant_id, {ci.id}) - {ci.id}
-        impacted_cis = ConfigurationItem.query.filter(ConfigurationItem.id.in_(impacted_ids)).all() if impacted_ids else []
+        impacted_cis = tenant_query(ConfigurationItem).filter(ConfigurationItem.id.in_(impacted_ids)).all() if impacted_ids else []
         return render_template(
             "ci_form.html", ci=ci, owners=owners, support_groups=support_groups, history=history,
             impacted_cis=impacted_cis,
