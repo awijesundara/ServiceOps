@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.31"
+APP_VERSION = "1.29.32"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -777,6 +777,25 @@ class CIRelationship(db.Model):
     )
 
 
+class ServiceOfferingCI(db.Model):
+    """ITIL 4 service configuration management: maps a business service
+    (ServiceOffering) to the configuration items that realize it. Without
+    this, a service's criticality is set by hand with no link to the CIs
+    that actually back it, and there's no way to answer "what services does
+    this CI support" for impact analysis or change risk."""
+    id = db.Column(db.Integer, primary_key=True)
+    service_offering_id = db.Column(db.Integer, db.ForeignKey("service_offering.id"), nullable=False)
+    ci_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False)
+    relationship_role = db.Column(db.String(30), nullable=False, default="Supporting")
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    service_offering = db.relationship("ServiceOffering", backref=db.backref("ci_links", cascade="all, delete-orphan"))
+    ci = db.relationship("ConfigurationItem", backref=db.backref("service_links", cascade="all, delete-orphan"))
+    __table_args__ = (
+        db.UniqueConstraint("service_offering_id", "ci_id", name="uq_service_offering_ci"),
+    )
+
+
 class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -1173,6 +1192,27 @@ class ChangeGovernance(db.Model):
     ci = db.relationship("ConfigurationItem")
 
 
+CHANGE_PIR_OUTCOMES = ["Successful", "Successful with issues", "Failed", "Backed out"]
+
+
+class ChangePostImplementationReview(db.Model):
+    """ITIL 4 change enablement post-implementation review. Required before a
+    change ticket can reach "Closed" -- see the gate in transition_ticket()
+    -- so "closed" always means "reviewed," not just "someone moved the
+    dropdown." Also the basis for a real change-success-rate metric instead
+    of inferring success from Closed-vs-Cancelled ticket state."""
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), unique=True, nullable=False)
+    outcome = db.Column(db.String(30), nullable=False)
+    summary = db.Column(db.Text, default="")
+    follow_up_actions = db.Column(db.Text, default="")
+    reviewed_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    reviewed_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    ticket = db.relationship("Ticket", backref=db.backref("post_implementation_review", uselist=False))
+    reviewed_by = db.relationship("User")
+
+
 class ChangeOwnership(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), unique=True, nullable=False)
@@ -1299,6 +1339,34 @@ class MajorIncidentProfile(db.Model):
         "Ticket", backref=db.backref("major_incident_profile", uselist=False)
     )
     coordinator = db.relationship("User")
+
+
+IMPROVEMENT_STATES = ["Identified", "Assessed", "In Progress", "Done", "Rejected"]
+
+
+class ImprovementItem(db.Model):
+    """ITIL 4 continual improvement register: tracks improvement opportunities
+    as trackable records with an owner and outcome, independent of any single
+    ticket's own lifecycle. Can be raised standalone or from an incident,
+    problem, change, request, or IT operations event -- source_type/source_id
+    use the same (type, id) shape as record_reference()/record_url() so a
+    source link can be rendered without a bespoke lookup."""
+    id = db.Column(db.Integer, primary_key=True)
+    number = db.Column(db.String(20), unique=True, nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, default="")
+    source_type = db.Column(db.String(20))
+    source_id = db.Column(db.Integer)
+    status = db.Column(db.String(20), nullable=False, default="Identified")
+    expected_outcome = db.Column(db.Text, default="")
+    measured_result = db.Column(db.Text, default="")
+    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    owner = db.relationship("User", foreign_keys=[owner_id])
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
 
 
 class Favorite(db.Model):
@@ -2586,6 +2654,12 @@ def transition_ticket(ticket, new_state):
                 f"{ticket.number} cannot complete while required task "
                 f"{incomplete.number} remains {incomplete.state}."
             ))
+    if ticket.kind == "change" and new_state == "Closed" and not ticket.post_implementation_review:
+        abort(409, description=(
+            f"{ticket.number} cannot close without a post-implementation review "
+            "(ITIL 4 change enablement requires a documented outcome before a "
+            "change is considered complete). Record the review first."
+        ))
     old_state = ticket.state
     ticket.state = new_state
     sync_slas("ticket", ticket.id, new_state)
@@ -6261,6 +6335,7 @@ def create_app(test_config=None):
             service_offerings=tenant_query(ServiceOffering).filter_by(
                 status="Operational"
             ).order_by(ServiceOffering.name).all(),
+            pir_outcomes=CHANGE_PIR_OUTCOMES,
         )
 
     @app.post("/change/<int:ticket_id>/delete")
@@ -6393,6 +6468,46 @@ def create_app(test_config=None):
             + (f" Conflicts flagged: {', '.join(conflicts)}." if conflicts else ""),
             "error" if conflicts else "success",
         )
+        return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+
+    @app.post("/change/<int:ticket_id>/pir")
+    @roles("agent", "manager", "admin")
+    def change_pir_update(ticket_id):
+        """Records (or updates) the ITIL 4 post-implementation review a
+        change needs before it can reach Closed -- see the gate in
+        transition_ticket(). Updatable even after the change is closed, in
+        case a follow-up action needs adding later."""
+        ticket = tenant_record_or_404(Ticket, ticket_id)
+        if ticket.kind != "change" or not ticket.change_governance:
+            abort(404)
+        require_ticket_team_access(ticket)
+        outcome = request.form.get("outcome", "")
+        if outcome not in CHANGE_PIR_OUTCOMES:
+            abort(400, description="Select a valid review outcome.")
+        summary = request.form.get("summary", "").strip()
+        if not summary:
+            abort(400, description="A summary is required for the post-implementation review.")
+        pir = ticket.post_implementation_review
+        if pir:
+            before = {"outcome": pir.outcome, "summary": pir.summary}
+            pir.outcome = outcome
+            pir.summary = summary
+            pir.follow_up_actions = request.form.get("follow_up_actions", "").strip()
+            pir.reviewed_by_id = current_user.id
+            pir.reviewed_at = now()
+            log_field_changes("ticket", ticket.id, before, {"outcome": outcome, "summary": summary},
+                              event="Post-implementation review updated")
+        else:
+            pir = ChangePostImplementationReview(
+                ticket_id=ticket.id, outcome=outcome, summary=summary,
+                follow_up_actions=request.form.get("follow_up_actions", "").strip(),
+                reviewed_by_id=current_user.id,
+            )
+            db.session.add(pir)
+            log_history("ticket", ticket.id, "Post-implementation review recorded", details=outcome)
+        audit("review", ticket.number, f"PIR outcome: {outcome}")
+        db.session.commit()
+        flash(f"Post-implementation review saved for {ticket.number}.", "success")
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
     @app.post("/incident/<int:ticket_id>/major-incident")
@@ -7934,6 +8049,91 @@ def create_app(test_config=None):
         db.session.commit()
         return redirect(url_for("enterprise_detail", record_id=record.id))
 
+    @app.get("/improvements")
+    @roles("agent", "manager", "admin")
+    def improvements():
+        status_filter = request.args.get("status", "")
+        query = tenant_query(ImprovementItem)
+        if status_filter:
+            if status_filter not in IMPROVEMENT_STATES:
+                abort(400)
+            query = query.filter_by(status=status_filter)
+        items = query.order_by(ImprovementItem.created_at.desc()).all()
+        return render_template(
+            "improvements.html", items=items, status_filter=status_filter,
+            states=IMPROVEMENT_STATES,
+        )
+
+    @app.post("/improvements/new")
+    @roles("agent", "manager", "admin")
+    def improvement_new():
+        """Raised either standalone from the Improvements list, or via a
+        "Raise improvement" quick-action on an incident/problem/change/event
+        detail page (source_type/source_id then use the same (type, id)
+        shape record_reference()/record_url() already understand)."""
+        title = request.form.get("title", "").strip()
+        if not title:
+            abort(400, description="A title is required.")
+        source_type = request.form.get("source_type") or None
+        source_id = request.form.get("source_id") or None
+        item = ImprovementItem(
+            number=sequence_number(ImprovementItem, "IMP"),
+            title=title[:200],
+            description=request.form.get("description", "").strip(),
+            expected_outcome=request.form.get("expected_outcome", "").strip(),
+            source_type=source_type,
+            source_id=int(source_id) if source_id else None,
+            owner_id=current_user.id,
+            created_by_id=current_user.id,
+        )
+        db.session.add(item)
+        db.session.flush()
+        audit("create", item.number, item.title)
+        db.session.commit()
+        flash(f"{item.number} raised as a continual-improvement item.", "success")
+        redirect_to = request.form.get("redirect_to")
+        if redirect_to and redirect_to.startswith("/"):
+            return redirect(redirect_to)
+        return redirect(url_for("improvement_detail", item_id=item.id))
+
+    @app.get("/improvement/<int:item_id>")
+    @roles("agent", "manager", "admin")
+    def improvement_detail(item_id):
+        item = tenant_record_or_404(ImprovementItem, item_id)
+        source = record_reference(item.source_type, item.source_id) if item.source_type and item.source_id else None
+        agents = tenant_query(User).filter(
+            User.role.in_(["agent", "manager", "admin"]), User.active.is_(True)
+        ).order_by(User.name).all()
+        return render_template(
+            "improvement_detail.html", item=item, states=IMPROVEMENT_STATES,
+            source_url=record_url(source) if source else None,
+            source_label=f"{record_number(source)} · {record_title(source)}" if source else None,
+            agents=agents,
+        )
+
+    @app.post("/improvement/<int:item_id>")
+    @roles("agent", "manager", "admin")
+    def improvement_update(item_id):
+        item = tenant_record_or_404(ImprovementItem, item_id)
+        new_status = request.form.get("status", item.status)
+        if new_status not in IMPROVEMENT_STATES:
+            abort(400)
+        before = {"status": item.status, "owner": item.owner.name if item.owner else "Unassigned"}
+        item.status = new_status
+        item.expected_outcome = request.form.get("expected_outcome", item.expected_outcome)
+        item.measured_result = request.form.get("measured_result", item.measured_result)
+        owner_id = request.form.get("owner_id")
+        item.owner_id = int(owner_id) if owner_id else None
+        after = {
+            "status": item.status,
+            "owner": item.owner.name if item.owner else "Unassigned",
+        }
+        log_field_changes("improvement", item.id, before, after, event=f"{item.number} updated")
+        audit("update", item.number, item.status)
+        db.session.commit()
+        flash(f"{item.number} updated.", "success")
+        return redirect(url_for("improvement_detail", item_id=item.id))
+
     @app.get("/catalog")
     @login_required
     def catalog():
@@ -9125,6 +9325,31 @@ def create_app(test_config=None):
                 audit("create", f"SLA definition: {name}",
                       f"{duration} minutes; {schedule.name if schedule else '24x7'}")
                 flash(f"SLA definition {name} created.", "success")
+            elif action == "link_service_ci":
+                service = tenant_record_or_404(ServiceOffering, int(request.form["service_offering_id"]))
+                ci = tenant_record_or_404(ConfigurationItem, int(request.form["ci_id"]))
+                role = request.form.get("relationship_role", "Supporting")
+                if role not in ("Primary", "Supporting"):
+                    abort(400)
+                existing_link = ServiceOfferingCI.query.filter_by(
+                    service_offering_id=service.id, ci_id=ci.id
+                ).first()
+                if existing_link:
+                    existing_link.relationship_role = role
+                else:
+                    db.session.add(ServiceOfferingCI(
+                        service_offering_id=service.id, ci_id=ci.id, relationship_role=role,
+                    ))
+                audit("configure", f"{service.name} service mapping", f"{role}: {ci.name}")
+                flash(f"{ci.name} linked to {service.name}.", "success")
+            elif action == "unlink_service_ci":
+                link = db.get_or_404(ServiceOfferingCI, int(request.form["link_id"]))
+                if link.tenant_id != current_user.tenant_id:
+                    abort(404)
+                audit("configure", f"{link.service_offering.name} service mapping",
+                      f"removed {link.ci.name}")
+                db.session.delete(link)
+                flash(f"{link.ci.name} unlinked from {link.service_offering.name}.", "success")
             elif action == "sync_directory":
                 # This action manages its own transaction (sync_directory commits
                 # or rolls back internally) so it is handled separately from the

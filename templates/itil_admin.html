@@ -265,8 +265,24 @@
   </section>
   <section class="panel">
     <h2>Service offerings</h2>
+    <p class="muted">Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk.</p>
     {% for service in services %}
-    <article class="config-row"><div><strong>{{ service.name }}</strong><small>{{ service.criticality }} criticality · {{ service.status }}</small></div><span>{{ service.owner.name }}</span></article>
+    <article class="config-row" style="flex-direction:column;align-items:stretch;gap:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center"><div><strong>{{ service.name }}</strong><small>{{ service.criticality }} criticality · {{ service.status }}</small></div><span>{{ service.owner.name }}</span></div>
+      {% for link in service.ci_links %}
+      <div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div>
+        <span class="badge">{{ link.relationship_role }}</span>
+        <form method="post" class="inline-form"><input type="hidden" name="action" value="unlink_service_ci"><input type="hidden" name="link_id" value="{{ link.id }}"><button class="link-button" aria-label="Unlink {{ link.ci.name }}">✕</button></form>
+      </div>
+      {% else %}<p class="muted">No configuration items linked yet.</p>{% endfor %}
+      <form method="post" class="inline-form">
+        <input type="hidden" name="action" value="link_service_ci">
+        <input type="hidden" name="service_offering_id" value="{{ service.id }}">
+        <select name="relationship_role"><option>Primary</option><option selected>Supporting</option></select>
+        <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div>
+        <button>Link CI</button>
+      </form>
+    </article>
     {% else %}<p>No service offerings configured.</p>{% endfor %}
   </section>
 </div>

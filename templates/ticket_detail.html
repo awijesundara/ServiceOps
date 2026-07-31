@@ -101,6 +101,17 @@
 </nav>
 <section class="panel event-history-panel" id="event-history">
   <header class="section-heading"><div><p class="eyebrow">EVENT STREAM</p><h2>Event history</h2></div><span>{{ history|length }} events</span></header>
+  {% if can_manage_ticket %}
+  <details><summary>Raise as a continual-improvement item</summary>
+    <form method="post" action="{{ url_for('improvement_new') }}" class="form-grid">
+      <input type="hidden" name="source_type" value="ticket"><input type="hidden" name="source_id" value="{{ ticket.id }}">
+      <input type="hidden" name="redirect_to" value="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">
+      <label class="wide required-field"><span>Title</span><input name="title" maxlength="200" required value="Improvement from {{ ticket.number }}: "></label>
+      <label class="wide"><span>Description</span><textarea name="description" rows="2"></textarea></label>
+      <div class="wide actions"><button>Raise improvement</button></div>
+    </form>
+  </details>
+  {% endif %}
   <div class="event-stream">
     {% for event in history %}
     <article class="event-entry">
@@ -224,6 +235,30 @@
       <label class="wide">Test plan<textarea name="test_plan" rows="4" required>{{ ticket.change_governance.test_plan }}</textarea></label>
       <label class="wide">Backout plan<textarea name="backout_plan" rows="4" required>{{ ticket.change_governance.backout_plan }}</textarea></label>
       <div class="wide actions"><button class="primary">Save plan and request reapproval</button></div>
+    </form>
+  </details>
+  {% endif %}
+
+  <hr>
+  <h3>Post-implementation review<span class="info-tip" tabindex="0" data-tip="Required before this change can be Closed — ITIL 4 change enablement expects a documented outcome, not just a status change.">i</span></h3>
+  {% if ticket.post_implementation_review %}
+  {% set pir = ticket.post_implementation_review %}
+  <dl class="governance-grid">
+    <dt>Outcome</dt><dd>{{ pir.outcome }}</dd>
+    <dt>Reviewed by</dt><dd>{{ pir.reviewed_by.name }} · {{ (pir.reviewed_at|usertime('%b %d, %Y · %H:%M')) }}</dd>
+  </dl>
+  <p>{{ pir.summary }}</p>
+  {% if pir.follow_up_actions %}<p><b>Follow-up actions:</b> {{ pir.follow_up_actions }}</p>{% endif %}
+  {% else %}
+  <p class="muted">Not reviewed yet — {{ ticket.number }} cannot be closed until this is recorded.</p>
+  {% endif %}
+  {% if can_manage_ticket %}
+  <details {% if not ticket.post_implementation_review %}open{% endif %}><summary>{{ 'Update review' if ticket.post_implementation_review else 'Record review' }}</summary>
+    <form method="post" action="{{ url_for('change_pir_update', ticket_id=ticket.id) }}" class="form-grid">
+      <label>Outcome<select name="outcome" required>{% for value in pir_outcomes %}<option {% if ticket.post_implementation_review and ticket.post_implementation_review.outcome==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label class="wide">Summary<textarea name="summary" rows="3" required>{{ ticket.post_implementation_review.summary if ticket.post_implementation_review else '' }}</textarea></label>
+      <label class="wide">Follow-up actions (optional)<textarea name="follow_up_actions" rows="2">{{ ticket.post_implementation_review.follow_up_actions if ticket.post_implementation_review else '' }}</textarea></label>
+      <div class="wide actions"><button class="primary">Save review</button></div>
     </form>
   </details>
   {% endif %}

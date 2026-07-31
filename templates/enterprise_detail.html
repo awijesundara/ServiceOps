@@ -36,6 +36,17 @@
 
 <section class="panel event-history-panel" id="event-history">
   <header class="section-heading"><div><p class="eyebrow">ACTIVITY</p><h2>Event history</h2></div><span>{{ history|length }} events</span></header>
+  {% if current_user.role in ['agent','manager','admin'] %}
+  <details><summary>Raise as a continual-improvement item</summary>
+    <form method="post" action="{{ url_for('improvement_new') }}" class="form-grid">
+      <input type="hidden" name="source_type" value="enterprise"><input type="hidden" name="source_id" value="{{ record.id }}">
+      <input type="hidden" name="redirect_to" value="{{ url_for('enterprise_detail', record_id=record.id) }}">
+      <label class="wide required-field"><span>Title</span><input name="title" maxlength="200" required value="Improvement from {{ record.number }}: "></label>
+      <label class="wide"><span>Description</span><textarea name="description" rows="2"></textarea></label>
+      <div class="wide actions"><button>Raise improvement</button></div>
+    </form>
+  </details>
+  {% endif %}
   <div class="event-stream">{% for event in history %}<article class="event-entry">{{ user_avatar(event.actor, 'event-marker') }}<div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ event.actor.name if event.actor else 'System' }}</small>{% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span>→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}{% if event.details %}<p>{{ event.details }}</p>{% endif %}</div></article>{% endfor %}<article class="event-entry">{{ user_avatar(record.requester, 'event-marker') }}<div class="event-body"><div><strong>Opened</strong><time>{{ (record.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ record.requester.name }}</small><p>{{ record.record_type }} {{ record.number }} opened as {{ record.priority }} · {{ record.risk }} risk.</p></div></article></div>
 </section>
 
