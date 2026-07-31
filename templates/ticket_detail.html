@@ -35,12 +35,14 @@
       <label><span>Impact</span><select name="impact" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label><span>Category</span><input value="{{ ticket.category }}" disabled></label>
       <label><span>Urgency</span><select name="urgency" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.urgency==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-      <label class="required-field"><span>Assignment group</span><input value="{{ owning_group.name if owning_group else 'Not assigned' }}" disabled></label>
-      <label><span>Team manager</span><input value="{{ owning_group.manager.name if owning_group and owning_group.manager else 'Not assigned' }}" disabled></label>
       <label><span>Priority</span><select name="priority" {% if not can_manage_ticket %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
       <label><span>Configuration item</span><input value="{{ display_ci.name if display_ci else 'Not selected' }}" disabled></label>
       <label><span>CI owning team</span><input value="{{ display_ci.support_group.name if display_ci and display_ci.support_group else 'Unassigned' }}" disabled></label>
-      <label><span>Assigned to</span><select name="assignee_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">Unassigned</option>{% for user in agents %}<option value="{{ user.id }}" {% if ticket.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+      <div class="record-grid-trio">
+        <label class="required-field"><span>Assignment group</span><input value="{{ owning_group.name if owning_group else 'Not assigned' }}" disabled></label>
+        <label><span>Team manager</span><input value="{{ owning_group.manager.name if owning_group and owning_group.manager else 'Not assigned' }}" disabled></label>
+        <label><span>Assigned to</span><select name="assignee_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">Unassigned</option>{% for user in agents %}<option value="{{ user.id }}" {% if ticket.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+      </div>
     </div>
     <div class="record-long-fields">
       <label class="required-field"><span>Short description</span><input value="{{ ticket.title }}" disabled></label>
