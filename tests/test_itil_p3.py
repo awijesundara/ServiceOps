@@ -294,3 +294,31 @@ def test_enterprise_record_visible_to_fulfillment_team_member_not_just_admin(cli
     search = client.get("/ui/search?q=EVT0009301")
     assert search.status_code == 200
     assert b"EVT0009301" in search.data
+
+
+def test_enterprise_record_owning_team_can_manage_not_just_view(client, app):
+    """Companion to the visibility fix: user_can_manage_enterprise_record()
+    ignored the record's own support_group_id, so a Unix-team RT-imported
+    record was viewable (after the visibility fix) but every edit still
+    403'd until someone created an OperationalTask on it.
+    """
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        record = EnterpriseRecord(
+            number="EVT0009302", domain="event", record_type="RT Ticket",
+            title="Disk almost full", description="Imported from RT",
+            requester_id=admin.id, support_group_id=group_id(app), tenant_id=1,
+        )
+        db.session.add(record)
+        db.session.commit()
+        record_id = record.id
+
+    login(client, username="database.manager", password="Manager123!")
+    updated = client.post(f"/enterprise/{record_id}", data={
+        "action": "update", "state": "In Progress", "priority": "P3", "risk": "Medium",
+    })
+    assert updated.status_code == 302
+    with app.app_context():
+        assert EnterpriseRecord.query.get(record_id).state == "In Progress"
+
+
