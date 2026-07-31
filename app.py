@@ -51,7 +51,7 @@ from serviceops_core.projections import project_document, validate_projection_po
 # Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
 # release; shown in the UI (sidebar, login page, /health) so operators can
 # confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.28"
+APP_VERSION = "1.29.29"
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -4151,7 +4151,38 @@ def provision_external_user(provider, subject, username, name, email, role, grou
             sync_directory_team_memberships(user, groups)
             normalize_user_role_from_assignments(user)
         return user
+
     base = (username or f"{provider}-{uuid.uuid4().hex[:8]}").strip().lower()[:70]
+    email_lower = (email or "").strip().lower()
+
+    # A user account that already exists under this username or email --
+    # e.g. a placeholder auto-created by RT import (serviceops_core/rt_import.py)
+    # matching an RT Requestor/Owner by email, or any other manually-created
+    # local account -- must be adopted into this identity on first login
+    # rather than getting a second, disconnected account with a suffixed
+    # username. Without this, an RT-imported person's real LDAP login never
+    # picks up their group memberships/team assignments (sync_directory_team_memberships
+    # never runs against their real account), and they end up with two
+    # unrelated users: the orphaned RT one holding all their imported
+    # tickets, and a fresh empty one they actually log into.
+    existing_user = None
+    if email_lower:
+        existing_user = User.query.filter(db.func.lower(User.email) == email_lower).first()
+    if not existing_user and base:
+        existing_user = User.query.filter_by(username=base).first()
+    if existing_user and not ExternalIdentity.query.filter_by(
+        provider=provider, user_id=existing_user.id
+    ).first():
+        existing_user.name = name or existing_user.name
+        existing_user.email = email or existing_user.email
+        existing_user.role = role
+        existing_user.active = True
+        db.session.add(ExternalIdentity(provider=provider, subject=subject, user_id=existing_user.id))
+        if provider == "ldap":
+            sync_directory_team_memberships(existing_user, groups)
+            normalize_user_role_from_assignments(existing_user)
+        return existing_user
+
     candidate, suffix = base, 1
     while User.query.filter_by(username=candidate).first():
         suffix += 1
