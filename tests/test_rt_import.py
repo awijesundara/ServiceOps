@@ -4,16 +4,12 @@ These mock RT entirely (no live RT instance required) by passing a fake
 session factory into import_from_rt, matching the same network-mocking
 approach used by tests/test_netbox_sync.py.
 """
-import base64
 import os
 import tempfile
 
 import pytest
 
-from app import (
-    Comment, FileAttachment, PlatformSetting, SupportGroup, Ticket,
-    TicketAssignmentGroup, User, create_app, db,
-)
+from app import EnterpriseRecord, PlatformSetting, SupportGroup, User, create_app, db
 from serviceops_core.rt_import import RTImportError, import_from_rt
 
 
@@ -40,15 +36,12 @@ class FakeResponse:
 
 
 class FakeRTSession:
-    def __init__(self, tickets, queues, users, history=None, transactions=None,
-                 attachments=None, attachment_meta=None):
+    def __init__(self, tickets, queues, users, history=None, transactions=None):
         self.tickets = {str(t["id"]): t for t in tickets}
         self.queues = queues
         self.users = users
         self.history = history or {}
         self.transactions = transactions or {}
-        self.attachments = attachments or {}
-        self.attachment_meta = attachment_meta or {}
 
     def get(self, url, params=None, timeout=None):
         if url.endswith("/REST/2.0/tickets"):
@@ -59,8 +52,6 @@ class FakeRTSession:
                 return FakeResponse(ticket)
             if url.endswith(f"/REST/2.0/ticket/{t_id}/history"):
                 return FakeResponse({"items": self.history.get(t_id, [])})
-            if url.endswith(f"/REST/2.0/ticket/{t_id}/attachments"):
-                return FakeResponse({"items": self.attachments.get(t_id, [])})
         for queue_id, name in self.queues.items():
             if url.endswith(f"/REST/2.0/queue/{queue_id}"):
                 return FakeResponse({"Name": name})
@@ -70,9 +61,6 @@ class FakeRTSession:
         for txn_id, txn in self.transactions.items():
             if url.endswith(f"/REST/2.0/transaction/{txn_id}"):
                 return FakeResponse(txn)
-        for att_id, meta in self.attachment_meta.items():
-            if url.endswith(f"/REST/2.0/attachment/{att_id}"):
-                return FakeResponse(meta)
         return FakeResponse({"items": []})
 
     def close(self):
@@ -110,7 +98,7 @@ def make_ticket(id_, subject, status="open", priority="80", queue_id="1", owner_
     }
 
 
-def test_creates_new_incident_from_rt_ticket(app, monkeypatch):
+def test_creates_new_it_operations_event_from_rt_ticket(app, monkeypatch):
     with app.app_context():
         admin_id = User.query.filter_by(username="admin").one().id
         ticket = make_ticket(101, "Printer is broken", queue_id="5", requestor_ids=["9"])
@@ -120,18 +108,18 @@ def test_creates_new_incident_from_rt_ticket(app, monkeypatch):
             users={"9": {"EmailAddress": "alice@example.test", "RealName": "Alice"}},
         )
         result = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
-        assert result["tickets_created"] == 1
+        assert result["records_created"] == 1
         assert result["teams_created"] == 1
         assert result["users_created"] == 1
 
-        rt_ticket = Ticket.query.filter_by(external_source="rt", external_id="101").one()
-        assert rt_ticket.title == "Printer is broken"
-        assert rt_ticket.kind == "incident"
-        assert rt_ticket.state == "In Progress"
-        assert rt_ticket.priority == "P1"
-        assert rt_ticket.requester.email == "alice@example.test"
-        group = TicketAssignmentGroup.query.filter_by(ticket_id=rt_ticket.id).one().group
-        assert group.name == "Help Desk"
+        record = EnterpriseRecord.query.filter_by(external_source="rt", external_id="101").one()
+        assert record.title == "Printer is broken"
+        assert record.domain == "event"
+        assert record.record_type == "RT Ticket"
+        assert record.state == "In Progress"
+        assert record.priority == "P1"
+        assert record.requester.email == "alice@example.test"
+        assert record.support_group.name == "Help Desk"
 
 
 def test_rerun_skips_already_imported_ticket(app, monkeypatch):
@@ -143,11 +131,11 @@ def test_rerun_skips_already_imported_ticket(app, monkeypatch):
             users={"9": {"EmailAddress": "bob@example.test", "RealName": "Bob"}},
         )
         first = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
-        assert first["tickets_created"] == 1
+        assert first["records_created"] == 1
         second = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
-        assert second["tickets_created"] == 0
+        assert second["records_created"] == 0
         assert second["already_imported"] == 1
-        assert Ticket.query.filter_by(external_source="rt", external_id="202").count() == 1
+        assert EnterpriseRecord.query.filter_by(external_source="rt", external_id="202").count() == 1
 
 
 def test_dry_run_does_not_commit(app, monkeypatch):
@@ -160,35 +148,27 @@ def test_dry_run_does_not_commit(app, monkeypatch):
         )
         result = import_from_rt(1, actor_user_id=admin_id, dry_run=True, session_factory=factory)
         assert result["dry_run"] is True
-        assert result["tickets_created"] == 1
+        assert result["records_created"] == 1
         assert len(result["preview"]) == 1
-        assert Ticket.query.count() == 0
+        assert EnterpriseRecord.query.filter_by(domain="event", record_type="RT Ticket").count() == 0
         assert User.query.filter_by(email="carol@example.test").count() == 0
 
 
-def test_comments_and_attachments_imported(app, monkeypatch):
+def test_correspondence_folded_into_description(app, monkeypatch):
     with app.app_context():
         admin_id = User.query.filter_by(username="admin").one().id
         ticket = make_ticket(404, "With history", requestor_ids=["9"])
-        attachment_content = base64.b64encode(b"file bytes here").decode()
         factory = enable_rt(
             monkeypatch, tickets=[ticket], queues={"1": "General"},
             users={"9": {"EmailAddress": "dan@example.test", "RealName": "Dan"}},
             history={"404": [{"id": "77"}]},
             transactions={"77": {"Type": "Correspond", "Content": "Initial message body", "Creator": {"id": "9"}}},
-            attachments={"404": [{"id": "55"}]},
-            attachment_meta={"55": {
-                "Filename": "notes.txt", "ContentType": "text/plain", "Content": attachment_content,
-            }},
         )
         result = import_from_rt(1, actor_user_id=admin_id, session_factory=factory)
         assert result["comments_imported"] == 1
-        ticket_row = Ticket.query.filter_by(external_source="rt", external_id="404").one()
-        comment = Comment.query.filter_by(ticket_id=ticket_row.id).one()
-        assert comment.body == "Initial message body"
-        # text/plain is RT's message-body representation, not a real
-        # attachment -- must not be imported as a FileAttachment.
-        assert FileAttachment.query.filter_by(ticket_id=ticket_row.id).count() == 0
+        record = EnterpriseRecord.query.filter_by(external_source="rt", external_id="404").one()
+        assert "Initial message body" in record.description
+        assert "Dan" in record.description
 
 
 def test_rt_import_disabled_raises(app):

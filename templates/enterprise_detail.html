@@ -16,6 +16,7 @@
       <label class="required-field"><span>Requested by</span><input value="{{ record.requester.name }} · {{ record.requester.email }}" disabled></label>
       <label><span>Priority</span><select name="priority" {% if not can_manage_record %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if record.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
       <label><span>Record type</span><input value="{{ record.record_type }}" disabled></label>
+      <label><span>Owning team</span><input value="{{ record.support_group.name if record.support_group else 'Unassigned' }}" disabled></label>
       <label><span>Risk</span><select name="risk" {% if not can_manage_record %}disabled{% endif %}>{% for risk in ['Low','Medium','High','Critical'] %}<option {% if record.risk==risk %}selected{% endif %}>{{ risk }}</option>{% endfor %}</select></label>
       <label><span>Configuration item</span><input value="{{ primary_ci_link.ci.name if primary_ci_link else 'Not selected' }}" disabled></label>
       <label><span>CI owning team</span><input value="{{ primary_ci_link.ci.support_group.name if primary_ci_link and primary_ci_link.ci.support_group else 'Unassigned' }}" disabled></label>
