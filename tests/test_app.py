@@ -13,6 +13,7 @@ from sqlalchemy.exc import DBAPIError
 from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, ApprovalChain,
                  ApprovalGate, ApprovalVote, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy,
                  BusinessSchedule, CatalogRequest, CatalogTask, ChangeGovernance, ChangeOwnership, ChangeRevision,
+                 Comment,
                  ChecklistItem, ConfigurationItem, EnterpriseRecord, CatalogItem, CatalogItemRouting, DirectoryGroupMapping,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
@@ -3737,3 +3738,81 @@ def test_ticket_detail_pages_show_ci_owning_team(client, app):
     }, follow_redirects=True)
     assert incident.status_code == 200
     assert b'data-owning-team="Windows"' in incident.data
+
+
+def test_comment_with_attachment_links_file_to_the_note(client, app):
+    """A work note posted with a file should attach it to that comment
+    directly, not just to the ticket's separate Attachments panel."""
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Comment attachment test", "description": "Attach a file to a work note",
+        "category": "Software", "priority": "P3",
+        "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Comment attachment test").one().id
+    posted = client.post(f"/ticket/{ticket_id}", data={
+        "action": "comment", "body": "See the attached log.",
+        "file": (BytesIO(b"evidence bytes"), "evidence.log"),
+    }, content_type="multipart/form-data", follow_redirects=True)
+    assert posted.status_code == 200
+    assert b"evidence.log" in posted.data
+    with app.app_context():
+        comment = Comment.query.filter_by(ticket_id=ticket_id).one()
+        attachment = FileAttachment.query.filter_by(ticket_id=ticket_id).one()
+        assert attachment.comment_id == comment.id
+        assert attachment.original_name == "evidence.log"
+
+
+def test_comment_without_file_does_not_touch_attachments(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Plain comment test", "description": "No file this time",
+        "category": "Software", "priority": "P3",
+        "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Plain comment test").one().id
+    client.post(f"/ticket/{ticket_id}", data={
+        "action": "comment", "body": "Just a note, no file.",
+    }, follow_redirects=True)
+    with app.app_context():
+        assert FileAttachment.query.filter_by(ticket_id=ticket_id).count() == 0
+
+
+def test_ticket_list_filters_by_priority_category_and_assignment_group(client, app):
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Unix disk cleanup", "description": "Filter target A",
+        "category": "Hardware", "impact": "Critical", "urgency": "Critical",
+        "group_id": group_id(app, "Unix"),
+    })
+    client.post("/tickets/new/incident", data={
+        "title": "Windows login issue", "description": "Filter target B",
+        "category": "Access", "impact": "Medium", "urgency": "Medium",
+        "group_id": group_id(app, "Windows"),
+    })
+
+    by_priority = client.get("/tickets/incident?priority=P1")
+    assert b"Unix disk cleanup" in by_priority.data
+    assert b"Windows login issue" not in by_priority.data
+
+    by_category = client.get("/tickets/incident?category=Access")
+    assert b"Windows login issue" in by_category.data
+    assert b"Unix disk cleanup" not in by_category.data
+
+    with app.app_context():
+        unix_id = SupportGroup.query.filter_by(name="Unix").one().id
+    by_group = client.get(f"/tickets/incident?group_id={unix_id}")
+    assert b"Unix disk cleanup" in by_group.data
+    assert b"Windows login issue" not in by_group.data
+
+    combined = client.get("/tickets/incident?priority=P1&category=Hardware")
+    assert b"Unix disk cleanup" in combined.data
+    assert b"Windows login issue" not in combined.data
+    mismatched = client.get("/tickets/incident?priority=P1&category=Access")
+    assert b"Unix disk cleanup" not in mismatched.data
+    assert b"Windows login issue" not in mismatched.data
