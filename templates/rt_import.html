@@ -1,7 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Import from Request Tracker · {{ instance_name }}{% endblock %}
+{% block title %}Import from RT · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">INTEGRATIONS</p><h1>Import from Request Tracker (RT)</h1><p>Pull tickets from an RT instance into ServiceOps as IT operations events.</p></div><a class="button" href="{{ url_for('integrations_admin') }}">← Back to Integrations</a></header>
+{% set admin_page_title = 'RT import' %}{% set admin_parent_title = 'Integrations and delivery' %}{% set admin_parent_url = url_for('integrations_admin') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>Import from Request Tracker (RT)</h1><p>Pull tickets from an RT instance into ServiceOps as IT operations events.</p></div></header>
 
 {% if rt_enabled %}
 <section class="panel" id="rt-import">
@@ -53,6 +54,6 @@
   {% else %}<p class="muted">No import jobs queued yet.</p>{% endif %}
 </section>
 {% else %}
-<section class="panel"><h2>Import tickets</h2><p class="muted">RT import is not enabled. Configure it under <a href="{{ url_for('system_settings') }}#settings-rt_import">Admin → Settings → RT import</a>.</p></section>
+<section class="panel"><h2>Import tickets</h2><p class="muted">RT import is not enabled. Configure it under <a href="{{ url_for('system_settings') }}#settings-request_tracker_connection">Administration home → Platform settings → Request Tracker connection</a>.</p></section>
 {% endif %}
 {% endblock %}

@@ -6,7 +6,7 @@
 {% if netbox_enabled %}
 <section class="panel" id="netbox-sync">
   <h2>Sync from NetBox</h2>
-  <p class="muted">NetBox is treated as the source of truth for hardware fields (name, serial number, vendor, model, IP address, location) — these are always overwritten on matched CIs. Whatever else NetBox has for a device (rack, position, tenant, role, platform, out-of-band IP, tags, comments, custom fields, interfaces, console ports, power ports, inventory items) is captured too, under "NetBox: " prefixed entries in the CI's Additional imported fields — different devices in NetBox often have different fields populated, and whatever's actually set is what shows up here. Devices are matched to existing CIs by NetBox device ID, then serial number, then hostname, so re-running a sync (or overlapping with a CSV import) never creates a duplicate CI. If NetBox's certificate is issued by an internal/corporate CA rather than a public one, paste that CA's certificate into the "NetBox CA certificate" setting under <a href="{{ url_for('system_settings') }}#settings-cmdb_import">Admin → Settings → CMDB import</a> — TLS verification stays on either way, it just needs to trust your CA. If you can't get hold of the CA certificate, the "Skip NetBox TLS certificate verification" toggle in that same section is a last-resort bypass — it works, but it means anyone able to intercept the connection to NetBox could tamper with the inventory data being imported, so prefer the CA certificate whenever possible.</p>
+  <p class="muted">NetBox is treated as the source of truth for hardware fields (name, serial number, vendor, model, IP address, location) — these are always overwritten on matched CIs. Whatever else NetBox has for a device (rack, position, tenant, role, platform, out-of-band IP, tags, comments, custom fields, interfaces, console ports, power ports, inventory items) is captured too, under "NetBox: " prefixed entries in the CI's Additional imported fields. Devices are matched by NetBox device ID, then serial number, then hostname, so re-running a sync never creates a duplicate CI. Configure credentials and certificate trust under <a href="{{ url_for('system_settings') }}#settings-netbox_connection">Administration home → Platform settings → NetBox connection</a>.</p>
   {% if netbox_sync_result %}
   <div class="callout"><strong>{{ 'Preview' if netbox_sync_result.dry_run else 'Applied' }}:</strong>
     {{ netbox_sync_result.devices_seen }} devices seen ·
@@ -23,7 +23,7 @@
   </form>
 </section>
 {% else %}
-<section class="panel"><h2>Sync from NetBox</h2><p class="muted">NetBox sync is not enabled. Configure it under <a href="{{ url_for('system_settings') }}#settings-cmdb_import">Admin → Settings → CMDB import</a>.</p></section>
+<section class="panel"><h2>Sync from NetBox</h2><p class="muted">NetBox sync is not enabled. Configure it under <a href="{{ url_for('system_settings') }}#settings-netbox_connection">Administration home → Platform settings → NetBox connection</a>.</p></section>
 {% endif %}
 
 <section class="panel" id="spreadsheet-import">

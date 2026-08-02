@@ -14,6 +14,7 @@ Installation:
 
 Operations:
   ./serviceops start | stop | restart | status | health | logs | doctor
+  ./serviceops deploy-local | install-update-hook
   ./serviceops backup [NAME]
   ./serviceops restore DATABASE_DUMP
   ./serviceops rehearse-recovery [MANIFEST]
@@ -38,6 +39,15 @@ if [[ "$command" == "install" ]]; then
 fi
 if [[ "$command" == "update" && ( "${2:-}" == "kubernetes" || "${2:-}" == "k8s" ) ]]; then
   exec "$ROOT_DIR/tools/safe_update_k8s.sh" "${3:-}"
+fi
+if [[ "$command" == "deploy-local" ]]; then
+  exec "$ROOT_DIR/tools/deploy-local.sh"
+fi
+if [[ "$command" == "install-update-hook" ]]; then
+  git -C "$ROOT_DIR" config core.hooksPath .githooks
+  chmod +x "$ROOT_DIR/.githooks/post-merge" "$ROOT_DIR/tools/deploy-local.sh"
+  echo "Installed the ServiceOps post-merge Docker redeploy hook."
+  exit 0
 fi
 [[ "$command" == "help" || "$command" == "--help" || "$command" == "-h" || -z "$command" ]] && {
   usage

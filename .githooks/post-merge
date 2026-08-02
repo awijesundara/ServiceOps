@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+[[ -f "$repo_root/.env" ]] || exit 0
+"$repo_root/tools/deploy-local.sh"

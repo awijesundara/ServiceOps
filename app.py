@@ -13,6 +13,7 @@ import socket
 import re
 import secrets
 import smtplib
+from pathlib import Path
 from collections import Counter, defaultdict
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from email.message import EmailMessage
@@ -53,10 +54,9 @@ from serviceops_core.workflow import (
 )
 from serviceops_core.projections import project_document, validate_projection_policy
 
-# Bumped alongside charts/serviceops/Chart.yaml and installer/app.py on every
-# release; shown in the UI (sidebar, login page, /health) so operators can
-# confirm which build is actually running without SSHing into the host.
-APP_VERSION = "1.29.51"
+# VERSION is the release source of truth; shown in the UI, API, and health
+# endpoint so operators can confirm the running build without host access.
+APP_VERSION = (Path(__file__).resolve().parent / "VERSION").read_text().strip()
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -2062,7 +2062,7 @@ DOMAIN_CONFIG = {
 
 
 SETTING_DEFINITIONS = {
-    "general": [
+    "organization": [
         {"key": "INSTANCE_NAME", "label": "Instance name", "type": "text", "default": "ServiceOps", "live": True},
         {"key": "COMPANY_NAME", "label": "Company name", "type": "text", "default": "Your Company", "live": True},
         {"key": "SUPPORT_EMAIL", "label": "Support email", "type": "email", "default": "", "live": True},
@@ -2072,7 +2072,7 @@ SETTING_DEFINITIONS = {
         {"key": "BRAND_AMBER", "label": "Accent brand color", "type": "color", "default": "#f9aa3c", "live": True},
         {"key": "DEFAULT_DENSITY", "label": "Default density", "type": "choice", "choices": ["comfortable", "compact"], "default": "comfortable", "live": True},
     ],
-    "authentication": [
+    "sign_in_and_directory": [
         {"key": "LOCAL_AUTH_ENABLED", "label": "Enable local authentication", "type": "bool", "default": "true", "live": True},
         {"key": "LDAP_ENABLED", "label": "Enable AD/LDAP", "type": "bool", "default": "false", "live": True},
         {"key": "LDAP_SERVER_URI", "label": "LDAP server URI", "type": "text", "default": "", "live": True},
@@ -2116,18 +2116,13 @@ SETTING_DEFINITIONS = {
         {"key": "CLAMAV_HOST", "label": "ClamAV daemon host", "type": "text", "default": "", "live": True},
         {"key": "CLAMAV_PORT", "label": "ClamAV daemon port", "type": "int", "default": "3310", "min": 1, "max": 65535, "live": True},
     ],
-    "workflow": [
-        {"key": "DEFAULT_TICKET_PRIORITY", "label": "Default ticket priority", "type": "choice", "choices": ["P1", "P2", "P3", "P4"], "default": "P3", "live": True},
-        {"key": "CHANGE_FREEZE_MESSAGE", "label": "Change freeze message", "type": "text", "default": "", "live": True},
-        {"key": "SYNC_CHILD_INCIDENT_STATES", "label": "Synchronize parent incident state to children", "type": "bool", "default": "false", "live": True},
-    ],
-    "dashboard": [
+    "workspace_defaults": [
         {"key": "DASHBOARD_SHOW_MY_ASSIGNED", "label": "Show \"Assigned to me\"", "type": "bool", "default": "true", "live": True},
         {"key": "DASHBOARD_SHOW_SLA_WIDGETS", "label": "Show SLA breached / at-risk widgets", "type": "bool", "default": "true", "live": True},
         {"key": "DASHBOARD_SHOW_RECENT", "label": "Show \"Recently updated\"", "type": "bool", "default": "true", "live": True},
         {"key": "SLA_AT_RISK_HOURS", "label": "SLA \"at risk\" warning window (hours)", "type": "int", "default": "4", "min": 1, "max": 72, "live": True},
     ],
-    "email": [
+    "email_delivery": [
         {"key": "SMTP_ENABLED", "label": "Enable SMTP delivery", "type": "bool", "default": "false", "live": True},
         {"key": "SMTP_HOST", "label": "SMTP host", "type": "text", "default": "", "live": True},
         {"key": "SMTP_PORT", "label": "SMTP port", "type": "int", "default": "587", "min": 1, "max": 65535, "live": True},
@@ -2136,13 +2131,7 @@ SETTING_DEFINITIONS = {
         {"key": "SMTP_PASSWORD", "label": "SMTP password", "type": "secret", "default": "", "live": True},
         {"key": "SMTP_FROM", "label": "SMTP from address", "type": "email", "default": "", "live": True},
     ],
-    "change_governance": [
-        {
-            "key": "CCB_REQUIRED_ENVIRONMENTS", "type": "text", "default": "Production", "live": True,
-            "label": "Environments that require CCB approval (comma-separated, e.g. Production, Staging)",
-        },
-    ],
-    "cmdb_import": [
+    "netbox_connection": [
         {"key": "NETBOX_ENABLED", "label": "Enable NetBox sync", "type": "bool", "default": "false", "live": True},
         {"key": "NETBOX_BASE_URL", "label": "NetBox base URL", "type": "url", "default": "", "live": True},
         {"key": "NETBOX_API_TOKEN", "label": "NetBox API token", "type": "secret", "default": "", "live": True},
@@ -2155,7 +2144,7 @@ SETTING_DEFINITIONS = {
             "label": "Skip NetBox TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
         },
     ],
-    "rt_import": [
+    "request_tracker_connection": [
         {"key": "RT_ENABLED", "label": "Enable Request Tracker (RT) import", "type": "bool", "default": "false", "live": True},
         {"key": "RT_BASE_URL", "label": "RT base URL", "type": "url", "default": "", "live": True},
         {"key": "RT_API_TOKEN", "label": "RT API token", "type": "secret", "default": "", "live": True},
@@ -2168,6 +2157,17 @@ SETTING_DEFINITIONS = {
             "label": "Skip RT TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
         },
     ],
+}
+
+SETTING_GROUP_META = {
+    "organization": ("Organization", "Company identity, support contact, and instance-wide naming."),
+    "appearance": ("Appearance", "Brand colors and the default screen density for new users."),
+    "sign_in_and_directory": ("Sign-in and directory", "Local login, AD/LDAP, Keycloak, directory attributes, and synchronization."),
+    "security": ("Security and limits", "Sessions, passwords, MFA, rate limits, uploads, malware scanning, and audit streaming."),
+    "workspace_defaults": ("Workspace defaults", "Dashboard content and service-level warning thresholds."),
+    "email_delivery": ("Email delivery", "SMTP connection and sender identity used for outgoing notifications."),
+    "netbox_connection": ("NetBox connection", "Connection used to synchronize configuration items from NetBox."),
+    "request_tracker_connection": ("Request Tracker connection", "Connection used to import records from Request Tracker."),
 }
 
 
@@ -5366,7 +5366,10 @@ def create_app(test_config=None):
                 ),
             },
             "servers": [{"url": "/api/v1"}],
-            "externalDocs": {"description": "Complete API guide", "url": "/api/v1/docs"},
+            "externalDocs": {
+                "description": "Complete API guide",
+                "url": "https://github.com/awijesundara/serviceops-notes/blob/main/docs/API_REFERENCE.md",
+            },
             "components": {
                 "securitySchemes": {
                     "bearerAuth": {
@@ -5471,11 +5474,9 @@ def create_app(test_config=None):
 
     @app.get("/api/v1/docs")
     def api_docs():
-        return send_from_directory(
-            os.path.join(app.root_path, "docs"),
-            "API_REFERENCE.md",
-            mimetype="text/markdown",
-            max_age=0,
+        return redirect(
+            "https://github.com/awijesundara/serviceops-notes/blob/main/docs/API_REFERENCE.md",
+            code=302,
         )
 
     @app.post("/api/v1/monitoring/<source_id>/events")
@@ -6657,7 +6658,6 @@ def create_app(test_config=None):
                 "ticket_form.html", kind=kind, teams=teams_query.order_by(SupportGroup.name).all(),
                 state_track=build_state_track(kind, "New"),
                 default_priority=setting_value("DEFAULT_TICKET_PRIORITY", "P3"),
-                change_freeze_message=setting_value("CHANGE_FREEZE_MESSAGE", ""),
                 service_offerings=tenant_query(ServiceOffering).filter_by(
                     status="Operational"
                 ).order_by(ServiceOffering.name).all(),
@@ -8403,7 +8403,7 @@ def create_app(test_config=None):
                 )
                 db.session.commit()
                 flash(
-                    f"Workflow package validated; {result['published']} new version(s) published.",
+                    f"Automation rules validated; {result['published']} new version(s) published.",
                     "success",
                 )
                 return redirect(url_for("workflows_admin"))
@@ -8602,9 +8602,9 @@ def create_app(test_config=None):
                 for message in errors:
                     flash(message, "error")
             else:
-                audit("update", "System settings", ", ".join(changed) or "No value changes")
+                audit("update", "Platform settings", ", ".join(changed) or "No value changes")
                 db.session.commit()
-                flash("System settings saved." + (
+                flash("Platform settings saved." + (
                     " Restart or roll out all application instances to apply marked settings."
                     if restart_required else ""), "success")
                 return redirect(url_for("system_settings"))
@@ -8614,13 +8614,14 @@ def create_app(test_config=None):
             values[definition["key"]] = "" if definition["type"] == "secret" else value
             definition["configured"] = bool(value) if definition["type"] == "secret" else False
         infrastructure = [
-            ("Deployment profile", app.config["DEPLOYMENT_PROFILE"], "Docker environment / Helm values"),
+            ("Deployment profile", app.config.get("DEPLOYMENT_PROFILE") or "Default profile", "Docker environment / Helm values"),
             ("Database", app.config["SQLALCHEMY_DATABASE_URI"].split("@")[-1], "DATABASE_URL / Kubernetes Secret"),
-            ("Upload storage", app.config["UPLOAD_FOLDER"], "Docker volume / Kubernetes PVC"),
-            ("Application replicas", os.getenv("REPLICA_COUNT", "Controlled externally"), "Docker Compose / Helm"),
-            ("Ingress and TLS", "Controlled externally", "Reverse proxy / Kubernetes Ingress"),
+            ("Upload storage", app.config.get("UPLOAD_FOLDER") or "Not configured", "Docker volume / Kubernetes PVC"),
+            ("Application replicas", os.getenv("REPLICA_COUNT") or "1 (local Compose default)", "Docker Compose / Helm"),
+            ("Ingress and TLS", os.getenv("PUBLIC_BASE_URL") or "Managed outside ServiceOps", "Reverse proxy / Kubernetes Ingress"),
         ]
         return render_template("system_settings.html", groups=SETTING_DEFINITIONS,
+                               group_meta=SETTING_GROUP_META,
                                values=values, infrastructure=infrastructure)
 
     @app.get("/admin/audit")
@@ -10050,6 +10051,7 @@ def create_app(test_config=None):
         return redirect(url_for("request_detail", request_id=ritm.request_id))
 
     @app.route("/itil/administration", methods=["GET", "POST"])
+    @app.route("/service-operations/settings", methods=["GET", "POST"])
     @roles("admin")
     @require_action("configure")
     def itil_admin():
@@ -10186,6 +10188,50 @@ def create_app(test_config=None):
                 audit("configure", "CCB approval authority",
                       f"{user.username}: {'granted' if enabled else 'revoked'}")
                 flash("CCB approval authority updated.", "success")
+            elif action == "set_change_approval_policy":
+                submitted = request.form.get("ccb_required_environments", "")
+                environments = []
+                seen = set()
+                for value in submitted.split(","):
+                    environment = value.strip()
+                    normalized = environment.casefold()
+                    if environment and normalized not in seen:
+                        seen.add(normalized)
+                        environments.append(environment)
+                if not environments or len(environments) > 20 or any(len(value) > 80 for value in environments):
+                    abort(400, description="Enter 1 to 20 environment names, separated by commas.")
+                policy_value = ", ".join(environments)
+                row = db.session.get(PlatformSetting, "CCB_REQUIRED_ENVIRONMENTS")
+                if not row:
+                    row = PlatformSetting(key="CCB_REQUIRED_ENVIRONMENTS")
+                    db.session.add(row)
+                row.value = policy_value
+                row.encrypted = False
+                row.updated_by_id = current_user.id
+                audit("configure", "Change approval policy",
+                      f"CCB required for: {policy_value}")
+                flash("Change approval policy updated.", "success")
+            elif action == "set_ticket_defaults":
+                priority = request.form.get("default_ticket_priority", "")
+                if priority not in ("P1", "P2", "P3", "P4"):
+                    abort(400, description="Select a valid default ticket priority.")
+                values = {
+                    "DEFAULT_TICKET_PRIORITY": priority,
+                    "SYNC_CHILD_INCIDENT_STATES": (
+                        "true" if request.form.get("sync_child_incident_states") else "false"
+                    ),
+                }
+                for key, value in values.items():
+                    row = db.session.get(PlatformSetting, key)
+                    if not row:
+                        row = PlatformSetting(key=key)
+                        db.session.add(row)
+                    row.value = value
+                    row.encrypted = False
+                    row.updated_by_id = current_user.id
+                audit("configure", "Ticket defaults",
+                      f"priority={priority}; synchronize child incidents={values['SYNC_CHILD_INCIDENT_STATES']}")
+                flash("Ticket defaults updated.", "success")
             elif action == "set_catalog_route":
                 item = tenant_record_or_404(CatalogItem, int(request.form["catalog_item_id"]))
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
@@ -10494,6 +10540,15 @@ def create_app(test_config=None):
             change_freeze_windows=tenant_query(ChangeFreezeWindow).order_by(
                 ChangeFreezeWindow.starts_at.desc()
             ).all(),
+            ccb_required_environments=setting_value(
+                "CCB_REQUIRED_ENVIRONMENTS", "Production"
+            ),
+            default_ticket_priority=setting_value(
+                "DEFAULT_TICKET_PRIORITY", "P3"
+            ),
+            sync_child_incident_states=setting_bool(
+                "SYNC_CHILD_INCIDENT_STATES"
+            ),
         )
 
     @app.post("/change/<int:ticket_id>/conflicts")
@@ -10943,6 +10998,44 @@ def create_app(test_config=None):
         results = []
         if q:
             pattern = f"%{q}%"
+            normalized_q = q.casefold()
+            navigation = [
+                ("Dashboard", "Service operations home overview", "dashboard", {}, None),
+                ("Visual task board", "Tasks and operational work board", "task_board", {}, None),
+                ("My tasks", "Work assigned to me", "my_work_tasks", {}, "agent"),
+                ("Incidents", "Incident Management open active critical", "tickets", {"kind": "incident"}, None),
+                ("Service requests", "Request Fulfilment requested items", "requests_list", {}, None),
+                ("Changes", "Change Management calendar approvals", "tickets", {"kind": "change"}, "agent"),
+                ("Service catalog", "Catalog items request services", "catalog", {}, None),
+                ("Knowledge", "Knowledge Management articles search", "knowledge", {}, None),
+                ("All workspaces", "Installed enterprise applications modules", "modules", {}, None),
+                ("My approvals", "Pending approvals", "approval_chains", {}, None),
+                ("Notifications", "Alerts messages", "notifications", {}, None),
+                ("Organization chart", "People reporting structure", "org_chart", {}, None),
+                ("Manager portal", "Leadership teams workload", "manager_portal", {}, "manager"),
+                ("Problems", "Problem Management root cause", "module_records", {"domain": "problem"}, "agent"),
+                ("Known errors", "Workarounds Problem Management", "known_errors", {}, "agent"),
+                ("IT operations", "Events infrastructure operations", "module_records", {"domain": "event"}, "agent"),
+                ("Improvements", "Continual improvement", "improvements", {}, "agent"),
+                ("CMDB and service map", "Configuration Management Database CI relationships", "cmdb", {}, "agent"),
+                ("Assets", "Asset Management inventory", "assets", {}, "agent"),
+                ("Analytics", "Reports dashboards service performance", "analytics", {}, "agent"),
+                ("Administration home", "Platform administration configuration", "admin_home", {}, "admin"),
+                ("Platform settings", "Security authentication email infrastructure", "system_settings", {}, "admin"),
+                ("Users and access", "Users roles accounts", "users", {}, "admin"),
+                ("API clients", "REST credentials tokens", "api_clients_admin", {}, "admin"),
+                ("Audit log", "Audit evidence events retention", "audit_log", {}, "admin"),
+                ("Service delivery and governance", "Routing SLA freeze teams", "itil_admin", {}, "admin"),
+                ("Integrations", "Webhooks monitoring RT import delivery", "integrations_admin", {}, "admin"),
+                ("Automation rules", "Workflow schedules executions", "workflows_admin", {}, "admin"),
+            ]
+            role_rank = {"requester": 0, "agent": 1, "manager": 2, "admin": 3}
+            for label, keywords, endpoint, params, minimum_role in navigation:
+                if minimum_role and role_rank[current_user.role] < role_rank[minimum_role]:
+                    continue
+                if normalized_q in f"{label} {keywords}".casefold():
+                    results.append({"type": "Navigation", "label": label,
+                                    "url": url_for(endpoint, **params), "meta": keywords})
             visible_ticket_ids = {
                 row.id for row in visible_ticket_query(current_user).all()
             }
@@ -11020,6 +11113,46 @@ def create_app(test_config=None):
                     "label": f"{row.number} · {row.title}",
                     "url": record_url(parent), "meta": row.state,
                 })
+            for row in tenant_query(Asset).filter(db.or_(
+                Asset.asset_tag.ilike(pattern), Asset.name.ilike(pattern),
+                Asset.asset_type.ilike(pattern), Asset.serial_number.ilike(pattern),
+            )).limit(20):
+                results.append({"type": "Asset", "label": f"{row.asset_tag} · {row.name}",
+                                "url": url_for("assets"), "meta": f"{row.asset_type} · {row.status}"})
+            for row in tenant_query(CatalogItem).filter(db.or_(
+                CatalogItem.name.ilike(pattern), CatalogItem.category.ilike(pattern),
+                CatalogItem.description.ilike(pattern),
+            )).limit(20):
+                results.append({"type": "Catalog item", "label": row.name,
+                                "url": url_for("catalog"), "meta": row.category})
+            if current_user.role == "admin":
+                for row in tenant_query(User).filter(db.or_(
+                    User.username.ilike(pattern), User.name.ilike(pattern),
+                    User.email.ilike(pattern), User.department.ilike(pattern),
+                )).limit(20):
+                    results.append({"type": "User", "label": f"{row.name} · {row.username}",
+                                    "url": url_for("user_edit", user_id=row.id), "meta": row.role})
+                for row in tenant_query(SupportGroup).filter(
+                    SupportGroup.name.ilike(pattern)
+                ).limit(20):
+                    results.append({"type": "Group", "label": row.name,
+                                    "url": url_for("itil_admin") + "#governance-groups",
+                                    "meta": row.group_type})
+                for row in tenant_query(IntegrationConnection).filter(db.or_(
+                    IntegrationConnection.name.ilike(pattern),
+                    IntegrationConnection.kind.ilike(pattern),
+                    IntegrationConnection.endpoint.ilike(pattern),
+                )).limit(20):
+                    results.append({"type": "Integration", "label": row.name,
+                                    "url": url_for("integrations_admin"), "meta": row.kind.upper()})
+            deduplicated = []
+            seen = set()
+            for result in results:
+                identity = (result["type"], result["url"], result["label"])
+                if identity not in seen:
+                    seen.add(identity)
+                    deduplicated.append(result)
+            results = deduplicated
         if request.accept_mimetypes.best == "application/json":
             return jsonify(results=[
                 project_document("search_result", current_user.role, row)
