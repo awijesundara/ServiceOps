@@ -1028,7 +1028,7 @@ class SLADefinition(db.Model):
     level management treats these as distinct agreement types even though
     they're tracked/breached the same mechanical way here."""
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(160), unique=True, nullable=False)
+    name = db.Column(db.String(160), nullable=False)
     target_type = db.Column(db.String(30), nullable=False)
     priority = db.Column(db.String(10))
     duration_minutes = db.Column(db.Integer, nullable=False)
@@ -1039,6 +1039,9 @@ class SLADefinition(db.Model):
     counterparty = db.Column(db.String(160), default="")
     schedule = db.relationship("BusinessSchedule")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "name", name="uq_sla_definition_tenant_name"),
+    )
 
 
 class TaskSLA(db.Model):
