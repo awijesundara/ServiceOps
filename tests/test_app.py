@@ -135,8 +135,8 @@ def test_health(client):
 
 def test_live_api_documentation_matches_supported_contract(client):
     guide = client.get("/api/v1/docs")
-    assert guide.status_code == 302
-    assert guide.location == "https://github.com/awijesundara/serviceops-notes/blob/main/docs/API_REFERENCE.md"
+    assert guide.status_code == 200
+    assert b"/api/v1/openapi.json" in guide.data
 
     contract = client.get("/api/v1/openapi.json")
     assert contract.status_code == 200
