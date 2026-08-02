@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ServiceOps REST API reference</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:920px;margin:2rem auto;padding:0 1rem;color:#1b2733;line-height:1.5}
+  h1{color:#003e4c}
+  code{background:#f1f3f5;padding:.1rem .3rem;border-radius:3px}
+  .op{border:1px solid #dfe4e8;border-radius:6px;padding:.75rem 1rem;margin:.75rem 0}
+  .op h3{margin:.1rem 0;font-size:1rem}
+  .method{display:inline-block;font-weight:700;color:#fff;border-radius:3px;padding:.05rem .5rem;margin-right:.5rem;font-size:.8rem}
+  .get{background:#2f7a3d}.post{background:#a05a00}.patch{background:#4b3fa8}.put{background:#0d5c8c}
+  .desc{color:#4a5760;font-size:.92rem;margin:.25rem 0 0}
+  #error{color:#a30000}
+</style>
+</head>
+<body>
+<h1>ServiceOps REST API reference</h1>
+<p>Generated live from the running instance's contract at
+<a href="/api/v1/openapi.json"><code>/api/v1/openapi.json</code></a>.
+Requests are made with a <code>sop_</code> API-client bearer token unless a
+path's security is explicitly overridden below.</p>
+<div id="paths">Loading…</div>
+<p id="error"></p>
+<script>
+fetch("/api/v1/openapi.json").then(r => r.json()).then(spec => {
+  const container = document.getElementById("paths");
+  container.textContent = "";
+  const base = (spec.servers && spec.servers[0] && spec.servers[0].url) || "/api/v1";
+  Object.entries(spec.paths || {}).forEach(([path, ops]) => {
+    const shared = ops.parameters || [];
+    ["get", "post", "put", "patch", "delete"].forEach(method => {
+      const op = ops[method];
+      if (!op) return;
+      const wrap = document.createElement("div");
+      wrap.className = "op";
+      const title = document.createElement("h3");
+      const badge = document.createElement("span");
+      badge.className = "method " + method;
+      badge.textContent = method.toUpperCase();
+      title.appendChild(badge);
+      title.appendChild(document.createTextNode(base + path));
+      wrap.appendChild(title);
+      if (op.summary) {
+        const s = document.createElement("p");
+        s.className = "desc";
+        s.textContent = op.summary;
+        wrap.appendChild(s);
+      }
+      if (op.description) {
+        const d = document.createElement("p");
+        d.className = "desc";
+        d.textContent = op.description;
+        wrap.appendChild(d);
+      }
+      const params = (op.parameters || []).concat(shared);
+      if (params.length) {
+        const p = document.createElement("p");
+        p.className = "desc";
+        p.textContent = "Parameters: " + params.map(function (param) {
+          return (param.name || (param["$ref"] || "").split("/").pop());
+        }).join(", ");
+        wrap.appendChild(p);
+      }
+      container.appendChild(wrap);
+    });
+  });
+}).catch(err => {
+  document.getElementById("error").textContent = "Could not load the live API contract: " + err;
+});
+</script>
+</body>
+</html>

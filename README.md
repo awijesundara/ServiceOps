@@ -9,18 +9,18 @@ lock-in.
 [![Version](https://img.shields.io/badge/version-1.30.0-003E4C)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](Dockerfile)
 [![Docker](https://img.shields.io/badge/docker-compose%20%7C%20kubernetes-2496ED?logo=docker&logoColor=white)](#quick-start)
-[![PostgreSQL](https://img.shields.io/badge/database-postgresql-4169E1?logo=postgresql&logoColor=white)](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md)
+[![PostgreSQL](https://img.shields.io/badge/database-postgresql-4169E1?logo=postgresql&logoColor=white)](#quick-start)
 
 ## What it looks like
 
 <table>
 <tr>
-<td width="50%"><img src="https://raw.githubusercontent.com/awijesundara/serviceops-notes/main/docs/readme/dashboard.png" alt="Dashboard"><br><sub>Dashboard — open work, SLA risk, and recent activity at a glance</sub></td>
-<td width="50%"><img src="https://raw.githubusercontent.com/awijesundara/serviceops-notes/main/docs/readme/incident_detail.png" alt="Incident detail"><br><sub>Incident detail — lifecycle stepper, event history, owning-team controls</sub></td>
+<td width="50%"><img src="docs/readme/dashboard.png" alt="Dashboard"><br><sub>Dashboard — open work, SLA risk, and recent activity at a glance</sub></td>
+<td width="50%"><img src="docs/readme/incident_detail.png" alt="Incident detail"><br><sub>Incident detail — lifecycle stepper, event history, owning-team controls</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="https://raw.githubusercontent.com/awijesundara/serviceops-notes/main/docs/readme/task_board.png" alt="Visual task board"><br><sub>Visual task board — drag-and-drop, backed by the same governed transitions as the form</sub></td>
-<td width="50%"><img src="https://raw.githubusercontent.com/awijesundara/serviceops-notes/main/docs/readme/catalog.png" alt="Service catalog"><br><sub>Service catalog — self-service ordering with approval and fulfillment routing</sub></td>
+<td width="50%"><img src="docs/readme/task_board.png" alt="Visual task board"><br><sub>Visual task board — drag-and-drop, backed by the same governed transitions as the form</sub></td>
+<td width="50%"><img src="docs/readme/catalog.png" alt="Service catalog"><br><sub>Service catalog — self-service ordering with approval and fulfillment routing</sub></td>
 </tr>
 </table>
 
@@ -43,9 +43,7 @@ flowchart LR
 
 The app is stateless and horizontally scalable behind a load balancer; the
 worker is a single always-on process that drives SLA breach detection,
-workflow automation, and durable delivery of notifications/webhooks. See
-[Engineering reference](https://github.com/awijesundara/serviceops-notes/blob/main/docs/ENGINEERING_REFERENCE.md) for the full
-architecture-decision log.
+workflow automation, and durable delivery of notifications/webhooks.
 
 ## Quick start
 
@@ -169,14 +167,12 @@ schema-compatibility details.
 
 ## Documentation
 
-- [Platform manual PDF](docs/ServiceOps_Complete_Platform_Manual.pdf) — the only documentation artifact shipped in this repository
-- [Platform manual source](https://github.com/awijesundara/serviceops-notes/blob/main/docs/OPERATIONS_MANUAL.md) — maintained in the development-notes repository
-- [Deployment guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md) — Docker, Kubernetes, identity, backup, upgrades, security
-- [REST API reference](https://github.com/awijesundara/serviceops-notes/blob/main/docs/API_REFERENCE.md) — `/api/v1/docs` redirects to this canonical copy
-- [Backlog](https://github.com/awijesundara/serviceops-notes/blob/main/docs/BACKLOG.md) — authoritative completed and open work
-- [Engineering reference](https://github.com/awijesundara/serviceops-notes/blob/main/docs/ENGINEERING_REFERENCE.md) — governance, traceability, service-management model, UI mapping
-- [Release governance](https://github.com/awijesundara/serviceops-notes/blob/main/docs/RELEASE_GOVERNANCE.md) — automatic versioning, immutable releases, and rollback rules
-- [Production readiness](https://github.com/awijesundara/serviceops-notes/blob/main/docs/PRODUCTION_READINESS_PLAN.md) — external validation and release gates
+- [Platform manual PDF](docs/ServiceOps_Complete_Platform_Manual.pdf) — what ServiceOps does and how to administer it
+- [REST API reference](docs/API_REFERENCE.md) — also served live at `/api/v1/docs`
+
+Deployment, engineering, backlog, release-governance, and production-readiness
+documentation is maintained in a private companion repository and isn't
+publicly linkable; it's available to maintainers on request.
 
 ## Product positioning
 

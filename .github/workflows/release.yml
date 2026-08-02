@@ -44,7 +44,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add VERSION README.md charts/serviceops/Chart.yaml static/service-worker.js
+          git add VERSION README.md charts/serviceops/Chart.yaml static/service-worker.js .env.example installer/app.py
           git commit -m "chore(release): ${TAG#v}"
           git tag -a "$TAG" -m "ServiceOps $TAG"
           git push origin HEAD:main "$TAG"
