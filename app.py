@@ -5367,8 +5367,8 @@ def create_app(test_config=None):
             },
             "servers": [{"url": "/api/v1"}],
             "externalDocs": {
-                "description": "Complete API guide",
-                "url": "https://github.com/awijesundara/serviceops-notes/blob/main/docs/API_REFERENCE.md",
+                "description": "Interactive API guide",
+                "url": "/api/v1/docs",
             },
             "components": {
                 "securitySchemes": {
@@ -5474,10 +5474,13 @@ def create_app(test_config=None):
 
     @app.get("/api/v1/docs")
     def api_docs():
-        return redirect(
-            "https://github.com/awijesundara/serviceops-notes/blob/main/docs/API_REFERENCE.md",
-            code=302,
-        )
+        # Self-contained so the reference never depends on the private
+        # serviceops-notes repo (not publicly reachable) or a copy of
+        # API_REFERENCE.md baked into this repo's git history, which
+        # CLAUDE.md's documentation-control policy keeps out of here.
+        # Renders the always-in-sync /api/v1/openapi.json via Swagger UI,
+        # vendored (no CDN) so it also works with no internet egress.
+        return render_template("api_docs.html")
 
     @app.post("/api/v1/monitoring/<source_id>/events")
     def monitoring_ingest(source_id):
