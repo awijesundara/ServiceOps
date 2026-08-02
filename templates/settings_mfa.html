@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Two-factor authentication · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">CREDENTIAL SECURITY</p><h1>Two-factor authentication (MFA)</h1><p>TOTP-based multi-factor authentication for your account.</p></div></header>
+
+{% if backup_codes %}
+<div class="panel">
+  <h2>Save your backup codes</h2>
+  <p>Each code can be used once if you lose access to your authenticator app. Store them somewhere safe -- they will not be shown again.</p>
+  <ul>
+    {% for code in backup_codes %}<li><code>{{ code }}</code></li>{% endfor %}
+  </ul>
+</div>
+{% elif enrolled %}
+<div class="panel">
+  <p>MFA is <strong>enabled</strong> on your account.</p>
+  {% if mfa_required %}<p class="muted">MFA is required for your role by administrator policy and cannot be disabled.</p>{% endif %}
+  <form method="post" class="stack">
+    <input type="hidden" name="action" value="regenerate_backup_codes">
+    <button class="button">Regenerate backup codes</button>
+  </form>
+  {% if not mfa_required %}
+  <form method="post" class="stack">
+    <input type="hidden" name="action" value="disable">
+    <label>Current password<input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="button">Disable MFA</button>
+  </form>
+  {% endif %}
+</div>
+{% else %}
+<div class="panel">
+  <p>Scan this QR provisioning URI with your authenticator app (Google Authenticator, 1Password, etc.), then enter the 6-digit code it generates to confirm enrollment.</p>
+  <p><code>{{ provisioning_uri }}</code></p>
+  <p class="muted">Manual entry secret: <code>{{ secret }}</code></p>
+  <form method="post" class="stack">
+    <input type="hidden" name="action" value="enable">
+    <label>Verification code<input name="code" inputmode="numeric" required autofocus></label>
+    <button class="primary">Enable MFA</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import logging
 import os
 import ssl
 import uuid
@@ -20,6 +21,7 @@ from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
+import pyotp
 from flask import Flask, Response, abort, current_app, flash, g, has_request_context, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from markupsafe import Markup, escape
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
@@ -39,7 +41,10 @@ from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
-from serviceops_core.security import role_has_action, validate_policy
+from serviceops_core.security import (
+    hash_password, mask_secret, redact, RedactingFilter, role_has_action,
+    validate_policy, verify_and_upgrade_password, verify_password,
+)
 from serviceops_core.priority import calculate_priority, validate_priority_policy
 from serviceops_core.business_time import add_business_minutes, validate_calendar
 from serviceops_core.workflow import (
@@ -295,6 +300,15 @@ class User(UserMixin, db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     manager_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     manager = db.relationship("User", remote_side=[id], foreign_keys=[manager_id])
+    # TOTP MFA (ISO 27001 A.8.5). The TOTP secret and backup-code hashes are
+    # Fernet-encrypted at rest via settings_cipher(), same as other secrets
+    # (see app.py's SETTING_SCHEMA "secret" fields). Backup codes are stored
+    # hashed (not merely encrypted) so even a key-compromise-plus-DB-read
+    # can't be used to log in with a backup code without brute-forcing it.
+    mfa_secret_encrypted = db.Column(db.Text)
+    mfa_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    mfa_enrolled_at = db.Column(db.DateTime(timezone=True))
+    mfa_backup_codes_json = db.Column(db.Text)
 
     @property
     def is_active(self):
@@ -596,6 +610,23 @@ class APIRateLimitWindow(db.Model):
     request_count = db.Column(db.Integer, nullable=False, default=0)
     __table_args__ = (
         db.UniqueConstraint("api_client_id", "window_start", name="uq_api_rate_limit_window"),
+    )
+
+
+class RouteRateLimitWindow(db.Model):
+    """Per-key, per-minute request counter backing rate limiting on
+    unauthenticated web routes (/login, password reset, MFA verification --
+    ISO 27001 A.8.16). `key` is a route+scope-qualified string such as
+    `login:ip:203.0.113.5` or `login:user:alice` so an attacker hammering one
+    IP or one account cannot exhaust another legitimate user's quota. Reuses
+    the same DB-backed windowed-counter design as APIRateLimitWindow (an
+    in-process counter would undercount across gunicorn workers)."""
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(160), nullable=False, index=True)
+    window_start = db.Column(db.DateTime(timezone=True), nullable=False)
+    request_count = db.Column(db.Integer, nullable=False, default=0)
+    __table_args__ = (
+        db.UniqueConstraint("key", "window_start", name="uq_route_rate_limit_window"),
     )
 
 
@@ -1868,6 +1899,73 @@ def enforce_api_rate_limit(client):
         abort(429, description=f"Rate limit of {limit} requests/minute exceeded for this API client.")
 
 
+def user_requires_mfa_by_policy(user):
+    """Whether MFA is policy-mandatory for this user (ISO 27001 A.8.5):
+    the `admin` role, or membership on the Change Control Board (any user
+    with `GroupMember.role == "CCB approver"` on the tenant's "Change
+    Control Board" support group -- the same membership CLAUDE.md's
+    change-governance rules treat as CCB approval authority elsewhere in
+    this file, e.g. app.py:3313, 10292)."""
+    if not setting_bool("REQUIRE_MFA_FOR_ADMIN", False):
+        return False
+    if user.role == "admin":
+        return True
+    ccb = SupportGroup.query.filter_by(
+        name="Change Control Board", tenant_id=user.tenant_id
+    ).first()
+    if not ccb:
+        return False
+    return GroupMember.query.filter_by(
+        group_id=ccb.id, user_id=user.id, role="CCB approver"
+    ).first() is not None
+
+
+def generate_mfa_backup_codes(count=10):
+    return [secrets.token_hex(5) for _ in range(count)]
+
+
+def hash_backup_code(code):
+    return hashlib.sha256(code.encode()).hexdigest()
+
+
+def route_rate_limit(scope, key, limit, window_seconds=60):
+    """General-purpose IP/account-scoped rate limiter for unauthenticated web
+    routes (ISO 27001 A.8.16), generalized from `enforce_api_rate_limit`'s
+    DB-backed windowed-counter pattern so it works correctly across multiple
+    gunicorn workers. `scope` distinguishes routes (e.g. "login", "mfa"),
+    `key` distinguishes the caller within that scope (e.g. the client IP or
+    username) so a flood against one IP/account cannot exhaust another
+    legitimate caller's quota. Sets `g.rate_limit_retry_after` and returns
+    False (does not raise) when the limit is exceeded, so callers can render
+    their own 429 response consistent with existing UX."""
+    composite_key = f"{scope}:{key}"[:160]
+    window_start = now().replace(second=0, microsecond=0)
+    row = RouteRateLimitWindow.query.filter_by(
+        key=composite_key, window_start=window_start
+    ).with_for_update().first()
+    if not row:
+        try:
+            with db.session.begin_nested():
+                row = RouteRateLimitWindow(
+                    key=composite_key, window_start=window_start, request_count=0
+                )
+                db.session.add(row)
+                db.session.flush()
+        except IntegrityError:
+            row = RouteRateLimitWindow.query.filter_by(
+                key=composite_key, window_start=window_start
+            ).with_for_update().one()
+        RouteRateLimitWindow.query.filter(
+            RouteRateLimitWindow.key == composite_key,
+            RouteRateLimitWindow.window_start < window_start - timedelta(hours=1),
+        ).delete()
+    row.request_count += 1
+    if row.request_count > limit:
+        g.rate_limit_retry_after = window_seconds - now().second
+        return False
+    return True
+
+
 def require_api_scope(scope):
     if scope not in API_SCOPES:
         raise RuntimeError(f"Unknown API scope: {scope}")
@@ -2011,6 +2109,9 @@ SETTING_DEFINITIONS = {
         {"key": "LOGIN_MAX_ATTEMPTS", "label": "Failed logins before lockout", "type": "int", "default": "5", "min": 3, "max": 20, "live": True},
         {"key": "LOGIN_LOCKOUT_MINUTES", "label": "Lockout duration in minutes", "type": "int", "default": "15", "min": 1, "max": 1440, "live": True},
         {"key": "API_RATE_LIMIT_PER_MINUTE", "label": "REST API requests per minute (per client)", "type": "int", "default": "120", "min": 10, "max": 6000, "live": True},
+        {"key": "LOGIN_RATE_LIMIT_PER_IP_PER_MINUTE", "label": "Login attempts per minute (per source IP)", "type": "int", "default": "20", "min": 5, "max": 1000, "live": True},
+        {"key": "LOGIN_RATE_LIMIT_PER_ACCOUNT_PER_MINUTE", "label": "Login attempts per minute (per account)", "type": "int", "default": "10", "min": 3, "max": 1000, "live": True},
+        {"key": "REQUIRE_MFA_FOR_ADMIN", "label": "Require MFA for admin and CCB accounts", "type": "bool", "default": "false", "live": True},
         {"key": "CLAMAV_ENABLED", "label": "Scan attachments with ClamAV", "type": "bool", "default": "false", "live": True},
         {"key": "CLAMAV_HOST", "label": "ClamAV daemon host", "type": "text", "default": "", "live": True},
         {"key": "CLAMAV_PORT", "label": "ClamAV daemon port", "type": "int", "default": "3310", "min": 1, "max": 65535, "live": True},
@@ -4607,7 +4708,7 @@ def seed():
     if not current_app.config.get("TESTING") and len(admin_password) < 14:
         raise RuntimeError("ADMIN_PASSWORD must contain at least 14 characters.")
     admin = User(username="admin", name="System Administrator", email="admin@example.local",
-                 password_hash=generate_password_hash(admin_password), role="admin")
+                 password_hash=hash_password(admin_password), role="admin")
     db.session.add(admin)
     db.session.flush()
     seed_itil(admin)
@@ -4764,7 +4865,7 @@ def provision_external_user(provider, subject, username, name, email, role, grou
     if existing:
         unique_email = f"{provider}-{uuid.uuid4().hex[:8]}@external.serviceops.local"
     user = User(username=candidate, name=name or candidate, email=unique_email,
-                password_hash=generate_password_hash(uuid.uuid4().hex), role=role)
+                password_hash=hash_password(uuid.uuid4().hex), role=role)
     db.session.add(user)
     db.session.flush()
     db.session.add(ExternalIdentity(provider=provider, subject=subject, user_id=user.id))
@@ -4863,6 +4964,13 @@ def ldap_authenticate(username, password):
 
 def create_app(test_config=None):
     app = Flask(__name__)
+    # ISO 27001 A.8.11: never let passwords/tokens/connection strings/LDAP
+    # bind passwords/session identifiers reach a log sink in the clear, even
+    # if a call site accidentally logs a raw dict/exception containing one.
+    _redacting_filter = RedactingFilter()
+    app.logger.addFilter(_redacting_filter)
+    logging.getLogger("gunicorn.error").addFilter(_redacting_filter)
+    logging.getLogger("gunicorn.access").addFilter(_redacting_filter)
     app.config.update(
         SECRET_KEY=os.getenv("SECRET_KEY"),
         SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", "sqlite:///serviceops.db"),
@@ -5730,6 +5838,35 @@ def create_app(test_config=None):
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
             provider = request.form.get("provider", "local")
+            # ISO 27001 A.8.16: general web rate limiting. Scoped per-IP so a
+            # distributed low-and-slow credential-stuffing attack across many
+            # usernames from one source is throttled even though it never
+            # trips the existing per-account lockout (app.py LOGIN_MAX_ATTEMPTS),
+            # and scoped per-account so many source IPs targeting one
+            # username are also throttled -- without letting either limiter
+            # lock out *other* legitimate users sharing an IP (e.g. NAT/VPN
+            # egress), since each IP/account has its own independent counter.
+            client_ip = request.remote_addr or "unknown"
+            ip_limit = setting_int("LOGIN_RATE_LIMIT_PER_IP_PER_MINUTE", 20)
+            user_limit = setting_int("LOGIN_RATE_LIMIT_PER_ACCOUNT_PER_MINUTE", 10)
+            ip_ok = route_rate_limit("login", f"ip:{client_ip}", ip_limit)
+            user_ok = (
+                route_rate_limit("login", f"user:{username.lower()}", user_limit)
+                if username else True
+            )
+            # Persist the counter increment even when the request is within
+            # limits -- otherwise it's only ever committed on the request
+            # that trips the 429, and every allowed request's contribution
+            # to the window is silently lost.
+            db.session.commit()
+            if not (ip_ok and user_ok):
+                response = render_template(
+                    "login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
+                    keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
+                    local_enabled=setting_bool("LOCAL_AUTH_ENABLED", True),
+                    deployment_profile=app.config["DEPLOYMENT_PROFILE"])
+                flash("Too many sign-in attempts. Please wait a moment and try again.", "error")
+                return response, 429
             lockout_record = User.query.filter_by(username=username).first()
             if lockout_record and lockout_record.locked_until and lockout_record.locked_until > now():
                 audit("login_blocked", username, "reason=locked")
@@ -5748,8 +5885,30 @@ def create_app(test_config=None):
                     app.logger.exception("LDAP authentication failed")
             elif setting_bool("LOCAL_AUTH_ENABLED", True):
                 candidate = User.query.filter_by(username=username).first()
-                if candidate and check_password_hash(candidate.password_hash, password):
-                    user = candidate
+                if candidate:
+                    valid, upgraded_hash = verify_and_upgrade_password(
+                        candidate.password_hash, password
+                    )
+                    if valid:
+                        user = candidate
+                        if upgraded_hash:
+                            # Lazy migration off legacy PBKDF2 to Argon2id
+                            # (ISO 27001 A.8.24) -- happens transparently on
+                            # the next successful login, no bulk migration
+                            # or forced reset required.
+                            candidate.password_hash = upgraded_hash
+            if user and user.active and user.mfa_enabled:
+                # Password verified but MFA is required (ISO 27001 A.8.5):
+                # do not issue a session yet. Stash the authenticated-but-
+                # not-yet-MFA'd user id in a short-lived, server-signed
+                # session value; /login/mfa completes the login only after a
+                # valid TOTP code or backup code is presented.
+                user.failed_login_count = 0
+                user.locked_until = None
+                db.session.commit()
+                session["_mfa_pending_user_id"] = user.id
+                session["_mfa_pending_provider"] = provider
+                return redirect(url_for("login_mfa"))
             if user and user.active:
                 user.failed_login_count = 0
                 user.locked_until = None
@@ -5779,6 +5938,67 @@ def create_app(test_config=None):
                                keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
                                local_enabled=setting_bool("LOCAL_AUTH_ENABLED", True),
                                deployment_profile=app.config["DEPLOYMENT_PROFILE"])
+
+    @app.route("/login/mfa", methods=["GET", "POST"])
+    def login_mfa():
+        pending_user_id = session.get("_mfa_pending_user_id")
+        if not pending_user_id:
+            return redirect(url_for("login"))
+        user = User.query.get(pending_user_id)
+        if not user or not user.active or not user.mfa_enabled:
+            session.pop("_mfa_pending_user_id", None)
+            session.pop("_mfa_pending_provider", None)
+            return redirect(url_for("login"))
+        if request.method == "POST":
+            client_ip = request.remote_addr or "unknown"
+            # ISO 27001 A.8.16: rate-limit MFA verification the same as the
+            # password step -- otherwise a stolen password alone would let
+            # an attacker brute-force a 6-digit TOTP code unthrottled.
+            mfa_limit = setting_int("LOGIN_RATE_LIMIT_PER_ACCOUNT_PER_MINUTE", 10)
+            mfa_ip_ok = route_rate_limit("mfa_verify", f"ip:{client_ip}", mfa_limit)
+            mfa_user_ok = route_rate_limit("mfa_verify", f"user:{user.username.lower()}", mfa_limit)
+            db.session.commit()
+            if not (mfa_ip_ok and mfa_user_ok):
+                flash("Too many verification attempts. Please wait a moment and try again.", "error")
+                return render_template("login_mfa.html"), 429
+            code = request.form.get("code", "").strip()
+            verified = False
+            backup_used = False
+            if code and user.mfa_secret_encrypted:
+                secret = settings_cipher().decrypt(user.mfa_secret_encrypted.encode()).decode()
+                totp = pyotp.TOTP(secret)
+                verified = totp.verify(code.replace(" ", ""), valid_window=1)
+            if not verified and code and user.mfa_backup_codes_json:
+                remaining = json.loads(user.mfa_backup_codes_json)
+                code_hash = hash_backup_code(code.strip().lower())
+                if code_hash in remaining:
+                    remaining.remove(code_hash)
+                    user.mfa_backup_codes_json = json.dumps(remaining)
+                    verified = True
+                    backup_used = True
+            if verified:
+                session.pop("_mfa_pending_user_id", None)
+                provider = session.pop("_mfa_pending_provider", "local")
+                login_user(user)
+                session.permanent = True
+                session["_auth_version"] = user.auth_version
+                session["_csrf_token"] = secrets.token_urlsafe(32)
+                audit(
+                    "login", user.username,
+                    f"provider={provider}; mfa=backup_code" if backup_used else f"provider={provider}; mfa=totp",
+                )
+                db.session.commit()
+                if backup_used:
+                    flash("Signed in with a backup code. Consider regenerating your backup codes.", "warning")
+                preference = UserPreference.query.filter_by(user_id=user.id).first()
+                start_page = preference.start_page if preference else None
+                if not is_safe_internal_path(start_page):
+                    start_page = url_for("dashboard")
+                return redirect(start_page)
+            audit("login_failed", user.username, "reason=invalid_mfa_code")
+            db.session.commit()
+            flash("Invalid verification code.", "error")
+        return render_template("login_mfa.html")
 
     @app.get("/auth/keycloak/login")
     def keycloak_login():
@@ -5826,16 +6046,16 @@ def create_app(test_config=None):
             current_password = request.form.get("current_password", "")
             new_password = request.form.get("new_password", "")
             confirmation = request.form.get("confirm_password", "")
-            if not check_password_hash(current_user.password_hash, current_password):
+            if not verify_password(current_user.password_hash, current_password):
                 abort(400, description="The current password is incorrect.")
             min_length = setting_int("PASSWORD_MIN_LENGTH", 14)
             if len(new_password) < min_length:
                 abort(400, description=f"The new password must contain at least {min_length} characters.")
             if new_password != confirmation:
                 abort(400, description="The password confirmation does not match.")
-            if check_password_hash(current_user.password_hash, new_password):
+            if verify_password(current_user.password_hash, new_password):
                 abort(400, description="The new password must differ from the current password.")
-            current_user.password_hash = generate_password_hash(new_password)
+            current_user.password_hash = hash_password(new_password)
             current_user.auth_version += 1
             session["_auth_version"] = current_user.auth_version
             audit("credential rotate", current_user.username, "Local password changed")
@@ -5843,6 +6063,78 @@ def create_app(test_config=None):
             flash("Password changed. Other browser sessions have been invalidated.", "success")
             return redirect(url_for("preferences"))
         return render_template("change_password.html")
+
+    @app.route("/settings/mfa", methods=["GET", "POST"])
+    @login_required
+    def settings_mfa():
+        """TOTP MFA enrollment/management (ISO 27001 A.8.5). GET shows
+        status and, when not yet enrolled, a freshly generated (not-yet-
+        persisted) secret's otpauth:// provisioning URI for the user to add
+        to an authenticator app -- rendering an actual QR image client-side
+        from that URI is a template concern, not a security one; the URI
+        alone is sufficient provisioning data. The secret is only persisted
+        (Fernet-encrypted, matching the existing settings_cipher() pattern
+        used for other secrets) once the user proves possession by
+        submitting a valid code, so an enrollment abandoned mid-flow never
+        leaves a live-but-unverified secret on the account."""
+        if request.method == "POST":
+            action = request.form.get("action", "enable")
+            if action == "disable":
+                if not verify_password(current_user.password_hash, request.form.get("password", "")):
+                    abort(400, description="Your current password is required to disable MFA.")
+                if user_requires_mfa_by_policy(current_user):
+                    abort(400, description="MFA is required for your role by administrator policy and cannot be disabled.")
+                current_user.mfa_enabled = False
+                current_user.mfa_secret_encrypted = None
+                current_user.mfa_backup_codes_json = None
+                current_user.mfa_enrolled_at = None
+                audit("mfa disable", current_user.username)
+                db.session.commit()
+                session.pop("_mfa_pending_secret", None)
+                flash("MFA has been disabled for your account.", "success")
+                return redirect(url_for("settings_mfa"))
+            if action == "regenerate_backup_codes":
+                if not current_user.mfa_enabled:
+                    abort(400, description="Enable MFA before generating backup codes.")
+                codes = generate_mfa_backup_codes()
+                current_user.mfa_backup_codes_json = json.dumps([hash_backup_code(c) for c in codes])
+                audit("mfa backup codes regenerate", current_user.username)
+                db.session.commit()
+                flash("New backup codes generated. Save them now -- they will not be shown again.", "success")
+                return render_template("settings_mfa.html", enrolled=True, backup_codes=codes,
+                                       mfa_required=user_requires_mfa_by_policy(current_user))
+            # action == "enable": confirm possession of the pending secret.
+            pending_secret = session.get("_mfa_pending_secret")
+            code = request.form.get("code", "").strip()
+            if not pending_secret or not code or not pyotp.TOTP(pending_secret).verify(code, valid_window=1):
+                flash("Invalid verification code. Scan the QR code again and try once more.", "error")
+                return redirect(url_for("settings_mfa"))
+            current_user.mfa_secret_encrypted = settings_cipher().encrypt(pending_secret.encode()).decode()
+            current_user.mfa_enabled = True
+            current_user.mfa_enrolled_at = now()
+            backup_codes = generate_mfa_backup_codes()
+            current_user.mfa_backup_codes_json = json.dumps([hash_backup_code(c) for c in backup_codes])
+            current_user.auth_version += 1
+            session["_auth_version"] = current_user.auth_version
+            audit("mfa enroll", current_user.username)
+            db.session.commit()
+            session.pop("_mfa_pending_secret", None)
+            flash("MFA is now enabled. Save your backup codes -- they will not be shown again.", "success")
+            return render_template("settings_mfa.html", enrolled=True, backup_codes=backup_codes,
+                                   mfa_required=user_requires_mfa_by_policy(current_user))
+        if current_user.mfa_enabled:
+            return render_template("settings_mfa.html", enrolled=True, backup_codes=None,
+                                   mfa_required=user_requires_mfa_by_policy(current_user))
+        secret = pyotp.random_base32()
+        session["_mfa_pending_secret"] = secret
+        provisioning_uri = pyotp.TOTP(secret).provisioning_uri(
+            name=current_user.username, issuer_name="ServiceOps"
+        )
+        return render_template(
+            "settings_mfa.html", enrolled=False, backup_codes=None,
+            provisioning_uri=provisioning_uri, secret=secret,
+            mfa_required=user_requires_mfa_by_policy(current_user),
+        )
 
     @app.get("/work/open")
     @login_required
@@ -7711,7 +8003,7 @@ def create_app(test_config=None):
                 flash(f"Password must contain at least {min_length} characters.", "error")
                 return render_template("user_form.html", user=None, self_service=False)
             user = User(username=request.form["username"], name=request.form["name"], email=request.form["email"],
-                        password_hash=generate_password_hash(password), role=request.form["role"],
+                        password_hash=hash_password(password), role=request.form["role"],
                         title=request.form.get("title", "")[:120],
                         department=request.form.get("department", "")[:120],
                         business_phone=request.form.get("business_phone", "")[:40],
@@ -7826,7 +8118,7 @@ def create_app(test_config=None):
         user.location = ""
         user.avatar_path = None
         user.manager_id = None
-        user.password_hash = generate_password_hash(uuid.uuid4().hex)
+        user.password_hash = hash_password(uuid.uuid4().hex)
         user.auth_version += 1
         user.erased_at = now()
         ExternalIdentity.query.filter_by(user_id=user.id).delete()
