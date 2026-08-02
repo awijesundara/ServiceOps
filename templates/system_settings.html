@@ -1,11 +1,22 @@
 {% extends "base.html" %}
-{% block title %}System settings · {{ instance_name }}{% endblock %}
+{% block title %}Platform settings · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">PLATFORM ADMINISTRATION</p><h1>System settings</h1><p>Configure the deployed platform. Every change is validated and audited.</p></div></header>
+{% set admin_page_title = 'Platform settings' %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>Platform settings</h1><p>Manage organization identity and branding, sign-in and directory providers, security limits, workspace defaults, email delivery, NetBox and RT connections, and view the current runtime environment.</p></div></header>
+<div class="settings-scope-note"><strong>Platform-wide configuration</strong><span>These settings control the shared application experience, identity integrations, security boundaries, outbound delivery, and external data connections. Ticket, team, change, service, and SLA policies are managed under Service delivery and governance.</span></div>
 <form method="post" enctype="multipart/form-data" class="settings-workspace">
   <nav class="settings-nav">
-    {% for category in groups %}<a href="#settings-{{ category }}">{{ category|replace('_',' ')|title }}</a>{% endfor %}
-    <a href="#settings-infrastructure">Infrastructure</a>
+    <div class="settings-nav-group"><strong>Identity and experience</strong>
+      <a href="#settings-branding">Company logo</a>
+      {% for category in ['organization','appearance','sign_in_and_directory'] %}<a href="#settings-{{ category }}">{{ group_meta[category][0] }}</a>{% endfor %}
+    </div>
+    <div class="settings-nav-group"><strong>Protection and behavior</strong>
+      {% for category in ['security','workspace_defaults'] %}<a href="#settings-{{ category }}">{{ group_meta[category][0] }}</a>{% endfor %}
+    </div>
+    <div class="settings-nav-group"><strong>Connections</strong>
+      {% for category in ['email_delivery','netbox_connection','request_tracker_connection'] %}<a href="#settings-{{ category }}">{{ group_meta[category][0] }}</a>{% endfor %}
+    </div>
+    <div class="settings-nav-group"><strong>Deployment</strong><a href="#settings-infrastructure">Runtime environment</a></div>
   </nav>
   <div class="settings-content">
     <section class="panel settings-section" id="settings-branding">
@@ -14,7 +25,7 @@
     </section>
     {% for category, definitions in groups.items() %}
     <section class="panel settings-section" id="settings-{{ category }}">
-      <div class="panel-head"><div><h2>{{ category|replace('_',' ')|title }}</h2><p>Settings marked “Live” apply without a restart. Others require a full application rollout.</p></div></div>
+      <div class="panel-head"><div><h2>{{ group_meta[category][0] }}</h2><p>{{ group_meta[category][1] }} Settings marked “Live” apply without a restart.</p></div></div>
       <div class="settings-grid">
       {% for setting in definitions %}
         <label class="setting-field {% if setting.type in ['json','text'] and setting.key|length > 20 %}wide{% endif %}">
@@ -36,8 +47,8 @@
     </section>
     {% endfor %}
     <section class="panel settings-section" id="settings-infrastructure">
-      <div class="panel-head"><div><h2>Infrastructure-owned configuration</h2><p>Displayed here for visibility. Change these through Compose or Helm so every instance remains consistent.</p></div></div>
-      <table><thead><tr><th>Setting</th><th>Effective value</th><th>Source of control</th></tr></thead><tbody>{% for name,value,source in infrastructure %}<tr><td><strong>{{ name }}</strong></td><td>{{ value }}</td><td><span class="apply-badge external">{{ source }}</span></td></tr>{% endfor %}</tbody></table>
+      <div class="panel-head"><div><h2>Runtime environment</h2><p>These values describe where this ServiceOps instance is running. They are read-only here because changing a database, volume, replica count, or TLS endpoint requires a controlled Docker Compose or Kubernetes rollout.</p></div></div>
+      <table><thead><tr><th>Runtime component</th><th>Current effective value</th><th>Where to change it</th></tr></thead><tbody>{% for name,value,source in infrastructure %}<tr><td><strong>{{ name }}</strong></td><td><code>{{ value }}</code></td><td><span class="apply-badge external">{{ source }}</span></td></tr>{% else %}<tr><td colspan="3">Runtime details are unavailable. Check the application deployment configuration.</td></tr>{% endfor %}</tbody></table>
     </section>
     <div class="settings-save"><div><strong>Audited change</strong><small>Review authentication carefully before saving.</small></div><button class="primary">Validate and save settings</button></div>
   </div>

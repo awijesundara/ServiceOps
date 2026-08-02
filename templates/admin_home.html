@@ -1,22 +1,29 @@
 {% extends "base.html" %}{% block title %}Administration · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">PLATFORM ADMINISTRATION</p><h1>Administration home</h1><p>Configure security, people, service management, integrations, workflows, and platform operations.</p></div></header>
-<section class="admin-capability-grid">
-  {% set cards = [
-    ('Guided setup','Branding, appearance, and instance-wide defaults','system_settings','✓'),
-    ('Authentication & security','Local login, AD/LDAP, Keycloak, lockout policy','system_settings#settings-authentication','◆'),
-    ('API clients','Manage REST API tokens and their scopes','api_clients_admin','⚿'),
-    ('Audit log','Every tracked change, exportable and signature-verified','audit_log','▤'),
-    ('Service management','ITIL classifications, routing and approvals','itil_admin','↔'),
-    ('User administration','Users, teams, directory mappings and roles','users','U'),
-    ('Business logic','Governed workflows and lifecycle automation','workflows_admin','▶'),
-    ('Data management','CMDB, services, assets and configuration','cmdb','▦'),
-    ('Email and integrations','SMTP, webhooks, monitoring and Teams','integrations_admin','✉'),
-    ('Reporting and analytics','Operational workload and service metrics','analytics','◕')
-  ] %}
-  {% for title, description, endpoint, icon in cards %}
-  {% set base_endpoint, _, fragment = endpoint.partition('#') %}
-  <a class="admin-capability-card" href="{{ url_for(base_endpoint) }}{{ '#' + fragment if fragment }}"><span>{{ icon }}</span><div><h2>{{ title }}</h2><p>{{ description }}</p></div></a>
-  {% endfor %}
+<header class="page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Administration home</h1><p>One place for every platform setting, access control, operational policy, connection, automation rule, and audit record.</p></div></header>
+{% set sections = [
+  ('Platform and security','How ServiceOps looks, signs people in, protects data, and behaves by default',[
+    ('Platform settings','Organization, appearance, sign-in, security, ticket defaults, email, and external connections','system_settings','⚙'),
+    ('Users and access','Users, roles, profile status, teams, and account lifecycle','users','U'),
+    ('API access','Create and revoke application credentials with limited permissions','api_clients_admin','⚿'),
+    ('Audit and evidence','Review, verify, export, and retain the record of administrative and operational changes','audit_log','▤')
+  ]),
+  ('Service operations','How requests, teams, approvals, services, and commitments are governed',[
+    ('Service delivery and governance','Catalog routing, directory-to-team mapping, team ownership, approval authority, freeze windows, services, and SLAs','itil_admin','↔')
+  ]),
+  ('Connections and automation','How ServiceOps exchanges information and performs repeatable work',[
+    ('Integrations and delivery','Webhooks, monitoring sources, Microsoft Teams, delivery status, and retry queues','integrations_admin','✉'),
+    ('Automation rules','Rules that react to ticket changes, SLA breaches, manual events, or schedules and perform controlled actions','workflows_admin','▶')
+  ])
+] %}
+{% for section_title, section_description, cards in sections %}
+<section class="admin-home-section">
+  <header><h2>{{ section_title }}</h2><p>{{ section_description }}</p></header>
+  <div class="admin-capability-grid">
+    {% for title, description, endpoint, icon in cards %}
+    <a class="admin-capability-card" href="{{ url_for(endpoint) }}"><span>{{ icon }}</span><div><h3>{{ title }}</h3><p>{{ description }}</p></div></a>
+    {% endfor %}
+  </div>
 </section>
+{% endfor %}
 {% endblock %}

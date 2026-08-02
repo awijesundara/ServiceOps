@@ -135,11 +135,8 @@ def test_health(client):
 
 def test_live_api_documentation_matches_supported_contract(client):
     guide = client.get("/api/v1/docs")
-    assert guide.status_code == 200
-    assert guide.mimetype == "text/markdown"
-    assert b"Idempotency-Key" in guide.data
-    assert b"tickets:read" in guide.data
-    assert b"Current compatibility boundary" in guide.data
+    assert guide.status_code == 302
+    assert guide.location == "https://github.com/awijesundara/serviceops-notes/blob/main/docs/API_REFERENCE.md"
 
     contract = client.get("/api/v1/openapi.json")
     assert contract.status_code == 200
@@ -684,8 +681,9 @@ def test_api_client_admin_one_time_secret_and_pwa_privacy(client, app):
     assert b"/api/" not in worker.data
     assert b"/ticket/" not in worker.data
     assert b"caches.open" in worker.data
-    assert b"serviceops-shell-v5" in worker.data
-    assert b"/static/itil.css?v=1.26.3" in worker.data
+    from app import APP_VERSION
+    assert f"serviceops-shell-v{APP_VERSION}".encode() in worker.data
+    assert f"/static/itil.css?v={APP_VERSION}".encode() in worker.data
     assert worker.data.index(b"fetch(event.request)") < worker.data.index(
         b"caches.match(event.request)"
     )
@@ -2351,6 +2349,12 @@ def test_unified_search_favorites_and_preferences(client, app):
     })
     result = client.get("/ui/search?q=Global+search")
     assert b"Global search verification" in result.data
+    navigation_result = client.get("/ui/search?q=cmdb")
+    assert b"CMDB and service map" in navigation_result.data
+    assert b"Navigation" in navigation_result.data
+    user_result = client.get("/ui/search?q=System+Administrator")
+    assert b"User" in user_result.data
+    assert b"admin" in user_result.data
     assert client.post("/ui/favorite", data={"url": "/task-board", "label": "My board"}).json["active"]
     client.post("/preferences", data={
         "theme": "dark", "density": "compact", "font_scale": "115",
@@ -2395,7 +2399,7 @@ def test_profile_and_user_administration_are_tenant_and_role_governed(client, ap
     with app.app_context():
         employee_id = User.query.filter_by(username="employee").one().id
     assert client.get("/admin").status_code == 200
-    assert b"User administration" in client.get("/admin").data
+    assert b"Users and access" in client.get("/admin").data
     assert b"Updated Employee" in client.get("/admin/users?q=Updated+Employee").data
     response = client.post(f"/admin/users/{employee_id}", data={
         "name": "Governed Employee", "email": "employee@test.invalid",
@@ -2761,6 +2765,102 @@ def test_admin_configures_ad_mapping_manager_and_ccb_authority(client, app):
         ).one()
 
 
+def test_administration_is_one_hub_with_clear_child_areas(client):
+    login(client)
+    home = client.get("/admin")
+    assert home.status_code == 200
+    assert b"Platform settings" in home.data
+    assert b"Service delivery and governance" in home.data
+    assert b"Automation rules" in home.data
+    assert b"Rules that react to ticket changes" in home.data
+    assert b"CMDB and service map" not in home.data
+    assert b"Reporting and analytics" not in home.data
+
+    sidebar = home.data.split(b'<aside class="sidebar">', 1)[1].split(b"</aside>", 1)[0]
+    assert b"Dashboard" in sidebar
+    assert b"Incidents" in sidebar
+    assert b"Service requests" in sidebar
+    assert b"Service catalog" in sidebar
+    assert b"Knowledge" in sidebar
+    assert b"All workspaces" in sidebar
+    assert b"OPERATIONS" in sidebar
+    assert b"Administration home" in sidebar
+    assert b"Service operations settings" not in sidebar
+    assert b"System settings" not in sidebar
+    assert b">Workflows<" not in sidebar
+
+    header = home.data.split(b'<header class="unified-nav">', 1)[1].split(b"</header>", 1)[0]
+    assert b"Search ServiceOps" in header
+    assert b"contextual-app-pill" not in header
+    assert b"Default update set" not in header
+    assert b'data-platform-drawer=' not in home.data
+
+    settings = client.get("/admin/settings")
+    assert b"Administration home" in settings.data
+    assert b'aria-label="Administration breadcrumb"' in settings.data
+    assert settings.data.count(b'aria-label="Administration breadcrumb"') == 1
+    assert b"ADMINISTRATION HOME / PLATFORM SETTINGS" not in settings.data
+    assert b'href="#settings-branding"' in settings.data
+    assert b"Identity and experience" in settings.data
+    assert b"organization identity and branding" in settings.data
+    assert b"NetBox and RT connections" in settings.data
+    assert b"Ticket, team, change, service, and SLA policies" in settings.data
+    assert b"Protection and behavior" in settings.data
+    assert b"Sign-in and directory" in settings.data
+    assert b"Change freeze message" not in settings.data
+    assert b'id="settings-change_approval_policy"' not in settings.data
+    assert b"Change approval policy" not in settings.data
+    assert b'id="settings-ticket_behavior"' not in settings.data
+    assert b"Default ticket priority" not in settings.data
+    assert b"Runtime environment" in settings.data
+    assert b"Application replicas" in settings.data
+    assert b"1 (local Compose default)" in settings.data
+
+    automation = client.get("/admin/workflows")
+    assert b"Automation rules" in automation.data
+    assert b"When</b> an event occurs" in automation.data
+    assert b"Technical execution evidence" in automation.data
+
+    users_page = client.get("/admin/users")
+    assert users_page.data.count(b'aria-label="Administration breadcrumb"') == 1
+    assert b'class="button" href="/admin">Administration home</a>' not in users_page.data
+    new_user = client.get("/admin/users/new")
+    assert b"Administration home" in new_user.data
+    assert b"Users and access" in new_user.data
+
+    governance = client.get("/itil/administration")
+    assert governance.status_code == 200
+    expected_section_order = [
+        b'id="ticket-defaults"', b'id="catalog"', b'id="directory-mapping"', b'id="team-aliases"',
+        b'id="ldap-sync"', b'id="team-managers"', b'id="governance-groups"',
+        b'id="change-approval-policy"', b'id="ccb"', b'id="change-freeze"',
+        b'id="service-offerings"', b'id="sla"',
+    ]
+    positions = [governance.data.index(marker) for marker in expected_section_order]
+    assert positions == sorted(positions)
+    assert governance.data.count(b'id="governance-groups"') == 1
+    assert governance.data.count(b'id="service-offerings"') == 1
+    assert b"Production" in governance.data
+
+    response = client.post("/itil/administration", data={
+        "action": "set_change_approval_policy",
+        "ccb_required_environments": "Production, Staging, production",
+    })
+    assert response.status_code == 302
+    updated = client.get("/itil/administration")
+    assert b'value="Production, Staging"' in updated.data
+
+    response = client.post("/itil/administration", data={
+        "action": "set_ticket_defaults",
+        "default_ticket_priority": "P2",
+        "sync_child_incident_states": "on",
+    })
+    assert response.status_code == 302
+    updated = client.get("/itil/administration")
+    assert b'<option value="P2" selected>P2</option>' in updated.data
+    assert b'name="sync_child_incident_states" checked' in updated.data
+
+
 def test_admin_can_update_live_platform_branding(client, app):
     login(client)
     response = client.post("/admin/settings", data={
@@ -2783,7 +2883,7 @@ def test_admin_can_update_live_platform_branding(client, app):
         "NOTIFICATION_FROM_NAME": "Operations Hub",
     }, follow_redirects=True)
     assert response.status_code == 200
-    assert b"System settings saved" in response.data
+    assert b"Platform settings saved" in response.data
     assert b"Operations Hub" in response.data
     with app.app_context():
         assert db.session.get(PlatformSetting, "COMPANY_NAME").value == "Example Corporation"
@@ -2906,7 +3006,7 @@ def test_admin_can_simulate_and_redeploy_workflows(client, app):
     login(client)
     page = client.get("/admin/workflows")
     assert page.status_code == 200
-    assert b"Arbitrary scripts are not supported" in page.data
+    assert b"They cannot run arbitrary scripts" in page.data
     simulated = client.post("/admin/workflows", data={
         "action": "simulate", "event_type": "ticket.state_entry",
         "context_json": json.dumps({
