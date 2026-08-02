@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Users · {{ instance_name }}{% endblock %}
 {% block content %}
+{% set admin_page_title = 'Users and access' %}{% include '_admin_context.html' %}
 <section class="list-workspace">
   <header class="list-toolbar">
     <div class="list-title"><span class="record-type-icon">U</span><div><strong>Users</strong><small>User administration</small></div></div>
@@ -20,7 +21,6 @@
         </div>
       </div>
     </form>
-    <a class="button" href="{{ url_for('admin_home') }}">Administration home</a>
   </header>
   <div class="list-breadcrumb"><span>▽</span> All{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if search %} › Search contains “{{ search }}”{% endif %}<span class="list-breadcrumb-count">{{ users|length }} records</span></div>
   <div class="table-scroll">

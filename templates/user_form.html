@@ -2,6 +2,7 @@
 {% set editing = user is not none %}
 {% block title %}{{ "My profile" if self_service else ("User " ~ user.username if editing else "New user") }} · {{ instance_name }}{% endblock %}
 {% block content %}
+{% if not self_service %}{% set admin_page_title = ("Edit user: " ~ user.username) if editing else "New user" %}{% set admin_parent_title = 'Users and access' %}{% set admin_parent_url = url_for('users') %}{% include '_admin_context.html' %}{% endif %}
 <section class="record-shell">
   <header class="record-toolbar">
     <div class="record-identity">
