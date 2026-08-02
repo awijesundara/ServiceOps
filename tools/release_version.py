@@ -36,6 +36,8 @@ def synchronized_content(version: str) -> dict[Path, str]:
     chart = ROOT / "charts/serviceops/Chart.yaml"
     readme = ROOT / "README.md"
     worker = ROOT / "static/service-worker.js"
+    env_example = ROOT / ".env.example"
+    installer = ROOT / "installer/app.py"
     return {
         ROOT / "VERSION": version + "\n",
         chart: re.sub(
@@ -52,6 +54,16 @@ def synchronized_content(version: str) -> dict[Path, str]:
             r"(\?v=)[0-9]+\.[0-9]+\.[0-9]+",
             rf"\g<1>{version}",
             re.sub(r'(?m)^const CACHE_NAME = .*$', f'const CACHE_NAME = "serviceops-shell-v{version}";', worker.read_text()),
+        ),
+        env_example: re.sub(
+            r"(?m)^(SERVICEOPS_IMAGE=serviceops-app:)[0-9]+\.[0-9]+\.[0-9]+$",
+            rf"\g<1>{version}",
+            env_example.read_text(),
+        ),
+        installer: re.sub(
+            r'("serviceops-app:)[0-9]+\.[0-9]+\.[0-9]+(")',
+            rf"\g<1>{version}\g<2>",
+            installer.read_text(),
         ),
     }
 
