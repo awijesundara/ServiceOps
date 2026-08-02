@@ -1,28 +1,51 @@
 {% extends "base.html" %}
-{% block title %}ITIL administration · {{ instance_name }}{% endblock %}
+{% block title %}Service delivery and governance · {{ instance_name }}{% endblock %}
 {% block content %}
+{% set admin_page_title = 'Service delivery and governance' %}{% include '_admin_context.html' %}
 <header class="page-head">
   <div>
-    <p class="eyebrow">ITIL CONFIGURATION</p>
-    <h1>Teams and approval authority</h1>
-    <p>Map Active Directory groups to teams, appoint accountable managers, and control CCB voting authority.</p>
+    <h1>Service delivery and governance</h1>
+    <p>Manage operational records for catalog routing, teams, approval authority, freeze windows, service mapping, and service commitments. Platform defaults and credentials are kept in Platform settings.</p>
   </div>
 </header>
 
 <div class="settings-workspace">
   <nav class="settings-nav">
-    <a href="#catalog">Service catalog</a>
-    <a href="#directory-mapping">AD → team mapping</a>
-    <a href="#team-aliases">Team aliases</a>
-    <a href="#ldap-sync">LDAP sync</a>
-    <a href="#team-managers">Team managers</a>
-    <a href="#ccb">CCB approvers</a>
-    <a href="#change-freeze">Change freeze</a>
-    <a href="#governance-groups">Governance groups</a>
-    <a href="#service-offerings">Service offerings</a>
-    <a href="#sla">Calendars &amp; SLAs</a>
+    <div class="settings-nav-group"><strong>Service delivery</strong>
+      <a href="#ticket-defaults">Ticket defaults</a>
+      <a href="#catalog">Catalog and routing</a>
+    </div>
+    <div class="settings-nav-group"><strong>People and routing</strong>
+      <a href="#directory-mapping">Directory mappings</a>
+      <a href="#team-aliases">Team aliases</a>
+      <a href="#ldap-sync">Directory synchronization</a>
+      <a href="#team-managers">Team ownership</a>
+      <a href="#governance-groups">Governance groups</a>
+    </div>
+    <div class="settings-nav-group"><strong>Change governance</strong>
+      <a href="#change-approval-policy">Change approval policy</a>
+      <a href="#ccb">Approval authority</a>
+      <a href="#change-freeze">Freeze windows</a>
+    </div>
+    <div class="settings-nav-group"><strong>Services and commitments</strong>
+      <a href="#service-offerings">Service offerings</a>
+      <a href="#sla">Calendars and commitments</a>
+    </div>
   </nav>
   <div class="settings-content">
+<div class="settings-section-heading"><span>01</span><div><h2>Service delivery</h2><p>Define what people can request and where fulfillment work is routed.</p></div></div>
+<section class="panel admin-section settings-section" id="ticket-defaults">
+  <div class="panel-head"><div><h2>Ticket defaults</h2><p>Set the initial priority for newly created tickets and choose whether parent incident state changes synchronize to child incidents.</p></div></div>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="action" value="set_ticket_defaults">
+    <label>Default ticket priority
+      <select name="default_ticket_priority">{% for priority in ['P1','P2','P3','P4'] %}<option value="{{ priority }}" {% if default_ticket_priority == priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select>
+      <small>Applied when a new ticket does not declare a priority.</small>
+    </label>
+    <label class="check"><input type="checkbox" name="sync_child_incident_states" {% if sync_child_incident_states %}checked{% endif %}> Synchronize parent incident state to child incidents</label>
+    <div class="wide actions"><button class="primary">Save ticket defaults</button></div>
+  </form>
+</section>
 <section class="panel admin-section settings-section" id="catalog">
   <div class="panel-head">
     <div>
@@ -86,6 +109,7 @@
   </form>
 </section>
 
+<div class="settings-section-heading"><span>02</span><div><h2>People and routing</h2><p>Connect directory groups to operational teams and assign accountable owners.</p></div></div>
 <section class="panel admin-section settings-section" id="directory-mapping">
   <div class="panel-head">
     <div>
@@ -236,6 +260,28 @@
   </table>
 </section>
 
+<section class="panel admin-section settings-section" id="governance-groups">
+  <div class="panel-head"><div><h2>Governance groups</h2><p>Review accountable groups, their type, manager, and current membership in one place.</p></div></div>
+  {% for group in groups %}
+  <article class="config-row">
+    <div><strong>{{ group.name }}</strong><small>{{ group.group_type }} · manager {{ group.manager.name if group.manager else "Unassigned" }}</small></div>
+    <span>{{ group.members|length }} members</span>
+  </article>
+  {% endfor %}
+</section>
+
+<div class="settings-section-heading"><span>03</span><div><h2>Change governance</h2><p>Control approval authority and the windows in which planned changes may proceed.</p></div></div>
+<section class="panel admin-section settings-section" id="change-approval-policy">
+  <div class="panel-head"><div><h2>Change approval policy</h2><p>Choose which CMDB environment names require Change Control Board approval. This policy determines <em>where</em> approval is enforced; Approval authority below determines <em>who</em> can approve.</p></div></div>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="action" value="set_change_approval_policy">
+    <label class="wide">Environments requiring CCB approval
+      <input name="ccb_required_environments" value="{{ ccb_required_environments }}" placeholder="Production, Staging" required>
+      <small>Comma-separated CMDB environment names. Changes apply immediately to new approval decisions.</small>
+    </label>
+    <div class="wide actions"><button class="primary">Save change approval policy</button></div>
+  </form>
+</section>
 <section class="panel admin-section settings-section" id="ccb">
   <div class="panel-head"><div><h2>Change Control Board approvers</h2><p>Only users explicitly granted CCB approval authority are selected as voters for new non-standard changes. Removing authority does not rewrite historical decisions.</p></div></div>
   <table>
@@ -299,17 +345,8 @@
   </table>
 </section>
 
-<div class="analytics-grid settings-section" id="governance-groups">
-  <section class="panel">
-    <h2>All governance groups</h2>
-    {% for group in groups %}
-    <article class="config-row">
-      <div><strong>{{ group.name }}</strong><small>{{ group.group_type }} · manager {{ group.manager.name if group.manager else "Unassigned" }}</small></div>
-      <span>{{ group.members|length }} members</span>
-    </article>
-    {% endfor %}
-  </section>
-  <section class="panel settings-section" id="service-offerings">
+<div class="settings-section-heading"><span>04</span><div><h2>Services and commitments</h2><p>Map services to their supporting configuration and define measurable operating commitments.</p></div></div>
+<section class="panel admin-section settings-section" id="service-offerings">
     <h2>Service offerings</h2>
     <p class="muted">Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk.</p>
     {% for service in services %}
@@ -330,8 +367,7 @@
       </form>
     </article>
     {% else %}<p>No service offerings configured.</p>{% endfor %}
-  </section>
-</div>
+</section>
 
 <section class="panel admin-section settings-section" id="sla">
   <h2>Business calendars and SLA definitions</h2>

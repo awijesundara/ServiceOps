@@ -38,12 +38,12 @@
   {% else %}<p class="muted">Nothing depends on this CI (directly or transitively) according to CMDB relationships yet.</p>{% endif %}
 </section>
 <section class="panel">
-  <h2>Services this CI supports<span class="info-tip" tabindex="0" data-tip="Business services mapped to this CI in ITIL configuration → Service offerings. Used for impact analysis (what breaks if this CI goes down) and change risk.">i</span></h2>
+  <h2>Services this CI supports<span class="info-tip" tabindex="0" data-tip="Business services mapped under Administration home → Service delivery and governance → Service offerings. Used for impact analysis and change risk.">i</span></h2>
   {% if ci.service_links %}
   <div class="related-links">
     {% for link in ci.service_links %}<a class="attachment" href="{{ url_for('itil_admin') }}#service-offerings"><strong>{{ link.service_offering.name }}</strong><span>{{ link.relationship_role }} · {{ link.service_offering.criticality }} criticality</span></a>{% endfor %}
   </div>
-  {% else %}<p class="muted">Not mapped to any business service yet. Add it under ITIL configuration → Service offerings.</p>{% endif %}
+  {% else %}<p class="muted">Not mapped to any business service yet. Add it under Administration home → Service delivery and governance → Service offerings.</p>{% endif %}
 </section>
 <section class="panel">
   <h2>Change history</h2>

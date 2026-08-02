@@ -6,25 +6,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ instance_name|default('ServiceOps') }}{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='1.29.51') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v='1.29.51') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v='1.29.51') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v='1.29.51') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v='1.29.51') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v='1.29.51') }}">
-  <script src="{{ url_for('static', filename='platform.js', v='1.29.51') }}" defer></script>
-  <script src="{{ url_for('static', filename='lookup.js', v='1.29.51') }}" defer></script>
-  <script src="{{ url_for('static', filename='select-enhance.js', v='1.29.51') }}" defer></script>
-  <script src="{{ url_for('static', filename='list-filter.js', v='1.29.51') }}" defer></script>
-  <script src="{{ url_for('static', filename='columns-picker.js', v='1.29.51') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=app_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v=app_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v=app_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v=app_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v=app_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v=app_version) }}">
+  <script src="{{ url_for('static', filename='platform.js', v=app_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='lookup.js', v=app_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='select-enhance.js', v=app_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='list-filter.js', v=app_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='columns-picker.js', v=app_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='admin-nav.js', v=app_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='admin-context.js', v=app_version) }}" defer></script>
 </head>
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
 {% if current_user.is_authenticated %}
-<script src="{{ url_for('static', filename='nav-init.js', v='1.29.51') }}"></script>
+{% set admin_endpoints = ['admin_home','itil_admin','system_settings','users','user_new','user_edit','audit_log','api_clients_admin','integrations_admin','workflows_admin'] %}
+<script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active</div>{% endif %}
 <aside class="sidebar">
   <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo">{% else %}<span class="company-mark">{{ company_name[:2]|upper }}</span>{% endif %}<span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span></a>
-  <nav>
+  <nav class="legacy-application-nav">
     <small>WORKSPACE</small>
     <a href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}class="active" aria-current="page"{% endif %}>Dashboard</a>
     <a href="{{ url_for('task_board') }}" {% if nav_active('task_board') %}class="active" aria-current="page"{% endif %}>Visual task board</a>
@@ -54,17 +57,10 @@
     {% endif %}
     {% if current_user.role == 'admin' %}
     <small>ADMINISTRATION</small>
-    <a href="{{ url_for('itil_admin') }}" {% if nav_active('itil_admin') %}class="active" aria-current="page"{% endif %}>ITIL configuration<span class="info-tip" tabindex="0" data-tip="ITIL = Information Technology Infrastructure Library, the industry-standard framework of IT service management practices (incidents, problems, changes, requests) ServiceOps' workflows follow.">i</span></a>
-    <a href="{{ url_for('system_settings') }}" {% if nav_active('system_settings') %}class="active" aria-current="page"{% endif %}>System settings</a>
-    <a href="{{ url_for('admin_home') }}" {% if nav_active('admin_home') %}class="active" aria-current="page"{% endif %}>Administration</a>
-    <a href="{{ url_for('users') }}" {% if nav_active('users') %}class="active" aria-current="page"{% endif %}>Users & roles</a>
-    <a href="{{ url_for('audit_log') }}" {% if nav_active('audit_log') %}class="active" aria-current="page"{% endif %}>Audit log</a>
-    <a href="{{ url_for('api_clients_admin') }}" {% if nav_active('api_clients_admin') %}class="active" aria-current="page"{% endif %}>API clients</a>
-    <a href="{{ url_for('integrations_admin') }}" {% if nav_active('integrations_admin') %}class="active" aria-current="page"{% endif %}>Integrations</a>
-    <a href="{{ url_for('workflows_admin') }}" {% if nav_active('workflows_admin') %}class="active" aria-current="page"{% endif %}>Workflows</a>
+    <a href="{{ url_for('admin_home') }}" {% if request.endpoint in admin_endpoints %}class="active" aria-current="page"{% endif %}>Administration home</a>
     {% endif %}
   </nav>
-  <script src="{{ url_for('static', filename='nav-init.js', v='1.29.51') }}"></script>
+  <script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
   <div class="profile">
     {{ user_avatar(current_user) }}
     <a href="{{ url_for('profile') }}"><strong>{{ current_user.name }}</strong><small>{{ current_user.role }}</small></a>
@@ -76,7 +72,7 @@
   <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation"><svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
   <form action="{{ url_for('global_search') }}" class="global-search"><span><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span><input name="q" placeholder="Search ServiceOps" aria-label="Search ServiceOps"></form>
   <div class="nav-menus">
-    <details>
+    <details data-nav-menu="favorites">
       <summary title="Favorites" aria-label="Favorites"><svg class="icon" data-favorite-star viewBox="0 0 24 24" data-active="{{ 'true' if current_page_is_favorite else 'false' }}"><polygon points="12 2.5 15.09 8.99 22.18 10.02 17.09 15.02 18.26 22.06 12 18.72 5.74 22.06 6.91 15.02 1.82 10.02 8.91 8.99"/></svg></summary>
       <div class="nav-popover">
         <h3>Favorites</h3>
@@ -85,7 +81,7 @@
         {% for favorite in ui_favorites %}<a href="{{ favorite.url }}">{{ favorite.label }}</a>{% else %}<p>No favorites yet.</p>{% endfor %}
       </div>
     </details>
-    <details>
+    <details data-nav-menu="history">
       <summary title="Recently viewed pages" aria-label="Recently viewed pages"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg></summary>
       <div class="nav-popover">
         <h3>Recently viewed</h3>
