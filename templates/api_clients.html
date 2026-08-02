@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}API clients · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">SECURITY ADMINISTRATION</p><h1>REST API clients</h1><p>Tenant-scoped service identities bound to a real ServiceOps user and explicit scopes.</p></div></header>
+{% set admin_page_title = 'API access' %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>API access</h1><p>Create application credentials that act as a named ServiceOps user with only the selected permissions. Tokens are shown once and can be revoked here.</p></div></header>
 {% if new_token %}
 <section class="panel"><h2>Copy this token now</h2><p>The token for <strong>{{ new_client_name }}</strong> is displayed once and cannot be recovered.</p><pre class="pre">{{ new_token }}</pre></section>
 {% endif %}

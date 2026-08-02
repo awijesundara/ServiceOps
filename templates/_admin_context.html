@@ -1,0 +1,6 @@
+<nav class="admin-context" aria-label="Administration breadcrumb">
+  <a href="{{ url_for('admin_home') }}"><span aria-hidden="true">←</span> Administration home</a>
+  <span aria-hidden="true">/</span>
+  {% if admin_parent_url %}<a href="{{ admin_parent_url }}">{{ admin_parent_title }}</a><span aria-hidden="true">/</span>{% endif %}
+  <strong>{{ admin_page_title }}</strong>
+</nav>

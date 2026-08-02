@@ -1,0 +1,74 @@
+name: Governed release
+
+on:
+  workflow_dispatch:
+    inputs:
+      increment:
+        description: Semantic version component to increment
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major]
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout main with release history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Refuse a release from stale source
+        run: test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+
+      - name: Calculate and synchronize the version
+        id: version
+        env:
+          INCREMENT: ${{ inputs.increment }}
+        run: |
+          version="$(python3 tools/release_version.py --bump "$INCREMENT" --write --check)"
+          tag="v${version}"
+          git rev-parse "$tag" >/dev/null 2>&1 && { echo "Tag $tag already exists" >&2; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Commit the immutable release version
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add VERSION README.md charts/serviceops/Chart.yaml static/service-worker.js
+          git commit -m "chore(release): ${TAG#v}"
+          git tag -a "$TAG" -m "ServiceOps $TAG"
+          git push origin HEAD:main "$TAG"
+
+  supply-chain:
+    needs: version
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    uses: ./.github/workflows/supply-chain.yml
+    with:
+      checkout_ref: ${{ needs.version.outputs.tag }}
+      publish_release: true
+    secrets: inherit
+
+  publish:
+    needs: [version, supply-chain]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish verified GitHub release with generated notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "ServiceOps $TAG"
