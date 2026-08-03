@@ -8,8 +8,19 @@ attribute-matching conventions already used by interactive LDAP login
 (app.ldap_authenticate).
 
 It intentionally does not:
-  * create new ServiceOps users (only already-provisioned LDAP identities are
-    updated — see ``ldap_authenticate``/``provision_external_user``),
+  * create new ServiceOps users for their own sake (only already-provisioned
+    LDAP identities are updated -- see ``ldap_authenticate``/
+    ``provision_external_user``) -- with one narrow exception: a user's
+    directory `manager` attribute is a DN that may belong to someone who has
+    never logged into ServiceOps themselves (a senior manager who never
+    touches the ticketing tool, for instance). Since that DN is already
+    present in this same directory search, this module provisions a normal
+    LDAP-identity user record for it (via provision_external_user, exactly as
+    if they'd logged in) purely so the reporting chain (User.manager_id) is
+    complete. It never fabricates a manager DN found nowhere in the
+    directory, and the provisioned account behaves identically to any other
+    LDAP user on its own eventual first login (role/groups resolved the
+    normal way at that point).
   * run on a schedule (manual trigger only; see app.py's admin route),
   * mutate approval-resolution logic (Approval/CCB code is unchanged; it
     merely benefits from the more complete User/GroupMember data this
@@ -90,6 +101,7 @@ def sync_directory(tenant_id, dry_run=False):
         "directory_entries": 0,
         "users_updated": 0,
         "managers_resolved": 0,
+        "managers_provisioned": 0,
         "memberships_added": 0,
         "memberships_removed": 0,
         "users_unmatched": 0,
@@ -129,6 +141,58 @@ def sync_directory(tenant_id, dry_run=False):
     )
     dn_to_user = {identity.subject.strip().casefold(): identity.user for identity in identities}
 
+    # Every directory entry this search returned, keyed by its own DN --
+    # lets a manager DN that resolves to no ServiceOps user yet still be
+    # provisioned below, as long as that manager is themselves a real
+    # directory entry this search found (never fabricated).
+    dn_to_entry = {}
+    for entry in entries:
+        entry_dn = (getattr(entry, "entry_dn", None) or "").strip().casefold()
+        if entry_dn:
+            dn_to_entry[entry_dn] = entry.entry_attributes_as_dict
+
+    def _resolve_or_provision_manager(manager_dn, _resolving=None):
+        """Return the ServiceOps User for `manager_dn`, provisioning a normal
+        LDAP-identity user record for them (role/groups resolved the usual
+        way) if the directory search above found them but they've never
+        logged into ServiceOps. `_resolving` guards against an (unlikely but
+        directory-data-driven, not code-controlled) manager cycle."""
+        key = manager_dn.strip().casefold()
+        existing = dn_to_user.get(key)
+        if existing:
+            return existing
+        entry_values = dn_to_entry.get(key)
+        if not entry_values:
+            return None
+        _resolving = _resolving or set()
+        if key in _resolving:
+            summary["errors"].append(f"Manager reporting cycle detected at: {manager_dn}")
+            return None
+        _resolving.add(key)
+        manager_username = _first(entry_values, attr_map.get("username", "sAMAccountName"))
+        if not manager_username:
+            return None
+        manager_email = _first(entry_values, attr_map.get("email", "mail"))
+        manager_name = _first(entry_values, attr_map.get("display_name", "displayName")) or manager_username
+        manager_groups = entry_values.get("memberOf") or []
+        manager_role = core_app.mapped_role(manager_groups, "LDAP_ROLE_MAPPINGS")
+        provisioned = core_app.provision_external_user(
+            "ldap", manager_dn, manager_username, manager_name, manager_email,
+            manager_role, groups=manager_groups,
+        )
+        if provisioned.tenant_id != tenant_id:
+            # provision_external_user() can adopt an existing local/other-tenant
+            # account by email/username collision -- never wire a cross-tenant
+            # user into this tenant's reporting chain.
+            summary["errors"].append(
+                f"Manager {manager_dn} resolved to a user outside this tenant; skipped."
+            )
+            return None
+        db.session.flush()
+        dn_to_user[key] = provisioned
+        summary["managers_provisioned"] += 1
+        return provisioned
+
     for entry in entries:
         entry_dn = getattr(entry, "entry_dn", None) or ""
         values = entry.entry_attributes_as_dict
@@ -158,14 +222,15 @@ def sync_directory(tenant_id, dry_run=False):
 
             manager_dn = _first(values, attr_map.get("manager", "manager"))
             if manager_dn:
-                manager_user = dn_to_user.get(manager_dn.strip().casefold())
+                manager_user = _resolve_or_provision_manager(manager_dn)
                 if manager_user and manager_user.id != user.id:
                     if user.manager_id != manager_user.id:
                         user.manager_id = manager_user.id
                         changed = True
                     summary["managers_resolved"] += 1
-                # Manager DN out of scope/filter: leave manager_id unchanged,
-                # do not error the whole sync.
+                # Manager DN outside this directory search entirely (e.g. a
+                # different base DN/filter): leave manager_id unchanged, do
+                # not error the whole sync.
 
             if changed:
                 summary["users_updated"] += 1
