@@ -21,7 +21,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
                  MonitoringEvent, MonitoringSource, Notification, OperationalTask,
                  OutboxEvent, ProblemProfile, RecordLink, ScheduleHoliday, SLADefinition,
-                 RequestedItem, PlatformSetting, ServiceOffering, SupportGroup, SupportGroupAlias,
+                 RequestedItem, PlatformSetting, ServiceOffering, ServiceOfferingCI, SupportGroup, SupportGroupAlias,
                  TaskCI, TaskHistory, TaskNote, TaskSLA,
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference,
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
@@ -75,6 +75,9 @@ def app():
             db.session.add(GroupMember(group_id=group.id, user_id=admin.id, role="member"))
         ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
         db.session.add(GroupMember(group_id=ccb.id, user_id=manager.id, role="CCB approver"))
+        executive_office = SupportGroup.query.filter_by(name="Executive Office").one()
+        executive_office.manager_id = manager.id
+        db.session.add(GroupMember(group_id=executive_office.id, user_id=manager.id, role="manager"))
         service_desk = SupportGroup.query.filter_by(name="Service Desk").one()
         db.session.add(GroupMember(group_id=service_desk.id, user_id=manager.id, role="member"))
         catalog_item = CatalogItem(
@@ -1850,8 +1853,10 @@ def test_change_has_governance_approval_chain_and_sla(client, app):
         ticket = Ticket.query.filter_by(kind="change").one()
         assert ticket.change_governance.risk_score == 75
         chain = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).one()
-        assert [gate.name for gate in chain.gates] == ["CoreApps manager assessment", "CCB weekly authorization"]
-        assert chain.gates[1].mode == "majority"
+        assert [gate.name for gate in chain.gates] == [
+            "CoreApps manager assessment", "CCB authorization", "Executive (CEO) approval",
+        ]
+        assert chain.gates[1].mode == "any"
         assert TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).count() == 1
 
 
@@ -1906,6 +1911,14 @@ def test_change_cannot_bypass_approval_from_detail_or_board(client, app):
         ccb_vote_id = chain.gates[1].votes[0].id
     assert client.post(f"/approval-votes/{ccb_vote_id}/decide", data={
         "decision": "Approved", "comments": "CCB authorization",
+    }).status_code == 302
+    with app.app_context():
+        chain = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id
+        ).one()
+        executive_vote_id = chain.gates[2].votes[0].id
+    assert client.post(f"/approval-votes/{executive_vote_id}/decide", data={
+        "decision": "Approved", "comments": "Executive authorization",
     }).status_code == 302
     allowed = client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": "In Progress", "priority": "P2",
@@ -2002,6 +2015,14 @@ def test_material_change_edit_supersedes_approvals_and_notifies_approvers(client
         ccb_vote_id = chain.gates[1].votes[0].id
     assert client.post(f"/approval-votes/{ccb_vote_id}/decide", data={
         "decision": "Approved", "comments": "CCB approved v1.",
+    }).status_code == 302
+    with app.app_context():
+        chain = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket_id
+        ).order_by(ApprovalChain.id.desc()).first()
+        executive_vote_id = chain.gates[2].votes[0].id
+    assert client.post(f"/approval-votes/{executive_vote_id}/decide", data={
+        "decision": "Approved", "comments": "Executive approved v1.",
     }).status_code == 302
     with app.app_context():
         assert db.session.get(Ticket, ticket_id).state == "Approved"
@@ -2671,6 +2692,53 @@ def test_external_identity_is_stable_and_does_not_enable_local_password(app):
         assert second.id == first_id
         assert second.role == "manager"
         assert ExternalIdentity.query.filter_by(provider="keycloak", subject="subject-123").count() == 1
+
+
+def test_role_locked_survives_directory_login_and_team_based_normalization(app):
+    """An admin manually promoting an agent to manager (role_locked=True in
+    the admin Users page) must survive that user's next LDAP/SSO login --
+    previously provision_external_user() and normalize_user_role_from_assignments()
+    unconditionally overwrote role from the directory-group/team-membership
+    mapping on every single login, silently reverting the manual promotion."""
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        user = provision_external_user(
+            "ldap", "CN=Alice,OU=Users,DC=example,DC=com", "alice", "Alice",
+            "alice@example.test", "agent",
+            groups=["CN=gg_unix,OU=Groups,DC=example,DC=com"],
+        )
+        db.session.add(GroupMember(group_id=unix.id, user_id=user.id, role="member"))
+        db.session.commit()
+        user_id = user.id
+
+        # Manual admin promotion + lock, exactly as user_edit's POST handler does.
+        user.role = "manager"
+        user.role_locked = True
+        db.session.commit()
+
+        # Directory still only maps this user to "agent" via LDAP_ROLE_MAPPINGS'
+        # default, and they're still just a team member (not a manager of any
+        # SupportGroup) -- both of which would normally demote them back to
+        # "agent" via normalize_user_role_from_assignments.
+        relogged = provision_external_user(
+            "ldap", "CN=Alice,OU=Users,DC=example,DC=com", "alice", "Alice",
+            "alice@example.test", "agent",
+            groups=["CN=gg_unix,OU=Groups,DC=example,DC=com"],
+        )
+        db.session.commit()
+        assert relogged.id == user_id
+        assert relogged.role == "manager"
+
+        # Unlocking hands control back to automatic sync on the next login.
+        relogged.role_locked = False
+        db.session.commit()
+        relogged_again = provision_external_user(
+            "ldap", "CN=Alice,OU=Users,DC=example,DC=com", "alice", "Alice",
+            "alice@example.test", "agent",
+            groups=["CN=gg_unix,OU=Groups,DC=example,DC=com"],
+        )
+        db.session.commit()
+        assert relogged_again.role == "agent"
 
 
 def test_ldap_group_mapping_synchronizes_team_membership(app):
@@ -3747,6 +3815,84 @@ def test_change_gets_ci_owner_manager_approval_when_different_from_assignment_gr
         names = [gate.name for gate in chain.gates]
         assert "Unix manager assessment" in names
         assert "Database manager assessment (CI owner)" in names
+
+
+def test_change_requires_every_service_co_owner_team_manager_approval(app):
+    """The change's CI backs a business service that's also backed by CIs
+    owned by two other teams -- each of those teams' managers must approve
+    too, not just the executing team and the change's own CI owner."""
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        database = SupportGroup.query.filter_by(name="Database").one()
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        manager = User.query.filter_by(username="database.manager").one()
+        # The shared fixture already makes `manager` the manager of every
+        # IT Fulfillment team (including Network) -- no extra setup needed.
+        network = SupportGroup.query.filter_by(name="Network").one()
+
+        primary_ci = ConfigurationItem(
+            name="lb-primary", ci_class="Server", environment="Production",
+            support_group_id=network.id,
+        )
+        sibling_ci = ConfigurationItem(
+            name="app-server-01", ci_class="Server", environment="Production",
+            support_group_id=database.id,
+        )
+        db.session.add_all([primary_ci, sibling_ci])
+        db.session.flush()
+        offering = ServiceOffering(name="Checkout Service", owner_id=manager.id)
+        db.session.add(offering)
+        db.session.flush()
+        db.session.add_all([
+            ServiceOfferingCI(service_offering_id=offering.id, ci_id=primary_ci.id),
+            ServiceOfferingCI(service_offering_id=offering.id, ci_id=sibling_ci.id),
+        ])
+        ticket = Ticket(
+            kind="change", number="CHG0000950", title="Load balancer change",
+            description="Test multi-team service co-ownership approval.", category="Software",
+            priority="P3", state="New", requester_id=manager.id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=unix.id))
+        db.session.add(ChangeGovernance(
+            ticket_id=ticket.id, change_type="Normal", risk_score=40, impact="Medium",
+            implementation_plan="Implement.", test_plan="Test.", backout_plan="Back out.",
+            ci_id=primary_ci.id,
+        ))
+        db.session.commit()
+        stages = change_approval_stages(ticket)
+        names = [stage["name"] for stage in stages]
+        assert "Unix manager assessment" in names
+        assert "Network manager assessment (CI owner)" in names
+        assert "Database manager assessment (service co-owner)" in names
+        assert "Executive (CEO) approval" in names
+        ccb_stage = next(stage for stage in stages if "CCB" in stage["name"])
+        assert ccb_stage["mode"] == "any"
+
+
+def test_change_blocked_when_executive_approver_not_configured(app):
+    with app.app_context():
+        executive_office = SupportGroup.query.filter_by(name="Executive Office").one()
+        executive_office.manager_id = None
+        db.session.commit()
+        manager = User.query.filter_by(username="database.manager").one()
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        ticket = Ticket(
+            kind="change", number="CHG0000951", title="Needs executive approval",
+            description="Test executive approver enforcement.", category="Software",
+            priority="P3", state="New", requester_id=manager.id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=windows.id))
+        db.session.add(ChangeGovernance(
+            ticket_id=ticket.id, change_type="Normal", risk_score=40, impact="Medium",
+            implementation_plan="Implement.", test_plan="Test.", backout_plan="Back out.",
+        ))
+        db.session.commit()
+        with pytest.raises(Exception):
+            change_approval_stages(ticket)
 
 
 def test_ccb_only_required_for_environments_in_setting_by_default(app):
