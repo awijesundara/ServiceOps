@@ -105,6 +105,60 @@ def test_manager_dn_resolves_to_manager_id(app, monkeypatch):
         assert result["users_unmatched"] == 0
 
 
+def test_manager_who_never_logged_in_is_provisioned_and_resolved(app, monkeypatch):
+    """A user's `manager` DN may belong to someone who has never logged into
+    ServiceOps themselves (e.g. a senior manager who never touches the
+    ticketing tool). Since that DN is present in the same directory search,
+    sync_directory must provision a normal LDAP-identity account for them so
+    the reporting chain is actually reflected, instead of silently leaving
+    manager_id unset forever."""
+    with app.app_context():
+        alice_dn = "CN=Alice,OU=Users,DC=example,DC=com"
+        wei_dn = "CN=Wei Guo,OU=GSuiteUsers,OU=Users,DC=example,DC=com"
+        alice = provision_ldap_user("alice", alice_dn)
+        entries = [
+            FakeEntry(alice_dn, {"manager": [wei_dn], "mail": ["alice@example.com"]}),
+            FakeEntry(wei_dn, {
+                "sAMAccountName": ["wei.guo"], "mail": ["wei.guo@example.com"],
+                "displayName": ["Wei Guo"],
+            }),
+        ]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+        result = sync_directory(1)
+        db.session.refresh(alice)
+        wei = User.query.filter_by(username="wei.guo").one()
+        assert alice.manager_id == wei.id
+        assert wei.tenant_id == 1
+        assert ExternalIdentity.query.filter_by(provider="ldap", subject=wei_dn).one().user_id == wei.id
+        assert result["managers_provisioned"] == 1
+        assert result["managers_resolved"] == 1
+
+        # A second run must not re-provision Wei Guo again.
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+        result2 = sync_directory(1)
+        assert result2["managers_provisioned"] == 0
+        assert User.query.filter_by(username="wei.guo").count() == 1
+
+
+def test_manager_dn_outside_directory_search_is_left_unresolved(app, monkeypatch):
+    """A manager DN that isn't itself a real entry in this directory search
+    (out of base DN/filter scope) must never be fabricated -- manager_id
+    stays unset and the rest of the sync still succeeds."""
+    with app.app_context():
+        alice_dn = "CN=Alice,OU=Users,DC=example,DC=com"
+        alice = provision_ldap_user("alice", alice_dn)
+        entries = [
+            FakeEntry(alice_dn, {"manager": ["CN=Outside Scope,OU=Other,DC=example,DC=com"]}),
+        ]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+        result = sync_directory(1)
+        db.session.refresh(alice)
+        assert alice.manager_id is None
+        assert result["managers_provisioned"] == 0
+        assert result["managers_resolved"] == 0
+        assert not result["errors"]
+
+
 def test_group_membership_sync_adds_membership_and_managed_row(app, monkeypatch):
     with app.app_context():
         unix = SupportGroup.query.filter_by(name="Unix").one()

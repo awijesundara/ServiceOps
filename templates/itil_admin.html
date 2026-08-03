@@ -25,6 +25,7 @@
     <div class="settings-nav-group"><strong>Change governance</strong>
       <a href="#change-approval-policy">Change approval policy</a>
       <a href="#ccb">Approval authority</a>
+      <a href="#executive-approval">Executive approval</a>
       <a href="#change-freeze">Freeze windows</a>
     </div>
     <div class="settings-nav-group"><strong>Services and commitments</strong>
@@ -256,6 +257,31 @@
         <td>{{ team.members|length }}</td>
       </tr>
       {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel admin-section settings-section" id="executive-approval">
+  <div class="panel-head"><div><h2>Executive approval (CEO)</h2><p>The named user here is required to approve every Normal/Emergency change alongside CCB authorization and the owning/CI-owner team managers.</p></div></div>
+  <table>
+    <thead><tr><th>Current executive approver</th><th>Assignment</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>{{ executive_office.manager.name if executive_office.manager else "Unassigned" }}</td>
+        <td>
+          <form method="post" class="inline-form">
+            <input type="hidden" name="action" value="set_manager">
+            <input type="hidden" name="group_id" value="{{ executive_office.id }}">
+            <select name="manager_id">
+              <option value="">Unassigned</option>
+              {% for user in manager_candidates %}
+              <option value="{{ user.id }}" {% if executive_office.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
+              {% endfor %}
+            </select>
+            <button class="button">Save</button>
+          </form>
+        </td>
+      </tr>
     </tbody>
   </table>
 </section>
