@@ -309,6 +309,13 @@ class User(UserMixin, db.Model):
     mfa_enabled = db.Column(db.Boolean, nullable=False, default=False)
     mfa_enrolled_at = db.Column(db.DateTime(timezone=True))
     mfa_backup_codes_json = db.Column(db.Text)
+    # When True, directory/SSO login (provision_external_user) and automatic
+    # team-based role derivation (normalize_user_role_from_assignments) must
+    # never overwrite this user's role -- an admin explicitly pinned it.
+    # Without this, a manual agent->manager promotion in the admin Users page
+    # silently reverted to whatever LDAP group mapping/team membership implied
+    # on that user's very next login.
+    role_locked = db.Column(db.Boolean, nullable=False, default=False)
 
     @property
     def is_active(self):
@@ -3316,6 +3323,14 @@ def change_requires_ccb(governance):
     return normalize_environment(ci.environment) in ccb_required_environments()
 
 
+def executive_office_group(tenant_id):
+    """The support group whose manager is this tenant's designated executive
+    (CEO) approver for change governance. Seeded automatically alongside the
+    Change Control Board (see seed()); configured the same way a team's
+    manager is (itil_admin's "Executive approval" section)."""
+    return SupportGroup.query.filter_by(name="Executive Office", tenant_id=tenant_id).first()
+
+
 def change_approval_stages(ticket):
     ownership = ticket.change_ownership
     governance = ticket.change_governance
@@ -3326,6 +3341,7 @@ def change_approval_stages(ticket):
         "mode": "all",
         "approver_ids": [ownership.group.manager_id],
     }]
+    covered_group_ids = {ownership.group_id}
     ci = governance.ci
     ci_group = ci.support_group if ci else None
     if ci_group and ci_group.id != ownership.group_id:
@@ -3336,6 +3352,42 @@ def change_approval_stages(ticket):
             "mode": "all",
             "approver_ids": [ci_group.manager_id],
         })
+        covered_group_ids.add(ci_group.id)
+    # If this change's CI backs a business service (ServiceOfferingCI) that is
+    # also backed by other CIs owned by different teams, each of those teams
+    # is exposed to the same change even though it's not "their" CI directly
+    # -- e.g. a shared load balancer's change plan matters to every team whose
+    # application sits behind it. Require each such team's manager too.
+    if ci:
+        service_ids = [
+            row[0] for row in db.session.query(ServiceOfferingCI.service_offering_id)
+            .filter_by(ci_id=ci.id, tenant_id=ticket.tenant_id).all()
+        ]
+        if service_ids:
+            sibling_group_ids = {
+                row[0] for row in db.session.query(ConfigurationItem.support_group_id)
+                .join(ServiceOfferingCI, ServiceOfferingCI.ci_id == ConfigurationItem.id)
+                .filter(
+                    ServiceOfferingCI.service_offering_id.in_(service_ids),
+                    ConfigurationItem.tenant_id == ticket.tenant_id,
+                    ConfigurationItem.support_group_id.isnot(None),
+                ).all()
+            }
+            for group_id in sorted(sibling_group_ids - covered_group_ids):
+                sibling_group = db.session.get(SupportGroup, group_id)
+                if not sibling_group or not sibling_group.active:
+                    continue
+                if not sibling_group.manager or not sibling_group.manager.active:
+                    abort(409, description=(
+                        f"The {sibling_group.name} team (co-owner of a service this CI backs) "
+                        "requires an active manager."
+                    ))
+                stages.append({
+                    "name": f"{sibling_group.name} manager assessment (service co-owner)",
+                    "mode": "all",
+                    "approver_ids": [sibling_group.manager_id],
+                })
+                covered_group_ids.add(group_id)
     if governance.change_type != "Standard" and change_requires_ccb(governance):
         ccb = SupportGroup.query.filter_by(name="Change Control Board", tenant_id=ticket.tenant_id).first()
         ccb_ids = [
@@ -3346,21 +3398,32 @@ def change_approval_stages(ticket):
             abort(409, description=(
                 "CCB membership must be configured before a non-standard change can be submitted."
             ))
-        if governance.change_type == "Emergency":
-            # Accelerated but still auditable: one active CCB approver can
-            # authorize immediately instead of waiting on the full board's
-            # scheduled majority review (CLAUDE.md: "Submitted late" is not an
-            # emergency justification — this only shortens the quorum required,
-            # it never skips CCB authorization or the audit trail).
-            stages.append({
-                "name": "Emergency CCB authorization (expedited)", "mode": "any",
-                "approver_ids": ccb_ids,
-            })
-        else:
-            stages.append({
-                "name": "CCB weekly authorization", "mode": "majority",
-                "approver_ids": ccb_ids,
-            })
+        # One active CCB approver authorizes -- not the whole board, and not
+        # a majority. Emergency changes already worked this way (an
+        # expedited/auditable route: CLAUDE.md "'Submitted late' is not an
+        # emergency justification" -- this only shortens quorum, it never
+        # skips CCB authorization or the audit trail); Normal changes now
+        # require the same single-approver quorum rather than a majority.
+        stages.append({
+            "name": (
+                "Emergency CCB authorization (expedited)"
+                if governance.change_type == "Emergency" else "CCB authorization"
+            ),
+            "mode": "any",
+            "approver_ids": ccb_ids,
+        })
+        executive = executive_office_group(ticket.tenant_id)
+        if not executive or not executive.manager or not executive.manager.active:
+            abort(409, description=(
+                "Executive (CEO) approval authority must be configured "
+                "(itil_admin's Executive approval section) before a "
+                "non-standard change requiring CCB authorization can be submitted."
+            ))
+        stages.append({
+            "name": "Executive (CEO) approval",
+            "mode": "all",
+            "approver_ids": [executive.manager_id],
+        })
     return stages
 
 
@@ -4640,6 +4703,12 @@ def seed_itil(admin):
     if not ccb:
         ccb = SupportGroup(name="Change Control Board", group_type="CCB Approval", tenant_id=admin.tenant_id)
         db.session.add(ccb)
+    executive_office = SupportGroup.query.filter_by(name="Executive Office", tenant_id=admin.tenant_id).first()
+    if not executive_office:
+        executive_office = SupportGroup(
+            name="Executive Office", group_type="Executive", tenant_id=admin.tenant_id
+        )
+        db.session.add(executive_office)
     db.session.flush()
     database_group = SupportGroup.query.filter_by(name="Database", tenant_id=admin.tenant_id).first()
     if database_group:
@@ -4785,7 +4854,7 @@ def sync_directory_team_memberships(user, groups):
 
 def normalize_user_role_from_assignments(user):
     """Keep non-admin user roles aligned with actual team responsibilities."""
-    if not user or user.role == "admin":
+    if not user or user.role == "admin" or user.role_locked:
         return user.role if user else "requester"
     manages_team = SupportGroup.query.filter_by(
         manager_id=user.id, active=True
@@ -4818,7 +4887,9 @@ def provision_external_user(provider, subject, username, name, email, role, grou
     identity = ExternalIdentity.query.filter_by(provider=provider, subject=subject).first()
     if identity:
         user = identity.user
-        user.name, user.email, user.role = name, email, role
+        user.name, user.email = name, email
+        if not user.role_locked:
+            user.role = role
         user.active = True
         if provider == "ldap":
             sync_directory_team_memberships(user, groups)
@@ -4848,7 +4919,8 @@ def provision_external_user(provider, subject, username, name, email, role, grou
     ).first():
         existing_user.name = name or existing_user.name
         existing_user.email = email or existing_user.email
-        existing_user.role = role
+        if not existing_user.role_locked:
+            existing_user.role = role
         existing_user.active = True
         db.session.add(ExternalIdentity(provider=provider, subject=subject, user_id=existing_user.id))
         if provider == "ldap":
@@ -8032,7 +8104,16 @@ def create_app(test_config=None):
             }
             user.name = request.form["name"].strip()[:120]
             user.email = request.form["email"].strip()[:160]
-            user.role = request.form["role"]
+            submitted_role = request.form["role"]
+            if submitted_role != user.role:
+                # An explicit manual change always takes effect immediately,
+                # regardless of the current lock state.
+                user.role = submitted_role
+            # role_locked itself is independently controlled by its own
+            # checkbox: an admin can lock the *current* role without changing
+            # it this submission, or unlock it to hand control back to
+            # directory/SSO-derived role sync on the next login.
+            user.role_locked = bool(request.form.get("role_locked"))
             user.active = bool(request.form.get("active"))
             user.title = request.form.get("title", "").strip()[:120]
             user.department = request.form.get("department", "").strip()[:120]
@@ -10133,7 +10214,7 @@ def create_app(test_config=None):
                 )
             elif action == "set_manager":
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
-                if group.group_type != "IT Fulfillment":
+                if group.group_type not in ("IT Fulfillment", "Executive"):
                     abort(400)
                 old_manager_id = group.manager_id
                 manager_id = int(request.form["manager_id"]) if request.form.get("manager_id") else None
@@ -10478,6 +10559,7 @@ def create_app(test_config=None):
                         f"{'Preview' if dry_run else 'Applied'}: "
                         f"{result['users_updated']} users updated, "
                         f"{result['managers_resolved']} managers resolved, "
+                        f"{result['managers_provisioned']} managers provisioned, "
                         f"{result['memberships_added']} memberships added, "
                         f"{result['memberships_removed']} memberships removed, "
                         f"{result['users_unmatched']} unmatched, "
@@ -10490,6 +10572,7 @@ def create_app(test_config=None):
                         ) + (
                             f"{result['users_updated']} users updated, "
                             f"{result['managers_resolved']} managers resolved, "
+                            f"{result['managers_provisioned']} managers provisioned, "
                             f"{result['memberships_added']} memberships added, "
                             f"{result['memberships_removed']} memberships removed, "
                             f"{result['users_unmatched']} unmatched entries, "
@@ -10515,14 +10598,31 @@ def create_app(test_config=None):
             User.active.is_(True),
             User.role == "manager",
         ).order_by(User.name).all()
-        ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
+        ccb = tenant_query(SupportGroup).filter_by(name="Change Control Board").first()
+        if not ccb:
+            ccb = SupportGroup(
+                name="Change Control Board", group_type="CCB Approval",
+                tenant_id=current_user.tenant_id,
+            )
+            db.session.add(ccb)
+            db.session.flush()
         ccb_approver_ids = {
             member.user_id for member in ccb.members if member.role == "CCB approver"
         }
+        executive_office = tenant_query(SupportGroup).filter_by(name="Executive Office").first()
+        if not executive_office:
+            executive_office = SupportGroup(
+                name="Executive Office", group_type="Executive",
+                tenant_id=current_user.tenant_id,
+            )
+            db.session.add(executive_office)
+            db.session.flush()
+        db.session.commit()
         return render_template(
             "itil_admin.html", groups=groups, teams=teams,
             manager_candidates=manager_candidates, ccb_candidates=ccb_candidates,
             ccb=ccb, ccb_approver_ids=ccb_approver_ids,
+            executive_office=executive_office,
             directory_mappings=DirectoryGroupMapping.query.order_by(
                 DirectoryGroupMapping.directory_group
             ).all(),
