@@ -13,7 +13,7 @@ main{max-width:1800px}.page-head{padding-bottom:16px;border-bottom:1px solid var
 .panel,.stats>*{border-radius:6px}.stats>*{position:relative;overflow:hidden}.stats>*::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--brand-teal)}.stats>*:hover::before{background:var(--brand-amber)}
 th{background:#f0f4f5;color:#4b6269;border-bottom-color:#cbd7da}tbody tr:hover{background:#f8fbfb}td a,.board-card a{color:var(--brand-teal)}.badge,.tag,.priority{background:var(--brand-teal-soft);color:var(--brand-teal)}
 .tour-focus{outline-color:var(--brand-amber)!important}.flash{border-left:4px solid var(--brand-teal);background:var(--brand-teal-soft);color:var(--brand-teal)}.flash.error{border-left-color:#b9362d}
-.auth-main{background:linear-gradient(135deg,var(--brand-teal-soft),#fff 48%,var(--brand-amber-soft))}.login-card{border-top:5px solid var(--brand-teal);border-radius:8px}
+.auth-main{max-width:none;background:linear-gradient(135deg,var(--brand-teal-soft),#fff 48%,var(--brand-amber-soft))}.login-card{border-top:5px solid var(--brand-teal);border-radius:8px}
 .login-card .brand-login-mark{width:68px;height:42px;background:var(--brand-teal);color:#fff;font-size:17px;font-weight:900;letter-spacing:-.05em}.login-card::after{content:"";display:block;width:52px;height:4px;margin-top:24px;background:var(--brand-amber);border-radius:3px}
 .profile .avatar,.avatar{background:var(--brand-amber-soft);color:var(--brand-teal)}.nav-icon b{background:var(--brand-amber-strong);color:#17212b}
 .high-contrast{--green:#00566a;--green-dark:#003e4c}@media(max-width:900px){.sidebar{background:var(--brand-teal)}}
