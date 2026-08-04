@@ -27,7 +27,7 @@ COPY . .
 # must only be reachable from a developer checkout (or Dockerfile.test), not
 # from `docker exec` against a running production container.
 RUN rm -f /app/tools/load_test_fixture.py /app/tools/load_demo_dataset.py
-RUN mkdir -p /app/uploads && chmod 755 /app/tools/container-entrypoint.sh /app/tools/gunicorn-entrypoint.sh && chown -R app:app /app
+RUN mkdir -p /app/uploads /app/logs && chmod 755 /app/tools/container-entrypoint.sh /app/tools/gunicorn-entrypoint.sh && chown -R app:app /app
 USER app
 EXPOSE 8080
 ENTRYPOINT ["/app/tools/container-entrypoint.sh"]
