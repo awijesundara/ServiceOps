@@ -2903,6 +2903,28 @@ def test_user_edit_active_toggle_and_calendar_integration_are_independent_contro
     assert html.count("<label") == html.count("</label>")
 
 
+def test_user_edit_granted_roles_checkboxes_are_not_wrapped_in_one_label(client, app):
+    """Regression for a reported UI bug: clicking anywhere in the "Granted
+    roles" field area (its heading, the info-tip, whitespace between
+    checkboxes) always toggled "requester" specifically, regardless of which
+    role checkbox the user meant to click. Root cause: every role checkbox
+    was already correctly wrapped in its own <label class="check">, but the
+    whole group was ALSO wrapped in one outer <label> -- an invalid nested
+    label. Per standard label-activation behavior, clicking anywhere inside
+    an outer label that isn't a more specific interactive descendant
+    activates the FIRST labelable descendant in tree order, which is
+    "requester" (the first role rendered). Fixed by making the outer
+    wrapper a plain <div>, not a <label>, so only a direct click on a
+    specific role's own <label class="check"> activates that role."""
+    login(client)
+    response = client.get("/admin/users/1")
+    assert response.status_code == 200
+    html = response.data.decode()
+    assert '<div class="wide field-group">' in html
+    assert '<label class="wide">' not in html
+    assert html.count("<label") == html.count("</label>")
+
+
 def test_user_edit_grants_and_revokes_multiple_roles(client, app):
     with app.app_context():
         target = User(
