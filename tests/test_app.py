@@ -4554,3 +4554,129 @@ def test_system_health_log_viewer_handles_missing_log_dir_gracefully(client):
     response = client.get("/admin/system-health/logs")
     assert response.status_code == 200
     assert b"No detailed log file is available" in response.data
+
+
+def test_system_health_errors_export_csv_and_json(client, app):
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        db.session.add(ApplicationLog(
+            level="ERROR", message="Export me please", logger_name="app",
+            path="/exportable/path", method="GET", tenant_id=admin.tenant_id,
+        ))
+        db.session.commit()
+
+    csv_response = client.get("/admin/system-health/errors/export?format=csv")
+    assert csv_response.status_code == 200
+    assert csv_response.mimetype == "text/csv"
+    assert b"Export me please" in csv_response.data
+    assert "attachment" in csv_response.headers["Content-Disposition"]
+
+    json_response = client.get("/admin/system-health/errors/export?format=json")
+    assert json_response.status_code == 200
+    assert json_response.mimetype == "application/json"
+    payload = json.loads(json_response.data)
+    assert any(row["message"] == "Export me please" for row in payload)
+
+    ndjson_response = client.get("/admin/system-health/errors/export?format=ndjson")
+    assert ndjson_response.status_code == 200
+    assert ndjson_response.mimetype == "application/x-ndjson"
+
+    txt_response = client.get("/admin/system-health/errors/export?format=txt")
+    assert txt_response.status_code == 200
+    assert txt_response.mimetype == "text/plain"
+    assert b"Export me please" in txt_response.data
+
+
+def test_system_health_errors_export_is_admin_only(client):
+    login(client, "employee", "Employee123!")
+    assert client.get("/admin/system-health/errors/export").status_code == 403
+
+
+def test_system_health_error_filters_narrow_results(client, app):
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        db.session.add(ApplicationLog(
+            level="ERROR", message="alpha failure", logger_name="app.alpha",
+            path="/alpha", method="GET", tenant_id=admin.tenant_id,
+        ))
+        db.session.add(ApplicationLog(
+            level="WARNING", message="beta warning", logger_name="app.beta",
+            path="/beta", method="POST", tenant_id=admin.tenant_id,
+        ))
+        db.session.commit()
+
+    only_alpha = client.get("/admin/system-health?logger=alpha")
+    assert b"alpha failure" in only_alpha.data
+    assert b"beta warning" not in only_alpha.data
+
+    only_beta_path = client.get("/admin/system-health?path=/beta")
+    assert b"beta warning" in only_beta_path.data
+    assert b"alpha failure" not in only_beta_path.data
+
+    level_only_warning = client.get("/admin/system-health?level=WARNING")
+    assert b"beta warning" in level_only_warning.data
+    assert b"alpha failure" not in level_only_warning.data
+
+
+def test_system_health_log_file_export_and_filters(client, tmp_path, monkeypatch):
+    login(client)
+    log_file = tmp_path / "serviceops.json.log"
+    log_file.write_text(
+        json.dumps({
+            "timestamp": "2026-08-04T00:00:00+00:00", "level": "INFO", "logger": "serviceops.request",
+            "message": "request completed", "path": "/tickets", "method": "GET", "status_code": 200,
+        }) + "\n" +
+        json.dumps({
+            "timestamp": "2026-08-04T00:05:00+00:00", "level": "ERROR", "logger": "app",
+            "message": "boom", "path": "/tickets/new", "method": "POST", "status_code": 500,
+        }) + "\n"
+    )
+    monkeypatch.setenv("LOG_DIR", str(tmp_path))
+
+    all_lines = client.get("/admin/system-health/logs")
+    assert all_lines.status_code == 200
+    assert b"request completed" in all_lines.data
+    assert b"boom" in all_lines.data
+
+    only_errors = client.get("/admin/system-health/logs?level=ERROR")
+    assert b"boom" in only_errors.data
+    assert b"request completed" not in only_errors.data
+
+    only_post = client.get("/admin/system-health/logs?method=POST")
+    assert b"boom" in only_post.data
+    assert b"request completed" not in only_post.data
+
+    export_response = client.get("/admin/system-health/logs/export?format=ndjson")
+    assert export_response.status_code == 200
+    assert export_response.mimetype == "application/x-ndjson"
+    assert b"boom" in export_response.data
+
+    export_csv = client.get("/admin/system-health/logs/export?format=csv&level=ERROR")
+    assert export_csv.status_code == 200
+    assert b"boom" in export_csv.data
+    assert b"request completed" not in export_csv.data
+
+
+def test_system_health_log_file_export_is_admin_only(client):
+    login(client, "employee", "Employee123!")
+    assert client.get("/admin/system-health/logs/export").status_code == 403
+
+
+def test_sign_out_button_is_clearly_labeled(client):
+    login(client)
+    response = client.get("/")
+    assert b"Sign out" in response.data
+
+
+def test_role_switcher_shown_only_for_multi_role_users(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        db.session.add(UserRoleGrant(user_id=admin.id, role="agent"))
+        db.session.commit()
+
+    login(client)
+    response = client.get("/")
+    assert b"Switch your active role" in response.data
+    assert b"Acting as: Admin" in response.data or b"Acting as:" in response.data
