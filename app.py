@@ -2,6 +2,9 @@ import csv
 import io
 import json
 import logging
+import logging.handlers
+import traceback as traceback_module
+import time as time_module
 import os
 import ssl
 import uuid
@@ -14,6 +17,7 @@ import re
 import secrets
 import smtplib
 from pathlib import Path
+import collections
 from collections import Counter, defaultdict
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from email.message import EmailMessage
@@ -23,7 +27,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 import pyotp
-from flask import Flask, Response, abort, current_app, flash, g, has_request_context, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Flask, Response, abort, current_app, flash, g, has_app_context, has_request_context, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from markupsafe import Markup, escape
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_sqlalchemy import SQLAlchemy
@@ -309,6 +313,10 @@ class User(UserMixin, db.Model):
     mfa_enabled = db.Column(db.Boolean, nullable=False, default=False)
     mfa_enrolled_at = db.Column(db.DateTime(timezone=True))
     mfa_backup_codes_json = db.Column(db.Text)
+    # Updated at most once/minute per user (see track_last_seen) -- backs
+    # the System Health "currently active users" count, not an exact
+    # per-request timestamp.
+    last_seen_at = db.Column(db.DateTime(timezone=True))
 
     @property
     def is_active(self):
@@ -563,6 +571,28 @@ class AuditRetentionPolicy(db.Model):
         default=tenant_context_id, unique=True, index=True,
     )
     updated_by = db.relationship("User")
+
+
+class ApplicationLog(db.Model):
+    """Every WARNING+ log record the application logger emits, persisted so
+    it survives a container restart/crash and is readable from the admin
+    System Health page (see DatabaseLogHandler) without shell/`docker logs`
+    access. tenant_id/user_id are nullable -- a crash can happen before
+    authentication, in a background worker, or with no tenant context at
+    all, and logging a failure must never itself raise (e.g. via a
+    tenant-fail-closed default)."""
+    id = db.Column(db.Integer, primary_key=True)
+    level = db.Column(db.String(10), nullable=False, index=True)
+    logger_name = db.Column(db.String(120))
+    message = db.Column(db.Text, nullable=False)
+    traceback = db.Column(db.Text)
+    path = db.Column(db.String(255))
+    method = db.Column(db.String(10))
+    request_id = db.Column(db.String(36), index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False, index=True)
+    user = db.relationship("User")
 
 
 class APIClient(db.Model):
@@ -5217,13 +5247,139 @@ def ldap_authenticate(username, password):
         first("mail", first("userPrincipalName", "")), matched_roles, groups=groups)
 
 
+APP_START_TIME = now()
+
+
+class JsonLogFormatter(logging.Formatter):
+    """One JSON object per line -- detailed enough to reconstruct what
+    happened around an incident (request_id ties every request-scoped log
+    line together; exc_info carries the full traceback) without needing raw
+    text log parsing. Written to LOG_DIR so operators can read it from the
+    admin System Health log viewer instead of `docker logs`."""
+
+    def format(self, record):
+        payload = {
+            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        for attr in ("request_id", "method", "path", "status_code", "duration_ms", "user_id", "tenant_id", "remote_addr"):
+            value = getattr(record, attr, None)
+            if value is not None:
+                payload[attr] = value
+        if record.exc_info:
+            payload["exception"] = "".join(traceback_module.format_exception(*record.exc_info))
+        return json.dumps(payload, default=str)
+
+
+class DatabaseLogHandler(logging.Handler):
+    """Persists WARNING+ records to ApplicationLog so they survive a
+    container restart/crash and are readable from the admin System Health
+    page without shell/`docker logs` access (the stated goal: "every error
+    must be recorded" and readable "from the admin menu"). Silently drops
+    the record (never raises) if there's no request/app context or the DB
+    write itself fails -- a logging failure must never crash the request
+    that triggered the log in the first place."""
+
+    def emit(self, record):
+        if not has_app_context():
+            return
+        try:
+            db.session.add(ApplicationLog(
+                level=record.levelname,
+                logger_name=record.name,
+                message=self.format(record) if not record.exc_info else record.getMessage(),
+                traceback=(
+                    "".join(traceback_module.format_exception(*record.exc_info))
+                    if record.exc_info else None
+                ),
+                path=request.path if has_request_context() else getattr(record, "path", None),
+                method=request.method if has_request_context() else getattr(record, "method", None),
+                request_id=(
+                    g.get("request_id") if has_request_context() else getattr(record, "request_id", None)
+                ),
+                user_id=(
+                    current_user.id
+                    if has_request_context() and current_user.is_authenticated else None
+                ),
+                tenant_id=(
+                    current_user.tenant_id
+                    if has_request_context() and current_user.is_authenticated else None
+                ),
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+
+def configure_detailed_logging(app):
+    """LOG_DIR-backed rotating JSON file (all loggers, INFO+) plus the
+    always-on DatabaseLogHandler (app logger, WARNING+). LOG_DIR is only set
+    in the container images (see compose.yaml's serviceops_logs volume --
+    the app/worker containers run read_only, so this must be a mounted
+    volume, not the read-only root filesystem); local/test runs without it
+    just skip the file handler and keep the DB-backed one."""
+    # app.logger is logging.getLogger(app.import_name) -- a single
+    # process-wide named logger, not something scoped to this particular
+    # Flask instance. create_app() can run more than once in the same
+    # process (every test in this suite does exactly that), so handlers
+    # added here must be cleared first or they silently accumulate one set
+    # per call -- each duplicate DatabaseLogHandler/file handler processing
+    # the same record, eventually including ones bound to a long-torn-down
+    # SQLite tempfile from an earlier test whose emit() failures then mask
+    # the current, valid handler's own successful write.
+    for logger_name in ("app", "gunicorn.access"):
+        target_logger = logging.getLogger(logger_name)
+        for handler in list(target_logger.handlers):
+            if isinstance(handler, (DatabaseLogHandler, logging.handlers.RotatingFileHandler)):
+                target_logger.removeHandler(handler)
+    for existing in list(logging.getLogger().handlers):
+        if isinstance(existing, logging.handlers.RotatingFileHandler):
+            logging.getLogger().removeHandler(existing)
+
+    log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+    log_dir = os.getenv("LOG_DIR", "").strip()
+    if log_dir:
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+            file_handler = logging.handlers.RotatingFileHandler(
+                os.path.join(log_dir, "serviceops.json.log"),
+                maxBytes=20 * 1024 * 1024, backupCount=10,
+            )
+            file_handler.setFormatter(JsonLogFormatter())
+            file_handler.addFilter(RedactingFilter())
+            file_handler.setLevel(log_level)
+            root_logger = logging.getLogger()
+            root_logger.addHandler(file_handler)
+            root_logger.setLevel(min(root_logger.level or logging.WARNING, log_level))
+            logging.getLogger("gunicorn.access").addHandler(file_handler)
+        except OSError as error:
+            app.logger.warning("Could not open LOG_DIR for the detailed log file: %s", error)
+
+    db_handler = DatabaseLogHandler()
+    db_handler.setLevel(logging.WARNING)
+    db_handler.addFilter(RedactingFilter())
+    app.logger.addHandler(db_handler)
+    app.logger.setLevel(log_level)
+
+
 def create_app(test_config=None):
     app = Flask(__name__)
     # ISO 27001 A.8.11: never let passwords/tokens/connection strings/LDAP
     # bind passwords/session identifiers reach a log sink in the clear, even
     # if a call site accidentally logs a raw dict/exception containing one.
+    # Same accumulation concern as configure_detailed_logging() below: clear
+    # any filter this same process already added on a previous create_app()
+    # call before adding a fresh one.
+    for logger_name in ("app", "gunicorn.error", "gunicorn.access"):
+        target_logger = logging.getLogger(logger_name)
+        for existing_filter in list(target_logger.filters):
+            if isinstance(existing_filter, RedactingFilter):
+                target_logger.removeFilter(existing_filter)
     _redacting_filter = RedactingFilter()
     app.logger.addFilter(_redacting_filter)
+    configure_detailed_logging(app)
     logging.getLogger("gunicorn.error").addFilter(_redacting_filter)
     logging.getLogger("gunicorn.access").addFilter(_redacting_filter)
     app.config.update(
@@ -5363,6 +5519,23 @@ def create_app(test_config=None):
             g.request_id = str(uuid.UUID(supplied)) if supplied else str(uuid.uuid4())
         except ValueError:
             g.request_id = str(uuid.uuid4())
+        g._request_started_at = time_module.monotonic()
+
+    @app.before_request
+    def track_last_seen():
+        # Throttled to at most once/minute/user -- an UPDATE on every single
+        # request would otherwise add write load proportional to traffic for
+        # a stat that only needs minute-level precision (System Health's
+        # "currently active users").
+        if not current_user.is_authenticated:
+            return
+        stale = (
+            current_user.last_seen_at is None
+            or (now() - align_tz(current_user.last_seen_at, now())) > timedelta(minutes=1)
+        )
+        if stale:
+            current_user.last_seen_at = now()
+            db.session.commit()
 
     @app.before_request
     def verify_api_identity():
@@ -5428,6 +5601,33 @@ def create_app(test_config=None):
             response.headers["Content-Length"] = str(len(response.get_data()))
         return response
 
+    @app.after_request
+    def log_request_completion(response):
+        # Every request, not just errors -- this is what "very detailed
+        # logs" actually needs: reconstructing the full sequence of what a
+        # user/client did, not just the moments something broke. Goes to
+        # the rotating JSON file (INFO) via the root logger, not the
+        # DB-backed handler (WARNING+ only, to keep ApplicationLog to
+        # actual problems worth an admin's attention).
+        duration_ms = None
+        started_at = g.get("_request_started_at")
+        if started_at is not None:
+            duration_ms = round((time_module.monotonic() - started_at) * 1000, 2)
+        logging.getLogger("serviceops.request").info(
+            "%s %s -> %s", request.method, request.path, response.status_code,
+            extra={
+                "request_id": g.get("request_id"),
+                "method": request.method,
+                "path": request.path,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+                "user_id": current_user.id if current_user.is_authenticated else None,
+                "tenant_id": current_user.tenant_id if current_user.is_authenticated else None,
+                "remote_addr": request.remote_addr,
+            },
+        )
+        return response
+
     @app.errorhandler(RequestEntityTooLarge)
     def request_entity_too_large(error):
         max_mb = app.config.get("MAX_CONTENT_LENGTH", 20 * 1024 * 1024) // (1024 * 1024)
@@ -5477,6 +5677,38 @@ def create_app(test_config=None):
         return render_template(
             "error.html", code=403, message="Your account has no tenant assignment. Contact an administrator."
         ), 403
+
+    @app.errorhandler(Exception)
+    def unhandled_exception(error):
+        # Flask/Werkzeug route error lookups by MRO specificity, so
+        # HTTPException (including RequestEntityTooLarge/TenantResolutionError
+        # above) is always dispatched to its own more-specific handler first
+        # -- this only ever actually receives a genuine bug: something with
+        # no handler of its own. "Every error must be recorded": the
+        # DatabaseLogHandler attached to app.logger persists this to
+        # ApplicationLog (visible on System Health) before anything else
+        # happens, and a dirty/half-written transaction from whatever failed
+        # is rolled back so the next request on this connection starts clean.
+        app.logger.error(
+            "Unhandled exception on %s %s", request.method, request.path, exc_info=error,
+        )
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001 - never let cleanup mask the original error
+            pass
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "error": {
+                    "status": 500,
+                    "title": "Internal Server Error",
+                    "detail": "An unexpected error occurred. This has been logged.",
+                    "request_id": g.get("request_id"),
+                }
+            }), 500
+        return render_template(
+            "error.html", code=500,
+            message="An unexpected error occurred. This has been logged and an administrator can review it.",
+        ), 500
 
     def nav_active(endpoint, **params):
         if request.endpoint != endpoint:
@@ -9027,6 +9259,140 @@ def create_app(test_config=None):
             ).count(),
         )
 
+    @app.get("/admin/system-health")
+    @roles("admin")
+    @require_action("security_administer")
+    def system_health():
+        db_healthy, db_latency_ms = True, None
+        db_check_started = time_module.monotonic()
+        try:
+            db.session.execute(db.text("SELECT 1"))
+            db_latency_ms = round((time_module.monotonic() - db_check_started) * 1000, 2)
+        except Exception:  # noqa: BLE001 - this check's whole point is surfacing DB failure
+            db_healthy = False
+
+        worker_heartbeat = db.session.get(PlatformSetting, "WORKER_LAST_HEARTBEAT")
+        worker_last_seen = None
+        worker_healthy = False
+        if worker_heartbeat and worker_heartbeat.value:
+            try:
+                worker_last_seen = datetime.fromisoformat(worker_heartbeat.value)
+                worker_healthy = (now() - worker_last_seen) < timedelta(seconds=30)
+            except ValueError:
+                pass
+
+        active_cutoff = now() - timedelta(minutes=15)
+        active_users = tenant_query(User).filter(
+            User.last_seen_at.isnot(None), User.last_seen_at >= active_cutoff,
+        ).order_by(User.last_seen_at.desc()).all()
+
+        # Not tenant_query(): many real errors have no tenant context at all
+        # (a failed login before authentication, an LDAP bind failure, a
+        # background worker error) -- strictly filtering by tenant_id would
+        # make exactly the crashes an admin most needs to see permanently
+        # invisible. Include this tenant's own errors plus every
+        # tenant-less one; still never another tenant's.
+        error_query = ApplicationLog.query.filter(
+            db.or_(ApplicationLog.tenant_id.is_(None), ApplicationLog.tenant_id == current_user.tenant_id)
+        )
+        level_filter = request.args.get("level", "")
+        if level_filter in ("ERROR", "CRITICAL", "WARNING"):
+            error_query = error_query.filter(ApplicationLog.level == level_filter)
+        q = request.args.get("q", "").strip()
+        if q:
+            error_query = error_query.filter(ApplicationLog.message.ilike(f"%{q}%"))
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            page = 1
+        per_page = 50
+        total_errors = error_query.count()
+        pages = max(1, (total_errors + per_page - 1) // per_page)
+        page = min(page, pages)
+        error_rows = error_query.order_by(ApplicationLog.created_at.desc()).offset(
+            (page - 1) * per_page
+        ).limit(per_page).all()
+
+        error_last_hour = ApplicationLog.query.filter(
+            db.or_(ApplicationLog.tenant_id.is_(None), ApplicationLog.tenant_id == current_user.tenant_id),
+            ApplicationLog.level.in_(["ERROR", "CRITICAL"]),
+            ApplicationLog.created_at >= now() - timedelta(hours=1),
+        ).count()
+
+        return render_template(
+            "system_health.html",
+            app_version=APP_VERSION,
+            app_start_time=APP_START_TIME,
+            db_healthy=db_healthy, db_latency_ms=db_latency_ms,
+            worker_healthy=worker_healthy, worker_last_seen=worker_last_seen,
+            active_users=active_users, active_user_count=len(active_users),
+            error_rows=error_rows, level_filter=level_filter, q=q,
+            page=page, pages=pages, total_errors=total_errors,
+            error_last_hour=error_last_hour,
+            total_users=tenant_query(User).filter_by(active=True).count(),
+            open_tickets=tenant_query(Ticket).filter(
+                Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])
+            ).count(),
+        )
+
+    @app.post("/admin/system-health/errors/clear")
+    @roles("admin")
+    @require_action("security_administer")
+    def system_health_clear_errors():
+        deleted = ApplicationLog.query.filter(
+            db.or_(ApplicationLog.tenant_id.is_(None), ApplicationLog.tenant_id == current_user.tenant_id)
+        ).delete(synchronize_session=False)
+        audit("purge", "Application error log", f"{deleted} entries cleared")
+        db.session.commit()
+        flash(f"Cleared {deleted} error log entries.", "success")
+        return redirect(url_for("system_health"))
+
+    @app.get("/admin/system-health/logs")
+    @roles("admin")
+    @require_action("security_administer")
+    def system_health_log_file():
+        # The detailed request-level JSON log (every request, not just
+        # errors -- see log_request_completion) lives on disk, not in the
+        # database, because its volume would otherwise dwarf every other
+        # table combined. Tails it here instead of requiring shell/`docker
+        # logs` access. Not tenant-filterable (it's a shared process-wide
+        # file across every tenant this instance serves) -- restricted to
+        # admins for that reason, same as the rest of this page.
+        log_dir = os.getenv("LOG_DIR", "").strip()
+        log_path = os.path.join(log_dir, "serviceops.json.log") if log_dir else None
+        lines = []
+        error_message = None
+        if not log_path or not os.path.isfile(log_path):
+            error_message = (
+                "No detailed log file is available. LOG_DIR is not configured for this "
+                "deployment, or no requests have been logged to it yet."
+            )
+        else:
+            try:
+                max_lines = min(max(int(request.args.get("lines", "500")), 1), 5000)
+            except ValueError:
+                max_lines = 500
+            try:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as handle:
+                    lines = collections.deque(handle, maxlen=max_lines)
+            except OSError as error:
+                error_message = f"Could not read the log file: {error}"
+        q = request.args.get("q", "").strip()
+        parsed = []
+        for line in lines:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                entry = {"level": "", "message": line.rstrip("\n")}
+            if q and q.casefold() not in json.dumps(entry, default=str).casefold():
+                continue
+            parsed.append(entry)
+        parsed.reverse()
+        return render_template(
+            "system_health_logs.html", entries=parsed, q=q,
+            error_message=error_message, log_path=log_path,
+        )
+
     @app.post("/admin/audit/rotate-key")
     @roles("admin")
     @require_action("security_administer")
@@ -11810,6 +12176,18 @@ def create_app(test_config=None):
             "error.html", code=409,
             message=error.description or "The requested workflow transition is not allowed.",
         ), 409
+
+    # Alembic's AlembicConfig(alembic.ini) above runs migrations/env.py,
+    # which calls logging.config.fileConfig(alembic.ini) -- that defaults
+    # to disable_existing_loggers=True, silently setting `app.logger.disabled
+    # = True` as a side effect on every migration run (this shared,
+    # process-wide named logger, not anything scoped to this Flask
+    # instance -- see configure_detailed_logging's docstring). Nothing else
+    # ever re-enables it, so this must run after the migration step, not
+    # just once inside configure_detailed_logging near the top of this
+    # function, or every log call -- including "every error must be
+    # recorded" -- silently no-ops for the rest of the process.
+    app.logger.disabled = False
 
     return app
 

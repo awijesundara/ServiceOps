@@ -201,3 +201,13 @@ pytest -q
   and uploads.
 - Your organization's SSO (AD/LDAP or Keycloak) configured before broad
   rollout — local auth is meant as a break-glass account only.
+- `GUNICORN_WORKERS`/`GUNICORN_THREADS` sized for your concurrent user
+  count — the shipped defaults (2 workers × 4 threads) are conservative for
+  a small deployment; a 100-concurrent-user load test surfaced occasional
+  connection resets during worker recycling (`GUNICORN_MAX_REQUESTS`) at
+  that default. `admin/system-health` shows live error/active-user counts
+  to help size this for your actual traffic.
+- If most users share one egress IP (NAT/VPN), raise
+  `LOGIN_RATE_LIMIT_PER_IP_PER_MINUTE` (Platform settings → Security)
+  above its default before a broad rollout, or a login rush can throttle
+  legitimate users along with any real attacker.

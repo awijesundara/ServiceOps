@@ -20,7 +20,13 @@ REHEARSAL_DATABASE="${SOURCE_DATABASE}_upgrade_rehearsal"
   exit 2
 }
 CANDIDATE_IMAGE="${SERVICEOPS_IMAGE:?SERVICEOPS_IMAGE is required}"
-COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/compose.yaml")
+# Overridable so tools/blue_green_deploy.sh can rehearse against
+# compose.blue-green.yaml's app_blue/app_green services instead of plain
+# compose.yaml's single "app" -- unset (the default), behavior is
+# identical to before this was made overridable.
+REHEARSE_COMPOSE_FILE="${REHEARSE_COMPOSE_FILE:-$ROOT_DIR/compose.yaml}"
+REHEARSE_APP_SERVICE="${REHEARSE_APP_SERVICE:-app}"
+COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$REHEARSE_COMPOSE_FILE")
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 evidence="$ROOT_DIR/backups/serviceops-upgrade-$stamp.json"
 started_epoch="$(date +%s)"
@@ -49,12 +55,12 @@ cleanup
 
 REHEARSAL_URL="postgresql+psycopg://${POSTGRES_USER:-serviceops}:${POSTGRES_PASSWORD}@db:5432/${REHEARSAL_DATABASE}"
 "${COMPOSE[@]}" run --rm --no-deps \
-  -e AUTO_MIGRATE=true -e DATABASE_URL="$REHEARSAL_URL" app true
+  -e AUTO_MIGRATE=true -e DATABASE_URL="$REHEARSAL_URL" "$REHEARSE_APP_SERVICE" true
 verification="$("${COMPOSE[@]}" run --rm --no-deps \
   -e AUTO_MIGRATE=false \
   -e DATABASE_URL="$REHEARSAL_URL" \
   -v serviceops_uploads:/recovery/uploads:ro \
-  app python -m tools.recovery_verify verify-database \
+  "$REHEARSE_APP_SERVICE" python -m tools.recovery_verify verify-database \
   --purpose upgrade --uploads /recovery/uploads)"
 "$ROOT_DIR/serviceops" health >/dev/null
 completed_epoch="$(date +%s)"

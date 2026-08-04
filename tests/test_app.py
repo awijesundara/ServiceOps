@@ -24,6 +24,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  RequestedItem, PlatformSetting, ServiceOffering, ServiceOfferingCI, SupportGroup, SupportGroupAlias,
                  TaskCI, TaskHistory, TaskNote, TaskSLA,
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference, UserRoleGrant, ManagedRoleGrant,
+                 ApplicationLog,
                  create_ticket_with_unique_number, create_with_retry_on_number_collision, next_number,
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
@@ -4477,3 +4478,79 @@ def test_module_records_searchable_by_imported_source_ticket_number(client, app)
         detail_id = EnterpriseRecord.query.filter_by(external_id="48055").one().id
     detail = client.get(f"/enterprise/{detail_id}")
     assert b"RT #48055" in detail.data
+
+
+def test_unhandled_exception_is_logged_and_shows_error_page_not_a_raw_500(client, app):
+    """"Every error must be recorded": an unhandled exception in a route
+    must (a) never leak a raw Werkzeug traceback page to the user, and (b)
+    be persisted to ApplicationLog by the DatabaseLogHandler attached to
+    app.logger, visible on System Health without shell access."""
+    login(client)
+    with app.app_context():
+        before = ApplicationLog.query.count()
+
+    # tenant_context_id() is patched to explode on its first call only --
+    # the cleanest way to force a genuine unhandled exception through a
+    # real authenticated route without adding a test-only crash endpoint to
+    # production code. Only the first call because error.html's own
+    # rendering goes through ui_context(), which also calls
+    # tenant_context_id() (via tenant_query) -- a patch that always raises
+    # would break the error page's own rendering too, not just the route
+    # that crashed.
+    import app as app_module
+    original = app_module.tenant_context_id
+    state = {"calls": 0}
+
+    def flaky():
+        state["calls"] += 1
+        if state["calls"] == 1:
+            raise RuntimeError("forced crash for test")
+        return original()
+
+    app_module.tenant_context_id = flaky
+    try:
+        response = client.get("/tickets/incident")
+    finally:
+        app_module.tenant_context_id = original
+
+    assert response.status_code == 500
+    assert b"unexpected error occurred" in response.data
+    assert b"Traceback" not in response.data
+    with app.app_context():
+        after = ApplicationLog.query.count()
+        assert after == before + 1
+        row = ApplicationLog.query.order_by(ApplicationLog.id.desc()).first()
+        assert row.level == "ERROR"
+        assert "forced crash for test" in row.traceback
+        assert row.path == "/tickets/incident"
+
+
+def test_system_health_shows_active_users_and_recorded_errors(client, app):
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        db.session.add(ApplicationLog(
+            level="ERROR", message="Something broke in a background job",
+            path="/some/path", method="GET", tenant_id=admin.tenant_id,
+        ))
+        db.session.commit()
+
+    response = client.get("/admin/system-health")
+    assert response.status_code == 200
+    assert b"Something broke in a background job" in response.data
+    assert b"Currently active users" in response.data
+    # The logged-in admin making this very request updates their own
+    # last_seen_at via track_last_seen before the route runs.
+    assert b"admin" in response.data
+
+
+def test_system_health_is_admin_only(client):
+    login(client, "employee", "Employee123!")
+    assert client.get("/admin/system-health").status_code == 403
+
+
+def test_system_health_log_viewer_handles_missing_log_dir_gracefully(client):
+    login(client)
+    response = client.get("/admin/system-health/logs")
+    assert response.status_code == 200
+    assert b"No detailed log file is available" in response.data
