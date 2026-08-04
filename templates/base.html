@@ -64,7 +64,7 @@
   <div class="profile">
     {{ user_avatar(current_user) }}
     <a href="{{ url_for('profile') }}"><strong>{{ current_user.name }}</strong><small>{{ current_user.effective_role }}</small></a>
-    <form action="{{ url_for('logout') }}" method="post"><button class="link-button" aria-label="Sign out">↗</button></form>
+    <form action="{{ url_for('logout') }}" method="post"><button type="submit" class="sign-out-button" title="Sign out" aria-label="Sign out"><svg class="icon" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>Sign out</span></button></form>
   </div>
   <div class="sidebar-version">v{{ app_version }}</div>
 </aside>
@@ -89,15 +89,18 @@
       </div>
     </details>
     {% if current_user.granted_roles|length > 1 %}
-    <details data-nav-menu="acting-role">
-      <summary title="Acting as {{ current_user.effective_role|capitalize }}" aria-label="Switch acting role"><span class="acting-role-badge">{{ current_user.effective_role|capitalize }}</span></summary>
+    <details data-nav-menu="acting-role" class="role-switcher">
+      <summary title="You have multiple roles -- click to switch which one is active" aria-label="Switch your active role (currently {{ current_user.effective_role|capitalize }})">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        <span class="acting-role-badge">Acting as: {{ current_user.effective_role|capitalize }}</span>
+      </summary>
       <div class="nav-popover">
-        <h3>Acting as</h3>
-        <p class="muted">You hold {{ current_user.granted_roles|join(', ') }}. Switching genuinely changes what you can do until you switch back.</p>
+        <h3>Switch your active role</h3>
+        <p class="muted">You hold {{ current_user.granted_roles|length }} roles: {{ current_user.granted_roles|join(', ') }}. Switching genuinely changes what you can see and do -- pick which one is active until you switch back.</p>
         {% for role in current_user.granted_roles %}
         <form method="post" action="{{ url_for('set_acting_role') }}">
           <input type="hidden" name="role" value="{{ role }}">
-          <button type="submit" class="favorite-toggle"{% if role == current_user.effective_role %} disabled{% endif %}>{{ '✓ ' if role == current_user.effective_role }}{{ role|capitalize }}</button>
+          <button type="submit" class="favorite-toggle role-switch-option"{% if role == current_user.effective_role %} disabled{% endif %}>{{ '✓ ' if role == current_user.effective_role }}{{ role|capitalize }}{% if role == current_user.effective_role %} <small>(active now)</small>{% endif %}</button>
         </form>
         {% endfor %}
       </div>
