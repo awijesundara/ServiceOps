@@ -6,15 +6,40 @@
 <div class="panel"><p class="flash error">{{ error_message }}</p></div>
 {% else %}
 <section class="panel">
-  <form class="list-search" style="margin-bottom:14px">
+  <form class="filters splunk-filters" style="margin-bottom:14px">
     <input name="q" value="{{ q }}" placeholder="Search path, message, request ID..." aria-label="Search logs">
+    <select name="level" aria-label="Level">
+      <option value="" {% if not level_filter %}selected{% endif %}>All levels</option>
+      {% for level in ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'] %}
+      <option value="{{ level }}" {% if level_filter == level %}selected{% endif %}>{{ level }}</option>
+      {% endfor %}
+    </select>
+    <input name="logger" value="{{ logger_filter }}" placeholder="Logger contains…" aria-label="Logger name">
+    <input name="path" value="{{ path_filter }}" placeholder="Path contains…" aria-label="Path">
+    <select name="method" aria-label="Method">
+      <option value="" {% if not method_filter %}selected{% endif %}>Any method</option>
+      {% for method in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] %}
+      <option value="{{ method }}" {% if method_filter == method %}selected{% endif %}>{{ method }}</option>
+      {% endfor %}
+    </select>
+    <input name="status_code" value="{{ status_filter }}" placeholder="Status code" aria-label="Status code">
+    <input name="request_id" value="{{ request_id_filter }}" placeholder="Request ID" aria-label="Request ID">
+    <label>From <input type="datetime-local" name="from" value="{{ from_filter }}" aria-label="From date/time"></label>
+    <label>To <input type="datetime-local" name="to" value="{{ to_filter }}" aria-label="To date/time"></label>
     <select name="lines">
-      {% for count in [200, 500, 1000, 2000, 5000] %}
+      {% for count in [200, 500, 1000, 2000, 5000, 20000] %}
       <option value="{{ count }}" {% if request.args.get('lines', '500')|int == count %}selected{% endif %}>Last {{ count }} lines</option>
       {% endfor %}
     </select>
-    <button>Search</button>
+    <button>Apply filters</button>
+    <a class="button" href="{{ url_for('system_health_log_file') }}">Clear filters</a>
   </form>
+  <div class="export-bar">
+    <span>Export {{ entries|length }} filtered lines as:</span>
+    {% for fmt, label in [('ndjson','NDJSON'), ('json','JSON'), ('csv','CSV'), ('txt','Plain text')] %}
+    <a class="button big" href="{{ url_for('system_health_log_file_export', format=fmt, q=q, level=level_filter, logger=logger_filter, path=path_filter, method=method_filter, status_code=status_filter, request_id=request_id_filter, lines=request.args.get('lines', '500'), **{'from': from_filter, 'to': to_filter}) }}">{{ label }}</a>
+    {% endfor %}
+  </div>
   <div class="task-list-scroll">
   <table class="task-list"><thead><tr><th>Time</th><th>Level</th><th>Method</th><th>Path</th><th>Status</th><th>Duration</th><th>User</th><th>Message</th></tr></thead><tbody>
     {% for entry in entries %}
