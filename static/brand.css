@@ -45,7 +45,10 @@ th{background:#f0f4f5;color:#4b6269;border-bottom-color:#cbd7da}tbody tr:hover{b
 .sidebar .role-switcher summary::-webkit-details-marker{display:none}
 .sidebar .role-switcher .role-switcher-chevron{transition:transform .15s ease}
 .sidebar .role-switcher[open] .role-switcher-chevron{transform:rotate(180deg)}
-.sidebar .role-switcher .role-switcher-popover{position:absolute;bottom:calc(100% + 8px);left:0;right:0;top:auto;width:auto}
+.sidebar .role-switcher .role-switcher-popover{position:absolute;z-index:30;bottom:calc(100% + 8px);left:0;right:0;top:auto;width:auto;background:#fff;color:var(--ink);border:1px solid var(--line);box-shadow:0 12px 35px rgba(0,0,0,.35)}
+.sidebar .role-switcher .role-switcher-popover h3{color:var(--ink);margin:0 0 8px;font-size:14px}
+.sidebar .role-switcher .role-switcher-popover .muted{color:var(--muted)}
+.sidebar .role-switcher .role-switch-option{color:var(--ink)}
 .apply-badge.live{background:#e1f2ee;color:#176a5a}.apply-badge.restart{background:#fff0dc;color:#8a5505}.apply-badge.external{background:#e8eef5;color:#35546e}
 .color-field{display:flex!important;justify-content:flex-start!important;gap:10px;margin-top:7px}.color-field input{width:55px;height:38px;padding:2px;margin:0}.color-field code{padding:8px;background:#f1f4f5;border-radius:5px}
 .settings-logo-preview{max-width:180px;max-height:70px;object-fit:contain}.settings-save{position:sticky;bottom:14px;display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-left:5px solid var(--brand-amber);border-radius:7px;padding:14px 18px;box-shadow:0 10px 30px rgba(0,47,58,.18);z-index:5}
