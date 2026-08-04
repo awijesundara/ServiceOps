@@ -22,7 +22,7 @@
 </head>
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
 {% if current_user.is_authenticated %}
-{% set admin_endpoints = ['admin_home','itil_admin','system_settings','users','user_new','user_edit','audit_log','api_clients_admin','integrations_admin','workflows_admin','platform_tenants'] %}
+{% set admin_endpoints = ['admin_home','itil_admin','system_settings','users','user_new','user_edit','audit_log','api_clients_admin','integrations_admin','workflows_admin','platform_tenants','system_health','system_health_log_file'] %}
 <script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active</div>{% endif %}
 <aside class="sidebar">
