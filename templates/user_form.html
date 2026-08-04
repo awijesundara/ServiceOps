@@ -32,7 +32,7 @@
       <label><span>Business phone</span><input name="business_phone" value="{{ user.business_phone if editing else '' }}" maxlength="40"></label>
       {% if not self_service and not editing %}<label><span>Initial role</span><select name="role">{% for role in all_roles %}{% if role != 'superadmin' or current_user.effective_role == 'superadmin' %}<option>{{ role }}</option>{% endif %}{% endfor %}</select><small>Directory/SSO login and team assignment may grant this user additional roles automatically after creation.</small></label>{% endif %}
       {% if not self_service and editing %}
-      <label class="wide"><span>Granted roles<span class="info-tip" tabindex="0" data-tip="A user can hold more than one role at once (e.g. both manager and admin) and switch which one they're acting as from the nav bar. Directory/SSO login and team/manager assignment can also grant or revoke roles automatically here -- unchecking one that's still implied by AD group membership or team responsibility only removes it until their next login/team-sync re-evaluates it.">i</span></span>
+      <div class="wide field-group"><span>Granted roles<span class="info-tip" tabindex="0" data-tip="A user can hold more than one role at once (e.g. both manager and admin) and switch which one they're acting as from the nav bar. Directory/SSO login and team/manager assignment can also grant or revoke roles automatically here -- unchecking one that's still implied by AD group membership or team responsibility only removes it until their next login/team-sync re-evaluates it.">i</span></span>
         <span class="checkbox-row">
           {% for role in all_roles %}
           <label class="check">
@@ -44,7 +44,7 @@
           {% endfor %}
         </span>
         {% if 'superadmin' in user.granted_roles and current_user.effective_role != 'superadmin' %}<small>Only a superadmin can change the superadmin grant.</small>{% endif %}
-      </label>
+      </div>
       {% endif %}
       {% if not self_service and editing %}<label><span>Reports to<span class="info-tip" tabindex="0" data-tip="Sets this person's manager for the organization chart. Team ownership is separate and still comes from AD group mapping or manual team assignment.">i</span></span><select name="manager_id"><option value="">No manager (top of chart)</option>{% for candidate in manager_choices %}<option value="{{ candidate.id }}" {% if user.manager_id==candidate.id %}selected{% endif %}>{{ candidate.name }}{% if candidate.title %} — {{ candidate.title }}{% endif %}</option>{% endfor %}</select></label>{% endif %}
       <label><span>Mobile phone</span><input name="mobile_phone" value="{{ user.mobile_phone if editing else '' }}" maxlength="40"></label>
