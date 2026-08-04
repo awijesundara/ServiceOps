@@ -33,22 +33,34 @@
 <section class="list-workspace" style="margin-top:20px">
   <header class="list-toolbar">
     <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Application errors</strong><small>{{ total_errors }} records</small></div></div>
-    <form class="list-search">
-      <input name="q" value="{{ q }}" placeholder="Search message" aria-label="Search errors">
-      <select name="level">
-        <option value="" {% if not level_filter %}selected{% endif %}>All levels</option>
-        {% for level in ['CRITICAL', 'ERROR', 'WARNING'] %}
-        <option value="{{ level }}" {% if level_filter == level %}selected{% endif %}>{{ level }}</option>
-        {% endfor %}
-      </select>
-      <button>Search</button>
-    </form>
     <nav class="list-pagination" aria-label="Pagination">
-      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('system_health', q=q, level=level_filter, page=page-1) }}">‹</a>
+      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('system_health', page=page-1, q=q, level=level_filter, logger=logger_filter, path=path_filter, request_id=request_id_filter, **{'from': from_filter, 'to': to_filter}) }}">‹</a>
       <span>Page {{ page }} of {{ pages }}</span>
-      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('system_health', q=q, level=level_filter, page=page+1) }}">›</a>
+      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('system_health', page=page+1, q=q, level=level_filter, logger=logger_filter, path=path_filter, request_id=request_id_filter, **{'from': from_filter, 'to': to_filter}) }}">›</a>
     </nav>
   </header>
+  <form class="filters splunk-filters" method="get" action="{{ url_for('system_health') }}">
+    <input name="q" value="{{ q }}" placeholder="Search message text" aria-label="Search errors">
+    <select name="level" aria-label="Level">
+      <option value="" {% if not level_filter %}selected{% endif %}>All levels</option>
+      {% for level in ['CRITICAL', 'ERROR', 'WARNING'] %}
+      <option value="{{ level }}" {% if level_filter == level %}selected{% endif %}>{{ level }}</option>
+      {% endfor %}
+    </select>
+    <input name="logger" value="{{ logger_filter }}" placeholder="Logger contains…" aria-label="Logger name">
+    <input name="path" value="{{ path_filter }}" placeholder="Path contains…" aria-label="Request path">
+    <input name="request_id" value="{{ request_id_filter }}" placeholder="Request ID" aria-label="Request ID">
+    <label>From <input type="datetime-local" name="from" value="{{ from_filter }}" aria-label="From date/time"></label>
+    <label>To <input type="datetime-local" name="to" value="{{ to_filter }}" aria-label="To date/time"></label>
+    <button>Apply filters</button>
+    <a class="button" href="{{ url_for('system_health') }}">Clear filters</a>
+  </form>
+  <div class="export-bar">
+    <span>Export {{ total_errors }} filtered records as:</span>
+    {% for fmt, label in [('csv','CSV'), ('json','JSON'), ('ndjson','NDJSON'), ('txt','Plain text')] %}
+    <a class="button big" href="{{ url_for('system_health_errors_export', format=fmt, q=q, level=level_filter, logger=logger_filter, path=path_filter, request_id=request_id_filter, **{'from': from_filter, 'to': to_filter}) }}">{{ label }}</a>
+    {% endfor %}
+  </div>
   <div class="task-list-scroll">
   <table class="task-list"><thead><tr><th>Time</th><th>Level</th><th>Request</th><th>User</th><th>Path</th><th>Message</th></tr></thead><tbody>
     {% for row in error_rows %}

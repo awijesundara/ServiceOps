@@ -6,6 +6,7 @@ import logging.handlers
 import traceback as traceback_module
 import time as time_module
 import os
+import sys
 import ssl
 import uuid
 import base64
@@ -5339,6 +5340,25 @@ def configure_detailed_logging(app):
             logging.getLogger().removeHandler(existing)
 
     log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+
+    # `docker logs`/`kubectl logs` must show the exact same detail as the
+    # in-app log viewer and LOG_DIR file -- an operator without shell access
+    # to the volume (or debugging before it's mounted) still needs full
+    # context. Same JsonLogFormatter/RedactingFilter as the file handler, so
+    # every line is identical in both places, just duplicated sinks.
+    for existing in list(logging.getLogger().handlers):
+        if isinstance(existing, logging.StreamHandler) and getattr(existing, "_serviceops_stdout", False):
+            logging.getLogger().removeHandler(existing)
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(JsonLogFormatter())
+    stdout_handler.addFilter(RedactingFilter())
+    stdout_handler.setLevel(log_level)
+    stdout_handler._serviceops_stdout = True
+    root_logger = logging.getLogger()
+    root_logger.addHandler(stdout_handler)
+    root_logger.setLevel(min(root_logger.level or logging.WARNING, log_level))
+    logging.getLogger("gunicorn.access").addHandler(stdout_handler)
+
     log_dir = os.getenv("LOG_DIR", "").strip()
     if log_dir:
         try:
@@ -5362,6 +5382,178 @@ def configure_detailed_logging(app):
     db_handler.addFilter(RedactingFilter())
     app.logger.addHandler(db_handler)
     app.logger.setLevel(log_level)
+
+
+def _parse_log_timestamp(value):
+    """Best-effort parse of a datetime-local/ISO query-string value used by
+    the System Health "from"/"to" filters; returns None (never raises) so a
+    malformed filter degrades to "no bound" instead of a 500."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _filtered_application_log_query(current_user):
+    """Splunk-style filtering over the persisted ApplicationLog error/warning
+    table: free-text message search plus level/logger/path/request_id/date
+    range facets, all combinable. Shared by the System Health page and its
+    CSV/JSON export so filters and export always see identical results.
+    Not tenant_query(): many real errors have no tenant context at all (a
+    failed login before authentication, an LDAP bind failure, a background
+    worker error) -- strictly filtering by tenant_id would make exactly the
+    crashes an admin most needs to see permanently invisible. Include this
+    tenant's own errors plus every tenant-less one; still never another
+    tenant's."""
+    query = ApplicationLog.query.filter(
+        db.or_(ApplicationLog.tenant_id.is_(None), ApplicationLog.tenant_id == current_user.tenant_id)
+    )
+    level_filter = request.args.get("level", "")
+    if level_filter in ("ERROR", "CRITICAL", "WARNING"):
+        query = query.filter(ApplicationLog.level == level_filter)
+    q = request.args.get("q", "").strip()
+    if q:
+        query = query.filter(ApplicationLog.message.ilike(f"%{q}%"))
+    logger_filter = request.args.get("logger", "").strip()
+    if logger_filter:
+        query = query.filter(ApplicationLog.logger_name.ilike(f"%{logger_filter}%"))
+    path_filter = request.args.get("path", "").strip()
+    if path_filter:
+        query = query.filter(ApplicationLog.path.ilike(f"%{path_filter}%"))
+    request_id_filter = request.args.get("request_id", "").strip()
+    if request_id_filter:
+        query = query.filter(ApplicationLog.request_id == request_id_filter)
+    from_dt = _parse_log_timestamp(request.args.get("from", "").strip())
+    if from_dt:
+        query = query.filter(ApplicationLog.created_at >= from_dt)
+    to_dt = _parse_log_timestamp(request.args.get("to", "").strip())
+    if to_dt:
+        query = query.filter(ApplicationLog.created_at <= to_dt)
+    filters = {
+        "level_filter": level_filter, "q": q, "logger_filter": logger_filter,
+        "path_filter": path_filter, "request_id_filter": request_id_filter,
+        "from_filter": request.args.get("from", "").strip(),
+        "to_filter": request.args.get("to", "").strip(),
+    }
+    return query, filters
+
+
+def _export_response(rows, fields, fmt, filename_stem):
+    """Renders `rows` (list of dicts already limited to `fields`) as CSV,
+    NDJSON, pretty JSON, or plain text -- the "export logs in multiple
+    famous file formats" requirement. Defaults to CSV (most portable into
+    Excel/Splunk/other SIEM tooling) for an unrecognized format rather than
+    erroring."""
+    timestamp = now().strftime("%Y%m%d-%H%M%S")
+    if fmt == "json":
+        body = json.dumps(rows, indent=2, default=str)
+        mimetype, ext = "application/json", "json"
+    elif fmt == "ndjson":
+        body = "\n".join(json.dumps(row, default=str) for row in rows)
+        mimetype, ext = "application/x-ndjson", "ndjson"
+    elif fmt == "txt":
+        lines = []
+        for row in rows:
+            lines.append(" | ".join(f"{field}={row.get(field)}" for field in fields))
+        body = "\n".join(lines)
+        mimetype, ext = "text/plain", "txt"
+    else:
+        fmt = "csv"
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+        body = buffer.getvalue()
+        mimetype, ext = "text/csv", "csv"
+    response = Response(body, mimetype=mimetype)
+    response.headers["Content-Disposition"] = (
+        f'attachment; filename="{filename_stem}-{timestamp}.{ext}"'
+    )
+    return response
+
+
+def _read_and_filter_log_file():
+    """Reads the shared LOG_DIR JSON log file and applies Splunk-style
+    facet filters (free-text q, level, logger, path, method, status_code,
+    request_id, from/to date range), all combinable -- shared by the log
+    viewer page and its export endpoint so what an admin sees on screen is
+    exactly what gets exported. Returns (parsed_entries, error_message,
+    log_path); parsed_entries is newest-first."""
+    log_dir = os.getenv("LOG_DIR", "").strip()
+    log_path = os.path.join(log_dir, "serviceops.json.log") if log_dir else None
+    lines = []
+    error_message = None
+    if not log_path or not os.path.isfile(log_path):
+        error_message = (
+            "No detailed log file is available. LOG_DIR is not configured for this "
+            "deployment, or no requests have been logged to it yet."
+        )
+    else:
+        try:
+            max_lines = min(max(int(request.args.get("lines", "500")), 1), 20000)
+        except ValueError:
+            max_lines = 500
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as handle:
+                lines = collections.deque(handle, maxlen=max_lines)
+        except OSError as error:
+            error_message = f"Could not read the log file: {error}"
+
+    q = request.args.get("q", "").strip()
+    level_filter = request.args.get("level", "").strip().upper()
+    logger_filter = request.args.get("logger", "").strip()
+    path_filter = request.args.get("path", "").strip()
+    method_filter = request.args.get("method", "").strip().upper()
+    status_filter = request.args.get("status_code", "").strip()
+    request_id_filter = request.args.get("request_id", "").strip()
+    from_dt = _parse_log_timestamp(request.args.get("from", "").strip())
+    to_dt = _parse_log_timestamp(request.args.get("to", "").strip())
+
+    parsed = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            entry = {"level": "", "message": line.rstrip("\n")}
+        if q and q.casefold() not in json.dumps(entry, default=str).casefold():
+            continue
+        if level_filter and str(entry.get("level", "")).upper() != level_filter:
+            continue
+        if logger_filter and logger_filter.casefold() not in str(entry.get("logger", "")).casefold():
+            continue
+        if path_filter and path_filter.casefold() not in str(entry.get("path", "")).casefold():
+            continue
+        if method_filter and str(entry.get("method", "")).upper() != method_filter:
+            continue
+        if status_filter and str(entry.get("status_code", "")) != status_filter:
+            continue
+        if request_id_filter and str(entry.get("request_id", "")) != request_id_filter:
+            continue
+        if from_dt or to_dt:
+            entry_ts = None
+            try:
+                entry_ts = datetime.fromisoformat(entry.get("timestamp", ""))
+            except (ValueError, TypeError):
+                pass
+            if entry_ts is not None:
+                if from_dt and entry_ts < from_dt:
+                    continue
+                if to_dt and entry_ts > to_dt:
+                    continue
+        parsed.append(entry)
+    parsed.reverse()
+    filters = {
+        "q": q, "level_filter": level_filter, "logger_filter": logger_filter,
+        "path_filter": path_filter, "method_filter": method_filter,
+        "status_filter": status_filter, "request_id_filter": request_id_filter,
+        "from_filter": request.args.get("from", "").strip(),
+        "to_filter": request.args.get("to", "").strip(),
+    }
+    return parsed, error_message, log_path, filters
 
 
 def create_app(test_config=None):
@@ -9286,21 +9478,7 @@ def create_app(test_config=None):
             User.last_seen_at.isnot(None), User.last_seen_at >= active_cutoff,
         ).order_by(User.last_seen_at.desc()).all()
 
-        # Not tenant_query(): many real errors have no tenant context at all
-        # (a failed login before authentication, an LDAP bind failure, a
-        # background worker error) -- strictly filtering by tenant_id would
-        # make exactly the crashes an admin most needs to see permanently
-        # invisible. Include this tenant's own errors plus every
-        # tenant-less one; still never another tenant's.
-        error_query = ApplicationLog.query.filter(
-            db.or_(ApplicationLog.tenant_id.is_(None), ApplicationLog.tenant_id == current_user.tenant_id)
-        )
-        level_filter = request.args.get("level", "")
-        if level_filter in ("ERROR", "CRITICAL", "WARNING"):
-            error_query = error_query.filter(ApplicationLog.level == level_filter)
-        q = request.args.get("q", "").strip()
-        if q:
-            error_query = error_query.filter(ApplicationLog.message.ilike(f"%{q}%"))
+        error_query, filters = _filtered_application_log_query(current_user)
         try:
             page = max(1, int(request.args.get("page", "1")))
         except ValueError:
@@ -9326,14 +9504,42 @@ def create_app(test_config=None):
             db_healthy=db_healthy, db_latency_ms=db_latency_ms,
             worker_healthy=worker_healthy, worker_last_seen=worker_last_seen,
             active_users=active_users, active_user_count=len(active_users),
-            error_rows=error_rows, level_filter=level_filter, q=q,
-            page=page, pages=pages, total_errors=total_errors,
-            error_last_hour=error_last_hour,
+            error_rows=error_rows, page=page, pages=pages, total_errors=total_errors,
+            error_last_hour=error_last_hour, **filters,
             total_users=tenant_query(User).filter_by(active=True).count(),
             open_tickets=tenant_query(Ticket).filter(
                 Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])
             ).count(),
         )
+
+    @app.get("/admin/system-health/errors/export")
+    @roles("admin")
+    @require_action("security_administer")
+    def system_health_errors_export():
+        error_query, _filters = _filtered_application_log_query(current_user)
+        rows = error_query.order_by(ApplicationLog.created_at.desc()).limit(10000).all()
+        fmt = request.args.get("format", "csv").lower()
+        fields = ["id", "created_at", "level", "logger_name", "message", "path", "method",
+                  "request_id", "user_id", "tenant_id", "traceback"]
+
+        def row_dict(row):
+            return {
+                "id": row.id,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "level": row.level,
+                "logger_name": row.logger_name,
+                "message": row.message,
+                "path": row.path,
+                "method": row.method,
+                "request_id": row.request_id,
+                "user_id": row.user_id,
+                "tenant_id": row.tenant_id,
+                "traceback": row.traceback,
+            }
+
+        audit("export", "Application error log", f"format={fmt} rows={len(rows)}")
+        db.session.commit()
+        return _export_response([row_dict(r) for r in rows], fields, fmt, "serviceops-error-log")
 
     @app.post("/admin/system-health/errors/clear")
     @roles("admin")
@@ -9358,40 +9564,27 @@ def create_app(test_config=None):
         # logs` access. Not tenant-filterable (it's a shared process-wide
         # file across every tenant this instance serves) -- restricted to
         # admins for that reason, same as the rest of this page.
-        log_dir = os.getenv("LOG_DIR", "").strip()
-        log_path = os.path.join(log_dir, "serviceops.json.log") if log_dir else None
-        lines = []
-        error_message = None
-        if not log_path or not os.path.isfile(log_path):
-            error_message = (
-                "No detailed log file is available. LOG_DIR is not configured for this "
-                "deployment, or no requests have been logged to it yet."
-            )
-        else:
-            try:
-                max_lines = min(max(int(request.args.get("lines", "500")), 1), 5000)
-            except ValueError:
-                max_lines = 500
-            try:
-                with open(log_path, "r", encoding="utf-8", errors="replace") as handle:
-                    lines = collections.deque(handle, maxlen=max_lines)
-            except OSError as error:
-                error_message = f"Could not read the log file: {error}"
-        q = request.args.get("q", "").strip()
-        parsed = []
-        for line in lines:
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                entry = {"level": "", "message": line.rstrip("\n")}
-            if q and q.casefold() not in json.dumps(entry, default=str).casefold():
-                continue
-            parsed.append(entry)
-        parsed.reverse()
+        parsed, error_message, log_path, filters = _read_and_filter_log_file()
         return render_template(
-            "system_health_logs.html", entries=parsed, q=q,
-            error_message=error_message, log_path=log_path,
+            "system_health_logs.html", entries=parsed,
+            error_message=error_message, log_path=log_path, **filters,
         )
+
+    @app.get("/admin/system-health/logs/export")
+    @roles("admin")
+    @require_action("security_administer")
+    def system_health_log_file_export():
+        parsed, error_message, _log_path, _filters = _read_and_filter_log_file()
+        fmt = request.args.get("format", "ndjson").lower()
+        fields = ["timestamp", "level", "logger", "message", "request_id", "method",
+                   "path", "status_code", "duration_ms", "user_id", "tenant_id",
+                   "remote_addr", "exception"]
+        audit("export", "Application log file", f"format={fmt} rows={len(parsed)}")
+        db.session.commit()
+        if error_message and not parsed:
+            flash(error_message, "error")
+            return redirect(url_for("system_health_log_file"))
+        return _export_response(parsed, fields, fmt, "serviceops-app-log")
 
     @app.post("/admin/audit/rotate-key")
     @roles("admin")
