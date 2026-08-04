@@ -4679,4 +4679,5 @@ def test_role_switcher_shown_only_for_multi_role_users(client, app):
     login(client)
     response = client.get("/")
     assert b"Switch your active role" in response.data
-    assert b"Acting as: Admin" in response.data or b"Acting as:" in response.data
+    assert b"Acting as" in response.data
+    assert b"Admin</strong>" in response.data
