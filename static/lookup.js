@@ -1,7 +1,25 @@
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".lookup").forEach(initLookup);
   initCIBrowser();
+  initAdditionalCIPickers();
 });
+
+function initAdditionalCIPickers() {
+  document.querySelectorAll("[data-add-ci-row]").forEach((button) => {
+    const picker = button.closest("[id][data-lookup-url]") || button.parentElement;
+    const url = picker.dataset.lookupUrl;
+    const rows = picker.querySelector(".additional-ci-rows");
+    button.addEventListener("click", () => {
+      const row = document.createElement("div");
+      row.className = "lookup inline-form additional-ci-row";
+      row.dataset.lookupUrl = url;
+      row.innerHTML = `<input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off"><input type="hidden" name="additional_ci_ids"><div class="lookup-results" hidden></div><button type="button" class="link-button" data-remove-ci-row aria-label="Remove this configuration item">✕</button>`;
+      rows.appendChild(row);
+      initLookup(row);
+      row.querySelector("[data-remove-ci-row]").addEventListener("click", () => row.remove());
+    });
+  });
+}
 
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
