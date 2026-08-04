@@ -3,7 +3,7 @@
 <section class="list-workspace">
   <header class="list-toolbar">
     <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Assets</strong><small>{{ total }} records</small></div></div>
-    {% if current_user.role=='admin' %}<a class="primary button" href="{{ url_for('asset_new') }}">+ New asset</a>{% endif %}
+    {% if current_user.effective_role in ['admin','superadmin'] %}<a class="primary button" href="{{ url_for('asset_new') }}">+ New asset</a>{% endif %}
     <form class="list-search">
       <input type="hidden" name="filter" value="{{ raw_filter }}">
       <input name="q" value="{{ q }}" placeholder="Tag, name, or serial" aria-label="Search assets">

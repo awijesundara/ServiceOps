@@ -46,7 +46,7 @@
 
 <section class="panel event-history-panel" id="event-history">
   <header class="section-heading"><div><p class="eyebrow">ACTIVITY</p><h2>Event history</h2></div><span>{{ history|length }} events</span></header>
-  {% if current_user.role in ['agent','manager','admin'] %}
+  {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}
   <details><summary>Raise as a continual-improvement item</summary>
     <form method="post" action="{{ url_for('improvement_new') }}" class="form-grid">
       <input type="hidden" name="source_type" value="enterprise"><input type="hidden" name="source_id" value="{{ record.id }}">

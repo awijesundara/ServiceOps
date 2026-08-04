@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}CMDB & service map · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">IT OPERATIONS</p><h1>CMDB & service map<span class="info-tip" tabindex="0" data-tip="CMDB = Configuration Management Database: the system of record for every CI (Configuration Item) — a server, application, or service — and how they depend on one another.">i</span></h1><p>Configuration items and the dependencies that connect business services.</p></div>{% if current_user.role=='admin' %}<a class="button" href="{{ url_for('cmdb_import') }}">⇪ Import</a> <a class="primary button" href="{{ url_for('ci_new') }}">+ New CI</a>{% endif %}</header>
+<header class="page-head"><div><p class="eyebrow">IT OPERATIONS</p><h1>CMDB & service map<span class="info-tip" tabindex="0" data-tip="CMDB = Configuration Management Database: the system of record for every CI (Configuration Item) — a server, application, or service — and how they depend on one another.">i</span></h1><p>Configuration items and the dependencies that connect business services.</p></div>{% if current_user.effective_role in ['admin','superadmin'] %}<a class="button" href="{{ url_for('cmdb_import') }}">⇪ Import</a> <a class="primary button" href="{{ url_for('ci_new') }}">+ New CI</a>{% endif %}</header>
 {% set csv_url = url_for('cmdb_export', status=status, filter=raw_filter) %}
 {% include "_export_toolbar.html" %}
 <section class="stats"><a href="#configuration-items"><span>Configuration items</span><strong>{{ cis_total }}</strong><small>Across all classes →</small></a><a href="#service-relationships"><span>Relationships</span><strong>{{ relationships|length }}</strong><small>Mapped dependencies →</small></a><a href="{{ url_for('cmdb', status='Operational') }}"><span>Operational</span><strong>{{ operational_total }}</strong><small>View healthy CIs →</small></a></section>
@@ -73,7 +73,7 @@
     <th data-col="install_date">Install date</th>
     <th data-col="warranty_expiry_date">Warranty expiry</th>
     {% for key in extra_attribute_keys %}<th data-col="attr:{{ key }}">{{ key }}</th>{% endfor %}
-    {% if current_user.role=='admin' %}<th></th>{% endif %}
+    {% if current_user.effective_role in ['admin','superadmin'] %}<th></th>{% endif %}
   </tr></thead><tbody>
     {% for ci in visible_cis %}<tr>
       <td><strong>{{ ci.name }}</strong>{% if ci.serial_number %}<br><small class="muted">S/N {{ ci.serial_number }}</small>{% endif %}</td>
@@ -93,7 +93,7 @@
       <td data-col="install_date">{{ ci.install_date.strftime('%Y-%m-%d') if ci.install_date else '—' }}</td>
       <td data-col="warranty_expiry_date">{{ ci.warranty_expiry_date.strftime('%Y-%m-%d') if ci.warranty_expiry_date else '—' }}</td>
       {% for key in extra_attribute_keys %}<td data-col="attr:{{ key }}">{{ (ci.attributes or {}).get(key) or '—' }}</td>{% endfor %}
-      {% if current_user.role=='admin' %}<td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}">Edit</a></td>{% endif %}
+      {% if current_user.effective_role in ['admin','superadmin'] %}<td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}">Edit</a></td>{% endif %}
     </tr>
     {% else %}<tr><td colspan="{{ 17 + extra_attribute_keys|length }}" class="empty">No matching configuration items{% if status %} with this status{% endif %}.</td></tr>{% endfor %}
   </tbody></table>
@@ -101,8 +101,8 @@
 </section>
 <section class="panel" id="service-relationships">
 <h2>Service relationships</h2>
-{% for rel in relationships %}<div class="relation"><strong>{{ rel.parent.name }}</strong><span>— {{ rel.relationship_type }} →</span><strong>{{ rel.child.name }}</strong>{% if current_user.role=='admin' %}<form method="post" action="{{ url_for('ci_relationship_delete', relationship_id=rel.id) }}"><button class="link-button" aria-label="Remove relationship">✕</button></form>{% endif %}</div>{% else %}<p class="muted">No relationships mapped yet.</p>{% endfor %}
-{% if current_user.role=='admin' %}
+{% for rel in relationships %}<div class="relation"><strong>{{ rel.parent.name }}</strong><span>— {{ rel.relationship_type }} →</span><strong>{{ rel.child.name }}</strong>{% if current_user.effective_role in ['admin','superadmin'] %}<form method="post" action="{{ url_for('ci_relationship_delete', relationship_id=rel.id) }}"><button class="link-button" aria-label="Remove relationship">✕</button></form>{% endif %}</div>{% else %}<p class="muted">No relationships mapped yet.</p>{% endfor %}
+{% if current_user.effective_role in ['admin','superadmin'] %}
 <details><summary>Add relationship</summary>
   <form method="post" action="{{ url_for('ci_relationship_add') }}" class="form-grid">
     <label>Parent CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="parent_id"><div class="lookup-results" hidden></div></div></label>

@@ -14,7 +14,7 @@
   <p class="pre">{{ article.body }}</p>
 </section>
 
-{% if current_user.role in ['agent','manager','admin'] and not article.archived %}
+{% if current_user.effective_role in ['agent','manager','admin','superadmin'] and not article.archived %}
 <section class="panel actions">
   <a class="button" href="{{ url_for('knowledge_edit', article_id=article.id) }}">Publish updated version</a>
   <form method="post" action="{{ url_for('knowledge_archive', article_id=article.id) }}"><button class="button" title="Archives this article. It will no longer appear in knowledge search, but its content and audit history are preserved.">Archive</button></form>

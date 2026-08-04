@@ -16,6 +16,14 @@
     ('Automation rules','Rules that react to ticket changes, SLA breaches, manual events, or schedules and perform controlled actions','workflows_admin','▶')
   ])
 ] %}
+{% if current_user.effective_role == 'superadmin' %}
+<section class="admin-home-section">
+  <header><h2>Platform</h2><p>Cross-tenant control -- not visible to per-tenant admins</p></header>
+  <div class="admin-capability-grid">
+    <a class="admin-capability-card" href="{{ url_for('platform_tenants') }}"><span>⬡</span><div><h3>Tenants</h3><p>Create and activate/deactivate tenants across the whole platform</p></div></a>
+  </div>
+</section>
+{% endif %}
 {% for section_title, section_description, cards in sections %}
 <section class="admin-home-section">
   <header><h2>{{ section_title }}</h2><p>{{ section_description }}</p></header>

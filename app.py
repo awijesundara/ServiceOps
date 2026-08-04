@@ -309,17 +309,32 @@ class User(UserMixin, db.Model):
     mfa_enabled = db.Column(db.Boolean, nullable=False, default=False)
     mfa_enrolled_at = db.Column(db.DateTime(timezone=True))
     mfa_backup_codes_json = db.Column(db.Text)
-    # When True, directory/SSO login (provision_external_user) and automatic
-    # team-based role derivation (normalize_user_role_from_assignments) must
-    # never overwrite this user's role -- an admin explicitly pinned it.
-    # Without this, a manual agent->manager promotion in the admin Users page
-    # silently reverted to whatever LDAP group mapping/team membership implied
-    # on that user's very next login.
-    role_locked = db.Column(db.Boolean, nullable=False, default=False)
 
     @property
     def is_active(self):
         return bool(self.active)
+
+    @property
+    def granted_roles(self):
+        """Every role this user currently holds (may be more than one --
+        e.g. both "manager" and "admin"), highest-ranked first."""
+        roles = {grant.role for grant in UserRoleGrant.query.filter_by(user_id=self.id).all()}
+        roles.add(self.role)  # defensive: self.role should always be a member already
+        return sorted(roles, key=lambda r: ROLE_RANK.get(r, -1), reverse=True)
+
+    @property
+    def effective_role(self):
+        """The role authorization checks should use for this request: the
+        session's "acting as" selection if the user actually still holds
+        that role, else their highest granted role (self.role). This is a
+        real demotion, not a UI label -- every authorization check in this
+        file reads effective_role, so a superadmin+admin+manager who
+        switches to "requester" genuinely loses admin/manager authority
+        until they switch back, including against direct route/API calls."""
+        acting_as = session.get("_acting_role") if has_request_context() else None
+        if acting_as and acting_as in self.granted_roles:
+            return acting_as
+        return self.role
 
 
 class ExternalIdentity(db.Model):
@@ -999,7 +1014,43 @@ class DirectoryManagedMembership(db.Model):
     synchronized_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     user = db.relationship("User")
     group = db.relationship("SupportGroup")
-    __table_args__ = (db.UniqueConstraint("user_id", "group_id", name="uq_directory_membership"),)
+
+
+class UserRoleGrant(db.Model):
+    """A role a user currently holds. A user may hold several at once (e.g.
+    both "manager" and "admin") -- User.role (recomputed by
+    recompute_base_role()) is always the highest-ranked one, so any code that
+    still reads User.role directly keeps its previous "assume the best/
+    highest role" behavior unchanged. The "acting as" toggle
+    (User.effective_role) lets a multi-role user deliberately act as a lower
+    one for a session without losing any grant."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    role = db.Column(db.String(20), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    user = db.relationship("User")
+    __table_args__ = (db.UniqueConstraint("user_id", "role", name="uq_user_role_grant"),)
+
+
+class ManagedRoleGrant(db.Model):
+    """Tracks which UserRoleGrant rows a specific automatic source currently
+    justifies, so that source's resync can safely revoke a role it granted
+    once no longer justified, without touching a role granted for a
+    different reason (including a plain manual admin grant, which never has
+    a row here at all). `source` scopes independent resync passes from each
+    other: "directory" (AD/SSO group->role mapping) and
+    "team_responsibility" (manages or belongs to a support group) currently
+    never interfere with each other or with a manual grant."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    role = db.Column(db.String(20), nullable=False)
+    source = db.Column(db.String(30), nullable=False)
+    detail = db.Column(db.String(500))
+    synchronized_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    user = db.relationship("User")
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "role", "source", name="uq_managed_role_grant"),
+    )
 
 
 class ApprovalChain(db.Model):
@@ -1626,9 +1677,16 @@ def roles(*allowed):
         @wraps(fn)
         @login_required
         def wrapped(*args, **kwargs):
-            if current_user.role not in allowed:
-                abort(403)
-            return fn(*args, **kwargs)
+            # superadmin is a strict superset of every other role's
+            # authority within a tenant (see ROLE_RANK/role_at_least) --
+            # it always satisfies a gate written for any narrower set of
+            # roles, so routes never need "superadmin" added to their own
+            # @roles(...) list by hand. This reads effective_role (the
+            # session's "acting as" selection, not just the highest granted
+            # role) so switching to a lower role is a real demotion here too.
+            if current_user.effective_role == "superadmin" or current_user.effective_role in allowed:
+                return fn(*args, **kwargs)
+            abort(403)
         return wrapped
     return decorator
 
@@ -1638,7 +1696,7 @@ def require_action(action):
         @wraps(fn)
         @login_required
         def wrapped(*args, **kwargs):
-            if not role_has_action(current_user.role, action):
+            if not role_has_action(current_user.effective_role, action):
                 abort(403)
             return fn(*args, **kwargs)
         return wrapped
@@ -3244,7 +3302,7 @@ def ticket_team_agents(ticket):
         return []
     return User.query.filter(
         User.id.in_(user_ids), User.active.is_(True),
-        User.role.in_(["agent", "manager", "admin"]),
+        User.role.in_(["agent", "manager", "admin", "superadmin"]),
     ).order_by(User.name).all()
 
 
@@ -4761,7 +4819,7 @@ def seed_itil(admin):
 
 def seed():
     if User.query.first():
-        admin = User.query.filter_by(role="admin").first()
+        admin = User.query.filter(User.role.in_(["admin", "superadmin"])).first()
         if not admin:
             raise RuntimeError("The database has users but no administrator account.")
         seed_itil(admin)
@@ -4780,24 +4838,42 @@ def seed():
                  password_hash=hash_password(admin_password), role="admin")
     db.session.add(admin)
     db.session.flush()
+    db.session.add(UserRoleGrant(user_id=admin.id, role="admin"))
     seed_itil(admin)
     deploy_workflow_package(admin.id)
     db.session.commit()
 
 
-def mapped_role(groups, mapping_name, default="requester"):
-    """Map directory/realm groups to a ServiceOps role without trusting user input."""
-    allowed = {"requester", "agent", "manager", "admin"}
+ROLE_RANK = {"requester": 0, "agent": 1, "manager": 2, "admin": 3, "superadmin": 4}
+ALL_ROLES = tuple(sorted(ROLE_RANK, key=ROLE_RANK.get))
+
+
+def role_at_least(role, minimum):
+    """True if `role` is at or above `minimum` in the role hierarchy."""
+    return ROLE_RANK.get(role, -1) >= ROLE_RANK.get(minimum, 999)
+
+
+def mapped_roles(groups, mapping_name, default="requester"):
+    """Map directory/realm groups to every ServiceOps role they grant,
+    without trusting user input. Returns {role: matched_group_or_None} --
+    a user can match more than one configured group mapping and so hold
+    more than one role at once (e.g. a "gg_admins" group granting admin
+    alongside a "gg_managers" group granting manager). Falls back to the
+    mapping's configured default role (a single entry with no matched
+    group) when nothing matched."""
     try:
         mappings = json.loads(setting_value(mapping_name, "{}"))
     except json.JSONDecodeError:
         mappings = {}
     normalized = normalized_directory_groups(groups)
+    matched = {}
     for group, role in mappings.items():
-        if str(group).strip().casefold() in normalized and role in allowed:
-            return role
+        if role in ROLE_RANK and str(group).strip().casefold() in normalized:
+            matched[role] = str(group).strip()
+    if matched:
+        return matched
     configured = setting_value(f"{mapping_name}_DEFAULT", default)
-    return configured if configured in allowed else default
+    return {configured if configured in ROLE_RANK else default: None}
 
 
 def normalized_directory_groups(groups):
@@ -4852,24 +4928,76 @@ def sync_directory_team_memberships(user, groups):
     )
 
 
-def normalize_user_role_from_assignments(user):
-    """Keep non-admin user roles aligned with actual team responsibilities."""
-    if not user or user.role == "admin" or user.role_locked:
-        return user.role if user else "requester"
-    manages_team = SupportGroup.query.filter_by(
-        manager_id=user.id, active=True
-    ).first() is not None
-    if manages_team:
-        user.role = "manager"
-        return user.role
-    has_team_membership = GroupMember.query.join(
+def sync_role_grants(user, source, desired_roles, detail_by_role=None):
+    """Reconcile the roles `source` currently justifies for `user` against
+    `desired_roles`, without touching a role justified by a different
+    source or granted manually (a manual grant never has a ManagedRoleGrant
+    row, so it's never a candidate for removal here). Recomputes User.role
+    (the highest currently-held role) afterward."""
+    detail_by_role = detail_by_role or {}
+    desired_roles = set(desired_roles)
+    existing = {
+        managed.role: managed
+        for managed in ManagedRoleGrant.query.filter_by(user_id=user.id, source=source).all()
+    }
+    for role in desired_roles:
+        if role not in ROLE_RANK:
+            continue
+        if role in existing:
+            existing[role].detail = detail_by_role.get(role, existing[role].detail)
+            existing[role].synchronized_at = now()
+            continue
+        if not UserRoleGrant.query.filter_by(user_id=user.id, role=role).first():
+            db.session.add(UserRoleGrant(user_id=user.id, role=role))
+        db.session.add(ManagedRoleGrant(
+            user_id=user.id, role=role, source=source, detail=detail_by_role.get(role)
+        ))
+    for role, managed in existing.items():
+        if role in desired_roles:
+            continue
+        db.session.delete(managed)
+        db.session.flush()
+        if not ManagedRoleGrant.query.filter_by(user_id=user.id, role=role).first():
+            grant = UserRoleGrant.query.filter_by(user_id=user.id, role=role).first()
+            if grant:
+                db.session.delete(grant)
+    return recompute_base_role(user)
+
+
+def recompute_base_role(user):
+    """User.role always reflects the highest role currently granted, so any
+    code that still reads it directly (rather than the session-aware
+    effective_role) keeps its previous "assume the best/highest role"
+    behavior. Falls back to "requester" -- every user always holds at
+    least that -- if every grant was somehow removed."""
+    db.session.flush()
+    grants = {g.role for g in UserRoleGrant.query.filter_by(user_id=user.id).all()}
+    if not grants:
+        db.session.add(UserRoleGrant(user_id=user.id, role="requester"))
+        grants = {"requester"}
+    user.role = max(grants, key=lambda r: ROLE_RANK.get(r, -1))
+    return user.role
+
+
+def sync_implied_role_grants(user):
+    """Ensure manager/agent role grants reflect actual team responsibility.
+    Grants (never overwrites) -- adds or revokes only the
+    "team_responsibility"-sourced manager/agent grants, never touching a
+    directory-derived or manually-granted role (including admin/
+    superadmin), unlike the single-role overwrite this replaced."""
+    if not user:
+        return
+    desired = set()
+    if SupportGroup.query.filter_by(manager_id=user.id, active=True).first():
+        desired.add("manager")
+    if GroupMember.query.join(
         SupportGroup, GroupMember.group_id == SupportGroup.id
     ).filter(
         GroupMember.user_id == user.id,
         SupportGroup.active.is_(True),
-    ).first() is not None
-    user.role = "agent" if has_team_membership else "requester"
-    return user.role
+    ).first():
+        desired.add("agent")
+    sync_role_grants(user, "team_responsibility", desired)
 
 
 def user_is_local(user):
@@ -4883,17 +5011,28 @@ def user_is_local(user):
     return ExternalIdentity.query.filter_by(user_id=user.id).first() is None
 
 
-def provision_external_user(provider, subject, username, name, email, role, groups=None):
+def provision_external_user(provider, subject, username, name, email, matched_roles, groups=None):
+    """`matched_roles` is normally a {role: matched_group_or_None} dict from
+    mapped_roles() -- every one of these roles is granted via
+    sync_role_grants(..., source="directory"), and any previously
+    directory-granted role no longer matched is revoked, without ever
+    touching a manually-granted or team-responsibility-granted role. A bare
+    role string or an iterable of role strings is also accepted for
+    callers that only have a single/plain set of roles."""
+    if isinstance(matched_roles, str):
+        matched_roles = {matched_roles: None}
+    elif not isinstance(matched_roles, dict):
+        matched_roles = {role: None for role in matched_roles}
+
     identity = ExternalIdentity.query.filter_by(provider=provider, subject=subject).first()
     if identity:
         user = identity.user
         user.name, user.email = name, email
-        if not user.role_locked:
-            user.role = role
         user.active = True
+        sync_role_grants(user, "directory", matched_roles, detail_by_role=matched_roles)
         if provider == "ldap":
             sync_directory_team_memberships(user, groups)
-            normalize_user_role_from_assignments(user)
+            sync_implied_role_grants(user)
         return user
 
     base = (username or f"{provider}-{uuid.uuid4().hex[:8]}").strip().lower()[:70]
@@ -4919,13 +5058,12 @@ def provision_external_user(provider, subject, username, name, email, role, grou
     ).first():
         existing_user.name = name or existing_user.name
         existing_user.email = email or existing_user.email
-        if not existing_user.role_locked:
-            existing_user.role = role
         existing_user.active = True
         db.session.add(ExternalIdentity(provider=provider, subject=subject, user_id=existing_user.id))
+        sync_role_grants(existing_user, "directory", matched_roles, detail_by_role=matched_roles)
         if provider == "ldap":
             sync_directory_team_memberships(existing_user, groups)
-            normalize_user_role_from_assignments(existing_user)
+            sync_implied_role_grants(existing_user)
         return existing_user
 
     candidate, suffix = base, 1
@@ -4936,14 +5074,18 @@ def provision_external_user(provider, subject, username, name, email, role, grou
     existing = User.query.filter_by(email=unique_email).first()
     if existing:
         unique_email = f"{provider}-{uuid.uuid4().hex[:8]}@external.serviceops.local"
+    initial_role = (
+        max(matched_roles, key=lambda r: ROLE_RANK.get(r, -1)) if matched_roles else "requester"
+    )
     user = User(username=candidate, name=name or candidate, email=unique_email,
-                password_hash=hash_password(uuid.uuid4().hex), role=role)
+                password_hash=hash_password(uuid.uuid4().hex), role=initial_role)
     db.session.add(user)
     db.session.flush()
     db.session.add(ExternalIdentity(provider=provider, subject=subject, user_id=user.id))
+    sync_role_grants(user, "directory", matched_roles, detail_by_role=matched_roles)
     if provider == "ldap":
         sync_directory_team_memberships(user, groups)
-        normalize_user_role_from_assignments(user)
+        sync_implied_role_grants(user)
     return user
 
 
@@ -5028,10 +5170,10 @@ def ldap_authenticate(username, password):
     values = entry.entry_attributes_as_dict
     first = lambda key, fallback="": (values.get(key) or [fallback])[0]
     groups = values.get("memberOf", [])
-    role = mapped_role(groups, "LDAP_ROLE_MAPPINGS")
+    matched_roles = mapped_roles(groups, "LDAP_ROLE_MAPPINGS")
     return provision_external_user(
         "ldap", entry.entry_dn, username, first("displayName", first("cn", username)),
-        first("mail", first("userPrincipalName", "")), role, groups=groups)
+        first("mail", first("userPrincipalName", "")), matched_roles, groups=groups)
 
 
 def create_app(test_config=None):
@@ -5328,6 +5470,7 @@ def create_app(test_config=None):
     app.jinja_env.globals["PREVIEWABLE_ATTACHMENT_TYPES"] = PREVIEWABLE_ATTACHMENT_TYPES
     app.jinja_env.globals["IMAGE_ATTACHMENT_TYPES"] = IMAGE_ATTACHMENT_TYPES
     app.jinja_env.globals["now"] = now
+    app.jinja_env.globals["all_roles"] = ALL_ROLES
 
     @app.context_processor
     def ui_context():
@@ -6092,10 +6235,10 @@ def create_app(test_config=None):
         if not subject:
             abort(401)
         realm_roles = claims.get("realm_access", {}).get("roles", [])
-        role = mapped_role(realm_roles, "KEYCLOAK_ROLE_MAPPINGS")
+        matched_roles = mapped_roles(realm_roles, "KEYCLOAK_ROLE_MAPPINGS")
         user = provision_external_user(
             "keycloak", subject, claims.get("preferred_username", ""),
-            claims.get("name", ""), claims.get("email", ""), role)
+            claims.get("name", ""), claims.get("email", ""), matched_roles)
         login_user(user)
         session.permanent = True
         session["_auth_version"] = user.auth_version
@@ -6112,6 +6255,29 @@ def create_app(test_config=None):
         logout_user()
         session.clear()
         return redirect(url_for("login"))
+
+    @app.post("/session/acting-role")
+    @login_required
+    def set_acting_role():
+        """Switch which of the user's currently-granted roles authorization
+        checks use for the rest of this session (User.effective_role) -- a
+        real demotion, not a UI label: every @roles(...)/require_action()
+        check and the direct role comparisons throughout this file read
+        effective_role, so switching to a lower role genuinely blocks
+        higher-privilege routes/actions until switched back."""
+        requested = request.form.get("role", "")
+        destination = request.referrer
+        safe_target = (
+            destination if destination and destination.startswith(request.host_url)
+            else url_for("dashboard")
+        )
+        if not requested:
+            session.pop("_acting_role", None)
+            return redirect(safe_target)
+        if requested not in current_user.granted_roles:
+            abort(403, description="You do not currently hold that role.")
+        session["_acting_role"] = requested
+        return redirect(safe_target)
 
     @app.route("/profile/password", methods=["GET", "POST"])
     @login_required
@@ -6413,7 +6579,7 @@ def create_app(test_config=None):
     TERMINAL_TASK_STATES = ["Closed Complete", "Closed Incomplete", "Closed Skipped", "Cancelled"]
 
     def manager_portal_groups():
-        if current_user.role == "admin":
+        if role_at_least(current_user.effective_role, "admin"):
             return tenant_query(SupportGroup).filter(
                 SupportGroup.group_type == "IT Fulfillment",
                 SupportGroup.active.is_(True),
@@ -6595,7 +6761,7 @@ def create_app(test_config=None):
             assigned_to_me.extend(
                 row_for(task, kind_label or task.task_kind.upper()) for task in mine
             )
-            if current_user.role == "admin":
+            if role_at_least(current_user.effective_role, "admin"):
                 team_query = open_tasks(model).join(
                     SupportGroup, model.assignment_group_id == SupportGroup.id
                 ).filter(SupportGroup.tenant_id == current_user.tenant_id)
@@ -6717,14 +6883,14 @@ def create_app(test_config=None):
                 SupportGroup.active.is_(True),
             ).all()
         }
-        if kind == "change" and current_user.role == "requester" and not eligible_it_team_ids:
+        if kind == "change" and current_user.effective_role == "requester" and not eligible_it_team_ids:
             abort(403)
 
         def render_form(error=None):
             teams_query = tenant_query(SupportGroup).filter_by(
                 group_type="IT Fulfillment", active=True
             )
-            if kind == "change" and current_user.role != "admin":
+            if kind == "change" and not role_at_least(current_user.effective_role, "admin"):
                 if eligible_it_team_ids:
                     teams_query = teams_query.filter(SupportGroup.id.in_(eligible_it_team_ids))
                 else:
@@ -6770,7 +6936,7 @@ def create_app(test_config=None):
                 return render_form("Select an active IT fulfillment team.")
             if (
                 kind == "change"
-                and current_user.role != "admin"
+                and not role_at_least(current_user.effective_role, "admin")
                 and owning_group.id not in eligible_it_team_ids
             ):
                 return render_form("You can submit changes only for IT fulfillment teams you belong to.")
@@ -6934,7 +7100,7 @@ def create_app(test_config=None):
                 require_ticket_not_locked(ticket)
                 return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             if action == "comment":
-                if not role_has_action(current_user.role, "comment_public"):
+                if not role_has_action(current_user.effective_role, "comment_public"):
                     abort(403)
                 body = request.form.get("body", "").strip()
                 upload = request.files.get("file")
@@ -6954,7 +7120,7 @@ def create_app(test_config=None):
                                 details=f"{attachment.original_name} ({attachment.size_bytes} bytes)",
                             )
             elif action == "reopen":
-                if not role_has_action(current_user.role, "resolve"):
+                if not role_has_action(current_user.effective_role, "resolve"):
                     abort(403)
                 require_ticket_team_access(ticket)
                 if ticket.state not in ("Resolved", "Closed"):
@@ -6972,7 +7138,7 @@ def create_app(test_config=None):
                 flash(f"{ticket.number} reopened.", "success")
                 return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             elif action == "quick_resolve":
-                if not role_has_action(current_user.role, "resolve"):
+                if not role_has_action(current_user.effective_role, "resolve"):
                     abort(403)
                 require_ticket_team_access(ticket)
                 before_state = ticket.state
@@ -6990,7 +7156,7 @@ def create_app(test_config=None):
                 audit("resolve", ticket.number, f"{before_state} -> Resolved")
             elif action == "update":
                 for required_action in ("update", "assign", "transition"):
-                    if not role_has_action(current_user.role, required_action):
+                    if not role_has_action(current_user.effective_role, required_action):
                         abort(403)
                 require_ticket_team_access(ticket)
                 assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
@@ -7006,7 +7172,7 @@ def create_app(test_config=None):
                 governed_priority_input = "impact" in request.form or "urgency" in request.form
                 if (
                     governed_priority_input and requested_priority != calculated
-                    and (current_user.role not in ("manager", "admin") or len(reason) < 10)
+                    and (not role_at_least(current_user.effective_role, "manager") or len(reason) < 10)
                 ):
                     flash(
                         "Only a manager or administrator may override calculated priority, "
@@ -7199,9 +7365,9 @@ def create_app(test_config=None):
         can_reopen = (
             ticket.state in ("Resolved", "Closed")
             and user_can_manage_ticket(current_user, ticket)
-            and role_has_action(current_user.role, "resolve")
+            and role_has_action(current_user.effective_role, "resolve")
         )
-        internal_view = role_has_action(current_user.role, "comment_internal")
+        internal_view = role_has_action(current_user.effective_role, "comment_internal")
         chains = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         slas = TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         work_tasks = OperationalTask.query.filter_by(
@@ -7763,7 +7929,7 @@ def create_app(test_config=None):
             member_ids.add(task.assignment_group.manager_id)
         agents = User.query.filter(
             User.id.in_(member_ids), User.active.is_(True),
-            User.role.in_(["agent", "manager", "admin"]),
+            User.role.in_(["agent", "manager", "admin", "superadmin"]),
         ).order_by(User.name).all() if member_ids else []
         history = TaskHistory.query.filter_by(
             target_type=task.parent_type, target_id=task.parent_id
@@ -8002,7 +8168,7 @@ def create_app(test_config=None):
         roots.sort(key=lambda u: u.name)
         return render_template(
             "org_chart.html", roots=roots, children=children,
-            can_edit=current_user.role == "admin",
+            can_edit=role_at_least(current_user.effective_role, "admin"),
         )
 
     @app.get("/admin/users")
@@ -8039,7 +8205,7 @@ def create_app(test_config=None):
             "name": {"label": "Name", "type": "text", "column": User.name},
             "email": {"label": "Email", "type": "text", "column": User.email},
             "role": {"label": "Role", "type": "choice", "column": User.role,
-                    "options": [(r, r) for r in ["requester", "agent", "manager", "admin"]]},
+                    "options": [(r, r) for r in ALL_ROLES]},
             "department": {"label": "Department", "type": "text", "column": User.department},
             "active": {"label": "Active", "type": "choice",
                       "options": [("true", "true"), ("false", "false")]},
@@ -8077,8 +8243,14 @@ def create_app(test_config=None):
             if len(password) < min_length:
                 flash(f"Password must contain at least {min_length} characters.", "error")
                 return render_template("user_form.html", user=None, self_service=False)
+            initial_role = request.form["role"]
+            if initial_role not in ALL_ROLES:
+                abort(400, description="Select a valid role.")
+            if initial_role == "superadmin" and current_user.effective_role != "superadmin":
+                flash("Only a superadmin can grant the superadmin role.", "error")
+                return render_template("user_form.html", user=None, self_service=False)
             user = User(username=request.form["username"], name=request.form["name"], email=request.form["email"],
-                        password_hash=hash_password(password), role=request.form["role"],
+                        password_hash=hash_password(password), role=initial_role,
                         title=request.form.get("title", "")[:120],
                         department=request.form.get("department", "")[:120],
                         business_phone=request.form.get("business_phone", "")[:40],
@@ -8086,6 +8258,8 @@ def create_app(test_config=None):
                         timezone=request.form.get("timezone", "Asia/Tokyo")[:80],
                         date_format=request.form.get("date_format", "system")[:40])
             db.session.add(user)
+            db.session.flush()
+            db.session.add(UserRoleGrant(user_id=user.id, role=initial_role))
             audit("create", user.username, user.role)
             db.session.commit()
             return redirect(url_for("users"))
@@ -8104,16 +8278,32 @@ def create_app(test_config=None):
             }
             user.name = request.form["name"].strip()[:120]
             user.email = request.form["email"].strip()[:160]
-            submitted_role = request.form["role"]
-            if submitted_role != user.role:
-                # An explicit manual change always takes effect immediately,
-                # regardless of the current lock state.
-                user.role = submitted_role
-            # role_locked itself is independently controlled by its own
-            # checkbox: an admin can lock the *current* role without changing
-            # it this submission, or unlock it to hand control back to
-            # directory/SSO-derived role sync on the next login.
-            user.role_locked = bool(request.form.get("role_locked"))
+            requested_roles = set(request.form.getlist("granted_roles")) & set(ALL_ROLES)
+            if not requested_roles:
+                flash("A user must hold at least one role.", "error")
+                return redirect(url_for("user_edit", user_id=user.id))
+            current_roles = set(user.granted_roles)
+            # Only an acting superadmin may grant or revoke the superadmin
+            # role on anyone -- otherwise a plain admin could hand
+            # themselves (or a peer) cross-tenant platform authority.
+            if ("superadmin" in requested_roles) != ("superadmin" in current_roles):
+                if current_user.effective_role != "superadmin":
+                    flash("Only a superadmin can grant or revoke the superadmin role.", "error")
+                    return redirect(url_for("user_edit", user_id=user.id))
+            for role in ALL_ROLES:
+                held, requested = role in current_roles, role in requested_roles
+                if requested and not held:
+                    db.session.add(UserRoleGrant(user_id=user.id, role=role))
+                elif held and not requested:
+                    # A manual revoke here always takes effect immediately.
+                    # If a directory-group mapping or team-responsibility
+                    # rule still implies this role, it can be re-granted on
+                    # this user's next login/team-change sync -- there is no
+                    # "lock" that overrides directory sync going forward.
+                    UserRoleGrant.query.filter_by(user_id=user.id, role=role).delete()
+                    ManagedRoleGrant.query.filter_by(user_id=user.id, role=role).delete()
+            db.session.flush()
+            recompute_base_role(user)
             user.active = bool(request.form.get("active"))
             user.title = request.form.get("title", "").strip()[:120]
             user.department = request.form.get("department", "").strip()[:120]
@@ -8301,6 +8491,48 @@ def create_app(test_config=None):
     @require_action("security_administer")
     def admin_home():
         return render_template("admin_home.html")
+
+    @app.route("/platform/tenants", methods=["GET", "POST"])
+    @roles("superadmin")
+    @require_action("platform_administer")
+    def platform_tenants():
+        """Cross-tenant platform administration. Deliberately bypasses the
+        normal tenant_query() scoping every other admin screen uses -- only
+        a superadmin (not a plain per-tenant admin) reaches this route at
+        all (see roles()/require_action() above), and every query here is
+        Tenant.query, never tenant_query(Tenant), by design."""
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "create_tenant":
+                slug = request.form.get("slug", "").strip().lower()[:80]
+                name = request.form.get("name", "").strip()[:160]
+                if not slug or not name or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
+                    flash("Enter a name and a lowercase, hyphen-safe slug.", "error")
+                    return redirect(url_for("platform_tenants"))
+                if Tenant.query.filter_by(slug=slug).first():
+                    flash(f"A tenant with slug \"{slug}\" already exists.", "error")
+                    return redirect(url_for("platform_tenants"))
+                tenant = Tenant(slug=slug, name=name)
+                db.session.add(tenant)
+                audit("create", f"Tenant {slug}", name)
+                flash(f"Tenant \"{name}\" created.", "success")
+            elif action == "set_tenant_active":
+                tenant = Tenant.query.filter_by(id=int(request.form["tenant_id"])).first_or_404()
+                if tenant.id == current_user.tenant_id and not request.form.get("active"):
+                    flash("You cannot deactivate the tenant your own account belongs to.", "error")
+                    return redirect(url_for("platform_tenants"))
+                tenant.active = bool(request.form.get("active"))
+                audit("configure", f"Tenant {tenant.slug}", f"active={tenant.active}")
+                flash(f"Tenant \"{tenant.name}\" {'activated' if tenant.active else 'deactivated'}.", "success")
+            else:
+                abort(400)
+            db.session.commit()
+            return redirect(url_for("platform_tenants"))
+        tenants = Tenant.query.order_by(Tenant.id).all()
+        user_counts = dict(
+            db.session.query(User.tenant_id, db.func.count(User.id)).group_by(User.tenant_id).all()
+        )
+        return render_template("platform_tenants.html", tenants=tenants, user_counts=user_counts)
 
     @app.route("/admin/api-clients", methods=["GET", "POST"])
     @roles("admin")
@@ -8918,7 +9150,7 @@ def create_app(test_config=None):
         config = DOMAIN_CONFIG.get(domain)
         if not config:
             abort(404)
-        if current_user.role == "requester" and domain not in ("customer", "hr"):
+        if current_user.effective_role == "requester" and domain not in ("customer", "hr"):
             abort(403)
         if request.method == "POST":
             record = EnterpriseRecord(
@@ -8931,8 +9163,8 @@ def create_app(test_config=None):
             db.session.flush()
             if domain == "problem":
                 db.session.add(ProblemProfile(enterprise_record_id=record.id))
-            if request.form.get("approval_required") and current_user.role != "requester":
-                admin = tenant_query(User).filter_by(role="admin", active=True).first()
+            if request.form.get("approval_required") and current_user.effective_role != "requester":
+                admin = tenant_query(User).filter(User.role.in_(["admin", "superadmin"]), User.active.is_(True)).first()
                 if not admin:
                     abort(409, description="No active administrator is configured to approve this record.")
                 db.session.add(Approval(enterprise_record_id=record.id, approver_id=admin.id))
@@ -9007,7 +9239,7 @@ def create_app(test_config=None):
                 audit(action, record.number)
             db.session.commit()
             return redirect(url_for("enterprise_detail", record_id=record.id))
-        agents = User.query.filter(User.role.in_(["agent", "manager", "admin"]), User.active.is_(True)).all()
+        agents = User.query.filter(User.role.in_(["agent", "manager", "admin", "superadmin"]), User.active.is_(True)).all()
         work_tasks = OperationalTask.query.filter_by(
             parent_type="enterprise", parent_id=record.id
         ).order_by(OperationalTask.sequence, OperationalTask.id).all()
@@ -9019,7 +9251,7 @@ def create_app(test_config=None):
                 member_ids.add(task.assignment_group.manager_id)
             task_agents[task.id] = User.query.filter(
                 User.id.in_(member_ids), User.active.is_(True),
-                User.role.in_(["agent", "manager", "admin"]),
+                User.role.in_(["agent", "manager", "admin", "superadmin"]),
             ).order_by(User.name).all() if member_ids else []
             task_permissions[task.id] = user_in_group(current_user, task.assignment_group)
         return render_template(
@@ -9193,7 +9425,7 @@ def create_app(test_config=None):
         item = tenant_record_or_404(ImprovementItem, item_id)
         source = record_reference(item.source_type, item.source_id) if item.source_type and item.source_id else None
         agents = tenant_query(User).filter(
-            User.role.in_(["agent", "manager", "admin"]), User.active.is_(True)
+            User.role.in_(["agent", "manager", "admin", "superadmin"]), User.active.is_(True)
         ).order_by(User.name).all()
         return render_template(
             "improvement_detail.html", item=item, states=IMPROVEMENT_STATES,
@@ -9242,7 +9474,7 @@ def create_app(test_config=None):
         if not item.active:
             abort(404)
         if item.approval_required:
-            manager = tenant_query(User).filter_by(role="admin", active=True).first()
+            manager = tenant_query(User).filter(User.role.in_(["admin", "superadmin"]), User.active.is_(True)).first()
             fulfillment = tenant_query(SupportGroup).filter_by(name="Service Desk", active=True).first()
             fulfillment_approver_ids = [member.user_id for member in fulfillment.members] if fulfillment else []
             if not manager or not fulfillment_approver_ids:
@@ -9727,7 +9959,7 @@ def create_app(test_config=None):
         query = Approval.query.join(EnterpriseRecord).filter(
             EnterpriseRecord.tenant_id == current_user.tenant_id
         )
-        if current_user.role != "admin":
+        if not role_at_least(current_user.effective_role, "admin"):
             query = query.filter_by(approver_id=current_user.id)
         return render_template("approvals.html", approvals=query.order_by(Approval.id.desc()).all())
 
@@ -9773,7 +10005,7 @@ def create_app(test_config=None):
         for chain in tenant_query(ApprovalChain).order_by(
             ApprovalChain.created_at.desc()
         ).all():
-            if current_user.role == "admin" or any(
+            if role_at_least(current_user.effective_role, "admin") or any(
                 vote.approver_id == current_user.id
                 for gate in chain.gates for vote in gate.votes
             ):
@@ -9910,7 +10142,7 @@ def create_app(test_config=None):
         db.session.flush()
         attach_slas("ritm", ritm.id, None)
         if item.approval_required:
-            manager = tenant_query(User).filter_by(role="admin", active=True).first()
+            manager = tenant_query(User).filter(User.role.in_(["admin", "superadmin"]), User.active.is_(True)).first()
             fulfillment = tenant_query(SupportGroup).filter_by(name="Service Desk").first()
             approvers = [member.user_id for member in fulfillment.members if member.user.active] if fulfillment else []
             if not manager or not approvers:
@@ -10002,7 +10234,7 @@ def create_app(test_config=None):
             member_ids.add(task.assignment_group.manager_id)
         agents = User.query.filter(
             User.id.in_(member_ids), User.active.is_(True),
-            User.role.in_(["agent", "manager", "admin"]),
+            User.role.in_(["agent", "manager", "admin", "superadmin"]),
         ).order_by(User.name).all() if member_ids else []
         history = TaskHistory.query.filter_by(
             target_type="ritm", target_id=ritm.id
@@ -10244,10 +10476,10 @@ def create_app(test_config=None):
                         db.session.add(GroupMember(
                             group_id=group.id, user_id=manager.id, role="manager"
                         ))
-                    normalize_user_role_from_assignments(manager)
+                    sync_implied_role_grants(manager)
                 if old_manager_id and old_manager_id != manager_id:
                     old_manager = db.session.get(User, old_manager_id)
-                    normalize_user_role_from_assignments(old_manager)
+                    sync_implied_role_grants(old_manager)
                 audit("configure", f"{group.name} manager",
                       manager.username if manager else "Unassigned")
                 flash(f"{group.name} manager updated.", "success")
@@ -10594,10 +10826,12 @@ def create_app(test_config=None):
         manager_candidates = tenant_query(User).filter(
             User.active.is_(True)
         ).order_by(User.name).all()
-        ccb_candidates = tenant_query(User).filter(
+        ccb_candidates = tenant_query(User).join(
+            UserRoleGrant, UserRoleGrant.user_id == User.id
+        ).filter(
             User.active.is_(True),
-            User.role == "manager",
-        ).order_by(User.name).all()
+            UserRoleGrant.role.in_(["manager", "admin", "superadmin"]),
+        ).distinct().order_by(User.name).all()
         ccb = tenant_query(SupportGroup).filter_by(name="Change Control Board").first()
         if not ccb:
             ccb = SupportGroup(
@@ -11132,9 +11366,8 @@ def create_app(test_config=None):
                 ("Integrations", "Webhooks monitoring RT import delivery", "integrations_admin", {}, "admin"),
                 ("Automation rules", "Workflow schedules executions", "workflows_admin", {}, "admin"),
             ]
-            role_rank = {"requester": 0, "agent": 1, "manager": 2, "admin": 3}
             for label, keywords, endpoint, params, minimum_role in navigation:
-                if minimum_role and role_rank[current_user.role] < role_rank[minimum_role]:
+                if minimum_role and not role_at_least(current_user.effective_role, minimum_role):
                     continue
                 if normalized_q in f"{label} {keywords}".casefold():
                     results.append({"type": "Navigation", "label": label,
@@ -11173,7 +11406,7 @@ def create_app(test_config=None):
                 ConfigurationItem.description.ilike(pattern),
                 ConfigurationItem.location.ilike(pattern),
             )).limit(20):
-                ci_url = url_for("ci_edit", ci_id=row.id) if current_user.role == "admin" else url_for("cmdb")
+                ci_url = url_for("ci_edit", ci_id=row.id) if role_at_least(current_user.effective_role, "admin") else url_for("cmdb")
                 results.append({"type": "Configuration item", "label": row.name,
                                 "url": ci_url, "meta": row.ci_class})
             for row in CatalogRequest.query.filter(
@@ -11228,7 +11461,7 @@ def create_app(test_config=None):
             )).limit(20):
                 results.append({"type": "Catalog item", "label": row.name,
                                 "url": url_for("catalog"), "meta": row.category})
-            if current_user.role == "admin":
+            if role_at_least(current_user.effective_role, "admin"):
                 for row in tenant_query(User).filter(db.or_(
                     User.username.ilike(pattern), User.name.ilike(pattern),
                     User.email.ilike(pattern), User.department.ilike(pattern),
@@ -11258,7 +11491,7 @@ def create_app(test_config=None):
             results = deduplicated
         if request.accept_mimetypes.best == "application/json":
             return jsonify(results=[
-                project_document("search_result", current_user.role, row)
+                project_document("search_result", current_user.effective_role, row)
                 for row in results[:30]
             ])
         return render_template("search.html", q=q, results=results[:60])
@@ -11280,7 +11513,7 @@ def create_app(test_config=None):
             active = True
         db.session.commit()
         return jsonify(project_document(
-            "ui_action_ack", current_user.role, {"active": active}
+            "ui_action_ack", current_user.effective_role, {"active": active}
         ))
 
     @app.post("/ui/history")
@@ -11364,7 +11597,7 @@ def create_app(test_config=None):
         audit("board move", ticket.number, state)
         db.session.commit()
         return jsonify(project_document(
-            "ui_action_ack", current_user.role, {"state": state}
+            "ui_action_ack", current_user.effective_role, {"state": state}
         ))
 
     @app.post("/ticket/<int:ticket_id>/checklist")
