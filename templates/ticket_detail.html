@@ -27,7 +27,7 @@
   {% include "_state_track.html" %}
   <form method="post" id="task-record-form" class="record-form">
     <input type="hidden" name="action" value="update">
-    {% if not can_manage_ticket and not ticket_locked and current_user.role in ['agent','manager','admin'] %}<div class="record-readonly-notice">Read only: operational updates are restricted to active members of {{ owning_group.name if owning_group else 'the owning team' }}.</div>{% endif %}
+    {% if not can_manage_ticket and not ticket_locked and current_user.effective_role in ['agent','manager','admin','superadmin'] %}<div class="record-readonly-notice">Read only: operational updates are restricted to active members of {{ owning_group.name if owning_group else 'the owning team' }}.</div>{% endif %}
     <div class="record-grid">
       <label><span>Number</span><input value="{{ ticket.number }}" disabled></label>
       <label><span>State</span><select name="state" {% if not can_manage_ticket %}disabled{% endif %}>{% for state in ticket_state_options %}<option {% if ticket.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>

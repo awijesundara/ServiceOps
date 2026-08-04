@@ -20,6 +20,7 @@ ALLOWLIST = {
     "notifications_clear": "deletes the caller's own notifications; no shared record changes",
     "favorite_toggle": "toggles the caller's own bookmark; no shared record changes",
     "history_record": "records the caller's own recently-viewed pages; no shared record changes",
+    "set_acting_role": "switches which of the caller's own already-granted roles this session acts as; no shared record changes, and only ever narrows/restores the caller's own authority",
 }
 
 LOGGING_CALLS = {"audit", "log_history", "log_field_changes"}

@@ -22,7 +22,7 @@
 </head>
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
 {% if current_user.is_authenticated %}
-{% set admin_endpoints = ['admin_home','itil_admin','system_settings','users','user_new','user_edit','audit_log','api_clients_admin','integrations_admin','workflows_admin'] %}
+{% set admin_endpoints = ['admin_home','itil_admin','system_settings','users','user_new','user_edit','audit_log','api_clients_admin','integrations_admin','workflows_admin','platform_tenants'] %}
 <script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active</div>{% endif %}
 <aside class="sidebar">
@@ -31,21 +31,21 @@
     <small>WORKSPACE</small>
     <a href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}class="active" aria-current="page"{% endif %}>Dashboard</a>
     <a href="{{ url_for('task_board') }}" {% if nav_active('task_board') %}class="active" aria-current="page"{% endif %}>Visual task board</a>
-    {% if current_user.role in ['agent','manager','admin'] %}<a href="{{ url_for('my_work_tasks') }}" {% if nav_active('my_work_tasks') %}class="active" aria-current="page"{% endif %}>My tasks{% if my_open_tasks_count %}<span class="nav-badge" title="{{ my_open_tasks_count }} open task{{ 's' if my_open_tasks_count != 1 }} assigned to you">{{ my_open_tasks_count if my_open_tasks_count < 100 else '99+' }}</span>{% endif %}</a>{% endif %}
+    {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}<a href="{{ url_for('my_work_tasks') }}" {% if nav_active('my_work_tasks') %}class="active" aria-current="page"{% endif %}>My tasks{% if my_open_tasks_count %}<span class="nav-badge" title="{{ my_open_tasks_count }} open task{{ 's' if my_open_tasks_count != 1 }} assigned to you">{{ my_open_tasks_count if my_open_tasks_count < 100 else '99+' }}</span>{% endif %}</a>{% endif %}
     <a href="{{ url_for('tickets', kind='incident') }}" {% if nav_active('tickets', kind='incident') %}class="active" aria-current="page"{% endif %}>Incidents</a>
     <a href="{{ url_for('requests_list') }}" {% if nav_active('requests_list') %}class="active" aria-current="page"{% endif %}>Service requests</a>
-    {% if current_user.role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}" {% if nav_active('tickets', kind='change') %}class="active" aria-current="page"{% endif %}>Changes</a>{% endif %}
+    {% if current_user.effective_role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}" {% if nav_active('tickets', kind='change') %}class="active" aria-current="page"{% endif %}>Changes</a>{% endif %}
     <a href="{{ url_for('catalog') }}" {% if nav_active('catalog') %}class="active" aria-current="page"{% endif %}>Service catalog</a>
     <a href="{{ url_for('knowledge') }}" {% if nav_active('knowledge') %}class="active" aria-current="page"{% endif %}>Knowledge</a>
     <a href="{{ url_for('modules') }}" {% if nav_active('modules') %}class="active" aria-current="page"{% endif %}>All workspaces</a>
     <a href="{{ url_for('approval_chains') }}" {% if nav_active('approval_chains') %}class="active" aria-current="page"{% endif %}>My approvals{% if pending_approvals_count %}<span class="nav-badge" title="{{ pending_approvals_count }} approval{{ 's' if pending_approvals_count != 1 }} waiting on you">{{ pending_approvals_count if pending_approvals_count < 100 else '99+' }}</span>{% endif %}</a>
     <a href="{{ url_for('notifications') }}" {% if nav_active('notifications') %}class="active" aria-current="page"{% endif %}>Notifications</a>
     <a href="{{ url_for('org_chart') }}" {% if nav_active('org_chart') %}class="active" aria-current="page"{% endif %}>Org chart</a>
-    {% if current_user.role in ['manager','admin'] %}
+    {% if current_user.effective_role in ['manager','admin','superadmin'] %}
     <small>LEADERSHIP</small>
     <a href="{{ url_for('manager_portal') }}" {% if nav_active('manager_portal') %}class="active" aria-current="page"{% endif %}>Manager portal</a>
     {% endif %}
-    {% if current_user.role in ['agent','manager','admin'] %}
+    {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}
     <small>OPERATIONS</small>
     <a href="{{ url_for('module_records', domain='problem') }}" {% if nav_active('module_records', domain='problem') %}class="active" aria-current="page"{% endif %}>Problems</a>
     <a href="{{ url_for('known_errors') }}" {% if nav_active('known_errors') %}class="active" aria-current="page"{% endif %}>Known errors</a>
@@ -55,7 +55,7 @@
     <a href="{{ url_for('assets') }}" {% if nav_active('assets') %}class="active" aria-current="page"{% endif %}>Assets</a>
     <a href="{{ url_for('analytics') }}" {% if nav_active('analytics') %}class="active" aria-current="page"{% endif %}>Analytics</a>
     {% endif %}
-    {% if current_user.role == 'admin' %}
+    {% if current_user.effective_role in ['admin','superadmin'] %}
     <small>ADMINISTRATION</small>
     <a href="{{ url_for('admin_home') }}" {% if request.endpoint in admin_endpoints %}class="active" aria-current="page"{% endif %}>Administration home</a>
     {% endif %}
@@ -63,7 +63,7 @@
   <script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
   <div class="profile">
     {{ user_avatar(current_user) }}
-    <a href="{{ url_for('profile') }}"><strong>{{ current_user.name }}</strong><small>{{ current_user.role }}</small></a>
+    <a href="{{ url_for('profile') }}"><strong>{{ current_user.name }}</strong><small>{{ current_user.effective_role }}</small></a>
     <form action="{{ url_for('logout') }}" method="post"><button class="link-button" aria-label="Sign out">↗</button></form>
   </div>
   <div class="sidebar-version">v{{ app_version }}</div>
@@ -88,6 +88,21 @@
         {% for row in ui_history %}<a href="{{ row.url }}">{{ row.label }}</a>{% else %}<p>No recent pages.</p>{% endfor %}
       </div>
     </details>
+    {% if current_user.granted_roles|length > 1 %}
+    <details data-nav-menu="acting-role">
+      <summary title="Acting as {{ current_user.effective_role|capitalize }}" aria-label="Switch acting role"><span class="acting-role-badge">{{ current_user.effective_role|capitalize }}</span></summary>
+      <div class="nav-popover">
+        <h3>Acting as</h3>
+        <p class="muted">You hold {{ current_user.granted_roles|join(', ') }}. Switching genuinely changes what you can do until you switch back.</p>
+        {% for role in current_user.granted_roles %}
+        <form method="post" action="{{ url_for('set_acting_role') }}">
+          <input type="hidden" name="role" value="{{ role }}">
+          <button type="submit" class="favorite-toggle"{% if role == current_user.effective_role %} disabled{% endif %}>{{ '✓ ' if role == current_user.effective_role }}{{ role|capitalize }}</button>
+        </form>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
     <a class="nav-icon" href="{{ url_for('notifications') }}" title="Notifications" aria-label="Notifications"><svg class="icon" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>{% if unread_notifications %}<b>{{ unread_notifications }}</b>{% endif %}</a>
     <a class="nav-icon" href="{{ url_for('help_center') }}" title="Help" aria-label="Help"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.9.4-1.5 1-1.5 2.2"/><line x1="12" y1="17.3" x2="12" y2="17.31"/></svg></a>
     <a class="nav-icon" href="{{ url_for('preferences') }}" title="Preferences" aria-label="Preferences"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1z"/></svg></a>

@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% block title %}Platform tenants · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = "Platform tenants" %}{% set admin_parent_title = "Administration home" %}{% set admin_parent_url = url_for('admin_home') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><p class="eyebrow">PLATFORM</p><h1>Tenants</h1><p>Cross-tenant control, visible only to superadmin accounts. Every other admin screen is scoped to your own tenant.</p></div></header>
+<section class="panel">
+  <div class="panel-head"><div><h2>Create tenant</h2></div></div>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="action" value="create_tenant">
+    <label>Name<input name="name" maxlength="160" required></label>
+    <label>Slug<input name="slug" maxlength="80" pattern="[a-z0-9][a-z0-9-]*" placeholder="acme-corp" required></label>
+    <div class="wide actions"><button class="primary">Create tenant</button></div>
+  </form>
+</section>
+<section class="panel" style="margin-top:20px">
+  <div class="panel-head"><div><h2>All tenants</h2></div></div>
+  <table>
+    <thead><tr><th>Name</th><th>Slug</th><th>Users</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for tenant in tenants %}
+      <tr>
+        <td><strong>{{ tenant.name }}</strong></td>
+        <td>{{ tenant.slug }}</td>
+        <td>{{ user_counts.get(tenant.id, 0) }}</td>
+        <td><span class="badge">{{ 'Active' if tenant.active else 'Inactive' }}</span></td>
+        <td>
+          <form method="post" class="inline-form">
+            <input type="hidden" name="action" value="set_tenant_active">
+            <input type="hidden" name="tenant_id" value="{{ tenant.id }}">
+            {% if tenant.active %}
+            <input type="hidden" name="active" value="">
+            <button class="button">Deactivate</button>
+            {% else %}
+            <input type="hidden" name="active" value="true">
+            <button class="primary">Activate</button>
+            {% endif %}
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

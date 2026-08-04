@@ -4,7 +4,8 @@
     "discover", "read", "comment_public", "comment_internal", "create",
     "update", "assign", "accept", "transition", "resolve", "close",
     "reopen", "approve", "delegate", "relate", "export", "report",
-    "delete", "purge", "configure", "administer", "security_administer"
+    "delete", "purge", "configure", "administer", "security_administer",
+    "platform_administer"
   ],
   "roles": {
     "requester": ["discover", "read", "comment_public", "create"],
@@ -23,6 +24,13 @@
       "update", "assign", "accept", "transition", "resolve", "close",
       "reopen", "approve", "delegate", "relate", "export", "report",
       "delete", "purge", "configure", "administer", "security_administer"
+    ],
+    "superadmin": [
+      "discover", "read", "comment_public", "comment_internal", "create",
+      "update", "assign", "accept", "transition", "resolve", "close",
+      "reopen", "approve", "delegate", "relate", "export", "report",
+      "delete", "purge", "configure", "administer", "security_administer",
+      "platform_administer"
     ]
   }
 }

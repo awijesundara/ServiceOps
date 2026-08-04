@@ -10,7 +10,7 @@ from typing import Any
 
 POLICY_PATH = Path(__file__).resolve().parent.parent / "config" / "field_projections.json"
 EXPECTED_SCHEMA = "serviceops.field-projections.v1"
-KNOWN_ROLES = {"requester", "agent", "manager", "admin"}
+KNOWN_ROLES = {"requester", "agent", "manager", "admin", "superadmin"}
 MACHINE_AUDIENCES = {"monitoring_source"}
 
 
