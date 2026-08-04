@@ -2223,6 +2223,18 @@ SETTING_DEFINITIONS = {
                 "title": "title", "department": "department", "division": "division",
                 "employee_id": "employeeID", "employee_type": "employeeType", "manager": "manager",
                 "email": "mail", "display_name": "displayName", "username": "sAMAccountName",
+                "business_phone": "telephoneNumber", "mobile_phone": "mobile",
+                "location": "physicalDeliveryOfficeName",
+            }),
+            "live": True,
+        },
+        {
+            "key": "KEYCLOAK_ATTR_MAP", "label": "Keycloak/OIDC directory attribute map", "type": "json",
+            "default": json.dumps({
+                "title": "title", "department": "department", "division": "division",
+                "employee_id": "employee_id", "employee_type": "employee_type",
+                "business_phone": "phone_number", "mobile_phone": "mobile_number",
+                "location": "location",
             }),
             "live": True,
         },
@@ -5083,14 +5095,34 @@ def user_is_local(user):
     return ExternalIdentity.query.filter_by(user_id=user.id).first() is None
 
 
-def provision_external_user(provider, subject, username, name, email, matched_roles, groups=None):
+def apply_external_profile_attrs(user, profile_attrs):
+    """Copy directory/SSO-sourced profile fields (title, department, employee
+    id, phone, mobile, location, ...) onto ``user``, never nulling out an
+    existing value for an attribute the provider didn't send this time
+    (sparse claim sets are normal for OIDC userinfo)."""
+    if not profile_attrs:
+        return
+    from serviceops_core.ldap_sync import PROFILE_FIELDS
+    for field in PROFILE_FIELDS:
+        value = profile_attrs.get(field)
+        if value:
+            setattr(user, field, str(value).strip())
+
+
+def provision_external_user(provider, subject, username, name, email, matched_roles, groups=None, profile_attrs=None):
     """`matched_roles` is normally a {role: matched_group_or_None} dict from
     mapped_roles() -- every one of these roles is granted via
     sync_role_grants(..., source="directory"), and any previously
     directory-granted role no longer matched is revoked, without ever
     touching a manually-granted or team-responsibility-granted role. A bare
     role string or an iterable of role strings is also accepted for
-    callers that only have a single/plain set of roles."""
+    callers that only have a single/plain set of roles.
+
+    ``profile_attrs``, when given, is a {User-column-name: value} dict of
+    directory/SSO profile fields (see PROFILE_FIELDS in ldap_sync.py) applied
+    to the user record on every login -- e.g. Keycloak/OIDC's department,
+    employee ID, phone, mobile, location claims (KEYCLOAK_ATTR_MAP setting).
+    """
     if isinstance(matched_roles, str):
         matched_roles = {matched_roles: None}
     elif not isinstance(matched_roles, dict):
@@ -5101,6 +5133,7 @@ def provision_external_user(provider, subject, username, name, email, matched_ro
         user = identity.user
         user.name, user.email = name, email
         user.active = True
+        apply_external_profile_attrs(user, profile_attrs)
         sync_role_grants(user, "directory", matched_roles, detail_by_role=matched_roles)
         if provider == "ldap":
             sync_directory_team_memberships(user, groups)
@@ -5131,6 +5164,7 @@ def provision_external_user(provider, subject, username, name, email, matched_ro
         existing_user.name = name or existing_user.name
         existing_user.email = email or existing_user.email
         existing_user.active = True
+        apply_external_profile_attrs(existing_user, profile_attrs)
         db.session.add(ExternalIdentity(provider=provider, subject=subject, user_id=existing_user.id))
         sync_role_grants(existing_user, "directory", matched_roles, detail_by_role=matched_roles)
         if provider == "ldap":
@@ -5153,6 +5187,7 @@ def provision_external_user(provider, subject, username, name, email, matched_ro
                 password_hash=hash_password(uuid.uuid4().hex), role=initial_role)
     db.session.add(user)
     db.session.flush()
+    apply_external_profile_attrs(user, profile_attrs)
     db.session.add(ExternalIdentity(provider=provider, subject=subject, user_id=user.id))
     sync_role_grants(user, "directory", matched_roles, detail_by_role=matched_roles)
     if provider == "ldap":
@@ -6702,9 +6737,21 @@ def create_app(test_config=None):
             abort(401)
         realm_roles = claims.get("realm_access", {}).get("roles", [])
         matched_roles = mapped_roles(realm_roles, "KEYCLOAK_ROLE_MAPPINGS")
+        try:
+            keycloak_attr_map = json.loads(setting_value("KEYCLOAK_ATTR_MAP", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            keycloak_attr_map = {}
+        if not isinstance(keycloak_attr_map, dict):
+            keycloak_attr_map = {}
+        profile_attrs = {
+            field: claims.get(claim_name)
+            for field, claim_name in keycloak_attr_map.items()
+            if claims.get(claim_name)
+        }
         user = provision_external_user(
             "keycloak", subject, claims.get("preferred_username", ""),
-            claims.get("name", ""), claims.get("email", ""), matched_roles)
+            claims.get("name", ""), claims.get("email", ""), matched_roles,
+            profile_attrs=profile_attrs)
         login_user(user)
         session.permanent = True
         session["_auth_version"] = user.auth_version
@@ -7442,6 +7489,20 @@ def create_app(test_config=None):
                     return render_form("The selected configuration item is invalid.")
                 if not tenant_query(ConfigurationItem).filter_by(id=ci_id).first():
                     return render_form("The selected configuration item does not exist.")
+            additional_ci_ids = set()
+            if kind == "change":
+                for raw_ci_id in request.form.getlist("additional_ci_ids"):
+                    if not raw_ci_id.strip():
+                        continue
+                    try:
+                        additional_ci_id = int(raw_ci_id)
+                    except (TypeError, ValueError):
+                        return render_form("One of the additional configuration items is invalid.")
+                    if additional_ci_id == ci_id:
+                        continue
+                    if not tenant_query(ConfigurationItem).filter_by(id=additional_ci_id).first():
+                        return render_form("One of the additional configuration items does not exist.")
+                    additional_ci_ids.add(additional_ci_id)
             if kind == "change" and ci_id:
                 conflicts = precreate_change_conflicts(current_user.tenant_id, ci_id, planned_start, planned_end)
                 if conflicts:
@@ -7511,6 +7572,17 @@ def create_app(test_config=None):
                 db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=owning_group.id))
                 db.session.add(ChangeRevision(ticket_id=ticket.id, revision=1))
                 db.session.flush()
+                for additional_ci_id in additional_ci_ids:
+                    db.session.add(TaskCI(
+                        target_type="ticket", target_id=ticket.id,
+                        ci_id=additional_ci_id, relationship_role="Affected CI",
+                    ))
+                if additional_ci_ids:
+                    db.session.flush()
+                    log_history(
+                        "ticket", ticket.id, "Configuration item linked",
+                        details=f"Affected CI: {len(additional_ci_ids)} additional configuration item(s) linked at creation.",
+                    )
                 run_change_conflict_detection(ticket, governance)
                 create_approval_chain(
                     f"{ticket.number} change authorization v1",
