@@ -39,6 +39,9 @@ DEFAULT_ATTR_MAP = {
     "division": "division",
     "employee_id": "employeeID",
     "employee_type": "employeeType",
+    "business_phone": "telephoneNumber",
+    "mobile_phone": "mobile",
+    "location": "physicalDeliveryOfficeName",
     "manager": "manager",
     "email": "mail",
     "display_name": "displayName",
@@ -47,7 +50,10 @@ DEFAULT_ATTR_MAP = {
 
 # ServiceOps User columns populated from directory attributes (excludes
 # "manager", "email", "display_name", "username" which are handled separately).
-PROFILE_FIELDS = ("title", "department", "division", "employee_id", "employee_type")
+PROFILE_FIELDS = (
+    "title", "department", "division", "employee_id", "employee_type",
+    "business_phone", "mobile_phone", "location",
+)
 
 
 class DirectorySyncError(RuntimeError):

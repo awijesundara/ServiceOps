@@ -1863,6 +1863,41 @@ def test_change_has_governance_approval_chain_and_sla(client, app):
         assert TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).count() == 1
 
 
+def test_change_creation_links_multiple_configuration_items(client, app):
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        primary_ci = ConfigurationItem(name="app-server-01", ci_class="Server", environment="Production", owner_id=admin.id)
+        extra_ci_a = ConfigurationItem(name="lb-01", ci_class="Network Appliance", environment="Production", owner_id=admin.id)
+        extra_ci_b = ConfigurationItem(name="db-01", ci_class="Database", environment="Production", owner_id=admin.id)
+        db.session.add_all([primary_ci, extra_ci_a, extra_ci_b])
+        db.session.commit()
+        primary_ci_id, extra_ci_a_id, extra_ci_b_id = primary_ci.id, extra_ci_a.id, extra_ci_b.id
+    response = client.post("/tickets/new/change", data={
+        "title": "Multi-CI maintenance window",
+        "description": "Coordinated maintenance across app, load balancer, and database tiers.",
+        "category": "Software", "priority": "P2", "change_type": "Normal",
+        "impact": "Medium",
+        "implementation_plan": "Patch each tier in sequence.",
+        "test_plan": "Run smoke tests after each tier.",
+        "backout_plan": "Roll back the most recently patched tier.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+        "group_id": group_id(app),
+        "ci_id": str(primary_ci_id),
+        "additional_ci_ids": [str(extra_ci_a_id), str(extra_ci_b_id)],
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    with app.app_context():
+        ticket = Ticket.query.filter_by(kind="change").one()
+        assert ticket.change_governance.ci_id == primary_ci_id
+        affected = {
+            link.ci_id for link in TaskCI.query.filter_by(
+                target_type="ticket", target_id=ticket.id, relationship_role="Affected CI",
+            ).all()
+        }
+        assert affected == {extra_ci_a_id, extra_ci_b_id}
+
+
 def test_change_cannot_bypass_approval_from_detail_or_board(client, app):
     login(client)
     client.post("/tickets/new/change", data={
@@ -2695,6 +2730,35 @@ def test_external_identity_is_stable_and_does_not_enable_local_password(app):
         assert second.id == first_id
         assert second.role == "manager"
         assert ExternalIdentity.query.filter_by(provider="keycloak", subject="subject-123").count() == 1
+
+
+def test_keycloak_provisioning_applies_mapped_profile_attrs(app):
+    with app.app_context():
+        user = provision_external_user(
+            "keycloak", "subject-456", "bob", "Bob", "bob@example.test", "agent",
+            profile_attrs={
+                "title": "Site Reliability Engineer", "department": "Platform Engineering",
+                "employee_id": "E4821", "business_phone": "+1-555-0100",
+                "mobile_phone": "+1-555-0199", "location": "Austin HQ",
+            },
+        )
+        db.session.commit()
+        assert user.title == "Site Reliability Engineer"
+        assert user.department == "Platform Engineering"
+        assert user.employee_id == "E4821"
+        assert user.business_phone == "+1-555-0100"
+        assert user.mobile_phone == "+1-555-0199"
+        assert user.location == "Austin HQ"
+        # A later login with a sparser claim set must never null out
+        # already-known profile data.
+        relogged = provision_external_user(
+            "keycloak", "subject-456", "bob", "Bob", "bob@example.test", "agent",
+            profile_attrs={"title": "Senior Site Reliability Engineer"},
+        )
+        db.session.commit()
+        assert relogged.title == "Senior Site Reliability Engineer"
+        assert relogged.department == "Platform Engineering"
+        assert relogged.location == "Austin HQ"
 
 
 def test_manual_role_grant_survives_directory_login(app):

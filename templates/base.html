@@ -75,7 +75,7 @@
       </summary>
       <div class="nav-popover role-switcher-popover">
         <h3>Switch your active role</h3>
-        <p class="muted">You hold {{ current_user.granted_roles|length }} roles: {{ current_user.granted_roles|join(', ') }}. Switching genuinely changes what you can see and do -- pick which one is active until you switch back.</p>
+        <p class="muted">You hold {{ current_user.granted_roles|length }} roles: {{ current_user.granted_roles|join(', ') }}.</p>
         {% for role in current_user.granted_roles %}
         <form method="post" action="{{ url_for('set_acting_role') }}">
           <input type="hidden" name="role" value="{{ role }}">
