@@ -24,6 +24,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  RequestedItem, PlatformSetting, ServiceOffering, ServiceOfferingCI, SupportGroup, SupportGroupAlias,
                  TaskCI, TaskHistory, TaskNote, TaskSLA,
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference, UserRoleGrant, ManagedRoleGrant,
+                 create_ticket_with_unique_number, create_with_retry_on_number_collision, next_number,
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
                  audit, change_approval_stages, create_api_token, create_app, create_notification, db,
@@ -2852,6 +2853,63 @@ def test_user_edit_grants_and_revokes_multiple_roles(client, app):
     with app.app_context():
         target = db.session.get(User, target_id)
         assert "superadmin" not in target.granted_roles
+
+
+def test_ticket_creation_survives_a_racing_duplicate_number(app):
+    """next_number() derives a ticket's number from MAX(Ticket.id) with no
+    locking, so two near-simultaneous ticket creations can compute the
+    identical number before either commits -- Ticket.number is unique=True,
+    so this previously surfaced as a raw IntegrityError/500 instead of the
+    second creator just getting the next available number. Simulate the
+    race directly: pre-insert a ticket at the number next_number() would
+    compute, then create_ticket_with_unique_number() must still succeed
+    (with a different number) instead of raising."""
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        colliding_number = next_number("incident")
+        db.session.add(Ticket(
+            number=colliding_number, kind="incident", title="Racing ticket",
+            description="Occupies the number the next call would compute.",
+            category="Software", priority="P3", state="New", requester_id=admin.id,
+        ))
+        db.session.commit()
+
+        ticket = create_ticket_with_unique_number(
+            "incident", title="Should not collide", description="Retry must recover.",
+            category="Software", priority="P3", requester_id=admin.id,
+        )
+        db.session.commit()
+        assert ticket.number != colliding_number
+        assert ticket.number.startswith("INC")
+        assert Ticket.query.filter_by(number=ticket.number).count() == 1
+
+
+def test_create_with_retry_gives_up_after_persistent_collisions(app):
+    """If every retry attempt keeps colliding, fail closed with a clear 409
+    instead of retrying forever or letting a raw IntegrityError escape."""
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        fixed_number = next_number("incident")
+
+        def build_always_colliding():
+            ticket = Ticket(
+                number=fixed_number, kind="incident", title="Always collides",
+                description="Never a fresh number.", category="Software",
+                priority="P3", state="New", requester_id=admin.id,
+            )
+            db.session.add(ticket)
+            return ticket
+
+        db.session.add(Ticket(
+            number=fixed_number, kind="incident", title="Blocks the number",
+            description="Pre-existing.", category="Software", priority="P3",
+            state="New", requester_id=admin.id,
+        ))
+        db.session.commit()
+
+        with pytest.raises(Exception) as excinfo:
+            create_with_retry_on_number_collision(build_always_colliding, attempts=3)
+        assert getattr(excinfo.value, "code", None) == 409
 
 
 def test_ldap_group_mapping_synchronizes_team_membership(app):

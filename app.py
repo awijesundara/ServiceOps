@@ -2113,6 +2113,44 @@ def next_number(kind):
     return f"{prefix}{maximum + 1:07d}"
 
 
+def create_with_retry_on_number_collision(build_row, attempts=10, error_description=None):
+    """next_number()/sequence_number()/next_operational_task_number() all
+    derive a record's number from the current max id with no locking, so
+    two near-simultaneous creators (double form submission, two browser
+    tabs, two concurrent API/monitoring callers, two gunicorn workers) can
+    compute the identical number before either commits. Every one of those
+    number columns is unique=True, so the second insert previously
+    surfaced as a raw IntegrityError/500 ("...number already exists...")
+    instead of just quietly succeeding with the next available number.
+
+    `build_row` must construct the row, call db.session.add() on it, and
+    return it -- and must call a fresh next_number()/sequence_number()/etc.
+    each time it runs, not reuse a number computed once outside this
+    function, or the retry would just collide again identically. Retries
+    inside a savepoint (the same pattern already used by
+    enforce_api_rate_limit's concurrent-window handling) so only the failed
+    insert rolls back, not the rest of this request's already-flushed work."""
+    for _attempt in range(attempts):
+        try:
+            with db.session.begin_nested():
+                row = build_row()
+                db.session.flush()
+        except IntegrityError:
+            continue
+        return row
+    abort(409, description=error_description or "Could not allocate a unique record number; please try again.")
+
+
+def create_ticket_with_unique_number(kind, **fields):
+    def build():
+        ticket = Ticket(number=next_number(kind), kind=kind, **fields)
+        db.session.add(ticket)
+        return ticket
+    return create_with_retry_on_number_collision(
+        build, error_description="Could not allocate a unique ticket number; please try again."
+    )
+
+
 DOMAIN_CONFIG = {
     "problem": {"name": "Problems", "prefix": "PRB", "types": ["Root cause analysis", "Known error"]},
     "customer": {"name": "Customer service", "prefix": "CS", "types": ["Support case", "Complaint", "Return / RMA", "Onboarding"]},
@@ -4605,10 +4643,13 @@ def create_catalog_task(ritm):
         abort(409, description=(
             f"{ritm.item.name} has no active fulfillment route and no active Service Desk fallback."
         ))
-    task = CatalogTask(number=sequence_number(CatalogTask, "SCTASK"), requested_item_id=ritm.id,
-                       title=f"Fulfill {ritm.item.name}", assignment_group_id=group.id,
-                       due_at=ritm.due_at)
-    db.session.add(task)
+    def build():
+        task = CatalogTask(number=sequence_number(CatalogTask, "SCTASK"), requested_item_id=ritm.id,
+                           title=f"Fulfill {ritm.item.name}", assignment_group_id=group.id,
+                           due_at=ritm.due_at)
+        db.session.add(task)
+        return task
+    task = create_with_retry_on_number_collision(build)
     log_history(
         "ritm", ritm.id, "Catalog task created",
         details=f"{task.number}: {task.title} → {group.name}",
@@ -5768,13 +5809,16 @@ def create_app(test_config=None):
             enterprise_record_id=record.id, tenant_id=source.tenant_id,
         )
         db.session.add(event)
-        task = OperationalTask(
-            number=next_operational_task_number("event"),
-            task_kind="event", parent_type="enterprise", parent_id=record.id,
-            title=f"Investigate {resource}", task_type="Investigation",
-            assignment_group_id=source.assignment_group_id, required=True,
-        )
-        db.session.add(task)
+        def build_task():
+            task = OperationalTask(
+                number=next_operational_task_number("event"),
+                task_kind="event", parent_type="enterprise", parent_id=record.id,
+                title=f"Investigate {resource}", task_type="Investigation",
+                assignment_group_id=source.assignment_group_id, required=True,
+            )
+            db.session.add(task)
+            return task
+        task = create_with_retry_on_number_collision(build_task)
         source.last_seen_at = now()
         audit(
             "monitoring ingest", record.number,
@@ -5863,15 +5907,13 @@ def create_app(test_config=None):
         ).first()
         if not group:
             abort(400, description="Select an active tenant IT fulfillment team.")
-        ticket = Ticket(
-            number=next_number("incident"), kind="incident",
+        ticket = create_ticket_with_unique_number(
+            "incident",
             title=title, description=description,
             category=str(body.get("category", "General"))[:80],
             priority=priority, requester_id=g.api_user.id,
             tenant_id=g.api_client.tenant_id,
         )
-        db.session.add(ticket)
-        db.session.flush()
         db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=group.id))
         attach_slas("ticket", ticket.id, ticket.priority)
         log_history(
@@ -7009,16 +7051,15 @@ def create_app(test_config=None):
             impact = request.form.get("impact", "Medium")
             urgency = request.form.get("urgency", "Medium")
             priority = calculate_priority(impact, urgency)
-            ticket = Ticket(number=next_number(kind), kind=kind,
-                            title=title, description=description,
-                            category=request.form.get("category", "General"), priority=priority,
-                            impact=impact, urgency=urgency,
-                            subcategory=request.form.get("subcategory", "").strip(),
-                            contact_type=contact_type, notify=notify,
-                            service_offering_id=offering.id if offering else None,
-                            requester_id=current_user.id)
-            db.session.add(ticket)
-            db.session.flush()
+            ticket = create_ticket_with_unique_number(
+                kind,
+                title=title, description=description,
+                category=request.form.get("category", "General"), priority=priority,
+                impact=impact, urgency=urgency,
+                subcategory=request.form.get("subcategory", "").strip(),
+                contact_type=contact_type, notify=notify,
+                service_offering_id=offering.id if offering else None,
+                requester_id=current_user.id)
             if kind == "incident" and ci_id:
                 db.session.add(TaskCI(
                     target_type="ticket", target_id=ticket.id, ci_id=ci_id,
@@ -7056,16 +7097,18 @@ def create_app(test_config=None):
                     f"Test plan:\n{governance.test_plan}",
                     f"Backout plan:\n{governance.backout_plan}",
                 ]))
-                initial_task = OperationalTask(
-                    number=next_operational_task_number("change"),
-                    task_kind="change", parent_type="ticket", parent_id=ticket.id,
-                    title="Implementation", task_type="Implementation",
-                    sequence=1, assignment_group_id=owning_group.id,
-                    planned_start=governance.planned_start, planned_end=governance.planned_end,
-                    required=True, work_notes=implementation_notes, state="Pending",
-                )
-                db.session.add(initial_task)
-                db.session.flush()
+                def build_initial_task():
+                    initial_task = OperationalTask(
+                        number=next_operational_task_number("change"),
+                        task_kind="change", parent_type="ticket", parent_id=ticket.id,
+                        title="Implementation", task_type="Implementation",
+                        sequence=1, assignment_group_id=owning_group.id,
+                        planned_start=governance.planned_start, planned_end=governance.planned_end,
+                        required=True, work_notes=implementation_notes, state="Pending",
+                    )
+                    db.session.add(initial_task)
+                    return initial_task
+                initial_task = create_with_retry_on_number_collision(build_initial_task)
                 log_history(
                     "ticket", ticket.id, "Change task created",
                     details=f"{initial_task.number} Implementation: created from the change's plan → {owning_group.name}",
@@ -7874,20 +7917,24 @@ def create_app(test_config=None):
                     f"({governance.planned_start.strftime('%Y-%m-%d %H:%M')} → "
                     f"{governance.planned_end.strftime('%Y-%m-%d %H:%M')})."
                 ))
-        task = OperationalTask(
-            number=next_operational_task_number("change"),
-            task_kind="change", parent_type="ticket", parent_id=ticket.id,
-            title=request.form["title"].strip(), task_type=task_type,
-            sequence=OperationalTask.query.filter_by(
-                parent_type="ticket", parent_id=ticket.id
-            ).count() + 1,
-            assignment_group_id=group.id,
-            planned_start=planned_start, planned_end=planned_end,
-            required=bool(request.form.get("required")),
-            state="Open" if task_type == "Planning" else "Pending",
-        )
-        db.session.add(task)
-        db.session.flush()
+        sequence = OperationalTask.query.filter_by(
+            parent_type="ticket", parent_id=ticket.id
+        ).count() + 1
+
+        def build_task():
+            task = OperationalTask(
+                number=next_operational_task_number("change"),
+                task_kind="change", parent_type="ticket", parent_id=ticket.id,
+                title=request.form["title"].strip(), task_type=task_type,
+                sequence=sequence,
+                assignment_group_id=group.id,
+                planned_start=planned_start, planned_end=planned_end,
+                required=bool(request.form.get("required")),
+                state="Open" if task_type == "Planning" else "Pending",
+            )
+            db.session.add(task)
+            return task
+        task = create_with_retry_on_number_collision(build_task)
         log_history(
             "ticket", ticket.id, "Change task created",
             details=f"{task.number} {task.task_type}: {task.title} → {group.name}",
@@ -9351,19 +9398,23 @@ def create_app(test_config=None):
         group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
         if not group.active or group.group_type != "IT Fulfillment":
             abort(400, description="Problem tasks require an active IT fulfillment team.")
-        task = OperationalTask(
-            number=next_operational_task_number("problem"),
-            task_kind="problem", parent_type="enterprise", parent_id=record.id,
-            title=request.form["title"].strip(),
-            task_type=request.form.get("task_type", "Investigation"),
-            sequence=OperationalTask.query.filter_by(
-                parent_type="enterprise", parent_id=record.id
-            ).count() + 1,
-            assignment_group_id=group.id,
-            required=bool(request.form.get("required")),
-        )
-        db.session.add(task)
-        db.session.flush()
+        sequence = OperationalTask.query.filter_by(
+            parent_type="enterprise", parent_id=record.id
+        ).count() + 1
+
+        def build_task():
+            task = OperationalTask(
+                number=next_operational_task_number("problem"),
+                task_kind="problem", parent_type="enterprise", parent_id=record.id,
+                title=request.form["title"].strip(),
+                task_type=request.form.get("task_type", "Investigation"),
+                sequence=sequence,
+                assignment_group_id=group.id,
+                required=bool(request.form.get("required")),
+            )
+            db.session.add(task)
+            return task
+        task = create_with_retry_on_number_collision(build_task)
         log_history(
             "enterprise", record.id, "Problem task created",
             details=f"{task.number}: {task.title} → {group.name}",
@@ -9399,18 +9450,20 @@ def create_app(test_config=None):
             abort(400, description="A title is required.")
         source_type = request.form.get("source_type") or None
         source_id = request.form.get("source_id") or None
-        item = ImprovementItem(
-            number=sequence_number(ImprovementItem, "IMP"),
-            title=title[:200],
-            description=request.form.get("description", "").strip(),
-            expected_outcome=request.form.get("expected_outcome", "").strip(),
-            source_type=source_type,
-            source_id=int(source_id) if source_id else None,
-            owner_id=current_user.id,
-            created_by_id=current_user.id,
-        )
-        db.session.add(item)
-        db.session.flush()
+        def build():
+            item = ImprovementItem(
+                number=sequence_number(ImprovementItem, "IMP"),
+                title=title[:200],
+                description=request.form.get("description", "").strip(),
+                expected_outcome=request.form.get("expected_outcome", "").strip(),
+                source_type=source_type,
+                source_id=int(source_id) if source_id else None,
+                owner_id=current_user.id,
+                created_by_id=current_user.id,
+            )
+            db.session.add(item)
+            return item
+        item = create_with_retry_on_number_collision(build)
         audit("create", item.number, item.title)
         db.session.commit()
         flash(f"{item.number} raised as a continual-improvement item.", "success")
@@ -9484,17 +9537,22 @@ def create_app(test_config=None):
                     "error",
                 )
                 return redirect(url_for("catalog"))
-        req = CatalogRequest(number=sequence_number(CatalogRequest, "REQ"), requested_by_id=current_user.id,
-                             requested_for_id=current_user.id)
-        db.session.add(req)
-        db.session.flush()
-        ritm = RequestedItem(number=sequence_number(RequestedItem, "RITM"), request_id=req.id,
-                             catalog_item_id=item.id, state="Awaiting Approval" if item.approval_required else "Open",
-                             stage="Approval" if item.approval_required else "Fulfillment",
-                             variables_json=json.dumps({"details": request.form.get("details", "")}),
-                             due_at=now() + timedelta(days=item.delivery_days))
-        db.session.add(ritm)
-        db.session.flush()
+        def build_req():
+            req = CatalogRequest(number=sequence_number(CatalogRequest, "REQ"), requested_by_id=current_user.id,
+                                 requested_for_id=current_user.id)
+            db.session.add(req)
+            return req
+        req = create_with_retry_on_number_collision(build_req)
+
+        def build_ritm():
+            ritm = RequestedItem(number=sequence_number(RequestedItem, "RITM"), request_id=req.id,
+                                 catalog_item_id=item.id, state="Awaiting Approval" if item.approval_required else "Open",
+                                 stage="Approval" if item.approval_required else "Fulfillment",
+                                 variables_json=json.dumps({"details": request.form.get("details", "")}),
+                                 due_at=now() + timedelta(days=item.delivery_days))
+            db.session.add(ritm)
+            return ritm
+        ritm = create_with_retry_on_number_collision(build_ritm)
         attach_slas("ritm", ritm.id, None)
         if item.approval_required:
             stages = [
@@ -10130,16 +10188,18 @@ def create_app(test_config=None):
         if not user_can_add_request_item(current_user, req):
             abort(403, description="Only request participants or an administrator can add items.")
         item = tenant_record_or_404(CatalogItem, int(request.form["catalog_item_id"]))
-        ritm = RequestedItem(
-            number=sequence_number(RequestedItem, "RITM"), request_id=req.id,
-            catalog_item_id=item.id,
-            state="Awaiting Approval" if item.approval_required else "Open",
-            stage="Approval" if item.approval_required else "Fulfillment",
-            variables_json=json.dumps({"details": request.form.get("details", "")}),
-            due_at=now() + timedelta(days=item.delivery_days),
-        )
-        db.session.add(ritm)
-        db.session.flush()
+        def build_ritm():
+            ritm = RequestedItem(
+                number=sequence_number(RequestedItem, "RITM"), request_id=req.id,
+                catalog_item_id=item.id,
+                state="Awaiting Approval" if item.approval_required else "Open",
+                stage="Approval" if item.approval_required else "Fulfillment",
+                variables_json=json.dumps({"details": request.form.get("details", "")}),
+                due_at=now() + timedelta(days=item.delivery_days),
+            )
+            db.session.add(ritm)
+            return ritm
+        ritm = create_with_retry_on_number_collision(build_ritm)
         attach_slas("ritm", ritm.id, None)
         if item.approval_required:
             manager = tenant_query(User).filter(User.role.in_(["admin", "superadmin"]), User.active.is_(True)).first()
@@ -10179,16 +10239,18 @@ def create_app(test_config=None):
         group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
         if not group.active or group.group_type != "IT Fulfillment":
             abort(400, description="Catalog tasks require an active IT fulfillment team.")
-        task = CatalogTask(
-            number=sequence_number(CatalogTask, "SCTASK"),
-            requested_item_id=ritm.id,
-            title=request.form["title"].strip(),
-            sequence=len(ritm.tasks) + 1,
-            assignment_group_id=group.id,
-            due_at=ritm.due_at,
-        )
-        db.session.add(task)
-        db.session.flush()
+        def build_task():
+            task = CatalogTask(
+                number=sequence_number(CatalogTask, "SCTASK"),
+                requested_item_id=ritm.id,
+                title=request.form["title"].strip(),
+                sequence=len(ritm.tasks) + 1,
+                assignment_group_id=group.id,
+                due_at=ritm.due_at,
+            )
+            db.session.add(task)
+            return task
+        task = create_with_retry_on_number_collision(build_task)
         execution_mode = request.form.get("execution_mode", "Parallel")
         predecessor = (
             CatalogTask.query.filter_by(requested_item_id=ritm.id)

@@ -624,18 +624,20 @@ def _create_change_ticket(rt_id, tenant_id, title, description, detail, requeste
     import app as core_app
     from app import db
 
-    ticket = core_app.Ticket(
-        number=core_app.sequence_number(core_app.Ticket, "CHG"),
-        kind="change", title=title, description=description[:20000],
-        state=_map_status(detail.get("Status"), RT_STATUS_MAP_CHANGE, summary),
-        priority=_map_priority(detail.get("Priority")),
-        category="General", requester_id=requester.id,
-        assignee_id=(assignee.id if assignee else None),
-        tenant_id=tenant_id, external_source="rt", external_id=rt_id,
-    )
-    _set_created_at(ticket, detail)
-    db.session.add(ticket)
-    db.session.flush()
+    def build():
+        ticket = core_app.Ticket(
+            number=core_app.sequence_number(core_app.Ticket, "CHG"),
+            kind="change", title=title, description=description[:20000],
+            state=_map_status(detail.get("Status"), RT_STATUS_MAP_CHANGE, summary),
+            priority=_map_priority(detail.get("Priority")),
+            category="General", requester_id=requester.id,
+            assignee_id=(assignee.id if assignee else None),
+            tenant_id=tenant_id, external_source="rt", external_id=rt_id,
+        )
+        _set_created_at(ticket, detail)
+        db.session.add(ticket)
+        return ticket
+    ticket = core_app.create_with_retry_on_number_collision(build)
     db.session.add(core_app.ChangeGovernance(
         ticket_id=ticket.id, change_type="Normal", ccb_required=False,
         tenant_id=tenant_id,
