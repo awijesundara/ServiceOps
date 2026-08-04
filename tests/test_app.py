@@ -2884,6 +2884,25 @@ def test_superadmin_bypasses_any_roles_gate_but_plain_admin_cannot_reach_platfor
     assert client.get("/platform/tenants").status_code == 403
 
 
+def test_user_edit_active_toggle_and_calendar_integration_are_independent_controls(client, app):
+    """Regression for a reported UI bug: the "Active" switch was an invalid
+    nested <label> (a .switch label inside the field's own label), and its
+    checkbox used position:absolute with no positioned ancestor -- with
+    nothing containing it, the invisible-but-clickable checkbox could render
+    on top of unrelated controls (here, the neighboring Calendar integration
+    dropdown), so clicking that dropdown silently toggled Active instead.
+    Assert the fixed structure: no nested <label> tags, and the Active
+    checkbox is addressed via a plain id/for association."""
+    login(client)
+    response = client.get("/admin/users/1")
+    assert response.status_code == 200
+    html = response.data.decode()
+    assert '<label class="switch">' not in html
+    assert 'id="active-toggle"' in html
+    assert 'for="active-toggle"' in html
+    assert html.count("<label") == html.count("</label>")
+
+
 def test_user_edit_grants_and_revokes_multiple_roles(client, app):
     with app.app_context():
         target = User(
