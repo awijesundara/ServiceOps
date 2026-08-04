@@ -23,12 +23,13 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  OutboxEvent, ProblemProfile, RecordLink, ScheduleHoliday, SLADefinition,
                  RequestedItem, PlatformSetting, ServiceOffering, ServiceOfferingCI, SupportGroup, SupportGroupAlias,
                  TaskCI, TaskHistory, TaskNote, TaskSLA,
-                 Tenant, Ticket, TicketAssignmentGroup, User, UserPreference,
+                 Tenant, Ticket, TicketAssignmentGroup, User, UserPreference, UserRoleGrant, ManagedRoleGrant,
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
                  audit, change_approval_stages, create_api_token, create_app, create_notification, db,
                  deploy_workflow_package, find_and_merge_duplicate_groups, ldap_authenticate,
-                 merge_support_group_into, normalize_environment, now, process_workflow_jobs,
+                 mapped_roles, merge_support_group_into, normalize_environment, now, process_workflow_jobs,
+                 recompute_base_role,
                  process_workflow_schedules, queue_workflow_event,
                  scan_attachment, simulate_workflows,
                  integration_endpoint_valid, integration_endpoint_resolves_safely,
@@ -2424,7 +2425,7 @@ def test_profile_and_user_administration_are_tenant_and_role_governed(client, ap
     assert b"Updated Employee" in client.get("/admin/users?q=Updated+Employee").data
     response = client.post(f"/admin/users/{employee_id}", data={
         "name": "Governed Employee", "email": "employee@test.invalid",
-        "role": "agent", "active": "1", "title": "Support analyst",
+        "granted_roles": ["agent"], "active": "1", "title": "Support analyst",
         "department": "Service Desk", "business_phone": "", "mobile_phone": "",
         "timezone": "UTC", "date_format": "system",
         "calendar_integration": "None",
@@ -2587,7 +2588,7 @@ def test_org_chart_reflects_manager_assignment_and_blocks_cycles(client, app):
         exec_id, lead_id = exec_user.id, lead_user.id
 
     assert client.post(f"/admin/users/{lead_id}", data={
-        "name": "Org Lead", "email": "org.lead@example.com", "role": "agent",
+        "name": "Org Lead", "email": "org.lead@example.com", "granted_roles": ["agent"],
         "active": "1", "manager_id": str(exec_id),
     }).status_code == 302
 
@@ -2600,7 +2601,7 @@ def test_org_chart_reflects_manager_assignment_and_blocks_cycles(client, app):
     assert b"Org Lead" in chart.data
 
     cycle = client.post(f"/admin/users/{exec_id}", data={
-        "name": "Org Exec", "email": "org.exec@example.com", "role": "manager",
+        "name": "Org Exec", "email": "org.exec@example.com", "granted_roles": ["manager"],
         "active": "1", "manager_id": str(lead_id),
     }, follow_redirects=True)
     assert cycle.status_code == 200
@@ -2609,7 +2610,7 @@ def test_org_chart_reflects_manager_assignment_and_blocks_cycles(client, app):
         assert User.query.get(exec_id).manager_id is None
 
     self_manage = client.post(f"/admin/users/{exec_id}", data={
-        "name": "Org Exec", "email": "org.exec@example.com", "role": "manager",
+        "name": "Org Exec", "email": "org.exec@example.com", "granted_roles": ["manager"],
         "active": "1", "manager_id": str(exec_id),
     }, follow_redirects=True)
     assert b"cannot be their own manager" in self_manage.data
@@ -2694,51 +2695,163 @@ def test_external_identity_is_stable_and_does_not_enable_local_password(app):
         assert ExternalIdentity.query.filter_by(provider="keycloak", subject="subject-123").count() == 1
 
 
-def test_role_locked_survives_directory_login_and_team_based_normalization(app):
-    """An admin manually promoting an agent to manager (role_locked=True in
-    the admin Users page) must survive that user's next LDAP/SSO login --
-    previously provision_external_user() and normalize_user_role_from_assignments()
-    unconditionally overwrote role from the directory-group/team-membership
-    mapping on every single login, silently reverting the manual promotion."""
+def test_manual_role_grant_survives_directory_login(app):
+    """An admin directly granting a user an extra role (e.g. admin, via a
+    UserRoleGrant with no ManagedRoleGrant backing) must survive that
+    user's next LDAP login -- directory sync only reconciles roles it
+    itself granted (source="directory"), never a manual grant."""
     with app.app_context():
-        unix = SupportGroup.query.filter_by(name="Unix").one()
         user = provision_external_user(
             "ldap", "CN=Alice,OU=Users,DC=example,DC=com", "alice", "Alice",
             "alice@example.test", "agent",
-            groups=["CN=gg_unix,OU=Groups,DC=example,DC=com"],
         )
-        db.session.add(GroupMember(group_id=unix.id, user_id=user.id, role="member"))
         db.session.commit()
         user_id = user.id
 
-        # Manual admin promotion + lock, exactly as user_edit's POST handler does.
-        user.role = "manager"
-        user.role_locked = True
+        # Manual admin grant, exactly as user_edit's POST handler does
+        # (which also calls recompute_base_role() after the grant loop).
+        db.session.add(UserRoleGrant(user_id=user.id, role="admin"))
+        recompute_base_role(user)
         db.session.commit()
+        assert set(user.granted_roles) == {"agent", "admin"}
+        assert user.role == "admin"  # highest granted
 
-        # Directory still only maps this user to "agent" via LDAP_ROLE_MAPPINGS'
-        # default, and they're still just a team member (not a manager of any
-        # SupportGroup) -- both of which would normally demote them back to
-        # "agent" via normalize_user_role_from_assignments.
+        # Directory still only maps this user to "agent" -- the manual
+        # "admin" grant has no ManagedRoleGrant row, so it's never touched.
         relogged = provision_external_user(
             "ldap", "CN=Alice,OU=Users,DC=example,DC=com", "alice", "Alice",
             "alice@example.test", "agent",
-            groups=["CN=gg_unix,OU=Groups,DC=example,DC=com"],
         )
         db.session.commit()
         assert relogged.id == user_id
-        assert relogged.role == "manager"
+        assert set(relogged.granted_roles) == {"agent", "admin"}
 
-        # Unlocking hands control back to automatic sync on the next login.
-        relogged.role_locked = False
+
+def test_directory_group_can_grant_multiple_roles_at_once(app):
+    """A user matching two configured AD-group mappings (one granting
+    manager, one granting admin) holds both roles simultaneously, and losing
+    one group on a later login only revokes that one grant."""
+    with app.app_context():
+        row = db.session.get(PlatformSetting, "LDAP_ROLE_MAPPINGS")
+        mapping = json.dumps({"gg_managers": "manager", "gg_admins": "admin"})
+        if row:
+            row.value = mapping
+        else:
+            db.session.add(PlatformSetting(key="LDAP_ROLE_MAPPINGS", value=mapping, encrypted=False))
         db.session.commit()
-        relogged_again = provision_external_user(
-            "ldap", "CN=Alice,OU=Users,DC=example,DC=com", "alice", "Alice",
-            "alice@example.test", "agent",
-            groups=["CN=gg_unix,OU=Groups,DC=example,DC=com"],
+
+        user = provision_external_user(
+            "ldap", "CN=Bob,OU=Users,DC=example,DC=com", "bob", "Bob",
+            "bob@example.test",
+            mapped_roles(
+                ["CN=gg_managers,OU=Groups,DC=example,DC=com", "CN=gg_admins,OU=Groups,DC=example,DC=com"],
+                "LDAP_ROLE_MAPPINGS",
+            ),
         )
         db.session.commit()
-        assert relogged_again.role == "agent"
+        assert set(user.granted_roles) == {"manager", "admin"}
+        assert user.role == "admin"
+
+        # Next login: no longer in gg_admins -- only the directory-sourced
+        # "admin" grant is revoked, "manager" (still matched) stays.
+        relogged = provision_external_user(
+            "ldap", "CN=Bob,OU=Users,DC=example,DC=com", "bob", "Bob",
+            "bob@example.test",
+            mapped_roles(["CN=gg_managers,OU=Groups,DC=example,DC=com"], "LDAP_ROLE_MAPPINGS"),
+        )
+        db.session.commit()
+        assert set(relogged.granted_roles) == {"manager"}
+        assert relogged.role == "manager"
+
+
+def test_effective_role_toggle_is_a_real_demotion(app, client):
+    """A user holding both admin and requester can switch which one they're
+    acting as, and the switch actually changes what @roles(...) authorizes
+    for the rest of that session -- not just a UI label."""
+    with app.app_context():
+        user = User(
+            username="dualrole", name="Dual Role", email="dualrole@test.invalid",
+            password_hash=generate_password_hash("DualRole123!"), role="admin",
+        )
+        db.session.add(user)
+        db.session.flush()
+        db.session.add(UserRoleGrant(user_id=user.id, role="admin"))
+        db.session.add(UserRoleGrant(user_id=user.id, role="requester"))
+        db.session.commit()
+
+    login(client, "dualrole", "DualRole123!")
+    assert client.get("/admin").status_code == 200
+
+    switched = client.post("/session/acting-role", data={"role": "requester"})
+    assert switched.status_code == 302
+    # Now genuinely demoted: the same account is blocked from an admin route.
+    assert client.get("/admin").status_code == 403
+
+    switch_back = client.post("/session/acting-role", data={"role": "admin"})
+    assert switch_back.status_code == 302
+    assert client.get("/admin").status_code == 200
+
+    # Cannot switch to a role never granted.
+    assert client.post("/session/acting-role", data={"role": "superadmin"}).status_code == 403
+
+
+def test_superadmin_bypasses_any_roles_gate_but_plain_admin_cannot_reach_platform_tenants(app, client):
+    with app.app_context():
+        user = User(
+            username="theceo", name="The CEO", email="theceo@test.invalid",
+            password_hash=generate_password_hash("TheCeo123!"), role="superadmin",
+        )
+        db.session.add(user)
+        db.session.flush()
+        db.session.add(UserRoleGrant(user_id=user.id, role="superadmin"))
+        db.session.commit()
+
+    login(client, "theceo", "TheCeo123!")
+    # superadmin satisfies @roles("admin") without "superadmin" needing to be
+    # listed at every one of those call sites.
+    assert client.get("/admin").status_code == 200
+    assert client.get("/platform/tenants").status_code == 200
+    client.post("/logout")
+
+    # A plain admin (the shared fixture's default admin account) cannot.
+    login(client)
+    assert client.get("/platform/tenants").status_code == 403
+
+
+def test_user_edit_grants_and_revokes_multiple_roles(client, app):
+    with app.app_context():
+        target = User(
+            username="multirole", name="Multi Role", email="multirole@test.invalid",
+            password_hash=generate_password_hash("MultiRole123!"), role="agent",
+        )
+        db.session.add(target)
+        db.session.flush()
+        db.session.add(UserRoleGrant(user_id=target.id, role="agent"))
+        db.session.commit()
+        target_id = target.id
+
+    login(client)
+    resp = client.post(f"/admin/users/{target_id}", data={
+        "name": "Multi Role", "email": "multirole@test.invalid",
+        "granted_roles": ["agent", "manager"], "active": "on",
+        "timezone": "Asia/Tokyo", "date_format": "system",
+    })
+    assert resp.status_code == 302
+    with app.app_context():
+        target = db.session.get(User, target_id)
+        assert set(target.granted_roles) == {"agent", "manager"}
+        assert target.role == "manager"
+
+    # A plain admin cannot grant superadmin to someone else.
+    resp = client.post(f"/admin/users/{target_id}", data={
+        "name": "Multi Role", "email": "multirole@test.invalid",
+        "granted_roles": ["agent", "manager", "superadmin"], "active": "on",
+        "timezone": "Asia/Tokyo", "date_format": "system",
+    })
+    assert resp.status_code == 302
+    with app.app_context():
+        target = db.session.get(User, target_id)
+        assert "superadmin" not in target.granted_roles
 
 
 def test_ldap_group_mapping_synchronizes_team_membership(app):

@@ -175,10 +175,10 @@ def sync_directory(tenant_id, dry_run=False):
         manager_email = _first(entry_values, attr_map.get("email", "mail"))
         manager_name = _first(entry_values, attr_map.get("display_name", "displayName")) or manager_username
         manager_groups = entry_values.get("memberOf") or []
-        manager_role = core_app.mapped_role(manager_groups, "LDAP_ROLE_MAPPINGS")
+        manager_roles = core_app.mapped_roles(manager_groups, "LDAP_ROLE_MAPPINGS")
         provisioned = core_app.provision_external_user(
             "ldap", manager_dn, manager_username, manager_name, manager_email,
-            manager_role, groups=manager_groups,
+            manager_roles, groups=manager_groups,
         )
         if provisioned.tenant_id != tenant_id:
             # provision_external_user() can adopt an existing local/other-tenant
