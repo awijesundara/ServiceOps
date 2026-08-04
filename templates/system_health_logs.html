@@ -1,0 +1,38 @@
+{% extends "base.html" %}{% block title %}Detailed logs · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = 'Detailed request logs' %}{% set admin_parent_title = 'System health' %}{% set admin_parent_url = url_for('system_health') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>Detailed request logs</h1><p>Every request this process has handled, most recent first -- read directly from {{ log_path or 'the configured log file' }} without shell access.</p></div></header>
+{% if error_message %}
+<div class="panel"><p class="flash error">{{ error_message }}</p></div>
+{% else %}
+<section class="panel">
+  <form class="list-search" style="margin-bottom:14px">
+    <input name="q" value="{{ q }}" placeholder="Search path, message, request ID..." aria-label="Search logs">
+    <select name="lines">
+      {% for count in [200, 500, 1000, 2000, 5000] %}
+      <option value="{{ count }}" {% if request.args.get('lines', '500')|int == count %}selected{% endif %}>Last {{ count }} lines</option>
+      {% endfor %}
+    </select>
+    <button>Search</button>
+  </form>
+  <div class="task-list-scroll">
+  <table class="task-list"><thead><tr><th>Time</th><th>Level</th><th>Method</th><th>Path</th><th>Status</th><th>Duration</th><th>User</th><th>Message</th></tr></thead><tbody>
+    {% for entry in entries %}
+    <tr>
+      <td>{{ entry.get('timestamp', '')[:19] }}</td>
+      <td><span class="priority {{ 'p1' if entry.get('level') in ('ERROR', 'CRITICAL') else ('p2' if entry.get('level') == 'WARNING' else 'p3') }}">{{ entry.get('level', '') }}</span></td>
+      <td>{{ entry.get('method', '') }}</td>
+      <td>{{ entry.get('path', '') }}</td>
+      <td>{{ entry.get('status_code', '') }}</td>
+      <td>{{ (entry.get('duration_ms') ~ ' ms') if entry.get('duration_ms') is not none else '' }}</td>
+      <td>{{ entry.get('user_id', '') }}</td>
+      <td>{{ entry.get('message', '') }}{% if entry.get('exception') %}<details><summary>Traceback</summary><pre class="pre">{{ entry.get('exception') }}</pre></details>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="empty">No matching log lines in the tailed window.</td></tr>
+    {% endfor %}
+  </tbody></table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

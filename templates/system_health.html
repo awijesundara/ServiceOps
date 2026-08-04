@@ -1,0 +1,77 @@
+{% extends "base.html" %}{% block title %}System health · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = 'System health' %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>System health</h1><p>Live application, database, worker, and error status -- no shell access required.</p></div><a class="button" href="{{ url_for('system_health_log_file') }}">Detailed request logs</a></header>
+<div class="stats">
+  <div><span>Application</span><strong>{{ 'Healthy' if db_healthy else 'DB unreachable' }}</strong><small>v{{ app_version }} · up since {{ (app_start_time|usertime('%Y-%m-%d %H:%M')) }}</small></div>
+  <div><span>Database</span><strong>{{ db_latency_ms ~ ' ms' if db_healthy else 'DOWN' }}</strong><small>SELECT 1 round trip</small></div>
+  <div class="{% if not worker_healthy %}stat-alert{% endif %}"><span>Background worker</span><strong>{{ 'Healthy' if worker_healthy else 'STALE / DOWN' }}</strong><small>{{ 'Last heartbeat ' ~ (worker_last_seen|usertime('%Y-%m-%d %H:%M:%S')) if worker_last_seen else 'No heartbeat recorded yet' }}</small></div>
+  <div class="{% if error_last_hour > 0 %}stat-alert{% endif %}"><span>Errors (last hour)</span><strong{% if error_last_hour > 0 %} class="stat-alert-text"{% endif %}>{{ error_last_hour }}</strong><small>{{ total_errors }} total recorded</small></div>
+  <div><span>Active users</span><strong>{{ active_user_count }}</strong><small>seen in the last 15 minutes</small></div>
+  <div><span>Open tickets</span><strong>{{ open_tickets }}</strong><small>{{ total_users }} active users total</small></div>
+</div>
+
+<div class="detail-grid">
+<section class="panel">
+  <h2>Currently active users</h2>
+  <table><thead><tr><th>User</th><th>Role</th><th>Last seen</th></tr></thead><tbody>
+    {% for user in active_users %}
+    <tr><td>{{ user.name }}<small> {{ user.username }}</small></td><td><span class="tag">{{ user.role }}</span></td><td>{{ (user.last_seen_at|usertime('%Y-%m-%d %H:%M:%S')) }}</td></tr>
+    {% else %}
+    <tr><td colspan="3" class="empty">No users active in the last 15 minutes.</td></tr>
+    {% endfor %}
+  </tbody></table>
+</section>
+<aside class="panel">
+  <h2>About this page</h2>
+  <p>"Active" means a request from that user in the last 15 minutes; the timestamp itself updates at most once a minute per user.</p>
+  <p>Errors below are anything ERROR/CRITICAL/WARNING the application logger emitted -- including unhandled exceptions, which are recorded here <em>before</em> the user sees the error page, so this list should be checked first when something appeared to crash.</p>
+  <p>The <a href="{{ url_for('system_health_log_file') }}">detailed request log</a> covers every request (not just errors) but lives on disk, not here, since its volume would dwarf every other table.</p>
+</aside>
+</div>
+
+<section class="list-workspace" style="margin-top:20px">
+  <header class="list-toolbar">
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Application errors</strong><small>{{ total_errors }} records</small></div></div>
+    <form class="list-search">
+      <input name="q" value="{{ q }}" placeholder="Search message" aria-label="Search errors">
+      <select name="level">
+        <option value="" {% if not level_filter %}selected{% endif %}>All levels</option>
+        {% for level in ['CRITICAL', 'ERROR', 'WARNING'] %}
+        <option value="{{ level }}" {% if level_filter == level %}selected{% endif %}>{{ level }}</option>
+        {% endfor %}
+      </select>
+      <button>Search</button>
+    </form>
+    <nav class="list-pagination" aria-label="Pagination">
+      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('system_health', q=q, level=level_filter, page=page-1) }}">‹</a>
+      <span>Page {{ page }} of {{ pages }}</span>
+      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('system_health', q=q, level=level_filter, page=page+1) }}">›</a>
+    </nav>
+  </header>
+  <div class="task-list-scroll">
+  <table class="task-list"><thead><tr><th>Time</th><th>Level</th><th>Request</th><th>User</th><th>Path</th><th>Message</th></tr></thead><tbody>
+    {% for row in error_rows %}
+    <tr>
+      <td>{{ (row.created_at|usertime('%Y-%m-%d %H:%M:%S')) }}</td>
+      <td><span class="priority {{ 'p1' if row.level in ('ERROR', 'CRITICAL') else 'p2' }}">{{ row.level }}</span></td>
+      <td>{{ row.request_id[:8] if row.request_id else '—' }}</td>
+      <td>{{ row.user.username if row.user else 'system' }}</td>
+      <td>{{ row.method ~ ' ' ~ row.path if row.path else '—' }}</td>
+      <td>
+        {{ row.message }}
+        {% if row.traceback %}
+        <details><summary>Traceback</summary><pre class="pre">{{ row.traceback }}</pre></details>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="empty">No matching error log entries.</td></tr>
+    {% endfor %}
+  </tbody></table>
+  </div>
+  <form method="post" action="{{ url_for('system_health_clear_errors') }}" class="actions" onsubmit="return confirm('Clear all recorded error log entries visible to this tenant? This cannot be undone.');">
+    <button class="button">Clear error log</button>
+  </form>
+</section>
+{% endblock %}

@@ -23,6 +23,8 @@ Operations:
   ./serviceops rehearse-upgrade
   ./serviceops retire-bootstrap-secret
   ./serviceops update [IMAGE_REF] | update kubernetes [IMAGE_TAG] | config
+  ./serviceops bootstrap-blue-green          (one-time: convert to the zero-downtime topology)
+  ./serviceops deploy IMAGE_REF | rollback   (DEPLOYMENT_MODE=blue-green only -- zero-downtime)
 EOF
 }
 
@@ -42,6 +44,9 @@ if [[ "$command" == "update" && ( "${2:-}" == "kubernetes" || "${2:-}" == "k8s" 
 fi
 if [[ "$command" == "deploy-local" ]]; then
   exec "$ROOT_DIR/tools/deploy-local.sh"
+fi
+if [[ "$command" == "bootstrap-blue-green" ]]; then
+  exec "$ROOT_DIR/tools/blue_green_bootstrap.sh"
 fi
 if [[ "$command" == "install-update-hook" ]]; then
   git -C "$ROOT_DIR" config core.hooksPath .githooks
@@ -89,6 +94,8 @@ validate_env_file "$ENV_FILE"
 MODE="$(awk -F= '/^DEPLOYMENT_MODE=/{value=$2; gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", value); print value}' "$ENV_FILE" | tail -1)"
 if [[ "$MODE" == "external" ]]; then
   FILE="$ROOT_DIR/compose.external-db.yaml"
+elif [[ "$MODE" == "blue-green" ]]; then
+  FILE="$ROOT_DIR/compose.blue-green.yaml"
 else
   FILE="$ROOT_DIR/compose.yaml"
 fi
@@ -141,7 +148,7 @@ case "$command" in
     echo "Bootstrap administrator secret retired from the steady-state containers."
     ;;
   backup)
-    [[ "$MODE" == "bundled" ]] || { echo "External database mode: use the database provider backup service."; exit 2; }
+    [[ "$MODE" == "bundled" || "$MODE" == "blue-green" ]] || { echo "External database mode: use the database provider backup service."; exit 2; }
     stamp="${2:-$(date -u +%Y%m%dT%H%M%SZ)}"
     dump="$BACKUP_DIR/serviceops-$stamp.dump"
     uploads="$BACKUP_DIR/serviceops-uploads-$stamp.tar.gz"
@@ -162,14 +169,19 @@ case "$command" in
     echo "Manifest: $manifest"
     ;;
   restore)
-    [[ "$MODE" == "bundled" ]] || { echo "Restore is managed by the external database provider."; exit 2; }
+    [[ "$MODE" == "bundled" || "$MODE" == "blue-green" ]] || { echo "Restore is managed by the external database provider."; exit 2; }
     dump="${2:-}"; [[ -f "$dump" ]] || { echo "Provide a valid database dump."; exit 2; }
     read -r -p "This replaces the ServiceOps database. Type RESTORE: " answer
     [[ "$answer" == "RESTORE" ]] || { echo "Cancelled."; exit 1; }
     set -a; source "$ENV_FILE"; set +a
-    "${COMPOSE[@]}" stop app worker
+    if [[ "$MODE" == "blue-green" ]]; then
+      restore_app_services=(app_blue app_green)
+    else
+      restore_app_services=(app)
+    fi
+    "${COMPOSE[@]}" stop "${restore_app_services[@]}" worker
     "${COMPOSE[@]}" exec -T db pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner <"$dump"
-    "${COMPOSE[@]}" start app worker
+    "${COMPOSE[@]}" start "${restore_app_services[@]}" worker
     "$0" health
     ;;
   rehearse-recovery)
@@ -186,6 +198,21 @@ case "$command" in
     ;;
   update)
     exec "$ROOT_DIR/tools/safe_update.sh" "${2:-}"
+    ;;
+  deploy)
+    [[ "$MODE" == "blue-green" ]] || {
+      echo "deploy requires DEPLOYMENT_MODE=blue-green in .env (zero-downtime blue/green rollout)." >&2
+      echo "For the default single-instance topology, use: ./serviceops update [IMAGE_REF]" >&2
+      exit 2
+    }
+    exec "$ROOT_DIR/tools/blue_green_deploy.sh" "${2:?Usage: ./serviceops deploy <image>}"
+    ;;
+  rollback)
+    [[ "$MODE" == "blue-green" ]] || {
+      echo "rollback requires DEPLOYMENT_MODE=blue-green in .env." >&2
+      exit 2
+    }
+    exec "$ROOT_DIR/tools/blue_green_rollback.sh"
     ;;
   *) usage; exit 2 ;;
 esac
