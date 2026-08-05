@@ -21,6 +21,10 @@ Operations:
   ./serviceops rehearse-pitr
   ./serviceops rehearse-migrations [ROW_COUNT]
   ./serviceops rehearse-upgrade
+  ./serviceops diagnose-recovery
+  ./serviceops stability-probe [REQUESTS]
+  ./serviceops recover-admin USERNAME
+  ./serviceops recover-audit-key TENANT_SLUG
   ./serviceops retire-bootstrap-secret
   ./serviceops update [IMAGE_REF] | update kubernetes [IMAGE_TAG] | config
   ./serviceops bootstrap-blue-green          (one-time: convert to the zero-downtime topology)
@@ -159,14 +163,27 @@ case "$command" in
     docker run --rm -v serviceops_uploads:/data:ro -v "$BACKUP_DIR":/backup alpine:3.21 \
       tar -czf "/backup/$(basename "$uploads")" -C /data .
     completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    key_reference="$(python3 -c 'import hashlib,os; print("sha256:" + hashlib.sha256(os.environ["SETTINGS_ENCRYPTION_KEY"].encode()).hexdigest()[:16])')"
     python3 "$ROOT_DIR/tools/recovery_verify.py" create-manifest \
       --database "$dump" --uploads "$uploads" --output "$manifest" \
       --started-at "$started_at" --completed-at "$completed_at" \
-      --application-image "${SERVICEOPS_IMAGE:-unknown}"
+      --application-image "${SERVICEOPS_IMAGE:-unknown}" --key-reference "$key_reference"
     chmod 600 "$dump" "$uploads" "$manifest"
     echo "Database: $dump"
     echo "Uploads:  $uploads"
     echo "Manifest: $manifest"
+    offsite_status="not-configured"
+    if [[ -n "${BACKUP_ARCHIVE_BUCKET:-}" ]]; then
+      docker run --rm --env-file "$ENV_FILE" -v "$BACKUP_DIR:/recovery:ro" \
+        "${SERVICEOPS_IMAGE}" python -m tools.archive_recovery_set "/recovery/$(basename "$manifest")"
+      offsite_status="archived"
+    fi
+    if "${COMPOSE[@]}" exec -T app test -f tools/record_backup_status.py; then
+      "${COMPOSE[@]}" exec -T app python -m tools.record_backup_status \
+        --manifest "$(basename "$manifest")" --offsite "$offsite_status"
+    else
+      echo "Backup succeeded; deploy 1.39.0 before recording dashboard status." >&2
+    fi
     ;;
   restore)
     [[ "$MODE" == "bundled" || "$MODE" == "blue-green" ]] || { echo "Restore is managed by the external database provider."; exit 2; }
@@ -195,6 +212,30 @@ case "$command" in
     ;;
   rehearse-upgrade)
     exec "$ROOT_DIR/tools/rehearse-upgrade.sh"
+    ;;
+  diagnose-recovery)
+    "${COMPOSE[@]}" exec -T app python -m tools.admin_recovery diagnose
+    ;;
+  stability-probe)
+    port="$(awk -F= '/^APP_PORT=/{value=$2; gsub(/^[[:space:]\"]+|[[:space:]\"]+$/, "", value); print value}' "$ENV_FILE" | tail -1)"
+    python3 "$ROOT_DIR/tools/stability_probe.py" --url "http://127.0.0.1:${port:-8080}/health" \
+      --requests "${2:-500}"
+    ;;
+  recover-admin)
+    username="${2:-}"; [[ -n "$username" ]] || { echo "Provide the administrator username." >&2; exit 2; }
+    "$0" backup "pre-admin-recovery-$(date -u +%Y%m%dT%H%M%SZ)"
+    read -r -s -p "New administrator password: " recovery_password; echo
+    printf '%s\n' "$recovery_password" | "${COMPOSE[@]}" exec -T app \
+      python -m tools.admin_recovery reset-admin --username "$username" --confirm
+    unset recovery_password
+    ;;
+  recover-audit-key)
+    tenant_slug="${2:-}"; [[ -n "$tenant_slug" ]] || { echo "Provide the tenant slug." >&2; exit 2; }
+    "$0" backup "pre-audit-key-recovery-$(date -u +%Y%m%dT%H%M%SZ)"
+    read -r -p "This establishes a permanent audit recovery boundary. Type RECOVER-AUDIT: " answer
+    [[ "$answer" == "RECOVER-AUDIT" ]] || { echo "Cancelled."; exit 1; }
+    "${COMPOSE[@]}" exec -T app python -m tools.admin_recovery recover-audit-key \
+      --tenant "$tenant_slug" --confirm
     ;;
   update)
     exec "$ROOT_DIR/tools/safe_update.sh" "${2:-}"
