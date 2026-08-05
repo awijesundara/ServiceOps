@@ -969,6 +969,27 @@ class DiscoveryTarget(db.Model):
         self.community_encrypted = settings_cipher().encrypt((value or "").encode()).decode() if value else None
 
 
+class DiscoveryCandidate(db.Model):
+    """A device found by a DiscoveryTarget run, held for administrator
+    review before anything lands in the CMDB -- discovery no longer
+    auto-creates CIs; a run only stages candidates here, and an explicit
+    "Add selected" / "Add all" / "Discard" decision on the review page is
+    what actually calls reconcile_facts_into_cmdb. ``facts`` is the full
+    probe_host()-shaped dict, replayed unchanged into reconciliation at
+    import time so nothing needs to be re-scanned to commit a decision."""
+    id = db.Column(db.Integer, primary_key=True)
+    target_id = db.Column(db.Integer, db.ForeignKey("discovery_target.id"), nullable=False, index=True)
+    host = db.Column(db.String(80), nullable=False)
+    name = db.Column(db.String(160), nullable=False)
+    ci_class = db.Column(db.String(80), nullable=False)
+    vendor = db.Column(db.String(120))
+    discovery_source = db.Column(db.String(40), nullable=False)
+    facts = db.Column(db.JSON, nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    target = db.relationship("DiscoveryTarget")
+
+
 class ServiceOfferingCI(db.Model):
     """ITIL 4 service configuration management: maps a business service
     (ServiceOffering) to the configuration items that realize it. Without
@@ -4367,7 +4388,7 @@ def process_discovery_schedule(limit=50):
     than a single tenant-wide toggle. One target's failure is caught and
     logged (no secrets -- never logs the decrypted community string) and
     never blocks or crashes the pass for other targets."""
-    from serviceops_core.network_discovery import discover_subnet, probe_host, reconcile_facts_into_cmdb
+    from serviceops_core.network_discovery import discover_subnet, probe_host
 
     current = now()
     processed = 0
@@ -4391,12 +4412,28 @@ def process_discovery_schedule(limit=50):
                 facts_list = discover_subnet(
                     target.address, target.community, port=target.snmp_port, version=target.snmp_version,
                 )
-            summary = reconcile_facts_into_cmdb(target.tenant_id, target.name, facts_list)
-            target.last_run_status = "ok" if not summary["errors"] else "partial"
+            # Scheduled runs stage candidates for review too -- discovery
+            # never auto-creates a CI on its own, scheduled or manual.
+            DiscoveryCandidate.query.filter_by(target_id=target.id).delete()
+            snmp_hosts = bare_hosts = 0
+            for facts in facts_list:
+                source = facts.get("discovery_source", "SNMP Discovery")
+                if source == "SNMP Discovery":
+                    snmp_hosts += 1
+                else:
+                    bare_hosts += 1
+                db.session.add(DiscoveryCandidate(
+                    target_id=target.id, host=facts["host"],
+                    name=facts.get("sys_name") or facts["host"],
+                    ci_class=facts.get("ci_class", "Device"),
+                    vendor=facts.get("vendor") or None,
+                    discovery_source=source, facts=facts,
+                    tenant_id=target.tenant_id,
+                ))
+            target.last_run_status = "ok"
             target.last_run_summary = (
-                f"{summary['hosts_seen']} host(s) responded ({summary['snmp_hosts']} via SNMP, "
-                f"{summary['bare_hosts']} liveness-only), {summary['created']} created, "
-                f"{summary['updated']} updated, {summary['relationships_created']} relationship(s)."
+                f"{len(facts_list)} host(s) responded ({snmp_hosts} via SNMP, {bare_hosts} liveness-only) "
+                f"-- awaiting review before anything is added to the CMDB."
             )
         except Exception as error:  # noqa: BLE001 - one target's failure must never block others
             db.session.rollback()
@@ -10736,7 +10773,12 @@ def create_app(test_config=None):
     @require_action("security_administer")
     def cmdb_discovery():
         targets = tenant_query(DiscoveryTarget).order_by(DiscoveryTarget.name).all()
-        return render_template("cmdb_discovery.html", targets=targets)
+        pending_counts = dict(
+            db.session.query(DiscoveryCandidate.target_id, db.func.count(DiscoveryCandidate.id))
+            .filter(DiscoveryCandidate.target_id.in_([t.id for t in targets]))
+            .group_by(DiscoveryCandidate.target_id).all()
+        ) if targets else {}
+        return render_template("cmdb_discovery.html", targets=targets, pending_counts=pending_counts)
 
     @app.post("/cmdb/discovery")
     @require_action("security_administer")
@@ -10777,9 +10819,7 @@ def create_app(test_config=None):
     @require_action("security_administer")
     def cmdb_discovery_run(target_id):
         target = tenant_record_or_404(DiscoveryTarget, target_id)
-        from serviceops_core.network_discovery import (
-            discover_subnet, probe_host, reconcile_facts_into_cmdb,
-        )
+        from serviceops_core.network_discovery import discover_subnet, probe_host
         try:
             if target.target_type == "host":
                 facts = probe_host(
@@ -10792,15 +10832,36 @@ def create_app(test_config=None):
                     target.address, target.community,
                     port=target.snmp_port, version=target.snmp_version,
                 )
-            summary = reconcile_facts_into_cmdb(target.tenant_id, target.name, facts_list)
-            target.last_run_status = "ok" if not summary["errors"] else "partial"
+            # A run only stages candidates for review -- it never creates a
+            # CI by itself. Clear this target's previous pending candidates
+            # first so re-running doesn't pile up stale ones alongside
+            # fresh results for the same address.
+            DiscoveryCandidate.query.filter_by(target_id=target.id).delete()
+            snmp_hosts = bare_hosts = 0
+            for facts in facts_list:
+                source = facts.get("discovery_source", "SNMP Discovery")
+                if source == "SNMP Discovery":
+                    snmp_hosts += 1
+                else:
+                    bare_hosts += 1
+                db.session.add(DiscoveryCandidate(
+                    target_id=target.id, host=facts["host"],
+                    name=facts.get("sys_name") or facts["host"],
+                    ci_class=facts.get("ci_class", "Device"),
+                    vendor=facts.get("vendor") or None,
+                    discovery_source=source, facts=facts,
+                    tenant_id=target.tenant_id,
+                ))
+            target.last_run_status = "ok"
             target.last_run_summary = (
-                f"{summary['hosts_seen']} host(s) responded ({summary['snmp_hosts']} via SNMP, "
-                f"{summary['bare_hosts']} liveness-only), {summary['created']} CI(s) created, "
-                f"{summary['updated']} updated, {summary['relationships_created']} relationship(s) created."
-                + (f" Errors: {'; '.join(summary['errors'])}" if summary["errors"] else "")
+                f"{len(facts_list)} host(s) responded ({snmp_hosts} via SNMP, {bare_hosts} liveness-only) "
+                f"-- awaiting review before anything is added to the CMDB."
             )
-            flash(target.last_run_summary, "success" if not summary["errors"] else "warning")
+            flash(
+                f"{target.last_run_summary} Review and add them below." if facts_list
+                else "No hosts responded.",
+                "success" if facts_list else "warning",
+            )
         except Exception as error:  # noqa: BLE001 - a bad target must surface, not crash the request
             target.last_run_status = "failed"
             target.last_run_summary = str(error)[:2000]
@@ -10810,10 +10871,64 @@ def create_app(test_config=None):
         db.session.commit()
         return redirect(url_for("cmdb_discovery"))
 
+    @app.get("/cmdb/discovery/<int:target_id>/review")
+    @require_action("security_administer")
+    def cmdb_discovery_review(target_id):
+        target = tenant_record_or_404(DiscoveryTarget, target_id)
+        candidates = DiscoveryCandidate.query.filter_by(target_id=target.id).order_by(
+            DiscoveryCandidate.discovery_source.desc(), DiscoveryCandidate.name
+        ).all()
+        return render_template("cmdb_discovery_review.html", target=target, candidates=candidates)
+
+    @app.post("/cmdb/discovery/<int:target_id>/import")
+    @require_action("security_administer")
+    def cmdb_discovery_import(target_id):
+        target = tenant_record_or_404(DiscoveryTarget, target_id)
+        from serviceops_core.network_discovery import reconcile_facts_into_cmdb
+
+        query = DiscoveryCandidate.query.filter_by(target_id=target.id)
+        if request.form.get("select_all") != "1":
+            selected_ids = {int(value) for value in request.form.getlist("candidate_id")}
+            if not selected_ids:
+                flash("No devices selected -- nothing was added.", "warning")
+                return redirect(url_for("cmdb_discovery_review", target_id=target.id))
+            query = query.filter(DiscoveryCandidate.id.in_(selected_ids))
+        candidates = query.all()
+        facts_list = [candidate.facts for candidate in candidates]
+        summary = reconcile_facts_into_cmdb(target.tenant_id, target.name, facts_list)
+        for candidate in candidates:
+            db.session.delete(candidate)
+        audit(
+            "import", "Discovery target",
+            f"{target.name}: {summary['created']} created, {summary['updated']} updated from review",
+        )
+        db.session.commit()
+        flash(
+            f"Added {summary['created']} new and updated {summary['updated']} existing CI(s), "
+            f"{summary['relationships_created']} relationship(s) created.",
+            "success" if not summary["errors"] else "warning",
+        )
+        remaining = DiscoveryCandidate.query.filter_by(target_id=target.id).count()
+        return redirect(
+            url_for("cmdb_discovery_review", target_id=target.id) if remaining
+            else url_for("cmdb_discovery")
+        )
+
+    @app.post("/cmdb/discovery/<int:target_id>/discard")
+    @require_action("security_administer")
+    def cmdb_discovery_discard(target_id):
+        target = tenant_record_or_404(DiscoveryTarget, target_id)
+        deleted = DiscoveryCandidate.query.filter_by(target_id=target.id).delete()
+        audit("discard", "Discovery target", f"{target.name}: {deleted} candidate(s) discarded")
+        db.session.commit()
+        flash(f"Discarded {deleted} discovered device(s) without adding them to the CMDB.", "success")
+        return redirect(url_for("cmdb_discovery"))
+
     @app.post("/cmdb/discovery/<int:target_id>/delete")
     @require_action("security_administer")
     def cmdb_discovery_delete(target_id):
         target = tenant_record_or_404(DiscoveryTarget, target_id)
+        DiscoveryCandidate.query.filter_by(target_id=target.id).delete()
         audit("delete", "Discovery target", target.name)
         db.session.delete(target)
         db.session.commit()
