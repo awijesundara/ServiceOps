@@ -103,9 +103,33 @@ def test_discovery_review_has_filter_aware_bulk_selection(client, app):
     login(client)
     page = client.get(f"/cmdb/discovery/{target_id}/review")
     assert page.status_code == 200
-    for label in (b"Select visible", b"Deselect visible", b"Select all", b"Deselect all", b"All vendors"):
+    for label in (b"Select filtered", b"Deselect filtered", b"Select every device", b"Deselect every device", b"All vendors"):
         assert label in page.data
     assert b'data-vendor="cisco"' in page.data
+    assert b"static/discovery.js" in page.data
+    assert b"<script>" not in page.data
+
+
+def test_discovery_targets_keep_primary_actions_visible(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        target = DiscoveryTarget(name="Core network", target_type="host", address="10.9.0.10",
+                                 created_by_id=admin.id, tenant_id=admin.tenant_id)
+        db.session.add(target)
+        db.session.flush()
+        db.session.add(DiscoveryCandidate(
+            target_id=target.id, host="10.9.0.10", name="core-switch", ci_class="Network Switch",
+            vendor="Cisco", discovery_source="SNMP Discovery", facts={}, tenant_id=admin.tenant_id,
+        ))
+        db.session.commit()
+    login(client)
+    page = client.get("/cmdb/discovery")
+    assert page.status_code == 200
+    for label in (b"Run now", b"View results (1)", b"Delete target"):
+        assert label in page.data
+    assert b"discovery-target-card" in page.data
+    assert b"static/discovery.js" in page.data
+    assert b"<script>" not in page.data
 
 
 def test_lifecycle_invokes_container_helpers_as_modules():
