@@ -18,48 +18,33 @@
   </form>
 </section>
 
-<section class="list-workspace">
-  <table class="record-list">
-    <thead><tr><th>Name</th><th>Type</th><th>Address</th><th>Schedule</th><th>Last run</th><th>Result</th><th></th></tr></thead>
-    <tbody>
-      {% for target in targets %}
-      <tr>
-        <td><strong>{{ target.name }}</strong></td>
-        <td>{{ target.target_type|capitalize }}</td>
-        <td>{{ target.address }}</td>
-        <td>{% if target.schedule_enabled %}Every {{ target.schedule_interval_minutes }} min{% else %}Manual only{% endif %}</td>
-        <td>{{ (target.last_run_at|usertime('%b %d, %Y · %H:%M')) if target.last_run_at else 'Never' }}<br><small class="muted">{{ target.last_run_status or '' }}</small></td>
-        <td><small>{{ target.last_run_summary or '' }}</small></td>
-        <td>
-          {% if pending_counts.get(target.id) %}
-          <a class="primary button" href="{{ url_for('cmdb_discovery_review', target_id=target.id) }}">Review {{ pending_counts[target.id] }} device{{ 's' if pending_counts[target.id] != 1 }}</a>
-          {% endif %}
-          <form method="post" action="{{ url_for('cmdb_discovery_run', target_id=target.id) }}" class="inline-form discovery-run-form" data-target-type="{{ target.target_type }}"><button class="button" type="submit" title="Run discovery now">Run now</button></form>
-          <form method="post" action="{{ url_for('cmdb_discovery_delete', target_id=target.id) }}" class="inline-form" onsubmit="return confirm('Remove discovery target {{ target.name }}?');"><button class="link-button" aria-label="Delete">✕</button></form>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="7" class="empty-table">No discovery targets configured yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<section class="discovery-targets" aria-labelledby="discovery-targets-title">
+  <div class="section-heading"><div><h2 id="discovery-targets-title">Discovery targets</h2><p>Run a scan or open its pending results without horizontal scrolling.</p></div><span>{{ targets|length }} configured</span></div>
+  <div class="discovery-target-grid">
+    {% for target in targets %}
+    <article class="discovery-target-card">
+      <header>
+        <div><span class="badge">{{ target.target_type|capitalize }}</span><h3>{{ target.name }}</h3><code>{{ target.address }}</code></div>
+        <div class="discovery-target-primary-actions">
+          <span class="discovery-target-state">{{ target.last_run_status or 'Not run' }}</span>
+          <form method="post" action="{{ url_for('cmdb_discovery_run', target_id=target.id) }}" class="discovery-run-form" data-target-type="{{ target.target_type }}"><button class="button" type="submit">Run now</button></form>
+          {% if pending_counts.get(target.id) %}<a class="primary button" href="{{ url_for('cmdb_discovery_review', target_id=target.id) }}">View results ({{ pending_counts[target.id] }})</a>{% endif %}
+        </div>
+      </header>
+      <dl>
+        <div><dt>Schedule</dt><dd>{% if target.schedule_enabled %}Every {{ target.schedule_interval_minutes }} min{% else %}Manual only{% endif %}</dd></div>
+        <div><dt>Last run</dt><dd>{{ (target.last_run_at|usertime('%b %d, %Y · %H:%M')) if target.last_run_at else 'Never' }}</dd></div>
+        <div class="wide"><dt>Latest result</dt><dd>{{ target.last_run_summary or 'No discovery results yet.' }}</dd></div>
+      </dl>
+      <footer class="discovery-target-actions">
+        {% if not pending_counts.get(target.id) %}<span class="discovery-no-results">No pending results to review</span>{% endif %}
+        <form method="post" action="{{ url_for('cmdb_discovery_delete', target_id=target.id) }}" data-confirm="Remove discovery target {{ target.name }}?"><button class="link-button discovery-delete" type="submit">Delete target</button></form>
+      </footer>
+    </article>
+    {% else %}
+    <div class="panel empty-table">No discovery targets configured yet.</div>
+    {% endfor %}
+  </div>
 </section>
-<script>
-document.querySelectorAll(".discovery-run-form").forEach((form) => {
-  form.addEventListener("submit", () => {
-    const button = form.querySelector("button");
-    const isSubnet = form.dataset.targetType === "subnet";
-    button.disabled = true;
-    button.innerHTML = '<span class="discovery-spinner" aria-hidden="true"></span> Running…';
-    const note = document.createElement("small");
-    note.className = "muted";
-    note.style.display = "block";
-    note.style.marginTop = "4px";
-    note.textContent = isSubnet
-      ? "Sweeping the subnet, usually under a minute — this page will refresh when it's done."
-      : "Usually a few seconds — this page will refresh when it's done.";
-    form.appendChild(note);
-  });
-});
-</script>
+<script src="{{ url_for('static', filename='discovery.js', v=app_version) }}" defer></script>
 {% endblock %}

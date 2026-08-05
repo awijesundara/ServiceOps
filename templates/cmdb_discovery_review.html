@@ -15,10 +15,10 @@
     <div class="discovery-review-selection">
       <p id="device-selection-summary" aria-live="polite"></p>
       <div class="discovery-review-actions">
-        <button type="button" class="button" data-selection="select-visible">Select visible</button>
-        <button type="button" class="button" data-selection="deselect-visible">Deselect visible</button>
-        <button type="button" class="button" data-selection="select-all">Select all</button>
-        <button type="button" class="button" data-selection="deselect-all">Deselect all</button>
+        <button type="button" class="button" data-selection="select-visible">Select filtered</button>
+        <button type="button" class="button" data-selection="deselect-visible">Deselect filtered</button>
+        <button type="button" class="button" data-selection="select-all">Select every device</button>
+        <button type="button" class="button" data-selection="deselect-all">Deselect every device</button>
         <button type="button" class="button" id="device-filter-clear">Clear filters</button>
       </div>
     </div>
@@ -42,7 +42,7 @@
     <p id="device-filter-empty" class="empty-table" hidden>No discovered devices match these filters.</p>
   </section>
   <footer class="record-footer-actions">
-    <button type="submit" class="button" formaction="{{ url_for('cmdb_discovery_discard', target_id=target.id) }}" onclick="return confirm('Discard all {{ candidates|length }} discovered device(s) without adding them?');">Discard all</button>
+    <button type="submit" class="button danger-button" formaction="{{ url_for('cmdb_discovery_discard', target_id=target.id) }}" data-confirm="Discard all {{ candidates|length }} discovered device(s) without adding them?">Discard all</button>
     <button type="submit" class="button" name="select_all" value="1">Add all {{ candidates|length }}</button>
     <button type="submit" class="primary">Add selected</button>
   </footer>
@@ -51,73 +51,5 @@
 <section class="panel"><p class="empty-table">Nothing pending review for this target. Run it again from the discovery page.</p></section>
 {% endif %}
 
-<script>
-(() => {
-  const rows = [...document.querySelectorAll("[data-device-row]")];
-  const query = document.getElementById("device-filter-query");
-  const classFilter = document.getElementById("device-filter-class");
-  const vendorFilter = document.getElementById("device-filter-vendor");
-  const sourceFilter = document.getElementById("device-filter-source");
-  const master = document.getElementById("review-select-all-checkbox");
-  const summary = document.getElementById("device-selection-summary");
-  const empty = document.getElementById("device-filter-empty");
-  if (!rows.length || !query || !classFilter || !vendorFilter || !sourceFilter || !master || !summary) return;
-
-  const checkbox = (row) => row.querySelector('input[name="candidate_id"]');
-  const visibleRows = () => rows.filter((row) => !row.hidden);
-  const addOptions = (select, field) => {
-    [...new Set(rows.map((row) => row.dataset[field]).filter(Boolean))].sort().forEach((value) => {
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = rows.find((row) => row.dataset[field] === value).querySelector(`td:nth-child(${field === "class" ? 4 : field === "vendor" ? 5 : 6})`).textContent.trim();
-      select.append(option);
-    });
-  };
-  addOptions(classFilter, "class");
-  addOptions(vendorFilter, "vendor");
-  addOptions(sourceFilter, "source");
-
-  const updateSummary = () => {
-    const visible = visibleRows();
-    const selected = rows.filter((row) => checkbox(row).checked);
-    const selectedVisible = visible.filter((row) => checkbox(row).checked);
-    summary.textContent = `${visible.length} of ${rows.length} visible · ${selected.length} selected`;
-    master.checked = visible.length > 0 && selectedVisible.length === visible.length;
-    master.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visible.length;
-    empty.hidden = visible.length !== 0;
-  };
-  const applyFilters = () => {
-    const term = query.value.trim().toLowerCase();
-    rows.forEach((row) => {
-      const searchable = [row.dataset.name, row.dataset.host, row.dataset.class, row.dataset.vendor, row.dataset.source].join(" ");
-      row.hidden = Boolean(
-        (term && !searchable.includes(term)) ||
-        (classFilter.value && row.dataset.class !== classFilter.value) ||
-        (vendorFilter.value && row.dataset.vendor !== vendorFilter.value) ||
-        (sourceFilter.value && row.dataset.source !== sourceFilter.value)
-      );
-    });
-    updateSummary();
-  };
-  [query, classFilter, vendorFilter, sourceFilter].forEach((control) => control.addEventListener("input", applyFilters));
-  rows.forEach((row) => checkbox(row).addEventListener("change", updateSummary));
-  master.addEventListener("change", () => {
-    visibleRows().forEach((row) => { checkbox(row).checked = master.checked; });
-    updateSummary();
-  });
-  document.querySelectorAll("[data-selection]").forEach((button) => button.addEventListener("click", () => {
-    const action = button.dataset.selection;
-    const targets = action.endsWith("visible") ? visibleRows() : rows;
-    const checked = action.startsWith("select");
-    targets.forEach((row) => { checkbox(row).checked = checked; });
-    updateSummary();
-  }));
-  document.getElementById("device-filter-clear").addEventListener("click", () => {
-    query.value = classFilter.value = vendorFilter.value = sourceFilter.value = "";
-    applyFilters();
-    query.focus();
-  });
-  updateSummary();
-})();
-</script>
+<script src="{{ url_for('static', filename='discovery.js', v=app_version) }}" defer></script>
 {% endblock %}
