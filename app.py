@@ -7976,27 +7976,26 @@ def create_app(test_config=None):
                     if not request.form.get(field, "").strip():
                         return render_form(f"{label} is required.")
             ci_id = None
-            if request.form.get("ci_id"):
+            additional_ci_ids = set()
+            if kind == "change":
+                try:
+                    change_ci_ids = [int(raw) for raw in request.form.getlist("ci_id") if raw.strip()]
+                except (TypeError, ValueError):
+                    return render_form("One of the selected configuration items is invalid.")
+                seen_ci_ids = list(dict.fromkeys(change_ci_ids))
+                for candidate_id in seen_ci_ids:
+                    if not tenant_query(ConfigurationItem).filter_by(id=candidate_id).first():
+                        return render_form("One of the selected configuration items does not exist.")
+                if seen_ci_ids:
+                    ci_id = seen_ci_ids[0]
+                    additional_ci_ids = set(seen_ci_ids[1:])
+            elif request.form.get("ci_id"):
                 try:
                     ci_id = int(request.form["ci_id"])
                 except (TypeError, ValueError):
                     return render_form("The selected configuration item is invalid.")
                 if not tenant_query(ConfigurationItem).filter_by(id=ci_id).first():
                     return render_form("The selected configuration item does not exist.")
-            additional_ci_ids = set()
-            if kind == "change":
-                for raw_ci_id in request.form.getlist("additional_ci_ids"):
-                    if not raw_ci_id.strip():
-                        continue
-                    try:
-                        additional_ci_id = int(raw_ci_id)
-                    except (TypeError, ValueError):
-                        return render_form("One of the additional configuration items is invalid.")
-                    if additional_ci_id == ci_id:
-                        continue
-                    if not tenant_query(ConfigurationItem).filter_by(id=additional_ci_id).first():
-                        return render_form("One of the additional configuration items does not exist.")
-                    additional_ci_ids.add(additional_ci_id)
             if kind == "change" and ci_id:
                 conflicts = precreate_change_conflicts(current_user.tenant_id, ci_id, planned_start, planned_end)
                 if conflicts:
