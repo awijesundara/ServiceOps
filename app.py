@@ -6322,7 +6322,7 @@ def create_app(test_config=None):
         # CLAUDE.md's documentation-control policy keeps out of here.
         # Renders the always-in-sync /api/v1/openapi.json via Swagger UI,
         # vendored (no CDN) so it also works with no internet egress.
-        return render_template("api_docs.html")
+        return render_template("api_docs.html", app_version=APP_VERSION)
 
     @app.post("/api/v1/monitoring/<source_id>/events")
     def monitoring_ingest(source_id):
