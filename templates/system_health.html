@@ -12,6 +12,24 @@
   <div class="{% if not backup_healthy %}stat-alert{% endif %}"><span>Recovery set</span><strong>{{ 'Current' if backup_healthy else 'STALE / MISSING' }}</strong><small>{% if last_backup_at %}{{ last_backup_at|usertime('%Y-%m-%d %H:%M:%S') }} · {{ backup_offsite }}{% else %}No successful backup recorded{% endif %} · RPO {{ backup_rpo_hours }}h</small></div>
 </div>
 
+<section class="panel" id="performance">
+  <header class="section-heading">
+    <div><h2>Performance</h2><p>Request rate, latency, and error rate sampled roughly every minute by the background worker.</p></div>
+    <div class="performance-controls">
+      <span class="tag" title="From DEPLOYMENT_MODE and GUNICORN_WORKERS -- the chart's scale/labels adapt to whichever deployment method is actually running, not a fixed assumption.">{{ deployment_mode }} · {{ gunicorn_workers }} worker process(es)</span>
+      <select id="performance-range">
+        <option value="1">Last hour</option>
+        <option value="6" selected>Last 6 hours</option>
+        <option value="24">Last 24 hours</option>
+        <option value="168">Last 7 days</option>
+      </select>
+    </div>
+  </header>
+  <div id="performance-charts" data-url="{{ url_for('system_health_performance') }}">
+    <p class="muted" id="performance-empty">No performance samples yet -- the background worker records one roughly every minute once the app is receiving traffic.</p>
+  </div>
+</section>
+
 <div class="detail-grid">
 <section class="panel">
   <h2>Currently active users</h2>
@@ -87,4 +105,5 @@
     <button class="button">Clear error log</button>
   </form>
 </section>
+<script src="{{ url_for('static', filename='performance-chart.js', v=app_version) }}"></script>
 {% endblock %}

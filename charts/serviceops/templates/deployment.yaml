@@ -48,6 +48,7 @@ spec:
             capabilities: {drop: ["ALL"]}
           env:
             - {name: DEPLOYMENT_PROFILE, value: {{ .Values.deploymentProfile | quote }}}
+            - {name: DEPLOYMENT_MODE, value: "kubernetes"}
             - {name: UPLOAD_FOLDER, value: /app/uploads}
             - {name: LOCAL_AUTH_ENABLED, value: {{ .Values.auth.localEnabled | quote }}}
             - {name: CSRF_ENABLED, value: {{ .Values.security.csrfEnabled | quote }}}

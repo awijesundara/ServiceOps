@@ -33,6 +33,7 @@ spec:
             capabilities: {drop: ["ALL"]}
           env:
             - {name: DEPLOYMENT_PROFILE, value: "production"}
+            - {name: DEPLOYMENT_MODE, value: "kubernetes"}
             - {name: AUTO_MIGRATE, value: "false"}
             - {name: UPLOAD_FOLDER, value: /tmp/uploads}
           envFrom:
