@@ -97,42 +97,70 @@ def guess_ci_class(facts):
     return "Device"
 
 
-async def _snmp_session(host, community, port, version, timeout):
-    from pysnmp.hlapi.v3arch.asyncio import CommunityData, SnmpEngine, UdpTransportTarget
+class _SnmpSession:
+    """One SnmpEngine, auth, and transport shared across every GET/WALK for
+    a single host/run, all inside one event loop (one asyncio.run() call).
 
-    engine = SnmpEngine()
-    auth = CommunityData(community, mpModel=1 if version == "2c" else 0)
-    transport = await UdpTransportTarget.create((host, port), timeout=timeout, retries=1)
-    return engine, auth, transport
+    This exists because of a real production incident: the original code
+    created a brand-new pysnmp SnmpEngine() for every single GET/WALK
+    (roughly 9 operations per host -- sys_descr, sys_object_id, sys_name,
+    sys_uptime, an ifDescr walk, an ifPhysAddress walk, an ARP walk, and two
+    LLDP walks). SnmpEngine() is pysnmp's heaviest object to construct -- it
+    initializes MIB instrumentation and, on a cold cache, can compile MIB
+    source via pysmi -- so a /24 sweep with 40 concurrent worker threads
+    could trigger thousands of engine constructions and MIB-compile attempts
+    within seconds, spiking memory enough to crash the container on a
+    modestly-provisioned host. Sharing one engine per host cuts that by
+    roughly 9x; see discover_host's docstring for the full incident note."""
 
+    def __init__(self, host, community, port, version, timeout):
+        self.host, self.community, self.port, self.version, self.timeout = (
+            host, community, port, version, timeout,
+        )
+        self.engine = None
+        self.auth = None
+        self.transport = None
+        self.context = None
 
-async def _async_snmp_get(host, community, oid, port=161, version="2c", timeout=2):
-    from pysnmp.hlapi.v3arch.asyncio import ContextData, ObjectIdentity, ObjectType, get_cmd
+    async def __aenter__(self):
+        from pysnmp.hlapi.v3arch.asyncio import CommunityData, ContextData, SnmpEngine, UdpTransportTarget
 
-    engine, auth, transport = await _snmp_session(host, community, port, version, timeout)
-    error_indication, error_status, _, var_binds = await get_cmd(
-        engine, auth, transport, ContextData(), ObjectType(ObjectIdentity(oid)),
-    )
-    if error_indication or error_status:
-        raise DiscoveryError(str(error_indication or error_status.prettyPrint()))
-    return str(var_binds[0][1])
+        self.engine = SnmpEngine()
+        self.auth = CommunityData(self.community, mpModel=1 if self.version == "2c" else 0)
+        self.transport = await UdpTransportTarget.create(
+            (self.host, self.port), timeout=self.timeout, retries=1,
+        )
+        self.context = ContextData()
+        return self
 
+    async def __aexit__(self, *exc_info):
+        return False
 
-async def _async_snmp_walk(host, community, base_oid, port=161, version="2c", timeout=2):
-    from pysnmp.hlapi.v3arch.asyncio import ContextData, ObjectIdentity, ObjectType, walk_cmd
+    async def get(self, oid):
+        from pysnmp.hlapi.v3arch.asyncio import ObjectIdentity, ObjectType, get_cmd
 
-    engine, auth, transport = await _snmp_session(host, community, port, version, timeout)
-    results = []
-    async for error_indication, error_status, _, var_binds in walk_cmd(
-        engine, auth, transport, ContextData(), ObjectType(ObjectIdentity(base_oid)), lexicographicMode=False,
-    ):
-        if error_indication:
-            raise DiscoveryError(str(error_indication))
-        if error_status:
-            break
-        for name, value in var_binds:
-            results.append((str(name), value))
-    return results
+        error_indication, error_status, _, var_binds = await get_cmd(
+            self.engine, self.auth, self.transport, self.context, ObjectType(ObjectIdentity(oid)),
+        )
+        if error_indication or error_status:
+            raise DiscoveryError(str(error_indication or error_status.prettyPrint()))
+        return var_binds[0][1]
+
+    async def walk(self, base_oid):
+        from pysnmp.hlapi.v3arch.asyncio import ObjectIdentity, ObjectType, walk_cmd
+
+        results = []
+        async for error_indication, error_status, _, var_binds in walk_cmd(
+            self.engine, self.auth, self.transport, self.context,
+            ObjectType(ObjectIdentity(base_oid)), lexicographicMode=False,
+        ):
+            if error_indication:
+                raise DiscoveryError(str(error_indication))
+            if error_status:
+                break
+            for name, value in var_binds:
+                results.append((str(name), value))
+        return results
 
 
 def _format_mac(value):
@@ -164,71 +192,71 @@ def _format_ipv4(value):
     return str(value)
 
 
-def snmp_get(host, community, oid, port=161, version="2c", timeout=2):
-    return asyncio.run(_async_snmp_get(host, community, oid, port=port, version=version, timeout=timeout))
+async def _discover_host_async(host, community, port, version, timeout):
+    async with _SnmpSession(host, community, port, version, timeout) as session:
+        try:
+            sys_descr = str(await session.get(OID_SYS_DESCR))
+        except (DiscoveryError, OSError, TimeoutError):
+            return None
 
+        async def safe_get(oid):
+            try:
+                return str(await session.get(oid))
+            except (DiscoveryError, OSError, TimeoutError):
+                return ""
 
-def snmp_walk(host, community, base_oid, port=161, version="2c", timeout=2):
-    return asyncio.run(_async_snmp_walk(host, community, base_oid, port=port, version=version, timeout=timeout))
+        async def safe_walk(oid):
+            try:
+                return await session.walk(oid)
+            except (DiscoveryError, OSError, TimeoutError):
+                return []
+
+        sys_object_id = await safe_get(OID_SYS_OBJECT_ID)
+        sys_name = await safe_get(OID_SYS_NAME)
+        sys_uptime = await safe_get(OID_SYS_UPTIME)
+
+        interfaces = []
+        for oid, value in await safe_walk(OID_IF_DESCR):
+            interfaces.append({"index": oid.rsplit(".", 1)[-1], "descr": str(value)})
+        mac_by_index = {
+            oid.rsplit(".", 1)[-1]: _format_mac(value) for oid, value in await safe_walk(OID_IF_PHYS_ADDRESS)
+        }
+        for interface in interfaces:
+            interface["mac_address"] = mac_by_index.get(interface["index"], "")
+
+        arp_entries = [_format_ipv4(value) for _, value in await safe_walk(OID_ARP_NET_ADDRESS)]
+
+        lldp_names = {oid: str(value) for oid, value in await safe_walk(OID_LLDP_REM_SYS_NAME)}
+        lldp_ports = {oid: str(value) for oid, value in await safe_walk(OID_LLDP_REM_PORT_ID)}
+        lldp_neighbors = []
+        for oid, neighbor_name in lldp_names.items():
+            # lldpRemPortId shares the same trailing index suffix as lldpRemSysName.
+            suffix = ".".join(oid.split(".")[-3:])
+            port_oid = next((candidate for candidate in lldp_ports if candidate.endswith(suffix)), None)
+            lldp_neighbors.append({
+                "neighbor_name": neighbor_name,
+                "neighbor_port": lldp_ports.get(port_oid, "") if port_oid else "",
+            })
+
+        vendor = guess_vendor(sys_object_id)
+        facts = {
+            "host": host, "sys_descr": sys_descr, "sys_object_id": sys_object_id,
+            "sys_name": sys_name, "sys_uptime": sys_uptime, "vendor": vendor,
+            "interfaces": interfaces, "arp_entries": arp_entries, "lldp_neighbors": lldp_neighbors,
+        }
+        facts["ci_class"] = guess_ci_class(facts)
+        return facts
 
 
 def discover_host(host, community, port=161, version="2c", timeout=2):
     """Gathers MIB-II/IF-MIB/IP-MIB/LLDP-MIB facts from one SNMP-reachable
-    host. Returns None (never raises) if the host doesn't respond to SNMP at
-    all -- a normal, expected outcome when sweeping a subnet where most
-    addresses are unused or not SNMP-enabled, not itself an error."""
-    try:
-        sys_descr = snmp_get(host, community, OID_SYS_DESCR, port=port, version=version, timeout=timeout)
-    except (DiscoveryError, OSError, TimeoutError):
-        return None
-
-    def safe_get(oid):
-        try:
-            return snmp_get(host, community, oid, port=port, version=version, timeout=timeout)
-        except (DiscoveryError, OSError, TimeoutError):
-            return ""
-
-    def safe_walk(oid):
-        try:
-            return snmp_walk(host, community, oid, port=port, version=version, timeout=timeout)
-        except (DiscoveryError, OSError, TimeoutError):
-            return []
-
-    sys_object_id = safe_get(OID_SYS_OBJECT_ID)
-    sys_name = safe_get(OID_SYS_NAME)
-    sys_uptime = safe_get(OID_SYS_UPTIME)
-
-    interfaces = []
-    for oid, value in safe_walk(OID_IF_DESCR):
-        interfaces.append({"index": oid.rsplit(".", 1)[-1], "descr": str(value)})
-    mac_by_index = {
-        oid.rsplit(".", 1)[-1]: _format_mac(value) for oid, value in safe_walk(OID_IF_PHYS_ADDRESS)
-    }
-    for interface in interfaces:
-        interface["mac_address"] = mac_by_index.get(interface["index"], "")
-
-    arp_entries = [_format_ipv4(value) for _, value in safe_walk(OID_ARP_NET_ADDRESS)]
-
-    lldp_names = {oid: str(value) for oid, value in safe_walk(OID_LLDP_REM_SYS_NAME)}
-    lldp_ports = {oid: str(value) for oid, value in safe_walk(OID_LLDP_REM_PORT_ID)}
-    lldp_neighbors = []
-    for oid, neighbor_name in lldp_names.items():
-        # lldpRemPortId shares the same trailing index suffix as lldpRemSysName.
-        suffix = ".".join(oid.split(".")[-3:])
-        port_oid = next((candidate for candidate in lldp_ports if candidate.endswith(suffix)), None)
-        lldp_neighbors.append({
-            "neighbor_name": neighbor_name,
-            "neighbor_port": lldp_ports.get(port_oid, "") if port_oid else "",
-        })
-
-    vendor = guess_vendor(sys_object_id)
-    facts = {
-        "host": host, "sys_descr": sys_descr, "sys_object_id": sys_object_id,
-        "sys_name": sys_name, "sys_uptime": sys_uptime, "vendor": vendor,
-        "interfaces": interfaces, "arp_entries": arp_entries, "lldp_neighbors": lldp_neighbors,
-    }
-    facts["ci_class"] = guess_ci_class(facts)
-    return facts
+    host, using exactly one shared SnmpEngine for all of it (see
+    _SnmpSession's docstring for why that matters -- a real memory/crash
+    incident on a real scan). Returns None (never raises) if the host
+    doesn't respond to SNMP at all -- a normal, expected outcome when
+    sweeping a subnet where most addresses are unused or not SNMP-enabled,
+    not itself an error."""
+    return asyncio.run(_discover_host_async(host, community, port, version, timeout))
 
 
 # Very common TCP ports checked ONLY to establish basic liveness for a host
@@ -259,20 +287,54 @@ def tcp_liveness_probe(host, ports=LIVENESS_PROBE_PORTS, timeout=0.2):
     return False
 
 
-def probe_host(host, community, port=161, version="2c", timeout=2, liveness_timeout=0.2):
+def reverse_dns_lookup(host, nameserver=None, timeout=0.5):
+    """Best-effort PTR lookup for a bare (non-SNMP) device's hostname.
+
+    Two strategies, both genuinely best-effort -- this is honest about its
+    limits rather than promising a name for every device: (1) the system
+    resolver (works if it's configured to forward local PTR queries, which
+    Docker's own embedded DNS is not by default); (2) a direct query against
+    ``nameserver`` (typically the subnet's own gateway, since many SOHO/
+    business routers -- UniFi, pfSense, OPNsense, most enterprise DHCP
+    servers -- answer PTR for their own DHCP leases; plenty of consumer
+    routers don't). Returns "" (never raises) if neither resolves."""
+    try:
+        return socket.gethostbyaddr(host)[0]
+    except (OSError, socket.herror):
+        pass
+    if not nameserver:
+        return ""
+    try:
+        import dns.resolver
+        import dns.reversename
+
+        resolver = dns.resolver.Resolver(configure=False)
+        resolver.nameservers = [nameserver]
+        resolver.timeout = timeout
+        resolver.lifetime = timeout
+        answer = resolver.resolve(dns.reversename.from_address(host), "PTR")
+        return str(answer[0]).rstrip(".")
+    except Exception:  # noqa: BLE001 - any DNS failure here just means no name, never an error
+        return ""
+
+
+def probe_host(host, community, port=161, version="2c", timeout=2, liveness_timeout=0.2, dns_nameserver=None):
     """The actual per-host discovery entry point used by discover_subnet and
     by app.py's single-host discovery routes: try full SNMP detail first
     (discover_host), and only if that gets no response, fall back to a bare
     liveness check so a real device on the network is still recorded --
     just with a "Network sweep (no SNMP)" discovery_source and none of the
-    vendor/interface/relationship detail an SNMP-capable device provides."""
+    vendor/interface/relationship detail an SNMP-capable device provides.
+    A bare hit still gets a best-effort reverse-DNS name attempt (see
+    reverse_dns_lookup) instead of always falling back to the bare IP."""
     facts = discover_host(host, community, port=port, version=version, timeout=timeout)
     if facts:
         facts["discovery_source"] = "SNMP Discovery"
         return facts
     if tcp_liveness_probe(host, timeout=liveness_timeout):
+        resolved_name = reverse_dns_lookup(host, nameserver=dns_nameserver)
         return {
-            "host": host, "sys_descr": "", "sys_object_id": "", "sys_name": host,
+            "host": host, "sys_descr": "", "sys_object_id": "", "sys_name": resolved_name or host,
             "sys_uptime": "", "vendor": "", "ci_class": "Device",
             "interfaces": [], "arp_entries": [], "lldp_neighbors": [],
             "discovery_source": "Network sweep (no SNMP)",
@@ -298,9 +360,16 @@ def discover_subnet(cidr, community, port=161, version="2c", timeout=0.6, max_ho
 
     network = ipaddress.ip_network(cidr, strict=False)
     addresses = list(network.hosts())[:max_hosts]
+    # Best-effort reverse-DNS nameserver for bare hits: the subnet's own
+    # gateway (conventionally .1) -- see reverse_dns_lookup's docstring for
+    # why this is a guess that works on some networks and not others.
+    gateway_guess = str(addresses[0]) if addresses else None
 
     def probe(address):
-        return probe_host(str(address), community, port=port, version=version, timeout=timeout)
+        return probe_host(
+            str(address), community, port=port, version=version, timeout=timeout,
+            dns_nameserver=gateway_guess,
+        )
 
     discovered = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
