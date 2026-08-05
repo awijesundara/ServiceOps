@@ -10226,7 +10226,7 @@ def create_app(test_config=None):
         db.session.commit()
         flash(f"{item.number} raised as a continual-improvement item.", "success")
         redirect_to = request.form.get("redirect_to")
-        if redirect_to and redirect_to.startswith("/"):
+        if is_safe_internal_path(redirect_to):
             return redirect(redirect_to)
         return redirect(url_for("improvement_detail", item_id=item.id))
 
