@@ -1,0 +1,33 @@
+groups:
+  - name: serviceops
+    rules:
+      - alert: ServiceOpsUnavailable
+        expr: up{job="serviceops"} == 0 or serviceops_up == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "ServiceOps is unavailable"}
+      - alert: ServiceOpsWorkerDown
+        expr: serviceops_worker_up == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "ServiceOps background worker heartbeat is stale"}
+      - alert: ServiceOpsErrorsDetected
+        expr: serviceops_application_errors_last_hour > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "ServiceOps recorded application errors"}
+      - alert: ServiceOpsHigh5xxRate
+        expr: sum(rate(serviceops_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(serviceops_http_requests_total[5m])), 0.001) > 0.02
+        for: 10m
+        labels: {severity: critical}
+        annotations: {summary: "ServiceOps 5xx rate exceeds 2 percent"}
+      - alert: ServiceOpsSyntheticLoginFailed
+        expr: probe_success{job="serviceops-login"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "ServiceOps end-to-end login probe is failing"}
+      - alert: ServiceOpsBackupStale
+        expr: serviceops_backup_age_seconds < 0 or serviceops_backup_age_seconds > 86400
+        for: 15m
+        labels: {severity: critical}
+        annotations: {summary: "No successful ServiceOps recovery set was recorded in the last 24 hours"}
