@@ -8842,29 +8842,43 @@ def create_app(test_config=None):
             require_ticket_team_access(target)
         elif not user_can_manage_enterprise_record(current_user, target):
             abort(403)
-        ci = tenant_record_or_404(ConfigurationItem, int(request.form["ci_id"]))
         role = request.form.get("relationship_role")
         if role not in ("Primary CI", "Affected CI", "Impacted service"):
             abort(400)
+        try:
+            ci_ids = [int(raw) for raw in request.form.getlist("ci_id") if raw.strip()]
+        except ValueError:
+            abort(400)
+        if not ci_ids:
+            abort(400, description="Select at least one configuration item.")
         if role == "Primary CI":
+            # A record has exactly one primary CI; multi-select never applies here.
+            ci_ids = ci_ids[:1]
             TaskCI.query.filter_by(
                 target_type=target_type, target_id=target_id,
                 relationship_role="Primary CI",
             ).delete()
-        exists = TaskCI.query.filter_by(
-            target_type=target_type, target_id=target_id, ci_id=ci.id,
-            relationship_role=role,
-        ).first()
-        if not exists:
+        linked_names = []
+        for ci_id in dict.fromkeys(ci_ids):
+            ci = tenant_record_or_404(ConfigurationItem, ci_id)
+            exists = TaskCI.query.filter_by(
+                target_type=target_type, target_id=target_id, ci_id=ci.id,
+                relationship_role=role,
+            ).first()
+            if exists:
+                continue
             db.session.add(TaskCI(
                 target_type=target_type, target_id=target_id,
                 ci_id=ci.id, relationship_role=role,
             ))
+            linked_names.append(ci.name)
+        if linked_names:
+            summary = f"{role}: {', '.join(linked_names)}"
             log_history(
                 target_type, target_id, "Configuration item linked",
-                details=f"{role}: {ci.name}",
+                details=summary,
             )
-            audit("link CI", record_number(target), f"{role}: {ci.name}")
+            audit("link CI", record_number(target), summary)
             # Affected CIs/impacted services are a material-change field (CLAUDE.md
             # governance rules): adding one to an already-approved change must
             # invalidate the current approval chain, the same as team/plan edits do.
@@ -11158,20 +11172,32 @@ def create_app(test_config=None):
     @roles("admin")
     def ci_relationship_add():
         parent = tenant_record_or_404(ConfigurationItem, int(request.form["parent_id"]))
-        child = tenant_record_or_404(ConfigurationItem, int(request.form["child_id"]))
-        if parent.id == child.id:
-            abort(400, description="A configuration item cannot depend on itself.")
         relationship_type = request.form.get("relationship_type", "Depends on")
         if relationship_type not in CI_RELATIONSHIP_TYPES:
             abort(400, description="Select a valid relationship type.")
-        existing = tenant_query(CIRelationship).filter_by(
-            parent_id=parent.id, child_id=child.id, relationship_type=relationship_type,
-        ).first()
-        if not existing:
+        try:
+            child_ids = [int(raw) for raw in request.form.getlist("child_id") if raw.strip()]
+        except ValueError:
+            abort(400)
+        if not child_ids:
+            abort(400, description="Select at least one child configuration item.")
+        linked_names = []
+        for child_id in dict.fromkeys(child_ids):
+            child = tenant_record_or_404(ConfigurationItem, child_id)
+            if parent.id == child.id:
+                abort(400, description="A configuration item cannot depend on itself.")
+            existing = tenant_query(CIRelationship).filter_by(
+                parent_id=parent.id, child_id=child.id, relationship_type=relationship_type,
+            ).first()
+            if existing:
+                continue
             db.session.add(CIRelationship(parent_id=parent.id, child_id=child.id, relationship_type=relationship_type))
-            audit("create", "CI relationship", f"{parent.name} — {relationship_type} → {child.name}")
+            linked_names.append(child.name)
+        if linked_names:
+            audit("create", "CI relationship",
+                  f"{parent.name} — {relationship_type} → {', '.join(linked_names)}")
             db.session.commit()
-            flash(f"Linked {parent.name} to {child.name}.", "success")
+            flash(f"Linked {parent.name} to {', '.join(linked_names)}.", "success")
         return redirect(url_for("cmdb"))
 
     @app.post("/cmdb/relationships/<int:relationship_id>/delete")
@@ -12171,21 +12197,31 @@ def create_app(test_config=None):
                 flash("Change freeze removed.", "success")
             elif action == "link_service_ci":
                 service = tenant_record_or_404(ServiceOffering, int(request.form["service_offering_id"]))
-                ci = tenant_record_or_404(ConfigurationItem, int(request.form["ci_id"]))
                 role = request.form.get("relationship_role", "Supporting")
                 if role not in ("Primary", "Supporting"):
                     abort(400)
-                existing_link = ServiceOfferingCI.query.filter_by(
-                    service_offering_id=service.id, ci_id=ci.id
-                ).first()
-                if existing_link:
-                    existing_link.relationship_role = role
-                else:
-                    db.session.add(ServiceOfferingCI(
-                        service_offering_id=service.id, ci_id=ci.id, relationship_role=role,
-                    ))
-                audit("configure", f"{service.name} service mapping", f"{role}: {ci.name}")
-                flash(f"{ci.name} linked to {service.name}.", "success")
+                try:
+                    ci_ids = [int(raw) for raw in request.form.getlist("ci_id") if raw.strip()]
+                except ValueError:
+                    abort(400)
+                if not ci_ids:
+                    abort(400, description="Select at least one configuration item.")
+                linked_names = []
+                for link_ci_id in dict.fromkeys(ci_ids):
+                    ci = tenant_record_or_404(ConfigurationItem, link_ci_id)
+                    existing_link = ServiceOfferingCI.query.filter_by(
+                        service_offering_id=service.id, ci_id=ci.id
+                    ).first()
+                    if existing_link:
+                        existing_link.relationship_role = role
+                    else:
+                        db.session.add(ServiceOfferingCI(
+                            service_offering_id=service.id, ci_id=ci.id, relationship_role=role,
+                        ))
+                    linked_names.append(ci.name)
+                audit("configure", f"{service.name} service mapping",
+                      f"{role}: {', '.join(linked_names)}")
+                flash(f"{', '.join(linked_names)} linked to {service.name}.", "success")
             elif action == "unlink_service_ci":
                 link = db.get_or_404(ServiceOfferingCI, int(request.form["link_id"]))
                 if link.tenant_id != current_user.tenant_id:

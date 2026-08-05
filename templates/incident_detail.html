@@ -161,7 +161,7 @@
   <h3 style="margin:16px 0 8px;font-size:13px;color:var(--muted)">Business services realized by the linked CIs</h3>
   {% for svc_link in impacted_services %}<div class="sla-row"><div><strong>{{ svc_link.service_offering.name }}</strong><small>via {{ svc_link.ci.name }}</small></div><span class="badge">{{ svc_link.service_offering.criticality }}</span></div>{% endfor %}
   {% endif %}
-  {% if can_manage_ticket %}<form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form"><select name="relationship_role"><option>Affected CI</option><option>Impacted service</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div><button>Link CI</button></form>{% endif %}
+  {% if can_manage_ticket %}<form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form"><select name="relationship_role"><option>Affected CI</option><option>Impacted service</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="Pick one or more configuration items…" autocomplete="off" required><div class="lookup-results" hidden></div></div><button>Link CIs</button></form>{% endif %}
 </section>
 
 <div class="incident-support-grid" id="resolution-information">
