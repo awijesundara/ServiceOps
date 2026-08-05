@@ -11,15 +11,27 @@ imports `app` to avoid a circular import at module load time (app.py imports
 this module; this module must not import app.py at import time).
 
 Scope, deliberately bounded: SNMPv2c/v3 GET/WALK against standard MIB-II,
-IF-MIB, IP-MIB (ARP table), and LLDP-MIB (neighbor topology). No active
-credential brute-forcing, no port scanning beyond the explicit configured
-target list/subnet, no protocol other than SNMP. A discovery target is
-always an explicit administrator-entered host or CIDR range with its own
-stored (encrypted) community/credentials -- this never scans arbitrary
-unconfigured network ranges.
+IF-MIB, IP-MIB (ARP table), and LLDP-MIB (neighbor topology), for full
+detail. Most consumer/office devices (phones, laptops, most routers, smart-
+home gear) don't run an SNMP agent at all, so SNMP alone misses most of a
+typical network -- real hardware validation confirmed this (a /24 sweep
+found only 1 of the many devices actually on the network, the one running
+SNMP). To match what GLPI/FusionInventory-style agentless discovery
+actually does, a device that doesn't answer SNMP is still checked for basic
+liveness via `tcp_liveness_probe()` -- a handful of very common TCP ports
+(80, 443, 22), never more, and only ever against the administrator's own
+explicit target host/subnet, never a range no one configured. A live-but-
+non-SNMP device is still recorded as a bare CI (IP only, no vendor/
+interfaces/relationships) rather than being silently invisible, with
+`discovery_source` distinguishing "SNMP Discovery" (full detail) from
+"Network sweep (no SNMP)" (presence only) so nothing pretends to know more
+than it does. No credential brute-forcing, no protocol beyond SNMP+this
+narrow liveness check, no scanning outside the configured target.
 """
 import asyncio
+import errno
 import ipaddress
+import socket
 
 # Standard MIB-II / IF-MIB / IP-MIB / LLDP-MIB OIDs used for discovery.
 OID_SYS_DESCR = "1.3.6.1.2.1.1.1.0"
@@ -219,27 +231,76 @@ def discover_host(host, community, port=161, version="2c", timeout=2):
     return facts
 
 
-def discover_subnet(cidr, community, port=161, version="2c", timeout=0.6, max_hosts=1024, max_workers=40):
-    """Sweeps every usable host address in ``cidr`` and returns discover_host
-    results for those that actually respond to SNMP; non-responders are
-    silently skipped (see discover_host's docstring). ``max_hosts`` is a hard
-    cap so a mistakenly huge CIDR (e.g. a /8) can't turn one discovery run
-    into an unbounded scan.
+# Very common TCP ports checked ONLY to establish basic liveness for a host
+# that didn't answer SNMP -- never treated as a port scan or service
+# inventory, just "is anything home at this address". Deliberately short:
+# widening this list trades sweep speed for a small chance of catching a
+# device that only listens on something unusual.
+LIVENESS_PROBE_PORTS = (80, 443, 22)
 
-    Probes are run concurrently (thread pool -- each host's SNMP round trip
-    is I/O-bound, so this is a real wall-clock win, not just busywork): a
-    full /24 sequentially at even a 1s timeout could take several minutes
+
+def tcp_liveness_probe(host, ports=LIVENESS_PROBE_PORTS, timeout=0.2):
+    """True if the host answers a TCP connection attempt on any of
+    ``ports`` -- either an actual open port, or a prompt connection-refused
+    (which still proves a live TCP/IP stack answered, just with that port
+    closed). A host that's simply absent from the network, or silently
+    drops everything behind a strict firewall, times out on every attempt
+    and is reported as not alive -- an inherent limitation of any
+    non-privileged (no raw ICMP socket) liveness check, not a bug."""
+    for probe_port in ports:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(timeout)
+                result = sock.connect_ex((host, probe_port))
+                if result == 0 or result == errno.ECONNREFUSED:
+                    return True
+        except OSError:
+            continue
+    return False
+
+
+def probe_host(host, community, port=161, version="2c", timeout=2, liveness_timeout=0.2):
+    """The actual per-host discovery entry point used by discover_subnet and
+    by app.py's single-host discovery routes: try full SNMP detail first
+    (discover_host), and only if that gets no response, fall back to a bare
+    liveness check so a real device on the network is still recorded --
+    just with a "Network sweep (no SNMP)" discovery_source and none of the
+    vendor/interface/relationship detail an SNMP-capable device provides."""
+    facts = discover_host(host, community, port=port, version=version, timeout=timeout)
+    if facts:
+        facts["discovery_source"] = "SNMP Discovery"
+        return facts
+    if tcp_liveness_probe(host, timeout=liveness_timeout):
+        return {
+            "host": host, "sys_descr": "", "sys_object_id": "", "sys_name": host,
+            "sys_uptime": "", "vendor": "", "ci_class": "Device",
+            "interfaces": [], "arp_entries": [], "lldp_neighbors": [],
+            "discovery_source": "Network sweep (no SNMP)",
+        }
+    return None
+
+
+def discover_subnet(cidr, community, port=161, version="2c", timeout=0.6, max_hosts=1024, max_workers=40):
+    """Sweeps every usable host address in ``cidr`` via probe_host (SNMP
+    detail first, bare liveness fallback second -- see probe_host's
+    docstring for why the fallback exists) and returns every host that
+    responded to either. ``max_hosts`` is a hard cap so a mistakenly huge
+    CIDR (e.g. a /8) can't turn one discovery run into an unbounded scan.
+
+    Probes are run concurrently (thread pool -- each host's SNMP/TCP round
+    trip is I/O-bound, so this is a real wall-clock win, not just busywork):
+    a full /24 sequentially at even a 1s timeout could take several minutes
     and exceed gunicorn's request timeout, which is exactly what happened
     the first time this ran against a real subnet (silently "hanging" until
     the worker was killed). Parallelized, the same /24 completes in
-    roughly 15-20s -- safely inside gunicorn's default 60s timeout."""
+    roughly 15-25s -- safely inside gunicorn's default 60s timeout."""
     import concurrent.futures
 
     network = ipaddress.ip_network(cidr, strict=False)
     addresses = list(network.hosts())[:max_hosts]
 
     def probe(address):
-        return discover_host(str(address), community, port=port, version=version, timeout=timeout)
+        return probe_host(str(address), community, port=port, version=version, timeout=timeout)
 
     discovered = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -265,12 +326,19 @@ def reconcile_facts_into_cmdb(tenant_id, target_name, facts_list):
     import app as core_app
     from app import CIRelationship, ConfigurationItem, db, now
 
-    summary = {"hosts_seen": len(facts_list), "created": 0, "updated": 0, "relationships_created": 0, "errors": []}
+    summary = {
+        "hosts_seen": len(facts_list), "created": 0, "updated": 0, "relationships_created": 0,
+        "snmp_hosts": sum(1 for f in facts_list if f.get("discovery_source", "SNMP Discovery") == "SNMP Discovery"),
+        "bare_hosts": sum(1 for f in facts_list if f.get("discovery_source") == "Network sweep (no SNMP)"),
+        "errors": [],
+    }
     host_to_ci = {}
 
     for facts in facts_list:
         try:
             ip_address = facts["host"]
+            source = facts.get("discovery_source", "SNMP Discovery")
+            is_snmp = source == "SNMP Discovery"
             existing = ConfigurationItem.query.filter_by(tenant_id=tenant_id, ip_address=ip_address).first()
             attributes = {
                 "sys_descr": facts.get("sys_descr", ""),
@@ -282,14 +350,20 @@ def reconcile_facts_into_cmdb(tenant_id, target_name, facts_list):
                 "discovered_at": now().isoformat(),
             }
             if existing:
-                existing.attributes = attributes
                 existing.updated_at = now()
+                # A bare (non-SNMP) liveness hit on a device we'd previously
+                # fully profiled via SNMP must never blank out that richer
+                # detail -- only refresh "last seen"; leave interfaces/
+                # sys_descr/etc. as they were from the earlier SNMP run.
+                if is_snmp or existing.discovery_source != "SNMP Discovery":
+                    existing.attributes = attributes
                 if existing.discovery_source != "Manual":
-                    existing.discovery_source = "SNMP Discovery"
-                    existing.vendor = facts.get("vendor") or existing.vendor
-                    if facts.get("sys_name"):
-                        existing.name = facts["sys_name"]
-                    existing.ci_class = facts.get("ci_class", existing.ci_class)
+                    if is_snmp or existing.discovery_source != "SNMP Discovery":
+                        existing.discovery_source = source
+                        existing.vendor = facts.get("vendor") or existing.vendor
+                        if facts.get("sys_name"):
+                            existing.name = facts["sys_name"]
+                        existing.ci_class = facts.get("ci_class", existing.ci_class)
                 ci = existing
                 summary["updated"] += 1
             else:
@@ -298,7 +372,7 @@ def reconcile_facts_into_cmdb(tenant_id, target_name, facts_list):
                     ci_class=facts.get("ci_class", "Device"),
                     ip_address=ip_address,
                     vendor=facts.get("vendor") or None,
-                    discovery_source="SNMP Discovery",
+                    discovery_source=source,
                     attributes=attributes,
                     tenant_id=tenant_id,
                 )

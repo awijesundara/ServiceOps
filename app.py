@@ -4367,7 +4367,7 @@ def process_discovery_schedule(limit=50):
     than a single tenant-wide toggle. One target's failure is caught and
     logged (no secrets -- never logs the decrypted community string) and
     never blocks or crashes the pass for other targets."""
-    from serviceops_core.network_discovery import discover_host, discover_subnet, reconcile_facts_into_cmdb
+    from serviceops_core.network_discovery import discover_subnet, probe_host, reconcile_facts_into_cmdb
 
     current = now()
     processed = 0
@@ -4383,7 +4383,7 @@ def process_discovery_schedule(limit=50):
                 continue
         try:
             if target.target_type == "host":
-                facts = discover_host(
+                facts = probe_host(
                     target.address, target.community, port=target.snmp_port, version=target.snmp_version,
                 )
                 facts_list = [facts] if facts else []
@@ -4394,7 +4394,8 @@ def process_discovery_schedule(limit=50):
             summary = reconcile_facts_into_cmdb(target.tenant_id, target.name, facts_list)
             target.last_run_status = "ok" if not summary["errors"] else "partial"
             target.last_run_summary = (
-                f"{summary['hosts_seen']} host(s) responded, {summary['created']} created, "
+                f"{summary['hosts_seen']} host(s) responded ({summary['snmp_hosts']} via SNMP, "
+                f"{summary['bare_hosts']} liveness-only), {summary['created']} created, "
                 f"{summary['updated']} updated, {summary['relationships_created']} relationship(s)."
             )
         except Exception as error:  # noqa: BLE001 - one target's failure must never block others
@@ -10777,11 +10778,11 @@ def create_app(test_config=None):
     def cmdb_discovery_run(target_id):
         target = tenant_record_or_404(DiscoveryTarget, target_id)
         from serviceops_core.network_discovery import (
-            discover_host, discover_subnet, reconcile_facts_into_cmdb,
+            discover_subnet, probe_host, reconcile_facts_into_cmdb,
         )
         try:
             if target.target_type == "host":
-                facts = discover_host(
+                facts = probe_host(
                     target.address, target.community,
                     port=target.snmp_port, version=target.snmp_version,
                 )
@@ -10794,7 +10795,8 @@ def create_app(test_config=None):
             summary = reconcile_facts_into_cmdb(target.tenant_id, target.name, facts_list)
             target.last_run_status = "ok" if not summary["errors"] else "partial"
             target.last_run_summary = (
-                f"{summary['hosts_seen']} host(s) responded, {summary['created']} CI(s) created, "
+                f"{summary['hosts_seen']} host(s) responded ({summary['snmp_hosts']} via SNMP, "
+                f"{summary['bare_hosts']} liveness-only), {summary['created']} CI(s) created, "
                 f"{summary['updated']} updated, {summary['relationships_created']} relationship(s) created."
                 + (f" Errors: {'; '.join(summary['errors'])}" if summary["errors"] else "")
             )
