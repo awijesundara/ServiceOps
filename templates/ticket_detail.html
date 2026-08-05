@@ -195,8 +195,8 @@
   {% if can_manage_ticket %}
   <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
     <select name="relationship_role"><option>Affected CI</option><option>Impacted service</option></select>
-    <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div>
-    <button>Link CI</button>
+    <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="Pick one or more configuration items…" autocomplete="off" required><div class="lookup-results" hidden></div></div>
+    <button>Link CIs</button>
   </form>
   {% endif %}
 </section>
@@ -278,8 +278,8 @@
   <details class="gov-tab-new"><summary>New</summary>
     <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
       <input type="hidden" name="relationship_role" value="Affected CI">
-      <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div>
-      <button class="primary">Link affected CI</button>
+      <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="Pick one or more configuration items…" autocomplete="off" required><div class="lookup-results" hidden></div></div>
+      <button class="primary">Link affected CIs</button>
     </form>
   </details>
   {% endif %}
@@ -295,8 +295,8 @@
   <details class="gov-tab-new"><summary>New</summary>
     <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
       <input type="hidden" name="relationship_role" value="Impacted service">
-      <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div>
-      <button class="primary">Link impacted service</button>
+      <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="Pick one or more configuration items…" autocomplete="off" required><div class="lookup-results" hidden></div></div>
+      <button class="primary">Link impacted services</button>
     </form>
   </details>
   {% endif %}

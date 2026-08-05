@@ -1908,6 +1908,135 @@ def test_change_creation_links_multiple_configuration_items(client, app):
         assert affected == {extra_ci_a_id, extra_ci_b_id}
 
 
+def test_ticket_ci_link_accepts_multiple_cis_in_one_submit(client, app):
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        ci_a = ConfigurationItem(name="web-01", ci_class="Server", environment="Production", owner_id=admin.id)
+        ci_b = ConfigurationItem(name="web-02", ci_class="Server", environment="Production", owner_id=admin.id)
+        db.session.add_all([ci_a, ci_b])
+        db.session.commit()
+        ci_a_id, ci_b_id = ci_a.id, ci_b.id
+    client.post("/tickets/new/incident", data={
+        "title": "Web tier degraded", "description": "Both web servers throwing 500s.",
+        "impact": "High", "urgency": "High", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(kind="incident").one().id
+    response = client.post(f"/record/ticket/{ticket_id}/configuration-items", data={
+        "relationship_role": "Affected CI",
+        "ci_id": [str(ci_a_id), str(ci_b_id), str(ci_a_id)],
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        linked = {
+            link.ci_id for link in TaskCI.query.filter_by(
+                target_type="ticket", target_id=ticket_id, relationship_role="Affected CI",
+            ).all()
+        }
+        assert linked == {ci_a_id, ci_b_id}
+        history = TaskHistory.query.filter_by(
+            target_type="ticket", target_id=ticket_id, event="Configuration item linked",
+        ).all()
+        assert len(history) == 1
+        assert "web-01" in history[0].details and "web-02" in history[0].details
+
+
+def test_ticket_primary_ci_link_stays_single_even_with_multiple_submitted(client, app):
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        ci_a = ConfigurationItem(name="db-primary", ci_class="Database", environment="Production", owner_id=admin.id)
+        ci_b = ConfigurationItem(name="db-replica", ci_class="Database", environment="Production", owner_id=admin.id)
+        db.session.add_all([ci_a, ci_b])
+        db.session.commit()
+        ci_a_id, ci_b_id = ci_a.id, ci_b.id
+    client.post("/tickets/new/incident", data={
+        "title": "Database failover", "description": "Primary database unresponsive.",
+        "impact": "High", "urgency": "High", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(kind="incident").one().id
+    client.post(f"/record/ticket/{ticket_id}/configuration-items", data={
+        "relationship_role": "Primary CI",
+        "ci_id": [str(ci_a_id), str(ci_b_id)],
+    })
+    with app.app_context():
+        primary = TaskCI.query.filter_by(
+            target_type="ticket", target_id=ticket_id, relationship_role="Primary CI",
+        ).all()
+        assert [link.ci_id for link in primary] == [ci_a_id]
+
+
+def test_ticket_ci_link_rejects_empty_selection(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "No CI picked", "description": "Submitting the link form empty must 400.",
+        "impact": "Low", "urgency": "Low", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(kind="incident").one().id
+    response = client.post(f"/record/ticket/{ticket_id}/configuration-items", data={
+        "relationship_role": "Affected CI",
+    })
+    assert response.status_code == 400
+
+
+def test_service_ci_mapping_links_multiple_cis_in_one_submit(client, app):
+    login(client)
+    with app.app_context():
+        admin_id = User.query.filter_by(username="admin").one().id
+        service = ServiceOffering(
+            name="Payments", owner_id=admin_id, criticality="Critical",
+            status="Operational", tenant_id=1,
+        )
+        ci_a = ConfigurationItem(name="pay-app-01", ci_class="Server", tenant_id=1)
+        ci_b = ConfigurationItem(name="pay-db-01", ci_class="Database", tenant_id=1)
+        db.session.add_all([service, ci_a, ci_b])
+        db.session.commit()
+        service_id, ci_a_id, ci_b_id = service.id, ci_a.id, ci_b.id
+    response = client.post("/itil/administration", data={
+        "action": "link_service_ci", "service_offering_id": str(service_id),
+        "relationship_role": "Supporting", "ci_id": [str(ci_a_id), str(ci_b_id)],
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        linked = {
+            link.ci_id for link in ServiceOfferingCI.query.filter_by(
+                service_offering_id=service_id,
+            ).all()
+        }
+        assert linked == {ci_a_id, ci_b_id}
+
+
+def test_ci_relationship_add_links_multiple_children_in_one_submit(client, app):
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        parent = ConfigurationItem(name="esx-host-01", ci_class="Server", owner_id=admin.id)
+        vm_a = ConfigurationItem(name="vm-app-01", ci_class="Virtual Machine", owner_id=admin.id)
+        vm_b = ConfigurationItem(name="vm-app-02", ci_class="Virtual Machine", owner_id=admin.id)
+        db.session.add_all([parent, vm_a, vm_b])
+        db.session.commit()
+        parent_id, vm_a_id, vm_b_id = parent.id, vm_a.id, vm_b.id
+    response = client.post("/cmdb/relationships", data={
+        "parent_id": str(parent_id), "relationship_type": "Depends on",
+        "child_id": [str(vm_a_id), str(vm_b_id)],
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        children = {
+            rel.child_id for rel in CIRelationship.query.filter_by(parent_id=parent_id).all()
+        }
+        assert children == {vm_a_id, vm_b_id}
+        # Self-reference must still be rejected even inside a batch.
+    response = client.post("/cmdb/relationships", data={
+        "parent_id": str(parent_id), "relationship_type": "Depends on",
+        "child_id": [str(parent_id)],
+    })
+    assert response.status_code == 400
+
+
 def test_change_cannot_bypass_approval_from_detail_or_board(client, app):
     login(client)
     client.post("/tickets/new/change", data={
