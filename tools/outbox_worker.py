@@ -6,8 +6,8 @@ import time
 from app import (
     PlatformSetting, create_app, db, now, process_discovery_schedule,
     process_kpi_snapshot_schedule, process_ldap_sync_schedule, process_outbox,
-    process_rt_import_jobs, process_sla_breaches, process_workflow_jobs,
-    process_workflow_schedules,
+    process_performance_sample_schedule, process_rt_import_jobs,
+    process_sla_breaches, process_workflow_jobs, process_workflow_schedules,
 )
 
 running = True
@@ -56,6 +56,11 @@ with app.app_context():
             record_heartbeat()
         except Exception:
             app.logger.exception("Could not record worker heartbeat")
+            db.session.rollback()
+        try:
+            process_performance_sample_schedule()
+        except Exception:
+            app.logger.exception("Could not record performance sample")
             db.session.rollback()
         if not processed:
             time.sleep(5)

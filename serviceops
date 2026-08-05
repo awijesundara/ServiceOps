@@ -23,6 +23,8 @@ Operations:
   ./serviceops rehearse-upgrade
   ./serviceops diagnose-recovery
   ./serviceops stability-probe [REQUESTS]
+  ./serviceops stress-test USERNAME [COUNT] [CONCURRENCY]
+  ./serviceops stress-test-cleanup
   ./serviceops recover-admin USERNAME
   ./serviceops recover-audit-key TENANT_SLUG
   ./serviceops retire-bootstrap-secret
@@ -220,6 +222,19 @@ case "$command" in
     port="$(awk -F= '/^APP_PORT=/{value=$2; gsub(/^[[:space:]\"]+|[[:space:]\"]+$/, "", value); print value}' "$ENV_FILE" | tail -1)"
     python3 "$ROOT_DIR/tools/stability_probe.py" --url "http://127.0.0.1:${port:-8080}/health" \
       --requests "${2:-500}"
+    ;;
+  stress-test)
+    username="${2:-}"; [[ -n "$username" ]] || { echo "Provide the requester username to stress-test with." >&2; exit 2; }
+    port="$(awk -F= '/^APP_PORT=/{value=$2; gsub(/^[[:space:]\"]+|[[:space:]\"]+$/, "", value); print value}' "$ENV_FILE" | tail -1)"
+    read -r -s -p "Password for ${username}: " stress_password; echo
+    SERVICEOPS_STRESS_PASSWORD="$stress_password" python3 "$ROOT_DIR/tools/stress_test.py" \
+      --url "http://127.0.0.1:${port:-8080}" --username "$username" \
+      --count "${3:-1000}" --concurrency "${4:-50}"
+    unset stress_password
+    echo "Run './serviceops stress-test-cleanup' afterward to remove the tickets this created." >&2
+    ;;
+  stress-test-cleanup)
+    "${COMPOSE[@]}" exec -T app python -m tools.stress_test_cleanup --confirm
     ;;
   recover-admin)
     username="${2:-}"; [[ -n "$username" ]] || { echo "Provide the administrator username." >&2; exit 2; }

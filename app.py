@@ -64,8 +64,6 @@ from serviceops_core.projections import project_document, validate_projection_po
 # endpoint so operators can confirm the running build without host access.
 APP_VERSION = (Path(__file__).resolve().parent / "VERSION").read_text().strip()
 APP_START_MONOTONIC = time_module.monotonic()
-HTTP_REQUEST_TOTAL = Counter()
-HTTP_REQUEST_DURATION_SECONDS = defaultdict(float)
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -733,6 +731,43 @@ class RouteRateLimitWindow(db.Model):
     __table_args__ = (
         db.UniqueConstraint("key", "window_start", name="uq_route_rate_limit_window"),
     )
+
+
+class RequestMetricTotal(db.Model):
+    """Cumulative, DB-backed HTTP request counters, keyed by method+status.
+
+    Replaces an earlier in-process `Counter()`/`defaultdict()` pair, which
+    silently undercounted: Gunicorn runs multiple worker *processes* (see
+    `GUNICORN_WORKERS`), each with its own private Python memory, so an
+    in-process counter only ever reflected whichever one worker happened to
+    handle a given request -- a `/metrics` scrape saw a different, partial
+    number depending on which worker the reverse proxy happened to route it
+    to. A DB row is shared truth across every process, matching the same
+    reasoning already applied to rate limiting (see RouteRateLimitWindow)."""
+    id = db.Column(db.Integer, primary_key=True)
+    method = db.Column(db.String(10), nullable=False)
+    status = db.Column(db.String(10), nullable=False)
+    request_count = db.Column(db.Integer, nullable=False, default=0)
+    duration_sum_ms = db.Column(db.Float, nullable=False, default=0.0)
+    __table_args__ = (
+        db.UniqueConstraint("method", "status", name="uq_request_metric_total_method_status"),
+    )
+
+
+class PerformanceSample(db.Model):
+    """Periodic snapshot of `RequestMetricTotal`'s cumulative totals plus
+    worker/deployment context, written roughly once a minute by the
+    background worker (see `process_performance_sample_schedule`). Two
+    consecutive rows let a viewer compute a real per-interval request rate
+    and average latency -- exactly what backs the System Health performance
+    chart and the `tools/stress_test.py` load-test evidence."""
+    id = db.Column(db.Integer, primary_key=True)
+    sampled_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False, index=True)
+    cumulative_requests = db.Column(db.Integer, nullable=False, default=0)
+    cumulative_errors = db.Column(db.Integer, nullable=False, default=0)
+    cumulative_duration_ms = db.Column(db.Float, nullable=False, default=0.0)
+    worker_healthy = db.Column(db.Boolean, nullable=False, default=False)
+    deployment_mode = db.Column(db.String(30), nullable=False, default="unknown")
 
 
 class IntegrationConnection(db.Model):
@@ -2132,6 +2167,27 @@ def generate_mfa_backup_codes(count=10):
 
 def hash_backup_code(code):
     return hashlib.sha256(code.encode()).hexdigest()
+
+
+def record_request_metric(method, status_code, duration_ms):
+    """Increments the shared `RequestMetricTotal` row for this method+status.
+
+    Runs on every request via `after_request`, so a failure here must never
+    break the actual response -- caught and logged, not raised. A stale
+    UniqueConstraint race (two workers creating the same row at once) is
+    retried once via a fresh lookup rather than surfaced as a 500."""
+    try:
+        status = str(status_code)
+        row = RequestMetricTotal.query.filter_by(method=method, status=status).with_for_update().first()
+        if not row:
+            row = RequestMetricTotal(method=method, status=status)
+            db.session.add(row)
+            db.session.flush()
+        row.request_count += 1
+        row.duration_sum_ms += duration_ms
+        db.session.commit()
+    except Exception:  # noqa: BLE001 - metrics must never break the actual request
+        db.session.rollback()
 
 
 def route_rate_limit(scope, key, limit, window_seconds=60):
@@ -4313,6 +4369,51 @@ def capture_kpi_snapshots(tenant_id):
         upsert("csat_avg", round(sum(csat_ratings) / len(csat_ratings), 2))
 
 
+def process_performance_sample_schedule(interval_seconds=60):
+    """Snapshots cumulative `RequestMetricTotal` totals into one
+    `PerformanceSample` row roughly every `interval_seconds`, backing the
+    System Health performance chart. Uses the same PlatformSetting
+    last-run-timestamp pattern as the worker heartbeat rather than a
+    per-tenant state row, since request metrics are process/infra-level,
+    not tenant-scoped."""
+    state = db.session.get(PlatformSetting, "PERFORMANCE_SAMPLE_LAST_RUN")
+    current = now()
+    if state and state.value:
+        try:
+            last_run = datetime.fromisoformat(state.value)
+            if (current - align_tz(last_run, current)).total_seconds() < interval_seconds:
+                return False
+        except (TypeError, ValueError):
+            pass
+    totals = RequestMetricTotal.query.all()
+    cumulative_requests = sum(row.request_count for row in totals)
+    cumulative_errors = sum(row.request_count for row in totals if row.status[:1] in ("4", "5"))
+    cumulative_duration_ms = sum(row.duration_sum_ms for row in totals)
+    heartbeat = db.session.get(PlatformSetting, "WORKER_LAST_HEARTBEAT")
+    worker_healthy = False
+    if heartbeat and heartbeat.value:
+        try:
+            worker_healthy = (current - align_tz(datetime.fromisoformat(heartbeat.value), current)) < timedelta(seconds=30)
+        except (TypeError, ValueError):
+            pass
+    db.session.add(PerformanceSample(
+        sampled_at=current, cumulative_requests=cumulative_requests,
+        cumulative_errors=cumulative_errors, cumulative_duration_ms=cumulative_duration_ms,
+        worker_healthy=worker_healthy,
+        deployment_mode=os.getenv("DEPLOYMENT_MODE", "unknown"),
+    ))
+    if not state:
+        state = PlatformSetting(key="PERFORMANCE_SAMPLE_LAST_RUN", tenant_id=1, encrypted=False)
+        db.session.add(state)
+    state.value = current.isoformat()
+    # Keep roughly a week of minute-resolution samples; older rows add
+    # nothing the chart uses and would otherwise grow unbounded forever.
+    cutoff = current - timedelta(days=7)
+    PerformanceSample.query.filter(PerformanceSample.sampled_at < cutoff).delete()
+    db.session.commit()
+    return True
+
+
 def process_kpi_snapshot_schedule(limit=50):
     """Captures one day's worth of KPI snapshots per active tenant, once
     every 24h -- same per-tenant due-interval and one-tenant-failure-
@@ -6054,9 +6155,7 @@ def create_app(test_config=None):
         started_at = g.get("_request_started_at")
         if started_at is not None:
             duration_ms = round((time_module.monotonic() - started_at) * 1000, 2)
-            metric_key = (request.method, str(response.status_code))
-            HTTP_REQUEST_TOTAL[metric_key] += 1
-            HTTP_REQUEST_DURATION_SECONDS[metric_key] += duration_ms / 1000
+            record_request_metric(request.method, response.status_code, duration_ms)
         logging.getLogger("serviceops.request").info(
             "%s %s -> %s", request.method, request.path, response.status_code,
             extra={
@@ -6343,11 +6442,16 @@ def create_app(test_config=None):
             "# TYPE serviceops_process_uptime_seconds gauge",
             f"serviceops_process_uptime_seconds {time_module.monotonic() - APP_START_MONOTONIC:.3f}",
         ]
-        for (method, status), count in sorted(HTTP_REQUEST_TOTAL.items()):
-            lines.append(f'serviceops_http_requests_total{{method="{method}",status="{status}"}} {count}')
+        for row in RequestMetricTotal.query.order_by(
+            RequestMetricTotal.method, RequestMetricTotal.status,
+        ).all():
             lines.append(
-                f'serviceops_http_request_duration_seconds_sum{{method="{method}",status="{status}"}} '
-                f'{HTTP_REQUEST_DURATION_SECONDS[(method, status)]:.6f}'
+                f'serviceops_http_requests_total{{method="{row.method}",status="{row.status}"}} '
+                f'{row.request_count}'
+            )
+            lines.append(
+                f'serviceops_http_request_duration_seconds_sum{{method="{row.method}",status="{row.status}"}} '
+                f'{row.duration_sum_ms / 1000:.6f}'
             )
         return Response("\n".join(lines) + "\n", mimetype="text/plain; version=0.0.4")
 
@@ -10137,6 +10241,42 @@ def create_app(test_config=None):
             open_tickets=tenant_query(Ticket).filter(
                 Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])
             ).count(),
+            deployment_mode=os.getenv("DEPLOYMENT_MODE", "unknown"),
+            gunicorn_workers=os.getenv("GUNICORN_WORKERS", "2"),
+        )
+
+    @app.get("/admin/system-health/performance.json")
+    @roles("admin")
+    @require_action("security_administer")
+    def system_health_performance():
+        try:
+            hours = max(1, min(168, int(request.args.get("hours", "6"))))
+        except ValueError:
+            hours = 6
+        since = now() - timedelta(hours=hours)
+        samples = PerformanceSample.query.filter(
+            PerformanceSample.sampled_at >= since,
+        ).order_by(PerformanceSample.sampled_at).all()
+        points = []
+        previous = None
+        for sample in samples:
+            if previous is not None:
+                elapsed = (sample.sampled_at - previous.sampled_at).total_seconds()
+                request_delta = sample.cumulative_requests - previous.cumulative_requests
+                error_delta = sample.cumulative_errors - previous.cumulative_errors
+                duration_delta = sample.cumulative_duration_ms - previous.cumulative_duration_ms
+                points.append({
+                    "at": sample.sampled_at.isoformat(),
+                    "requests_per_sec": round(request_delta / elapsed, 3) if elapsed > 0 and request_delta >= 0 else 0,
+                    "error_rate": round(error_delta / request_delta, 4) if request_delta > 0 else 0,
+                    "avg_latency_ms": round(duration_delta / request_delta, 2) if request_delta > 0 else 0,
+                    "worker_healthy": sample.worker_healthy,
+                })
+            previous = sample
+        return jsonify(
+            deployment_mode=os.getenv("DEPLOYMENT_MODE", "unknown"),
+            gunicorn_workers=os.getenv("GUNICORN_WORKERS", "2"),
+            points=points,
         )
 
     @app.get("/admin/system-health/errors/export")
