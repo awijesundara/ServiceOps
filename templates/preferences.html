@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}Preferences · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">PERSONALIZATION</p><h1>System preferences</h1><p>Accessible, light-only workspace preferences for your account.</p></div><a class="button" href="{{ url_for('profile') }}">Edit profile</a></header>
+<header class="page-head"><div><p class="eyebrow">PERSONALIZATION</p><h1>System preferences</h1><p>Accessible, light-only workspace preferences for your account.</p></div><div class="record-actions"><a class="button" href="{{ url_for('my_sessions') }}">Review sessions</a><a class="button" href="{{ url_for('profile') }}">Edit profile</a></div></header>
 <form method="post" class="preferences-workspace">
   <nav class="preferences-nav" aria-label="Preference categories">
     <button type="button" class="active" data-pref-tab="general">General</button>

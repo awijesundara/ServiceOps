@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 import pyotp
+import boto3
 from flask import Flask, Response, abort, current_app, flash, g, has_app_context, has_request_context, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from markupsafe import Markup, escape
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
@@ -62,6 +63,9 @@ from serviceops_core.projections import project_document, validate_projection_po
 # VERSION is the release source of truth; shown in the UI, API, and health
 # endpoint so operators can confirm the running build without host access.
 APP_VERSION = (Path(__file__).resolve().parent / "VERSION").read_text().strip()
+APP_START_MONOTONIC = time_module.monotonic()
+HTTP_REQUEST_TOTAL = Counter()
+HTTP_REQUEST_DURATION_SECONDS = defaultdict(float)
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
@@ -266,6 +270,19 @@ def tenant_query(model):
     return model.query.filter(model.tenant_id == tenant_context_id())
 
 
+def object_storage_enabled():
+    return os.getenv("OBJECT_STORAGE_BUCKET", "").strip() != ""
+
+
+def object_storage_client():
+    return boto3.client(
+        "s3", endpoint_url=os.getenv("OBJECT_STORAGE_ENDPOINT") or None,
+        region_name=os.getenv("OBJECT_STORAGE_REGION", "us-east-1"),
+        aws_access_key_id=os.getenv("OBJECT_STORAGE_ACCESS_KEY") or None,
+        aws_secret_access_key=os.getenv("OBJECT_STORAGE_SECRET_KEY") or None,
+    )
+
+
 class Tenant(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     slug = db.Column(db.String(80), unique=True, nullable=False)
@@ -354,6 +371,41 @@ class ExternalIdentity(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     user = db.relationship("User")
     __table_args__ = (db.UniqueConstraint("provider", "subject", name="uq_external_identity"),)
+
+
+class UserSession(db.Model):
+    """Server-side inventory/revocation record for a signed browser session.
+
+    Flask still stores the session payload in its signed cookie; this record
+    gives users and administrators a durable way to see and revoke that cookie
+    without storing its contents or bearer value server-side.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    provider = db.Column(db.String(30), nullable=False, default="local")
+    ip_address = db.Column(db.String(64))
+    user_agent = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    last_seen_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    revoked_at = db.Column(db.DateTime(timezone=True))
+    revoked_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    user = db.relationship("User", foreign_keys=[user_id])
+    revoked_by = db.relationship("User", foreign_keys=[revoked_by_id])
+
+
+class PasswordResetToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    used_at = db.Column(db.DateTime(timezone=True))
+    requested_ip = db.Column(db.String(64))
+    user = db.relationship("User")
 
 
 class PlatformSetting(db.Model):
@@ -1985,6 +2037,7 @@ API_SCOPES = {
     "tickets:update",
     "workflows:execute",
     "cmdb:write",
+    "users:provision",
 }
 
 
@@ -2092,7 +2145,9 @@ def route_rate_limit(scope, key, limit, window_seconds=60):
     False (does not raise) when the limit is exceeded, so callers can render
     their own 429 response consistent with existing UX."""
     composite_key = f"{scope}:{key}"[:160]
-    window_start = now().replace(second=0, microsecond=0)
+    current = now()
+    epoch_start = (int(current.timestamp()) // window_seconds) * window_seconds
+    window_start = datetime.fromtimestamp(epoch_start, tz=timezone.utc)
     row = RouteRateLimitWindow.query.filter_by(
         key=composite_key, window_start=window_start
     ).with_for_update().first()
@@ -2114,7 +2169,7 @@ def route_rate_limit(scope, key, limit, window_seconds=60):
         ).delete()
     row.request_count += 1
     if row.request_count > limit:
-        g.rate_limit_retry_after = window_seconds - now().second
+        g.rate_limit_retry_after = max(1, window_seconds - int((current - window_start).total_seconds()))
         return False
     return True
 
@@ -5427,7 +5482,7 @@ class JsonLogFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
-        for attr in ("request_id", "method", "path", "status_code", "duration_ms", "user_id", "tenant_id", "remote_addr"):
+        for attr in ("request_id", "trace_id", "method", "path", "status_code", "duration_ms", "user_id", "tenant_id", "remote_addr"):
             value = getattr(record, attr, None)
             if value is not None:
                 payload[attr] = value
@@ -5873,6 +5928,9 @@ def create_app(test_config=None):
             g.request_id = str(uuid.UUID(supplied)) if supplied else str(uuid.uuid4())
         except ValueError:
             g.request_id = str(uuid.uuid4())
+        traceparent = request.headers.get("traceparent", "")
+        trace_match = re.fullmatch(r"[\da-f]{2}-([\da-f]{32})-[\da-f]{16}-[\da-f]{2}", traceparent.lower())
+        g.trace_id = trace_match.group(1) if trace_match else secrets.token_hex(16)
         g._request_started_at = time_module.monotonic()
 
     @app.before_request
@@ -5892,9 +5950,38 @@ def create_app(test_config=None):
             db.session.commit()
 
     @app.before_request
+    def enforce_session_inventory():
+        if not current_user.is_authenticated:
+            return None
+        session_id = session.get("_session_id")
+        record = UserSession.query.filter_by(session_id=session_id).first() if session_id else None
+        if record and (record.revoked_at or align_tz(record.expires_at, now()) <= now()):
+            logout_user()
+            session.clear()
+            return redirect(url_for("login"))
+        if not record:
+            session_id = secrets.token_urlsafe(32)
+            session["_session_id"] = session_id
+            record = UserSession(
+                session_id=session_id, user_id=current_user.id,
+                tenant_id=current_user.tenant_id,
+                provider=session.get("_auth_provider", "local"),
+                ip_address=(request.remote_addr or "")[:64],
+                user_agent=request.headers.get("User-Agent", "")[:500],
+                expires_at=now() + app.config["PERMANENT_SESSION_LIFETIME"],
+            )
+            db.session.add(record)
+            db.session.commit()
+        elif (now() - align_tz(record.last_seen_at, now())) > timedelta(minutes=1):
+            record.last_seen_at = now()
+            db.session.commit()
+        g.user_session = record
+        return None
+
+    @app.before_request
     def verify_api_identity():
         if (
-            request.path.startswith("/api/v1/")
+            (request.path.startswith("/api/v1/") or request.path.startswith("/scim/v2/"))
             and request.endpoint not in {
                 "api_openapi", "api_docs", "monitoring_ingest",
             }
@@ -5905,7 +5992,7 @@ def create_app(test_config=None):
     def verify_csrf():
         if (
             request.path.startswith("/api/v1/monitoring/")
-            or request.path.startswith("/api/v1/")
+            or (request.path.startswith("/api/v1/") or request.path.startswith("/scim/v2/"))
             and getattr(g, "api_client", None)
         ):
             return None
@@ -5967,10 +6054,14 @@ def create_app(test_config=None):
         started_at = g.get("_request_started_at")
         if started_at is not None:
             duration_ms = round((time_module.monotonic() - started_at) * 1000, 2)
+            metric_key = (request.method, str(response.status_code))
+            HTTP_REQUEST_TOTAL[metric_key] += 1
+            HTTP_REQUEST_DURATION_SECONDS[metric_key] += duration_ms / 1000
         logging.getLogger("serviceops.request").info(
             "%s %s -> %s", request.method, request.path, response.status_code,
             extra={
                 "request_id": g.get("request_id"),
+                "trace_id": g.get("trace_id"),
                 "method": request.method,
                 "path": request.path,
                 "status_code": response.status_code,
@@ -6159,8 +6250,106 @@ def create_app(test_config=None):
 
     @app.get("/ready")
     def ready():
-        db.session.execute(db.select(func.count(User.id))).scalar()
-        return jsonify(status="ready")
+        checks = {}
+        try:
+            db.session.execute(db.text("SELECT 1"))
+            checks["database"] = {"ok": True}
+        except Exception as error:  # readiness must report each failed prerequisite
+            db.session.rollback()
+            checks["database"] = {"ok": False, "reason": type(error).__name__}
+        try:
+            context = MigrationContext.configure(db.session.connection())
+            current_heads = set(context.get_current_heads())
+            config = AlembicConfig(str(Path(__file__).parent / "alembic.ini"))
+            expected_heads = set(ScriptDirectory.from_config(config).get_heads())
+            checks["migrations"] = {
+                "ok": current_heads == expected_heads,
+                "current": sorted(current_heads), "expected": sorted(expected_heads),
+            }
+        except Exception as error:
+            checks["migrations"] = {"ok": False, "reason": type(error).__name__}
+        try:
+            tenants = Tenant.query.filter_by(active=True).all()
+            for tenant in tenants:
+                active_key = AuditIntegrityKey.query.filter_by(
+                    tenant_id=tenant.id, active=True,
+                ).order_by(AuditIntegrityKey.id.desc()).first()
+                if active_key:
+                    audit_integrity_key(active_key.key_id, tenant.id)
+            checks["audit_encryption"] = {"ok": True, "tenants_checked": len(tenants)}
+        except Exception as error:
+            db.session.rollback()
+            checks["audit_encryption"] = {"ok": False, "reason": type(error).__name__}
+        heartbeat = db.session.get(PlatformSetting, "WORKER_LAST_HEARTBEAT") if checks["database"]["ok"] else None
+        try:
+            heartbeat_at = datetime.fromisoformat(heartbeat.value) if heartbeat and heartbeat.value else None
+            heartbeat_age = (now() - align_tz(heartbeat_at, now())).total_seconds() if heartbeat_at else None
+            checks["worker"] = {"ok": heartbeat_age is not None and heartbeat_age < 30, "age_seconds": heartbeat_age}
+        except (TypeError, ValueError):
+            checks["worker"] = {"ok": False, "reason": "invalid heartbeat"}
+        upload_folder = app.config["UPLOAD_FOLDER"]
+        checks["uploads"] = {
+            "ok": os.path.isdir(upload_folder) and os.access(upload_folder, os.R_OK | os.W_OK),
+            "path_configured": bool(upload_folder),
+        }
+        if object_storage_enabled():
+            try:
+                object_storage_client().head_bucket(Bucket=os.environ["OBJECT_STORAGE_BUCKET"])
+                checks["object_storage"] = {"ok": True, "bucket_configured": True}
+            except Exception as error:
+                checks["object_storage"] = {"ok": False, "reason": type(error).__name__}
+        overall = all(check["ok"] for check in checks.values())
+        return jsonify(status="ready" if overall else "not_ready", version=APP_VERSION, checks=checks), 200 if overall else 503
+
+    @app.get("/metrics")
+    def prometheus_metrics():
+        if not env_bool("METRICS_ENABLED", True):
+            abort(404)
+        configured_token = os.getenv("METRICS_TOKEN", "").strip()
+        supplied_token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        if configured_token and not hmac.compare_digest(configured_token, supplied_token):
+            abort(401)
+        heartbeat = db.session.get(PlatformSetting, "WORKER_LAST_HEARTBEAT")
+        worker_up = 0
+        if heartbeat and heartbeat.value:
+            try:
+                worker_up = int((now() - align_tz(datetime.fromisoformat(heartbeat.value), now())) < timedelta(seconds=30))
+            except (TypeError, ValueError):
+                pass
+        error_hour = ApplicationLog.query.filter(
+            ApplicationLog.level.in_(["ERROR", "CRITICAL"]),
+            ApplicationLog.created_at >= now() - timedelta(hours=1),
+        ).count()
+        last_backup = db.session.get(PlatformSetting, "LAST_BACKUP_AT")
+        backup_age = -1
+        if last_backup and last_backup.value:
+            try:
+                backup_age = max(0, (now() - align_tz(datetime.fromisoformat(last_backup.value), now())).total_seconds())
+            except (TypeError, ValueError):
+                pass
+        lines = [
+            "# HELP serviceops_up Whether the application can query its database.",
+            "# TYPE serviceops_up gauge", "serviceops_up 1",
+            "# HELP serviceops_info Build information.", "# TYPE serviceops_info gauge",
+            f'serviceops_info{{version="{APP_VERSION}"}} 1',
+            "# HELP serviceops_worker_up Whether the worker heartbeat is fresh.",
+            "# TYPE serviceops_worker_up gauge", f"serviceops_worker_up {worker_up}",
+            "# HELP serviceops_application_errors_last_hour Error and critical records in the last hour.",
+            "# TYPE serviceops_application_errors_last_hour gauge",
+            f"serviceops_application_errors_last_hour {error_hour}",
+            "# HELP serviceops_backup_age_seconds Age of the last successful recovery set, or -1 if none is recorded.",
+            "# TYPE serviceops_backup_age_seconds gauge", f"serviceops_backup_age_seconds {backup_age:.0f}",
+            "# HELP serviceops_process_uptime_seconds Process uptime.",
+            "# TYPE serviceops_process_uptime_seconds gauge",
+            f"serviceops_process_uptime_seconds {time_module.monotonic() - APP_START_MONOTONIC:.3f}",
+        ]
+        for (method, status), count in sorted(HTTP_REQUEST_TOTAL.items()):
+            lines.append(f'serviceops_http_requests_total{{method="{method}",status="{status}"}} {count}')
+            lines.append(
+                f'serviceops_http_request_duration_seconds_sum{{method="{method}",status="{status}"}} '
+                f'{HTTP_REQUEST_DURATION_SECONDS[(method, status)]:.6f}'
+            )
+        return Response("\n".join(lines) + "\n", mimetype="text/plain; version=0.0.4")
 
     @app.get("/manifest.webmanifest")
     def pwa_manifest():
@@ -6654,9 +6843,101 @@ def create_app(test_config=None):
         db.session.commit()
         return jsonify(document), 202
 
+    def scim_user_document(user):
+        return {
+            "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+            "id": str(user.id), "externalId": user.employee_id,
+            "userName": user.username, "displayName": user.name,
+            "active": user.active,
+            "emails": [{"value": user.email, "primary": True}],
+            "meta": {"resourceType": "User", "created": user.created_at.isoformat(),
+                     "location": url_for("scim_user", user_id=user.id, _external=True)},
+        }
+
+    def require_scim_admin():
+        require_api_scope("users:provision")
+        if not role_has_action(g.api_user.role, "security_administer"):
+            abort(403, description="The SCIM client must act as a security administrator.")
+
+    @app.route("/scim/v2/Users", methods=["GET", "POST"])
+    def scim_users():
+        require_scim_admin()
+        if request.method == "GET":
+            query = User.query.filter_by(tenant_id=g.api_client.tenant_id)
+            filter_value = request.args.get("filter", "")
+            match = re.fullmatch(r'userName\s+eq\s+"([^"]+)"', filter_value, re.IGNORECASE)
+            if filter_value and not match:
+                abort(400, description="Only the SCIM filter userName eq \"value\" is supported.")
+            if match:
+                query = query.filter(func.lower(User.username) == match.group(1).lower())
+            rows = query.order_by(User.id).all()
+            return jsonify(schemas=["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
+                           totalResults=len(rows), startIndex=1,
+                           itemsPerPage=len(rows), Resources=[scim_user_document(user) for user in rows])
+        body = request.get_json(silent=True) or {}
+        username = str(body.get("userName", "")).strip()[:80]
+        emails = body.get("emails") if isinstance(body.get("emails"), list) else []
+        email = str(next((item.get("value") for item in emails if isinstance(item, dict) and item.get("value")), "")).strip()[:160]
+        name = str(body.get("displayName") or username).strip()[:120]
+        if not username or not email:
+            abort(400, description="userName and an email value are required.")
+        if User.query.filter(db.or_(func.lower(User.username) == username.lower(), func.lower(User.email) == email.lower())).first():
+            abort(409, description="A user with that username or email already exists.")
+        user = User(
+            username=username, email=email, name=name, active=bool(body.get("active", True)),
+            employee_id=str(body.get("externalId", ""))[:80] or None,
+            role="requester", tenant_id=g.api_client.tenant_id,
+            password_hash=hash_password(secrets.token_urlsafe(48)),
+        )
+        db.session.add(user)
+        db.session.flush()
+        db.session.add(UserRoleGrant(user_id=user.id, role="requester"))
+        db.session.add(ExternalIdentity(provider="scim", subject=str(body.get("externalId") or username), user_id=user.id))
+        audit("scim create", user.username, f"client={g.api_client.client_id}",
+              user_id=g.api_user.id, tenant_id=user.tenant_id)
+        db.session.commit()
+        return jsonify(scim_user_document(user)), 201
+
+    @app.route("/scim/v2/Users/<int:user_id>", methods=["GET", "PUT", "PATCH", "DELETE"])
+    def scim_user(user_id):
+        require_scim_admin()
+        user = User.query.filter_by(id=user_id, tenant_id=g.api_client.tenant_id).first_or_404()
+        if request.method == "GET":
+            return jsonify(scim_user_document(user))
+        if request.method == "DELETE":
+            user.active = False
+        else:
+            body = request.get_json(silent=True) or {}
+            if request.method == "PATCH":
+                for operation in body.get("Operations", []):
+                    if str(operation.get("op", "")).lower() not in {"add", "replace"}:
+                        continue
+                    path, value = operation.get("path"), operation.get("value")
+                    if path == "active":
+                        user.active = bool(value)
+                    elif path == "displayName":
+                        user.name = str(value).strip()[:120]
+            else:
+                user.name = str(body.get("displayName") or user.name).strip()[:120]
+                user.active = bool(body.get("active", user.active))
+                emails = body.get("emails") if isinstance(body.get("emails"), list) else []
+                email = next((item.get("value") for item in emails if isinstance(item, dict) and item.get("value")), None)
+                if email:
+                    user.email = str(email).strip()[:160]
+        if not user.active:
+            user.auth_version += 1
+            UserSession.query.filter_by(user_id=user.id, revoked_at=None).update(
+                {"revoked_at": now(), "revoked_by_id": g.api_user.id}
+            )
+        audit("scim update", user.username, f"active={user.active}; client={g.api_client.client_id}",
+              user_id=g.api_user.id, tenant_id=user.tenant_id)
+        db.session.commit()
+        return ("", 204) if request.method == "DELETE" else jsonify(scim_user_document(user))
+
     @app.after_request
     def security_headers(response):
         response.headers["X-Request-ID"] = g.get("request_id", str(uuid.uuid4()))
+        response.headers["traceparent"] = f"00-{g.get('trace_id', secrets.token_hex(16))}-{secrets.token_hex(8)}-01"
         if g.get("rate_limit_retry_after") is not None:
             response.headers["Retry-After"] = str(g.rate_limit_retry_after)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -6762,6 +7043,7 @@ def create_app(test_config=None):
                 login_user(user)
                 session.permanent = True
                 session["_auth_version"] = user.auth_version
+                session["_auth_provider"] = provider
                 session["_csrf_token"] = secrets.token_urlsafe(32)
                 audit("login", user.username, f"provider={provider}")
                 db.session.commit()
@@ -6785,6 +7067,77 @@ def create_app(test_config=None):
                                keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
                                local_enabled=setting_bool("LOCAL_AUTH_ENABLED", True),
                                deployment_profile=app.config["DEPLOYMENT_PROFILE"])
+
+    @app.route("/forgot-password", methods=["GET", "POST"])
+    def forgot_password():
+        if request.method == "POST":
+            identity = request.form.get("identity", "").strip().lower()
+            allowed = route_rate_limit(
+                "password_reset", f"ip:{request.remote_addr or 'unknown'}",
+                setting_int("PASSWORD_RESET_RATE_LIMIT_PER_HOUR", 5), window_seconds=3600,
+            )
+            db.session.commit()
+            if not allowed:
+                flash("Too many recovery requests. Please try again later.", "error")
+                return render_template("forgot_password.html"), 429
+            user = User.query.filter(
+                db.or_(func.lower(User.username) == identity, func.lower(User.email) == identity),
+                User.active.is_(True),
+            ).first()
+            if user and user_is_local(user):
+                raw_token = secrets.token_urlsafe(32)
+                token_hash = hmac.new(
+                    current_app.config["SECRET_KEY"].encode(), raw_token.encode(), hashlib.sha256,
+                ).hexdigest()
+                PasswordResetToken.query.filter_by(user_id=user.id, used_at=None).update({"used_at": now()})
+                db.session.add(PasswordResetToken(
+                    token_hash=token_hash, user_id=user.id, tenant_id=user.tenant_id,
+                    expires_at=now() + timedelta(minutes=30),
+                    requested_ip=(request.remote_addr or "")[:64],
+                ))
+                reset_url = url_for("reset_password", token=raw_token, _external=True)
+                create_notification(
+                    user.id, "ServiceOps password recovery",
+                    f"Use this single-use link within 30 minutes to reset your password: {reset_url}",
+                    tenant_id=user.tenant_id,
+                )
+                audit("password reset request", user.username, "recovery link issued",
+                      user_id=user.id, tenant_id=user.tenant_id)
+                db.session.commit()
+            flash("If that active local account exists, recovery instructions have been sent.", "success")
+            return redirect(url_for("login"))
+        return render_template("forgot_password.html")
+
+    @app.route("/reset-password/<token>", methods=["GET", "POST"])
+    def reset_password(token):
+        token_hash = hmac.new(
+            current_app.config["SECRET_KEY"].encode(), token.encode(), hashlib.sha256,
+        ).hexdigest()
+        row = PasswordResetToken.query.filter_by(token_hash=token_hash, used_at=None).first()
+        valid = bool(row and align_tz(row.expires_at, now()) > now() and row.user.active)
+        if not valid:
+            return render_template("error.html", code=400, message="This recovery link is invalid or expired."), 400
+        if request.method == "POST":
+            password = request.form.get("password", "")
+            confirmation = request.form.get("confirmation", "")
+            min_length = setting_int("PASSWORD_MIN_LENGTH", 14)
+            if len(password) < min_length or password != confirmation:
+                flash(f"Use matching passwords containing at least {min_length} characters.", "error")
+                return render_template("reset_password.html", token=token)
+            row.user.password_hash = hash_password(password)
+            row.user.auth_version += 1
+            row.user.failed_login_count = 0
+            row.user.locked_until = None
+            row.used_at = now()
+            UserSession.query.filter_by(user_id=row.user_id, revoked_at=None).update(
+                {"revoked_at": now(), "revoked_by_id": row.user_id}
+            )
+            audit("password reset", row.user.username, "self-service recovery completed",
+                  user_id=row.user.id, tenant_id=row.tenant_id)
+            db.session.commit()
+            flash("Password reset. Sign in with your new password.", "success")
+            return redirect(url_for("login"))
+        return render_template("reset_password.html", token=token)
 
     @app.route("/login/mfa", methods=["GET", "POST"])
     def login_mfa():
@@ -6829,6 +7182,7 @@ def create_app(test_config=None):
                 login_user(user)
                 session.permanent = True
                 session["_auth_version"] = user.auth_version
+                session["_auth_provider"] = provider
                 session["_csrf_token"] = secrets.token_urlsafe(32)
                 audit(
                     "login", user.username,
@@ -6862,6 +7216,12 @@ def create_app(test_config=None):
         subject = claims.get("sub")
         if not subject:
             abort(401)
+        required_acr = os.getenv("KEYCLOAK_REQUIRED_ACR", "").strip()
+        if required_acr and claims.get("acr") != required_acr:
+            audit("login_blocked", str(claims.get("preferred_username", subject)),
+                  f"provider=keycloak; required_acr={required_acr}")
+            db.session.commit()
+            abort(403, description="Your identity provider did not confirm the required MFA assurance level.")
         realm_roles = claims.get("realm_access", {}).get("roles", [])
         matched_roles = mapped_roles(realm_roles, "KEYCLOAK_ROLE_MAPPINGS")
         try:
@@ -6882,6 +7242,7 @@ def create_app(test_config=None):
         login_user(user)
         session.permanent = True
         session["_auth_version"] = user.auth_version
+        session["_auth_provider"] = "keycloak"
         session["_csrf_token"] = secrets.token_urlsafe(32)
         audit("login", user.username, "provider=keycloak")
         db.session.commit()
@@ -6891,6 +7252,12 @@ def create_app(test_config=None):
     @login_required
     def logout():
         audit("logout", current_user.username)
+        active_session = UserSession.query.filter_by(
+            session_id=session.get("_session_id"), user_id=current_user.id,
+        ).first()
+        if active_session:
+            active_session.revoked_at = now()
+            active_session.revoked_by_id = current_user.id
         db.session.commit()
         logout_user()
         session.clear()
@@ -9162,6 +9529,40 @@ def create_app(test_config=None):
     def admin_home():
         return render_template("admin_home.html")
 
+    @app.get("/profile/sessions")
+    @login_required
+    def my_sessions():
+        rows = UserSession.query.filter_by(user_id=current_user.id).order_by(
+            UserSession.last_seen_at.desc()
+        ).all()
+        return render_template("sessions.html", sessions=rows, admin_view=False)
+
+    @app.get("/admin/sessions")
+    @roles("admin")
+    @require_action("security_administer")
+    def admin_sessions():
+        rows = tenant_query(UserSession).order_by(UserSession.last_seen_at.desc()).limit(1000).all()
+        return render_template("sessions.html", sessions=rows, admin_view=True)
+
+    @app.post("/sessions/<int:session_record_id>/revoke")
+    @login_required
+    def revoke_session(session_record_id):
+        row = tenant_query(UserSession).filter_by(id=session_record_id).first_or_404()
+        administering = role_has_action(current_user.effective_role, "security_administer")
+        if row.user_id != current_user.id and not administering:
+            abort(403)
+        if row.revoked_at is None:
+            row.revoked_at = now()
+            row.revoked_by_id = current_user.id
+            audit("session revoke", row.user.username, f"session={row.session_id[:12]}")
+            db.session.commit()
+        if row.session_id == session.get("_session_id"):
+            logout_user()
+            session.clear()
+            return redirect(url_for("login"))
+        flash("Session revoked.", "success")
+        return redirect(url_for("admin_sessions" if administering and request.form.get("admin_view") else "my_sessions"))
+
     @app.route("/platform/tenants", methods=["GET", "POST"])
     @roles("superadmin")
     @require_action("platform_administer")
@@ -9695,6 +10096,17 @@ def create_app(test_config=None):
             ApplicationLog.level.in_(["ERROR", "CRITICAL"]),
             ApplicationLog.created_at >= now() - timedelta(hours=1),
         ).count()
+        last_backup_row = db.session.get(PlatformSetting, "LAST_BACKUP_AT")
+        last_backup_at = None
+        if last_backup_row and last_backup_row.value:
+            try:
+                last_backup_at = datetime.fromisoformat(last_backup_row.value)
+            except ValueError:
+                pass
+        backup_rpo_hours = setting_int("BACKUP_RPO_HOURS", int(os.getenv("BACKUP_RPO_HOURS", "24")))
+        backup_healthy = bool(
+            last_backup_at and (now() - align_tz(last_backup_at, now())) <= timedelta(hours=backup_rpo_hours)
+        )
 
         return render_template(
             "system_health.html",
@@ -9705,6 +10117,9 @@ def create_app(test_config=None):
             active_users=active_users, active_user_count=len(active_users),
             error_rows=error_rows, page=page, pages=pages, total_errors=total_errors,
             error_last_hour=error_last_hour, **filters,
+            last_backup_at=last_backup_at, backup_healthy=backup_healthy,
+            backup_rpo_hours=backup_rpo_hours,
+            backup_offsite=setting_value("LAST_BACKUP_OFFSITE_STATUS", "not-recorded"),
             total_users=tenant_query(User).filter_by(active=True).count(),
             open_tickets=tenant_query(Ticket).filter(
                 Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])
@@ -12675,10 +13090,17 @@ def create_app(test_config=None):
         with open(path, "rb") as handle:
             for chunk in iter(lambda: handle.read(65536), b""):
                 sha256.update(chunk)
+        file_size = os.path.getsize(path)
+        if object_storage_enabled():
+            object_storage_client().upload_file(
+                path, os.environ["OBJECT_STORAGE_BUCKET"], stored,
+                ExtraArgs={"ContentType": verified_mime_type},
+            )
+            os.remove(path)
         attachment = FileAttachment(
             ticket_id=ticket.id, comment_id=comment_id, uploaded_by_id=current_user.id,
             original_name=original, stored_name=stored,
-            mime_type=verified_mime_type, size_bytes=os.path.getsize(path),
+            mime_type=verified_mime_type, size_bytes=file_size,
             sha256=sha256.hexdigest(), scan_status=scan_status,
         )
         db.session.add(attachment)
@@ -12720,11 +13142,22 @@ def create_app(test_config=None):
             request.args.get("view") == "1"
             and attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES
         )
-        return send_from_directory(
-            app.config["UPLOAD_FOLDER"], attachment.stored_name,
-            as_attachment=not inline, download_name=attachment.original_name,
-            mimetype=attachment.mime_type if inline else None,
-        )
+        if object_storage_enabled():
+            response = object_storage_client().get_object(
+                Bucket=os.environ["OBJECT_STORAGE_BUCKET"], Key=attachment.stored_name,
+            )
+            headers = {
+                "Content-Disposition": (
+                    f"inline; filename={json.dumps(attachment.original_name)}" if inline
+                    else f"attachment; filename={json.dumps(attachment.original_name)}"
+                ),
+                "Content-Length": str(response["ContentLength"]),
+            }
+            return Response(response["Body"].iter_chunks(), headers=headers,
+                            mimetype=attachment.mime_type if inline else "application/octet-stream")
+        return send_from_directory(app.config["UPLOAD_FOLDER"], attachment.stored_name,
+                                   as_attachment=not inline, download_name=attachment.original_name,
+                                   mimetype=attachment.mime_type if inline else None)
 
     @app.get("/help")
     @login_required

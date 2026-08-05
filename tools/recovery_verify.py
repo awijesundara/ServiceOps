@@ -46,6 +46,7 @@ def create_manifest(args: argparse.Namespace) -> int:
         "backup_started_at": args.started_at,
         "backup_completed_at": args.completed_at,
         "application_image": args.application_image,
+        "encryption_key_reference": getattr(args, "key_reference", "not-recorded"),
         "database": artifact(dump),
         "uploads": artifact(uploads),
         "capabilities": {
@@ -212,6 +213,7 @@ def parser() -> argparse.ArgumentParser:
     create.add_argument("--started-at", required=True)
     create.add_argument("--completed-at", required=True)
     create.add_argument("--application-image", required=True)
+    create.add_argument("--key-reference", default="not-recorded")
     create.set_defaults(function=create_manifest)
     verify = commands.add_parser("verify-manifest")
     verify.add_argument("manifest")
