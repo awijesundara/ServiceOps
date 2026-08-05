@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}CMDB discovery · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>Agentless discovery<span class="info-tip" tabindex="0" data-tip="SNMP-based discovery reads switches and other SNMP-speaking devices directly -- no software installed on the target, unlike tools/cmdb_sync_agent.sh's self-registering host agent. Each target is explicit: an administrator-entered host or CIDR range with its own credentials. Nothing outside a configured target is ever scanned.">i</span></h1><p>Discover configuration items and their connections from switches and other SNMP-speaking devices, without installing anything on them.</p></div><a class="button" href="{{ url_for('cmdb') }}">‹ Back to CMDB</a></header>
+
+<section class="panel">
+  <h2>Add a discovery target</h2>
+  <form method="post" action="{{ url_for('cmdb_discovery_add') }}" class="form-grid">
+    <label><span>Name</span><input name="name" required maxlength="160" placeholder="Core switch stack"></label>
+    <label><span>Target type</span><select name="target_type" id="discovery-target-type"><option value="host">Single host</option><option value="subnet">Subnet (CIDR)</option></select></label>
+    <label><span>Address</span><input name="address" required placeholder="10.0.1.1 or 10.0.1.0/24"></label>
+    <label><span>SNMP version</span><select name="snmp_version"><option value="2c">v2c</option><option value="3">v3</option></select></label>
+    <label><span>SNMP port</span><input type="number" name="snmp_port" value="161" min="1" max="65535"></label>
+    <label><span>Community string<span class="info-tip" tabindex="0" data-tip="Encrypted at rest with the same cipher used for webhook and integration secrets. Never shown again after saving.">i</span></span><input type="password" name="community" autocomplete="off"></label>
+    <label class="switch-row"><input type="checkbox" name="schedule_enabled"> Run on a schedule</label>
+    <label><span>Interval (minutes)</span><input type="number" name="schedule_interval_minutes" value="1440" min="5"></label>
+    <div class="wide actions"><button class="primary">Add discovery target</button></div>
+  </form>
+</section>
+
+<section class="list-workspace">
+  <table class="record-list">
+    <thead><tr><th>Name</th><th>Type</th><th>Address</th><th>Schedule</th><th>Last run</th><th>Result</th><th></th></tr></thead>
+    <tbody>
+      {% for target in targets %}
+      <tr>
+        <td><strong>{{ target.name }}</strong></td>
+        <td>{{ target.target_type|capitalize }}</td>
+        <td>{{ target.address }}</td>
+        <td>{% if target.schedule_enabled %}Every {{ target.schedule_interval_minutes }} min{% else %}Manual only{% endif %}</td>
+        <td>{{ (target.last_run_at|usertime('%b %d, %Y · %H:%M')) if target.last_run_at else 'Never' }}<br><small class="muted">{{ target.last_run_status or '' }}</small></td>
+        <td><small>{{ target.last_run_summary or '' }}</small></td>
+        <td>
+          <form method="post" action="{{ url_for('cmdb_discovery_run', target_id=target.id) }}" class="inline-form"><button class="button" title="Run discovery now">Run now</button></form>
+          <form method="post" action="{{ url_for('cmdb_discovery_delete', target_id=target.id) }}" class="inline-form" onsubmit="return confirm('Remove discovery target {{ target.name }}?');"><button class="link-button" aria-label="Delete">✕</button></form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty-table">No discovery targets configured yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
