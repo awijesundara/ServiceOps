@@ -29,7 +29,8 @@
     {% endif %}
     <label>Username<input name="username" autocomplete="username" required autofocus></label>
     <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
-    <button class="primary">Sign in</button>
+  <button class="primary">Sign in</button>
+  {% if local_enabled %}<a href="{{ url_for('forgot_password') }}">Forgot your password?</a>{% endif %}
   </form>
   {% endif %}
   <div class="login-version muted">v{{ app_version }}</div>

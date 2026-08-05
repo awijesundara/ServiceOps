@@ -139,7 +139,10 @@ def test_health(client):
     assert response.status_code == 200
     assert response.json == {"status": "ok", "version": APP_VERSION}
     assert client.get("/live").json == {"status": "alive"}
-    assert client.get("/ready").json == {"status": "ready"}
+    readiness = client.get("/ready")
+    assert readiness.status_code == 503
+    assert readiness.json["status"] == "not_ready"
+    assert readiness.json["checks"]["database"]["ok"] is True
 
 
 def test_live_api_documentation_matches_supported_contract(client):

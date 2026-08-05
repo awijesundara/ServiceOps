@@ -9,6 +9,7 @@
   <div class="{% if error_last_hour > 0 %}stat-alert{% endif %}"><span>Errors (last hour)</span><strong{% if error_last_hour > 0 %} class="stat-alert-text"{% endif %}>{{ error_last_hour }}</strong><small>{{ total_errors }} total recorded</small></div>
   <div><span>Active users</span><strong>{{ active_user_count }}</strong><small>seen in the last 15 minutes</small></div>
   <div><span>Open tickets</span><strong>{{ open_tickets }}</strong><small>{{ total_users }} active users total</small></div>
+  <div class="{% if not backup_healthy %}stat-alert{% endif %}"><span>Recovery set</span><strong>{{ 'Current' if backup_healthy else 'STALE / MISSING' }}</strong><small>{% if last_backup_at %}{{ last_backup_at|usertime('%Y-%m-%d %H:%M:%S') }} · {{ backup_offsite }}{% else %}No successful backup recorded{% endif %} · RPO {{ backup_rpo_hours }}h</small></div>
 </div>
 
 <div class="detail-grid">
