@@ -46,6 +46,10 @@ VENDOR_OID_PREFIXES = {
     "1.3.6.1.4.1.8072.": "Net-SNMP (generic host)",
     "1.3.6.1.4.1.14988.": "MikroTik",
     "1.3.6.1.4.1.4526.": "Netgear",
+    "1.3.6.1.4.1.2435.": "Brother",
+    "1.3.6.1.4.1.311.": "Microsoft",
+    "1.3.6.1.4.1.10071.": "Ubiquiti",
+    "1.3.6.1.4.1.1588.": "Brocade",
 }
 
 
@@ -115,8 +119,37 @@ async def _async_snmp_walk(host, community, base_oid, port=161, version="2c", ti
         if error_status:
             break
         for name, value in var_binds:
-            results.append((str(name), str(value)))
+            results.append((str(name), value))
     return results
+
+
+def _format_mac(value):
+    """SNMP returns interface/hardware addresses as a raw 6-byte
+    OctetString -- str(value) on that gives mangled, unreadable characters
+    (confirmed against a real device during validation), not a MAC. Format
+    as the conventional colon-hex form; falls back to the raw string for
+    anything that isn't exactly 6 bytes (some devices report an empty or
+    non-Ethernet address here)."""
+    try:
+        raw = value.asOctets()
+    except AttributeError:
+        return str(value)
+    if len(raw) == 6:
+        return ":".join(f"{byte:02x}" for byte in raw)
+    return str(value)
+
+
+def _format_ipv4(value):
+    """ARP-table entries (ipNetToMediaNetAddress) come back as a raw 4-byte
+    IpAddress -- same mangled-string problem as MACs. Format as dotted
+    decimal; falls back to the raw string for anything not exactly 4 bytes."""
+    try:
+        raw = value.asOctets()
+    except AttributeError:
+        return str(value)
+    if len(raw) == 4:
+        return ".".join(str(byte) for byte in raw)
+    return str(value)
 
 
 def snmp_get(host, community, oid, port=161, version="2c", timeout=2):
@@ -155,15 +188,17 @@ def discover_host(host, community, port=161, version="2c", timeout=2):
 
     interfaces = []
     for oid, value in safe_walk(OID_IF_DESCR):
-        interfaces.append({"index": oid.rsplit(".", 1)[-1], "descr": value})
-    mac_by_index = {oid.rsplit(".", 1)[-1]: value for oid, value in safe_walk(OID_IF_PHYS_ADDRESS)}
+        interfaces.append({"index": oid.rsplit(".", 1)[-1], "descr": str(value)})
+    mac_by_index = {
+        oid.rsplit(".", 1)[-1]: _format_mac(value) for oid, value in safe_walk(OID_IF_PHYS_ADDRESS)
+    }
     for interface in interfaces:
         interface["mac_address"] = mac_by_index.get(interface["index"], "")
 
-    arp_entries = [value for _, value in safe_walk(OID_ARP_NET_ADDRESS)]
+    arp_entries = [_format_ipv4(value) for _, value in safe_walk(OID_ARP_NET_ADDRESS)]
 
-    lldp_names = {oid: value for oid, value in safe_walk(OID_LLDP_REM_SYS_NAME)}
-    lldp_ports = {oid: value for oid, value in safe_walk(OID_LLDP_REM_PORT_ID)}
+    lldp_names = {oid: str(value) for oid, value in safe_walk(OID_LLDP_REM_SYS_NAME)}
+    lldp_ports = {oid: str(value) for oid, value in safe_walk(OID_LLDP_REM_PORT_ID)}
     lldp_neighbors = []
     for oid, neighbor_name in lldp_names.items():
         # lldpRemPortId shares the same trailing index suffix as lldpRemSysName.

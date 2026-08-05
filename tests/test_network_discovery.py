@@ -10,13 +10,45 @@ import pytest
 
 from app import CIRelationship, ConfigurationItem, create_app, db
 from serviceops_core.network_discovery import (
-    guess_ci_class, guess_vendor, reconcile_facts_into_cmdb,
+    _format_ipv4, _format_mac, guess_ci_class, guess_vendor, reconcile_facts_into_cmdb,
 )
+
+
+class _FakeOctetString:
+    """Stands in for pysnmp's OctetString/IpAddress: str() on the real thing
+    gives mangled, unreadable characters for binary content (confirmed
+    against a real Brother-branded network printer during validation) --
+    the only correct way to get the actual bytes is .asOctets()."""
+    def __init__(self, raw_bytes):
+        self._raw = raw_bytes
+
+    def asOctets(self):
+        return self._raw
+
+    def __str__(self):
+        return self._raw.decode("latin-1")
+
+
+def test_format_mac_renders_six_byte_octet_string_as_colon_hex():
+    raw = bytes([0x50, 0xC2, 0xE8, 0xA8, 0x28, 0x60])
+    assert _format_mac(_FakeOctetString(raw)) == "50:c2:e8:a8:28:60"
+
+
+def test_format_ipv4_renders_four_byte_octet_string_as_dotted_decimal():
+    raw = bytes([192, 168, 68, 1])
+    assert _format_ipv4(_FakeOctetString(raw)) == "192.168.68.1"
+
+
+def test_format_mac_and_ipv4_fall_back_to_str_for_non_octet_values():
+    assert _format_mac("already-a-string") == "already-a-string"
+    assert _format_ipv4("already-a-string") == "already-a-string"
+    assert _format_mac(_FakeOctetString(b"")) == ""  # empty address, e.g. a loopback interface
 
 
 def test_guess_vendor_matches_known_enterprise_prefixes():
     assert guess_vendor("1.3.6.1.4.1.9.1.1208") == "Cisco"
     assert guess_vendor("1.3.6.1.4.1.2636.1.1.1.2.57") == "Juniper"
+    assert guess_vendor("1.3.6.1.4.1.2435.2.3.9.1") == "Brother"
     assert guess_vendor("") == ""
     assert guess_vendor("1.3.6.1.4.1.99999.1") == ""
 
