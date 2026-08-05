@@ -1893,8 +1893,7 @@ def test_change_creation_links_multiple_configuration_items(client, app):
         "backout_plan": "Roll back the most recently patched tier.",
         "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
         "group_id": group_id(app),
-        "ci_id": str(primary_ci_id),
-        "additional_ci_ids": [str(extra_ci_a_id), str(extra_ci_b_id)],
+        "ci_id": [str(primary_ci_id), str(extra_ci_a_id), str(extra_ci_b_id)],
     }, follow_redirects=True)
     assert response.status_code == 200
     with app.app_context():
