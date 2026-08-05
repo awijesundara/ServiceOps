@@ -25,6 +25,16 @@
     addOptions(vendorFilter, "vendor");
     addOptions(sourceFilter, "source");
 
+    const normalize = (value) => (value || "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+    rows.forEach((row) => {
+      row.dataset.searchText = normalize(row.textContent);
+    });
+
     const updateSummary = () => {
       const visible = visibleRows();
       const selected = rows.filter((row) => checkbox(row).checked);
@@ -35,19 +45,18 @@
       empty.hidden = visible.length !== 0;
     };
     const applyFilters = () => {
-      const term = query.value.trim().toLowerCase();
+      const terms = normalize(query.value).split(" ").filter(Boolean);
       rows.forEach((row) => {
-        const searchable = [row.dataset.name, row.dataset.host, row.dataset.class, row.dataset.vendor, row.dataset.source].join(" ");
-        row.hidden = Boolean((term && !searchable.includes(term)) ||
+        const searchable = row.dataset.searchText;
+        row.hidden = Boolean((terms.length && !terms.every((term) => searchable.includes(term))) ||
           (classFilter.value && row.dataset.class !== classFilter.value) ||
           (vendorFilter.value && row.dataset.vendor !== vendorFilter.value) ||
           (sourceFilter.value && row.dataset.source !== sourceFilter.value));
       });
       updateSummary();
     };
-    [query, classFilter, vendorFilter, sourceFilter].forEach((control) => {
-      control.addEventListener(control.tagName === "SELECT" ? "change" : "input", applyFilters);
-    });
+    ["input", "search", "change"].forEach((eventName) => query.addEventListener(eventName, applyFilters));
+    [classFilter, vendorFilter, sourceFilter].forEach((control) => control.addEventListener("change", applyFilters));
     rows.forEach((row) => checkbox(row).addEventListener("change", updateSummary));
     master.addEventListener("change", () => {
       visibleRows().forEach((row) => { checkbox(row).checked = master.checked; });
