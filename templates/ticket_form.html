@@ -56,10 +56,9 @@
   <label><span>Impact<span class="info-tip" tabindex="0" data-tip="How much of the business or how many users are affected if this change goes wrong.">i</span></span><select name="impact">{% for opt in ['Low','Medium','High'] %}<option {% if (f and f.get('impact')==opt) or (not f and opt=='Medium') %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
   <label><span>Risk score<span class="info-tip" tabindex="0" data-tip="Leave blank to auto-calculate from change type, CI criticality, and environment — a transparent starting point, not a replacement for judgment. Type a number to override it (you'll be asked for a reason).">i</span></span><input type="number" min="0" max="100" name="risk_score" placeholder="Auto-calculated" value="{{ f.get('risk_score','') if f else '' }}"></label>
   <label class="wide"><span>Risk score override reason<span class="info-tip" tabindex="0" data-tip="Only needed if you typed a risk score above instead of leaving it to auto-calculate.">i</span></span><input name="risk_score_override_reason" placeholder="Why does this change carry more/less risk than the calculated baseline?" value="{{ f.get('risk_score_override_reason','') if f else '' }}"></label>
-  <div class="wide">
-    <span>Configuration item/s<span class="info-tip" tabindex="0" data-tip="Search or browse (⌕) and tick as many as apply. The first one picked is treated as the change's primary CI (used for risk scoring and conflict checks); any others are recorded as additional affected CIs.">i</span></span>
+  <label class="wide"><span>Configuration item/s<span class="info-tip" tabindex="0" data-tip="Search or browse (⌕) and tick as many as apply. The first one picked is treated as the change's primary CI (used for risk scoring and conflict checks); any others are recorded as additional affected CIs.">i</span></span>
     <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id"><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="Search and pick one or more configuration items…" autocomplete="off"><div class="lookup-results" hidden></div></div>
-  </div>
+  </label>
   <div class="wide field-pair">
     <label class="required-field"><span>Planned start</span><input type="datetime-local" name="planned_start" required value="{{ f.get('planned_start','') if f else '' }}"></label>
     <label class="required-field"><span>Planned end</span><input type="datetime-local" name="planned_end" required value="{{ f.get('planned_end','') if f else '' }}"></label>

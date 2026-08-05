@@ -4,8 +4,11 @@ from pathlib import Path
 
 from app import (
     APIClient, DiscoveryCandidate, DiscoveryTarget, Notification,
-    PasswordResetToken, User, UserSession, create_api_token, db,
+    PasswordResetToken, PerformanceSample, RequestMetricTotal, User,
+    UserSession, align_tz, create_api_token, db, now,
+    process_performance_sample_schedule,
 )
+from datetime import timedelta
 from serviceops_core.security import verify_password
 from tests.test_app import app, client, login
 
@@ -17,6 +20,93 @@ def test_metrics_exposes_operational_signals(client):
     assert b"serviceops_worker_up" in response.data
     assert b"serviceops_http_requests_total" in response.data
     assert response.headers["Content-Type"].startswith("text/plain")
+
+
+def test_request_metrics_are_db_backed_not_in_process(client, app):
+    # B-285: an in-process Counter() undercounts across Gunicorn's multiple
+    # worker processes -- this asserts the fix (a shared DB row) actually
+    # accumulates across repeated requests within one test process, which
+    # would already have caught the original in-memory-only version too
+    # since here it's the same effect a second Gunicorn worker would cause:
+    # the count must reflect real accumulated totals, not just "at least 1".
+    with app.app_context():
+        RequestMetricTotal.query.delete()
+        db.session.commit()
+    client.get("/health")
+    client.get("/health")
+    client.get("/health")
+    with app.app_context():
+        row = RequestMetricTotal.query.filter_by(method="GET", status="200").first()
+        assert row is not None
+        assert row.request_count >= 3
+
+
+def test_performance_sample_schedule_is_rate_limited_and_computes_totals(client, app):
+    with app.app_context():
+        RequestMetricTotal.query.delete()
+        PerformanceSample.query.delete()
+        db.session.commit()
+    client.get("/health")
+    client.get("/health")
+    with app.app_context():
+        assert process_performance_sample_schedule(interval_seconds=60) is True
+        # Immediately due again -- must be a no-op until the interval elapses.
+        assert process_performance_sample_schedule(interval_seconds=60) is False
+        sample = PerformanceSample.query.order_by(PerformanceSample.id.desc()).first()
+        assert sample.cumulative_requests >= 2
+
+
+def test_performance_sample_schedule_prunes_samples_older_than_a_week(client, app):
+    with app.app_context():
+        PerformanceSample.query.delete()
+        db.session.add(PerformanceSample(
+            sampled_at=now() - timedelta(days=10), cumulative_requests=1,
+            cumulative_errors=0, cumulative_duration_ms=1,
+        ))
+        db.session.commit()
+        assert process_performance_sample_schedule(interval_seconds=60) is True
+        remaining = PerformanceSample.query.all()
+        cutoff = now() - timedelta(days=7)
+        assert all(align_tz(s.sampled_at, cutoff) >= cutoff for s in remaining)
+
+
+def test_system_health_performance_endpoint_requires_security_administer(client, app):
+    login(client)
+    with app.app_context():
+        PerformanceSample.query.delete()
+        first = now() - timedelta(minutes=2)
+        db.session.add(PerformanceSample(
+            sampled_at=first, cumulative_requests=100, cumulative_errors=1,
+            cumulative_duration_ms=5000, worker_healthy=True, deployment_mode="compose",
+        ))
+        db.session.add(PerformanceSample(
+            sampled_at=first + timedelta(minutes=1), cumulative_requests=160,
+            cumulative_errors=2, cumulative_duration_ms=8000, worker_healthy=True,
+            deployment_mode="compose",
+        ))
+        db.session.commit()
+    response = client.get("/admin/system-health/performance.json")
+    assert response.status_code == 200
+    payload = response.get_json()
+    # deployment_mode reflects the currently-running process's own
+    # DEPLOYMENT_MODE env var (live, not historical), so it isn't tied to
+    # what a past PerformanceSample happened to record.
+    assert "deployment_mode" in payload
+    assert len(payload["points"]) == 1
+    point = payload["points"][0]
+    assert point["requests_per_sec"] == round(60 / 60, 3)
+    assert point["avg_latency_ms"] == round(3000 / 60, 2)
+
+
+def test_system_health_performance_endpoint_denies_requester(client, app):
+    from app import User as UserModel
+    login(client)
+    with app.app_context():
+        requester = UserModel.query.filter_by(username="admin").one()
+        requester.role = "requester"
+        db.session.commit()
+    response = client.get("/admin/system-health/performance.json")
+    assert response.status_code == 403
 
 
 def test_login_creates_inventory_and_admin_can_revoke_session(client, app):
