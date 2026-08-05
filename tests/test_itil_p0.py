@@ -118,6 +118,17 @@ def test_improvement_item_can_be_raised_from_a_ticket_and_updated(client, app):
         assert ImprovementItem.query.get(item_id).status == "In Progress"
 
 
+def test_improvement_redirect_rejects_scheme_relative_external_url(client, app):
+    login(client)
+    response = client.post("/improvements/new", data={
+        "title": "Safe redirect regression",
+        "redirect_to": "//attacker.example/phishing",
+    })
+    assert response.status_code == 302
+    assert response.headers["Location"].startswith("/improvement/")
+    assert "attacker.example" not in response.headers["Location"]
+
+
 def test_ci_service_mapping_can_be_linked_and_unlinked(client, app):
     login(client)
     with app.app_context():

@@ -21,6 +21,7 @@
   <script src="{{ url_for('static', filename='admin-context.js', v=app_version) }}" defer></script>
 </head>
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
+<a class="skip-link" href="#main-content">Skip to main content</a>
 {% if current_user.is_authenticated %}
 {% set admin_endpoints = ['admin_home','itil_admin','system_settings','users','user_new','user_edit','audit_log','api_clients_admin','integrations_admin','workflows_admin','platform_tenants','system_health','system_health_log_file'] %}
 <script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
@@ -90,7 +91,7 @@
   <div class="sidebar-version">v{{ app_version }}</div>
 </aside>
 <header class="unified-nav">
-  <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation"><svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
+  <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation" aria-expanded="true"><svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
   <form action="{{ url_for('global_search') }}" class="global-search"><span><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span><input name="q" placeholder="Search ServiceOps" aria-label="Search ServiceOps"></form>
   <div class="nav-menus">
     <details data-nav-menu="favorites">
@@ -115,16 +116,16 @@
   </div>
 </header>
 {% endif %}
-<main class="{% if not current_user.is_authenticated %}auth-main{% endif %}">
+<main id="main-content" tabindex="-1" class="{% if not current_user.is_authenticated %}auth-main{% endif %}">
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
 {% if current_user.is_authenticated %}
-<dialog id="ci-browser-modal" class="ci-browser-modal">
+<dialog id="ci-browser-modal" class="ci-browser-modal" aria-modal="true" aria-labelledby="ci-browser-title">
   <div class="ci-browser-head">
-    <h3>Select a configuration item</h3>
+    <h3 id="ci-browser-title">Select a configuration item</h3>
     <button type="button" class="link-button" data-ci-browser-close aria-label="Close">✕</button>
   </div>
   <div class="ci-browser-filters">
