@@ -31,6 +31,7 @@ function initLookup(container) {
   const hidden = multiName ? null : container.querySelector('input[type="hidden"]');
   const results = container.querySelector(".lookup-results");
   const chips = multiName ? container.querySelector(".lookup-chips") : null;
+  if (multiName) container.classList.add("lookup-multi");
   const spinner = document.createElement("span");
   spinner.className = "lookup-loading";
   container.insertBefore(spinner, results);
