@@ -168,7 +168,7 @@ def write_environment(config):
         env_line("API_TOKEN_PEPPER",
                  config.get("api_token_pepper") or Fernet.generate_key().decode()),
         env_line("ADMIN_PASSWORD", config.get("admin_password", "")),
-        env_line("SERVICEOPS_IMAGE", config.get("serviceops_image", "serviceops-app:1.36.1")),
+        env_line("SERVICEOPS_IMAGE", config.get("serviceops_image", "serviceops-app:1.36.2")),
         'LOCAL_AUTH_ENABLED="true"',
         env_line("LDAP_ENABLED", str(bool(config.get("ldap_enabled"))).lower()),
         env_line("LDAP_SERVER_URI", config.get("ldap_uri", "")),

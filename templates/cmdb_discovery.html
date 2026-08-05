@@ -31,7 +31,7 @@
         <td>{{ (target.last_run_at|usertime('%b %d, %Y · %H:%M')) if target.last_run_at else 'Never' }}<br><small class="muted">{{ target.last_run_status or '' }}</small></td>
         <td><small>{{ target.last_run_summary or '' }}</small></td>
         <td>
-          <form method="post" action="{{ url_for('cmdb_discovery_run', target_id=target.id) }}" class="inline-form"><button class="button" title="Run discovery now">Run now</button></form>
+          <form method="post" action="{{ url_for('cmdb_discovery_run', target_id=target.id) }}" class="inline-form discovery-run-form" data-target-type="{{ target.target_type }}"><button class="button" type="submit" title="Run discovery now">Run now</button></form>
           <form method="post" action="{{ url_for('cmdb_discovery_delete', target_id=target.id) }}" class="inline-form" onsubmit="return confirm('Remove discovery target {{ target.name }}?');"><button class="link-button" aria-label="Delete">✕</button></form>
         </td>
       </tr>
@@ -41,4 +41,22 @@
     </tbody>
   </table>
 </section>
+<script>
+document.querySelectorAll(".discovery-run-form").forEach((form) => {
+  form.addEventListener("submit", () => {
+    const button = form.querySelector("button");
+    const isSubnet = form.dataset.targetType === "subnet";
+    button.disabled = true;
+    button.innerHTML = '<span class="discovery-spinner" aria-hidden="true"></span> Running…';
+    const note = document.createElement("small");
+    note.className = "muted";
+    note.style.display = "block";
+    note.style.marginTop = "4px";
+    note.textContent = isSubnet
+      ? "Sweeping the subnet, usually under a minute — this page will refresh when it's done."
+      : "Usually a few seconds — this page will refresh when it's done.";
+    form.appendChild(note);
+  });
+});
+</script>
 {% endblock %}
