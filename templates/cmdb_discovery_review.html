@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Review discovered devices · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">CMDB · {{ target.name }}</p><h1>Review discovered devices</h1><p>Nothing has been added to the CMDB yet. Pick which devices to add, add all of them, or discard the whole batch.</p></div><a class="button" href="{{ url_for('cmdb_discovery') }}">‹ Back to discovery</a></header>
+
+{% if candidates %}
+<form method="post" action="{{ url_for('cmdb_discovery_import', target_id=target.id) }}">
+  <section class="list-workspace">
+    <table class="record-list">
+      <thead><tr><th><input type="checkbox" id="review-select-all-checkbox" title="Select all"></th><th>Name</th><th>Address</th><th>Class</th><th>Vendor</th><th>Source</th></tr></thead>
+      <tbody>
+        {% for candidate in candidates %}
+        <tr>
+          <td><input type="checkbox" name="candidate_id" value="{{ candidate.id }}" checked></td>
+          <td><strong>{{ candidate.name }}</strong></td>
+          <td>{{ candidate.host }}</td>
+          <td>{{ candidate.ci_class }}</td>
+          <td>{{ candidate.vendor or '—' }}</td>
+          <td><span class="badge">{{ candidate.discovery_source }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <footer class="record-footer-actions">
+    <button type="submit" class="button" formaction="{{ url_for('cmdb_discovery_discard', target_id=target.id) }}" onclick="return confirm('Discard all {{ candidates|length }} discovered device(s) without adding them?');">Discard all</button>
+    <button type="submit" class="button" name="select_all" value="1">Add all {{ candidates|length }}</button>
+    <button type="submit" class="primary">Add selected</button>
+  </footer>
+</form>
+{% else %}
+<section class="panel"><p class="empty-table">Nothing pending review for this target. Run it again from the discovery page.</p></section>
+{% endif %}
+
+<script>
+document.getElementById("review-select-all-checkbox")?.addEventListener("change", (event) => {
+  document.querySelectorAll('input[name="candidate_id"]').forEach((box) => { box.checked = event.target.checked; });
+});
+</script>
+{% endblock %}

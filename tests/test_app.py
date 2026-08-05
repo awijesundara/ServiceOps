@@ -16,7 +16,8 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  ApprovalGate, ApprovalVote, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy,
                  BusinessSchedule, CatalogRequest, CatalogTask, ChangeGovernance, ChangeOwnership, ChangeRevision,
                  Comment,
-                 ChecklistItem, CIRelationship, ConfigurationItem, DiscoveryTarget, EnterpriseRecord, CatalogItem,
+                 ChecklistItem, CIRelationship, ConfigurationItem, DiscoveryCandidate, DiscoveryTarget,
+                 EnterpriseRecord, CatalogItem,
                  CatalogItemRouting, DirectoryGroupMapping,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
@@ -4566,7 +4567,11 @@ def test_cmdb_discovery_requires_security_administer(client, app):
     }).status_code == 403
 
 
-def test_cmdb_discovery_run_reconciles_mocked_snmp_facts(client, app, monkeypatch):
+def test_cmdb_discovery_run_stages_candidates_without_creating_a_ci(client, app, monkeypatch):
+    """Discovery runs -- manual or scheduled -- never create a CI by
+    themselves anymore; a run only stages a DiscoveryCandidate row for
+    administrator review (see test_cmdb_discovery_review_add_selected_*
+    below for the actual import step)."""
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
         target = DiscoveryTarget(
@@ -4595,10 +4600,99 @@ def test_cmdb_discovery_run_reconciles_mocked_snmp_facts(client, app, monkeypatc
         target = db.session.get(DiscoveryTarget, target_id)
         assert target.last_run_status == "ok"
         assert target.last_run_at is not None
-        ci = ConfigurationItem.query.filter_by(ip_address="10.0.0.9").one()
-        assert ci.name == "mocked-switch-1"
-        assert ci.discovery_source == "SNMP Discovery"
-        assert ci.vendor == "Cisco"
+        assert ConfigurationItem.query.filter_by(ip_address="10.0.0.9").count() == 0
+        candidate = DiscoveryCandidate.query.filter_by(target_id=target_id).one()
+        assert candidate.name == "mocked-switch-1"
+        assert candidate.discovery_source == "SNMP Discovery"
+        assert candidate.vendor == "Cisco"
+        assert candidate.facts["sys_descr"] == "Cisco IOS"
+
+
+def _stage_candidate(app, target_id, tenant_id, host="10.0.0.9", name="mocked-switch-1"):
+    with app.app_context():
+        candidate = DiscoveryCandidate(
+            target_id=target_id, host=host, name=name, ci_class="Network Switch", vendor="Cisco",
+            discovery_source="SNMP Discovery", tenant_id=tenant_id,
+            facts={
+                "host": host, "sys_name": name, "sys_descr": "Cisco IOS", "sys_object_id": "1.3.6.1.4.1.9.1.1",
+                "sys_uptime": "1", "vendor": "Cisco", "ci_class": "Network Switch",
+                "interfaces": [], "arp_entries": [], "lldp_neighbors": [],
+                "discovery_source": "SNMP Discovery",
+            },
+        )
+        db.session.add(candidate)
+        db.session.commit()
+        return candidate.id
+
+
+def test_cmdb_discovery_review_add_selected_creates_only_checked_cis(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        target = DiscoveryTarget(name="Review target", target_type="subnet", address="10.0.0.0/24", created_by_id=admin.id)
+        db.session.add(target)
+        db.session.commit()
+        target_id, tenant_id = target.id, target.tenant_id
+    keep_id = _stage_candidate(app, target_id, tenant_id, host="10.0.0.9", name="keep-me")
+    skip_id = _stage_candidate(app, target_id, tenant_id, host="10.0.0.10", name="skip-me")
+
+    login(client)
+    response = client.post(f"/cmdb/discovery/{target_id}/import", data={"candidate_id": [str(keep_id)]}, follow_redirects=True)
+    assert response.status_code == 200
+    with app.app_context():
+        assert ConfigurationItem.query.filter_by(ip_address="10.0.0.9").count() == 1
+        assert ConfigurationItem.query.filter_by(ip_address="10.0.0.10").count() == 0
+        assert db.session.get(DiscoveryCandidate, keep_id) is None
+        assert db.session.get(DiscoveryCandidate, skip_id) is not None  # left pending, not discarded
+
+
+def test_cmdb_discovery_review_add_all_creates_every_candidate(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        target = DiscoveryTarget(name="Add all target", target_type="subnet", address="10.0.1.0/24", created_by_id=admin.id)
+        db.session.add(target)
+        db.session.commit()
+        target_id, tenant_id = target.id, target.tenant_id
+    _stage_candidate(app, target_id, tenant_id, host="10.0.1.9", name="host-a")
+    _stage_candidate(app, target_id, tenant_id, host="10.0.1.10", name="host-b")
+
+    login(client)
+    response = client.post(f"/cmdb/discovery/{target_id}/import", data={"select_all": "1"}, follow_redirects=True)
+    assert response.status_code == 200
+    with app.app_context():
+        assert ConfigurationItem.query.filter_by(ip_address="10.0.1.9").count() == 1
+        assert ConfigurationItem.query.filter_by(ip_address="10.0.1.10").count() == 1
+        assert DiscoveryCandidate.query.filter_by(target_id=target_id).count() == 0
+
+
+def test_cmdb_discovery_review_discard_creates_nothing(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        target = DiscoveryTarget(name="Discard target", target_type="subnet", address="10.0.2.0/24", created_by_id=admin.id)
+        db.session.add(target)
+        db.session.commit()
+        target_id, tenant_id = target.id, target.tenant_id
+    _stage_candidate(app, target_id, tenant_id, host="10.0.2.9", name="never-added")
+
+    login(client)
+    response = client.post(f"/cmdb/discovery/{target_id}/discard", follow_redirects=True)
+    assert response.status_code == 200
+    with app.app_context():
+        assert ConfigurationItem.query.filter_by(ip_address="10.0.2.9").count() == 0
+        assert DiscoveryCandidate.query.filter_by(target_id=target_id).count() == 0
+
+
+def test_cmdb_discovery_review_requires_security_administer(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        target = DiscoveryTarget(name="Locked target", target_type="host", address="10.0.3.1", created_by_id=admin.id)
+        db.session.add(target)
+        db.session.commit()
+        target_id = target.id
+
+    login(client, "employee", "Employee123!")
+    assert client.get(f"/cmdb/discovery/{target_id}/review").status_code == 403
+    assert client.post(f"/cmdb/discovery/{target_id}/import", data={"select_all": "1"}).status_code == 403
+    assert client.post(f"/cmdb/discovery/{target_id}/discard").status_code == 403
 
 
 def test_cmdb_discovery_run_survives_snmp_failure(client, app, monkeypatch):
@@ -4660,6 +4754,7 @@ def test_cmdb_discovery_schedule_skips_targets_not_yet_due(app, monkeypatch):
         )
         db.session.add_all([due, not_due, disabled])
         db.session.commit()
+        due_id = due.id
 
     calls = []
 
@@ -4667,11 +4762,13 @@ def test_cmdb_discovery_schedule_skips_targets_not_yet_due(app, monkeypatch):
         calls.append(host)
         return None
     monkeypatch.setattr("serviceops_core.network_discovery.discover_host", fake_discover_host)
+    monkeypatch.setattr("serviceops_core.network_discovery.tcp_liveness_probe", lambda *a, **k: False)
 
     with app.app_context():
         processed = process_discovery_schedule()
         assert processed == 1
         assert calls == ["10.0.0.11"]
+        assert DiscoveryCandidate.query.filter_by(target_id=due_id).count() == 0
 
 
 def test_cmdb_topology_renders_nodes_and_edges(client, app):
