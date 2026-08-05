@@ -388,8 +388,8 @@
         <input type="hidden" name="action" value="link_service_ci">
         <input type="hidden" name="service_offering_id" value="{{ service.id }}">
         <select name="relationship_role"><option>Primary</option><option selected>Supporting</option></select>
-        <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="ci_id"><div class="lookup-results" hidden></div></div>
-        <button>Link CI</button>
+        <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="Pick one or more configuration items…" autocomplete="off" required><div class="lookup-results" hidden></div></div>
+        <button>Link CIs</button>
       </form>
     </article>
     {% else %}<p>No service offerings configured.</p>{% endfor %}

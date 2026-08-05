@@ -1,25 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".lookup").forEach(initLookup);
   initCIBrowser();
-  initAdditionalCIPickers();
 });
-
-function initAdditionalCIPickers() {
-  document.querySelectorAll("[data-add-ci-row]").forEach((button) => {
-    const picker = button.closest("[id][data-lookup-url]") || button.parentElement;
-    const url = picker.dataset.lookupUrl;
-    const rows = picker.querySelector(".additional-ci-rows");
-    button.addEventListener("click", () => {
-      const row = document.createElement("div");
-      row.className = "lookup inline-form additional-ci-row";
-      row.dataset.lookupUrl = url;
-      row.innerHTML = `<input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off"><input type="hidden" name="additional_ci_ids"><div class="lookup-results" hidden></div><button type="button" class="link-button" data-remove-ci-row aria-label="Remove this configuration item">✕</button>`;
-      rows.appendChild(row);
-      initLookup(row);
-      row.querySelector("[data-remove-ci-row]").addEventListener("click", () => row.remove());
-    });
-  });
-}
 
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -44,12 +26,53 @@ function highlightMatch(label, query) {
 
 function initLookup(container) {
   const url = container.dataset.lookupUrl;
+  const multiName = container.dataset.multiName || "";
   const input = container.querySelector(".lookup-search");
-  const hidden = container.querySelector('input[type="hidden"]');
+  const hidden = multiName ? null : container.querySelector('input[type="hidden"]');
   const results = container.querySelector(".lookup-results");
+  const chips = multiName ? container.querySelector(".lookup-chips") : null;
   const spinner = document.createElement("span");
   spinner.className = "lookup-loading";
   container.insertBefore(spinner, results);
+
+  const selectedValues = () => multiName
+    ? [...chips.querySelectorAll('input[type="hidden"]')].map((el) => el.value)
+    : [];
+
+  function addChip(item) {
+    if (selectedValues().includes(String(item.value))) return;
+    const chip = document.createElement("span");
+    chip.className = "lookup-chip";
+    const label = document.createElement("span");
+    label.textContent = item.label;
+    const value = document.createElement("input");
+    value.type = "hidden";
+    value.name = multiName;
+    value.value = item.value;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "lookup-chip-remove";
+    remove.setAttribute("aria-label", `Remove ${item.label}`);
+    remove.textContent = "✕";
+    remove.addEventListener("click", () => {
+      chip.remove();
+      syncRequired();
+    });
+    chip.append(label, value, remove);
+    chips.appendChild(chip);
+    syncRequired();
+  }
+
+  function syncRequired() {
+    // Native "required" belongs on the visible search box only while nothing
+    // is picked yet; once at least one chip exists the empty search box must
+    // not block submitting the already-picked items.
+    if (multiName && container.dataset.required !== undefined) {
+      input.required = selectedValues().length === 0;
+    }
+  }
+  syncRequired();
+
   if (url.includes("/lookup/cis") && !input.disabled) {
     container.classList.add("lookup-has-browse");
     const browseButton = document.createElement("button");
@@ -58,7 +81,7 @@ function initLookup(container) {
     browseButton.setAttribute("aria-label", "Browse configuration items");
     browseButton.title = "Browse configuration items";
     browseButton.textContent = "⌕";
-    browseButton.addEventListener("click", () => openCIBrowser(input, hidden));
+    browseButton.addEventListener("click", () => openCIBrowser(input, hidden, multiName ? {addChip, selectedValues} : null));
     container.appendChild(browseButton);
   }
   if (url.includes("/lookup/cis") && hidden) {
@@ -126,6 +149,13 @@ function initLookup(container) {
   function select(index) {
     const item = items[index];
     if (!item) return;
+    if (multiName) {
+      addChip(item);
+      input.value = "";
+      results.hidden = true;
+      input.focus();
+      return;
+    }
     if (hidden) {
       input.value = item.label;
       hidden.value = item.value;
@@ -201,14 +231,60 @@ let ciBrowserTarget = null;
 let ciBrowserFiltersLoaded = false;
 let ciBrowserDebounce = null;
 
-function openCIBrowser(input, hidden) {
+function closeCIBrowser() {
+  const modal = document.getElementById("ci-browser-modal");
+  modal.close ? modal.close() : modal.removeAttribute("open");
+}
+
+function updateCIBrowserAddButton() {
+  const modal = document.getElementById("ci-browser-modal");
+  const addButton = modal.querySelector(".ci-browser-add-selected");
+  if (!addButton) return;
+  const picked = modal.querySelectorAll(".ci-browser-pick:checked").length;
+  addButton.disabled = picked === 0;
+  addButton.textContent = picked ? `Add ${picked} selected` : "Add selected";
+}
+
+function openCIBrowser(input, hidden, multi) {
   const modal = document.getElementById("ci-browser-modal");
   if (!modal) return;
-  ciBrowserTarget = {input, hidden};
+  ciBrowserTarget = {input, hidden, multi};
+  modal.classList.toggle("ci-browser-multi", Boolean(multi));
+  modal.querySelector("#ci-browser-title").textContent = multi
+    ? "Tick every configuration item to add" : "Select a configuration item";
+  const headRow = modal.querySelector(".ci-browser-table thead tr");
+  let pickHead = headRow.querySelector(".ci-browser-pick-head");
+  if (multi && !pickHead) {
+    pickHead = document.createElement("th");
+    pickHead.className = "ci-browser-pick-head";
+    pickHead.setAttribute("aria-label", "Add");
+    headRow.prepend(pickHead);
+  } else if (!multi && pickHead) {
+    pickHead.remove();
+  }
   const q = modal.querySelector(".ci-browser-q");
   q.value = "";
   modal.querySelector(".ci-browser-class").value = "";
   modal.querySelector(".ci-browser-environment").value = "";
+  let footer = modal.querySelector(".ci-browser-footer");
+  if (multi && !footer) {
+    footer = document.createElement("div");
+    footer.className = "ci-browser-footer";
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.className = "primary ci-browser-add-selected";
+    addButton.textContent = "Add selected";
+    addButton.disabled = true;
+    addButton.addEventListener("click", () => {
+      modal.querySelectorAll(".ci-browser-pick:checked").forEach((box) => {
+        ciBrowserTarget.multi.addChip({value: box.dataset.id, label: box.dataset.name, owning_team: box.dataset.owningTeam});
+      });
+      closeCIBrowser();
+    });
+    footer.appendChild(addButton);
+    modal.appendChild(footer);
+  }
+  if (footer) footer.hidden = !multi;
   if (typeof modal.showModal === "function") {
     modal.showModal();
   } else {
@@ -220,12 +296,14 @@ function openCIBrowser(input, hidden) {
 
 function renderCIBrowserResults(payload) {
   const modal = document.getElementById("ci-browser-modal");
+  const multi = ciBrowserTarget && ciBrowserTarget.multi;
   const tbody = modal.querySelector(".ci-browser-table tbody");
   tbody.innerHTML = "";
+  updateCIBrowserAddButton();
   if (!payload.results.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 5;
+    cell.colSpan = multi ? 6 : 5;
     cell.className = "empty";
     cell.textContent = "No matching configuration items.";
     row.appendChild(cell);
@@ -234,6 +312,26 @@ function renderCIBrowserResults(payload) {
   }
   payload.results.forEach((ci) => {
     const row = document.createElement("tr");
+    let checkbox = null;
+    if (multi) {
+      const pickCell = document.createElement("td");
+      pickCell.className = "ci-browser-pick-cell";
+      checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "ci-browser-pick";
+      checkbox.dataset.id = ci.id;
+      checkbox.dataset.name = ci.name;
+      checkbox.dataset.owningTeam = ci.owning_team || "";
+      checkbox.setAttribute("aria-label", `Add ${ci.name}`);
+      if (multi.selectedValues().includes(String(ci.id))) {
+        checkbox.checked = true;
+        checkbox.disabled = true;
+        checkbox.title = "Already added";
+      }
+      checkbox.addEventListener("change", updateCIBrowserAddButton);
+      pickCell.appendChild(checkbox);
+      row.appendChild(pickCell);
+    }
     const nameCell = document.createElement("td");
     const strong = document.createElement("strong");
     strong.textContent = ci.name;
@@ -244,7 +342,14 @@ function renderCIBrowserResults(payload) {
       cell.textContent = value;
       row.appendChild(cell);
     });
-    row.addEventListener("click", () => {
+    row.addEventListener("click", (event) => {
+      if (multi) {
+        if (event.target !== checkbox && !checkbox.disabled) {
+          checkbox.checked = !checkbox.checked;
+          updateCIBrowserAddButton();
+        }
+        return;
+      }
       if (ciBrowserTarget) {
         ciBrowserTarget.input.value = ci.name;
         if (ciBrowserTarget.hidden) {
@@ -255,7 +360,7 @@ function renderCIBrowserResults(payload) {
           }));
         }
       }
-      modal.close ? modal.close() : modal.removeAttribute("open");
+      closeCIBrowser();
     });
     tbody.appendChild(row);
   });
@@ -307,11 +412,9 @@ async function runCIBrowserSearch() {
 function initCIBrowser() {
   const modal = document.getElementById("ci-browser-modal");
   if (!modal) return;
-  modal.querySelector("[data-ci-browser-close]").addEventListener("click", () => {
-    modal.close ? modal.close() : modal.removeAttribute("open");
-  });
+  modal.querySelector("[data-ci-browser-close]").addEventListener("click", closeCIBrowser);
   modal.addEventListener("click", (event) => {
-    if (event.target === modal) modal.close ? modal.close() : modal.removeAttribute("open");
+    if (event.target === modal) closeCIBrowser();
   });
   modal.querySelector(".ci-browser-q").addEventListener("input", () => {
     clearTimeout(ciBrowserDebounce);
