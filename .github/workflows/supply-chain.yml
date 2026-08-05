@@ -50,7 +50,26 @@ jobs:
       - name: Run complete application suite
         run: |
           docker build --file Dockerfile.test --tag serviceops-test:${RELEASE_SHA} .
+          docker run --rm serviceops-test:${RELEASE_SHA} python tools/release_version.py --check
+          docker run --rm serviceops-test:${RELEASE_SHA} ruff check .
+          docker run --rm serviceops-test:${RELEASE_SHA} python -m compileall -q app.py installer serviceops_core tools
+          docker run --rm serviceops-test:${RELEASE_SHA} alembic heads | tee /tmp/alembic-heads.txt
+          test "$(wc -l < /tmp/alembic-heads.txt)" -eq 1
           docker run --rm serviceops-test:${RELEASE_SHA} pytest -q
+
+      - name: Validate shell, JavaScript, and Compose configuration
+        env:
+          POSTGRES_PASSWORD: quality-gate-only
+          SECRET_KEY: quality-gate-only-secret-key-at-least-32-characters
+          SETTINGS_ENCRYPTION_KEY: Z2F0ZS1vbmx5LWtleS1ub3QtZm9yLXJ1bnRpbWU=
+          SERVICEOPS_IMAGE: serviceops-quality-gate:current
+          DATABASE_URL: postgresql+psycopg://quality:quality@database.invalid/serviceops
+        run: |
+          find tools packaging -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          bash -n serviceops
+          find static -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          docker compose --env-file .env.example -f compose.yaml config --quiet
+          docker compose --env-file .env.example -f compose.external-db.yaml config --quiet
 
       - name: Set up Python for dependency audit
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

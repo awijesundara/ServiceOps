@@ -103,9 +103,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const data = new URLSearchParams({url: path, label: document.title});
     fetch("/ui/history", {method: "POST", headers: csrfHeaders, body: data});
   }
-  document.querySelector("[data-nav-toggle]")?.addEventListener("click", () => {
+  const navToggle = document.querySelector("[data-nav-toggle]");
+  if (navToggle) {
+    navToggle.setAttribute("aria-expanded", body.classList.contains("nav-collapsed") ? "false" : "true");
+  }
+  navToggle?.addEventListener("click", () => {
     const collapsed = body.classList.toggle("nav-collapsed");
     localStorage.setItem("navCollapsed", collapsed ? "1" : "0");
+    navToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
   });
   document.querySelectorAll("[data-print-page]").forEach(button => {
     button.addEventListener("click", () => window.print());

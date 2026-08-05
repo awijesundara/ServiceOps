@@ -832,6 +832,10 @@ def test_login_and_dashboard(client):
     response = login(client)
     assert response.status_code == 200
     assert b"Recently updated" in response.data
+    assert b'<a class="skip-link" href="#main-content">' in response.data
+    assert b'<main id="main-content" tabindex="-1"' in response.data
+    assert b'aria-expanded="true"' in response.data
+    assert b'aria-modal="true" aria-labelledby="ci-browser-title"' in response.data
 
 
 def test_declarative_action_policy_and_requester_field_projection(client, app):
