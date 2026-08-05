@@ -16,7 +16,8 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  ApprovalGate, ApprovalVote, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy,
                  BusinessSchedule, CatalogRequest, CatalogTask, ChangeGovernance, ChangeOwnership, ChangeRevision,
                  Comment,
-                 ChecklistItem, ConfigurationItem, EnterpriseRecord, CatalogItem, CatalogItemRouting, DirectoryGroupMapping,
+                 ChecklistItem, CIRelationship, ConfigurationItem, DiscoveryTarget, EnterpriseRecord, CatalogItem,
+                 CatalogItemRouting, DirectoryGroupMapping,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
                  MonitoringEvent, MonitoringSource, Notification, OperationalTask,
@@ -30,7 +31,8 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  WorkflowSchedule,
                  audit, change_approval_stages, create_api_token, create_app, create_notification, db,
                  deploy_workflow_package, find_and_merge_duplicate_groups, ldap_authenticate,
-                 mapped_roles, merge_support_group_into, normalize_environment, now, process_workflow_jobs,
+                 mapped_roles, merge_support_group_into, normalize_environment, now, process_discovery_schedule,
+                 process_workflow_jobs,
                  recompute_base_role,
                  process_workflow_schedules, queue_workflow_event,
                  scan_attachment, simulate_workflows,
@@ -4530,6 +4532,162 @@ def test_cmdb_list_supports_servicenow_style_filter(client, app):
     assert b"cmdb-filter-prod.example.com" in by_team.data
     assert b"cmdb-filter-dev.example.com" not in by_team.data
     assert b"Owning team is Windows" in by_team.data
+
+
+def test_cmdb_discovery_target_stores_community_encrypted_not_plaintext(client, app):
+    login(client)
+    response = client.post("/cmdb/discovery", data={
+        "name": "Core switch", "target_type": "host", "address": "10.0.0.1",
+        "snmp_version": "2c", "snmp_port": "161", "community": "s3cr3t-community",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    with app.app_context():
+        target = DiscoveryTarget.query.filter_by(name="Core switch").one()
+        assert target.community_encrypted is not None
+        assert "s3cr3t-community" not in target.community_encrypted
+        assert target.community == "s3cr3t-community"
+
+
+def test_cmdb_discovery_rejects_invalid_address(client, app):
+    login(client)
+    client.post("/cmdb/discovery", data={
+        "name": "Bad target", "target_type": "subnet", "address": "not-a-cidr",
+        "snmp_version": "2c", "snmp_port": "161", "community": "public",
+    })
+    with app.app_context():
+        assert DiscoveryTarget.query.filter_by(name="Bad target").count() == 0
+
+
+def test_cmdb_discovery_requires_security_administer(client, app):
+    login(client, "employee", "Employee123!")
+    assert client.get("/cmdb/discovery").status_code == 403
+    assert client.post("/cmdb/discovery", data={
+        "name": "x", "target_type": "host", "address": "10.0.0.1", "community": "public",
+    }).status_code == 403
+
+
+def test_cmdb_discovery_run_reconciles_mocked_snmp_facts(client, app, monkeypatch):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        target = DiscoveryTarget(
+            name="Mocked switch", target_type="host", address="10.0.0.9",
+            created_by_id=admin.id,
+        )
+        target.community = "public"
+        db.session.add(target)
+        db.session.commit()
+        target_id = target.id
+
+    def fake_discover_host(host, community, port=161, version="2c", timeout=2):
+        assert host == "10.0.0.9"
+        assert community == "public"
+        return {
+            "host": host, "sys_name": "mocked-switch-1", "sys_descr": "Cisco IOS",
+            "sys_object_id": "1.3.6.1.4.1.9.1.1", "sys_uptime": "1", "vendor": "Cisco",
+            "ci_class": "Network Switch", "interfaces": [], "arp_entries": [], "lldp_neighbors": [],
+        }
+    monkeypatch.setattr("serviceops_core.network_discovery.discover_host", fake_discover_host)
+
+    login(client)
+    response = client.post(f"/cmdb/discovery/{target_id}/run", follow_redirects=True)
+    assert response.status_code == 200
+    with app.app_context():
+        target = db.session.get(DiscoveryTarget, target_id)
+        assert target.last_run_status == "ok"
+        assert target.last_run_at is not None
+        ci = ConfigurationItem.query.filter_by(ip_address="10.0.0.9").one()
+        assert ci.name == "mocked-switch-1"
+        assert ci.discovery_source == "SNMP Discovery"
+        assert ci.vendor == "Cisco"
+
+
+def test_cmdb_discovery_run_survives_snmp_failure(client, app, monkeypatch):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        target = DiscoveryTarget(name="Unreachable", target_type="host", address="10.0.0.250", created_by_id=admin.id)
+        target.community = "public"
+        db.session.add(target)
+        db.session.commit()
+        target_id = target.id
+
+    def raising_discover_host(*args, **kwargs):
+        raise ConnectionError("simulated network failure")
+    monkeypatch.setattr("serviceops_core.network_discovery.discover_host", raising_discover_host)
+
+    login(client)
+    response = client.post(f"/cmdb/discovery/{target_id}/run", follow_redirects=True)
+    assert response.status_code == 200
+    with app.app_context():
+        target = db.session.get(DiscoveryTarget, target_id)
+        assert target.last_run_status == "failed"
+        assert "simulated network failure" in target.last_run_summary
+
+
+def test_cmdb_discovery_target_is_tenant_scoped(client, app):
+    with app.app_context():
+        second_tenant = Tenant(id=2, slug="other-tenant", name="Other Tenant", active=True)
+        db.session.add(second_tenant)
+        admin = User.query.filter_by(username="admin").one()
+        other_target = DiscoveryTarget(
+            name="Other tenant target", target_type="host", address="10.0.0.1",
+            created_by_id=admin.id, tenant_id=2,
+        )
+        db.session.add(other_target)
+        db.session.commit()
+        other_target_id = other_target.id
+
+    login(client)
+    assert client.post(f"/cmdb/discovery/{other_target_id}/run").status_code == 404
+    assert client.post(f"/cmdb/discovery/{other_target_id}/delete").status_code == 404
+
+
+def test_cmdb_discovery_schedule_skips_targets_not_yet_due(app, monkeypatch):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        due = DiscoveryTarget(
+            name="Due target", target_type="host", address="10.0.0.11",
+            created_by_id=admin.id, schedule_enabled=True, schedule_interval_minutes=5,
+            last_run_at=now() - timedelta(minutes=10),
+        )
+        not_due = DiscoveryTarget(
+            name="Not due target", target_type="host", address="10.0.0.12",
+            created_by_id=admin.id, schedule_enabled=True, schedule_interval_minutes=60,
+            last_run_at=now() - timedelta(minutes=5),
+        )
+        disabled = DiscoveryTarget(
+            name="Disabled target", target_type="host", address="10.0.0.13",
+            created_by_id=admin.id, schedule_enabled=False,
+        )
+        db.session.add_all([due, not_due, disabled])
+        db.session.commit()
+
+    calls = []
+
+    def fake_discover_host(host, community, port=161, version="2c", timeout=2):
+        calls.append(host)
+        return None
+    monkeypatch.setattr("serviceops_core.network_discovery.discover_host", fake_discover_host)
+
+    with app.app_context():
+        processed = process_discovery_schedule()
+        assert processed == 1
+        assert calls == ["10.0.0.11"]
+
+
+def test_cmdb_topology_renders_nodes_and_edges(client, app):
+    with app.app_context():
+        parent = ConfigurationItem(name="topo-parent", ci_class="Server")
+        child = ConfigurationItem(name="topo-child", ci_class="Server")
+        db.session.add_all([parent, child])
+        db.session.flush()
+        db.session.add(CIRelationship(parent_id=parent.id, child_id=child.id, relationship_type="Connects to"))
+        db.session.commit()
+    login(client)
+    response = client.get("/cmdb/topology")
+    assert response.status_code == 200
+    assert b"topo-parent" in response.data
+    assert b"topo-child" in response.data
+    assert b"CMDB_TOPOLOGY_GRAPH" in response.data
 
 
 def test_users_list_supports_servicenow_style_filter(client, app):

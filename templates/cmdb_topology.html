@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}CMDB topology · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>Topology map<span class="info-tip" tabindex="0" data-tip="Every configuration item and relationship visible to you, laid out automatically. Discovered nodes (SNMP discovery) are marked distinctly from manually-created ones. Drag nodes to rearrange; the layout is not saved.">i</span></h1><p>A visual map of configuration items and how they connect.</p></div><a class="button" href="{{ url_for('cmdb') }}">‹ Back to CMDB</a></header>
+
+<section class="panel">
+  <div id="cmdb-topology-legend" class="muted" style="margin-bottom:10px;font-size:12px">
+    <span style="color:var(--brand-teal,#003e4c)">●</span> Manually created &nbsp;
+    <span style="color:var(--brand-amber,#f9aa3c)">●</span> SNMP discovered &nbsp;
+    — line = relationship (hover a node for details)
+  </div>
+  <svg id="cmdb-topology-svg" width="100%" height="640" style="background:#f7f9fa;border:1px solid var(--line);border-radius:8px;cursor:grab"></svg>
+  <p id="cmdb-topology-empty" class="muted" hidden>No configuration items to display yet.</p>
+</section>
+
+<script>window.CMDB_TOPOLOGY_GRAPH = {{ graph_json|safe }};</script>
+<script src="{{ url_for('static', filename='cmdb-topology.js', v=app_version) }}" defer></script>
+{% endblock %}

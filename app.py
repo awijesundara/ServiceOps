@@ -933,6 +933,42 @@ class CIRelationship(db.Model):
     )
 
 
+class DiscoveryTarget(db.Model):
+    """An administrator-configured agentless SNMP discovery target -- either
+    a single host or a CIDR subnet -- with its own encrypted community
+    string (see serviceops_core/network_discovery.py). Never a substitute for
+    tools/cmdb_sync_agent.sh's agent-based self-registration; this is the
+    complementary agentless path for devices (switches, appliances) that
+    can't run an agent themselves."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(160), nullable=False)
+    target_type = db.Column(db.String(10), nullable=False, default="host")  # "host" or "subnet"
+    address = db.Column(db.String(80), nullable=False)  # IP or CIDR
+    snmp_version = db.Column(db.String(4), nullable=False, default="2c")
+    snmp_port = db.Column(db.Integer, nullable=False, default=161)
+    community_encrypted = db.Column(db.Text)
+    schedule_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    schedule_interval_minutes = db.Column(db.Integer, nullable=False, default=1440)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    last_run_at = db.Column(db.DateTime(timezone=True))
+    last_run_status = db.Column(db.String(20))
+    last_run_summary = db.Column(db.Text)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    created_by = db.relationship("User")
+
+    @property
+    def community(self):
+        if not self.community_encrypted:
+            return ""
+        return settings_cipher().decrypt(self.community_encrypted.encode()).decode()
+
+    @community.setter
+    def community(self, value):
+        self.community_encrypted = settings_cipher().encrypt((value or "").encode()).decode() if value else None
+
+
 class ServiceOfferingCI(db.Model):
     """ITIL 4 service configuration management: maps a business service
     (ServiceOffering) to the configuration items that realize it. Without
@@ -4319,6 +4355,59 @@ def process_ldap_sync_schedule(limit=50):
             except Exception:
                 db.session.rollback()
             processed += 1
+    return processed
+
+
+def process_discovery_schedule(limit=50):
+    """Runs agentless SNMP discovery (serviceops_core.network_discovery) for
+    each active DiscoveryTarget with scheduling enabled whose interval has
+    elapsed, across all tenants -- scheduling is per-row (each target has its
+    own interval and last_run_at), unlike LDAP sync's per-tenant scheduling,
+    since discovery targets are individually administrator-configured rather
+    than a single tenant-wide toggle. One target's failure is caught and
+    logged (no secrets -- never logs the decrypted community string) and
+    never blocks or crashes the pass for other targets."""
+    from serviceops_core.network_discovery import discover_host, discover_subnet, reconcile_facts_into_cmdb
+
+    current = now()
+    processed = 0
+    targets = DiscoveryTarget.query.filter_by(active=True, schedule_enabled=True).order_by(
+        DiscoveryTarget.id
+    ).limit(limit).all()
+    for target in targets:
+        interval = timedelta(minutes=max(target.schedule_interval_minutes, 5))
+        if target.last_run_at:
+            last_run = target.last_run_at
+            comparison_now = current.replace(tzinfo=None) if last_run.tzinfo is None else current
+            if comparison_now - last_run < interval:
+                continue
+        try:
+            if target.target_type == "host":
+                facts = discover_host(
+                    target.address, target.community, port=target.snmp_port, version=target.snmp_version,
+                )
+                facts_list = [facts] if facts else []
+            else:
+                facts_list = discover_subnet(
+                    target.address, target.community, port=target.snmp_port, version=target.snmp_version,
+                )
+            summary = reconcile_facts_into_cmdb(target.tenant_id, target.name, facts_list)
+            target.last_run_status = "ok" if not summary["errors"] else "partial"
+            target.last_run_summary = (
+                f"{summary['hosts_seen']} host(s) responded, {summary['created']} created, "
+                f"{summary['updated']} updated, {summary['relationships_created']} relationship(s)."
+            )
+        except Exception as error:  # noqa: BLE001 - one target's failure must never block others
+            db.session.rollback()
+            target = db.session.get(DiscoveryTarget, target.id)
+            target.last_run_status = "error"
+            target.last_run_summary = type(error).__name__
+            current_app.logger.error(
+                "Scheduled discovery failed for target %s: %s", target.id, type(error).__name__
+            )
+        target.last_run_at = current
+        db.session.commit()
+        processed += 1
     return processed
 
 
@@ -10641,6 +10730,113 @@ def create_app(test_config=None):
         db.session.commit()
         flash("Relationship removed.", "success")
         return redirect(url_for("cmdb"))
+
+    @app.get("/cmdb/discovery")
+    @require_action("security_administer")
+    def cmdb_discovery():
+        targets = tenant_query(DiscoveryTarget).order_by(DiscoveryTarget.name).all()
+        return render_template("cmdb_discovery.html", targets=targets)
+
+    @app.post("/cmdb/discovery")
+    @require_action("security_administer")
+    def cmdb_discovery_add():
+        name = request.form.get("name", "").strip()
+        target_type = request.form.get("target_type", "host")
+        address = request.form.get("address", "").strip()
+        community = request.form.get("community", "")
+        if not name or not address:
+            flash("Name and address are required.", "error")
+            return redirect(url_for("cmdb_discovery"))
+        if target_type not in ("host", "subnet"):
+            abort(400, description="Invalid target type.")
+        try:
+            if target_type == "host":
+                ipaddress.ip_address(address)
+            else:
+                ipaddress.ip_network(address, strict=False)
+        except ValueError:
+            flash("Address must be a valid IP address (host) or CIDR range (subnet).", "error")
+            return redirect(url_for("cmdb_discovery"))
+        target = DiscoveryTarget(
+            name=name, target_type=target_type, address=address,
+            snmp_version=request.form.get("snmp_version", "2c"),
+            snmp_port=int(request.form.get("snmp_port") or 161),
+            schedule_enabled=request.form.get("schedule_enabled") == "on",
+            schedule_interval_minutes=max(int(request.form.get("schedule_interval_minutes") or 1440), 5),
+            created_by_id=current_user.id,
+        )
+        target.community = community
+        db.session.add(target)
+        audit("create", "Discovery target", f"{name} ({target_type}: {address})")
+        db.session.commit()
+        flash(f"Discovery target {name} created.", "success")
+        return redirect(url_for("cmdb_discovery"))
+
+    @app.post("/cmdb/discovery/<int:target_id>/run")
+    @require_action("security_administer")
+    def cmdb_discovery_run(target_id):
+        target = tenant_record_or_404(DiscoveryTarget, target_id)
+        from serviceops_core.network_discovery import (
+            discover_host, discover_subnet, reconcile_facts_into_cmdb,
+        )
+        try:
+            if target.target_type == "host":
+                facts = discover_host(
+                    target.address, target.community,
+                    port=target.snmp_port, version=target.snmp_version,
+                )
+                facts_list = [facts] if facts else []
+            else:
+                facts_list = discover_subnet(
+                    target.address, target.community,
+                    port=target.snmp_port, version=target.snmp_version,
+                )
+            summary = reconcile_facts_into_cmdb(target.tenant_id, target.name, facts_list)
+            target.last_run_status = "ok" if not summary["errors"] else "partial"
+            target.last_run_summary = (
+                f"{summary['hosts_seen']} host(s) responded, {summary['created']} CI(s) created, "
+                f"{summary['updated']} updated, {summary['relationships_created']} relationship(s) created."
+                + (f" Errors: {'; '.join(summary['errors'])}" if summary["errors"] else "")
+            )
+            flash(target.last_run_summary, "success" if not summary["errors"] else "warning")
+        except Exception as error:  # noqa: BLE001 - a bad target must surface, not crash the request
+            target.last_run_status = "failed"
+            target.last_run_summary = str(error)[:2000]
+            flash(f"Discovery run failed: {error}", "error")
+        target.last_run_at = now()
+        audit("run", "Discovery target", f"{target.name}: {target.last_run_status}")
+        db.session.commit()
+        return redirect(url_for("cmdb_discovery"))
+
+    @app.post("/cmdb/discovery/<int:target_id>/delete")
+    @require_action("security_administer")
+    def cmdb_discovery_delete(target_id):
+        target = tenant_record_or_404(DiscoveryTarget, target_id)
+        audit("delete", "Discovery target", target.name)
+        db.session.delete(target)
+        db.session.commit()
+        flash("Discovery target removed.", "success")
+        return redirect(url_for("cmdb_discovery"))
+
+    @app.get("/cmdb/topology")
+    @roles("agent", "manager", "admin")
+    def cmdb_topology():
+        cis = tenant_query(ConfigurationItem).all()
+        relationships = tenant_query(CIRelationship).all()
+        graph = {
+            "nodes": [
+                {
+                    "id": ci.id, "name": ci.name, "ci_class": ci.ci_class,
+                    "status": ci.operational_status, "discovery_source": ci.discovery_source,
+                }
+                for ci in cis
+            ],
+            "edges": [
+                {"source": rel.parent_id, "target": rel.child_id, "type": rel.relationship_type}
+                for rel in relationships
+            ],
+        }
+        return render_template("cmdb_topology.html", graph_json=json.dumps(graph))
 
     @app.get("/approvals")
     @login_required
