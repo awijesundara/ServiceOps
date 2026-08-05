@@ -106,8 +106,14 @@ def test_discovery_review_has_filter_aware_bulk_selection(client, app):
     for label in (b"Select filtered", b"Deselect filtered", b"Select every device", b"Deselect every device", b"All vendors"):
         assert label in page.data
     assert b'data-vendor="cisco"' in page.data
+    assert b"All words can match across different columns" in page.data
+    assert b'aria-controls="discovery-device-table"' in page.data
     assert b"static/discovery.js" in page.data
     assert b"<script>" not in page.data
+
+    discovery_script = (Path(__file__).parents[1] / "static" / "discovery.js").read_text()
+    assert 'terms.every((term) => searchable.includes(term))' in discovery_script
+    assert '["input", "search", "change"]' in discovery_script
 
 
 def test_discovery_targets_keep_primary_actions_visible(client, app):

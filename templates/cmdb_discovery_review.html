@@ -7,7 +7,7 @@
 <form method="post" action="{{ url_for('cmdb_discovery_import', target_id=target.id) }}" id="discovery-review-form">
   <section class="discovery-review-toolbar" aria-label="Filter and select discovered devices">
     <div class="discovery-review-filters">
-      <label><span>Search</span><input id="device-filter-query" type="search" placeholder="Name, address, class, vendor, or source" autocomplete="off"></label>
+      <label><span>Search discovered devices</span><input id="device-filter-query" type="search" placeholder="Try: Cisco switch, 192.168, or SNMP" autocomplete="off" aria-controls="discovery-device-table" aria-describedby="device-search-help"><small id="device-search-help">All words can match across different columns.</small></label>
       <label><span>Class</span><select id="device-filter-class"><option value="">All classes</option></select></label>
       <label><span>Vendor</span><select id="device-filter-vendor"><option value="">All vendors</option></select></label>
       <label><span>Source</span><select id="device-filter-source"><option value="">All sources</option></select></label>
@@ -24,7 +24,7 @@
     </div>
   </section>
   <section class="list-workspace">
-    <table class="record-list">
+    <table class="record-list" id="discovery-device-table">
       <thead><tr><th><input type="checkbox" id="review-select-all-checkbox" title="Select or deselect visible devices" aria-label="Select or deselect visible devices"></th><th>Name</th><th>Address</th><th>Class</th><th>Vendor</th><th>Source</th></tr></thead>
       <tbody>
         {% for candidate in candidates %}
