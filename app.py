@@ -49,7 +49,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from serviceops_core.security import (
-    hash_password, mask_secret, redact, RedactingFilter, role_has_action,
+    hash_password, load_policy, mask_secret, redact, RedactingFilter, role_has_action,
     validate_policy, verify_and_upgrade_password, verify_password,
 )
 from serviceops_core.priority import calculate_priority, validate_priority_policy
@@ -63,6 +63,7 @@ from serviceops_core.ci_class_policy import (
     ci_class_action_allowed, ci_class_read_allowed, managed_ci_classes,
     restrict_ci_query_to_readable_classes,
 )
+from serviceops_core.dns_lookup import resolve_hostname, resolve_ip
 
 # VERSION is the release source of truth; shown in the UI, API, and health
 # endpoint so operators can confirm the running build without host access.
@@ -8061,6 +8062,32 @@ def create_app(test_config=None):
     def admin_home():
         return render_template("admin_home.html")
 
+    @app.get("/admin/access")
+    @roles("admin")
+    @require_action("security_administer")
+    def admin_access():
+        # A GLPI-style Access Control hub: Users has its own dedicated route
+        # already; Groups & Teams and Directory link into the existing
+        # itil_admin() sections (that mega-page's team/AD-mapping logic is
+        # not duplicated here, just linked to by anchor) rather than being
+        # torn out into new routes in this pass -- Roles & Permissions is
+        # the one genuinely new page (see admin_roles()).
+        return render_template("admin_access.html")
+
+    @app.get("/admin/roles")
+    @roles("admin")
+    @require_action("security_administer")
+    def admin_roles():
+        # config/authorization.json is Git-backed and loaded once per
+        # process (serviceops_core.security.load_policy, @lru_cache) -- this
+        # page renders it read-only. A DB-backed override layer for this
+        # file (analogous to CiClassPermission) is a materially bigger
+        # authorization change than what was asked for and is out of scope.
+        policy = load_policy()
+        return render_template(
+            "admin_roles.html", actions=policy["actions"], role_actions=policy["roles"],
+        )
+
     @app.get("/profile/sessions")
     @login_required
     def my_sessions():
@@ -10029,6 +10056,29 @@ def create_app(test_config=None):
             ],
         }
         return render_template("cmdb_topology.html", graph_json=json.dumps(graph))
+
+    @app.get("/cmdb/<int:ci_id>/network-info")
+    @roles("agent", "manager", "admin")
+    def cmdb_network_info(ci_id):
+        # Purely informational hostname<->IP resolution for the topology
+        # detail panel and the CI edit page's discovered-interfaces table --
+        # never used to open an outbound connection, so this only needs the
+        # same read-permission check ci_edit already applies, not the
+        # SSRF-focused address allowlist used for webhook delivery.
+        ci = tenant_record_or_404(ConfigurationItem, ci_id)
+        if not ci_class_read_allowed(current_user.tenant_id, ci.ci_class, current_user.effective_role):
+            abort(403)
+        ips = []
+        if ci.ip_address:
+            ips.append(ci.ip_address)
+        for iface in (ci.attributes or {}).get("interfaces") or []:
+            addr = iface.get("ip_address") if isinstance(iface, dict) else None
+            if addr and addr not in ips:
+                ips.append(addr)
+        hostnames = [ci.name] if ci.name else []
+        addresses = [{"ip": ip, "hostname": resolve_hostname(ip)} for ip in ips]
+        hostname_results = [{"hostname": name, "ips": resolve_ip(name)} for name in hostnames]
+        return jsonify({"addresses": addresses, "hostnames": hostname_results})
 
     # requester is deliberately excluded: no CMDB route (read or write) has
     # ever let requester through, so a requester column would be an inert
