@@ -9435,15 +9435,34 @@ def create_app(test_config=None):
             ])
         return csv_response(buffer.getvalue(), "cmdb.csv")
 
-    def _ci_attributes_from_form():
+    # Structured facts written by agentless discovery (serviceops_core/
+    # network_discovery.py's reconcile_facts_into_cmdb) -- rendered as their
+    # own read-only panels/tables on the CI form (see ci_form.html), never as
+    # editable "Additional imported fields" rows, since a raw Python list-of-
+    # dicts str()'d into a text input is unreadable (the exact "[{'index':
+    # '1', ...}]" wall of text an administrator flagged from a live scan).
+    CI_DISCOVERY_ATTRIBUTE_KEYS = {
+        "sys_descr", "sys_object_id", "sys_uptime", "interfaces",
+        "lldp_neighbors", "discovered_via", "discovered_at",
+    }
+
+    def _ci_attributes_from_form(existing_attributes=None):
+        """Merges the editable free-form attribute rows with whatever
+        discovery-structured keys (see CI_DISCOVERY_ATTRIBUTE_KEYS) the CI
+        already has -- those never appear as editable rows, so without this
+        merge saving the form would silently wipe discovered interfaces/LLDP
+        data every time an admin edits an unrelated field."""
         keys = request.form.getlist("attr_key")
         values = request.form.getlist("attr_value")
-        attributes = {}
-        for key, value in zip(keys, values):
-            key = key.strip()
-            value = value.strip()
-            if key and value:
-                attributes[key] = value
+        attributes = {
+            key: value for key, value in (
+                (k.strip(), v.strip()) for k, v in zip(keys, values)
+            ) if key and key not in CI_DISCOVERY_ATTRIBUTE_KEYS and value
+        }
+        if existing_attributes:
+            for key in CI_DISCOVERY_ATTRIBUTE_KEYS:
+                if key in existing_attributes:
+                    attributes[key] = existing_attributes[key]
         return attributes
 
     def _ci_duplicate_of(name, serial_number, exclude_id=None):
@@ -9553,7 +9572,7 @@ def create_app(test_config=None):
             ci.support_group_id = int(support_group_id) if support_group_id else None
             owner_id = request.form.get("owner_id")
             ci.owner_id = int(owner_id) if owner_id else None
-            ci.attributes = _ci_attributes_from_form()
+            ci.attributes = _ci_attributes_from_form(ci.attributes)
             ci.require_ccb_approval = (
                 ci_always_requires_ccb(ci.ci_class, ci.environment, ci.business_criticality)
                 or request.form.get("require_ccb_approval") == "on"
@@ -9572,9 +9591,19 @@ def create_app(test_config=None):
         ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).limit(50).all()
         impacted_ids = ci_impact_set(ci.tenant_id, {ci.id}) - {ci.id}
         impacted_cis = tenant_query(ConfigurationItem).filter(ConfigurationItem.id.in_(impacted_ids)).all() if impacted_ids else []
+        lldp_neighbor_cis = {}
+        for neighbor in (ci.attributes or {}).get("lldp_neighbors") or []:
+            neighbor_name = (neighbor.get("neighbor_name") or "").strip()
+            if not neighbor_name or neighbor_name in lldp_neighbor_cis:
+                continue
+            match = tenant_query(ConfigurationItem).filter(
+                func.lower(ConfigurationItem.name) == neighbor_name.casefold()
+            ).first()
+            if match:
+                lldp_neighbor_cis[neighbor_name] = match
         return render_template(
             "ci_form.html", ci=ci, owners=owners, support_groups=support_groups, history=history,
-            impacted_cis=impacted_cis,
+            impacted_cis=impacted_cis, lldp_neighbor_cis=lldp_neighbor_cis,
         )
 
     @app.route("/cmdb/import", methods=["GET", "POST"])

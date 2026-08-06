@@ -1373,6 +1373,73 @@ def test_ci_form_rejects_duplicate_hostname_and_serial(client, app):
         assert ConfigurationItem.query.count() == 1
 
 
+def test_ci_edit_preserves_discovered_attributes_not_shown_in_the_editable_form(client, app):
+    # B-287: interfaces/lldp_neighbors/etc. moved out of the editable
+    # "Additional imported fields" rows into their own read-only panel
+    # (ci_form.html) -- but the CI edit POST handler must still merge them
+    # back into ci.attributes rather than silently wiping them out just
+    # because they're no longer submitted as attr_key/attr_value pairs.
+    login(client)
+    with app.app_context():
+        ci = ConfigurationItem(
+            name="switch-01", ci_class="Network Switch", tenant_id=1,
+            discovery_source="SNMP Discovery",
+            attributes={
+                "sys_descr": "Arista EOS", "interfaces": [{"index": "1", "descr": "Eth1"}],
+                "lldp_neighbors": [{"neighbor_name": "switch-02", "neighbor_port": "Eth2"}],
+                "cpu_notes": "dual-socket",
+            },
+        )
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+
+    client.post(f"/cmdb/{ci_id}/edit", data={
+        "name": "switch-01", "ci_class": "Network Switch", "environment": "Production",
+        "operational_status": "Operational",
+        "attr_key": ["cpu_notes"], "attr_value": ["dual-socket, upgraded"],
+    }, follow_redirects=True)
+
+    with app.app_context():
+        ci = db.session.get(ConfigurationItem, ci_id)
+        assert ci.attributes["sys_descr"] == "Arista EOS"
+        assert ci.attributes["interfaces"] == [{"index": "1", "descr": "Eth1"}]
+        assert ci.attributes["lldp_neighbors"] == [{"neighbor_name": "switch-02", "neighbor_port": "Eth2"}]
+        assert ci.attributes["cpu_notes"] == "dual-socket, upgraded"
+
+
+def test_ci_edit_detail_page_shows_discovered_interfaces_and_lldp_table(client, app):
+    login(client)
+    with app.app_context():
+        neighbor = ConfigurationItem(
+            name="switch-02", ci_class="Network Switch", tenant_id=1,
+            discovery_source="SNMP Discovery",
+        )
+        db.session.add(neighbor)
+        db.session.commit()
+        ci = ConfigurationItem(
+            name="switch-01", ci_class="Network Switch", tenant_id=1,
+            discovery_source="SNMP Discovery",
+            attributes={
+                "sys_descr": "Arista EOS",
+                "interfaces": [{"index": "1", "descr": "Eth1", "mac_address": "aa:bb:cc:dd:ee:01"}],
+                "lldp_neighbors": [{"neighbor_name": "switch-02", "neighbor_port": "Eth2"}],
+            },
+        )
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+
+    page = client.get(f"/cmdb/{ci_id}/edit")
+    assert page.status_code == 200
+    assert b"Arista EOS" in page.data
+    assert b"Eth1" in page.data
+    assert b"aa:bb:cc:dd:ee:01" in page.data
+    # The raw dict/list string must never leak into a plain text input.
+    assert b"[{&#39;index&#39;" not in page.data and b"[{'index'" not in page.data
+    assert b"switch-02" in page.data
+
+
 def test_production_management_and_critical_cis_always_require_ccb(client, app):
     """CCB approval is auto-forced (and can't be unchecked) for Production,
     Management-class, or Critical-criticality CIs -- the "always require
