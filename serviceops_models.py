@@ -75,6 +75,7 @@ __all__ = [
     "CatalogItem",
     "CatalogItemRouting",
     "ConfigurationItem",
+    "CiClassPermission",
     "CIRelationship",
     "DiscoveryTarget",
     "DiscoveryCandidate",
@@ -891,6 +892,29 @@ class ConfigurationItem(db.Model):
     # environment isn't in CCB_REQUIRED_ENVIRONMENTS (e.g. a Dev box that's
     # still business-critical enough to need board sign-off).
     require_ccb_approval = db.Column(db.Boolean, nullable=False, default=False)
+
+
+class CiClassPermission(db.Model):
+    """Per-(tenant, CI class, role) read grant, opt-in and additive to the
+    flat role/action policy in config/authorization.json. No rows exist for
+    a given ci_class -> that class is unmanaged, visible in CMDB lists to
+    every role that can see CMDB at all (today's behavior, unchanged -- this
+    table only ever narrows visibility, never widens create/update/delete
+    access, which stay governed solely by the existing @roles("admin") gate
+    on the CMDB mutation routes). Once at least one row exists for a class,
+    it is "managed": any role with no row for it -- or a row with
+    can_read=False -- is denied read access to CIs of that class."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    ci_class = db.Column(db.String(80), nullable=False)
+    role = db.Column(db.String(20), nullable=False)
+    can_read = db.Column(db.Boolean, nullable=False, default=False)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    updated_by = db.relationship("User", foreign_keys=[updated_by_id])
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "ci_class", "role", name="uq_ci_class_permission_tenant_class_role"),
+    )
 
 
 CI_RELATIONSHIP_TYPES = ["Depends on", "Runs on", "Connects to", "Hosted on", "Backs up"]
