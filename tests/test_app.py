@@ -2664,7 +2664,7 @@ def test_profile_and_user_administration_are_tenant_and_role_governed(client, ap
     with app.app_context():
         employee_id = User.query.filter_by(username="employee").one().id
     assert client.get("/admin").status_code == 200
-    assert b"Users and access" in client.get("/admin").data
+    assert b"Access control" in client.get("/admin").data
     assert b"Updated Employee" in client.get("/admin/users?q=Updated+Employee").data
     response = client.post(f"/admin/users/{employee_id}", data={
         "name": "Governed Employee", "email": "employee@test.invalid",
@@ -5229,6 +5229,79 @@ def test_cmdb_topology_excludes_virtual_machines(client, app):
     assert response.status_code == 200
     assert b"topo-physical-host" in response.data
     assert b"topo-a-vm" not in response.data
+
+
+def test_cmdb_network_info_resolves_hostname_and_ip(client, app, monkeypatch):
+    with app.app_context():
+        ci = ConfigurationItem(name="dns-test-host", ci_class="Server", ip_address="203.0.113.5")
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+
+    monkeypatch.setattr(
+        "serviceops_core.dns_lookup.socket.gethostbyaddr",
+        lambda ip: ("dns-test-host.example.com", [], [ip]),
+    )
+    monkeypatch.setattr(
+        "serviceops_core.dns_lookup.socket.getaddrinfo",
+        lambda host, port: [(None, None, None, None, ("203.0.113.5", 0))],
+    )
+    login(client)
+    response = client.get(f"/cmdb/{ci_id}/network-info")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["addresses"] == [{"ip": "203.0.113.5", "hostname": "dns-test-host.example.com"}]
+    assert body["hostnames"] == [{"hostname": "dns-test-host", "ips": ["203.0.113.5"]}]
+
+
+def test_cmdb_network_info_degrades_gracefully_when_dns_fails(client, app, monkeypatch):
+    with app.app_context():
+        ci = ConfigurationItem(name="dns-fail-host", ci_class="Server", ip_address="203.0.113.6")
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+
+    def raise_os_error(*args, **kwargs):
+        raise OSError("no PTR record")
+
+    monkeypatch.setattr("serviceops_core.dns_lookup.socket.gethostbyaddr", raise_os_error)
+    monkeypatch.setattr("serviceops_core.dns_lookup.socket.getaddrinfo", raise_os_error)
+    login(client)
+    response = client.get(f"/cmdb/{ci_id}/network-info")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["addresses"] == [{"ip": "203.0.113.6", "hostname": ""}]
+    assert body["hostnames"] == [{"hostname": "dns-fail-host", "ips": []}]
+
+
+def test_cmdb_network_info_respects_class_read_permission(client, app):
+    with app.app_context():
+        ci = ConfigurationItem(name="dns-restricted-host", ci_class="Consumable", ip_address="203.0.113.7")
+        db.session.add(ci)
+        db.session.add(CiClassPermission(tenant_id=1, ci_class="Consumable", role="admin", can_read=False))
+        db.session.commit()
+        ci_id = ci.id
+    login(client)
+    assert client.get(f"/cmdb/{ci_id}/network-info").status_code == 403
+
+
+def test_admin_access_hub_requires_admin(client):
+    login(client, "employee", "Employee123!")
+    assert client.get("/admin/access").status_code == 403
+    client.post("/logout")
+    login(client)
+    assert client.get("/admin/access").status_code == 200
+
+
+def test_admin_roles_page_shows_policy_and_requires_admin(client):
+    login(client, "database.manager", "Manager123!")
+    assert client.get("/admin/roles").status_code == 403
+    client.post("/logout")
+    login(client)
+    response = client.get("/admin/roles")
+    assert response.status_code == 200
+    assert b"Agent" in response.data
+    assert b"security_administer" in response.data
 
 
 def test_users_list_supports_servicenow_style_filter(client, app):

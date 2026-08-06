@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Roles & permissions · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = 'Roles & permissions' %}{% set admin_parent_title = 'Access control' %}{% set admin_parent_url = url_for('admin_access') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Roles &amp; permissions</h1><p>The base role → action policy is Git-backed (<code>config/authorization.json</code>) and read-only here; changing it requires editing that file and redeploying. Per-CI-class CMDB permissions are database-backed and configurable below.</p></div></header>
+<section class="panel">
+  <h2>Role → action policy</h2>
+  <div class="task-list-scroll">
+    <table>
+      <thead><tr><th>Action</th>{% for role in role_actions.keys() %}<th>{{ role|capitalize }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for action in actions %}
+        <tr><td>{{ action }}</td>
+          {% for role in role_actions.keys() %}<td>{% if action in role_actions[role] %}✓{% else %}—{% endif %}</td>{% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">superadmin is always implicitly allowed every action and is not listed here.</p>
+</section>
+<section class="panel">
+  <h2>CI class permissions</h2>
+  <p>Per-(CI class, role) Read/Create/Update/Delete grants for the CMDB.</p>
+  <a class="button" href="{{ url_for('cmdb_permissions') }}">Open CI class permissions ›</a>
+</section>
+{% endblock %}

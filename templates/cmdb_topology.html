@@ -7,9 +7,20 @@
   <div id="cmdb-topology-legend" class="muted" style="margin-bottom:10px;font-size:12px">
     <span style="color:var(--brand-teal,#003e4c)">●</span> Manually created &nbsp;
     <span style="color:var(--brand-amber,#f9aa3c)">●</span> SNMP discovered &nbsp;
-    — line = relationship (hover a node for details)
+    — line = relationship, "+N more" = collapsed connections, click a node to expand and inspect
   </div>
-  <svg id="cmdb-topology-svg" width="100%" height="640" data-graph="{{ graph_json }}" style="background:#f7f9fa;border:1px solid var(--line);border-radius:8px;cursor:grab"></svg>
+  <div style="display:flex;gap:8px;margin-bottom:8px">
+    <button type="button" id="cmdb-topology-zoom-in" class="button">+</button>
+    <button type="button" id="cmdb-topology-zoom-out" class="button">−</button>
+    <button type="button" id="cmdb-topology-reset" class="button">Reset view</button>
+  </div>
+  <div style="display:flex;gap:12px;align-items:flex-start">
+    <svg id="cmdb-topology-svg" width="100%" height="640" data-graph="{{ graph_json }}" data-backbone-classes="Switch,Router,Server" style="flex:1;background:#f7f9fa;border:1px solid var(--line);border-radius:8px;cursor:grab"></svg>
+    <aside id="cmdb-topology-detail" class="panel" hidden style="width:280px;flex-shrink:0">
+      <button type="button" id="cmdb-topology-detail-close" class="button" style="float:right">×</button>
+      <div id="cmdb-topology-detail-body"></div>
+    </aside>
+  </div>
   <p id="cmdb-topology-empty" class="muted" hidden>No configuration items to display yet.</p>
 </section>
 
