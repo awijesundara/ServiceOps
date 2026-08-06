@@ -16,7 +16,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  ApprovalGate, ApprovalVote, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy,
                  BusinessSchedule, CatalogRequest, CatalogTask, ChangeGovernance, ChangeOwnership, ChangeRevision,
                  Comment,
-                 ChecklistItem, CIRelationship, ConfigurationItem, DiscoveryCandidate, DiscoveryTarget,
+                 ChecklistItem, CIRelationship, CiClassPermission, ConfigurationItem, DiscoveryCandidate, DiscoveryTarget,
                  EnterpriseRecord, CatalogItem,
                  CatalogItemRouting, DirectoryGroupMapping,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
@@ -44,6 +44,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  verify_audit_chain)
 from werkzeug.security import generate_password_hash
 from serviceops_core.security import role_has_action, validate_policy
+from serviceops_core.ci_class_policy import managed_ci_classes
 from serviceops_core.priority import calculate_priority, validate_priority_policy
 from serviceops_core.projections import (
     ProjectionConfigurationError, project_document, validate_projection_policy,
@@ -4735,6 +4736,123 @@ def test_cmdb_list_supports_servicenow_style_filter(client, app):
     assert b"cmdb-filter-prod.example.com" in by_team.data
     assert b"cmdb-filter-dev.example.com" not in by_team.data
     assert b"Owning team is Windows" in by_team.data
+
+
+def test_cmdb_unmanaged_ci_class_visible_to_every_role(client, app):
+    # B-288: the single most important test in this feature -- a CI class
+    # with zero configured CiClassPermission rows must be exactly as visible
+    # as before this feature existed, to every role that could see CMDB at
+    # all pre-feature.
+    with app.app_context():
+        db.session.add(ConfigurationItem(name="unmanaged-srv.example.com", ci_class="Server"))
+        db.session.commit()
+    for username, password in (("admin", "Admin123!"), ("database.manager", "Manager123!")):
+        login(client, username, password)
+        page = client.get("/cmdb")
+        assert b"unmanaged-srv.example.com" in page.data
+        client.post("/logout")
+
+
+def test_cmdb_managed_class_read_requires_explicit_grant(client, app):
+    with app.app_context():
+        unix_agent = User(
+            username="ci-perm-agent", name="CI Perm Agent", email="ci-perm-agent@test.invalid",
+            password_hash=generate_password_hash("Agent123!"), role="agent",
+        )
+        db.session.add(unix_agent)
+        db.session.add(ConfigurationItem(name="managed-printer-01", ci_class="Printer"))
+        db.session.add(CiClassPermission(
+            tenant_id=1, ci_class="Printer", role="agent", can_read=True,
+        ))
+        db.session.commit()
+
+    login(client, "ci-perm-agent", "Agent123!")
+    granted = client.get("/cmdb")
+    assert b"managed-printer-01" in granted.data
+    client.post("/logout")
+
+    login(client, "database.manager", "Manager123!")
+    denied = client.get("/cmdb")
+    assert b"managed-printer-01" not in denied.data
+
+
+def test_cmdb_export_csv_respects_class_read_filter(client, app):
+    with app.app_context():
+        db.session.add(ConfigurationItem(name="export-hidden-01", ci_class="Consumable"))
+        db.session.add(CiClassPermission(
+            tenant_id=1, ci_class="Consumable", role="admin", can_read=False,
+        ))
+        db.session.commit()
+    login(client)
+    csv = client.get("/cmdb/export.csv")
+    assert b"export-hidden-01" not in csv.data
+
+
+def test_cmdb_topology_respects_class_read_filter(client, app):
+    with app.app_context():
+        db.session.add(ConfigurationItem(name="topology-hidden-01", ci_class="Consumable"))
+        db.session.add(CiClassPermission(
+            tenant_id=1, ci_class="Consumable", role="admin", can_read=False,
+        ))
+        db.session.commit()
+    login(client)
+    page = client.get("/cmdb/topology")
+    assert b"topology-hidden-01" not in page.data
+
+
+def test_cmdb_permissions_route_requires_admin(client, app):
+    login(client, "employee", "Employee123!")
+    assert client.get("/cmdb/permissions").status_code == 403
+    assert client.post("/cmdb/permissions", data={}).status_code == 403
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+    assert client.get("/cmdb/permissions").status_code == 403
+
+
+def test_cmdb_permissions_grid_upserts_rows_and_audits(client, app):
+    with app.app_context():
+        db.session.add(ConfigurationItem(name="grid-test-01", ci_class="Router"))
+        db.session.commit()
+    login(client)
+    response = client.post("/cmdb/permissions", data={
+        "ci_class": ["Router"],
+        "read__Router__agent": "on",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    with app.app_context():
+        row = CiClassPermission.query.filter_by(tenant_id=1, ci_class="Router", role="agent").one()
+        assert row.can_read is True
+        no_grant_row = CiClassPermission.query.filter_by(
+            tenant_id=1, ci_class="Router", role="manager",
+        ).first()
+        assert no_grant_row is None or no_grant_row.can_read is False
+        assert Audit.query.filter_by(action="configure", target="CI class permission").count() == 1
+
+
+def test_cmdb_permissions_add_new_class_marks_it_managed(client, app):
+    login(client)
+    client.post("/cmdb/permissions", data={"new_class": "Simcard"}, follow_redirects=True)
+    with app.app_context():
+        assert managed_ci_classes(1) >= {"Simcard"}
+
+
+def test_cmdb_create_edit_unaffected_by_class_permissions(client, app):
+    # Create/update stay admin-only and ungated by this feature no matter
+    # what the class permission grid says -- this table only ever narrows
+    # read visibility, never touches the CI mutation routes.
+    with app.app_context():
+        db.session.add(CiClassPermission(
+            tenant_id=1, ci_class="Server", role="admin", can_read=False,
+        ))
+        db.session.commit()
+    login(client)
+    created = client.post("/cmdb/new", data={
+        "name": "still-creatable.example.com", "ci_class": "Server",
+        "environment": "Production", "operational_status": "Operational",
+    }, follow_redirects=True)
+    assert created.status_code == 200
+    with app.app_context():
+        assert ConfigurationItem.query.filter_by(name="still-creatable.example.com").count() == 1
 
 
 def test_cmdb_discovery_target_stores_community_encrypted_not_plaintext(client, app):

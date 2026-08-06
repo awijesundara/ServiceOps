@@ -59,6 +59,9 @@ from serviceops_core.workflow import (
     package_digest, validate_workflow, workflow_matches,
 )
 from serviceops_core.projections import project_document, validate_projection_policy
+from serviceops_core.ci_class_policy import (
+    ci_class_read_allowed, managed_ci_classes, restrict_ci_query_to_readable_classes,
+)
 
 # VERSION is the release source of truth; shown in the UI, API, and health
 # endpoint so operators can confirm the running build without host access.
@@ -9337,7 +9340,9 @@ def create_app(test_config=None):
         q = request.args.get("q", "").strip()
         raw_filter = request.args.get("filter", "")
         conditions = parse_list_filter_param(raw_filter)
-        query = tenant_query(ConfigurationItem)
+        query = restrict_ci_query_to_readable_classes(
+            tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
+        )
         if status:
             query = query.filter(ConfigurationItem.operational_status == status)
         if q:
@@ -9364,11 +9369,18 @@ def create_app(test_config=None):
         visible_cis = query.order_by(
             ConfigurationItem.ci_class, ConfigurationItem.name
         ).offset((page - 1) * per_page).limit(per_page).all()
-        cis_total = tenant_query(ConfigurationItem).count()
-        operational_total = tenant_query(ConfigurationItem).filter(
+        readable_ci_ids = restrict_ci_query_to_readable_classes(
+            tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
+        )
+        cis_total = readable_ci_ids.count()
+        operational_total = readable_ci_ids.filter(
             ConfigurationItem.operational_status == "Operational"
         ).count()
-        relationships = tenant_query(CIRelationship).all()
+        relationships = [
+            rel for rel in tenant_query(CIRelationship).all()
+            if ci_class_read_allowed(current_user.tenant_id, rel.parent.ci_class, current_user.effective_role)
+            and ci_class_read_allowed(current_user.tenant_id, rel.child.ci_class, current_user.effective_role)
+        ]
         # CIs pulled in from NetBox/CSV carry many more fields than the default
         # table shows (attributes is a free-form JSON bag); surface whatever keys
         # actually appear on this page so users can opt into columns beyond the
@@ -9400,7 +9412,9 @@ def create_app(test_config=None):
     def cmdb_export():
         status = request.args.get("status", "").strip()
         conditions = parse_list_filter_param(request.args.get("filter", ""))
-        query = tenant_query(ConfigurationItem)
+        query = restrict_ci_query_to_readable_classes(
+            tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
+        )
         if status:
             query = query.filter(ConfigurationItem.operational_status == status)
         query = apply_filter_conditions(query, conditions, cmdb_filter_field_spec())
@@ -9958,8 +9972,14 @@ def create_app(test_config=None):
     @app.get("/cmdb/topology")
     @roles("agent", "manager", "admin")
     def cmdb_topology():
-        cis = tenant_query(ConfigurationItem).all()
-        relationships = tenant_query(CIRelationship).all()
+        cis = restrict_ci_query_to_readable_classes(
+            tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
+        ).all()
+        visible_ci_ids = {ci.id for ci in cis}
+        relationships = [
+            rel for rel in tenant_query(CIRelationship).all()
+            if rel.parent_id in visible_ci_ids and rel.child_id in visible_ci_ids
+        ]
         graph = {
             "nodes": [
                 {
@@ -9974,6 +9994,55 @@ def create_app(test_config=None):
             ],
         }
         return render_template("cmdb_topology.html", graph_json=json.dumps(graph))
+
+    CI_CLASS_PERMISSION_ROLES = ("requester", "agent", "manager", "admin")
+
+    @app.route("/cmdb/permissions", methods=["GET", "POST"])
+    @roles("admin")
+    def cmdb_permissions():
+        tenant_id = current_user.tenant_id
+        if request.method == "POST":
+            new_class = request.form.get("new_class", "").strip()
+            submitted_classes = set(request.form.getlist("ci_class")) | ({new_class} if new_class else set())
+            changed = []
+            for ci_class in submitted_classes:
+                if not ci_class:
+                    continue
+                for role in CI_CLASS_PERMISSION_ROLES:
+                    can_read = request.form.get(f"read__{ci_class}__{role}") == "on"
+                    row = CiClassPermission.query.filter_by(
+                        tenant_id=tenant_id, ci_class=ci_class, role=role,
+                    ).first()
+                    if not row:
+                        # Only create a row when it actually grants read, or
+                        # when this class is newly opted-in via "Add" (an
+                        # all-unchecked row still needs to exist so the class
+                        # shows up as managed going forward).
+                        if not can_read and ci_class != new_class:
+                            continue
+                        row = CiClassPermission(tenant_id=tenant_id, ci_class=ci_class, role=role)
+                        db.session.add(row)
+                    if row.can_read != can_read or row.updated_by_id != current_user.id:
+                        row.can_read = can_read
+                        row.updated_by_id = current_user.id
+                        changed.append(f"{ci_class}/{role}={'read' if can_read else 'no-read'}")
+            if changed:
+                audit("configure", "CI class permission", "; ".join(changed))
+            db.session.commit()
+            flash("CI class permissions saved.", "success")
+            return redirect(url_for("cmdb_permissions"))
+
+        classes_in_use = {
+            row[0] for row in tenant_query(ConfigurationItem)
+            .with_entities(ConfigurationItem.ci_class).distinct().all()
+        }
+        all_classes = sorted(classes_in_use | managed_ci_classes(tenant_id))
+        existing = CiClassPermission.query.filter_by(tenant_id=tenant_id).all()
+        grants = {(row.ci_class, row.role): row.can_read for row in existing}
+        return render_template(
+            "cmdb_permissions.html", ci_classes=all_classes, roles=CI_CLASS_PERMISSION_ROLES,
+            grants=grants, managed_classes=managed_ci_classes(tenant_id),
+        )
 
     @app.get("/approvals")
     @login_required
