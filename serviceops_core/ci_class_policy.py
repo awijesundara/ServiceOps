@@ -1,19 +1,27 @@
-"""Per-(tenant, CI class, role) CMDB read-visibility policy.
+"""Per-(tenant, CI class, role) CMDB permission policy.
 
 DB-backed and tenant-scoped, unlike security.py's deliberately file-based,
 no-DB role/action policy -- kept as a separate module so security.py's
 existing no-app-context unit tests stay untouched. See CiClassPermission
-in serviceops_models.py for the opt-in/deny-once-managed semantics this
-implements: a CI class with no configured rows is visible to every role
-that can see CMDB at all (unchanged default); only once an administrator
-adds at least one row for a class does that class become "managed," at
-which point any role without an explicit can_read=True row for it is
-filtered out of CMDB lists/exports/topology for that class.
+in serviceops_models.py for the full opt-in semantics, which are
+deliberately asymmetric between read and create/update/delete:
 
-Deliberately narrower than a full per-class CRUD matrix: create/update/
-delete on CMDB stay governed solely by the existing @roles("admin") gate
-on the CI mutation routes, unaffected by this module.
+- Read defaults OPEN for an unmanaged class (no rows at all): visible to
+  every role that could see CMDB before this table existed. Only once an
+  administrator adds at least one row for a class does it become
+  "managed" for read, at which point a role needs an explicit
+  can_read=True row or its CIs are filtered from CMDB lists/exports/
+  topology for that class.
+- Create/update/delete default CLOSED for agent/manager, regardless of
+  whether the class is "managed" for read: an agent/manager row (or its
+  absence) is checked directly, independent of read-management state, so
+  shipping this feature never grants new write capability to anyone until
+  an administrator explicitly checks a box. admin/superadmin always pass
+  every check -- this table only ever grants agent/manager capability
+  they didn't have, never restricts admin's pre-existing full access.
 """
+
+_CRUD_COLUMNS = {"create": "can_create", "update": "can_update", "delete": "can_delete"}
 
 
 def ci_class_read_allowed(tenant_id, ci_class, role):
@@ -26,6 +34,22 @@ def ci_class_read_allowed(tenant_id, ci_class, role):
     if not rows:
         return True
     return any(row.role == role and row.can_read for row in rows)
+
+
+def ci_class_action_allowed(tenant_id, ci_class, role, action):
+    """True if `role` may perform `action` ("create"/"update"/"delete")
+    against CIs of `ci_class` for `tenant_id`. Unlike read, this always
+    defaults to False for agent/manager absent an explicit grant -- see
+    module docstring."""
+    from serviceops_models import CiClassPermission
+
+    if role in ("admin", "superadmin"):
+        return True
+    column = _CRUD_COLUMNS.get(action)
+    if column is None:
+        raise ValueError(f"Unknown CI class action: {action}")
+    row = CiClassPermission.query.filter_by(tenant_id=tenant_id, ci_class=ci_class, role=role).first()
+    return bool(row and getattr(row, column))
 
 
 def managed_ci_classes(tenant_id):
