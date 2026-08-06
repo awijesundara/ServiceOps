@@ -47,6 +47,9 @@
     {% for iface in discovered.interfaces %}<tr><td>{{ iface.index }}</td><td>{{ iface.descr }}</td><td>{{ iface.mac_address or '—' }}</td></tr>{% endfor %}
   </tbody></table></div>
   {% endif %}
+  <h3>Hostname resolution</h3>
+  <div id="ci-form-dns" class="muted" data-ci-id="{{ ci.id }}">Looking up…</div>
+  <script src="{{ url_for('static', filename='ci-form-dns.js', v=app_version) }}" defer></script>
   {% if discovered.lldp_neighbors %}
   <h3>LLDP neighbors<span class="badge">{{ discovered.lldp_neighbors|length }}</span></h3>
   <div class="task-list-scroll"><table><thead><tr><th>This device's port</th><th>Neighbor</th><th>Neighbor's port</th><th>CMDB match</th></tr></thead><tbody>
