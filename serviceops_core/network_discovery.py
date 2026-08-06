@@ -394,6 +394,7 @@ def reconcile_facts_into_cmdb(tenant_id, target_name, facts_list):
     run."""
     import app as core_app
     from app import CIRelationship, ConfigurationItem, db, now
+    from sqlalchemy import func
 
     summary = {
         "hosts_seen": len(facts_list), "created": 0, "updated": 0, "relationships_created": 0,
@@ -452,16 +453,39 @@ def reconcile_facts_into_cmdb(tenant_id, target_name, facts_list):
         except Exception as error:  # noqa: BLE001 - one bad host must never block the rest of the sweep
             summary["errors"].append(f"{facts.get('host', '?')}: {error}")
 
-    # LLDP neighbor edges: only link pairs where BOTH sides were discovered
-    # in this same run (matched by sysName), since a neighbor name alone
-    # isn't a reliable enough key to match against unrelated existing CIs.
+    # LLDP neighbor edges. Prefer a same-run match (matched by sysName --
+    # cheapest and most certain, both sides freshly confirmed together in
+    # this exact sweep). For a neighbor not seen in this run -- the common
+    # case for a single-host/small-target scan, where most reported LLDP
+    # neighbors were never individually scanned -- fall back to the wider
+    # CMDB, but restricted to CIs discovery itself created/confirmed
+    # (discovery_source != "Manual"/"Import"/"API"): a hostname alone isn't a
+    # reliable enough key to risk linking against an unrelated CI a human
+    # happened to name the same thing, but it's a reasonable key among CIs
+    # that are themselves discovered network hosts. This is what lets a
+    # topology actually accumulate across repeated incremental scans rather
+    # than only ever seeing pairs scanned in the exact same run together.
     name_to_ci = {ci.name: ci for ci in host_to_ci.values()}
+    DISCOVERED_SOURCES = ("SNMP Discovery", "Network sweep (no SNMP)")
+
+    def _find_neighbor_ci(neighbor_name):
+        if not neighbor_name:
+            return None
+        matched = name_to_ci.get(neighbor_name)
+        if matched:
+            return matched
+        return ConfigurationItem.query.filter(
+            ConfigurationItem.tenant_id == tenant_id,
+            ConfigurationItem.discovery_source.in_(DISCOVERED_SOURCES),
+            func.lower(ConfigurationItem.name) == neighbor_name.casefold(),
+        ).first()
+
     for facts in facts_list:
         source_ci = host_to_ci.get(facts.get("host"))
         if not source_ci:
             continue
         for neighbor in facts.get("lldp_neighbors", []):
-            neighbor_ci = name_to_ci.get(neighbor.get("neighbor_name"))
+            neighbor_ci = _find_neighbor_ci(neighbor.get("neighbor_name"))
             if not neighbor_ci or neighbor_ci.id == source_ci.id:
                 continue
             # "Connects to" is symmetric for LLDP-discovered pairs -- both
