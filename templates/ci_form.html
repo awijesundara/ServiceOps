@@ -49,8 +49,8 @@
   {% endif %}
   {% if discovered.lldp_neighbors %}
   <h3>LLDP neighbors<span class="badge">{{ discovered.lldp_neighbors|length }}</span></h3>
-  <div class="task-list-scroll"><table><thead><tr><th>Neighbor</th><th>Neighbor port</th><th>CMDB match</th></tr></thead><tbody>
-    {% for neighbor in discovered.lldp_neighbors %}<tr><td>{{ neighbor.neighbor_name }}</td><td>{{ neighbor.neighbor_port }}</td>
+  <div class="task-list-scroll"><table><thead><tr><th>This device's port</th><th>Neighbor</th><th>Neighbor's port</th><th>CMDB match</th></tr></thead><tbody>
+    {% for neighbor in discovered.lldp_neighbors %}<tr><td>{{ neighbor.local_port or '—' }}</td><td>{{ neighbor.neighbor_name }}</td><td>{{ neighbor.neighbor_port }}</td>
       <td>{% set matched = lldp_neighbor_cis.get(neighbor.neighbor_name) %}{% if matched %}<a href="{{ url_for('ci_edit', ci_id=matched.id) }}">{{ matched.name }}</a>{% else %}<span class="muted">Not yet in CMDB</span>{% endif %}</td>
     </tr>{% endfor %}
   </tbody></table></div>
