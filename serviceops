@@ -25,6 +25,7 @@ Operations:
   ./serviceops stability-probe [REQUESTS]
   ./serviceops stress-test USERNAME [COUNT] [CONCURRENCY]
   ./serviceops stress-test-cleanup
+  ./serviceops cmdb-merge-duplicates [--tenant SLUG] [--confirm]
   ./serviceops recover-admin USERNAME
   ./serviceops recover-audit-key TENANT_SLUG
   ./serviceops retire-bootstrap-secret
@@ -235,6 +236,9 @@ case "$command" in
     ;;
   stress-test-cleanup)
     "${COMPOSE[@]}" exec -T app python -m tools.stress_test_cleanup --confirm
+    ;;
+  cmdb-merge-duplicates)
+    "${COMPOSE[@]}" exec -T app python -m tools.cmdb_merge_duplicates "${@:2}"
     ;;
   recover-admin)
     username="${2:-}"; [[ -n "$username" ]] || { echo "Provide the administrator username." >&2; exit 2; }

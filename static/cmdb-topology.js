@@ -5,7 +5,14 @@
 document.addEventListener("DOMContentLoaded", () => {
   const svg = document.getElementById("cmdb-topology-svg");
   const empty = document.getElementById("cmdb-topology-empty");
-  const graph = window.CMDB_TOPOLOGY_GRAPH || { nodes: [], edges: [] };
+  let graph = { nodes: [], edges: [] };
+  try {
+    graph = svg ? JSON.parse(svg.dataset.graph || "{}") : graph;
+  } catch (error) {
+    graph = { nodes: [], edges: [] };
+  }
+  graph.nodes = graph.nodes || [];
+  graph.edges = graph.edges || [];
   if (!svg || !graph.nodes.length) {
     if (empty) empty.hidden = false;
     if (svg) svg.hidden = true;
@@ -22,7 +29,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }));
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const edges = graph.edges
-    .map((edge) => ({ source: nodeById.get(edge.source), target: nodeById.get(edge.target), type: edge.type }))
+    .map((edge) => ({
+      source: nodeById.get(edge.source), target: nodeById.get(edge.target),
+      type: edge.type, label: edge.label,
+    }))
     .filter((edge) => edge.source && edge.target);
 
   function tick() {
@@ -59,10 +69,21 @@ document.addEventListener("DOMContentLoaded", () => {
     line.setAttribute("stroke", "#c7d1d5");
     line.setAttribute("stroke-width", "1.5");
     const title = document.createElementNS(svgNS, "title");
-    title.textContent = `${edge.source.name} — ${edge.type} → ${edge.target.name}`;
+    title.textContent = edge.label
+      ? `${edge.source.name} — ${edge.type} (${edge.label}) → ${edge.target.name}`
+      : `${edge.source.name} — ${edge.type} → ${edge.target.name}`;
     line.appendChild(title);
     svg.appendChild(line);
-    return { edge, line };
+    let portLabel = null;
+    if (edge.label) {
+      portLabel = document.createElementNS(svgNS, "text");
+      portLabel.textContent = edge.label;
+      portLabel.setAttribute("font-size", "9");
+      portLabel.setAttribute("text-anchor", "middle");
+      portLabel.setAttribute("fill", "#667582");
+      svg.appendChild(portLabel);
+    }
+    return { edge, line, portLabel };
   });
 
   const nodeGroups = nodes.map((node) => {
@@ -104,9 +125,13 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   function render() {
-    edgeLines.forEach(({ edge, line }) => {
+    edgeLines.forEach(({ edge, line, portLabel }) => {
       line.setAttribute("x1", edge.source.x); line.setAttribute("y1", edge.source.y);
       line.setAttribute("x2", edge.target.x); line.setAttribute("y2", edge.target.y);
+      if (portLabel) {
+        portLabel.setAttribute("x", (edge.source.x + edge.target.x) / 2);
+        portLabel.setAttribute("y", (edge.source.y + edge.target.y) / 2 - 4);
+      }
     });
     nodeGroups.forEach(({ node, group }) => {
       group.setAttribute("transform", `translate(${node.x},${node.y})`);

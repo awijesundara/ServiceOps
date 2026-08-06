@@ -5104,7 +5104,24 @@ def test_cmdb_topology_renders_nodes_and_edges(client, app):
     assert response.status_code == 200
     assert b"topo-parent" in response.data
     assert b"topo-child" in response.data
-    assert b"CMDB_TOPOLOGY_GRAPH" in response.data
+    # B-289: the graph payload moved from an inline <script> (silently
+    # blocked by this app's script-src 'self' CSP -- the same class of bug
+    # fixed for /api/v1/docs in B-276, confirmed here it was never actually
+    # reaching the browser) into a data-* attribute the external JS file reads.
+    assert b"<script>window.CMDB_TOPOLOGY_GRAPH" not in response.data
+    assert b'data-graph="' in response.data
+
+
+def test_cmdb_topology_excludes_virtual_machines(client, app):
+    with app.app_context():
+        db.session.add(ConfigurationItem(name="topo-physical-host", ci_class="Server"))
+        db.session.add(ConfigurationItem(name="topo-a-vm", ci_class="Virtual Machine"))
+        db.session.commit()
+    login(client)
+    response = client.get("/cmdb/topology")
+    assert response.status_code == 200
+    assert b"topo-physical-host" in response.data
+    assert b"topo-a-vm" not in response.data
 
 
 def test_users_list_supports_servicenow_style_filter(client, app):

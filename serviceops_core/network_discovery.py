@@ -228,14 +228,26 @@ async def _discover_host_async(host, community, port, version, timeout):
 
         lldp_names = {oid: str(value) for oid, value in await safe_walk(OID_LLDP_REM_SYS_NAME)}
         lldp_ports = {oid: str(value) for oid, value in await safe_walk(OID_LLDP_REM_PORT_ID)}
+        interface_descr_by_index = {iface["index"]: iface["descr"] for iface in interfaces}
         lldp_neighbors = []
         for oid, neighbor_name in lldp_names.items():
             # lldpRemPortId shares the same trailing index suffix as lldpRemSysName.
             suffix = ".".join(oid.split(".")[-3:])
             port_oid = next((candidate for candidate in lldp_ports if candidate.endswith(suffix)), None)
+            # The lldpRemEntry index is lldpRemTimeMark.lldpRemLocalPortNum.
+            # lldpRemIndex -- the middle component identifies which of THIS
+            # device's own ports the neighbor was seen on. Most
+            # implementations set lldpRemLocalPortNum equal to ifIndex, so
+            # correlating it against the ifDescr walk above resolves it to
+            # a human port name (e.g. "Ethernet51") for the topology map's
+            # "server X is plugged into switch port Y" view -- falls back
+            # to the bare numeric index if a vendor doesn't follow that
+            # convention, rather than guessing.
+            local_port_index = oid.split(".")[-2]
             lldp_neighbors.append({
                 "neighbor_name": neighbor_name,
                 "neighbor_port": lldp_ports.get(port_oid, "") if port_oid else "",
+                "local_port": interface_descr_by_index.get(local_port_index, local_port_index),
             })
 
         vendor = guess_vendor(sys_object_id)
@@ -410,6 +422,23 @@ def reconcile_facts_into_cmdb(tenant_id, target_name, facts_list):
             source = facts.get("discovery_source", "SNMP Discovery")
             is_snmp = source == "SNMP Discovery"
             existing = ConfigurationItem.query.filter_by(tenant_id=tenant_id, ip_address=ip_address).first()
+            if not existing and facts.get("sys_name"):
+                # A device rediscovered at a new/different IP (DHCP churn,
+                # multi-homed hosts) or a CI whose ip_address was never set
+                # by the CSV/NetBox import that first created it (a real,
+                # observed cause of duplicate CIs -- the same hostname
+                # showing up twice, once "Manual"/ci_class=Server with no
+                # ip_address and once discovery-created as ci_class=Device
+                # at the IP the scan actually found it at) would otherwise
+                # never match the IP-only lookup above and get a duplicate
+                # CI created instead of being merged into the existing one.
+                # Exact, case-insensitive hostname match is the fallback --
+                # scoped to this tenant, same identity-preservation rules
+                # below apply regardless of which lookup found the match.
+                existing = ConfigurationItem.query.filter(
+                    ConfigurationItem.tenant_id == tenant_id,
+                    func.lower(ConfigurationItem.name) == facts["sys_name"].casefold(),
+                ).first()
             attributes = {
                 "sys_descr": facts.get("sys_descr", ""),
                 "sys_object_id": facts.get("sys_object_id", ""),
@@ -421,6 +450,12 @@ def reconcile_facts_into_cmdb(tenant_id, target_name, facts_list):
             }
             if existing:
                 existing.updated_at = now()
+                # ip_address is operational data (where the device actually
+                # answered), not identity -- always safe to refresh even for
+                # a Manual CI, unlike name/ci_class/vendor below. Matters
+                # most for the name-fallback match above, where the existing
+                # CI commonly has no ip_address at all yet.
+                existing.ip_address = ip_address
                 # A bare (non-SNMP) liveness hit on a device we'd previously
                 # fully profiled via SNMP must never blank out that richer
                 # detail -- only refresh "last seen"; leave interfaces/
@@ -499,12 +534,19 @@ def reconcile_facts_into_cmdb(tenant_id, target_name, facts_list):
                     db.and_(CIRelationship.parent_id == neighbor_ci.id, CIRelationship.child_id == source_ci.id),
                 ),
             ).first()
+            local_port = neighbor.get("local_port") or ""
+            remote_port = neighbor.get("neighbor_port") or ""
+            label = f"{local_port} ↔ {remote_port}" if local_port or remote_port else None
             if not exists:
                 db.session.add(CIRelationship(
                     tenant_id=tenant_id, parent_id=source_ci.id, child_id=neighbor_ci.id,
-                    relationship_type="Connects to",
+                    relationship_type="Connects to", label=label,
                 ))
                 summary["relationships_created"] += 1
+            elif label and not exists.label:
+                # Backfill a label onto a relationship created by a scan
+                # before this port-level detail existed.
+                exists.label = label
 
     db.session.commit()
     return summary

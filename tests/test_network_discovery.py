@@ -234,6 +234,58 @@ def test_reconcile_lldp_neighbor_match_excludes_manually_created_cis(app):
         assert CIRelationship.query.count() == 0
 
 
+def test_reconcile_merges_into_existing_ci_matched_by_name_when_ip_differs(app):
+    # B-289: a real observed duplicate -- a CI first created manually/via
+    # CSV import with no ip_address (or a stale one) gets a *second* CI
+    # created by discovery at the IP it actually finds the device at,
+    # because the old code matched only by ip_address. Confirms the new
+    # name-fallback match merges into the existing record instead.
+    with app.app_context():
+        db.session.add(ConfigurationItem(
+            name="dmi1bacula01.dc.japannext.co.jp", ci_class="Server",
+            discovery_source="Manual", vendor=None, ip_address=None, tenant_id=1,
+        ))
+        db.session.commit()
+        manual_id = ConfigurationItem.query.filter_by(name="dmi1bacula01.dc.japannext.co.jp").one().id
+
+        summary = reconcile_facts_into_cmdb(1, "test", [{
+            "host": "10.68.99.88", "sys_name": "dmi1bacula01.dc.japannext.co.jp",
+            "sys_descr": "Linux", "sys_object_id": "1.3.6.1.4.1.8072.3.2.10",
+            "sys_uptime": "100", "vendor": "Dell", "ci_class": "Device",
+            "interfaces": [], "arp_entries": [], "lldp_neighbors": [],
+        }])
+        assert summary["created"] == 0
+        assert summary["updated"] == 1
+        assert ConfigurationItem.query.filter_by(
+            name="dmi1bacula01.dc.japannext.co.jp",
+        ).count() == 1
+        merged = db.session.get(ConfigurationItem, manual_id)
+        assert merged.ci_class == "Server"  # Manual identity untouched
+        assert merged.ip_address == "10.68.99.88"  # operational data refreshed
+
+
+def test_reconcile_lldp_relationship_gets_port_label(app):
+    with app.app_context():
+        summary = reconcile_facts_into_cmdb(1, "core stack", [
+            {
+                "host": "10.0.1.1", "sys_name": "sw-core-1", "sys_descr": "Arista EOS",
+                "sys_object_id": "1.3.6.1.4.1.30065.1", "sys_uptime": "1",
+                "vendor": "Arista Networks", "ci_class": "Network Switch",
+                "interfaces": [], "arp_entries": [],
+                "lldp_neighbors": [{"neighbor_name": "srv-1", "neighbor_port": "eth0", "local_port": "Ethernet51"}],
+            },
+            {
+                "host": "10.0.1.2", "sys_name": "srv-1", "sys_descr": "Linux",
+                "sys_object_id": "1.3.6.1.4.1.8072.3.2.10", "sys_uptime": "1",
+                "vendor": "Dell", "ci_class": "Server",
+                "interfaces": [], "arp_entries": [], "lldp_neighbors": [],
+            },
+        ])
+        assert summary["relationships_created"] == 1
+        rel = CIRelationship.query.one()
+        assert rel.label == "Ethernet51 ↔ eth0"
+
+
 def test_reconcile_never_overwrites_manually_created_ci_identity(app):
     with app.app_context():
         db.session.add(ConfigurationItem(

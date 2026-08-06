@@ -925,6 +925,11 @@ class CIRelationship(db.Model):
     parent_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False)
     child_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False)
     relationship_type = db.Column(db.String(60), nullable=False, default="Depends on")
+    # Port-level detail for an LLDP-derived "Connects to" edge (e.g.
+    # "Ethernet51 <-> eth0"), so the topology map can show which physical
+    # port each side is plugged into, not just that they're connected.
+    # Null for manually-created relationships, which have no port concept.
+    label = db.Column(db.String(160))
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     parent = db.relationship("ConfigurationItem", foreign_keys=[parent_id])
     child = db.relationship("ConfigurationItem", foreign_keys=[child_id])
