@@ -175,6 +175,65 @@ def test_reconcile_creates_cis_and_connects_to_relationship_from_lldp(app):
         assert {relationship.parent_id, relationship.child_id} == {switch_1.id, switch_2.id}
 
 
+def test_reconcile_links_lldp_neighbor_discovered_in_an_earlier_run(app):
+    # B-287: a single-host scan (the common real-world case -- an admin
+    # scanning one switch, not a whole subnet) only ever sees its own LLDP
+    # neighbor list, never the neighbor's own facts in the same run. Before
+    # this fix, reconcile_facts_into_cmdb only matched neighbor names against
+    # CIs discovered in that exact same call, so a topology never accumulated
+    # across incremental scans -- every single-host run showed "nothing
+    # depends on this CI" even when the neighbor had already been scanned
+    # and existed in the CMDB from a prior run.
+    with app.app_context():
+        earlier_run = reconcile_facts_into_cmdb(1, "first switch", [{
+            "host": "10.0.0.2", "sys_name": "core-switch-2", "sys_descr": "Cisco IOS",
+            "sys_object_id": "1.3.6.1.4.1.9.1.1208", "sys_uptime": "1",
+            "vendor": "Cisco", "ci_class": "Network Switch",
+            "interfaces": [], "arp_entries": [], "lldp_neighbors": [],
+        }])
+        assert earlier_run["created"] == 1
+        assert earlier_run["relationships_created"] == 0
+
+        later_run = reconcile_facts_into_cmdb(1, "second switch", [{
+            "host": "10.0.0.1", "sys_name": "core-switch-1", "sys_descr": "Cisco IOS",
+            "sys_object_id": "1.3.6.1.4.1.9.1.1208", "sys_uptime": "2",
+            "vendor": "Cisco", "ci_class": "Network Switch",
+            "interfaces": [], "arp_entries": [],
+            # Deliberately different case than the stored CI name, to also
+            # exercise the case-insensitive match.
+            "lldp_neighbors": [{"neighbor_name": "Core-Switch-2", "neighbor_port": "Gi0/2"}],
+        }])
+        assert later_run["created"] == 1
+        assert later_run["relationships_created"] == 1
+
+        switch_1 = ConfigurationItem.query.filter_by(ip_address="10.0.0.1").one()
+        switch_2 = ConfigurationItem.query.filter_by(ip_address="10.0.0.2").one()
+        relationship = CIRelationship.query.one()
+        assert relationship.relationship_type == "Connects to"
+        assert {relationship.parent_id, relationship.child_id} == {switch_1.id, switch_2.id}
+
+
+def test_reconcile_lldp_neighbor_match_excludes_manually_created_cis(app):
+    # A manually-created CI that happens to share a name with an LLDP-
+    # reported neighbor must never be linked -- only CIs discovery itself
+    # created/confirmed are trustworthy enough for a fuzzy hostname match.
+    with app.app_context():
+        db.session.add(ConfigurationItem(
+            name="core-switch-2", ci_class="Network Switch",
+            discovery_source="Manual", tenant_id=1,
+        ))
+        db.session.commit()
+        summary = reconcile_facts_into_cmdb(1, "single switch", [{
+            "host": "10.0.0.1", "sys_name": "core-switch-1", "sys_descr": "Cisco IOS",
+            "sys_object_id": "1.3.6.1.4.1.9.1.1208", "sys_uptime": "1",
+            "vendor": "Cisco", "ci_class": "Network Switch",
+            "interfaces": [], "arp_entries": [],
+            "lldp_neighbors": [{"neighbor_name": "core-switch-2", "neighbor_port": "Gi0/2"}],
+        }])
+        assert summary["relationships_created"] == 0
+        assert CIRelationship.query.count() == 0
+
+
 def test_reconcile_never_overwrites_manually_created_ci_identity(app):
     with app.app_context():
         db.session.add(ConfigurationItem(

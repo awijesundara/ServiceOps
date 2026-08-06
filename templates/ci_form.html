@@ -23,12 +23,41 @@
 {% if ci and (ci.ci_class|lower) in personal_asset_classes %}<label class="wide">Owner<select name="owner_id"><option value="">Unassigned</option>{% for user in owners %}<option value="{{ user.id }}" {% if ci.owner_id==user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>{% endfor %}</select></label>
 {% elif ci and ci.owner_id %}<label class="wide">Owner<select name="owner_id"><option value="">Unassigned</option>{% for user in owners %}<option value="{{ user.id }}" {% if ci.owner_id==user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>{% endfor %}</select></label><p class="muted wide">Owner is only meaningful for personally-assigned assets (laptops, phones). For servers, switches, and applications the owning support group above is what matters.</p>
 {% endif %}
+{% set discovery_keys = ['sys_descr', 'sys_object_id', 'sys_uptime', 'interfaces', 'lldp_neighbors', 'discovered_via', 'discovered_at'] %}
 <div class="wide"><strong>Additional imported fields</strong><p class="muted">Free-form fields captured from spreadsheet imports (CPUs, RAM, Builder, iDRAC, DNS, …). Edit or remove them, or add your own.</p>
-  <div class="ci-attr-rows">{% for key, value in (ci.attributes if ci else {}).items() %}<div class="ci-attr-row"><input name="attr_key" value="{{ key }}" placeholder="Field name"><input name="attr_value" value="{{ value }}" placeholder="Value"><button type="button" class="link-button ci-attr-remove" aria-label="Remove field">✕</button></div>{% endfor %}</div>
+  <div class="ci-attr-rows">{% for key, value in (ci.attributes if ci else {}).items() if key not in discovery_keys %}<div class="ci-attr-row"><input name="attr_key" value="{{ key }}" placeholder="Field name"><input name="attr_value" value="{{ value }}" placeholder="Value"><button type="button" class="link-button ci-attr-remove" aria-label="Remove field">✕</button></div>{% endfor %}</div>
   <button type="button" class="button" id="ci-attr-add">+ Add field</button>
 </div>
 <div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">Cancel</a><button class="primary">{{ 'Save changes' if ci else 'Create CI' }}</button></div></form>
 {% if ci %}
+{% set discovered = ci.attributes or {} %}
+{% if discovered.sys_descr or discovered.interfaces or discovered.lldp_neighbors %}
+<section class="panel">
+  <h2>Discovered network details<span class="info-tip" tabindex="0" data-tip="Read-only facts collected by agentless SNMP discovery. Edit CMDB relationships below to correct topology; this panel just shows what the device reported.">i</span></h2>
+  <dl class="governance-grid">
+    {% if discovered.sys_descr %}<dt>System description</dt><dd>{{ discovered.sys_descr }}</dd>{% endif %}
+    {% if discovered.sys_object_id %}<dt>System object ID</dt><dd>{{ discovered.sys_object_id }}</dd>{% endif %}
+    {% if discovered.sys_uptime %}<dt>Uptime (ticks)</dt><dd>{{ discovered.sys_uptime }}</dd>{% endif %}
+    {% if discovered.discovered_via %}<dt>Discovered via</dt><dd>{{ discovered.discovered_via }}</dd>{% endif %}
+    {% if discovered.discovered_at %}<dt>Last discovered</dt><dd>{{ discovered.discovered_at }}</dd>{% endif %}
+  </dl>
+  {% if discovered.interfaces %}
+  <h3>Interfaces<span class="badge">{{ discovered.interfaces|length }}</span></h3>
+  <div class="task-list-scroll"><table><thead><tr><th>Index</th><th>Description</th><th>MAC address</th></tr></thead><tbody>
+    {% for iface in discovered.interfaces %}<tr><td>{{ iface.index }}</td><td>{{ iface.descr }}</td><td>{{ iface.mac_address or '—' }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% endif %}
+  {% if discovered.lldp_neighbors %}
+  <h3>LLDP neighbors<span class="badge">{{ discovered.lldp_neighbors|length }}</span></h3>
+  <div class="task-list-scroll"><table><thead><tr><th>Neighbor</th><th>Neighbor port</th><th>CMDB match</th></tr></thead><tbody>
+    {% for neighbor in discovered.lldp_neighbors %}<tr><td>{{ neighbor.neighbor_name }}</td><td>{{ neighbor.neighbor_port }}</td>
+      <td>{% set matched = lldp_neighbor_cis.get(neighbor.neighbor_name) %}{% if matched %}<a href="{{ url_for('ci_edit', ci_id=matched.id) }}">{{ matched.name }}</a>{% else %}<span class="muted">Not yet in CMDB</span>{% endif %}</td>
+    </tr>{% endfor %}
+  </tbody></table></div>
+  <p class="muted">Connections to matched neighbors above are also shown as "Connects to" relationships on the <a href="{{ url_for('cmdb_topology') }}">topology map</a>.</p>
+  {% endif %}
+</section>
+{% endif %}
 <section class="panel">
   <h2>Impact analysis<span class="info-tip" tabindex="0" data-tip="Every CI that transitively depends on this one via CMDB relationships (Depends on, Runs on, Hosted on, Connects to, Backs up), walked up to 4 levels — i.e. what actually breaks if this CI goes down, not just what's directly linked.">i</span></h2>
   {% if impacted_cis %}
