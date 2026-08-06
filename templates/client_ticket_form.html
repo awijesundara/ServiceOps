@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block title %}New customer ticket · {{ instance_name }}{% endblock %}
+{% block content %}<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('client_management_home') }}">CLIENT MANAGEMENT</a> / NEW TICKET</p><h1>Create customer ticket</h1><p>Record a customer conversation and route it to the SysOps support queue.</p></div></header>
+<section class="panel client-form"><form method="post" class="form-grid">
+  <label class="wide required-field"><span>Customer</span><select name="contact_id" required><option value="">Select a contact</option>{% for contact in contacts %}<option value="{{ contact.id }}">{{ contact.name }} · {{ contact.email }} · {{ contact.organization.name }}</option>{% endfor %}</select><small>Missing a customer? <a href="{{ url_for('client_contacts') }}">Create a contact first</a>.</small></label>
+  <label class="wide required-field"><span>Subject</span><input name="subject" maxlength="200" required></label>
+  <label><span>Type</span><select name="ticket_type"><option>Question</option><option>Incident</option><option>Problem</option><option>Task</option></select></label>
+  <label><span>Priority</span><select name="priority"><option>Low</option><option selected>Normal</option><option>High</option><option>Urgent</option></select></label>
+  <label><span>Channel</span><select name="channel"><option>Web</option><option>Email</option><option>Phone</option><option>Chat</option></select></label>
+  <label><span>Assignee</span><select name="assignee_id"><option value="">Unassigned SysOps queue</option>{% for agent in agents %}<option value="{{ agent.id }}">{{ agent.name }}</option>{% endfor %}</select></label>
+  <label class="wide"><span>Tags</span><input name="tags" maxlength="500" placeholder="billing, onboarding, priority-client"></label>
+  <label class="wide required-field"><span>Description</span><textarea name="description" rows="8" required></textarea></label>
+  <div class="wide actions"><a class="button" href="{{ url_for('client_tickets') }}">Cancel</a><button class="primary">Create ticket</button></div>
+</form></section>{% endblock %}

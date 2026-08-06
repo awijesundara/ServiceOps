@@ -1,0 +1,11 @@
+<aside class="client-views">
+  <h2>Views</h2>
+  <nav aria-label="Client ticket views">
+    <a href="{{ url_for('client_tickets', view='mine') }}" {% if view|default('') == 'mine' %}class="active" aria-current="page"{% endif %}><span>Your unsolved tickets</span>{% if counts is defined %}<b>{{ counts.mine }}</b>{% endif %}</a>
+    <a href="{{ url_for('client_tickets', view='unassigned') }}" {% if view|default('') == 'unassigned' %}class="active" aria-current="page"{% endif %}><span>Unassigned tickets</span>{% if counts is defined %}<b>{{ counts.unassigned }}</b>{% endif %}</a>
+    <a href="{{ url_for('client_tickets', view='unsolved') }}" {% if view|default('unsolved') == 'unsolved' %}class="active" aria-current="page"{% endif %}><span>All unsolved tickets</span>{% if counts is defined %}<b>{{ counts.unsolved }}</b>{% endif %}</a>
+    <a href="{{ url_for('client_tickets', view='recent') }}" {% if view|default('') == 'recent' %}class="active" aria-current="page"{% endif %}><span>Recently updated</span>{% if counts is defined %}<b>{{ counts.recent }}</b>{% endif %}</a>
+    <a href="{{ url_for('client_tickets', view='pending') }}" {% if view|default('') == 'pending' %}class="active" aria-current="page"{% endif %}><span>Pending tickets</span>{% if counts is defined %}<b>{{ counts.pending }}</b>{% endif %}</a>
+    <a href="{{ url_for('client_tickets', view='solved') }}" {% if view|default('') == 'solved' %}class="active" aria-current="page"{% endif %}><span>Recently solved</span>{% if counts is defined %}<b>{{ counts.solved }}</b>{% endif %}</a>
+  </nav>
+</aside>

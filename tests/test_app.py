@@ -15,6 +15,7 @@ from sqlalchemy.exc import DBAPIError
 from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, ApprovalChain,
                  ApprovalGate, ApprovalVote, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy,
                  BusinessSchedule, CatalogRequest, CatalogTask, ChangeGovernance, ChangeOwnership, ChangeRevision,
+                 ClientContact, ClientOrganization, ClientTicket, ClientTicketMessage,
                  Comment,
                  ChecklistItem, CIRelationship, CiClassPermission, ConfigurationItem, DiscoveryCandidate, DiscoveryTarget,
                  EnterpriseRecord, CatalogItem,
@@ -3328,13 +3329,22 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
     assert b"Reporting and analytics" not in home.data
 
     sidebar = home.data.split(b'<aside class="sidebar">', 1)[1].split(b"</aside>", 1)[0]
-    assert b"Dashboard" in sidebar
+    assert b">Home<" in sidebar
     assert b"Incidents" in sidebar
     assert b"Service requests" in sidebar
     assert b"Service catalog" in sidebar
     assert b"Knowledge" in sidebar
     assert b"All workspaces" in sidebar
-    assert b"OPERATIONS" in sidebar
+    assert b">Operations<" in sidebar
+    assert b'aria-label="Find a menu item"' in sidebar
+    assert b">Management<" in sidebar
+    assert b">Administration<" in sidebar
+    assert b">User management<" in sidebar
+    assert b">Users<" in sidebar
+    assert b"Groups, teams &amp; access" in sidebar
+    assert b"Roles &amp; permissions" in sidebar
+    assert b"Active sessions" in sidebar
+    assert b'class="nav-group nav-group-admin" open' in sidebar
     assert b"Administration home" in sidebar
     assert b"Service operations settings" not in sidebar
     assert b"System settings" not in sidebar
@@ -3411,6 +3421,113 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
     assert b'<option value="P2" selected>P2</option>' in updated.data
     assert b'name="sync_child_incident_states" checked' in updated.data
 
+
+def test_client_management_is_sysops_gated_and_supports_customer_ticket_workflow(app, client):
+    login(client, "employee", "Employee123!")
+    assert client.get("/client-management").status_code == 403
+    client.post("/logout")
+
+    login(client, "database.manager", "Manager123!")
+    assert client.get("/client-management").status_code == 403
+    client.post("/logout")
+
+    with app.app_context():
+        sysops = SupportGroup.query.filter_by(name="SysOps", tenant_id=1).one()
+        manager = User.query.filter_by(username="database.manager").one()
+        db.session.add(GroupMember(group_id=sysops.id, user_id=manager.id, role="member"))
+        db.session.commit()
+
+    login(client, "database.manager", "Manager123!")
+    home = client.get("/client-management")
+    assert home.status_code == 200
+    assert b"External customer conversations" in home.data
+    assert b"Client management" in home.data
+
+    response = client.post("/client-management/organizations", data={
+        "name": "Example Client", "domain": "example.invalid", "external_id": "CRM-100",
+        "notes": "Priority customer",
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        organization_id = ClientOrganization.query.filter_by(name="Example Client").one().id
+
+    response = client.post("/client-management/contacts", data={
+        "organization_id": organization_id, "name": "Jane Customer",
+        "email": "jane@example.invalid", "phone": "+81 00 0000 0000",
+        "job_title": "Operations lead", "preferred_language": "English",
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        contact_id = ClientContact.query.filter_by(email="jane@example.invalid").one().id
+
+    response = client.post("/client-management/tickets/new", data={
+        "contact_id": contact_id, "subject": "Cannot access client portal",
+        "description": "The customer receives an access denied response.",
+        "ticket_type": "Incident", "priority": "High", "channel": "Email",
+        "tags": "portal, access",
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        ticket = ClientTicket.query.filter_by(subject="Cannot access client portal").one()
+        ticket_id = ticket.id
+        assert ticket.number.startswith("CXT")
+        assert ticket.support_group.name == "SysOps"
+        assert ticket.tenant_id == 1
+        assert len(ticket.messages) == 1
+
+    detail = client.get(f"/client-management/tickets/{ticket_id}")
+    assert detail.status_code == 200
+    assert b"Jane Customer" in detail.data
+    assert b"Public reply" in detail.data
+    response = client.post(f"/client-management/tickets/{ticket_id}", data={
+        "action": "reply", "visibility": "internal", "body": "Checking the identity provider logs.",
+    })
+    assert response.status_code == 302
+    response = client.post(f"/client-management/tickets/{ticket_id}", data={
+        "action": "update", "status": "Pending", "priority": "Urgent",
+        "ticket_type": "Incident", "assignee_id": "", "tags": "portal, access, waiting",
+    })
+    assert response.status_code == 302
+    search = client.get("/client-management/tickets?q=Jane+Customer")
+    assert b"Cannot access client portal" in search.data
+    global_search = client.get("/ui/search?q=Example+Client")
+    assert b"Customer ticket" in global_search.data
+    with app.app_context():
+        ticket = db.session.get(ClientTicket, ticket_id)
+        assert ticket.status == "Pending"
+        assert ticket.priority == "Urgent"
+        assert ClientTicketMessage.query.filter_by(
+            client_ticket_id=ticket_id, visibility="internal"
+        ).count() == 2  # internal note plus status event
+
+
+def test_client_management_direct_records_are_tenant_isolated(app, client):
+    login(client)
+    with app.app_context():
+        db.session.add(Tenant(id=2, slug="client-two", name="Client Tenant Two"))
+        db.session.flush()
+        admin = User.query.filter_by(username="admin").one()
+        group = SupportGroup(name="SysOps", group_type="Client Support", tenant_id=2)
+        organization = ClientOrganization(name="Other Tenant Client", tenant_id=2)
+        db.session.add_all([group, organization])
+        db.session.flush()
+        contact = ClientContact(
+            tenant_id=2, organization_id=organization.id, name="Other Contact",
+            email="other@tenant-two.invalid",
+        )
+        db.session.add(contact)
+        db.session.flush()
+        ticket = ClientTicket(
+            tenant_id=2, number="CXT9000001", subject="Other tenant ticket",
+            description="Must not be visible", contact_id=contact.id,
+            organization_id=organization.id, support_group_id=group.id,
+            created_by_id=admin.id,
+        )
+        db.session.add(ticket)
+        db.session.commit()
+        ticket_id = ticket.id
+    assert client.get(f"/client-management/tickets/{ticket_id}").status_code == 404
+    assert b"Other tenant ticket" not in client.get("/client-management/tickets").data
 
 def test_admin_can_update_live_platform_branding(client, app):
     login(client)
