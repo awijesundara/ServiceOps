@@ -71,6 +71,10 @@ __all__ = [
     "MonitoringSource",
     "MonitoringEvent",
     "EnterpriseRecord",
+    "ClientOrganization",
+    "ClientContact",
+    "ClientTicket",
+    "ClientTicketMessage",
     "Approval",
     "CatalogItem",
     "CatalogItemRouting",
@@ -811,6 +815,77 @@ class EnterpriseRecord(db.Model):
             return json.loads(self.metadata_json) if self.metadata_json else {}
         except (TypeError, ValueError):
             return {}
+
+
+class ClientOrganization(db.Model):
+    """External customer account, kept separate from internal users/teams."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    name = db.Column(db.String(180), nullable=False)
+    domain = db.Column(db.String(180), nullable=False, default="")
+    external_id = db.Column(db.String(120))
+    notes = db.Column(db.Text, nullable=False, default="")
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    contacts = db.relationship("ClientContact", cascade="all, delete-orphan", backref="organization")
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_client_organization_tenant_name"),)
+
+
+class ClientContact(db.Model):
+    """Customer identity used for support communication, not application login."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("client_organization.id"), nullable=False, index=True)
+    name = db.Column(db.String(160), nullable=False)
+    email = db.Column(db.String(254), nullable=False)
+    phone = db.Column(db.String(60), nullable=False, default="")
+    job_title = db.Column(db.String(120), nullable=False, default="")
+    preferred_language = db.Column(db.String(30), nullable=False, default="English")
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    __table_args__ = (db.UniqueConstraint("tenant_id", "email", name="uq_client_contact_tenant_email"),)
+
+
+class ClientTicket(db.Model):
+    """External support conversation with Zendesk-style queue semantics."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    number = db.Column(db.String(24), unique=True, nullable=False, index=True)
+    subject = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(30), nullable=False, default="New", index=True)
+    priority = db.Column(db.String(20), nullable=False, default="Normal", index=True)
+    ticket_type = db.Column(db.String(30), nullable=False, default="Question")
+    channel = db.Column(db.String(30), nullable=False, default="Web")
+    tags = db.Column(db.String(500), nullable=False, default="")
+    contact_id = db.Column(db.Integer, db.ForeignKey("client_contact.id"), nullable=False, index=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("client_organization.id"), nullable=False, index=True)
+    assignee_id = db.Column(db.Integer, db.ForeignKey("user.id"), index=True)
+    support_group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    solved_at = db.Column(db.DateTime(timezone=True))
+    contact = db.relationship("ClientContact")
+    organization = db.relationship("ClientOrganization")
+    assignee = db.relationship("User", foreign_keys=[assignee_id])
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
+    support_group = db.relationship("SupportGroup")
+    messages = db.relationship("ClientTicketMessage", cascade="all, delete-orphan", backref="ticket", order_by="ClientTicketMessage.created_at")
+
+
+class ClientTicketMessage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    client_ticket_id = db.Column(db.Integer, db.ForeignKey("client_ticket.id"), nullable=False, index=True)
+    author_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    visibility = db.Column(db.String(20), nullable=False, default="public")
+    event_type = db.Column(db.String(30), nullable=False, default="reply")
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    author = db.relationship("User")
 
 
 class Approval(db.Model):
