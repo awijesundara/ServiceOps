@@ -9,10 +9,9 @@
     <span style="color:var(--brand-amber,#f9aa3c)">●</span> SNMP discovered &nbsp;
     — line = relationship (hover a node for details)
   </div>
-  <svg id="cmdb-topology-svg" width="100%" height="640" style="background:#f7f9fa;border:1px solid var(--line);border-radius:8px;cursor:grab"></svg>
+  <svg id="cmdb-topology-svg" width="100%" height="640" data-graph="{{ graph_json }}" style="background:#f7f9fa;border:1px solid var(--line);border-radius:8px;cursor:grab"></svg>
   <p id="cmdb-topology-empty" class="muted" hidden>No configuration items to display yet.</p>
 </section>
 
-<script>window.CMDB_TOPOLOGY_GRAPH = {{ graph_json|safe }};</script>
 <script src="{{ url_for('static', filename='cmdb-topology.js', v=app_version) }}" defer></script>
 {% endblock %}

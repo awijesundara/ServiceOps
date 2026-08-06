@@ -9972,9 +9972,14 @@ def create_app(test_config=None):
     @app.get("/cmdb/topology")
     @roles("agent", "manager", "admin")
     def cmdb_topology():
+        # Virtual machines are excluded from the physical connectivity map --
+        # a VM's meaningful "connection" is to its hypervisor host (oVirt,
+        # not LLDP-discoverable switch-port topology), which is a separate,
+        # not-yet-built concern. Showing VMs here today would only add noise
+        # with no physical-port information behind it.
         cis = restrict_ci_query_to_readable_classes(
             tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
-        ).all()
+        ).filter(ConfigurationItem.ci_class != "Virtual Machine").all()
         visible_ci_ids = {ci.id for ci in cis}
         relationships = [
             rel for rel in tenant_query(CIRelationship).all()
@@ -9989,7 +9994,10 @@ def create_app(test_config=None):
                 for ci in cis
             ],
             "edges": [
-                {"source": rel.parent_id, "target": rel.child_id, "type": rel.relationship_type}
+                {
+                    "source": rel.parent_id, "target": rel.child_id, "type": rel.relationship_type,
+                    "label": rel.label,
+                }
                 for rel in relationships
             ],
         }
