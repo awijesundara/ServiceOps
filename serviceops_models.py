@@ -895,20 +895,38 @@ class ConfigurationItem(db.Model):
 
 
 class CiClassPermission(db.Model):
-    """Per-(tenant, CI class, role) read grant, opt-in and additive to the
-    flat role/action policy in config/authorization.json. No rows exist for
-    a given ci_class -> that class is unmanaged, visible in CMDB lists to
-    every role that can see CMDB at all (today's behavior, unchanged -- this
-    table only ever narrows visibility, never widens create/update/delete
-    access, which stay governed solely by the existing @roles("admin") gate
-    on the CMDB mutation routes). Once at least one row exists for a class,
-    it is "managed": any role with no row for it -- or a row with
-    can_read=False -- is denied read access to CIs of that class."""
+    """Per-(tenant, CI class, role) CRUD grant, additive to the flat
+    role/action policy in config/authorization.json. Read and
+    create/update/delete have deliberately OPPOSITE default semantics for a
+    class with no rows at all ("unmanaged"):
+
+    - Read defaults OPEN: an unmanaged class is visible to every role that
+      could see CMDB at all before this table existed (agent/manager/admin)
+      -- zero behavior change for a deployment that never configures this.
+    - Create/update/delete default CLOSED for agent/manager: agent and
+      manager only reached the CMDB mutation routes at all once this table
+      let create/update/delete be granted per class (they were previously
+      @roles("admin")-only); an agent/manager row with no can_create/
+      can_update/can_delete grant for a class -- including a class with NO
+      rows configured yet -- means no capability, so shipping this never
+      grants anyone new write access until an administrator explicitly
+      checks a box. admin (and superadmin, which never needs a row at all)
+      always has full CRUD regardless of what the grid says -- this table
+      only ever grants agent/manager capability they didn't have, never
+      restricts admin's pre-existing access.
+
+    Once at least one row exists for a class, it is "managed" for READ
+    purposes: any role with no row for it, or can_read=False, is denied
+    read access to that class's CIs. Create/update/delete are always
+    per-(class, agent/manager-role) opt-in regardless of "managed" state."""
     id = db.Column(db.Integer, primary_key=True)
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     ci_class = db.Column(db.String(80), nullable=False)
     role = db.Column(db.String(20), nullable=False)
     can_read = db.Column(db.Boolean, nullable=False, default=False)
+    can_create = db.Column(db.Boolean, nullable=False, default=False)
+    can_update = db.Column(db.Boolean, nullable=False, default=False)
+    can_delete = db.Column(db.Boolean, nullable=False, default=False)
     updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     updated_by = db.relationship("User", foreign_keys=[updated_by_id])

@@ -4836,10 +4836,10 @@ def test_cmdb_permissions_add_new_class_marks_it_managed(client, app):
         assert managed_ci_classes(1) >= {"Simcard"}
 
 
-def test_cmdb_create_edit_unaffected_by_class_permissions(client, app):
-    # Create/update stay admin-only and ungated by this feature no matter
-    # what the class permission grid says -- this table only ever narrows
-    # read visibility, never touches the CI mutation routes.
+def test_cmdb_admin_create_is_always_allowed_regardless_of_class_permissions(client, app):
+    # admin (and superadmin) always pass every CiClassPermission check --
+    # this table only ever grants agent/manager capability they didn't have,
+    # never restricts admin's pre-existing full CMDB access.
     with app.app_context():
         db.session.add(CiClassPermission(
             tenant_id=1, ci_class="Server", role="admin", can_read=False,
@@ -4853,6 +4853,113 @@ def test_cmdb_create_edit_unaffected_by_class_permissions(client, app):
     assert created.status_code == 200
     with app.app_context():
         assert ConfigurationItem.query.filter_by(name="still-creatable.example.com").count() == 1
+
+
+def test_cmdb_agent_denied_create_without_explicit_grant(client, app):
+    # B-291 (reopened per user request to match GLPI): agent/manager now
+    # reach the CMDB create/update routes at all (previously admin-only),
+    # but must never gain write access anyone didn't explicitly grant --
+    # the default for create/update/delete is closed, unlike read.
+    with app.app_context():
+        agent = User(
+            username="ci-perm-create-agent", name="CI Perm Create Agent",
+            email="ci-perm-create-agent@test.invalid",
+            password_hash=generate_password_hash("Agent123!"), role="agent",
+        )
+        db.session.add(agent)
+        db.session.commit()
+    login(client, "ci-perm-create-agent", "Agent123!")
+    response = client.post("/cmdb/new", data={
+        "name": "denied-create.example.com", "ci_class": "Server",
+        "environment": "Production", "operational_status": "Operational",
+    })
+    assert response.status_code == 403
+    with app.app_context():
+        assert ConfigurationItem.query.filter_by(name="denied-create.example.com").count() == 0
+
+
+def test_cmdb_agent_can_create_with_explicit_grant(client, app):
+    with app.app_context():
+        agent = User(
+            username="ci-perm-create-agent2", name="CI Perm Create Agent 2",
+            email="ci-perm-create-agent2@test.invalid",
+            password_hash=generate_password_hash("Agent123!"), role="agent",
+        )
+        db.session.add(agent)
+        db.session.add(CiClassPermission(tenant_id=1, ci_class="Server", role="agent", can_create=True))
+        db.session.commit()
+    login(client, "ci-perm-create-agent2", "Agent123!")
+    response = client.post("/cmdb/new", data={
+        "name": "granted-create.example.com", "ci_class": "Server",
+        "environment": "Production", "operational_status": "Operational",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    with app.app_context():
+        assert ConfigurationItem.query.filter_by(name="granted-create.example.com").count() == 1
+
+
+def test_cmdb_manager_denied_update_without_explicit_grant(client, app):
+    with app.app_context():
+        db.session.add(ConfigurationItem(name="update-target-01", ci_class="Printer", tenant_id=1))
+        db.session.commit()
+        ci_id = ConfigurationItem.query.filter_by(name="update-target-01").one().id
+    login(client, "database.manager", "Manager123!")
+    get_response = client.get(f"/cmdb/{ci_id}/edit")
+    assert get_response.status_code == 403
+    post_response = client.post(f"/cmdb/{ci_id}/edit", data={
+        "name": "update-target-01", "ci_class": "Printer",
+        "environment": "Production", "operational_status": "Operational",
+    })
+    assert post_response.status_code == 403
+
+
+def test_cmdb_manager_can_update_with_explicit_grant(client, app):
+    with app.app_context():
+        db.session.add(ConfigurationItem(name="update-target-02", ci_class="Printer", tenant_id=1))
+        db.session.add(CiClassPermission(tenant_id=1, ci_class="Printer", role="manager", can_update=True))
+        db.session.commit()
+        ci_id = ConfigurationItem.query.filter_by(name="update-target-02").one().id
+    login(client, "database.manager", "Manager123!")
+    response = client.post(f"/cmdb/{ci_id}/edit", data={
+        "name": "update-target-02-renamed", "ci_class": "Printer",
+        "environment": "Production", "operational_status": "Operational",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    with app.app_context():
+        assert db.session.get(ConfigurationItem, ci_id).name == "update-target-02-renamed"
+
+
+def test_cmdb_relationship_add_requires_update_grant_on_both_endpoints(client, app):
+    with app.app_context():
+        db.session.add(ConfigurationItem(name="rel-parent", ci_class="Server", tenant_id=1))
+        db.session.add(ConfigurationItem(name="rel-child", ci_class="Switch", tenant_id=1))
+        # Manager is granted update on the parent's class but not the child's.
+        db.session.add(CiClassPermission(tenant_id=1, ci_class="Server", role="manager", can_update=True))
+        db.session.commit()
+        parent_id = ConfigurationItem.query.filter_by(name="rel-parent").one().id
+        child_id = ConfigurationItem.query.filter_by(name="rel-child").one().id
+    login(client, "database.manager", "Manager123!")
+    response = client.post("/cmdb/relationships", data={
+        "parent_id": str(parent_id), "relationship_type": "Depends on", "child_id": str(child_id),
+    })
+    assert response.status_code == 403
+    with app.app_context():
+        assert CIRelationship.query.count() == 0
+
+
+def test_cmdb_permissions_grid_saves_crud_columns(client, app):
+    with app.app_context():
+        db.session.add(ConfigurationItem(name="grid-crud-test", ci_class="Router", tenant_id=1))
+        db.session.commit()
+    login(client)
+    client.post("/cmdb/permissions", data={
+        "ci_class": ["Router"],
+        "read__Router__agent": "on", "create__Router__agent": "on",
+        "update__Router__agent": "on", "delete__Router__agent": "on",
+    }, follow_redirects=True)
+    with app.app_context():
+        row = CiClassPermission.query.filter_by(tenant_id=1, ci_class="Router", role="agent").one()
+        assert row.can_read and row.can_create and row.can_update and row.can_delete
 
 
 def test_cmdb_discovery_target_stores_community_encrypted_not_plaintext(client, app):

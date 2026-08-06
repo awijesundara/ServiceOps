@@ -4,7 +4,7 @@
 <header class="page-head">
   <div>
     <h1>CI class permissions</h1>
-    <p>Restrict which roles can see configuration items of a given class in CMDB lists, exports, and the topology map. A class with no rows below is visible to every role that can see the CMDB at all — the same as today. Ticking "Add" for a class puts it under management: from then on, a role needs its box checked here to see that class's CIs. Creating, editing, and deleting CIs stays administrator-only regardless of this page.</p>
+    <p>Per-role Read/Create/Update/Delete grants for each configuration item class — a class with no boxes checked below behaves exactly as before this page existed. Read defaults to visible for everyone until a class is put under management (any box ticked for it); Create/Update/Delete default to denied for agent and manager until explicitly granted here, so turning this on never silently hands out new write access. Administrators always have full access regardless of this grid.</p>
   </div>
 </header>
 <section class="panel">
@@ -12,19 +12,38 @@
     <div class="task-list-scroll">
     <table class="ci-permissions-table">
       <thead><tr>
-        <th>CI class</th>
-        {% for role in roles %}<th>{{ role|capitalize }}<br><label class="muted"><input type="checkbox" data-col-toggle="{{ role }}"> All</label></th>{% endfor %}
+        <th rowspan="2">CI class</th>
+        {% for role in roles %}<th colspan="{{ 4 if role in crud_roles else 1 }}">{{ role|capitalize }}</th>{% endfor %}
+      </tr><tr>
+        {% for role in roles %}
+          <th><label class="muted"><input type="checkbox" data-col-toggle="read__{{ role }}"> Read</label></th>
+          {% if role in crud_roles %}
+          <th><label class="muted"><input type="checkbox" data-col-toggle="create__{{ role }}"> Create</label></th>
+          <th><label class="muted"><input type="checkbox" data-col-toggle="update__{{ role }}"> Update</label></th>
+          <th><label class="muted"><input type="checkbox" data-col-toggle="delete__{{ role }}"> Delete</label></th>
+          {% endif %}
+        {% endfor %}
       </tr></thead>
       <tbody>
         {% for ci_class in ci_classes %}
         <tr>
           <td><input type="hidden" name="ci_class" value="{{ ci_class }}">{{ ci_class }}{% if ci_class not in managed_classes %} <span class="badge">Unmanaged — visible to everyone</span>{% endif %}
-            <label class="muted"><input type="checkbox" data-row-toggle="{{ ci_class }}"> All roles</label>
+            <label class="muted"><input type="checkbox" data-row-toggle="{{ ci_class }}"> All</label>
           </td>
-          {% for role in roles %}<td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="{{ role }}" name="read__{{ ci_class }}__{{ role }}" {% if grants.get((ci_class, role)) %}checked{% endif %}></td>{% endfor %}
+          {% for role in roles %}
+            {% set cell = grants.get((ci_class, role), {}) %}
+            <td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="read__{{ role }}" name="read__{{ ci_class }}__{{ role }}" {% if cell.read %}checked{% endif %}></td>
+            {% if role in crud_roles %}
+            <td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="create__{{ role }}" name="create__{{ ci_class }}__{{ role }}" {% if cell.create %}checked{% endif %}></td>
+            <td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="update__{{ role }}" name="update__{{ ci_class }}__{{ role }}" {% if cell.update %}checked{% endif %}></td>
+            <td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="delete__{{ role }}" name="delete__{{ ci_class }}__{{ role }}" {% if cell.delete %}checked{% endif %}></td>
+            {% else %}
+            <td colspan="3"><span class="muted">Always allowed</span></td>
+            {% endif %}
+          {% endfor %}
         </tr>
         {% else %}
-        <tr><td colspan="{{ roles|length + 1 }}" class="empty">No configuration items yet — nothing to configure.</td></tr>
+        <tr><td colspan="{{ 1 + roles|length + crud_roles|length * 3 }}" class="empty">No configuration items yet — nothing to configure.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -60,7 +60,8 @@ from serviceops_core.workflow import (
 )
 from serviceops_core.projections import project_document, validate_projection_policy
 from serviceops_core.ci_class_policy import (
-    ci_class_read_allowed, managed_ci_classes, restrict_ci_query_to_readable_classes,
+    ci_class_action_allowed, ci_class_read_allowed, managed_ci_classes,
+    restrict_ci_query_to_readable_classes,
 )
 
 # VERSION is the release source of truth; shown in the UI, API, and health
@@ -9494,11 +9495,16 @@ def create_app(test_config=None):
         return query.filter(db.or_(*conditions)).first()
 
     @app.route("/cmdb/new", methods=["GET", "POST"])
-    @roles("admin")
+    @roles("agent", "manager", "admin")
     def ci_new():
         if request.method == "POST":
             name = request.form["name"].strip()
             serial_number = request.form.get("serial_number", "").strip() or None
+            ci_class = request.form["ci_class"].strip()
+            if not ci_class_action_allowed(
+                current_user.tenant_id, ci_class, current_user.effective_role, "create",
+            ):
+                abort(403, description=f"You are not permitted to create {ci_class} configuration items.")
             duplicate = _ci_duplicate_of(name, serial_number)
             if duplicate:
                 flash(
@@ -9510,7 +9516,6 @@ def create_app(test_config=None):
             install_date = request.form.get("install_date") or None
             warranty_expiry_date = request.form.get("warranty_expiry_date") or None
             support_group_id = request.form.get("support_group_id") or None
-            ci_class = request.form["ci_class"].strip()
             environment = normalize_environment(request.form["environment"])
             business_criticality = request.form.get("business_criticality", "Medium")
             ci = ConfigurationItem(
@@ -9545,9 +9550,13 @@ def create_app(test_config=None):
         return render_template("ci_form.html", support_groups=support_groups)
 
     @app.route("/cmdb/<int:ci_id>/edit", methods=["GET", "POST"])
-    @roles("admin")
+    @roles("agent", "manager", "admin")
     def ci_edit(ci_id):
         ci = tenant_record_or_404(ConfigurationItem, ci_id)
+        if not ci_class_action_allowed(
+            current_user.tenant_id, ci.ci_class, current_user.effective_role, "update",
+        ):
+            abort(403, description=f"You are not permitted to edit {ci.ci_class} configuration items.")
         if request.method == "POST":
             name = request.form["name"].strip()
             serial_number = request.form.get("serial_number", "").strip() or None
@@ -9564,10 +9573,15 @@ def create_app(test_config=None):
                 "business_criticality", "ip_address", "serial_number", "vendor", "model",
                 "location", "cost_center",
             ]
+            new_ci_class = request.form["ci_class"].strip()
+            if new_ci_class != ci.ci_class and not ci_class_action_allowed(
+                current_user.tenant_id, new_ci_class, current_user.effective_role, "update",
+            ):
+                abort(403, description=f"You are not permitted to move this CI into {new_ci_class}.")
             before = {field: getattr(ci, field) or "" for field in tracked_fields}
             before["attributes"] = json.dumps(ci.attributes or {}, sort_keys=True)
             ci.name = request.form["name"].strip()
-            ci.ci_class = request.form["ci_class"].strip()
+            ci.ci_class = new_ci_class
             ci.description = request.form.get("description", "").strip() or None
             ci.environment = normalize_environment(request.form["environment"])
             ci.operational_status = request.form["operational_status"]
@@ -9762,9 +9776,13 @@ def create_app(test_config=None):
         )
 
     @app.post("/cmdb/relationships")
-    @roles("admin")
+    @roles("agent", "manager", "admin")
     def ci_relationship_add():
         parent = tenant_record_or_404(ConfigurationItem, int(request.form["parent_id"]))
+        if not ci_class_action_allowed(
+            current_user.tenant_id, parent.ci_class, current_user.effective_role, "update",
+        ):
+            abort(403, description=f"You are not permitted to edit {parent.ci_class} configuration items.")
         relationship_type = request.form.get("relationship_type", "Depends on")
         if relationship_type not in CI_RELATIONSHIP_TYPES:
             abort(400, description="Select a valid relationship type.")
@@ -9779,6 +9797,10 @@ def create_app(test_config=None):
             child = tenant_record_or_404(ConfigurationItem, child_id)
             if parent.id == child.id:
                 abort(400, description="A configuration item cannot depend on itself.")
+            if not ci_class_action_allowed(
+                current_user.tenant_id, child.ci_class, current_user.effective_role, "update",
+            ):
+                abort(403, description=f"You are not permitted to edit {child.ci_class} configuration items.")
             existing = tenant_query(CIRelationship).filter_by(
                 parent_id=parent.id, child_id=child.id, relationship_type=relationship_type,
             ).first()
@@ -9794,9 +9816,14 @@ def create_app(test_config=None):
         return redirect(url_for("cmdb"))
 
     @app.post("/cmdb/relationships/<int:relationship_id>/delete")
-    @roles("admin")
+    @roles("agent", "manager", "admin")
     def ci_relationship_delete(relationship_id):
         relationship = tenant_record_or_404(CIRelationship, relationship_id)
+        for endpoint_class in (relationship.parent.ci_class, relationship.child.ci_class):
+            if not ci_class_action_allowed(
+                current_user.tenant_id, endpoint_class, current_user.effective_role, "update",
+            ):
+                abort(403, description=f"You are not permitted to edit {endpoint_class} configuration items.")
         audit("delete", "CI relationship", f"{relationship.parent.name} — {relationship.child.name}")
         db.session.delete(relationship)
         db.session.commit()
@@ -10003,7 +10030,15 @@ def create_app(test_config=None):
         }
         return render_template("cmdb_topology.html", graph_json=json.dumps(graph))
 
-    CI_CLASS_PERMISSION_ROLES = ("requester", "agent", "manager", "admin")
+    # requester is deliberately excluded: no CMDB route (read or write) has
+    # ever let requester through, so a requester column would be an inert
+    # checkbox that can never take effect -- the same footgun avoided
+    # elsewhere in this feature. admin's create/update/delete are always
+    # implicitly allowed (see ci_class_action_allowed) and rendered as an
+    # "Always" badge in the template rather than a checkbox that would be
+    # equally inert; admin's Read column stays a real, restrictable checkbox.
+    CI_CLASS_PERMISSION_ROLES = ("agent", "manager", "admin")
+    CI_CLASS_PERMISSION_CRUD_ROLES = ("agent", "manager")
 
     @app.route("/cmdb/permissions", methods=["GET", "POST"])
     @roles("admin")
@@ -10018,22 +10053,41 @@ def create_app(test_config=None):
                     continue
                 for role in CI_CLASS_PERMISSION_ROLES:
                     can_read = request.form.get(f"read__{ci_class}__{role}") == "on"
+                    can_create = (
+                        request.form.get(f"create__{ci_class}__{role}") == "on"
+                        if role in CI_CLASS_PERMISSION_CRUD_ROLES else False
+                    )
+                    can_update = (
+                        request.form.get(f"update__{ci_class}__{role}") == "on"
+                        if role in CI_CLASS_PERMISSION_CRUD_ROLES else False
+                    )
+                    can_delete = (
+                        request.form.get(f"delete__{ci_class}__{role}") == "on"
+                        if role in CI_CLASS_PERMISSION_CRUD_ROLES else False
+                    )
                     row = CiClassPermission.query.filter_by(
                         tenant_id=tenant_id, ci_class=ci_class, role=role,
                     ).first()
                     if not row:
-                        # Only create a row when it actually grants read, or
-                        # when this class is newly opted-in via "Add" (an
+                        # Only create a row when it actually grants something,
+                        # or when this class is newly opted-in via "Add" (an
                         # all-unchecked row still needs to exist so the class
                         # shows up as managed going forward).
-                        if not can_read and ci_class != new_class:
+                        if not (can_read or can_create or can_update or can_delete) and ci_class != new_class:
                             continue
                         row = CiClassPermission(tenant_id=tenant_id, ci_class=ci_class, role=role)
                         db.session.add(row)
-                    if row.can_read != can_read or row.updated_by_id != current_user.id:
-                        row.can_read = can_read
+                    if (
+                        row.can_read != can_read or row.can_create != can_create
+                        or row.can_update != can_update or row.can_delete != can_delete
+                    ):
+                        row.can_read, row.can_create = can_read, can_create
+                        row.can_update, row.can_delete = can_update, can_delete
                         row.updated_by_id = current_user.id
-                        changed.append(f"{ci_class}/{role}={'read' if can_read else 'no-read'}")
+                        changed.append(
+                            f"{ci_class}/{role}=read:{can_read},create:{can_create},"
+                            f"update:{can_update},delete:{can_delete}"
+                        )
             if changed:
                 audit("configure", "CI class permission", "; ".join(changed))
             db.session.commit()
@@ -10046,10 +10100,17 @@ def create_app(test_config=None):
         }
         all_classes = sorted(classes_in_use | managed_ci_classes(tenant_id))
         existing = CiClassPermission.query.filter_by(tenant_id=tenant_id).all()
-        grants = {(row.ci_class, row.role): row.can_read for row in existing}
+        grants = {
+            (row.ci_class, row.role): {
+                "read": row.can_read, "create": row.can_create,
+                "update": row.can_update, "delete": row.can_delete,
+            }
+            for row in existing
+        }
         return render_template(
             "cmdb_permissions.html", ci_classes=all_classes, roles=CI_CLASS_PERMISSION_ROLES,
-            grants=grants, managed_classes=managed_ci_classes(tenant_id),
+            crud_roles=CI_CLASS_PERMISSION_CRUD_ROLES, grants=grants,
+            managed_classes=managed_ci_classes(tenant_id),
         )
 
     @app.get("/approvals")
