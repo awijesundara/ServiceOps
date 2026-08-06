@@ -1,4 +1,57 @@
 document.addEventListener("DOMContentLoaded", () => {
+  const applicationNav = document.querySelector("[data-application-nav]");
+  if (applicationNav) {
+    const topGroups = [...applicationNav.querySelectorAll(":scope > .nav-group")];
+    topGroups.forEach((group) => {
+      group.addEventListener("toggle", () => {
+        if (!group.open || applicationNav.classList.contains("is-filtering")) return;
+        topGroups.forEach((other) => {
+          if (other !== group) other.open = false;
+        });
+      });
+    });
+
+    const menuFilter = applicationNav.querySelector("[data-nav-filter]");
+    const emptyState = applicationNav.querySelector("[data-nav-filter-empty]");
+    const home = applicationNav.querySelector(".nav-home");
+    const normalize = (value) => value.toLocaleLowerCase().replace(/&/g, "and");
+    menuFilter?.addEventListener("input", () => {
+      const query = normalize(menuFilter.value.trim());
+      applicationNav.classList.toggle("is-filtering", Boolean(query));
+      let matchCount = 0;
+
+      if (home) {
+        const matches = !query || normalize(home.textContent).includes(query);
+        home.toggleAttribute("data-filter-match", matches && Boolean(query));
+        home.hidden = !matches;
+        if (matches) matchCount += 1;
+      }
+
+      topGroups.forEach((group) => {
+        const directSummary = group.querySelector(":scope > summary");
+        const groupMatch = normalize(directSummary?.textContent || "").includes(query);
+        let groupMatches = 0;
+        group.querySelectorAll("a").forEach((link) => {
+          const matches = !query || groupMatch || normalize(link.textContent).includes(query);
+          link.hidden = !matches;
+          if (matches) groupMatches += 1;
+        });
+        group.querySelectorAll(".nav-subgroup").forEach((subgroup) => {
+          const visibleLinks = [...subgroup.querySelectorAll("a")].some((link) => !link.hidden);
+          const subgroupMatch = normalize(subgroup.querySelector(":scope > summary")?.textContent || "").includes(query);
+          subgroup.hidden = Boolean(query) && !visibleLinks && !subgroupMatch;
+          if (query && (visibleLinks || subgroupMatch)) subgroup.open = true;
+        });
+        const matches = !query || groupMatch || groupMatches > 0;
+        group.toggleAttribute("data-filter-match", matches && Boolean(query));
+        group.hidden = !matches;
+        if (query && matches) group.open = true;
+        matchCount += groupMatches;
+      });
+      if (emptyState) emptyState.hidden = !query || matchCount > 0;
+    });
+  }
+
   const drawers = [...document.querySelectorAll("[data-platform-drawer]")];
   const closeDrawers = () => drawers.forEach((drawer) => { drawer.hidden = true; });
   document.querySelectorAll("[data-open-platform-drawer]").forEach((button) => {

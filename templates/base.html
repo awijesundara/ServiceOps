@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v=app_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='client-management.css', v=app_version) }}">
   <script src="{{ url_for('static', filename='platform.js', v=app_version) }}" defer></script>
   <script src="{{ url_for('static', filename='lookup.js', v=app_version) }}" defer></script>
   <script src="{{ url_for('static', filename='select-enhance.js', v=app_version) }}" defer></script>
@@ -28,38 +29,92 @@
 {% if test_fixture_active %}<div class="test-fixture-banner">NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active</div>{% endif %}
 <aside class="sidebar">
   <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo">{% else %}<span class="company-mark">{{ company_name[:2]|upper }}</span>{% endif %}<span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span></a>
-  <nav class="legacy-application-nav">
-    <small>WORKSPACE</small>
-    <a href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}class="active" aria-current="page"{% endif %}>Dashboard</a>
-    <a href="{{ url_for('task_board') }}" {% if nav_active('task_board') %}class="active" aria-current="page"{% endif %}>Visual task board</a>
-    {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}<a href="{{ url_for('my_work_tasks') }}" {% if nav_active('my_work_tasks') %}class="active" aria-current="page"{% endif %}>My tasks{% if my_open_tasks_count %}<span class="nav-badge" title="{{ my_open_tasks_count }} open task{{ 's' if my_open_tasks_count != 1 }} assigned to you">{{ my_open_tasks_count if my_open_tasks_count < 100 else '99+' }}</span>{% endif %}</a>{% endif %}
-    <a href="{{ url_for('tickets', kind='incident') }}" {% if nav_active('tickets', kind='incident') %}class="active" aria-current="page"{% endif %}>Incidents</a>
-    <a href="{{ url_for('requests_list') }}" {% if nav_active('requests_list') %}class="active" aria-current="page"{% endif %}>Service requests</a>
-    {% if current_user.effective_role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}" {% if nav_active('tickets', kind='change') %}class="active" aria-current="page"{% endif %}>Changes</a>{% endif %}
-    <a href="{{ url_for('catalog') }}" {% if nav_active('catalog') %}class="active" aria-current="page"{% endif %}>Service catalog</a>
-    <a href="{{ url_for('knowledge') }}" {% if nav_active('knowledge') %}class="active" aria-current="page"{% endif %}>Knowledge</a>
-    <a href="{{ url_for('modules') }}" {% if nav_active('modules') %}class="active" aria-current="page"{% endif %}>All workspaces</a>
-    <a href="{{ url_for('approval_chains') }}" {% if nav_active('approval_chains') %}class="active" aria-current="page"{% endif %}>My approvals{% if pending_approvals_count %}<span class="nav-badge" title="{{ pending_approvals_count }} approval{{ 's' if pending_approvals_count != 1 }} waiting on you">{{ pending_approvals_count if pending_approvals_count < 100 else '99+' }}</span>{% endif %}</a>
-    <a href="{{ url_for('notifications') }}" {% if nav_active('notifications') %}class="active" aria-current="page"{% endif %}>Notifications</a>
-    <a href="{{ url_for('org_chart') }}" {% if nav_active('org_chart') %}class="active" aria-current="page"{% endif %}>Org chart</a>
+  <nav class="application-nav" aria-label="Application navigation" data-application-nav>
+    <label class="nav-filter"><span aria-hidden="true">⌕</span><input type="search" placeholder="Find menu" aria-label="Find a menu item" data-nav-filter></label>
+    <a class="nav-home{% if nav_active('dashboard') %} active{% endif %}" href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">⌂</span><span>Home</span></a>
+
+    {% if client_management_access %}
+    <details class="nav-group nav-group-client" {% if request.endpoint in ['client_management_home','client_tickets','client_ticket_new','client_ticket_detail','client_organizations','client_contacts'] %}open{% endif %}>
+      <summary><span class="nav-symbol" aria-hidden="true">◒</span><span>Client management</span>{% if client_open_ticket_count %}<span class="nav-badge">{{ client_open_ticket_count if client_open_ticket_count < 100 else '99+' }}</span>{% endif %}<span class="nav-chevron" aria-hidden="true"></span></summary>
+      <div class="nav-group-items">
+        <a href="{{ url_for('client_management_home') }}" {% if nav_active('client_management_home') %}class="active" aria-current="page"{% endif %}>Support overview</a>
+        <a href="{{ url_for('client_tickets') }}" {% if request.endpoint in ['client_tickets','client_ticket_new','client_ticket_detail'] %}class="active" aria-current="page"{% endif %}>Customer tickets</a>
+        <a href="{{ url_for('client_organizations') }}" {% if nav_active('client_organizations') %}class="active" aria-current="page"{% endif %}>Organizations</a>
+        <a href="{{ url_for('client_contacts') }}" {% if nav_active('client_contacts') %}class="active" aria-current="page"{% endif %}>Contacts</a>
+      </div>
+    </details>
+    {% endif %}
+
+    <details class="nav-group" {% if request.endpoint in ['task_board','my_work_tasks','tickets','requests_list','approval_chains','notifications','org_chart'] %}open{% endif %}>
+      <summary><span class="nav-symbol" aria-hidden="true">◫</span><span>My work</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+      <div class="nav-group-items">
+        <a href="{{ url_for('task_board') }}" {% if nav_active('task_board') %}class="active" aria-current="page"{% endif %}>Visual task board</a>
+        {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}<a href="{{ url_for('my_work_tasks') }}" {% if nav_active('my_work_tasks') %}class="active" aria-current="page"{% endif %}>My tasks{% if my_open_tasks_count %}<span class="nav-badge">{{ my_open_tasks_count if my_open_tasks_count < 100 else '99+' }}</span>{% endif %}</a>{% endif %}
+        <a href="{{ url_for('tickets', kind='incident') }}" {% if nav_active('tickets', kind='incident') %}class="active" aria-current="page"{% endif %}>Incidents</a>
+        <a href="{{ url_for('requests_list') }}" {% if nav_active('requests_list') %}class="active" aria-current="page"{% endif %}>Service requests</a>
+        {% if current_user.effective_role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}" {% if nav_active('tickets', kind='change') %}class="active" aria-current="page"{% endif %}>Changes</a>{% endif %}
+        <a href="{{ url_for('approval_chains') }}" {% if nav_active('approval_chains') %}class="active" aria-current="page"{% endif %}>My approvals{% if pending_approvals_count %}<span class="nav-badge">{{ pending_approvals_count if pending_approvals_count < 100 else '99+' }}</span>{% endif %}</a>
+        <a href="{{ url_for('notifications') }}" {% if nav_active('notifications') %}class="active" aria-current="page"{% endif %}>Notifications</a>
+        <a href="{{ url_for('org_chart') }}" {% if nav_active('org_chart') %}class="active" aria-current="page"{% endif %}>Organization chart</a>
+      </div>
+    </details>
+
+    <details class="nav-group" {% if request.endpoint in ['catalog','knowledge','modules'] %}open{% endif %}>
+      <summary><span class="nav-symbol" aria-hidden="true">◎</span><span>Self-service</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+      <div class="nav-group-items">
+        <a href="{{ url_for('catalog') }}" {% if nav_active('catalog') %}class="active" aria-current="page"{% endif %}>Service catalog</a>
+        <a href="{{ url_for('knowledge') }}" {% if nav_active('knowledge') %}class="active" aria-current="page"{% endif %}>Knowledge</a>
+        <a href="{{ url_for('modules') }}" {% if nav_active('modules') %}class="active" aria-current="page"{% endif %}>All workspaces</a>
+      </div>
+    </details>
+
     {% if current_user.effective_role in ['manager','admin','superadmin'] %}
-    <small>LEADERSHIP</small>
-    <a href="{{ url_for('manager_portal') }}" {% if nav_active('manager_portal') %}class="active" aria-current="page"{% endif %}>Manager portal</a>
+    <details class="nav-group" {% if request.endpoint in ['manager_portal','analytics','analytics_overdue'] %}open{% endif %}>
+      <summary><span class="nav-symbol" aria-hidden="true">▥</span><span>Management</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+      <div class="nav-group-items"><a href="{{ url_for('manager_portal') }}" {% if nav_active('manager_portal') %}class="active" aria-current="page"{% endif %}>Manager portal</a><a href="{{ url_for('analytics') }}" {% if nav_active('analytics') %}class="active" aria-current="page"{% endif %}>Analytics</a></div>
+    </details>
     {% endif %}
+
     {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}
-    <small>OPERATIONS</small>
-    <a href="{{ url_for('module_records', domain='problem') }}" {% if nav_active('module_records', domain='problem') %}class="active" aria-current="page"{% endif %}>Problems</a>
-    <a href="{{ url_for('known_errors') }}" {% if nav_active('known_errors') %}class="active" aria-current="page"{% endif %}>Known errors</a>
-    <a href="{{ url_for('module_records', domain='event') }}" {% if nav_active('module_records', domain='event') %}class="active" aria-current="page"{% endif %}>IT operations</a>
-    <a href="{{ url_for('improvements') }}" {% if nav_active('improvements') %}class="active" aria-current="page"{% endif %}>Improvements</a>
-    <a href="{{ url_for('cmdb') }}" {% if nav_active('cmdb') %}class="active" aria-current="page"{% endif %}>CMDB & service map<span class="info-tip" tabindex="0" data-tip="CMDB = Configuration Management Database: tracks every server, application, and service (CI = Configuration Item) and how they depend on one another.">i</span></a>
-    <a href="{{ url_for('assets') }}" {% if nav_active('assets') %}class="active" aria-current="page"{% endif %}>Assets</a>
-    <a href="{{ url_for('analytics') }}" {% if nav_active('analytics') %}class="active" aria-current="page"{% endif %}>Analytics</a>
+    <details class="nav-group" {% if request.endpoint in ['module_records','known_errors','improvements','cmdb','cmdb_topology','cmdb_discovery','cmdb_discovery_review','cmdb_import','assets'] %}open{% endif %}>
+      <summary><span class="nav-symbol" aria-hidden="true">◇</span><span>Operations</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+      <div class="nav-group-items">
+        <a href="{{ url_for('module_records', domain='problem') }}" {% if nav_active('module_records', domain='problem') %}class="active" aria-current="page"{% endif %}>Problems</a>
+        <a href="{{ url_for('known_errors') }}" {% if nav_active('known_errors') %}class="active" aria-current="page"{% endif %}>Known errors</a>
+        <a href="{{ url_for('module_records', domain='event') }}" {% if nav_active('module_records', domain='event') %}class="active" aria-current="page"{% endif %}>IT operations</a>
+        <a href="{{ url_for('improvements') }}" {% if nav_active('improvements') %}class="active" aria-current="page"{% endif %}>Improvements</a>
+        <a href="{{ url_for('cmdb') }}" {% if nav_active('cmdb') %}class="active" aria-current="page"{% endif %}>CMDB &amp; service map</a>
+        <a href="{{ url_for('assets') }}" {% if nav_active('assets') %}class="active" aria-current="page"{% endif %}>Assets</a>
+      </div>
+    </details>
     {% endif %}
+
     {% if current_user.effective_role in ['admin','superadmin'] %}
-    <small>ADMINISTRATION</small>
-    <a href="{{ url_for('admin_home') }}" {% if request.endpoint in admin_endpoints %}class="active" aria-current="page"{% endif %}>Administration home</a>
+    <details class="nav-group nav-group-admin" {% if request.endpoint in admin_endpoints %}open{% endif %}>
+      <summary><span class="nav-symbol" aria-hidden="true">⚙</span><span>Administration</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+      <div class="nav-group-items">
+        <a href="{{ url_for('admin_home') }}" {% if nav_active('admin_home') %}class="active" aria-current="page"{% endif %}>Administration home</a>
+        <details class="nav-subgroup" {% if request.endpoint in ['users','user_new','user_edit','admin_access','admin_roles','admin_sessions'] %}open{% endif %}>
+          <summary><span>User management</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+          <div class="nav-subgroup-items">
+            <a href="{{ url_for('users') }}" {% if request.endpoint in ['users','user_new','user_edit'] %}class="active" aria-current="page"{% endif %}>Users</a>
+            <a href="{{ url_for('admin_access') }}" {% if nav_active('admin_access') %}class="active" aria-current="page"{% endif %}>Groups, teams &amp; access</a>
+            <a href="{{ url_for('admin_roles') }}" {% if nav_active('admin_roles') %}class="active" aria-current="page"{% endif %}>Roles &amp; permissions</a>
+            <a href="{{ url_for('admin_sessions') }}" {% if nav_active('admin_sessions') %}class="active" aria-current="page"{% endif %}>Active sessions</a>
+          </div>
+        </details>
+        <a href="{{ url_for('itil_admin') }}" {% if nav_active('itil_admin') %}class="active" aria-current="page"{% endif %}>Service delivery &amp; governance</a>
+        <a href="{{ url_for('system_settings') }}" {% if nav_active('system_settings') %}class="active" aria-current="page"{% endif %}>Platform settings</a>
+        <a href="{{ url_for('integrations_admin') }}" {% if nav_active('integrations_admin') %}class="active" aria-current="page"{% endif %}>Integrations &amp; delivery</a>
+        <a href="{{ url_for('workflows_admin') }}" {% if nav_active('workflows_admin') %}class="active" aria-current="page"{% endif %}>Automation rules</a>
+        <a href="{{ url_for('api_clients_admin') }}" {% if nav_active('api_clients_admin') %}class="active" aria-current="page"{% endif %}>API access</a>
+        <a href="{{ url_for('audit_log') }}" {% if nav_active('audit_log') %}class="active" aria-current="page"{% endif %}>Audit &amp; evidence</a>
+        <a href="{{ url_for('system_health') }}" {% if request.endpoint in ['system_health','system_health_log_file'] %}class="active" aria-current="page"{% endif %}>System health</a>
+        {% if current_user.effective_role == 'superadmin' %}<a href="{{ url_for('platform_tenants') }}" {% if nav_active('platform_tenants') %}class="active" aria-current="page"{% endif %}>Platform tenants</a>{% endif %}
+      </div>
+    </details>
     {% endif %}
+    <p class="nav-filter-empty" data-nav-filter-empty hidden>No matching menu items</p>
   </nav>
   <script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
   <div class="profile">

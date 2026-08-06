@@ -43,6 +43,7 @@ from ldap3 import ALL, SUBTREE, Connection, Server, Tls
 from ldap3.utils.conv import escape_filter_chars
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -3169,6 +3170,37 @@ def user_support_group_ids(user):
     return group_ids
 
 
+def client_sysops_group(tenant_id):
+    return SupportGroup.query.filter(
+        SupportGroup.tenant_id == tenant_id,
+        func.lower(SupportGroup.name) == "sysops",
+        SupportGroup.active.is_(True),
+    ).first()
+
+
+def user_can_access_client_management(user):
+    """Client support is isolated to SysOps and active administrators."""
+    if not user.is_authenticated or not user.active:
+        return False
+    if role_at_least(user.effective_role, "admin"):
+        return True
+    group = client_sysops_group(user.tenant_id)
+    return bool(group and (
+        group.manager_id == user.id
+        or GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first()
+    ))
+
+
+def require_client_management(view):
+    @wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        if not user_can_access_client_management(current_user):
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapped
+
+
 def visible_catalog_request_query(user):
     query = CatalogRequest.query
     if not user.is_authenticated or not user.active:
@@ -3460,6 +3492,7 @@ SUPPORT_GROUP_FK_MODELS = (
     (ChangeOwnership, "group_id"),
     (TicketAssignmentGroup, "group_id"),
     (OperationalTask, "assignment_group_id"),
+    (ClientTicket, "support_group_id"),
 )
 
 
@@ -3533,6 +3566,13 @@ def seed_itil(admin):
         service_desk = SupportGroup(name="Service Desk", group_type="Fulfillment", tenant_id=admin.tenant_id)
         security = SupportGroup(name="Security Operations", group_type="Fulfillment", tenant_id=admin.tenant_id)
         db.session.add_all([service_desk, security])
+    if not SupportGroup.query.filter(
+        SupportGroup.tenant_id == admin.tenant_id,
+        func.lower(SupportGroup.name) == "sysops",
+    ).first():
+        db.session.add(SupportGroup(
+            name="SysOps", group_type="Client Support", tenant_id=admin.tenant_id,
+        ))
     team_names = ["CoreApps", "Database", "Network", "Windows", "Unix", "SSD"]
     for team_name in team_names:
         group = SupportGroup.query.filter_by(name=team_name, tenant_id=admin.tenant_id).first()
@@ -4751,6 +4791,13 @@ def create_app(test_config=None):
                     CatalogTask.assignee_id == current_user.id,
                     CatalogTask.state.notin_(["Closed Complete", "Closed Incomplete", "Closed Skipped"]),
                 ).count()
+            ),
+            "client_management_access": user_can_access_client_management(current_user),
+            "client_open_ticket_count": (
+                tenant_query(ClientTicket).filter(
+                    ClientTicket.status.notin_(["Solved", "Closed"])
+                ).count()
+                if user_can_access_client_management(current_user) else 0
             ),
         }
 
@@ -8055,6 +8102,211 @@ def create_app(test_config=None):
             abort(404)
         avatar_dir = os.path.join(app.config["UPLOAD_FOLDER"], "avatars")
         return send_from_directory(avatar_dir, user.avatar_path)
+
+    def client_workspace_context():
+        group = client_sysops_group(current_user.tenant_id)
+        user_ids = set()
+        if group:
+            user_ids.update(member.user_id for member in group.members if member.user.active)
+            if group.manager and group.manager.active:
+                user_ids.add(group.manager_id)
+        if current_user.id not in user_ids and role_at_least(current_user.effective_role, "admin"):
+            user_ids.add(current_user.id)
+        agents = tenant_query(User).filter(User.id.in_(user_ids), User.active.is_(True)).order_by(User.name).all() if user_ids else []
+        return group, agents
+
+    @app.get("/client-management")
+    @require_client_management
+    def client_management_home():
+        query = tenant_query(ClientTicket)
+        counts = {
+            "mine": query.filter(ClientTicket.assignee_id == current_user.id, ClientTicket.status.notin_(["Solved", "Closed"])).count(),
+            "unassigned": query.filter(ClientTicket.assignee_id.is_(None), ClientTicket.status.notin_(["Solved", "Closed"])).count(),
+            "unsolved": query.filter(ClientTicket.status.notin_(["Solved", "Closed"])).count(),
+            "pending": query.filter(ClientTicket.status == "Pending").count(),
+            "recent": query.filter(ClientTicket.updated_at >= now() - timedelta(days=7)).count(),
+            "solved": query.filter(ClientTicket.status == "Solved").count(),
+        }
+        recent = query.options(
+            selectinload(ClientTicket.contact), selectinload(ClientTicket.assignee),
+            selectinload(ClientTicket.organization),
+        ).order_by(ClientTicket.updated_at.desc()).limit(8).all()
+        return render_template("client_management_home.html", counts=counts, recent=recent)
+
+    @app.get("/client-management/tickets")
+    @require_client_management
+    def client_tickets():
+        view = request.args.get("view", "unsolved")
+        q = request.args.get("q", "").strip()
+        query = tenant_query(ClientTicket).options(
+            selectinload(ClientTicket.contact), selectinload(ClientTicket.assignee),
+            selectinload(ClientTicket.organization),
+        )
+        if view == "mine":
+            query = query.filter(ClientTicket.assignee_id == current_user.id, ClientTicket.status.notin_(["Solved", "Closed"]))
+        elif view == "unassigned":
+            query = query.filter(ClientTicket.assignee_id.is_(None), ClientTicket.status.notin_(["Solved", "Closed"]))
+        elif view == "pending":
+            query = query.filter(ClientTicket.status == "Pending")
+        elif view == "recent":
+            query = query.filter(ClientTicket.updated_at >= now() - timedelta(days=7))
+        elif view == "solved":
+            query = query.filter(ClientTicket.status.in_(["Solved", "Closed"]))
+        else:
+            view = "unsolved"
+            query = query.filter(ClientTicket.status.notin_(["Solved", "Closed"]))
+        if q:
+            query = query.join(ClientContact).join(ClientOrganization).filter(db.or_(
+                ClientTicket.number.ilike(f"%{q}%"), ClientTicket.subject.ilike(f"%{q}%"),
+                ClientContact.name.ilike(f"%{q}%"), ClientContact.email.ilike(f"%{q}%"),
+                ClientOrganization.name.ilike(f"%{q}%"),
+            ))
+        tickets = query.order_by(ClientTicket.updated_at.desc()).limit(250).all()
+        return render_template("client_tickets.html", tickets=tickets, view=view, q=q)
+
+    @app.route("/client-management/tickets/new", methods=["GET", "POST"])
+    @require_client_management
+    def client_ticket_new():
+        group, agents = client_workspace_context()
+        if not group:
+            abort(409, description="The SysOps client-support team is not configured.")
+        contacts = tenant_query(ClientContact).filter_by(active=True).options(selectinload(ClientContact.organization)).order_by(ClientContact.name).all()
+        if request.method == "POST":
+            contact = tenant_query(ClientContact).filter_by(id=request.form.get("contact_id", type=int), active=True).first_or_404()
+            subject = request.form.get("subject", "").strip()
+            description = request.form.get("description", "").strip()
+            if not subject or not description:
+                flash("Subject and description are required.", "error")
+            else:
+                agent_ids = {agent.id for agent in agents}
+                assignee_id = request.form.get("assignee_id", type=int)
+                if assignee_id not in agent_ids:
+                    assignee_id = None
+
+                def build_client_ticket():
+                    row = ClientTicket(
+                        number=sequence_number(ClientTicket, "CXT"), tenant_id=current_user.tenant_id,
+                        subject=subject, description=description,
+                        status="New", priority=request.form.get("priority") if request.form.get("priority") in ["Low", "Normal", "High", "Urgent"] else "Normal",
+                        ticket_type=request.form.get("ticket_type") if request.form.get("ticket_type") in ["Question", "Incident", "Problem", "Task"] else "Question",
+                        channel=request.form.get("channel") if request.form.get("channel") in ["Web", "Email", "Phone", "Chat"] else "Web",
+                        tags=request.form.get("tags", "").strip()[:500], contact_id=contact.id,
+                        organization_id=contact.organization_id, assignee_id=assignee_id,
+                        support_group_id=group.id, created_by_id=current_user.id,
+                    )
+                    db.session.add(row)
+                    return row
+
+                ticket = create_with_retry_on_number_collision(build_client_ticket, error_description="Could not allocate a client ticket number; please try again.")
+                db.session.add(ClientTicketMessage(
+                    tenant_id=current_user.tenant_id, client_ticket_id=ticket.id,
+                    author_id=current_user.id, body=description, visibility="public", event_type="opened",
+                ))
+                audit("client ticket created", ticket.number, f"Customer {contact.email}; organization {contact.organization.name}")
+                db.session.commit()
+                return redirect(url_for("client_ticket_detail", ticket_id=ticket.id))
+        return render_template("client_ticket_form.html", contacts=contacts, agents=agents)
+
+    @app.route("/client-management/tickets/<int:ticket_id>", methods=["GET", "POST"])
+    @require_client_management
+    def client_ticket_detail(ticket_id):
+        ticket = tenant_query(ClientTicket).options(
+            selectinload(ClientTicket.messages).selectinload(ClientTicketMessage.author),
+            selectinload(ClientTicket.contact), selectinload(ClientTicket.organization),
+            selectinload(ClientTicket.assignee),
+        ).filter_by(id=ticket_id).first_or_404()
+        group, agents = client_workspace_context()
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "reply":
+                body = request.form.get("body", "").strip()
+                visibility = request.form.get("visibility", "public")
+                if visibility not in ("public", "internal"):
+                    abort(400)
+                if not body:
+                    flash("Enter a reply or internal note.", "error")
+                else:
+                    db.session.add(ClientTicketMessage(
+                        tenant_id=current_user.tenant_id, client_ticket_id=ticket.id,
+                        author_id=current_user.id, body=body, visibility=visibility,
+                    ))
+                    ticket.updated_at = now()
+                    audit("client ticket message", ticket.number, visibility)
+                    db.session.commit()
+                    return redirect(url_for("client_ticket_detail", ticket_id=ticket.id))
+            elif action == "update":
+                old_status = ticket.status
+                status = request.form.get("status")
+                priority = request.form.get("priority")
+                ticket_type = request.form.get("ticket_type")
+                if status not in ["New", "Open", "Pending", "On-hold", "Solved", "Closed"]:
+                    abort(400)
+                if priority not in ["Low", "Normal", "High", "Urgent"] or ticket_type not in ["Question", "Incident", "Problem", "Task"]:
+                    abort(400)
+                agent_ids = {agent.id for agent in agents}
+                assignee_id = request.form.get("assignee_id", type=int)
+                ticket.assignee_id = assignee_id if assignee_id in agent_ids else None
+                ticket.status, ticket.priority, ticket.ticket_type = status, priority, ticket_type
+                ticket.tags = request.form.get("tags", "").strip()[:500]
+                ticket.solved_at = now() if status == "Solved" and old_status != "Solved" else (None if status not in ["Solved", "Closed"] else ticket.solved_at)
+                if old_status != status:
+                    db.session.add(ClientTicketMessage(
+                        tenant_id=current_user.tenant_id, client_ticket_id=ticket.id,
+                        author_id=current_user.id, body=f"Status changed from {old_status} to {status}.",
+                        visibility="internal", event_type="status",
+                    ))
+                audit("client ticket updated", ticket.number, f"Status {old_status} -> {status}")
+                db.session.commit()
+                return redirect(url_for("client_ticket_detail", ticket_id=ticket.id))
+        return render_template("client_ticket_detail.html", ticket=ticket, agents=agents)
+
+    @app.route("/client-management/organizations", methods=["GET", "POST"])
+    @require_client_management
+    def client_organizations():
+        if request.method == "POST":
+            name = request.form.get("name", "").strip()
+            if not name:
+                flash("Organization name is required.", "error")
+            elif tenant_query(ClientOrganization).filter(func.lower(ClientOrganization.name) == name.lower()).first():
+                flash("That client organization already exists.", "error")
+            else:
+                row = ClientOrganization(
+                    tenant_id=current_user.tenant_id, name=name,
+                    domain=request.form.get("domain", "").strip().lower(),
+                    external_id=request.form.get("external_id", "").strip() or None,
+                    notes=request.form.get("notes", "").strip(),
+                )
+                db.session.add(row)
+                audit("client organization created", name)
+                db.session.commit()
+                return redirect(url_for("client_organizations"))
+        rows = tenant_query(ClientOrganization).options(selectinload(ClientOrganization.contacts)).order_by(ClientOrganization.name).all()
+        return render_template("client_organizations.html", organizations=rows)
+
+    @app.route("/client-management/contacts", methods=["GET", "POST"])
+    @require_client_management
+    def client_contacts():
+        organizations = tenant_query(ClientOrganization).filter_by(active=True).order_by(ClientOrganization.name).all()
+        if request.method == "POST":
+            organization = tenant_query(ClientOrganization).filter_by(id=request.form.get("organization_id", type=int), active=True).first_or_404()
+            name, email = request.form.get("name", "").strip(), request.form.get("email", "").strip().lower()
+            if not name or not email or "@" not in email:
+                flash("A valid name and email address are required.", "error")
+            elif tenant_query(ClientContact).filter(func.lower(ClientContact.email) == email).first():
+                flash("That client email address already exists.", "error")
+            else:
+                row = ClientContact(
+                    tenant_id=current_user.tenant_id, organization_id=organization.id,
+                    name=name, email=email, phone=request.form.get("phone", "").strip(),
+                    job_title=request.form.get("job_title", "").strip(),
+                    preferred_language=request.form.get("preferred_language", "English").strip() or "English",
+                )
+                db.session.add(row)
+                audit("client contact created", email, organization.name)
+                db.session.commit()
+                return redirect(url_for("client_contacts"))
+        contacts = tenant_query(ClientContact).options(selectinload(ClientContact.organization)).order_by(ClientContact.name).all()
+        return render_template("client_contacts.html", contacts=contacts, organizations=organizations)
 
     @app.get("/admin")
     @roles("admin")
@@ -11590,6 +11842,13 @@ def create_app(test_config=None):
                 ("Integrations", "Webhooks monitoring RT import delivery", "integrations_admin", {}, "admin"),
                 ("Automation rules", "Workflow schedules executions", "workflows_admin", {}, "admin"),
             ]
+            if user_can_access_client_management(current_user):
+                navigation.extend([
+                    ("Client management", "Customer support external clients SysOps", "client_management_home", {}, None),
+                    ("Customer tickets", "Client cases conversations replies internal notes", "client_tickets", {}, None),
+                    ("Client organizations", "Customer companies accounts", "client_organizations", {}, None),
+                    ("Client contacts", "Customer people email phone", "client_contacts", {}, None),
+                ])
             for label, keywords, endpoint, params, minimum_role in navigation:
                 if minimum_role and not role_at_least(current_user.effective_role, minimum_role):
                     continue
@@ -11685,6 +11944,27 @@ def create_app(test_config=None):
             )).limit(20):
                 results.append({"type": "Catalog item", "label": row.name,
                                 "url": url_for("catalog"), "meta": row.category})
+            if user_can_access_client_management(current_user):
+                for row in tenant_query(ClientTicket).join(ClientContact).join(ClientOrganization).filter(db.or_(
+                    ClientTicket.number.ilike(pattern), ClientTicket.subject.ilike(pattern),
+                    ClientTicket.description.ilike(pattern), ClientContact.name.ilike(pattern),
+                    ClientContact.email.ilike(pattern), ClientOrganization.name.ilike(pattern),
+                )).limit(20):
+                    results.append({"type": "Customer ticket", "label": f"{row.number} · {row.subject}",
+                                    "url": url_for("client_ticket_detail", ticket_id=row.id),
+                                    "meta": f"{row.organization.name} · {row.status}"})
+                for row in tenant_query(ClientOrganization).filter(db.or_(
+                    ClientOrganization.name.ilike(pattern), ClientOrganization.domain.ilike(pattern),
+                    ClientOrganization.external_id.ilike(pattern),
+                )).limit(20):
+                    results.append({"type": "Client organization", "label": row.name,
+                                    "url": url_for("client_organizations"), "meta": row.domain})
+                for row in tenant_query(ClientContact).filter(db.or_(
+                    ClientContact.name.ilike(pattern), ClientContact.email.ilike(pattern),
+                    ClientContact.phone.ilike(pattern),
+                )).limit(20):
+                    results.append({"type": "Client contact", "label": f"{row.name} · {row.email}",
+                                    "url": url_for("client_contacts"), "meta": row.organization.name})
             if role_at_least(current_user.effective_role, "admin"):
                 for row in tenant_query(User).filter(db.or_(
                     User.username.ilike(pattern), User.name.ilike(pattern),
