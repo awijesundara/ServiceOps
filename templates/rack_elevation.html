@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ rack.name }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>{{ rack.name }}{% if rack.site %} <small class="muted">({{ rack.site }})</small>{% endif %}</h1><p>{{ rack.u_height }}U rack{% if rack.external_source == 'netbox' %} &middot; synced from NetBox{% endif %}</p></div><a class="button" href="{{ url_for('rack_list') }}">← Back to racks</a></header>
+<div id="rack-elevation-root" data-rack="{{ rack_json }}">
+  <div class="rack-elevation-layout">
+    <div class="rack-elevation-panels">
+      <section class="panel"><h2>Front</h2><svg id="rack-elevation-front" width="220" data-face="front"></svg></section>
+      <section class="panel"><h2>Rear</h2><svg id="rack-elevation-rear" width="220" data-face="rear"></svg></section>
+    </div>
+    <aside class="rack-elevation-sidebar">
+      <section class="panel">
+        <h2>Rack statistics</h2>
+        <div class="rack-stat"><span>Space</span><div class="rack-stat-bar"><div id="rack-stat-space" class="rack-stat-fill"></div></div><small id="rack-stat-space-label"></small></div>
+        <div class="rack-stat"><span>Weight</span><div class="rack-stat-bar"><div id="rack-stat-weight" class="rack-stat-fill"></div></div><small id="rack-stat-weight-label"></small></div>
+        <div class="rack-stat"><span>Power</span><div class="rack-stat-bar"><div id="rack-stat-power" class="rack-stat-fill"></div></div><small id="rack-stat-power-label"></small></div>
+      </section>
+      <section class="panel">
+        <h2>Power units</h2>
+        <div id="rack-pdu-list"><p class="muted">No PDUs recorded.</p></div>
+      </section>
+    </aside>
+  </div>
+  <p id="rack-elevation-empty" class="muted" hidden>Nothing mounted in this rack yet.</p>
+</div>
+<script src="{{ url_for('static', filename='rack-elevation.js', v=app_version) }}" defer></script>
+{% endblock %}
