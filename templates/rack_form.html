@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Edit {{ rack.name }} · {{ instance_name }}{% endblock %}
+{% block content %}<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>Edit {{ rack.name }}</h1></div><a class="button" href="{{ url_for('rack_list') }}">← Back to racks</a></header>
+<form method="post" class="panel form-grid">
+<label>Name<input name="name" value="{{ rack.name }}" required></label>
+<label>Site<input name="site" value="{{ rack.site }}"></label>
+<label>Height (U)<input type="number" name="u_height" value="{{ rack.u_height }}" min="1" max="60"></label>
+<label class="wide">Notes<textarea name="notes" rows="4">{{ rack.notes }}</textarea></label>
+<div class="wide actions">
+<a class="button" href="{{ url_for('rack_list') }}">Cancel</a>
+<button type="submit" class="button" form="rack-delete-form" onclick="return confirm('Delete this rack? This cannot be undone.');">Delete</button>
+<button class="primary">Save changes</button>
+</div>
+</form>
+<form method="post" id="rack-delete-form" action="{{ url_for('rack_delete', rack_id=rack.id) }}" hidden></form>
+{% endblock %}

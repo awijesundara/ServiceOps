@@ -9912,6 +9912,7 @@ def create_app(test_config=None):
             support_group_id = request.form.get("support_group_id") or None
             environment = normalize_environment(request.form["environment"])
             business_criticality = request.form.get("business_criticality", "Medium")
+            rack_id = request.form.get("rack_id") or None
             ci = ConfigurationItem(
                 name=request.form["name"].strip(), ci_class=ci_class,
                 description=request.form.get("description", "").strip() or None,
@@ -9934,6 +9935,10 @@ def create_app(test_config=None):
                     ci_always_requires_ccb(ci_class, environment, business_criticality)
                     or request.form.get("require_ccb_approval") == "on"
                 ),
+                rack_id=int(rack_id) if rack_id else None,
+                rack_position=request.form.get("rack_position", type=float),
+                rack_u_height=request.form.get("rack_u_height", type=int),
+                rack_face=request.form.get("rack_face", "").strip() or None,
             )
             db.session.add(ci)
             audit("create", "CI", ci.name)
@@ -9941,7 +9946,8 @@ def create_app(test_config=None):
             flash(f"{ci.name} created.", "success")
             return redirect(url_for("cmdb"))
         support_groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
-        return render_template("ci_form.html", support_groups=support_groups)
+        racks = tenant_query(Rack).filter_by(active=True).order_by(Rack.name).all()
+        return render_template("ci_form.html", support_groups=support_groups, racks=racks)
 
     @app.route("/cmdb/<int:ci_id>/edit", methods=["GET", "POST"])
     @roles("agent", "manager", "admin")
@@ -9999,6 +10005,11 @@ def create_app(test_config=None):
                 ci_always_requires_ccb(ci.ci_class, ci.environment, ci.business_criticality)
                 or request.form.get("require_ccb_approval") == "on"
             )
+            rack_id = request.form.get("rack_id") or None
+            ci.rack_id = int(rack_id) if rack_id else None
+            ci.rack_position = request.form.get("rack_position", type=float)
+            ci.rack_u_height = request.form.get("rack_u_height", type=int)
+            ci.rack_face = request.form.get("rack_face", "").strip() or None
             after = {field: getattr(ci, field) or "" for field in tracked_fields}
             after["attributes"] = json.dumps(ci.attributes or {}, sort_keys=True)
             log_field_changes("ci", ci.id, before, after)
@@ -10008,6 +10019,7 @@ def create_app(test_config=None):
             return redirect(url_for("cmdb"))
         owners = tenant_query(User).filter_by(active=True).order_by(User.name).all()
         support_groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
+        racks = tenant_query(Rack).filter_by(active=True).order_by(Rack.name).all()
         history = TaskHistory.query.filter_by(
             target_type="ci", target_id=ci.id
         ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).limit(50).all()
@@ -10024,7 +10036,7 @@ def create_app(test_config=None):
             if match:
                 lldp_neighbor_cis[neighbor_name] = match
         return render_template(
-            "ci_form.html", ci=ci, owners=owners, support_groups=support_groups, history=history,
+            "ci_form.html", ci=ci, owners=owners, support_groups=support_groups, racks=racks, history=history,
             impacted_cis=impacted_cis, lldp_neighbor_cis=lldp_neighbor_cis,
         )
 
@@ -10118,7 +10130,8 @@ def create_app(test_config=None):
                 "configure", "NetBox CMDB sync",
                 f"{'Preview' if dry_run else 'Applied'}: "
                 f"{result['devices_seen']} devices seen, {result['cis_created']} created, "
-                f"{result['cis_updated']} updated, {len(result['errors'])} errors",
+                f"{result['cis_updated']} updated, {result['racks_created']} racks created, "
+                f"{result['racks_updated']} racks updated, {len(result['errors'])} errors",
             )
             session["netbox_sync_result"] = result
             flash(
@@ -10126,11 +10139,125 @@ def create_app(test_config=None):
                     "NetBox sync preview: " if dry_run else "NetBox sync applied: "
                 ) + (
                     f"{result['devices_seen']} devices seen, {result['cis_created']} created, "
-                    f"{result['cis_updated']} updated, {len(result['errors'])} errors."
+                    f"{result['cis_updated']} updated, {result['racks_created']} racks created, "
+                    f"{result['racks_updated']} racks updated, {len(result['errors'])} errors."
                 ),
                 "success" if not result["errors"] else "warning",
             )
         return redirect(url_for("cmdb_import"))
+
+    @app.route("/cmdb/racks", methods=["GET", "POST"])
+    @roles("agent", "manager", "admin")
+    def rack_list():
+        if request.method == "POST":
+            if current_user.effective_role not in ("admin", "superadmin"):
+                abort(403)
+            name = request.form.get("name", "").strip()
+            if not name:
+                flash("Rack name is required.", "error")
+            elif tenant_query(Rack).filter(func.lower(Rack.name) == name.casefold()).first():
+                flash("A rack with that name already exists.", "error")
+            else:
+                rack = Rack(
+                    tenant_id=current_user.tenant_id, name=name,
+                    site=request.form.get("site", "").strip(),
+                    u_height=request.form.get("u_height", type=int) or 42,
+                    notes=request.form.get("notes", "").strip(),
+                )
+                db.session.add(rack)
+                audit("create", "Rack", name)
+                db.session.commit()
+                flash(f"{name} created.", "success")
+                return redirect(url_for("rack_list"))
+        racks = tenant_query(Rack).filter_by(active=True).order_by(Rack.site, Rack.name).all()
+        occupied_u = {
+            row.rack_id: row.total
+            for row in db.session.query(
+                ConfigurationItem.rack_id, func.sum(ConfigurationItem.rack_u_height).label("total"),
+            ).filter(ConfigurationItem.rack_id.isnot(None), ConfigurationItem.tenant_id == current_user.tenant_id)
+            .group_by(ConfigurationItem.rack_id).all()
+        }
+        return render_template("rack_list.html", racks=racks, occupied_u=occupied_u)
+
+    @app.route("/cmdb/racks/<int:rack_id>/edit", methods=["GET", "POST"])
+    @roles("admin")
+    def rack_edit(rack_id):
+        rack = tenant_record_or_404(Rack, rack_id)
+        if request.method == "POST":
+            name = request.form.get("name", "").strip()
+            duplicate = tenant_query(Rack).filter(
+                func.lower(Rack.name) == name.casefold(), Rack.id != rack.id,
+            ).first()
+            if not name:
+                flash("Rack name is required.", "error")
+            elif duplicate:
+                flash("A rack with that name already exists.", "error")
+            else:
+                rack.name = name
+                rack.site = request.form.get("site", "").strip()
+                rack.u_height = request.form.get("u_height", type=int) or rack.u_height
+                rack.notes = request.form.get("notes", "").strip()
+                audit("update", "Rack", rack.name)
+                db.session.commit()
+                flash(f"{rack.name} updated.", "success")
+                return redirect(url_for("rack_list"))
+        return render_template("rack_form.html", rack=rack)
+
+    @app.post("/cmdb/racks/<int:rack_id>/delete")
+    @roles("admin")
+    def rack_delete(rack_id):
+        rack = tenant_record_or_404(Rack, rack_id)
+        still_mounted = tenant_query(ConfigurationItem).filter_by(rack_id=rack.id).count()
+        if still_mounted:
+            flash(
+                f"Cannot delete {rack.name}: {still_mounted} configuration item(s) are still "
+                "mounted in it. Unassign them first.", "error",
+            )
+            return redirect(url_for("rack_list"))
+        audit("delete", "Rack", rack.name)
+        db.session.delete(rack)
+        db.session.commit()
+        flash(f"{rack.name} deleted.", "success")
+        return redirect(url_for("rack_list"))
+
+    @app.get("/cmdb/racks/<int:rack_id>")
+    @roles("agent", "manager", "admin")
+    def rack_elevation(rack_id):
+        rack = tenant_record_or_404(Rack, rack_id)
+        cis = restrict_ci_query_to_readable_classes(
+            tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
+        ).filter_by(rack_id=rack.id).all()
+
+        def ci_dict(ci):
+            return {
+                "id": ci.id, "name": ci.name, "ci_class": ci.ci_class,
+                "status": ci.operational_status,
+                "position": ci.rack_position if ci.rack_position is not None else 1,
+                "u_height": ci.rack_u_height if ci.rack_u_height else 1,
+            }
+
+        front = [ci_dict(ci) for ci in cis if ci.rack_face != "rear" and (ci.ci_class or "").lower() != "pdu"]
+        rear = [ci_dict(ci) for ci in cis if ci.rack_face == "rear" and (ci.ci_class or "").lower() != "pdu"]
+        pdus = [
+            {
+                "id": ci.id, "name": ci.name,
+                "power_watts": (ci.attributes or {}).get("power_watts"),
+            }
+            for ci in cis if (ci.ci_class or "").lower() == "pdu"
+        ]
+        space_used = sum((ci.rack_u_height or 1) for ci in cis if ci.rack_position is not None)
+        weights = [(ci.attributes or {}).get("weight_kg") for ci in cis if (ci.attributes or {}).get("weight_kg")]
+        powers = [(ci.attributes or {}).get("power_watts") for ci in cis if (ci.attributes or {}).get("power_watts")]
+        payload = {
+            "rack": {"id": rack.id, "name": rack.name, "site": rack.site, "u_height": rack.u_height},
+            "front": front, "rear": rear, "pdus": pdus,
+            "stats": {
+                "space_used_u": space_used, "space_total_u": rack.u_height,
+                "weight_kg": sum(weights) if weights else None,
+                "power_watts": sum(powers) if powers else None,
+            },
+        }
+        return render_template("rack_elevation.html", rack=rack, rack_json=json.dumps(payload))
 
     @app.route("/tickets/import/rt", methods=["GET", "POST"])
     @roles("admin")

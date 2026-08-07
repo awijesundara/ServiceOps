@@ -13,6 +13,10 @@
 <label>Model<input name="model" value="{{ ci.model if ci else '' }}"></label>
 <label>Location<input name="location" value="{{ ci.location if ci else '' }}" placeholder="Site, rack, or region"></label>
 <label>Cost center<input name="cost_center" value="{{ ci.cost_center if ci else '' }}"></label>
+<label>Rack<select name="rack_id"><option value="">Not rack-mounted</option>{% for rack in racks %}<option value="{{ rack.id }}" {% if ci and ci.rack_id==rack.id %}selected{% endif %}>{{ rack.name }}{% if rack.site %} ({{ rack.site }}){% endif %}</option>{% endfor %}</select></label>
+<label>Rack position (U)<input type="number" step="0.5" min="1" name="rack_position" value="{{ ci.rack_position if ci and ci.rack_position is not none else '' }}"></label>
+<label>Height (U)<input type="number" step="1" min="1" name="rack_u_height" value="{{ ci.rack_u_height if ci and ci.rack_u_height is not none else '' }}" placeholder="1"></label>
+<label>Rack face<select name="rack_face"><option value="">&mdash;</option><option value="front" {% if ci and ci.rack_face=='front' %}selected{% endif %}>Front</option><option value="rear" {% if ci and ci.rack_face=='rear' %}selected{% endif %}>Rear</option></select></label>
 <label>Discovery source<select name="discovery_source">{% for value in ['Manual','Discovery scan','Import','API'] %}<option {% if (ci.discovery_source if ci else 'Manual')==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
 <label>Install date<input type="date" name="install_date" value="{{ ci.install_date.isoformat() if ci and ci.install_date else '' }}"></label>
 <label>Warranty expiry<input type="date" name="warranty_expiry_date" value="{{ ci.warranty_expiry_date.isoformat() if ci and ci.warranty_expiry_date else '' }}"></label>

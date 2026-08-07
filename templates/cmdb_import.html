@@ -6,13 +6,15 @@
 {% if netbox_enabled %}
 <section class="panel" id="netbox-sync">
   <h2>Sync from NetBox</h2>
-  <p class="muted">NetBox is treated as the source of truth for hardware fields (name, serial number, vendor, model, IP address, location) — these are always overwritten on matched CIs. Whatever else NetBox has for a device (rack, position, tenant, role, platform, out-of-band IP, tags, comments, custom fields, interfaces, console ports, power ports, inventory items) is captured too, under "NetBox: " prefixed entries in the CI's Additional imported fields. Devices are matched by NetBox device ID, then serial number, then hostname, so re-running a sync never creates a duplicate CI. Configure credentials and certificate trust under <a href="{{ url_for('system_settings') }}#settings-netbox_connection">Administration home → Platform settings → NetBox connection</a>.</p>
+  <p class="muted">NetBox is treated as the source of truth for hardware fields (name, serial number, vendor, model, IP address, location) and physical rack placement (rack, position, height in U, front/rear face — see <a href="{{ url_for('rack_list') }}">Racks</a>) — these are always overwritten on matched CIs. Whatever else NetBox has for a device (tenant, role, platform, out-of-band IP, tags, comments, custom fields, interfaces, console ports, power ports, inventory items) is captured too, under "NetBox: " prefixed entries in the CI's Additional imported fields. Devices are matched by NetBox device ID, then serial number, then hostname, so re-running a sync never creates a duplicate CI. A device's NetBox role (e.g. "PDU", "Switch") becomes its CI class directly, falling back to "Server" only when NetBox has no role set. Configure credentials and certificate trust under <a href="{{ url_for('system_settings') }}#settings-netbox_connection">Administration home → Platform settings → NetBox connection</a>.</p>
   {% if netbox_sync_result %}
   <div class="callout"><strong>{{ 'Preview' if netbox_sync_result.dry_run else 'Applied' }}:</strong>
     {{ netbox_sync_result.devices_seen }} devices seen ·
     {{ netbox_sync_result.cis_created }} created ·
     {{ netbox_sync_result.cis_updated }} updated ·
     {{ netbox_sync_result.cis_matched_by_serial }} adopted by serial number ·
+    {{ netbox_sync_result.racks_created }} racks created ·
+    {{ netbox_sync_result.racks_updated }} racks updated ·
     {{ netbox_sync_result.errors|length }} errors
     {% if netbox_sync_result.errors %}<ul>{% for error in netbox_sync_result.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
   </div>

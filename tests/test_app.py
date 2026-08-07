@@ -23,7 +23,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
                  MonitoringEvent, MonitoringSource, Notification, OperationalTask,
-                 OutboxEvent, ProblemProfile, RecordLink, ScheduleHoliday, SLADefinition,
+                 OutboxEvent, ProblemProfile, Rack, RecordLink, ScheduleHoliday, SLADefinition,
                  RequestedItem, PlatformSetting, ServiceOffering, ServiceOfferingCI, SupportGroup, SupportGroupAlias,
                  TaskCI, TaskHistory, TaskNote, TaskSLA,
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference, UserRoleGrant, ManagedRoleGrant,
@@ -5364,6 +5364,94 @@ def test_cmdb_topology_excludes_virtual_machines(client, app):
     response = client.get("/cmdb/topology")
     assert response.status_code == 200
     assert b"topo-physical-host" in response.data
+
+
+def test_rack_list_requires_agent_and_write_requires_admin(client, app):
+    login(client, "employee", "Employee123!")
+    assert client.get("/cmdb/racks").status_code == 403
+    client.post("/logout")
+
+    login(client, "database.manager", "Manager123!")
+    assert client.get("/cmdb/racks").status_code == 200
+    assert client.post("/cmdb/racks", data={"name": "rack-manager-attempt"}).status_code == 403
+    client.post("/logout")
+
+    login(client)
+    response = client.post("/cmdb/racks", data={"name": "rack-test-01", "site": "CC1", "u_height": "42"})
+    assert response.status_code == 302
+    with app.app_context():
+        rack = Rack.query.filter_by(name="rack-test-01").one()
+        assert (rack.site, rack.u_height, rack.tenant_id) == ("CC1", 42, 1)
+
+
+def test_rack_delete_blocked_while_ci_still_mounted(client, app):
+    login(client)
+    with app.app_context():
+        rack = Rack(tenant_id=1, name="rack-delete-test", u_height=42)
+        db.session.add(rack)
+        db.session.flush()
+        db.session.add(ConfigurationItem(
+            name="rack-delete-ci", ci_class="Server", rack_id=rack.id, rack_position=1, rack_u_height=1,
+        ))
+        db.session.commit()
+        rack_id = rack.id
+    response = client.post(f"/cmdb/racks/{rack_id}/delete", follow_redirects=True)
+    assert response.status_code == 200
+    assert b"still mounted" in response.data
+    with app.app_context():
+        assert db.session.get(Rack, rack_id) is not None
+
+    with app.app_context():
+        ConfigurationItem.query.filter_by(name="rack-delete-ci").update({"rack_id": None})
+        db.session.commit()
+    response = client.post(f"/cmdb/racks/{rack_id}/delete", follow_redirects=True)
+    assert response.status_code == 200
+    with app.app_context():
+        assert db.session.get(Rack, rack_id) is None
+
+
+def test_rack_elevation_places_devices_and_respects_class_read_permission(client, app):
+    with app.app_context():
+        rack = Rack(tenant_id=1, name="rack-elevation-test", u_height=42)
+        db.session.add(rack)
+        db.session.flush()
+        db.session.add(ConfigurationItem(
+            name="rack-elevation-visible", ci_class="Server", rack_id=rack.id,
+            rack_position=10, rack_u_height=2, rack_face="front",
+        ))
+        db.session.add(ConfigurationItem(
+            name="rack-elevation-hidden", ci_class="Consumable", rack_id=rack.id,
+            rack_position=20, rack_u_height=1, rack_face="front",
+        ))
+        db.session.add(CiClassPermission(tenant_id=1, ci_class="Consumable", role="admin", can_read=False))
+        db.session.commit()
+        rack_id = rack.id
+    login(client)
+    response = client.get(f"/cmdb/racks/{rack_id}")
+    assert response.status_code == 200
+    assert b"rack-elevation-visible" in response.data
+    assert b"rack-elevation-hidden" not in response.data
+
+
+def test_ci_form_round_trips_manual_rack_placement(client, app):
+    with app.app_context():
+        rack = Rack(tenant_id=1, name="rack-manual-place", u_height=42)
+        db.session.add(rack)
+        db.session.commit()
+        rack_id = rack.id
+    login(client)
+    response = client.post("/cmdb/new", data={
+        "name": "manual-rack-ci", "ci_class": "Server", "environment": "Production",
+        "operational_status": "Operational", "rack_id": str(rack_id),
+        "rack_position": "5.5", "rack_u_height": "2", "rack_face": "rear",
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        ci = ConfigurationItem.query.filter_by(name="manual-rack-ci").one()
+        assert ci.rack_id == rack_id
+        assert ci.rack_position == 5.5
+        assert ci.rack_u_height == 2
+        assert ci.rack_face == "rear"
     assert b"topo-a-vm" not in response.data
 
 

@@ -38,7 +38,10 @@ from app import parse_form_date
 
 # Columns NetBox owns; matches netbox_sync.HARDWARE_FIELDS (kept separate to
 # avoid a hard import-time dependency between the two sync modules).
-NETBOX_OWNED_FIELDS = ("name", "serial_number", "vendor", "model", "ip_address", "location")
+NETBOX_OWNED_FIELDS = (
+    "name", "serial_number", "vendor", "model", "ip_address", "location",
+    "rack_id", "rack_position", "rack_u_height", "rack_face",
+)
 
 # Spreadsheet header -> ConfigurationItem field. Header matching is
 # case-insensitive and tolerant of the sheet having many unrecognized extra

@@ -79,6 +79,7 @@ __all__ = [
     "CatalogItem",
     "CatalogItemRouting",
     "ConfigurationItem",
+    "Rack",
     "CiClassPermission",
     "CIRelationship",
     "DiscoveryTarget",
@@ -967,6 +968,37 @@ class ConfigurationItem(db.Model):
     # environment isn't in CCB_REQUIRED_ENVIRONMENTS (e.g. a Dev box that's
     # still business-critical enough to need board sign-off).
     require_ccb_approval = db.Column(db.Boolean, nullable=False, default=False)
+    # Physical rack placement -- all four nullable/optional, meaningless and
+    # simply blank for any CI that isn't rack-mounted (a Business Application
+    # CI, for instance), exactly like `location` already works today. Sourced
+    # from either serviceops_core/netbox_sync.py (a NetBox-managed rack) or
+    # direct admin entry on the CI edit form.
+    rack_id = db.Column(db.Integer, db.ForeignKey("rack.id"), index=True)
+    rack_position = db.Column(db.Float)
+    rack_u_height = db.Column(db.Integer)
+    rack_face = db.Column(db.String(10))
+    rack = db.relationship("Rack")
+
+
+class Rack(db.Model):
+    """A physical rack a ConfigurationItem can be mounted in -- either
+    synced from NetBox's own /api/dcim/racks/ or created by hand for a site
+    without NetBox. Not itself a ConfigurationItem/ci_class: racks are
+    physical containers, not managed/monitored assets in their own right."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    site = db.Column(db.String(120), nullable=False, default="")
+    u_height = db.Column(db.Integer, nullable=False, default=42)
+    notes = db.Column(db.Text, nullable=False, default="")
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    # Populated by netbox_sync.py so a re-run matches existing rows instead
+    # of creating duplicates. Null for manually-created racks.
+    external_source = db.Column(db.String(20))
+    external_id = db.Column(db.String(120))
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_rack_tenant_name"),)
 
 
 class CiClassPermission(db.Model):
