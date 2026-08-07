@@ -99,9 +99,59 @@ document.addEventListener("DOMContentLoaded", () => {
   const path = location.pathname + location.search;
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
   const csrfHeaders = {"Content-Type": "application/x-www-form-urlencoded", "X-CSRF-Token": csrfToken};
+  // Adds/moves an entry to the top of a nav-popover list (Favorites,
+  // Recently viewed) without a page refresh -- both lists used to only
+  // reflect a change after the next full page load, since the click/visit
+  // handlers below only patched the star icon or button text, never the
+  // list markup itself.
+  function upsertNavPopoverEntry(container, urlAttr, emptyAttr, url, label) {
+    if (!container) return;
+    container.querySelector(`[${emptyAttr}]`)?.remove();
+    container.querySelector(`a[${urlAttr}="${CSS.escape(url)}"]`)?.remove();
+    const link = document.createElement("a");
+    link.href = url;
+    link.textContent = label;
+    link.setAttribute(urlAttr, url);
+    link.classList.add("nav-popover-entry-new");
+    container.prepend(link);
+    requestAnimationFrame(() => link.classList.remove("nav-popover-entry-new"));
+  }
+  function removeNavPopoverEntry(container, urlAttr, emptyAttr, emptyText, url) {
+    if (!container) return;
+    container.querySelector(`a[${urlAttr}="${CSS.escape(url)}"]`)?.remove();
+    if (!container.querySelector("a")) {
+      const empty = document.createElement("p");
+      empty.setAttribute(emptyAttr, "");
+      empty.textContent = emptyText;
+      container.appendChild(empty);
+    }
+  }
   if (body.querySelector(".sidebar")) {
-    const data = new URLSearchParams({url: path, label: document.title});
-    fetch("/ui/history", {method: "POST", headers: csrfHeaders, body: data});
+    const label = document.title;
+    const data = new URLSearchParams({url: path, label});
+    fetch("/ui/history", {method: "POST", headers: csrfHeaders, body: data})
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result) => {
+        if (!result) return;
+        upsertNavPopoverEntry(
+          document.querySelector("[data-history-list]"), "data-history-url", "data-history-empty",
+          result.url || path, result.label || label,
+        );
+      })
+      .catch(() => {});
+  }
+  // "Forgot your password?" only applies to a local account -- an AD/LDAP
+  // password reset isn't something ServiceOps's local reset flow can do, so
+  // hide the link live as the selected authentication source changes rather
+  // than only deciding it once at page render.
+  const authProviderSelect = document.querySelector("[data-auth-provider-select]");
+  const forgotPasswordLink = document.querySelector("[data-forgot-password-link]");
+  if (authProviderSelect && forgotPasswordLink) {
+    const syncForgotPasswordVisibility = () => {
+      forgotPasswordLink.hidden = authProviderSelect.value !== "local";
+    };
+    authProviderSelect.addEventListener("change", syncForgotPasswordVisibility);
+    syncForgotPasswordVisibility();
   }
   const navToggle = document.querySelector("[data-nav-toggle]");
   if (navToggle) {
@@ -154,6 +204,14 @@ document.addEventListener("DOMContentLoaded", () => {
       : "Add this page to favorites";
     const star = document.querySelector("[data-favorite-star]");
     if (star) star.setAttribute("data-active", result.active ? "true" : "false");
+    const favoritesList = document.querySelector("[data-favorites-list]");
+    if (result.active) {
+      upsertNavPopoverEntry(favoritesList, "data-favorite-url", "data-favorites-empty", result.url, result.label);
+      showToast("Added to favorites.", "success");
+    } else {
+      removeNavPopoverEntry(favoritesList, "data-favorite-url", "data-favorites-empty", "No favorites yet.", result.url);
+      showToast("Removed from favorites.", "success");
+    }
   });
   let dragged = null;
   document.querySelectorAll(".board-card[draggable=true]").forEach(card => {

@@ -2621,7 +2621,12 @@ def test_unified_search_favorites_and_preferences(client, app):
     user_result = client.get("/ui/search?q=System+Administrator")
     assert b"User" in user_result.data
     assert b"admin" in user_result.data
-    assert client.post("/ui/favorite", data={"url": "/task-board", "label": "My board"}).json["active"]
+    favorite_ack = client.post("/ui/favorite", data={"url": "/task-board", "label": "My board"}).json
+    assert favorite_ack["active"]
+    assert (favorite_ack["url"], favorite_ack["label"]) == ("/task-board", "My board")
+    history_response = client.post("/ui/history", data={"url": "/task-board", "label": "My board"})
+    assert history_response.status_code == 200
+    assert (history_response.json["url"], history_response.json["label"]) == ("/task-board", "My board")
     client.post("/preferences", data={
         "theme": "dark", "density": "compact", "font_scale": "115",
         "high_contrast": "1", "reduced_motion": "1", "nav_pinned": "1",
@@ -4566,6 +4571,20 @@ def test_ldap_bind_password_decrypt_failure_refuses_anonymous_fallback(app):
         ))
         db.session.commit()
         assert ldap_authenticate("someuser", "somepassword") is None
+
+
+def test_login_forgot_password_link_hidden_by_default_when_ldap_also_enabled(client, app):
+    """"Forgot your password?" only applies to a local account; when both
+    local and AD/LDAP sign-in are available, the AD/LDAP provider is the
+    default selection, so the link must start hidden (JS then toggles it
+    live as the user changes the dropdown -- see static/platform.js)."""
+    with app.app_context():
+        db.session.add(PlatformSetting(key="LDAP_ENABLED", value="true", encrypted=False))
+        db.session.add(PlatformSetting(key="LDAP_SERVER_URI", value="ldap://ldap.example.test", encrypted=False))
+        db.session.commit()
+    page = client.get("/login")
+    assert b'data-auth-provider-select' in page.data
+    assert b'data-forgot-password-link hidden' in page.data
 
 
 def test_api_rate_limit_returns_429_with_retry_after(client, app):
