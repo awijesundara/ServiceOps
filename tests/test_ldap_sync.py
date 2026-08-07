@@ -47,12 +47,28 @@ class FakeEntry:
         return self._attrs
 
 
+class _FakeStandard:
+    def __init__(self, connection):
+        self._connection = connection
+
+    def paged_search(self, search_base=None, search_filter=None, search_scope=None,
+                      attributes=None, paged_size=None, generator=True):
+        for entry in self._connection._entries:
+            yield {"type": "searchResEntry", "dn": entry.entry_dn, "attributes": entry.entry_attributes_as_dict}
+
+
+class _FakeExtend:
+    def __init__(self, connection):
+        self.standard = _FakeStandard(connection)
+
+
 class FakeConnection:
     def __init__(self, entries):
         self._entries = entries
         self.entries = []
+        self.extend = _FakeExtend(self)
 
-    def search(self, base_dn, search_filter, search_scope=None, attributes=None):
+    def search(self, base_dn, search_filter, search_scope=None, attributes=None, size_limit=None):
         self.entries = self._entries
         return True
 
@@ -157,6 +173,25 @@ def test_manager_dn_outside_directory_search_is_left_unresolved(app, monkeypatch
         assert result["managers_provisioned"] == 0
         assert result["managers_resolved"] == 0
         assert not result["errors"]
+
+
+def test_self_manager_dn_is_skipped_and_reported(app, monkeypatch):
+    """If AD points a user's manager to their own DN, sync must not set a
+    self-reference and must report it clearly instead of crashing."""
+    with app.app_context():
+        alice_dn = "CN=Alice,OU=Users,DC=example,DC=com"
+        alice = provision_ldap_user("alice", alice_dn)
+        entries = [
+            FakeEntry(alice_dn, {"manager": [alice_dn]}),
+        ]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+        result = sync_directory(1)
+        db.session.refresh(alice)
+        assert alice.manager_id is None
+        assert result["managers_resolved"] == 0
+        assert result["self_manager_skipped"] == 1
+        assert result["self_manager_users"] == ["alice"]
+        assert any("Self-manager record skipped for alice" in error for error in result["errors"])
 
 
 def test_group_membership_sync_adds_membership_and_managed_row(app, monkeypatch):
