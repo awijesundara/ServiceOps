@@ -2,22 +2,52 @@
 {% block title %}Roles & permissions · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set admin_page_title = 'Roles & permissions' %}{% set admin_parent_title = 'Access control' %}{% set admin_parent_url = url_for('admin_access') %}{% include '_admin_context.html' %}
-<header class="page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Roles &amp; permissions</h1><p>The base role → action policy is Git-backed (<code>config/authorization.json</code>) and read-only here; changing it requires editing that file and redeploying. Per-CI-class CMDB permissions are database-backed and configurable below.</p></div></header>
+<header class="page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Roles &amp; permissions</h1><p><code>config/authorization.json</code> is the Git-backed, ITIL-recommended baseline. Check or clear boxes below to grant or revoke an action for a role in this tenant &mdash; changes are stored as overrides on top of that baseline, so "Reset to recommended" can always bring a role back to it. Per-CI-class CMDB permissions are configured separately below.</p></div></header>
 <section class="panel">
-  <h2>Role → action policy</h2>
-  <div class="task-list-scroll">
-    <table>
-      <thead><tr><th>Action</th>{% for role in role_actions.keys() %}<th>{{ role|capitalize }}</th>{% endfor %}</tr></thead>
-      <tbody>
-        {% for action in actions %}
-        <tr><td>{{ action }}</td>
-          {% for role in role_actions.keys() %}<td>{% if action in role_actions[role] %}✓{% else %}—{% endif %}</td>{% endfor %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="panel-head"><h2>Role &rarr; action policy</h2></div>
+  <form method="post">
+    <input type="hidden" name="action" value="save">
+    <div class="task-list-scroll">
+      <table>
+        <thead><tr>
+          <th>Action</th>
+          {% for role in role_actions.keys() %}<th>{{ role|capitalize }}{% if role not in editable_roles %} <small class="muted">(fixed)</small>{% endif %}</th>{% endfor %}
+        </tr></thead>
+        <tbody>
+          {% for act in actions %}
+          <tr><td>{{ act }}</td>
+            {% for role in role_actions.keys() %}
+            <td>
+              {% if role in editable_roles %}
+              <input type="checkbox" name="grant__{{ role }}__{{ act }}" {% if act in role_actions[role] %}checked{% endif %}>
+              {% else %}
+              {% if act in role_actions[role] %}✓{% else %}—{% endif %}
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">superadmin is always implicitly allowed every action and can't be edited here. A checkbox that differs from the ITIL-recommended baseline is stored as an override for this tenant only.</p>
+    <div class="actions"><button class="primary">Save permissions</button></div>
+  </form>
+</section>
+<section class="panel">
+  <h2>Reset to recommended</h2>
+  <p class="muted">Discards this tenant's overrides for a role, restoring it to exactly what <code>config/authorization.json</code> grants.</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    {% for role in editable_roles %}
+    <form method="post" onsubmit="return confirm('Reset {{ role }} to the ITIL-recommended baseline? This discards any custom permission changes made for this role.');">
+      <input type="hidden" name="action" value="reset">
+      <input type="hidden" name="role" value="{{ role }}">
+      <button type="submit" class="button" {% if not has_overrides.get(role) %}disabled{% endif %}>
+        Reset {{ role|capitalize }}{% if has_overrides.get(role) %} <span class="badge">customized</span>{% else %} <small class="muted">(at baseline)</small>{% endif %}
+      </button>
+    </form>
+    {% endfor %}
   </div>
-  <p class="muted">superadmin is always implicitly allowed every action and is not listed here.</p>
 </section>
 <section class="panel">
   <h2>CI class permissions</h2>
