@@ -63,12 +63,12 @@
       }
     },
     "ui_action_ack": {
-      "allowed_fields": ["active", "state"],
+      "allowed_fields": ["active", "state", "url", "label"],
       "audiences": {
-        "requester": ["active", "state"],
-        "agent": ["active", "state"],
-        "manager": ["active", "state"],
-        "admin": ["active", "state"]
+        "requester": ["active", "state", "url", "label"],
+        "agent": ["active", "state", "url", "label"],
+        "manager": ["active", "state", "url", "label"],
+        "admin": ["active", "state", "url", "label"]
       }
     }
   }

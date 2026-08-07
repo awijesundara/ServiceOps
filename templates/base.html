@@ -155,14 +155,18 @@
         <h3>Favorites</h3>
         <button type="button" class="favorite-toggle" data-favorite>{{ 'Remove this page from favorites' if current_page_is_favorite else 'Add this page to favorites' }}</button>
         <hr>
-        {% for favorite in ui_favorites %}<a href="{{ favorite.url }}">{{ favorite.label }}</a>{% else %}<p>No favorites yet.</p>{% endfor %}
+        <div data-favorites-list>
+        {% for favorite in ui_favorites %}<a href="{{ favorite.url }}" data-favorite-url="{{ favorite.url }}">{{ favorite.label }}</a>{% else %}<p data-favorites-empty>No favorites yet.</p>{% endfor %}
+        </div>
       </div>
     </details>
     <details data-nav-menu="history">
       <summary title="Recently viewed pages" aria-label="Recently viewed pages"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg></summary>
       <div class="nav-popover">
         <h3>Recently viewed</h3>
-        {% for row in ui_history %}<a href="{{ row.url }}">{{ row.label }}</a>{% else %}<p>No recent pages.</p>{% endfor %}
+        <div data-history-list>
+        {% for row in ui_history %}<a href="{{ row.url }}" data-history-url="{{ row.url }}">{{ row.label }}</a>{% else %}<p data-history-empty>No recent pages.</p>{% endfor %}
+        </div>
       </div>
     </details>
     <a class="nav-icon" href="{{ url_for('notifications') }}" title="Notifications" aria-label="Notifications"><svg class="icon" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>{% if unread_notifications %}<b>{{ unread_notifications }}</b>{% endif %}</a>
