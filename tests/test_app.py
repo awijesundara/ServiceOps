@@ -5503,8 +5503,45 @@ def test_ci_form_shows_embedded_rack_preview_when_placed(client, app):
     assert f'/cmdb/racks/{rack_id}/embed?highlight={ci_id}'.encode() in placed_page.data
 
     unracked_page = client.get(f"/cmdb/{unracked_id}/edit")
-    assert b"Rack placement" not in unracked_page.data
+    assert b"Rack &amp; network placement" not in unracked_page.data
     assert b"/embed?highlight=" not in unracked_page.data
+
+
+def test_ci_detail_shows_switch_and_server_network_connections(client, app):
+    """A switch's CI page lists every server plugged into it, and a
+    server's page shows the switch it connects to -- both directions of
+    the same "Connects to" CIRelationship, with port labels."""
+    with app.app_context():
+        switch = ConfigurationItem(name="net-conn-switch", ci_class="Switch")
+        server = ConfigurationItem(name="net-conn-server", ci_class="Server")
+        hidden_class_server = ConfigurationItem(name="net-conn-hidden", ci_class="Consumable")
+        db.session.add_all([switch, server, hidden_class_server])
+        db.session.flush()
+        db.session.add(CIRelationship(
+            parent_id=switch.id, child_id=server.id, relationship_type="Connects to",
+            label="Ethernet51 <-> eth0",
+        ))
+        db.session.add(CIRelationship(
+            parent_id=switch.id, child_id=hidden_class_server.id, relationship_type="Connects to",
+            label="Ethernet52 <-> eth0",
+        ))
+        db.session.add(CiClassPermission(tenant_id=1, ci_class="Consumable", role="admin", can_read=False))
+        db.session.commit()
+        switch_id, server_id = switch.id, server.id
+
+    login(client)
+    switch_page = client.get(f"/cmdb/{switch_id}/edit")
+    assert b"Connected servers" in switch_page.data
+    assert b"net-conn-server" in switch_page.data
+    assert b"Ethernet51" in switch_page.data
+    # A class this admin has explicitly had read access revoked for must
+    # not leak through the connections list either.
+    assert b"net-conn-hidden" not in switch_page.data
+
+    server_page = client.get(f"/cmdb/{server_id}/edit")
+    assert b"Connects to" in server_page.data
+    assert b"net-conn-switch" in server_page.data
+    assert b"eth0" in server_page.data
 
 
 def test_ci_form_round_trips_manual_rack_placement(client, app):

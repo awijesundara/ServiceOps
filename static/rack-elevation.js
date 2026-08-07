@@ -15,9 +15,25 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   const uHeight = payload.rack.u_height || 42;
   const rowHeight = 18;
-  const svgHeight = uHeight * rowHeight + 20;
   const highlightId = payload.highlight_ci_id;
   let highlightedBlock = null;
+
+  // Compact (embedded-preview) mode shows a window around the highlighted
+  // device instead of the whole rack -- a 42U rack with one 1U device in
+  // it is mostly empty space, which is exactly what made the embedded
+  // preview look sparse/broken rather than compact and focused.
+  let winStart = 1, winEnd = uHeight;
+  if (payload.compact && highlightId) {
+    const all = [...(payload.front || []), ...(payload.rear || []), ...(payload.pdus || [])];
+    const target = all.find((d) => d.id === highlightId);
+    if (target) {
+      const height = Math.max(target.u_height || 1, 1);
+      winStart = Math.max(1, target.position - 5);
+      winEnd = Math.min(uHeight, target.position + height - 1 + 5);
+    }
+  }
+  const windowSize = winEnd - winStart + 1;
+  const svgHeight = windowSize * rowHeight + 20;
 
   const svgNS = "http://www.w3.org/2000/svg";
   const colorFor = (ciClass) => {
@@ -35,11 +51,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // Outer rack frame.
     const frame = document.createElementNS(svgNS, "rect");
     frame.setAttribute("x", 30); frame.setAttribute("y", 10);
-    frame.setAttribute("width", 180); frame.setAttribute("height", uHeight * rowHeight);
+    frame.setAttribute("width", 180); frame.setAttribute("height", windowSize * rowHeight);
     frame.setAttribute("fill", "#f7f9fa"); frame.setAttribute("stroke", "var(--line, #dfe5e8)");
     svg.appendChild(frame);
-    for (let u = 1; u <= uHeight; u++) {
-      const y = 10 + (uHeight - u) * rowHeight;
+    for (let u = winStart; u <= winEnd; u++) {
+      const y = 10 + (winEnd - u) * rowHeight;
       const label = document.createElementNS(svgNS, "text");
       label.textContent = u;
       label.setAttribute("x", 24); label.setAttribute("y", y + rowHeight - 5);
@@ -54,7 +70,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     devices.forEach((device) => {
       const height = Math.max(device.u_height, 1);
-      const y = 10 + (uHeight - (device.position + height - 1)) * rowHeight;
+      const top = device.position + height - 1;
+      if (top < winStart || device.position > winEnd) return; // outside the visible window
+      const y = 10 + (winEnd - top) * rowHeight;
       const group = document.createElementNS(svgNS, "a");
       group.setAttribute("href", `/cmdb/${device.id}/edit`);
       const block = document.createElementNS(svgNS, "rect");
