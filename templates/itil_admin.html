@@ -200,7 +200,7 @@
   <div class="panel-head">
     <div>
       <h2>LDAP directory sync</h2>
-      <p>Manually pull title, department, division, employee ID/type, manager chain, and AD-group team membership from the directory for users who have already signed in through AD/LDAP at least once. This does not run on a schedule &mdash; trigger it manually whenever the directory changes.</p>
+      <p>Pull title, department, division, employee ID/type, manager chain, and AD-group team membership from the directory for users who have already signed in through AD/LDAP at least once. Scheduled sync is {% if ldap_sync_enabled %}enabled every {{ ldap_sync_interval_minutes }} minute{{ '' if ldap_sync_interval_minutes == 1 else 's' }}{% else %}disabled{% endif %}; you can still trigger a manual run at any time.</p>
     </div>
   </div>
   {% if not ldap_enabled %}
@@ -213,12 +213,13 @@
   </form>
   {% if ldap_sync_result %}
   <table>
-    <thead><tr><th>Directory entries</th><th>Users updated</th><th>Managers resolved</th><th>Memberships added</th><th>Memberships removed</th><th>Unmatched</th><th>Errors</th></tr></thead>
+    <thead><tr><th>Directory entries</th><th>Users updated</th><th>Managers resolved</th><th>Self-manager skipped</th><th>Memberships added</th><th>Memberships removed</th><th>Unmatched</th><th>Errors</th></tr></thead>
     <tbody>
       <tr>
         <td>{{ ldap_sync_result.directory_entries }}</td>
         <td>{{ ldap_sync_result.users_updated }}</td>
         <td>{{ ldap_sync_result.managers_resolved }}</td>
+        <td>{{ ldap_sync_result.self_manager_skipped or 0 }}</td>
         <td>{{ ldap_sync_result.memberships_added }}</td>
         <td>{{ ldap_sync_result.memberships_removed }}</td>
         <td>{{ ldap_sync_result.users_unmatched }}</td>
@@ -227,6 +228,9 @@
     </tbody>
   </table>
   {% if ldap_sync_result.dry_run %}<p class="muted">This was a preview; no changes were saved.</p>{% endif %}
+  {% if ldap_sync_result.self_manager_users %}
+  <p class="muted">Self-manager records skipped (directory manager points to own DN): {{ ldap_sync_result.self_manager_users|join(', ') }}.</p>
+  {% endif %}
   {% for error in ldap_sync_result.errors %}<p class="muted">{{ error }}</p>{% endfor %}
   {% endif %}
   {% endif %}

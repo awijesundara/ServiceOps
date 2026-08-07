@@ -108,6 +108,8 @@ def sync_directory(tenant_id, dry_run=False):
         "users_updated": 0,
         "managers_resolved": 0,
         "managers_provisioned": 0,
+        "self_manager_skipped": 0,
+        "self_manager_users": [],
         "memberships_added": 0,
         "memberships_removed": 0,
         "users_unmatched": 0,
@@ -122,10 +124,20 @@ def sync_directory(tenant_id, dry_run=False):
             "LDAP_USER_FILTER", "(&(objectClass=user)(sAMAccountName={username}))"
         ).replace("{username}", "*")
         base_dn = core_app.setting_value("LDAP_BASE_DN", "")
-        if not service.search(base_dn, search_filter, search_scope=SUBTREE, attributes=wanted_attrs):
-            summary["errors"].append("Directory search returned no results or failed.")
-            return summary
-        entries = list(service.entries)
+        entries = []
+        for record in service.extend.standard.paged_search(
+            search_base=base_dn,
+            search_filter=search_filter,
+            search_scope=SUBTREE,
+            attributes=wanted_attrs,
+            paged_size=500,
+            generator=True,
+        ):
+            if record.get("type") != "searchResEntry":
+                continue
+            dn = str(record.get("dn") or "").strip()
+            attrs = record.get("attributes") or {}
+            entries.append((dn, attrs))
     finally:
         try:
             service.unbind()
@@ -152,10 +164,10 @@ def sync_directory(tenant_id, dry_run=False):
     # provisioned below, as long as that manager is themselves a real
     # directory entry this search found (never fabricated).
     dn_to_entry = {}
-    for entry in entries:
-        entry_dn = (getattr(entry, "entry_dn", None) or "").strip().casefold()
+    for entry_dn_raw, entry_values in entries:
+        entry_dn = (entry_dn_raw or "").strip().casefold()
         if entry_dn:
-            dn_to_entry[entry_dn] = entry.entry_attributes_as_dict
+            dn_to_entry[entry_dn] = entry_values
 
     def _resolve_or_provision_manager(manager_dn, _resolving=None):
         """Return the ServiceOps User for `manager_dn`, provisioning a normal
@@ -199,9 +211,8 @@ def sync_directory(tenant_id, dry_run=False):
         summary["managers_provisioned"] += 1
         return provisioned
 
-    for entry in entries:
-        entry_dn = getattr(entry, "entry_dn", None) or ""
-        values = entry.entry_attributes_as_dict
+    for entry_dn, values in entries:
+        entry_dn = entry_dn or ""
         user = dn_to_user.get(entry_dn.strip().casefold())
         if not user:
             summary["users_unmatched"] += 1
@@ -229,7 +240,13 @@ def sync_directory(tenant_id, dry_run=False):
             manager_dn = _first(values, attr_map.get("manager", "manager"))
             if manager_dn:
                 manager_user = _resolve_or_provision_manager(manager_dn)
-                if manager_user and manager_user.id != user.id:
+                if manager_user and manager_user.id == user.id:
+                    summary["self_manager_skipped"] += 1
+                    summary["self_manager_users"].append(user.username)
+                    summary["errors"].append(
+                        f"Self-manager record skipped for {user.username}: directory manager points to own DN."
+                    )
+                elif manager_user:
                     if user.manager_id != manager_user.id:
                         user.manager_id = manager_user.id
                         changed = True
@@ -261,5 +278,8 @@ def sync_directory(tenant_id, dry_run=False):
         db.session.rollback()
     else:
         db.session.commit()
+
+    # Keep response bounded/deterministic for admin UI + logs.
+    summary["self_manager_users"] = sorted(set(summary["self_manager_users"]))
 
     return summary
