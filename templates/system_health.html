@@ -3,13 +3,13 @@
 {% set admin_page_title = 'System health' %}{% include '_admin_context.html' %}
 <header class="page-head"><div><h1>System health</h1><p>Live application, database, worker, and error status -- no shell access required.</p></div><a class="button" href="{{ url_for('system_health_log_file') }}">Detailed request logs</a></header>
 <div class="stats">
-  <div><span>Application</span><strong>{{ 'Healthy' if db_healthy else 'DB unreachable' }}</strong><small>v{{ app_version }} · up since {{ (app_start_time|usertime('%Y-%m-%d %H:%M')) }}</small></div>
-  <div><span>Database</span><strong>{{ db_latency_ms ~ ' ms' if db_healthy else 'DOWN' }}</strong><small>SELECT 1 round trip</small></div>
-  <div class="{% if not worker_healthy %}stat-alert{% endif %}"><span>Background worker</span><strong>{{ 'Healthy' if worker_healthy else 'STALE / DOWN' }}</strong><small>{{ 'Last heartbeat ' ~ (worker_last_seen|usertime('%Y-%m-%d %H:%M:%S')) if worker_last_seen else 'No heartbeat recorded yet' }}</small></div>
-  <div class="{% if error_last_hour > 0 %}stat-alert{% endif %}"><span>Errors (last hour)</span><strong{% if error_last_hour > 0 %} class="stat-alert-text"{% endif %}>{{ error_last_hour }}</strong><small>{{ total_errors }} total recorded</small></div>
-  <div><span>Active users</span><strong>{{ active_user_count }}</strong><small>seen in the last 15 minutes</small></div>
-  <div><span>Open tickets</span><strong>{{ open_tickets }}</strong><small>{{ total_users }} active users total</small></div>
-  <div class="{% if not backup_healthy %}stat-alert{% endif %}"><span>Recovery set</span><strong>{{ 'Current' if backup_healthy else 'STALE / MISSING' }}</strong><small>{% if last_backup_at %}{{ last_backup_at|usertime('%Y-%m-%d %H:%M:%S') }} · {{ backup_offsite }}{% else %}No successful backup recorded{% endif %} · RPO {{ backup_rpo_hours }}h</small></div>
+  <a href="{{ url_for('health') }}"><span>Application</span><strong>{{ 'Healthy' if db_healthy else 'DB unreachable' }}</strong><small>v{{ app_version }} · up since {{ (app_start_time|usertime('%Y-%m-%d %H:%M')) }}</small></a>
+  <a href="{{ url_for('ready') }}"><span>Database</span><strong>{{ db_latency_ms ~ ' ms' if db_healthy else 'DOWN' }}</strong><small>SELECT 1 round trip · full readiness detail →</small></a>
+  <a href="#performance" class="{% if not worker_healthy %}stat-alert{% endif %}"><span>Background worker</span><strong{% if not worker_healthy %} class="stat-alert-text"{% endif %}>{{ 'Healthy' if worker_healthy else 'STALE / DOWN' }}</strong><small>{{ 'Last heartbeat ' ~ (worker_last_seen|usertime('%Y-%m-%d %H:%M:%S')) if worker_last_seen else 'No heartbeat recorded yet' }}</small></a>
+  <a href="#application-errors" class="{% if error_last_hour > 0 %}stat-alert{% endif %}"><span>Errors (last hour)</span><strong{% if error_last_hour > 0 %} class="stat-alert-text"{% endif %}>{{ error_last_hour }}</strong><small>{{ total_errors }} total recorded · view log →</small></a>
+  <a href="#active-users"><span>Active users</span><strong>{{ active_user_count }}</strong><small>seen in the last 15 minutes</small></a>
+  <a href="{{ url_for('open_work') }}"><span>Open tickets</span><strong>{{ open_tickets }}</strong><small>{{ total_users }} active users total · view queue →</small></a>
+  <a href="#recovery-set" class="{% if not backup_healthy %}stat-alert{% endif %}"><span>Recovery set</span><strong{% if not backup_healthy %} class="stat-alert-text"{% endif %}>{{ 'Current' if backup_healthy else ('Missing' if not last_backup_at else 'Stale') }}</strong><small>{% if last_backup_at %}{{ last_backup_at|usertime('%Y-%m-%d %H:%M:%S') }} · {{ backup_offsite }}{% else %}No successful backup recorded{% endif %} · RPO {{ backup_rpo_hours }}h</small></a>
 </div>
 
 <section class="panel" id="performance">
@@ -31,7 +31,7 @@
 </section>
 
 <div class="detail-grid">
-<section class="panel">
+<section class="panel" id="active-users">
   <h2>Currently active users</h2>
   <table><thead><tr><th>User</th><th>Role</th><th>Last seen</th></tr></thead><tbody>
     {% for user in active_users %}
@@ -49,7 +49,18 @@
 </aside>
 </div>
 
-<section class="list-workspace" style="margin-top:20px">
+<section class="panel" id="recovery-set" style="margin-top:20px">
+  <h2>Recovery set<span class="info-tip" tabindex="0" data-tip="Tracks the most recent verified backup, not backups themselves -- ServiceOps has no built-in backup pipeline. An external backup job (pg_dump, a managed snapshot, etc.) is expected to call tools/record_backup_status.py after each successful run.">i</span></h2>
+  {% if not last_backup_at %}
+  <p class="muted">No successful backup has ever been recorded for this deployment. This isn't necessarily a live incident -- it usually just means the backup pipeline has never run <code>tools/record_backup_status.py --manifest &lt;path&gt; --offsite archived|not-configured</code> after a successful backup. Configure your backup job (cron, a managed snapshot schedule, etc.) to call that tool on success.</p>
+  {% elif not backup_healthy %}
+  <p class="muted">The most recent recorded backup was {{ last_backup_at|usertime('%Y-%m-%d %H:%M:%S') }}, which is older than the configured {{ backup_rpo_hours }}-hour RPO. Either the backup pipeline stopped running, or <code>tools/record_backup_status.py</code> stopped being called after a successful run -- check the external backup job's own logs/schedule first.</p>
+  {% else %}
+  <p class="muted">Last recorded backup: {{ last_backup_at|usertime('%Y-%m-%d %H:%M:%S') }} · offsite status: {{ backup_offsite }} · within the {{ backup_rpo_hours }}-hour RPO.</p>
+  {% endif %}
+</section>
+
+<section class="list-workspace" style="margin-top:20px" id="application-errors">
   <header class="list-toolbar">
     <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Application errors</strong><small>{{ total_errors }} records</small></div></div>
     <nav class="list-pagination" aria-label="Pagination">

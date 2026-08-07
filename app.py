@@ -292,12 +292,31 @@ def roles(*allowed):
     return decorator
 
 
+def effective_role_has_action(role, action, tenant_id=None):
+    """Tenant-scoped role_has_action(): consults RolePolicyOverride first
+    (an admin's explicit deviation from the Git-backed baseline), falling
+    back to config/authorization.json's flat policy when no override row
+    exists for this (tenant, role, action) -- see RolePolicyOverride's
+    docstring. Deliberately not folded into serviceops_core.security's own
+    role_has_action(), which stays DB-free by design; this wrapper lives
+    here in app.py instead, the same way ci_class_policy.py sits alongside
+    (not inside) security.py for the same reason."""
+    tenant_id = tenant_id if tenant_id is not None else tenant_context_id()
+    if tenant_id is not None:
+        override = RolePolicyOverride.query.filter_by(
+            tenant_id=tenant_id, role=role, action=action,
+        ).first()
+        if override:
+            return override.is_granted
+    return role_has_action(role, action)
+
+
 def require_action(action):
     def decorator(fn):
         @wraps(fn)
         @login_required
         def wrapped(*args, **kwargs):
-            if not role_has_action(current_user.effective_role, action):
+            if not effective_role_has_action(current_user.effective_role, action):
                 abort(403)
             return fn(*args, **kwargs)
         return wrapped
@@ -4978,6 +4997,26 @@ def create_app(test_config=None):
         overall = all(check["ok"] for check in checks.values())
         return jsonify(status="ready" if overall else "not_ready", version=APP_VERSION, checks=checks), 200 if overall else 503
 
+    def _recovery_set_status():
+        """Single source of truth for backup/RPO freshness -- read by both
+        /metrics and system_health(), which previously computed this
+        independently and could silently drift apart."""
+        last_backup_row = db.session.get(PlatformSetting, "LAST_BACKUP_AT")
+        last_backup_at = None
+        if last_backup_row and last_backup_row.value:
+            try:
+                last_backup_at = datetime.fromisoformat(last_backup_row.value)
+            except ValueError:
+                pass
+        backup_rpo_hours = setting_int("BACKUP_RPO_HOURS", int(os.getenv("BACKUP_RPO_HOURS", "24")))
+        backup_age_seconds = -1
+        if last_backup_at:
+            backup_age_seconds = max(0, (now() - align_tz(last_backup_at, now())).total_seconds())
+        backup_healthy = bool(
+            last_backup_at is not None and backup_age_seconds <= backup_rpo_hours * 3600
+        )
+        return last_backup_at, backup_healthy, backup_rpo_hours, backup_age_seconds
+
     @app.get("/metrics")
     def prometheus_metrics():
         if not env_bool("METRICS_ENABLED", True):
@@ -4997,13 +5036,7 @@ def create_app(test_config=None):
             ApplicationLog.level.in_(["ERROR", "CRITICAL"]),
             ApplicationLog.created_at >= now() - timedelta(hours=1),
         ).count()
-        last_backup = db.session.get(PlatformSetting, "LAST_BACKUP_AT")
-        backup_age = -1
-        if last_backup and last_backup.value:
-            try:
-                backup_age = max(0, (now() - align_tz(datetime.fromisoformat(last_backup.value), now())).total_seconds())
-            except (TypeError, ValueError):
-                pass
+        _, _, _, backup_age = _recovery_set_status()
         lines = [
             "# HELP serviceops_up Whether the application can query its database.",
             "# TYPE serviceops_up gauge", "serviceops_up 1",
@@ -5335,7 +5368,7 @@ def create_app(test_config=None):
     @app.post("/api/v1/incidents")
     def api_incident_create():
         require_api_scope("incidents:create")
-        if not role_has_action(g.api_user.role, "create"):
+        if not effective_role_has_action(g.api_user.role, "create", tenant_id=g.api_user.tenant_id):
             abort(403, description="The acting user cannot create records.")
         key, request_hash, replay = api_idempotency_context()
         if replay:
@@ -5390,7 +5423,7 @@ def create_app(test_config=None):
     def api_ticket_update(number):
         require_api_scope("tickets:update")
         for action in ("update", "assign", "transition"):
-            if not role_has_action(g.api_user.role, action):
+            if not effective_role_has_action(g.api_user.role, action, tenant_id=g.api_user.tenant_id):
                 abort(403, description=f"The acting user cannot perform {action}.")
         ticket = visible_ticket_query(g.api_user).filter(
             func.upper(Ticket.number) == number.upper()
@@ -5490,7 +5523,7 @@ def create_app(test_config=None):
     @app.post("/api/v1/tickets/<number>/workflow-events")
     def api_workflow_event(number):
         require_api_scope("workflows:execute")
-        if not role_has_action(g.api_user.role, "transition"):
+        if not effective_role_has_action(g.api_user.role, "transition", tenant_id=g.api_user.tenant_id):
             abort(403, description="The acting user cannot execute workflows.")
         ticket = visible_ticket_query(g.api_user).filter(
             func.upper(Ticket.number) == number.upper()
@@ -5538,7 +5571,7 @@ def create_app(test_config=None):
 
     def require_scim_admin():
         require_api_scope("users:provision")
-        if not role_has_action(g.api_user.role, "security_administer"):
+        if not effective_role_has_action(g.api_user.role, "security_administer", tenant_id=g.api_user.tenant_id):
             abort(403, description="The SCIM client must act as a security administrator.")
 
     @app.route("/scim/v2/Users", methods=["GET", "POST"])
@@ -6814,7 +6847,7 @@ def create_app(test_config=None):
                 require_ticket_not_locked(ticket)
                 return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             if action == "comment":
-                if not role_has_action(current_user.effective_role, "comment_public"):
+                if not effective_role_has_action(current_user.effective_role, "comment_public"):
                     abort(403)
                 body = request.form.get("body", "").strip()
                 upload = request.files.get("file")
@@ -6834,7 +6867,7 @@ def create_app(test_config=None):
                                 details=f"{attachment.original_name} ({attachment.size_bytes} bytes)",
                             )
             elif action == "reopen":
-                if not role_has_action(current_user.effective_role, "resolve"):
+                if not effective_role_has_action(current_user.effective_role, "resolve"):
                     abort(403)
                 require_ticket_team_access(ticket)
                 if ticket.state not in ("Resolved", "Closed"):
@@ -6852,7 +6885,7 @@ def create_app(test_config=None):
                 flash(f"{ticket.number} reopened.", "success")
                 return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             elif action == "quick_resolve":
-                if not role_has_action(current_user.effective_role, "resolve"):
+                if not effective_role_has_action(current_user.effective_role, "resolve"):
                     abort(403)
                 require_ticket_team_access(ticket)
                 before_state = ticket.state
@@ -6870,7 +6903,7 @@ def create_app(test_config=None):
                 audit("resolve", ticket.number, f"{before_state} -> Resolved")
             elif action == "update":
                 for required_action in ("update", "assign", "transition"):
-                    if not role_has_action(current_user.effective_role, required_action):
+                    if not effective_role_has_action(current_user.effective_role, required_action):
                         abort(403)
                 require_ticket_team_access(ticket)
                 assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
@@ -7079,9 +7112,9 @@ def create_app(test_config=None):
         can_reopen = (
             ticket.state in ("Resolved", "Closed")
             and user_can_manage_ticket(current_user, ticket)
-            and role_has_action(current_user.effective_role, "resolve")
+            and effective_role_has_action(current_user.effective_role, "resolve")
         )
-        internal_view = role_has_action(current_user.effective_role, "comment_internal")
+        internal_view = effective_role_has_action(current_user.effective_role, "comment_internal")
         chains = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         slas = TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         work_tasks = OperationalTask.query.filter_by(
@@ -8441,18 +8474,93 @@ def create_app(test_config=None):
         # the one genuinely new page (see admin_roles()).
         return render_template("admin_access.html")
 
-    @app.get("/admin/roles")
+    # requester/agent/manager/admin are editable; superadmin is never
+    # overridable (always implicitly granted everywhere, per this app's
+    # existing convention -- see RolePolicyOverride's docstring).
+    EDITABLE_POLICY_ROLES = ("requester", "agent", "manager", "admin")
+
+    @app.route("/admin/roles", methods=["GET", "POST"])
     @roles("admin")
     @require_action("security_administer")
     def admin_roles():
-        # config/authorization.json is Git-backed and loaded once per
-        # process (serviceops_core.security.load_policy, @lru_cache) -- this
-        # page renders it read-only. A DB-backed override layer for this
-        # file (analogous to CiClassPermission) is a materially bigger
-        # authorization change than what was asked for and is out of scope.
+        # config/authorization.json is the Git-backed recommended baseline
+        # (loaded once per process via serviceops_core.security.load_policy,
+        # @lru_cache -- never mutated at runtime, so no cache-invalidation
+        # concern). RolePolicyOverride is the DB-backed, tenant-scoped layer
+        # an admin can adjust on top of it; "reset to recommended" for a
+        # role is just deleting that role's override rows.
         policy = load_policy()
+        tenant_id = current_user.tenant_id
+        if request.method == "POST":
+            action = request.form.get("action", "save")
+            if action == "reset":
+                role = request.form.get("role", "")
+                if role not in EDITABLE_POLICY_ROLES:
+                    abort(400)
+                removed = RolePolicyOverride.query.filter_by(tenant_id=tenant_id, role=role).delete()
+                audit("configure", "Role policy reset", f"{role} reset to recommended ({removed} override(s) removed)")
+                db.session.commit()
+                flash(f"{role.capitalize()}'s permissions were reset to the ITIL-recommended baseline.", "success")
+            else:
+                existing = {
+                    (row.role, row.action): row
+                    for row in RolePolicyOverride.query.filter_by(tenant_id=tenant_id).all()
+                }
+                changed = 0
+                for role in EDITABLE_POLICY_ROLES:
+                    baseline_actions = set(policy["roles"].get(role, ()))
+                    for act in policy["actions"]:
+                        granted = request.form.get(f"grant__{role}__{act}") == "on"
+                        matches_baseline = granted == (act in baseline_actions)
+                        row = existing.get((role, act))
+                        if matches_baseline:
+                            if row:
+                                db.session.delete(row)
+                                changed += 1
+                        elif row:
+                            if row.is_granted != granted:
+                                row.is_granted = granted
+                                row.updated_by_id = current_user.id
+                                changed += 1
+                        else:
+                            db.session.add(RolePolicyOverride(
+                                tenant_id=tenant_id, role=role, action=act,
+                                is_granted=granted, updated_by_id=current_user.id,
+                            ))
+                            changed += 1
+                if changed:
+                    audit("configure", "Role policy", f"{changed} role/action override(s) changed")
+                    db.session.commit()
+                    flash(f"Saved {changed} permission change(s).", "success")
+                else:
+                    flash("No changes to save.", "success")
+            return redirect(url_for("admin_roles"))
+
+        overrides = {
+            (row.role, row.action): row.is_granted
+            for row in RolePolicyOverride.query.filter_by(tenant_id=tenant_id).all()
+        }
+        effective_role_actions = {}
+        for role in policy["roles"]:
+            baseline_actions = set(policy["roles"].get(role, ()))
+            if role not in EDITABLE_POLICY_ROLES:
+                effective_role_actions[role] = baseline_actions
+                continue
+            effective = set(baseline_actions)
+            for act in policy["actions"]:
+                override = overrides.get((role, act))
+                if override is True:
+                    effective.add(act)
+                elif override is False:
+                    effective.discard(act)
+            effective_role_actions[role] = effective
+        has_overrides = {
+            role: any(r == role for r, _ in overrides) for role in EDITABLE_POLICY_ROLES
+        }
         return render_template(
-            "admin_roles.html", actions=policy["actions"], role_actions=policy["roles"],
+            "admin_roles.html", actions=policy["actions"], role_actions=effective_role_actions,
+            editable_roles=EDITABLE_POLICY_ROLES, baseline_role_actions=policy["roles"],
+            has_overrides=has_overrides,
         )
 
     @app.get("/profile/sessions")
@@ -8474,7 +8582,7 @@ def create_app(test_config=None):
     @login_required
     def revoke_session(session_record_id):
         row = tenant_query(UserSession).filter_by(id=session_record_id).first_or_404()
-        administering = role_has_action(current_user.effective_role, "security_administer")
+        administering = effective_role_has_action(current_user.effective_role, "security_administer")
         if row.user_id != current_user.id and not administering:
             abort(403)
         if row.revoked_at is None:
@@ -9022,17 +9130,7 @@ def create_app(test_config=None):
             ApplicationLog.level.in_(["ERROR", "CRITICAL"]),
             ApplicationLog.created_at >= now() - timedelta(hours=1),
         ).count()
-        last_backup_row = db.session.get(PlatformSetting, "LAST_BACKUP_AT")
-        last_backup_at = None
-        if last_backup_row and last_backup_row.value:
-            try:
-                last_backup_at = datetime.fromisoformat(last_backup_row.value)
-            except ValueError:
-                pass
-        backup_rpo_hours = setting_int("BACKUP_RPO_HOURS", int(os.getenv("BACKUP_RPO_HOURS", "24")))
-        backup_healthy = bool(
-            last_backup_at and (now() - align_tz(last_backup_at, now())) <= timedelta(hours=backup_rpo_hours)
-        )
+        last_backup_at, backup_healthy, backup_rpo_hours, _ = _recovery_set_status()
 
         return render_template(
             "system_health.html",

@@ -23,7 +23,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
                  MonitoringEvent, MonitoringSource, Notification, OperationalTask,
-                 OutboxEvent, ProblemProfile, Rack, RecordLink, ScheduleHoliday, SLADefinition,
+                 OutboxEvent, ProblemProfile, Rack, RecordLink, RolePolicyOverride, ScheduleHoliday, SLADefinition,
                  RequestedItem, PlatformSetting, ServiceOffering, ServiceOfferingCI, SupportGroup, SupportGroupAlias,
                  TaskCI, TaskHistory, TaskNote, TaskSLA,
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference, UserRoleGrant, ManagedRoleGrant,
@@ -5644,6 +5644,58 @@ def test_admin_roles_page_shows_policy_and_requires_admin(client):
     assert response.status_code == 200
     assert b"Agent" in response.data
     assert b"security_administer" in response.data
+
+
+def test_admin_roles_save_creates_override_and_takes_effect(client, app):
+    """Revoking an action a role's baseline grants must actually change
+    what that role can do, not just what the grid displays -- verified
+    against a real @require_action-gated route (comment_internal)."""
+    login(client)
+    get_page = client.get("/admin/roles")
+    assert b'name="grant__agent__comment_internal" checked' in get_page.data
+
+    form_data = {"action": "save"}
+    with app.app_context():
+        from serviceops_core.security import load_policy
+        policy = load_policy()
+        for role in ("requester", "agent", "manager", "admin"):
+            for act in policy["actions"]:
+                if act in policy["roles"].get(role, ()) and not (role == "agent" and act == "comment_internal"):
+                    form_data[f"grant__{role}__{act}"] = "on"
+    response = client.post("/admin/roles", data=form_data)
+    assert response.status_code == 302
+    with app.app_context():
+        override = RolePolicyOverride.query.filter_by(tenant_id=1, role="agent", action="comment_internal").one()
+        assert override.is_granted is False
+
+    page_after = client.get("/admin/roles")
+    assert b'name="grant__agent__comment_internal" checked' not in page_after.data
+
+
+def test_admin_roles_reset_removes_overrides_and_restores_baseline(client, app):
+    with app.app_context():
+        db.session.add(RolePolicyOverride(tenant_id=1, role="agent", action="comment_internal", is_granted=False))
+        db.session.commit()
+    login(client)
+    response = client.post("/admin/roles", data={"action": "reset", "role": "agent"})
+    assert response.status_code == 302
+    with app.app_context():
+        assert RolePolicyOverride.query.filter_by(tenant_id=1, role="agent").count() == 0
+
+    # superadmin must never be resettable/overridable through this route.
+    assert client.post("/admin/roles", data={"action": "reset", "role": "superadmin"}).status_code == 400
+
+
+def test_admin_roles_override_is_tenant_scoped(client, app):
+    with app.app_context():
+        db.session.add(Tenant(id=2, slug="roles-test-tenant-2", name="Roles Test Tenant 2"))
+        db.session.add(RolePolicyOverride(tenant_id=2, role="agent", action="comment_internal", is_granted=False))
+        db.session.commit()
+    login(client)
+    # Tenant 1's admin session must see tenant 1's (unmodified) grid, not
+    # tenant 2's override.
+    page = client.get("/admin/roles")
+    assert b'name="grant__agent__comment_internal" checked' in page.data
 
 
 def test_users_list_supports_servicenow_style_filter(client, app):
