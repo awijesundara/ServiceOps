@@ -6,7 +6,8 @@ dry-run preview, per-record error isolation" shape as
 serviceops_core/ldap_sync.py.
 
 NetBox is treated as the source of truth for hardware fields (name, serial
-number, vendor, model, IP address, location) — every sync overwrites those
+number, vendor, model, IP address, location) and physical rack placement
+(rack, position, height in U, front/rear face) — every sync overwrites those
 fields on matched CIs. Non-hardware fields (owner, cost center, description,
 business criticality, ...) are left untouched here; those are populated by
 serviceops_core/cmdb_import.py (CSV/spreadsheet import), which in turn never
@@ -19,6 +20,7 @@ import requests
 
 DEVICES_PATH = "/api/dcim/devices/"
 VMS_PATH = "/api/virtualization/virtual-machines/"
+RACKS_PATH = "/api/dcim/racks/"
 
 
 def _format_interface(record):
@@ -85,8 +87,14 @@ STATUS_MAP = {
 
 # ConfigurationItem columns NetBox owns outright; a re-sync always overwrites
 # these on a matched CI (see cmdb_import.py's mirrored NETBOX_OWNED_FIELDS,
-# which is why the two modules never fight over the same columns).
-HARDWARE_FIELDS = ("name", "serial_number", "vendor", "model", "ip_address", "location")
+# which is why the two modules never fight over the same columns). The four
+# rack_* fields were added alongside the rack elevation view -- previously
+# this data lived only as free-text "NetBox: Rack"/"NetBox: Position"
+# attributes (see _map_device below).
+HARDWARE_FIELDS = (
+    "name", "serial_number", "vendor", "model", "ip_address", "location",
+    "rack_id", "rack_position", "rack_u_height", "rack_face",
+)
 
 
 class NetboxSyncError(RuntimeError):
@@ -239,8 +247,11 @@ def _extra_attributes(record, *, fields=()):
     return attributes
 
 
-def _map_device(record, ci_class):
+def _map_device(record, ci_class, rack_id_map=None):
     status_value = _first_attr(record, "status", "value")
+    rack_id_map = rack_id_map or {}
+    netbox_rack_id = _first_attr(record, "rack", "id")
+    face_value = _first_attr(record, "face", "value")
     return {
         "name": record.get("name") or f"device-{record.get('id')}",
         "ci_class": ci_class,
@@ -251,16 +262,64 @@ def _map_device(record, ci_class):
         "location": _location_of(record),
         "operational_status": STATUS_MAP.get(status_value, "Operational"),
         "netbox_id": str(record["id"]),
+        # Physical rack placement -- rack_id resolved against the map of
+        # already-synced racks built by sync_from_netbox this run (see
+        # _upsert_rack); a device on a rack NetBox itself doesn't return
+        # (shouldn't happen, but matches nothing rather than raising) or a
+        # device with no rack at all both simply get rack_id=None here.
+        # device_type.u_height may not be present on every NetBox version's
+        # nested device_type representation -- read defensively, the CI
+        # form/rack view fall back to 1U when it's missing.
+        "rack_id": rack_id_map.get(str(netbox_rack_id)) if netbox_rack_id is not None else None,
+        "rack_position": record.get("position"),
+        "rack_u_height": _first_attr(record, "device_type", "u_height"),
+        "rack_face": face_value,
         "attributes": _extra_attributes(record, fields=(
             ("Region", ("site", "region", "name")),
-            ("Rack", ("rack", "name")),
-            ("Position", ("position",)),
             ("Tenant", ("tenant", "name")),
             ("Role", ("role", "name")),
             ("Platform", ("platform", "name")),
             ("Status", ("status", "label")),
         )),
     }
+
+
+def _map_rack(record):
+    return {
+        "name": record.get("name") or f"rack-{record.get('id')}",
+        "site": _first_attr(record, "site", "name") or "",
+        "u_height": record.get("u_height") or 42,
+        "netbox_id": str(record["id"]),
+    }
+
+
+def _upsert_rack(mapped, tenant_id, summary):
+    """Same three-tier match as _upsert (external id, then tenant-unique
+    name) -- returns the local Rack row so the caller can build a
+    {netbox_rack_id: local_rack_id} map for device linking."""
+    import app as core_app
+    from app import db
+
+    rack = core_app.Rack.query.filter_by(
+        tenant_id=tenant_id, external_source="netbox", external_id=mapped["netbox_id"],
+    ).first()
+    if not rack:
+        rack = core_app.Rack.query.filter_by(tenant_id=tenant_id, name=mapped["name"]).first()
+    if rack:
+        rack.site = mapped["site"]
+        rack.u_height = mapped["u_height"]
+        rack.external_source = "netbox"
+        rack.external_id = mapped["netbox_id"]
+        summary["racks_updated"] += 1
+    else:
+        rack = core_app.Rack(
+            tenant_id=tenant_id, name=mapped["name"], site=mapped["site"],
+            u_height=mapped["u_height"], external_source="netbox", external_id=mapped["netbox_id"],
+        )
+        db.session.add(rack)
+        summary["racks_created"] += 1
+    db.session.flush()
+    return rack
 
 
 def _map_vm(record):
@@ -338,6 +397,8 @@ def _upsert(mapped, tenant_id, summary):
             location=mapped["location"], discovery_source="API",
             external_source="netbox", external_id=mapped["netbox_id"],
             tenant_id=tenant_id, attributes=netbox_attributes,
+            rack_id=mapped.get("rack_id"), rack_position=mapped.get("rack_position"),
+            rack_u_height=mapped.get("rack_u_height"), rack_face=mapped.get("rack_face"),
         ))
         summary["cis_created"] += 1
 
@@ -381,17 +442,34 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
         "cis_created": 0,
         "cis_updated": 0,
         "cis_matched_by_serial": 0,
+        "racks_created": 0,
+        "racks_updated": 0,
         "errors": [],
     }
 
     session = session_factory(base_url, token)
     try:
+        rack_id_map = {}
+        for record in _paginate(session, base_url, RACKS_PATH):
+            try:
+                rack = _upsert_rack(_map_rack(record), tenant_id, summary)
+                rack_id_map[str(record["id"])] = rack.id
+            except Exception as error:  # noqa: BLE001 - isolate one bad record from the whole sync
+                summary["errors"].append(f"rack {record.get('name', record.get('id'))}: {type(error).__name__}")
         devices = list(_paginate(session, base_url, DEVICES_PATH))
         components_by_device = _fetch_all_components(session, base_url) if devices else {}
         for record in devices:
             summary["devices_seen"] += 1
             try:
-                mapped = _map_device(record, "Server")
+                # NetBox's own device role, when present, classifies the
+                # device far more usefully than a blanket "Server" -- this
+                # is what lets a PDU (or Switch/Router) ever come back
+                # correctly classified from a real sync rather than
+                # everything landing as "Server" regardless of its real
+                # role. Falls back to "Server" only when NetBox has no role
+                # set on the device at all.
+                ci_class = _first_attr(record, "role", "name") or "Server"
+                mapped = _map_device(record, ci_class, rack_id_map=rack_id_map)
                 mapped["attributes"].update(components_by_device.get(mapped["netbox_id"], {}))
                 _upsert(mapped, tenant_id, summary)
             except Exception as error:  # noqa: BLE001 - isolate one bad record from the whole sync

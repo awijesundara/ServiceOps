@@ -9,7 +9,7 @@ import tempfile
 
 import pytest
 
-from app import ConfigurationItem, PlatformSetting, Tenant, create_app, db
+from app import ConfigurationItem, PlatformSetting, Rack, Tenant, create_app, db
 from serviceops_core.netbox_sync import NetboxSyncError, _netbox_session, sync_from_netbox
 
 
@@ -40,7 +40,7 @@ class FakeSession:
     params (tests use small fixed device/VM lists)."""
 
     def __init__(self, devices=None, vms=None, interfaces=None, console_ports=None,
-                 power_ports=None, inventory_items=None):
+                 power_ports=None, inventory_items=None, racks=None):
         self._pages = {
             "/api/dcim/devices/": {"results": devices or [], "next": None},
             "/api/virtualization/virtual-machines/": {"results": vms or [], "next": None},
@@ -48,6 +48,7 @@ class FakeSession:
             "/api/dcim/console-ports/": {"results": console_ports or [], "next": None},
             "/api/dcim/power-ports/": {"results": power_ports or [], "next": None},
             "/api/dcim/inventory-items/": {"results": inventory_items or [], "next": None},
+            "/api/dcim/racks/": {"results": racks or [], "next": None},
         }
 
     def get(self, url, params=None, timeout=None):
@@ -61,7 +62,7 @@ class FakeSession:
 
 
 def enable_netbox(devices=None, vms=None, monkeypatch=None, interfaces=None,
-                   console_ports=None, power_ports=None, inventory_items=None):
+                   console_ports=None, power_ports=None, inventory_items=None, racks=None):
     for key, value in (
         ("NETBOX_ENABLED", "true"),
         ("NETBOX_BASE_URL", "https://netbox.example.com"),
@@ -84,22 +85,31 @@ def enable_netbox(devices=None, vms=None, monkeypatch=None, interfaces=None,
     def fake_session_factory(base_url, token):
         return FakeSession(
             devices=devices, vms=vms, interfaces=interfaces, console_ports=console_ports,
-            power_ports=power_ports, inventory_items=inventory_items,
+            power_ports=power_ports, inventory_items=inventory_items, racks=racks,
         )
 
     return fake_session_factory
 
 
 def make_device(id_, name, serial="", status="active", manufacturer="Dell", model="R640",
-                 ip="10.0.0.1/24", site="CC1", location="9D-Row"):
+                 ip="10.0.0.1/24", site="CC1", location="9D-Row", role=None, rack_id=None,
+                 position=None, u_height=None, face=None):
     return {
         "id": id_, "name": name, "serial": serial,
         "status": {"value": status},
-        "device_type": {"manufacturer": {"name": manufacturer}, "model": model},
+        "device_type": {"manufacturer": {"name": manufacturer}, "model": model, "u_height": u_height},
         "primary_ip4": {"address": ip} if ip else None,
         "site": {"name": site} if site else None,
         "location": {"name": location} if location else None,
+        "role": {"name": role} if role else None,
+        "rack": {"id": rack_id} if rack_id else None,
+        "position": position,
+        "face": {"value": face} if face else None,
     }
+
+
+def make_rack(id_, name, site="CC1", u_height=42):
+    return {"id": id_, "name": name, "site": {"name": site} if site else None, "u_height": u_height}
 
 
 def test_creates_new_ci_from_device(app, monkeypatch):
@@ -159,9 +169,8 @@ def test_adopts_existing_manual_ci_by_serial_number(app, monkeypatch):
 
 def test_extra_netbox_fields_are_captured_as_attributes(app, monkeypatch):
     with app.app_context():
-        device = make_device(101, "srv-01", serial="ABC123")
+        device = make_device(101, "srv-01", serial="ABC123", position=2.0)
         device.update({
-            "rack": {"name": "9D05"}, "position": 2.0,
             "tenant": {"name": "CoreApps"}, "role": {"name": "server:linux"},
             "platform": {"name": "CentOS Linux 7"},
             "status": {"value": "active", "label": "Active"},
@@ -173,8 +182,11 @@ def test_extra_netbox_fields_are_captured_as_attributes(app, monkeypatch):
         factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
         sync_from_netbox(1, session_factory=factory)
         ci = ConfigurationItem.query.filter_by(external_id="101").one()
-        assert ci.attributes["NetBox: Rack"] == "9D05"
-        assert ci.attributes["NetBox: Position"] == 2.0
+        # Rack/position are now structured columns, not free-text attributes
+        # (see test_device_rack_position_face_and_role_are_synced below).
+        assert "NetBox: Rack" not in ci.attributes
+        assert "NetBox: Position" not in ci.attributes
+        assert ci.rack_position == 2.0
         assert ci.attributes["NetBox: Tenant"] == "CoreApps"
         assert ci.attributes["NetBox: Role"] == "server:linux"
         assert ci.attributes["NetBox: Platform"] == "CentOS Linux 7"
@@ -189,19 +201,64 @@ def test_extra_netbox_fields_are_captured_as_attributes(app, monkeypatch):
 def test_resync_refreshes_netbox_attributes_without_dropping_csv_attributes(app, monkeypatch):
     with app.app_context():
         device = make_device(101, "srv-01", serial="ABC123")
-        device["rack"] = {"name": "9D05"}
+        device["comments"] = "first sync"
         factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
         sync_from_netbox(1, session_factory=factory)
         ci = ConfigurationItem.query.filter_by(external_id="101").one()
         ci.attributes = {**ci.attributes, "Builder": "William Yao"}
         db.session.commit()
 
-        device["rack"] = {"name": "9D06"}
+        device["comments"] = "second sync"
         factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
         sync_from_netbox(1, session_factory=factory)
         ci = ConfigurationItem.query.filter_by(external_id="101").one()
-        assert ci.attributes["NetBox: Rack"] == "9D06"
+        assert ci.attributes["NetBox: Comments"] == "second sync"
         assert ci.attributes["Builder"] == "William Yao"
+
+
+def test_device_rack_position_face_and_role_are_synced(app, monkeypatch):
+    with app.app_context():
+        rack = make_rack(5, "9D05", site="CC1", u_height=42)
+        device = make_device(
+            101, "srv-01", serial="ABC123", role="Switch", rack_id=5,
+            position=12.0, u_height=2, face="front",
+        )
+        factory = enable_netbox(devices=[device], racks=[rack], monkeypatch=monkeypatch)
+        result = sync_from_netbox(1, session_factory=factory)
+        assert result["racks_created"] == 1
+        local_rack = Rack.query.filter_by(external_id="5").one()
+        assert (local_rack.name, local_rack.site, local_rack.u_height) == ("9D05", "CC1", 42)
+        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        assert ci.ci_class == "Switch"
+        assert ci.rack_id == local_rack.id
+        assert ci.rack_position == 12.0
+        assert ci.rack_u_height == 2
+        assert ci.rack_face == "front"
+
+
+def test_device_without_role_falls_back_to_server_ci_class(app, monkeypatch):
+    with app.app_context():
+        device = make_device(101, "srv-01", serial="ABC123")
+        factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
+        sync_from_netbox(1, session_factory=factory)
+        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        assert ci.ci_class == "Server"
+
+
+def test_rack_resync_updates_existing_rack_by_external_id(app, monkeypatch):
+    with app.app_context():
+        rack = make_rack(5, "9D05", site="CC1", u_height=42)
+        factory = enable_netbox(racks=[rack], monkeypatch=monkeypatch)
+        sync_from_netbox(1, session_factory=factory)
+        assert Rack.query.count() == 1
+
+        rack["u_height"] = 47
+        factory = enable_netbox(racks=[rack], monkeypatch=monkeypatch)
+        result = sync_from_netbox(1, session_factory=factory)
+        assert result["racks_created"] == 0
+        assert result["racks_updated"] == 1
+        assert Rack.query.count() == 1
+        assert Rack.query.filter_by(external_id="5").one().u_height == 47
 
 
 def test_device_components_are_captured_as_attribute_summaries(app, monkeypatch):
