@@ -186,6 +186,12 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
   document.querySelector("[data-favorite]")?.addEventListener("click", async (event) => {
+    // event.currentTarget is only valid during synchronous dispatch -- the
+    // browser resets it to null once the handler yields at the first
+    // `await`, so it must be captured up front rather than read after the
+    // fetch resolves (this was silently throwing and aborting the whole
+    // handler before the list/star/toast updates below ever ran).
+    const button = event.currentTarget;
     const data = new URLSearchParams({url: path, label: document.querySelector("h1")?.textContent || document.title});
     let response;
     try {
@@ -199,7 +205,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const result = await response.json();
-    event.currentTarget.textContent = result.active
+    button.textContent = result.active
       ? "Remove this page from favorites"
       : "Add this page to favorites";
     const star = document.querySelector("[data-favorite-star]");
