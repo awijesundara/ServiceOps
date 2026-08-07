@@ -39,7 +39,7 @@ from alembic.config import Config as AlembicConfig
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from cryptography.fernet import Fernet, InvalidToken
-from ldap3 import ALL, SUBTREE, Connection, Server, Tls
+from ldap3 import ALL, BASE, SUBTREE, Connection, Server, Tls
 from ldap3.utils.conv import escape_filter_chars
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -3984,6 +3984,94 @@ def ldap_server_and_service_connection():
     return server, service
 
 
+def sync_ldap_manager_on_login(user, entry_dn, manager_dn, merged_attr_map):
+    """Best-effort manager mapping for LDAP login.
+
+    Runs on successful login so org-chart links stay current without relying
+    on periodic/full-directory sync. Never raises -- login must continue even
+    if manager lookup fails.
+    """
+    if not user or not entry_dn or not manager_dn:
+        return
+    entry_key = str(entry_dn).strip().casefold()
+    manager_key = str(manager_dn).strip().casefold()
+    if not entry_key or not manager_key:
+        return
+    if entry_key == manager_key:
+        current_app.logger.warning(
+            "Self-manager LDAP record skipped for user %s.",
+            user.username,
+        )
+        return
+
+    try:
+        manager_identity = ExternalIdentity.query.filter_by(
+            provider="ldap", subject=manager_dn
+        ).first()
+        manager_user = manager_identity.user if manager_identity else None
+
+        if not manager_user:
+            _server, service = ldap_server_and_service_connection()
+            try:
+                if not service.search(
+                    search_base=manager_dn,
+                    search_filter="(objectClass=*)",
+                    search_scope=BASE,
+                    attributes=sorted(set([
+                        merged_attr_map.get("username", "sAMAccountName"),
+                        merged_attr_map.get("display_name", "displayName"),
+                        merged_attr_map.get("email", "mail"),
+                        "memberOf",
+                    ])),
+                    size_limit=1,
+                ):
+                    return
+                entries = list(service.entries)
+            finally:
+                try:
+                    service.unbind()
+                except Exception:
+                    pass
+            if not entries:
+                return
+            values = entries[0].entry_attributes_as_dict
+            first = lambda key, fallback="": (values.get(key) or [fallback])[0]
+            manager_username = first(merged_attr_map.get("username", "sAMAccountName"), "")
+            if not manager_username:
+                return
+            manager_groups = values.get("memberOf", [])
+            manager_roles = mapped_roles(manager_groups, "LDAP_ROLE_MAPPINGS")
+            manager_profile_attrs = {}
+            from serviceops_core.ldap_sync import PROFILE_FIELDS
+            for field in PROFILE_FIELDS:
+                ldap_attr = merged_attr_map.get(field)
+                if not ldap_attr:
+                    continue
+                val = first(ldap_attr, "")
+                if val:
+                    manager_profile_attrs[field] = val
+            manager_user = provision_external_user(
+                "ldap",
+                manager_dn,
+                manager_username,
+                first(merged_attr_map.get("display_name", "displayName"), manager_username),
+                first(merged_attr_map.get("email", "mail"), ""),
+                manager_roles,
+                groups=manager_groups,
+                profile_attrs=manager_profile_attrs,
+            )
+
+        if manager_user and manager_user.id != user.id and manager_user.tenant_id == user.tenant_id:
+            if user.manager_id != manager_user.id:
+                user.manager_id = manager_user.id
+    except Exception as error:  # noqa: BLE001 - login must not fail on manager sync
+        current_app.logger.warning(
+            "LDAP manager sync on login failed for %s: %s",
+            user.username,
+            type(error).__name__,
+        )
+
+
 def ldap_authenticate(username, password):
     if not password or not setting_bool("LDAP_ENABLED"):
         return None
@@ -3996,7 +4084,17 @@ def ldap_authenticate(username, password):
     search_filter = setting_value(
         "LDAP_USER_FILTER", "(&(objectClass=user)(sAMAccountName={username}))"
     ).replace("{username}", safe_username)
-    attrs = ["distinguishedName", "cn", "displayName", "mail", "memberOf", "userPrincipalName"]
+    try:
+        ldap_attr_map = json.loads(setting_value("LDAP_ATTR_MAP", "{}"))
+    except (TypeError, json.JSONDecodeError):
+        ldap_attr_map = {}
+    attr_names = {
+        "distinguishedName", "cn", "displayName", "mail", "memberOf", "userPrincipalName"
+    }
+    for mapped in ldap_attr_map.values() if isinstance(ldap_attr_map, dict) else []:
+        if isinstance(mapped, str) and mapped.strip():
+            attr_names.add(mapped.strip())
+    attrs = sorted(attr_names)
     if not service.search(setting_value("LDAP_BASE_DN", ""), search_filter,
                           search_scope=SUBTREE, attributes=attrs, size_limit=2):
         service.unbind()
@@ -4017,9 +4115,26 @@ def ldap_authenticate(username, password):
     first = lambda key, fallback="": (values.get(key) or [fallback])[0]
     groups = values.get("memberOf", [])
     matched_roles = mapped_roles(groups, "LDAP_ROLE_MAPPINGS")
-    return provision_external_user(
+    from serviceops_core.ldap_sync import DEFAULT_ATTR_MAP, PROFILE_FIELDS
+    merged_attr_map = dict(DEFAULT_ATTR_MAP)
+    if isinstance(ldap_attr_map, dict):
+        merged_attr_map.update({k: v for k, v in ldap_attr_map.items() if isinstance(v, str) and v})
+    profile_attrs = {}
+    for field in PROFILE_FIELDS:
+        ldap_attr = merged_attr_map.get(field)
+        if not ldap_attr:
+            continue
+        val = first(ldap_attr, "")
+        if val:
+            profile_attrs[field] = val
+    user = provision_external_user(
         "ldap", entry.entry_dn, username, first("displayName", first("cn", username)),
-        first("mail", first("userPrincipalName", "")), matched_roles, groups=groups)
+        first("mail", first("userPrincipalName", "")), matched_roles, groups=groups,
+        profile_attrs=profile_attrs,
+    )
+    manager_dn = first(merged_attr_map.get("manager", "manager"), "")
+    sync_ldap_manager_on_login(user, entry.entry_dn, manager_dn, merged_attr_map)
+    return user
 
 
 APP_START_TIME = now()
@@ -11268,6 +11383,7 @@ def create_app(test_config=None):
                         f"{result['users_updated']} users updated, "
                         f"{result['managers_resolved']} managers resolved, "
                         f"{result['managers_provisioned']} managers provisioned, "
+                        f"{result.get('self_manager_skipped', 0)} self-manager records skipped, "
                         f"{result['memberships_added']} memberships added, "
                         f"{result['memberships_removed']} memberships removed, "
                         f"{result['users_unmatched']} unmatched, "
@@ -11281,6 +11397,7 @@ def create_app(test_config=None):
                             f"{result['users_updated']} users updated, "
                             f"{result['managers_resolved']} managers resolved, "
                             f"{result['managers_provisioned']} managers provisioned, "
+                            f"{result.get('self_manager_skipped', 0)} self-manager records skipped, "
                             f"{result['memberships_added']} memberships added, "
                             f"{result['memberships_removed']} memberships removed, "
                             f"{result['users_unmatched']} unmatched entries, "
@@ -11349,6 +11466,8 @@ def create_app(test_config=None):
             ).all(),
             fulfillment_groups=fulfillment_groups,
             ldap_enabled=setting_bool("LDAP_ENABLED"),
+            ldap_sync_enabled=setting_bool("LDAP_SYNC_ENABLED"),
+            ldap_sync_interval_minutes=setting_int("LDAP_SYNC_INTERVAL_MINUTES", 60),
             ldap_sync_result=session.pop("ldap_sync_result", None),
             change_freeze_windows=tenant_query(ChangeFreezeWindow).order_by(
                 ChangeFreezeWindow.starts_at.desc()

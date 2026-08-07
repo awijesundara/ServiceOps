@@ -28,9 +28,21 @@ def app():
     os.unlink(path)
 
 
+class _FakeStandard:
+    def paged_search(self, search_base=None, search_filter=None, search_scope=None,
+                      attributes=None, paged_size=None, generator=True):
+        return iter(())
+
+
+class _FakeExtend:
+    def __init__(self):
+        self.standard = _FakeStandard()
+
+
 class FakeConnection:
     def __init__(self):
         self.entries = []
+        self.extend = _FakeExtend()
 
     def search(self, base_dn, search_filter, search_scope=None, attributes=None):
         self.entries = []
