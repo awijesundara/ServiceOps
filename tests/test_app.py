@@ -5366,6 +5366,26 @@ def test_cmdb_topology_excludes_virtual_machines(client, app):
     assert b"topo-physical-host" in response.data
 
 
+def test_rack_list_shows_space_used_when_a_ci_has_no_height_set(client, app):
+    """A CI placed in a rack with the Height (U) field left blank stores
+    rack_u_height=NULL; SUM() over an all-NULL group returns SQL NULL, not
+    0, which previously crashed rack_list()'s "used / rack.u_height"
+    division outright (found via live browser verification, not a test)."""
+    with app.app_context():
+        rack = Rack(tenant_id=1, name="rack-no-height-test", u_height=42)
+        db.session.add(rack)
+        db.session.flush()
+        db.session.add(ConfigurationItem(
+            name="rack-no-height-ci", ci_class="Server", rack_id=rack.id,
+            rack_position=1, rack_u_height=None,
+        ))
+        db.session.commit()
+    login(client)
+    response = client.get("/cmdb/racks")
+    assert response.status_code == 200
+    assert b"rack-no-height-test" in response.data
+
+
 def test_rack_list_requires_agent_and_write_requires_admin(client, app):
     login(client, "employee", "Employee123!")
     assert client.get("/cmdb/racks").status_code == 403
@@ -5433,6 +5453,60 @@ def test_rack_elevation_places_devices_and_respects_class_read_permission(client
     assert b"rack-elevation-hidden" not in response.data
 
 
+def test_rack_elevation_highlight_param_and_embed_route(client, app):
+    with app.app_context():
+        rack = Rack(tenant_id=1, name="rack-highlight-test", u_height=42)
+        db.session.add(rack)
+        db.session.flush()
+        ci = ConfigurationItem(
+            name="rack-highlight-ci", ci_class="Server", rack_id=rack.id,
+            rack_position=10, rack_u_height=2, rack_face="front",
+        )
+        db.session.add(ci)
+        db.session.commit()
+        rack_id, ci_id = rack.id, ci.id
+    login(client)
+    response = client.get(f"/cmdb/racks/{rack_id}?highlight={ci_id}")
+    assert response.status_code == 200
+    # The JSON payload is embedded via an HTML data-* attribute (escaped by
+    # Jinja autoescaping, e.g. '"' -> '&#34;'), so check for the un-escaped
+    # substrings rather than a literal JSON snippet -- see B-292/B-289 for
+    # the same lesson learned with the topology graph payload.
+    assert b"highlight_ci_id" in response.data
+    assert str(ci_id).encode() in response.data
+
+    embed_response = client.get(f"/cmdb/racks/{rack_id}/embed?highlight={ci_id}")
+    assert embed_response.status_code == 200
+    assert b"rack-highlight-ci" in embed_response.data
+    assert b"<html" in embed_response.data
+    assert b"sidebar" not in embed_response.data
+
+
+def test_ci_form_shows_embedded_rack_preview_when_placed(client, app):
+    with app.app_context():
+        rack = Rack(tenant_id=1, name="rack-preview-test", u_height=42)
+        db.session.add(rack)
+        db.session.flush()
+        ci = ConfigurationItem(
+            name="rack-preview-ci", ci_class="Server", rack_id=rack.id,
+            rack_position=3, rack_u_height=1, rack_face="front",
+        )
+        db.session.add(ci)
+        db.session.commit()
+        rack_id, ci_id = rack.id, ci.id
+        unracked = ConfigurationItem(name="rack-preview-unracked", ci_class="Server")
+        db.session.add(unracked)
+        db.session.commit()
+        unracked_id = unracked.id
+    login(client)
+    placed_page = client.get(f"/cmdb/{ci_id}/edit")
+    assert f'/cmdb/racks/{rack_id}/embed?highlight={ci_id}'.encode() in placed_page.data
+
+    unracked_page = client.get(f"/cmdb/{unracked_id}/edit")
+    assert b"Rack placement" not in unracked_page.data
+    assert b"/embed?highlight=" not in unracked_page.data
+
+
 def test_ci_form_round_trips_manual_rack_placement(client, app):
     with app.app_context():
         rack = Rack(tenant_id=1, name="rack-manual-place", u_height=42)
@@ -5458,7 +5532,7 @@ def test_ci_form_round_trips_manual_rack_placement(client, app):
     assert f'href="/cmdb/{ci_id}/edit"'.encode() in cmdb_page.data
 
     detail_page = client.get(f"/cmdb/{ci_id}/edit")
-    assert f'href="/cmdb/racks/{rack_id}"'.encode() in detail_page.data
+    assert f'href="/cmdb/racks/{rack_id}?highlight={ci_id}"'.encode() in detail_page.data
     assert b"rack-manual-place" in detail_page.data
 
 
