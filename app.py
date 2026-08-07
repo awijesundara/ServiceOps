@@ -12136,7 +12136,8 @@ def create_app(test_config=None):
             active = True
         db.session.commit()
         return jsonify(project_document(
-            "ui_action_ack", current_user.effective_role, {"active": active}
+            "ui_action_ack", current_user.effective_role,
+            {"active": active, "url": url, "label": label},
         ))
 
     @app.post("/ui/history")
@@ -12145,15 +12146,17 @@ def create_app(test_config=None):
         url = request.form.get("url", "")[:500]
         if not is_safe_internal_path(url) or url.startswith(("/static", "/health", "/ui/")):
             return ("", 204)
+        label = request.form.get("label", "Page")[:180]
         row = RecentView.query.filter_by(user_id=current_user.id, url=url).first()
         if row:
-            row.label = request.form.get("label", row.label)[:180]
+            row.label = label
             row.viewed_at = now()
         else:
-            db.session.add(RecentView(user_id=current_user.id, url=url,
-                                      label=request.form.get("label", "Page")[:180]))
+            db.session.add(RecentView(user_id=current_user.id, url=url, label=label))
         db.session.commit()
-        return ("", 204)
+        return jsonify(project_document(
+            "ui_action_ack", current_user.effective_role, {"url": url, "label": label},
+        ))
 
     @app.route("/preferences", methods=["GET", "POST"])
     @login_required

@@ -17,7 +17,7 @@
   <form method="post" class="stack">
     {% if local_enabled and ldap_enabled %}
     <label>Authentication source
-      <select name="provider">
+      <select name="provider" data-auth-provider-select>
         <option value="ldap">Corporate directory (AD/LDAP)</option>
         <option value="local">Local administrator</option>
       </select>
@@ -30,7 +30,9 @@
     <label>Username<input name="username" autocomplete="username" required autofocus></label>
     <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
   <button class="primary">Sign in</button>
-  {% if local_enabled %}<a href="{{ url_for('forgot_password') }}">Forgot your password?</a>{% endif %}
+  {% if local_enabled %}
+  <a href="{{ url_for('forgot_password') }}" data-forgot-password-link{% if local_enabled and ldap_enabled %} hidden{% endif %}>Forgot your password?</a>
+  {% endif %}
   </form>
   {% endif %}
   <div class="login-version muted">v{{ app_version }}</div>
