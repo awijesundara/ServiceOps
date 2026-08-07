@@ -75,6 +75,13 @@ document.addEventListener("DOMContentLoaded", () => {
       const y = 10 + (winEnd - top) * rowHeight;
       const group = document.createElementNS(svgNS, "a");
       group.setAttribute("href", `/cmdb/${device.id}/edit`);
+      // This view is iframed into the compact CI-page preview (see
+      // rack_elevation_embed.html); without target="_top" a click navigates
+      // the iframe itself to the full ci_form.html page, which contains
+      // another copy of this same iframe -- an infinite nesting doll rather
+      // than a real navigation. Harmless no-op on the full (non-iframed)
+      // /cmdb/racks/<id> view.
+      group.setAttribute("target", "_top");
       const block = document.createElementNS(svgNS, "rect");
       block.setAttribute("x", 32); block.setAttribute("y", y);
       block.setAttribute("width", 176); block.setAttribute("height", height * rowHeight - 2);
@@ -112,7 +119,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const pduList = document.getElementById("rack-pdu-list");
   if (pduList && (payload.pdus || []).length) {
     pduList.innerHTML = payload.pdus.map((pdu) => `
-      <a href="/cmdb/${pdu.id}/edit" class="rack-pdu-row${highlightId && pdu.id === highlightId ? " rack-pdu-row-highlight" : ""}">
+      <a href="/cmdb/${pdu.id}/edit" target="_top" class="rack-pdu-row${highlightId && pdu.id === highlightId ? " rack-pdu-row-highlight" : ""}">
         <strong>${pdu.name}</strong>
         <span>${pdu.power_watts != null ? pdu.power_watts + "W" : "power not tracked"}</span>
       </a>`).join("");
