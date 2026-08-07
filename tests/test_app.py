@@ -5452,7 +5452,14 @@ def test_ci_form_round_trips_manual_rack_placement(client, app):
         assert ci.rack_position == 5.5
         assert ci.rack_u_height == 2
         assert ci.rack_face == "rear"
-    assert b"topo-a-vm" not in response.data
+        ci_id = ci.id
+
+    cmdb_page = client.get("/cmdb?q=manual-rack-ci")
+    assert f'href="/cmdb/{ci_id}/edit"'.encode() in cmdb_page.data
+
+    detail_page = client.get(f"/cmdb/{ci_id}/edit")
+    assert f'href="/cmdb/racks/{rack_id}"'.encode() in detail_page.data
+    assert b"rack-manual-place" in detail_page.data
 
 
 def test_cmdb_network_info_resolves_hostname_and_ip(client, app, monkeypatch):

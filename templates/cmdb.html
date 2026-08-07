@@ -76,7 +76,7 @@
     {% if current_user.effective_role in ['admin','superadmin'] %}<th></th>{% endif %}
   </tr></thead><tbody>
     {% for ci in visible_cis %}<tr>
-      <td><strong>{{ ci.name }}</strong>{% if ci.serial_number %}<br><small class="muted">S/N {{ ci.serial_number }}</small>{% endif %}</td>
+      <td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}"><strong>{{ ci.name }}</strong></a>{% if ci.serial_number %}<br><small class="muted">S/N {{ ci.serial_number }}</small>{% endif %}</td>
       <td data-col="ci_class">{{ ci.ci_class }}</td>
       <td data-col="environment">{{ ci.environment }}</td>
       <td data-col="operational_status"><span class="badge">{{ ci.operational_status }}</span></td>
