@@ -31,7 +31,7 @@
     <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
   <button class="primary">Sign in</button>
   {% if local_enabled %}
-  <a href="{{ url_for('forgot_password') }}" data-forgot-password-link{% if local_enabled and ldap_enabled %} hidden{% endif %}>Forgot your password?</a>
+  <a class="login-card-forgot" href="{{ url_for('forgot_password') }}" data-forgot-password-link{% if local_enabled and ldap_enabled %} hidden{% endif %}>Forgot your password?</a>
   {% endif %}
   </form>
   {% endif %}
