@@ -16,6 +16,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const uHeight = payload.rack.u_height || 42;
   const rowHeight = 18;
   const svgHeight = uHeight * rowHeight + 20;
+  const highlightId = payload.highlight_ci_id;
+  let highlightedBlock = null;
 
   const svgNS = "http://www.w3.org/2000/svg";
   const colorFor = (ciClass) => {
@@ -60,6 +62,12 @@ document.addEventListener("DOMContentLoaded", () => {
       block.setAttribute("width", 176); block.setAttribute("height", height * rowHeight - 2);
       block.setAttribute("fill", colorFor(device.ci_class));
       block.setAttribute("rx", 3);
+      if (highlightId && device.id === highlightId) {
+        block.setAttribute("stroke", "#f9aa3c");
+        block.setAttribute("stroke-width", "3");
+        block.classList.add("rack-elevation-highlight");
+        highlightedBlock = block;
+      }
       const title = document.createElementNS(svgNS, "title");
       title.textContent = `${device.name} · ${device.ci_class} · ${device.status}`;
       block.appendChild(title);
@@ -86,10 +94,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const pduList = document.getElementById("rack-pdu-list");
   if (pduList && (payload.pdus || []).length) {
     pduList.innerHTML = payload.pdus.map((pdu) => `
-      <a href="/cmdb/${pdu.id}/edit" class="rack-pdu-row">
+      <a href="/cmdb/${pdu.id}/edit" class="rack-pdu-row${highlightId && pdu.id === highlightId ? " rack-pdu-row-highlight" : ""}">
         <strong>${pdu.name}</strong>
         <span>${pdu.power_watts != null ? pdu.power_watts + "W" : "power not tracked"}</span>
       </a>`).join("");
+  }
+
+  if (highlightedBlock) {
+    highlightedBlock.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
   }
 
   const stats = payload.stats || {};
@@ -109,21 +121,25 @@ document.addEventListener("DOMContentLoaded", () => {
   setStat("rack-stat-space", "rack-stat-space-label", stats.space_used_u, stats.space_total_u, "U");
   // Weight/power have no meaningful "total" to bar-fill against (this app
   // has no rack max-load/max-draw schema) -- the bar is just a tracked/
-  // not-tracked indicator, not a percentage. The fill <div> has no CSS
-  // width of its own, so it defaults to filling its container unless set
-  // explicitly here in every branch, including "not tracked".
-  if (stats.weight_kg != null) {
-    document.getElementById("rack-stat-weight-label").textContent = `${stats.weight_kg} kg`;
-    document.getElementById("rack-stat-weight").style.width = "100%";
-  } else {
-    document.getElementById("rack-stat-weight-label").textContent = "Not tracked";
-    document.getElementById("rack-stat-weight").style.width = "0%";
-  }
-  if (stats.power_watts != null) {
-    document.getElementById("rack-stat-power-label").textContent = `${stats.power_watts} W`;
-    document.getElementById("rack-stat-power").style.width = "100%";
-  } else {
-    document.getElementById("rack-stat-power-label").textContent = "Not tracked";
-    document.getElementById("rack-stat-power").style.width = "0%";
-  }
+  // not-tracked indicator, not a percentage.
+  const setTrackedStat = (fillId, labelId, value, unit) => {
+    const fill = document.getElementById(fillId);
+    const label = document.getElementById(labelId);
+    // Guarded the same way setStat() is -- these elements don't exist at
+    // all on the compact /embed view (no stats panel there), and calling
+    // .textContent on a null getElementById result throws, which was
+    // silently breaking the embedded rack preview on every CI page that
+    // has one (found via a real headless-browser console-error check, not
+    // visible from the screenshot alone).
+    if (!fill || !label) return;
+    if (value == null) {
+      label.textContent = "Not tracked";
+      fill.style.width = "0%";
+      return;
+    }
+    label.textContent = `${value}${unit ? " " + unit : ""}`;
+    fill.style.width = "100%";
+  };
+  setTrackedStat("rack-stat-weight", "rack-stat-weight-label", stats.weight_kg, "kg");
+  setTrackedStat("rack-stat-power", "rack-stat-power-label", stats.power_watts, "W");
 });

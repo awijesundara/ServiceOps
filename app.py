@@ -10173,7 +10173,13 @@ def create_app(test_config=None):
         occupied_u = {
             row.rack_id: row.total
             for row in db.session.query(
-                ConfigurationItem.rack_id, func.sum(ConfigurationItem.rack_u_height).label("total"),
+                ConfigurationItem.rack_id,
+                # A CI with no height set defaults to 1U everywhere else in
+                # this feature (see ci_dict() in rack_elevation()) -- must
+                # coalesce per-row here too, not just at the end: SUM() of
+                # an all-NULL group returns SQL NULL, not 0, which crashed
+                # the template's "used / rack.u_height" division outright.
+                func.sum(func.coalesce(ConfigurationItem.rack_u_height, 1)).label("total"),
             ).filter(ConfigurationItem.rack_id.isnot(None), ConfigurationItem.tenant_id == current_user.tenant_id)
             .group_by(ConfigurationItem.rack_id).all()
         }
@@ -10220,10 +10226,7 @@ def create_app(test_config=None):
         flash(f"{rack.name} deleted.", "success")
         return redirect(url_for("rack_list"))
 
-    @app.get("/cmdb/racks/<int:rack_id>")
-    @roles("agent", "manager", "admin")
-    def rack_elevation(rack_id):
-        rack = tenant_record_or_404(Rack, rack_id)
+    def _rack_elevation_payload(rack):
         cis = restrict_ci_query_to_readable_classes(
             tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
         ).filter_by(rack_id=rack.id).all()
@@ -10248,16 +10251,35 @@ def create_app(test_config=None):
         space_used = sum((ci.rack_u_height or 1) for ci in cis if ci.rack_position is not None)
         weights = [(ci.attributes or {}).get("weight_kg") for ci in cis if (ci.attributes or {}).get("weight_kg")]
         powers = [(ci.attributes or {}).get("power_watts") for ci in cis if (ci.attributes or {}).get("power_watts")]
-        payload = {
+        highlight_ci_id = request.args.get("highlight", type=int)
+        return {
             "rack": {"id": rack.id, "name": rack.name, "site": rack.site, "u_height": rack.u_height},
             "front": front, "rear": rear, "pdus": pdus,
+            "highlight_ci_id": highlight_ci_id,
             "stats": {
                 "space_used_u": space_used, "space_total_u": rack.u_height,
                 "weight_kg": sum(weights) if weights else None,
                 "power_watts": sum(powers) if powers else None,
             },
         }
+
+    @app.get("/cmdb/racks/<int:rack_id>")
+    @roles("agent", "manager", "admin")
+    def rack_elevation(rack_id):
+        rack = tenant_record_or_404(Rack, rack_id)
+        payload = _rack_elevation_payload(rack)
         return render_template("rack_elevation.html", rack=rack, rack_json=json.dumps(payload))
+
+    @app.get("/cmdb/racks/<int:rack_id>/embed")
+    @roles("agent", "manager", "admin")
+    def rack_elevation_embed(rack_id):
+        # A compact, chrome-free version of the same view (no sidebar nav,
+        # no stats/PDU panels) meant to be iframed directly into a CI's own
+        # detail page -- see ci_form.html -- so "where does this device sit"
+        # is visible without leaving the CI you're already looking at.
+        rack = tenant_record_or_404(Rack, rack_id)
+        payload = _rack_elevation_payload(rack)
+        return render_template("rack_elevation_embed.html", rack=rack, rack_json=json.dumps(payload))
 
     @app.route("/tickets/import/rt", methods=["GET", "POST"])
     @roles("admin")
