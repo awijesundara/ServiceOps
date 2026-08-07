@@ -10035,9 +10035,34 @@ def create_app(test_config=None):
             ).first()
             if match:
                 lldp_neighbor_cis[neighbor_name] = match
+        # "Connects to" is the physical/network-link relationship type this
+        # CI's own discovered LLDP data (or a manually-drawn relationship)
+        # produces -- see B-289/cmdb_topology. Surfaced here directly
+        # (both directions: this CI as parent or child) so a switch shows
+        # every server plugged into it and a server shows the switch it's
+        # plugged into, without leaving the CI page for the topology map.
+        connects_to_rels = tenant_query(CIRelationship).filter(
+            CIRelationship.relationship_type == "Connects to",
+            db.or_(CIRelationship.parent_id == ci.id, CIRelationship.child_id == ci.id),
+        ).all()
+        network_connections = []
+        for rel in connects_to_rels:
+            other = rel.child if rel.parent_id == ci.id else rel.parent
+            if not other or not ci_class_read_allowed(
+                current_user.tenant_id, other.ci_class, current_user.effective_role,
+            ):
+                continue
+            local_port, other_port = "", ""
+            if rel.label and "<->" in rel.label:
+                left, right = rel.label.split("<->", 1)
+                local_port, other_port = (left.strip(), right.strip()) if rel.parent_id == ci.id else (right.strip(), left.strip())
+            network_connections.append({
+                "ci": other, "local_port": local_port, "other_port": other_port,
+            })
         return render_template(
             "ci_form.html", ci=ci, owners=owners, support_groups=support_groups, racks=racks, history=history,
             impacted_cis=impacted_cis, lldp_neighbor_cis=lldp_neighbor_cis,
+            network_connections=network_connections,
         )
 
     @app.route("/cmdb/import", methods=["GET", "POST"])
@@ -10226,7 +10251,7 @@ def create_app(test_config=None):
         flash(f"{rack.name} deleted.", "success")
         return redirect(url_for("rack_list"))
 
-    def _rack_elevation_payload(rack):
+    def _rack_elevation_payload(rack, compact=False):
         cis = restrict_ci_query_to_readable_classes(
             tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
         ).filter_by(rack_id=rack.id).all()
@@ -10256,6 +10281,7 @@ def create_app(test_config=None):
             "rack": {"id": rack.id, "name": rack.name, "site": rack.site, "u_height": rack.u_height},
             "front": front, "rear": rear, "pdus": pdus,
             "highlight_ci_id": highlight_ci_id,
+            "compact": compact,
             "stats": {
                 "space_used_u": space_used, "space_total_u": rack.u_height,
                 "weight_kg": sum(weights) if weights else None,
@@ -10278,7 +10304,7 @@ def create_app(test_config=None):
         # detail page -- see ci_form.html -- so "where does this device sit"
         # is visible without leaving the CI you're already looking at.
         rack = tenant_record_or_404(Rack, rack_id)
-        payload = _rack_elevation_payload(rack)
+        payload = _rack_elevation_payload(rack, compact=True)
         return render_template("rack_elevation_embed.html", rack=rack, rack_json=json.dumps(payload))
 
     @app.route("/tickets/import/rt", methods=["GET", "POST"])

@@ -34,11 +34,33 @@
 </div>
 <div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">Cancel</a><button class="primary">{{ 'Save changes' if ci else 'Create CI' }}</button></div></form>
 {% if ci %}
-{% if ci.rack_id and ci.rack %}
+{% if (ci.rack_id and ci.rack) or network_connections %}
 <section class="panel">
-  <h2>Rack placement</h2>
-  <p class="muted">{{ ci.rack.name }}{% if ci.rack.site %} ({{ ci.rack.site }}){% endif %} &middot; U{{ ci.rack_position|int if ci.rack_position == ci.rack_position|int else ci.rack_position }}{% if ci.rack_face %}, {{ ci.rack_face }}{% endif %} &middot; <a href="{{ url_for('rack_elevation', rack_id=ci.rack_id, highlight=ci.id) }}">Open full rack view →</a></p>
-  <iframe src="{{ url_for('rack_elevation_embed', rack_id=ci.rack_id, highlight=ci.id) }}" style="width:100%;height:260px;border:1px solid var(--line);border-radius:8px" title="Rack placement preview"></iframe>
+  <div class="panel-head">
+    <div>
+      <h2>Rack &amp; network placement<span class="info-tip" tabindex="0" data-tip="Where this CI physically sits and what it's plugged into, from either manual entry or discovered LLDP/NetBox data.">i</span></h2>
+      {% if ci.rack_id and ci.rack %}<p>{{ ci.rack.name }}{% if ci.rack.site %} &middot; {{ ci.rack.site }}{% endif %} &middot; U{{ ci.rack_position|int if ci.rack_position == ci.rack_position|int else ci.rack_position }}{% if ci.rack_face %}, {{ ci.rack_face }}{% endif %}</p>{% endif %}
+    </div>
+    {% if ci.rack_id and ci.rack %}<a class="button" href="{{ url_for('rack_elevation', rack_id=ci.rack_id, highlight=ci.id) }}">Open full rack view →</a>{% endif %}
+  </div>
+  <div class="rack-placement-grid">
+    {% if ci.rack_id and ci.rack %}
+    <iframe src="{{ url_for('rack_elevation_embed', rack_id=ci.rack_id, highlight=ci.id) }}" class="rack-placement-preview" title="Rack placement preview"></iframe>
+    {% endif %}
+    {% if network_connections %}
+    <div>
+      <h3>{{ 'Connected servers' if (ci.ci_class|lower) in ['switch','router'] else 'Connects to' }}<span class="badge">{{ network_connections|length }}</span></h3>
+      <div class="rack-connections-list">
+        {% for conn in network_connections %}
+        <a class="rack-connection-row" href="{{ url_for('ci_edit', ci_id=conn.ci.id) }}">
+          <div><strong>{{ conn.ci.name }}</strong><small>{{ conn.ci.ci_class }}</small></div>
+          {% if conn.local_port or conn.other_port %}<span class="rack-connection-ports">{{ conn.local_port or '—' }} ↔ {{ conn.other_port or '—' }}</span>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
 </section>
 {% endif %}
 {% set discovered = ci.attributes or {} %}
