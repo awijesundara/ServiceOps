@@ -13,7 +13,7 @@
 <label>Model<input name="model" value="{{ ci.model if ci else '' }}"></label>
 <label>Location<input name="location" value="{{ ci.location if ci else '' }}" placeholder="Site, rack, or region"></label>
 <label>Cost center<input name="cost_center" value="{{ ci.cost_center if ci else '' }}"></label>
-<label>Rack<select name="rack_id"><option value="">Not rack-mounted</option>{% for rack in racks %}<option value="{{ rack.id }}" {% if ci and ci.rack_id==rack.id %}selected{% endif %}>{{ rack.name }}{% if rack.site %} ({{ rack.site }}){% endif %}</option>{% endfor %}</select>{% if ci and ci.rack_id and ci.rack %}<small><a href="{{ url_for('rack_elevation', rack_id=ci.rack_id) }}">View {{ ci.rack.name }} elevation{% if ci.rack_position is not none %} (U{{ ci.rack_position|int if ci.rack_position == ci.rack_position|int else ci.rack_position }}{% if ci.rack_face %}, {{ ci.rack_face }}{% endif %}){% endif %} →</a></small>{% endif %}</label>
+<label>Rack<select name="rack_id"><option value="">Not rack-mounted</option>{% for rack in racks %}<option value="{{ rack.id }}" {% if ci and ci.rack_id==rack.id %}selected{% endif %}>{{ rack.name }}{% if rack.site %} ({{ rack.site }}){% endif %}</option>{% endfor %}</select>{% if ci and ci.rack_id and ci.rack %}<small><a href="{{ url_for('rack_elevation', rack_id=ci.rack_id, highlight=ci.id) }}">View {{ ci.rack.name }} elevation{% if ci.rack_position is not none %} (U{{ ci.rack_position|int if ci.rack_position == ci.rack_position|int else ci.rack_position }}{% if ci.rack_face %}, {{ ci.rack_face }}{% endif %}){% endif %} →</a></small>{% endif %}</label>
 <label>Rack position (U)<input type="number" step="0.5" min="1" name="rack_position" value="{{ ci.rack_position if ci and ci.rack_position is not none else '' }}"></label>
 <label>Height (U)<input type="number" step="1" min="1" name="rack_u_height" value="{{ ci.rack_u_height if ci and ci.rack_u_height is not none else '' }}" placeholder="1"></label>
 <label>Rack face<select name="rack_face"><option value="">&mdash;</option><option value="front" {% if ci and ci.rack_face=='front' %}selected{% endif %}>Front</option><option value="rear" {% if ci and ci.rack_face=='rear' %}selected{% endif %}>Rear</option></select></label>
@@ -34,6 +34,13 @@
 </div>
 <div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">Cancel</a><button class="primary">{{ 'Save changes' if ci else 'Create CI' }}</button></div></form>
 {% if ci %}
+{% if ci.rack_id and ci.rack %}
+<section class="panel">
+  <h2>Rack placement</h2>
+  <p class="muted">{{ ci.rack.name }}{% if ci.rack.site %} ({{ ci.rack.site }}){% endif %} &middot; U{{ ci.rack_position|int if ci.rack_position == ci.rack_position|int else ci.rack_position }}{% if ci.rack_face %}, {{ ci.rack_face }}{% endif %} &middot; <a href="{{ url_for('rack_elevation', rack_id=ci.rack_id, highlight=ci.id) }}">Open full rack view →</a></p>
+  <iframe src="{{ url_for('rack_elevation_embed', rack_id=ci.rack_id, highlight=ci.id) }}" style="width:100%;height:260px;border:1px solid var(--line);border-radius:8px" title="Rack placement preview"></iframe>
+</section>
+{% endif %}
 {% set discovered = ci.attributes or {} %}
 {% if discovered.sys_descr or discovered.interfaces or discovered.lldp_neighbors %}
 <section class="panel">
