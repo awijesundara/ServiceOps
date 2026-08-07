@@ -80,6 +80,7 @@ __all__ = [
     "CatalogItemRouting",
     "ConfigurationItem",
     "Rack",
+    "RolePolicyOverride",
     "CiClassPermission",
     "CIRelationship",
     "DiscoveryTarget",
@@ -1039,6 +1040,32 @@ class CiClassPermission(db.Model):
     updated_by = db.relationship("User", foreign_keys=[updated_by_id])
     __table_args__ = (
         db.UniqueConstraint("tenant_id", "ci_class", "role", name="uq_ci_class_permission_tenant_class_role"),
+    )
+
+
+class RolePolicyOverride(db.Model):
+    """Per-(tenant, role, action) override of config/authorization.json's
+    flat role -> action policy. A row only exists when an admin has
+    explicitly deviated a role's grant for that action away from the
+    Git-backed baseline -- there is no row for the common case of "matches
+    the baseline", mirroring CiClassPermission's "no row = default" storage
+    philosophy. `is_granted` records the admin's explicit choice (True to
+    grant an action the baseline denies, False to revoke one the baseline
+    grants); "reset to recommended" for a role is simply deleting that
+    role's override rows, which is why no separate baseline-snapshot
+    table is needed -- config/authorization.json IS the recommended
+    baseline. superadmin is never overridable (always implicitly granted
+    everywhere, per this app's existing convention)."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    role = db.Column(db.String(20), nullable=False)
+    action = db.Column(db.String(40), nullable=False)
+    is_granted = db.Column(db.Boolean, nullable=False)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    updated_by = db.relationship("User", foreign_keys=[updated_by_id])
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "role", "action", name="uq_role_policy_override_tenant_role_action"),
     )
 
 
