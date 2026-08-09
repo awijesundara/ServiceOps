@@ -4757,9 +4757,18 @@ def create_app(test_config=None):
 
     @app.after_request
     def inject_csrf(response):
+        # Deliberately NOT gated on response.status_code < 400: a form that
+        # re-renders itself with a 400/409 on validation failure (e.g.
+        # render_form() rejecting a change inside a freeze window) needs a
+        # working CSRF token in THAT error page too, since the user edits
+        # and resubmits from it without a fresh page load. Excluding 4xx
+        # here previously meant that exact retry got "security token is
+        # missing" -- the token was fine, the error page just never got
+        # one embedded. 3xx responses have no HTML body to inject into and
+        # a fresh GET follows anyway, so they're skipped by the mimetype
+        # check below on their own merits, not by a status-code gate.
         if (
             app.config["CSRF_ENABLED"]
-            and response.status_code < 400
             and response.mimetype == "text/html"
         ):
             body = response.get_data(as_text=True)
@@ -6667,6 +6676,15 @@ def create_app(test_config=None):
                 service_offerings=tenant_query(ServiceOffering).filter_by(
                     status="Operational"
                 ).order_by(ServiceOffering.name).all(),
+                # Active/upcoming freeze windows, surfaced on the form itself
+                # so a Standard/Normal change author sees the block coming
+                # instead of only discovering it after a failed submit.
+                change_freeze_windows=(
+                    tenant_query(ChangeFreezeWindow).filter(
+                        ChangeFreezeWindow.ends_at >= now()
+                    ).order_by(ChangeFreezeWindow.starts_at).all()
+                    if kind == "change" else []
+                ),
                 form=request.form if error else None, form_error=error,
             ), (400 if error else 200)
 
@@ -7192,6 +7210,12 @@ def create_app(test_config=None):
                 status="Operational"
             ).order_by(ServiceOffering.name).all(),
             pir_outcomes=CHANGE_PIR_OUTCOMES,
+            change_freeze_windows=(
+                tenant_query(ChangeFreezeWindow).filter(
+                    ChangeFreezeWindow.ends_at >= now()
+                ).order_by(ChangeFreezeWindow.starts_at).all()
+                if ticket.kind == "change" else []
+            ),
         )
 
     @app.post("/change/<int:ticket_id>/delete")
