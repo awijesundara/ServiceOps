@@ -216,6 +216,56 @@ def test_csrf_protects_login_and_authenticated_mutations():
     os.unlink(path)
 
 
+def test_csrf_token_survives_a_validation_error_resubmit_on_the_same_page():
+    """Regression test for a real reported bug: a form that re-renders
+    itself with a 4xx status on server-side validation failure (e.g. a
+    change rejected for falling inside a freeze window) previously came
+    back with NO _csrf_token field at all -- inject_csrf only ever embedded
+    one into responses with status_code < 400. A user who edited the form
+    and resubmitted from that same error page (without a fresh page load)
+    then hit "The security token is missing or expired," even though
+    nothing about their session had actually changed. The fix: inject_csrf
+    no longer gates on status code."""
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    csrf_app = create_app({
+        "TESTING": True,
+        "CSRF_ENABLED": True,
+        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}",
+    })
+    csrf_client = csrf_app.test_client()
+    login_page = csrf_client.get("/login")
+    token = re.search(
+        rb'name="_csrf_token" value="([^"]+)"', login_page.data
+    ).group(1).decode()
+    csrf_client.post("/login", data={
+        "username": "admin", "password": "Admin123!", "_csrf_token": token,
+    })
+    group = group_id(csrf_app, "Network")
+    invalid_submit = csrf_client.post("/tickets/new/incident", data={
+        "title": "Test incident", "description": "x", "category": "Network",
+        "subcategory": "x", "contact_type": "Not-a-real-contact-type",
+        "notify": "Email", "impact": "High", "urgency": "High", "group_id": str(group),
+    }, headers={"X-CSRF-Token": token})
+    assert invalid_submit.status_code == 400
+    retry_token_match = re.search(
+        rb'name="_csrf_token" value="([^"]+)"', invalid_submit.data
+    )
+    assert retry_token_match is not None, (
+        "the re-rendered error page must embed a usable CSRF token so the "
+        "user's very next resubmit from the same page doesn't fail"
+    )
+    retry_token = retry_token_match.group(1).decode()
+    fixed_submit = csrf_client.post("/tickets/new/incident", data={
+        "title": "Test incident", "description": "x", "category": "Network",
+        "subcategory": "x", "contact_type": "Self-service",
+        "notify": "Email", "impact": "High", "urgency": "High", "group_id": str(group),
+        "_csrf_token": retry_token,
+    })
+    assert fixed_submit.status_code == 302
+    os.unlink(path)
+
+
 def test_migration_baseline_creates_fresh_schema_and_records_revision():
     fd, path = tempfile.mkstemp()
     os.close(fd)
