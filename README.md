@@ -6,7 +6,7 @@ approvals, SLAs, and analytics, deployable with one command and no vendor
 lock-in.
 
 [![Supply chain](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml/badge.svg)](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml)
-[![Version](https://img.shields.io/badge/version-1.51.1-003E4C)](VERSION)
+[![Version](https://img.shields.io/badge/version-1.51.2-003E4C)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](Dockerfile)
 [![Docker](https://img.shields.io/badge/docker-compose%20%7C%20kubernetes-2496ED?logo=docker&logoColor=white)](#quick-start)
 [![PostgreSQL](https://img.shields.io/badge/database-postgresql-4169E1?logo=postgresql&logoColor=white)](#quick-start)
