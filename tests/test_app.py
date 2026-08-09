@@ -42,6 +42,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  is_safe_internal_path, process_outbox,
                  provision_external_user, secret_value, settings_cipher, user_is_local,
                  rotate_audit_integrity_key, tenant_context_id, TenantResolutionError,
+                 user_can_manage_ticket, user_in_group, user_can_manage_ritm,
                  verify_audit_chain)
 from werkzeug.security import generate_password_hash
 from serviceops_core.security import role_has_action, validate_policy
@@ -935,7 +936,7 @@ def test_tenant_scope_prevents_cross_tenant_ticket_discovery(client, app):
         db.session.add(other_group)
         db.session.flush()
         db.session.add(GroupMember(
-            group_id=other_group.id, user_id=other_user.id, role="manager"
+            group_id=other_group.id, user_id=other_user.id, role="manager", tenant_id=2,
         ))
         other_ticket = Ticket(
             number="INC9000001", kind="incident", title="Other tenant outage",
@@ -993,6 +994,102 @@ def test_tenant_scope_prevents_cross_tenant_ticket_discovery(client, app):
     client.post("/logout")
     login(client, "other.agent", "OtherTenant123!")
     assert client.get(f"/ticket/{other_ticket_id}").status_code == 200
+
+
+def test_dependent_tables_carry_their_own_tenant_id_and_stay_isolated(client, app):
+    """Comment/GroupMember/CatalogItemRouting/RequestedItem/CatalogTask/
+    FileAttachment/the legacy Approval model previously had no tenant_id of
+    their own and relied entirely on every query site remembering to join
+    back to their tenant-owning parent -- this exercises both halves of the
+    fix: the column is populated correctly on creation, and the two real
+    cross-tenant authorization gaps found while auditing this (admin's
+    unconditional bypass in user_can_manage_ticket/user_can_manage_ritm/
+    user_in_group/user_can_manage_enterprise_record not checking tenant)
+    are actually closed."""
+    with app.app_context():
+        other_tenant = Tenant(id=2, slug="other2", name="Other organisation 2")
+        other_user = User(
+            username="other.admin", name="Other Admin", email="otheradmin@test.invalid",
+            password_hash=generate_password_hash("OtherTenant123!"),
+            role="admin", tenant_id=2,
+        )
+        db.session.add_all([other_tenant, other_user])
+        db.session.flush()
+        other_group = SupportGroup(
+            name="Other Fulfillment", group_type="IT Fulfillment", tenant_id=2,
+        )
+        db.session.add(other_group)
+        db.session.flush()
+        other_ticket = Ticket(
+            number="INC9000002", kind="incident", title="Other tenant ticket for comments",
+            description="x", requester_id=other_user.id, tenant_id=2,
+        )
+        db.session.add(other_ticket)
+        db.session.flush()
+        other_comment = Comment(
+            ticket_id=other_ticket.id, user_id=other_user.id, body="Private comment",
+            tenant_id=2,
+        )
+        other_item = CatalogItem(
+            name="Other tenant private item", category="Private",
+            description="x", delivery_days=1, active=True, tenant_id=2,
+        )
+        db.session.add_all([other_comment, other_item])
+        db.session.flush()
+        other_routing = CatalogItemRouting(
+            catalog_item_id=other_item.id, support_group_id=other_group.id, tenant_id=2,
+        )
+        other_request = CatalogRequest(
+            number="REQ9000002", requested_by_id=other_user.id, requested_for_id=other_user.id,
+            tenant_id=2,
+        )
+        db.session.add_all([other_routing, other_request])
+        db.session.flush()
+        other_ritm = RequestedItem(
+            number="RITM9000002", request_id=other_request.id, catalog_item_id=other_item.id,
+            tenant_id=2,
+        )
+        db.session.add(other_ritm)
+        db.session.flush()
+        other_task = CatalogTask(
+            number="SCTASK9000002", requested_item_id=other_ritm.id, title="Fulfill",
+            assignment_group_id=other_group.id, tenant_id=2,
+        )
+        other_attachment = FileAttachment(
+            ticket_id=other_ticket.id, uploaded_by_id=other_user.id,
+            original_name="secret.txt", stored_name="secret-stored.txt",
+            size_bytes=3, tenant_id=2,
+        )
+        db.session.add_all([other_task, other_attachment])
+        db.session.commit()
+
+        assert other_comment.tenant_id == 2
+        assert other_routing.tenant_id == 2
+        assert other_ritm.tenant_id == 2
+        assert other_task.tenant_id == 2
+        assert other_attachment.tenant_id == 2
+
+        other_group_id = other_group.id
+        other_ritm_id = other_ritm.id
+        other_task_id = other_task.id
+        admin = User.query.filter_by(username="admin").one()
+        # admin here is tenant 1 -- these authorization helpers must reject
+        # managing tenant 2's records even though the role check alone
+        # (role == "admin") would otherwise short-circuit to True.
+        assert user_can_manage_ticket(admin, other_ticket) is False
+        assert user_in_group(admin, other_group) is False
+        assert user_can_manage_ritm(admin, other_ritm) is False
+
+    login(client)
+    # A tenant-1 admin must not be able to add a catalog task to tenant 2's
+    # RITM, or update/view tenant 2's catalog task, by guessing ids.
+    assert client.post(f"/ritm/{other_ritm_id}/tasks", data={
+        "title": "Cross-tenant task", "group_id": str(other_group_id),
+    }).status_code == 403
+    assert client.get(f"/catalog-task/{other_task_id}").status_code == 403
+    assert client.post(f"/catalog-task/{other_task_id}", data={
+        "state": "In Progress",
+    }).status_code == 403
 
 
 def test_incident_lifecycle(client, app):

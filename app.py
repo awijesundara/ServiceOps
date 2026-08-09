@@ -65,6 +65,8 @@ from serviceops_core.ci_class_policy import (
     restrict_ci_query_to_readable_classes,
 )
 from serviceops_core.dns_lookup import resolve_hostname, resolve_ip
+from serviceops_core.dns_pin import pin_resolved_addresses
+from serviceops_core.analytics import overdue_enterprise_records, OVERDUE_RECORDS_LIMIT
 
 # VERSION is the release source of truth; shown in the UI, API, and health
 # endpoint so operators can confirm the running build without host access.
@@ -1012,34 +1014,47 @@ def integration_endpoint_valid(endpoint, allow_private_network=False):
     return True
 
 
-def integration_endpoint_resolves_safely(endpoint, allow_private_network=False):
+def resolve_endpoint_addresses_safely(endpoint, allow_private_network=False):
     """Re-resolve the endpoint's hostname and reject it if any A/AAAA record is
     disallowed. A literal-IP/hostname string check alone (integration_endpoint_valid)
     cannot catch a public-looking hostname that resolves to a private address
     (DNS rebinding) -- this closes that gap at delivery time, immediately before
-    the connection is made."""
+    the connection is made.
+
+    Returns (ok, hostname, infos): `hostname` is None when `endpoint` was
+    already a literal IP (nothing to pin -- there's no resolver step for the
+    caller to race against); `infos` is the raw socket.getaddrinfo() result
+    used for the validation, in the exact shape callers can hand to
+    serviceops_core.dns_pin.pin_resolved_addresses() to pin the same
+    addresses for the connection that follows, closing the TOCTOU window
+    between this check and the actual HTTP client's own DNS lookup."""
     hostname = urlparse(endpoint).hostname
     if not hostname:
-        return False
+        return False, None, None
     try:
         address = ipaddress.ip_address(hostname)
-        return _integration_address_allowed(address, allow_private_network)
+        return _integration_address_allowed(address, allow_private_network), None, None
     except ValueError:
         pass
     try:
         infos = socket.getaddrinfo(hostname, None)
     except OSError:
-        return False
+        return False, hostname, None
     if not infos:
-        return False
+        return False, hostname, None
     for info in infos:
         raw_address = info[4][0]
         try:
             if not _integration_address_allowed(ipaddress.ip_address(raw_address), allow_private_network):
-                return False
+                return False, hostname, None
         except ValueError:
-            return False
-    return True
+            return False, hostname, None
+    return True, hostname, infos
+
+
+def integration_endpoint_resolves_safely(endpoint, allow_private_network=False):
+    ok, _, _ = resolve_endpoint_addresses_safely(endpoint, allow_private_network)
+    return ok
 
 
 def deliver_smtp(event):
@@ -1097,11 +1112,26 @@ def deliver_webhook(event, connection):
     target = connection.endpoint
     max_redirects = 3
     for _ in range(max_redirects + 1):
-        if not integration_endpoint_valid(target) or not integration_endpoint_resolves_safely(target):
+        if not integration_endpoint_valid(target):
             raise RuntimeError("Webhook destination resolves to a non-routable or private address.")
-        response = requests.post(
-            target, json=body, headers=headers, timeout=10, allow_redirects=False,
-        )
+        ok, hostname, infos = resolve_endpoint_addresses_safely(target)
+        if not ok:
+            raise RuntimeError("Webhook destination resolves to a non-routable or private address.")
+        # Pin the addresses just validated for exactly this connection attempt
+        # -- requests' own internal DNS lookup would otherwise re-resolve
+        # `hostname` independently, reopening the TOCTOU window between this
+        # check and the actual connect (see serviceops_core/dns_pin.py).
+        # `hostname` is None when `target` was already a literal IP, which
+        # has no resolver step to pin against.
+        if hostname and infos:
+            with pin_resolved_addresses(hostname, infos):
+                response = requests.post(
+                    target, json=body, headers=headers, timeout=10, allow_redirects=False,
+                )
+        else:
+            response = requests.post(
+                target, json=body, headers=headers, timeout=10, allow_redirects=False,
+            )
         if response.is_redirect:
             location = response.headers.get("Location", "")
             target = urljoin(target, location)
@@ -1898,6 +1928,8 @@ def ticket_owning_group(ticket):
 def user_can_manage_ticket(user, ticket):
     if not user.is_authenticated or not user.active:
         return False
+    if ticket.tenant_id != user.tenant_id:
+        return False
     if user.role == "admin":
         return True
     group = ticket_owning_group(ticket)
@@ -2331,6 +2363,13 @@ def run_change_conflict_detection(ticket, governance):
 
 def user_in_group(user, group):
     if not user.is_authenticated or not user.active or not group:
+        return False
+    # The "admin bypasses membership" shortcut must still respect tenant
+    # boundaries -- an admin's role grants authority within their own
+    # tenant, not over another tenant's teams, even though tenant admins
+    # historically weren't checked here (found while hardening tenant_id
+    # scoping across GroupMember/CatalogTask call sites).
+    if group.tenant_id != user.tenant_id:
         return False
     return (
         user.role == "admin"
@@ -3300,6 +3339,8 @@ def user_can_add_request_item(user, catalog_request):
 def user_can_manage_ritm(user, ritm):
     if not user.is_authenticated or not user.active:
         return False
+    if ritm.tenant_id != user.tenant_id:
+        return False
     if user.role == "admin":
         return True
     group_ids = user_support_group_ids(user)
@@ -3393,6 +3434,8 @@ def user_can_view_enterprise_record(user, record):
 def user_can_manage_enterprise_record(user, record):
     if not user.is_authenticated or not user.active:
         return False
+    if record.tenant_id != user.tenant_id:
+        return False
     if user.role == "admin":
         return True
     if user.role not in ("agent", "manager"):
@@ -3440,7 +3483,7 @@ def create_catalog_task(ritm):
     def build():
         task = CatalogTask(number=sequence_number(CatalogTask, "SCTASK"), requested_item_id=ritm.id,
                            title=f"Fulfill {ritm.item.name}", assignment_group_id=group.id,
-                           due_at=ritm.due_at)
+                           due_at=ritm.due_at, tenant_id=ritm.tenant_id)
         db.session.add(task)
         return task
     task = create_with_retry_on_number_collision(build)
@@ -3640,7 +3683,7 @@ def seed_itil(admin):
         ])
         db.session.flush()
     if windows:
-        for item in CatalogItem.query.all():
+        for item in CatalogItem.query.filter_by(tenant_id=admin.tenant_id).all():
             normalized = f"{item.name} {item.category}".lower()
             if (
                 ("laptop" in normalized or "software" in normalized)
@@ -3648,7 +3691,7 @@ def seed_itil(admin):
             ):
                 db.session.add(CatalogItemRouting(
                     catalog_item_id=item.id, support_group_id=windows.id,
-                    updated_by_id=admin.id,
+                    updated_by_id=admin.id, tenant_id=admin.tenant_id,
                 ))
     if not SLADefinition.query.first():
         db.session.add_all([
@@ -3757,7 +3800,7 @@ def sync_directory_team_memberships(user, groups):
     for group_id, mapping in desired.items():
         membership = GroupMember.query.filter_by(group_id=group_id, user_id=user.id).first()
         if not membership:
-            db.session.add(GroupMember(group_id=group_id, user_id=user.id, role="member"))
+            db.session.add(GroupMember(group_id=group_id, user_id=user.id, role="member", tenant_id=user.tenant_id))
         if group_id not in existing:
             db.session.add(DirectoryManagedMembership(
                 user_id=user.id, group_id=group_id, directory_group=mapping.directory_group
@@ -6852,7 +6895,7 @@ def create_app(test_config=None):
                 body = request.form.get("body", "").strip()
                 upload = request.files.get("file")
                 if body:
-                    comment = Comment(ticket_id=ticket.id, user_id=current_user.id, body=body)
+                    comment = Comment(ticket_id=ticket.id, user_id=current_user.id, body=body, tenant_id=ticket.tenant_id)
                     db.session.add(comment)
                     db.session.flush()
                     log_history("ticket", ticket.id, "Comment added", details=body[:500])
@@ -9447,7 +9490,7 @@ def create_app(test_config=None):
                 admin = tenant_query(User).filter(User.role.in_(["admin", "superadmin"]), User.active.is_(True)).first()
                 if not admin:
                     abort(409, description="No active administrator is configured to approve this record.")
-                db.session.add(Approval(enterprise_record_id=record.id, approver_id=admin.id))
+                db.session.add(Approval(enterprise_record_id=record.id, approver_id=admin.id, tenant_id=record.tenant_id))
                 create_notification(
                     admin.id, f"Approval requested: {record.number}",
                     record.title, tenant_id=record.tenant_id,
@@ -9782,7 +9825,7 @@ def create_app(test_config=None):
                                  catalog_item_id=item.id, state="Awaiting Approval" if item.approval_required else "Open",
                                  stage="Approval" if item.approval_required else "Fulfillment",
                                  variables_json=json.dumps({"details": request.form.get("details", "")}),
-                                 due_at=now() + timedelta(days=item.delivery_days))
+                                 due_at=now() + timedelta(days=item.delivery_days), tenant_id=req.tenant_id)
             db.session.add(ritm)
             return ritm
         ritm = create_with_retry_on_number_collision(build_ritm)
@@ -9911,7 +9954,8 @@ def create_app(test_config=None):
         if status:
             query = query.filter(ConfigurationItem.operational_status == status)
         query = apply_filter_conditions(query, conditions, cmdb_filter_field_spec())
-        cis = query.order_by(ConfigurationItem.ci_class, ConfigurationItem.name).all()
+        export_limit = 5000
+        cis = query.order_by(ConfigurationItem.ci_class, ConfigurationItem.name).limit(export_limit).all()
         # Attribute keys vary per CI (they come from whatever columns a CSV
         # import happened to have), so the export's extra columns are the
         # union of every key seen across the CIs being exported, in first-
@@ -10987,7 +11031,7 @@ def create_app(test_config=None):
                 state="Awaiting Approval" if item.approval_required else "Open",
                 stage="Approval" if item.approval_required else "Fulfillment",
                 variables_json=json.dumps({"details": request.form.get("details", "")}),
-                due_at=now() + timedelta(days=item.delivery_days),
+                due_at=now() + timedelta(days=item.delivery_days), tenant_id=req.tenant_id,
             )
             db.session.add(ritm)
             return ritm
@@ -11038,7 +11082,7 @@ def create_app(test_config=None):
                 title=request.form["title"].strip(),
                 sequence=len(ritm.tasks) + 1,
                 assignment_group_id=group.id,
-                due_at=ritm.due_at,
+                due_at=ritm.due_at, tenant_id=ritm.tenant_id,
             )
             db.session.add(task)
             return task
@@ -11328,7 +11372,7 @@ def create_app(test_config=None):
                         membership.role = "manager"
                     else:
                         db.session.add(GroupMember(
-                            group_id=group.id, user_id=manager.id, role="manager"
+                            group_id=group.id, user_id=manager.id, role="manager", tenant_id=group.tenant_id
                         ))
                     sync_implied_role_grants(manager)
                 if old_manager_id and old_manager_id != manager_id:
@@ -11351,7 +11395,7 @@ def create_app(test_config=None):
                         membership.role = "CCB approver"
                     else:
                         db.session.add(GroupMember(
-                            group_id=ccb.id, user_id=user.id, role="CCB approver"
+                            group_id=ccb.id, user_id=user.id, role="CCB approver", tenant_id=ccb.tenant_id
                         ))
                 elif membership:
                     db.session.delete(membership)
@@ -11414,7 +11458,7 @@ def create_app(test_config=None):
                     ))
                 route = item.fulfillment_route
                 if not route:
-                    route = CatalogItemRouting(catalog_item_id=item.id)
+                    route = CatalogItemRouting(catalog_item_id=item.id, tenant_id=item.tenant_id)
                     db.session.add(route)
                 route.support_group_id = group.id
                 route.active = True
@@ -11479,7 +11523,7 @@ def create_app(test_config=None):
                 db.session.flush()
                 route = item.fulfillment_route
                 if not route:
-                    route = CatalogItemRouting(catalog_item_id=item.id)
+                    route = CatalogItemRouting(catalog_item_id=item.id, tenant_id=item.tenant_id)
                     db.session.add(route)
                 route.support_group_id = group.id
                 route.active = True
@@ -12081,12 +12125,14 @@ def create_app(test_config=None):
     @app.get("/analytics/overdue")
     @roles("agent", "manager", "admin")
     def analytics_overdue():
-        record_ids = [row.id for row in visible_enterprise_record_query(current_user).all()]
-        overdue_records = EnterpriseRecord.query.filter(
-            EnterpriseRecord.id.in_(record_ids), EnterpriseRecord.due_at < now(),
-            EnterpriseRecord.state.notin_(["Closed", "Resolved", "Completed"])
-        ).order_by(EnterpriseRecord.due_at).all()
-        return render_template("analytics_overdue.html", overdue_records=overdue_records, modules=DOMAIN_CONFIG)
+        record_ids = [
+            row.id for row in visible_enterprise_record_query(current_user).with_entities(EnterpriseRecord.id).all()
+        ]
+        overdue_records, overdue_truncated = overdue_enterprise_records(EnterpriseRecord, record_ids, now)
+        return render_template(
+            "analytics_overdue.html", overdue_records=overdue_records, modules=DOMAIN_CONFIG,
+            overdue_truncated=overdue_truncated, overdue_limit=OVERDUE_RECORDS_LIMIT,
+        )
 
     @app.get("/internal/lookup/cis")
     @login_required
@@ -12579,7 +12625,7 @@ def create_app(test_config=None):
             ticket_id=ticket.id, comment_id=comment_id, uploaded_by_id=current_user.id,
             original_name=original, stored_name=stored,
             mime_type=verified_mime_type, size_bytes=file_size,
-            sha256=sha256.hexdigest(), scan_status=scan_status,
+            sha256=sha256.hexdigest(), scan_status=scan_status, tenant_id=ticket.tenant_id,
         )
         db.session.add(attachment)
         audit("attach", ticket.number, original)

@@ -3,6 +3,7 @@
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">PLATFORM ANALYTICS</p><h1>Overdue work</h1><p>Enterprise records past their due date and still open.</p></div><a class="button" href="{{ url_for('analytics') }}">← Back to analytics</a></header>
 <section class="panel">
+{% if overdue_truncated %}<p class="muted">Showing the first {{ overdue_records|length }} overdue records.</p>{% endif %}
 {% if overdue_records %}
 <table><thead><tr><th>Number</th><th>Module</th><th>Summary</th><th>State</th><th>Priority</th><th>Due</th><th>Assignee</th></tr></thead>
 <tbody>{% for r in overdue_records %}<tr><td><a href="{{ url_for('enterprise_detail', record_id=r.id) }}">{{ r.number }}</a></td><td>{{ modules[r.domain].name }}</td><td>{{ r.title }}</td><td><span class="badge">{{ r.state }}</span></td><td><span class="priority {{ r.priority|lower }}">{{ r.priority }}</span></td><td>{{ (r.due_at|usertime('%b %d, %H:%M')) }}</td><td>{{ r.assignee.name if r.assignee else 'Unassigned' }}</td></tr>{% endfor %}</tbody></table>

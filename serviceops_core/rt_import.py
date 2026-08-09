@@ -401,6 +401,7 @@ def _save_imported_attachment(filename, content_bytes, uploaded_by_id, ticket, e
         uploaded_by_id=uploaded_by_id, original_name=original, stored_name=stored,
         mime_type=mime_type, size_bytes=len(content_bytes), sha256=hashlib.sha256(content_bytes).hexdigest(),
         scan_status=scan_status,
+        tenant_id=(ticket.tenant_id if ticket else enterprise_record.tenant_id),
     )
     db.session.add(attachment)
     summary["attachments_imported"] += 1
