@@ -92,6 +92,13 @@ services:
     security_opt:
       - no-new-privileges:true
     stop_grace_period: 30s
+    # No memory ceiling existed here before: an unbounded query/leak could
+    # grow until the HOST's OOM-killer intervened, taking down whatever else
+    # shares the host rather than just this container. A conservative,
+    # env-overridable limit turns that into a controlled, Compose-restarted
+    # OOM-kill of just this service instead -- a mitigation, not a substitute
+    # for real load-test evidence of the actual root cause (see BACKLOG).
+    mem_limit: ${APP_MEM_LIMIT:-1g}
 
   worker:
     image: ${SERVICEOPS_IMAGE:?Set an immutable SERVICEOPS_IMAGE tag in .env}
@@ -126,6 +133,7 @@ services:
     security_opt:
       - no-new-privileges:true
     stop_grace_period: 30s
+    mem_limit: ${WORKER_MEM_LIMIT:-512m}
 
 volumes:
   serviceops_data:

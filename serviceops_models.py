@@ -425,6 +425,11 @@ class Comment(db.Model):
     body = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     author = db.relationship("User")
+    # Redundant with ticket.tenant_id but kept as its own enforced column --
+    # same defense-in-depth rationale as ApprovalGate.tenant_id: a comment
+    # lookup shouldn't depend on every future query site remembering to join
+    # back through ticket.
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class TaskNote(db.Model):
@@ -898,6 +903,8 @@ class Approval(db.Model):
     comments = db.Column(db.Text, default="")
     decided_at = db.Column(db.DateTime(timezone=True))
     approver = db.relationship("User")
+    # Same defense-in-depth rationale as ApprovalGate.tenant_id -- see there.
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class CatalogItem(db.Model):
@@ -932,6 +939,7 @@ class CatalogItemRouting(db.Model):
     )
     support_group = db.relationship("SupportGroup", foreign_keys=[support_group_id])
     updated_by = db.relationship("User", foreign_keys=[updated_by_id])
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class ConfigurationItem(db.Model):
@@ -1221,6 +1229,7 @@ class GroupMember(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     role = db.Column(db.String(40), nullable=False, default="member")
     user = db.relationship("User")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     __table_args__ = (db.UniqueConstraint("group_id", "user_id"),)
 
 
@@ -1587,6 +1596,7 @@ class RequestedItem(db.Model):
     due_at = db.Column(db.DateTime(timezone=True))
     item = db.relationship("CatalogItem")
     tasks = db.relationship("CatalogTask", cascade="all, delete-orphan", backref="requested_item")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class CatalogTask(db.Model):
@@ -1602,6 +1612,7 @@ class CatalogTask(db.Model):
     work_notes = db.Column(db.Text, default="")
     assignment_group = db.relationship("SupportGroup")
     assignee = db.relationship("User")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 class CatalogTaskControl(db.Model):
@@ -1911,3 +1922,9 @@ class FileAttachment(db.Model):
     enterprise_record = db.relationship("EnterpriseRecord", backref=db.backref("attachments", cascade="all, delete-orphan"))
     comment = db.relationship("Comment", backref=db.backref("attachments", cascade="all, delete-orphan"))
     uploaded_by = db.relationship("User")
+    # File bytes are the most sensitive data this table points at, and its
+    # tenant is otherwise only reachable through whichever ONE of three
+    # different parents (ticket/enterprise_record/comment) happens to be
+    # set -- an own tenant_id makes every attachment query uniform instead
+    # of branching per parent type.
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
