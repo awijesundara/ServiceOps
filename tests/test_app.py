@@ -15,7 +15,7 @@ from sqlalchemy.exc import DBAPIError
 from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, ApprovalChain,
                  ApprovalGate, ApprovalVote, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy,
                  BusinessSchedule, CatalogRequest, CatalogTask, ChangeGovernance, ChangeOwnership, ChangeRevision,
-                 ClientContact, ClientOrganization, ClientTicket, ClientTicketMessage,
+                 ClientContact, ClientOrganization, ClientOrganizationAccess, ClientTicket, ClientTicketMessage,
                  Comment,
                  ChecklistItem, CIRelationship, CiClassPermission, ConfigurationItem, DiscoveryCandidate, DiscoveryTarget,
                  EnterpriseRecord, CatalogItem,
@@ -3687,6 +3687,90 @@ def test_client_management_direct_records_are_tenant_isolated(app, client):
         ticket_id = ticket.id
     assert client.get(f"/client-management/tickets/{ticket_id}").status_code == 404
     assert b"Other tenant ticket" not in client.get("/client-management/tickets").data
+
+
+def test_client_organization_restricted_visibility_defaults_open_and_is_opt_in(app, client):
+    """Regression/behavior test for Client Management phase 1: restricted_visibility
+    defaults False, so every existing org stays visible to every SysOps
+    member exactly as before this column existed -- restricting is an
+    explicit admin action, not a default."""
+    with app.app_context():
+        sysops = SupportGroup.query.filter_by(name="SysOps", tenant_id=1).one()
+        agent = User.query.filter_by(username="employee").one()
+        db.session.add(GroupMember(group_id=sysops.id, user_id=agent.id, role="member", tenant_id=1))
+        organization = ClientOrganization(tenant_id=1, name="Default Visibility Client")
+        db.session.add(organization)
+        db.session.commit()
+        assert organization.restricted_visibility is False
+        organization_id = organization.id
+    login(client, "employee", "Employee123!")
+    assert b"Default Visibility Client" in client.get("/client-management/organizations").data
+    assert client.get(f"/client-management/organizations/{organization_id}").status_code == 200
+
+
+def test_client_organization_restricted_visibility_blocks_ungranted_sysops_members(app, client):
+    with app.app_context():
+        sysops = SupportGroup.query.filter_by(name="SysOps", tenant_id=1).one()
+        granted_agent = User.query.filter_by(username="database.manager").one()
+        blocked_agent = User.query.filter_by(username="employee").one()
+        db.session.add_all([
+            GroupMember(group_id=sysops.id, user_id=granted_agent.id, role="member", tenant_id=1),
+            GroupMember(group_id=sysops.id, user_id=blocked_agent.id, role="member", tenant_id=1),
+        ])
+        organization = ClientOrganization(tenant_id=1, name="Restricted Client", restricted_visibility=True)
+        db.session.add(organization)
+        db.session.commit()
+        organization_id = organization.id
+        granted_agent_id = granted_agent.id
+
+    login(client)
+    assert client.post(f"/client-management/organizations/{organization_id}", data={
+        "action": "add_grant", "grantee": f"user:{granted_agent_id}",
+    }).status_code == 302
+    client.post("/logout")
+
+    login(client, "database.manager", "Manager123!")
+    assert client.get(f"/client-management/organizations/{organization_id}").status_code == 200
+    assert b"Restricted Client" in client.get("/client-management/organizations").data
+    client.post("/logout")
+
+    login(client, "employee", "Employee123!")
+    assert client.get(f"/client-management/organizations/{organization_id}").status_code == 404
+    assert b"Restricted Client" not in client.get("/client-management/organizations").data
+    search_results = client.get(
+        "/ui/search?q=Restricted+Client", headers={"Accept": "application/json"}
+    ).json["results"]
+    assert not any(row["type"] == "Client organization" for row in search_results)
+    client.post("/logout")
+
+    login(client)
+    with app.app_context():
+        grant = ClientOrganizationAccess.query.filter_by(organization_id=organization_id).one()
+        grant_id = grant.id
+    assert client.post(f"/client-management/organizations/{organization_id}", data={
+        "action": "remove_grant", "grant_id": grant_id,
+    }).status_code == 302
+    with app.app_context():
+        assert ClientOrganizationAccess.query.filter_by(organization_id=organization_id).count() == 0
+
+
+def test_client_organization_visibility_toggle_and_grants_require_admin(app, client):
+    with app.app_context():
+        sysops = SupportGroup.query.filter_by(name="SysOps", tenant_id=1).one()
+        manager = User.query.filter_by(username="database.manager").one()
+        db.session.add(GroupMember(group_id=sysops.id, user_id=manager.id, role="manager", tenant_id=1))
+        organization = ClientOrganization(tenant_id=1, name="Manager Visible Client")
+        db.session.add(organization)
+        db.session.commit()
+        organization_id = organization.id
+
+    login(client, "database.manager", "Manager123!")
+    assert client.post(f"/client-management/organizations/{organization_id}", data={
+        "action": "toggle_restricted",
+    }).status_code == 403
+    with app.app_context():
+        assert db.session.get(ClientOrganization, organization_id).restricted_visibility is False
+
 
 def test_admin_can_update_live_platform_branding(client, app):
     login(client)

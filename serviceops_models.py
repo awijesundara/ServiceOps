@@ -72,6 +72,7 @@ __all__ = [
     "MonitoringEvent",
     "EnterpriseRecord",
     "ClientOrganization",
+    "ClientOrganizationAccess",
     "ClientContact",
     "ClientTicket",
     "ClientTicketMessage",
@@ -833,10 +834,43 @@ class ClientOrganization(db.Model):
     external_id = db.Column(db.String(120))
     notes = db.Column(db.Text, nullable=False, default="")
     active = db.Column(db.Boolean, nullable=False, default=True)
+    # Opt-in: False (the default) means every existing/new org keeps today's
+    # all-or-nothing behavior -- any SysOps member/admin sees it, exactly as
+    # before this column existed. Only when an admin explicitly flips this on
+    # does ClientOrganizationAccess start being consulted at all, so adding
+    # the capability is zero-risk to every org that never uses it.
+    restricted_visibility = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     contacts = db.relationship("ClientContact", cascade="all, delete-orphan", backref="organization")
+    access_grants = db.relationship("ClientOrganizationAccess", cascade="all, delete-orphan", backref="organization")
     __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_client_organization_tenant_name"),)
+
+
+class ClientOrganizationAccess(db.Model):
+    """Grants a specific user OR support group visibility into a
+    restricted-visibility ClientOrganization -- consulted only when that
+    org's restricted_visibility is True (see its docstring). Exactly one of
+    user_id/group_id is set per row. No row for a restricted org simply
+    means no one but admins can see it, matching this app's "no row = no
+    grant" convention (CiClassPermission, RolePolicyOverride)."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("client_organization.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"))
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    user = db.relationship("User", foreign_keys=[user_id])
+    group = db.relationship("SupportGroup", foreign_keys=[group_id])
+    updated_by = db.relationship("User", foreign_keys=[updated_by_id])
+    __table_args__ = (
+        db.UniqueConstraint("organization_id", "user_id", "group_id", name="uq_client_org_access_org_user_group"),
+        db.CheckConstraint(
+            "(user_id IS NOT NULL AND group_id IS NULL) OR (user_id IS NULL AND group_id IS NOT NULL)",
+            name="ck_client_org_access_exactly_one_grantee",
+        ),
+    )
 
 
 class ClientContact(db.Model):
