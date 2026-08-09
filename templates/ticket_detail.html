@@ -214,6 +214,9 @@
 {% if ticket.change_governance %}
 <section class="panel" id="governance">
   <header class="section-heading"><div><h2>Change governance</h2><p>Plans, risk, schedule, tasks, and approvals</p></div></header>
+  {% if change_freeze_windows %}
+  <div class="flash warning"><strong>Active or upcoming change freeze{{ 'zes' if change_freeze_windows|length > 1 else '' }}</strong>Standard and Normal changes can't be scheduled inside these windows — only Emergency changes are exempt.<ul>{% for window in change_freeze_windows %}<li>{{ window.title }}: {{ window.starts_at.strftime('%b %d, %Y %H:%M') }} – {{ window.ends_at.strftime('%b %d, %Y %H:%M') }}{% if window.reason %} — {{ window.reason }}{% endif %}</li>{% endfor %}</ul></div>
+  {% endif %}
   <dl class="governance-grid">
     <dt>Revision</dt><dd>v{{ ticket.change_revision.revision if ticket.change_revision else 1 }}</dd>
     <dt>Type</dt><dd>{{ ticket.change_governance.change_type }}</dd>
