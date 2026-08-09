@@ -2765,6 +2765,13 @@ def test_unified_search_favorites_and_preferences(client, app):
     navigation_result = client.get("/ui/search?q=cmdb")
     assert b"CMDB and service map" in navigation_result.data
     assert b"Navigation" in navigation_result.data
+    # Sub-sections within admin pages (e.g. "Security and limits" inside
+    # Platform settings) previously had no search entry at all -- only the
+    # page itself was indexed.
+    security_result = client.get("/ui/search?q=security", headers={"Accept": "application/json"}).json["results"]
+    assert any(row["label"] == "Security and limits" and "#settings-security" in row["url"] for row in security_result)
+    freeze_result = client.get("/ui/search?q=freeze+windows", headers={"Accept": "application/json"}).json["results"]
+    assert any(row["label"] == "Change freeze windows" for row in freeze_result)
     user_result = client.get("/ui/search?q=System+Administrator")
     assert b"User" in user_result.data
     assert b"admin" in user_result.data
@@ -4300,6 +4307,40 @@ def test_operational_task_detail_shows_activity_notes_and_siblings(client, app):
     assert b"Coordinating with the network team before starting." in posted.data
     with app.app_context():
         assert TaskNote.query.filter_by(target_type="operational_task", target_id=first_task_id).count() == 1
+
+
+def test_conflict_detection_completed_history_only_logged_when_a_conflict_is_found(client, app):
+    """Regression test: a user flagged the ticket timeline showing a
+    "Conflict detection completed / No conflict" entry on every single
+    change -- clutter with nothing actionable in it, unlike this
+    codebase's existing convention (e.g. the SLA-breach scan only logs a
+    "breached" entry, never one for every non-breaching pass)."""
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        ci = ConfigurationItem(
+            name="uncontested-server", ci_class="Server",
+            environment="Production", owner_id=admin.id,
+        )
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+    login(client)
+    created = client.post("/tickets/new/change", data={
+        "title": "Routine, uncontested change", "description": "No overlapping work.",
+        "category": "Software", "priority": "P3", "change_type": "Standard",
+        "risk_score": "10", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.", "ci_id": str(ci_id),
+        "planned_start": "2026-09-01T09:00", "planned_end": "2026-09-01T17:00",
+    }, follow_redirects=True)
+    assert created.status_code == 200
+    assert b"Conflict detection completed" not in created.data
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Routine, uncontested change").one()
+        assert ticket.change_governance.conflict_status == "No conflict"
+        assert not TaskHistory.query.filter_by(
+            target_type="ticket", target_id=ticket.id, event="Conflict detection completed",
+        ).first()
 
 
 def test_change_creation_blocks_on_open_incident_conflict(client, app):

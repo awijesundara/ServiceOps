@@ -2353,10 +2353,18 @@ def run_change_conflict_detection(ticket, governance):
     governance.conflict_status = (
         f"Conflict: {', '.join(conflicts)}" if conflicts else "No conflict"
     )[:500]
-    log_history(
-        "ticket", ticket.id, "Conflict detection completed",
-        details=governance.conflict_status,
-    )
+    # Matches this codebase's existing convention for routine automated
+    # checks (e.g. the SLA-breach scan only logs a "breached" entry, never
+    # a "checked, not breached" one for every non-breaching pass): the
+    # ticket-facing timeline only gets an entry for the exceptional,
+    # actionable outcome. The tamper-evident audit log below always
+    # records the check regardless, so "checked, no conflict" is never
+    # lost -- it's just not clutter in front of the user.
+    if conflicts:
+        log_history(
+            "ticket", ticket.id, "Conflict detection completed",
+            details=governance.conflict_status,
+        )
     audit("conflict check", ticket.number, governance.conflict_status)
     return conflicts
 
@@ -12304,6 +12312,59 @@ def create_app(test_config=None):
                 ("Integrations", "Webhooks monitoring RT import delivery", "integrations_admin", {}, "admin"),
                 ("Automation rules", "Workflow schedules executions", "workflows_admin", {}, "admin"),
             ]
+            # Sub-sections within admin pages (e.g. "Security and limits"
+            # inside Platform settings) previously had no search entry at
+            # all -- only the page itself was indexed, so a user searching
+            # for a specific setting group by name found nothing even
+            # though a direct #anchor link to it already existed on the
+            # page. Reuses the same (label, keywords, endpoint, params,
+            # minimum_role) shape via url_for's _anchor kwarg, so no new
+            # matching/rendering logic is needed below.
+            for category, (group_label, group_description) in SETTING_GROUP_META.items():
+                navigation.append((
+                    group_label, f"{group_description} Platform settings",
+                    "system_settings", {"_anchor": f"settings-{category}"}, "admin",
+                ))
+            navigation.extend([
+                ("Company branding", "Logo colors company name Platform settings",
+                 "system_settings", {"_anchor": "settings-branding"}, "admin"),
+                ("Runtime environment", "Deployment mode version Platform settings",
+                 "system_settings", {"_anchor": "settings-infrastructure"}, "admin"),
+                ("Ticket defaults", "Default priority category Service delivery and governance",
+                 "itil_admin", {"_anchor": "ticket-defaults"}, "admin"),
+                ("Catalog routing", "Fulfillment team catalog items Service delivery and governance",
+                 "itil_admin", {"_anchor": "catalog"}, "admin"),
+                ("Directory group mapping", "AD LDAP group to team mapping Service delivery and governance",
+                 "itil_admin", {"_anchor": "directory-mapping"}, "admin"),
+                ("Team aliases", "Support group name aliases Service delivery and governance",
+                 "itil_admin", {"_anchor": "team-aliases"}, "admin"),
+                ("LDAP sync schedule", "Directory synchronization Service delivery and governance",
+                 "itil_admin", {"_anchor": "ldap-sync"}, "admin"),
+                ("Team managers", "Support group manager assignment Service delivery and governance",
+                 "itil_admin", {"_anchor": "team-managers"}, "admin"),
+                ("Governance groups", "CCB executive approval group setup Service delivery and governance",
+                 "itil_admin", {"_anchor": "governance-groups"}, "admin"),
+                ("Change approval policy", "Normal Standard change authorization Service delivery and governance",
+                 "itil_admin", {"_anchor": "change-approval-policy"}, "admin"),
+                ("Change Control Board", "CCB membership approval Service delivery and governance",
+                 "itil_admin", {"_anchor": "ccb"}, "admin"),
+                ("Executive approval authority", "Executive change sign-off Service delivery and governance",
+                 "itil_admin", {"_anchor": "executive-approval"}, "admin"),
+                ("Change freeze windows", "Blackout period schedule block Service delivery and governance",
+                 "itil_admin", {"_anchor": "change-freeze"}, "admin"),
+                ("Service offerings", "Business service catalog Service delivery and governance",
+                 "itil_admin", {"_anchor": "service-offerings"}, "admin"),
+                ("SLA definitions", "Service level agreement targets Service delivery and governance",
+                 "itil_admin", {"_anchor": "sla"}, "admin"),
+                ("Performance charts", "Response time throughput System health",
+                 "system_health", {"_anchor": "performance"}, "admin"),
+                ("Application errors", "Error log System health",
+                 "system_health", {"_anchor": "application-errors"}, "admin"),
+                ("Active users", "Currently signed in System health",
+                 "system_health", {"_anchor": "active-users"}, "admin"),
+                ("Recovery set", "Backup RPO freshness System health",
+                 "system_health", {"_anchor": "recovery-set"}, "admin"),
+            ])
             if user_can_access_client_management(current_user):
                 navigation.extend([
                     ("Client management", "Customer support external clients SysOps", "client_management_home", {}, None),
