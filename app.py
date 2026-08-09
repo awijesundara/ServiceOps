@@ -3267,6 +3267,48 @@ def require_client_management(view):
     return wrapped
 
 
+def visible_client_organization_query(user):
+    """Client Management access was previously all-or-nothing: any SysOps
+    member/admin saw every organization in the tenant. Organizations stay
+    that way (restricted_visibility defaults False, zero behavior change)
+    unless an admin explicitly opts one into restricted visibility, at
+    which point only admins and users/groups with an explicit
+    ClientOrganizationAccess grant can see it."""
+    query = tenant_query(ClientOrganization)
+    if role_at_least(user.effective_role, "admin"):
+        return query
+    group_ids = user_support_group_ids(user)
+    granted_org_ids = {
+        row.organization_id for row in ClientOrganizationAccess.query.filter(
+            ClientOrganizationAccess.tenant_id == user.tenant_id,
+            db.or_(
+                ClientOrganizationAccess.user_id == user.id,
+                ClientOrganizationAccess.group_id.in_(group_ids),
+            ),
+        ).all()
+    }
+    return query.filter(db.or_(
+        ClientOrganization.restricted_visibility.is_(False),
+        ClientOrganization.id.in_(granted_org_ids),
+    ))
+
+
+def visible_client_ticket_query(user):
+    query = tenant_query(ClientTicket)
+    if role_at_least(user.effective_role, "admin"):
+        return query
+    visible_org_ids = visible_client_organization_query(user).with_entities(ClientOrganization.id)
+    return query.filter(ClientTicket.organization_id.in_(visible_org_ids))
+
+
+def visible_client_contact_query(user):
+    query = tenant_query(ClientContact)
+    if role_at_least(user.effective_role, "admin"):
+        return query
+    visible_org_ids = visible_client_organization_query(user).with_entities(ClientOrganization.id)
+    return query.filter(ClientContact.organization_id.in_(visible_org_ids))
+
+
 def visible_catalog_request_query(user):
     query = CatalogRequest.query
     if not user.is_authenticated or not user.active:
@@ -4988,7 +5030,7 @@ def create_app(test_config=None):
             ),
             "client_management_access": user_can_access_client_management(current_user),
             "client_open_ticket_count": (
-                tenant_query(ClientTicket).filter(
+                visible_client_ticket_query(current_user).filter(
                     ClientTicket.status.notin_(["Solved", "Closed"])
                 ).count()
                 if user_can_access_client_management(current_user) else 0
@@ -8341,7 +8383,7 @@ def create_app(test_config=None):
     @app.get("/client-management")
     @require_client_management
     def client_management_home():
-        query = tenant_query(ClientTicket)
+        query = visible_client_ticket_query(current_user)
         counts = {
             "mine": query.filter(ClientTicket.assignee_id == current_user.id, ClientTicket.status.notin_(["Solved", "Closed"])).count(),
             "unassigned": query.filter(ClientTicket.assignee_id.is_(None), ClientTicket.status.notin_(["Solved", "Closed"])).count(),
@@ -8361,7 +8403,7 @@ def create_app(test_config=None):
     def client_tickets():
         view = request.args.get("view", "unsolved")
         q = request.args.get("q", "").strip()
-        query = tenant_query(ClientTicket).options(
+        query = visible_client_ticket_query(current_user).options(
             selectinload(ClientTicket.contact), selectinload(ClientTicket.assignee),
             selectinload(ClientTicket.organization),
         )
@@ -8393,9 +8435,9 @@ def create_app(test_config=None):
         group, agents = client_workspace_context()
         if not group:
             abort(409, description="The SysOps client-support team is not configured.")
-        contacts = tenant_query(ClientContact).filter_by(active=True).options(selectinload(ClientContact.organization)).order_by(ClientContact.name).all()
+        contacts = visible_client_contact_query(current_user).filter_by(active=True).options(selectinload(ClientContact.organization)).order_by(ClientContact.name).all()
         if request.method == "POST":
-            contact = tenant_query(ClientContact).filter_by(id=request.form.get("contact_id", type=int), active=True).first_or_404()
+            contact = visible_client_contact_query(current_user).filter_by(id=request.form.get("contact_id", type=int), active=True).first_or_404()
             subject = request.form.get("subject", "").strip()
             description = request.form.get("description", "").strip()
             if not subject or not description:
@@ -8433,7 +8475,7 @@ def create_app(test_config=None):
     @app.route("/client-management/tickets/<int:ticket_id>", methods=["GET", "POST"])
     @require_client_management
     def client_ticket_detail(ticket_id):
-        ticket = tenant_query(ClientTicket).options(
+        ticket = visible_client_ticket_query(current_user).options(
             selectinload(ClientTicket.messages).selectinload(ClientTicketMessage.author),
             selectinload(ClientTicket.contact), selectinload(ClientTicket.organization),
             selectinload(ClientTicket.assignee),
@@ -8503,15 +8545,91 @@ def create_app(test_config=None):
                 audit("client organization created", name)
                 db.session.commit()
                 return redirect(url_for("client_organizations"))
-        rows = tenant_query(ClientOrganization).options(selectinload(ClientOrganization.contacts)).order_by(ClientOrganization.name).all()
+        rows = visible_client_organization_query(current_user).options(selectinload(ClientOrganization.contacts)).order_by(ClientOrganization.name).all()
         return render_template("client_organizations.html", organizations=rows)
+
+    @app.route("/client-management/organizations/<int:organization_id>", methods=["GET", "POST"])
+    @require_client_management
+    def client_organization_detail(organization_id):
+        organization = visible_client_organization_query(current_user).options(
+            selectinload(ClientOrganization.contacts), selectinload(ClientOrganization.access_grants),
+        ).filter_by(id=organization_id).first_or_404()
+        if request.method == "POST":
+            if not role_at_least(current_user.effective_role, "admin"):
+                abort(403, description="Only an administrator can change organization visibility or access grants.")
+            action = request.form.get("action")
+            if action == "toggle_restricted":
+                organization.restricted_visibility = not organization.restricted_visibility
+                audit(
+                    "client organization visibility", organization.name,
+                    "Restricted" if organization.restricted_visibility else "Open to all SysOps members",
+                )
+                db.session.commit()
+                flash(
+                    f"{organization.name} is now "
+                    f"{'restricted to explicitly granted users/teams' if organization.restricted_visibility else 'visible to every SysOps member'}.",
+                    "success",
+                )
+            elif action == "add_grant":
+                grantee = request.form.get("grantee", "")
+                kind, _, raw_id = grantee.partition(":")
+                try:
+                    grantee_id = int(raw_id)
+                except (TypeError, ValueError):
+                    abort(400, description="Select a valid user or team.")
+                if kind == "user":
+                    user_row = tenant_record_or_404(User, grantee_id)
+                    existing = ClientOrganizationAccess.query.filter_by(
+                        organization_id=organization.id, user_id=user_row.id
+                    ).first()
+                    if not existing:
+                        db.session.add(ClientOrganizationAccess(
+                            tenant_id=current_user.tenant_id, organization_id=organization.id,
+                            user_id=user_row.id, updated_by_id=current_user.id,
+                        ))
+                        audit("client organization access granted", organization.name, f"user {user_row.username}")
+                        db.session.commit()
+                elif kind == "group":
+                    group_row = tenant_record_or_404(SupportGroup, grantee_id)
+                    existing = ClientOrganizationAccess.query.filter_by(
+                        organization_id=organization.id, group_id=group_row.id
+                    ).first()
+                    if not existing:
+                        db.session.add(ClientOrganizationAccess(
+                            tenant_id=current_user.tenant_id, organization_id=organization.id,
+                            group_id=group_row.id, updated_by_id=current_user.id,
+                        ))
+                        audit("client organization access granted", organization.name, f"team {group_row.name}")
+                        db.session.commit()
+                else:
+                    abort(400, description="Select a valid user or team.")
+                flash("Access grant added.", "success")
+            elif action == "remove_grant":
+                grant = ClientOrganizationAccess.query.filter_by(
+                    id=request.form.get("grant_id", type=int), organization_id=organization.id,
+                ).first_or_404()
+                label = grant.user.username if grant.user_id else grant.group.name
+                db.session.delete(grant)
+                audit("client organization access revoked", organization.name, label)
+                db.session.commit()
+                flash("Access grant removed.", "success")
+            return redirect(url_for("client_organization_detail", organization_id=organization.id))
+        agents = User.query.filter(
+            User.tenant_id == current_user.tenant_id, User.active.is_(True),
+            User.role.in_(["agent", "manager", "admin"]),
+        ).order_by(User.name).all()
+        groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
+        return render_template(
+            "client_organization_detail.html", organization=organization, agents=agents, groups=groups,
+            is_admin=role_at_least(current_user.effective_role, "admin"),
+        )
 
     @app.route("/client-management/contacts", methods=["GET", "POST"])
     @require_client_management
     def client_contacts():
-        organizations = tenant_query(ClientOrganization).filter_by(active=True).order_by(ClientOrganization.name).all()
+        organizations = visible_client_organization_query(current_user).filter_by(active=True).order_by(ClientOrganization.name).all()
         if request.method == "POST":
-            organization = tenant_query(ClientOrganization).filter_by(id=request.form.get("organization_id", type=int), active=True).first_or_404()
+            organization = visible_client_organization_query(current_user).filter_by(id=request.form.get("organization_id", type=int), active=True).first_or_404()
             name, email = request.form.get("name", "").strip(), request.form.get("email", "").strip().lower()
             if not name or not email or "@" not in email:
                 flash("A valid name and email address are required.", "error")
@@ -8528,7 +8646,7 @@ def create_app(test_config=None):
                 audit("client contact created", email, organization.name)
                 db.session.commit()
                 return redirect(url_for("client_contacts"))
-        contacts = tenant_query(ClientContact).options(selectinload(ClientContact.organization)).order_by(ClientContact.name).all()
+        contacts = visible_client_contact_query(current_user).options(selectinload(ClientContact.organization)).order_by(ClientContact.name).all()
         return render_template("client_contacts.html", contacts=contacts, organizations=organizations)
 
     @app.get("/admin")
@@ -12468,7 +12586,7 @@ def create_app(test_config=None):
                 results.append({"type": "Catalog item", "label": row.name,
                                 "url": url_for("catalog"), "meta": row.category})
             if user_can_access_client_management(current_user):
-                for row in tenant_query(ClientTicket).join(ClientContact).join(ClientOrganization).filter(db.or_(
+                for row in visible_client_ticket_query(current_user).join(ClientContact).join(ClientOrganization).filter(db.or_(
                     ClientTicket.number.ilike(pattern), ClientTicket.subject.ilike(pattern),
                     ClientTicket.description.ilike(pattern), ClientContact.name.ilike(pattern),
                     ClientContact.email.ilike(pattern), ClientOrganization.name.ilike(pattern),
@@ -12476,13 +12594,13 @@ def create_app(test_config=None):
                     results.append({"type": "Customer ticket", "label": f"{row.number} · {row.subject}",
                                     "url": url_for("client_ticket_detail", ticket_id=row.id),
                                     "meta": f"{row.organization.name} · {row.status}"})
-                for row in tenant_query(ClientOrganization).filter(db.or_(
+                for row in visible_client_organization_query(current_user).filter(db.or_(
                     ClientOrganization.name.ilike(pattern), ClientOrganization.domain.ilike(pattern),
                     ClientOrganization.external_id.ilike(pattern),
                 )).limit(20):
                     results.append({"type": "Client organization", "label": row.name,
                                     "url": url_for("client_organizations"), "meta": row.domain})
-                for row in tenant_query(ClientContact).filter(db.or_(
+                for row in visible_client_contact_query(current_user).filter(db.or_(
                     ClientContact.name.ilike(pattern), ClientContact.email.ilike(pattern),
                     ClientContact.phone.ilike(pattern),
                 )).limit(20):

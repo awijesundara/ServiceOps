@@ -1,0 +1,51 @@
+{% extends "base.html" %}{% block title %}{{ organization.name }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('client_management_home') }}">CLIENT MANAGEMENT</a> / <a href="{{ url_for('client_organizations') }}">ORGANIZATIONS</a></p><h1>{{ organization.name }}{% if organization.restricted_visibility %} <span class="badge">Restricted</span>{% endif %}</h1><p>{{ organization.domain or 'No domain set' }}{% if organization.external_id %} · {{ organization.external_id }}{% endif %}</p></div></header>
+<div class="detail-grid">
+  <section class="panel">
+    <h2>Overview</h2>
+    <dl class="facts">
+      <dt>Status</dt><dd>{{ 'Active' if organization.active else 'Inactive' }}</dd>
+      <dt>Contacts</dt><dd>{{ organization.contacts|length }}</dd>
+      <dt>Notes</dt><dd>{{ organization.notes or '—' }}</dd>
+    </dl>
+  </section>
+  <aside class="facts">
+    <section class="panel">
+      <h2>Visibility<span class="info-tip" tabindex="0" data-tip="Open (default): every SysOps member/admin sees this organization and its tickets, exactly like before this setting existed. Restricted: only admins and users/teams explicitly granted access below can see it.">i</span></h2>
+      <p class="muted">{{ 'Restricted to explicitly granted users and teams.' if organization.restricted_visibility else 'Visible to every SysOps member.' }}</p>
+      {% if is_admin %}
+      <form method="post"><input type="hidden" name="action" value="toggle_restricted"><button class="button">{{ 'Open to all SysOps members' if organization.restricted_visibility else 'Restrict visibility' }}</button></form>
+      {% endif %}
+    </section>
+    {% if organization.restricted_visibility %}
+    <section class="panel">
+      <h2>Access grants</h2>
+      {% if organization.access_grants %}
+      <div class="rack-connections-list">
+        {% for grant in organization.access_grants %}
+        <div class="rack-connection-row">
+          <div><strong>{{ grant.user.name if grant.user_id else grant.group.name }}</strong><small>{{ 'User' if grant.user_id else 'Team' }}</small></div>
+          {% if is_admin %}
+          <form method="post"><input type="hidden" name="action" value="remove_grant"><input type="hidden" name="grant_id" value="{{ grant.id }}"><button class="link-button" aria-label="Remove grant">✕</button></form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}<p class="muted">No one has been granted access yet — only admins can see this organization.</p>{% endif %}
+      {% if is_admin %}
+      <form method="post" class="stack">
+        <input type="hidden" name="action" value="add_grant">
+        <label>Grant access to<select name="grantee" required>
+          <option value="">Select a user or team…</option>
+          <optgroup label="Users">{% for agent in agents %}<option value="user:{{ agent.id }}">{{ agent.name }}</option>{% endfor %}</optgroup>
+          <optgroup label="Teams">{% for group in groups %}<option value="group:{{ group.id }}">{{ group.name }}</option>{% endfor %}</optgroup>
+        </select></label>
+        <button class="button">Add grant</button>
+      </form>
+      {% endif %}
+    </section>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}
