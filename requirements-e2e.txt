@@ -1,0 +1,6 @@
+# Real-browser smoke test dependency (tests/test_e2e_smoke.py), kept
+# separate from requirements.txt/requirements-dev.txt so it never lands in
+# the production image -- Playwright ships a Chromium binary, which has no
+# place in a runtime container. Not installed by Dockerfile.test either;
+# run explicitly (see tests/test_e2e_smoke.py's module docstring).
+playwright==1.55.0
