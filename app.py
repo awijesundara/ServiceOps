@@ -17,6 +17,8 @@ import socket
 import re
 import secrets
 import smtplib
+import imaplib
+import email as email_module
 from pathlib import Path
 import collections
 from collections import Counter, defaultdict
@@ -71,6 +73,10 @@ from serviceops_core.client_automation import (
     condition_matches, validate_trigger, ClientTriggerConfigurationError,
     CLIENT_TRIGGER_EVENTS, CLIENT_TRIGGER_FIELDS, CLIENT_TRIGGER_OPERATORS,
     CLIENT_TRIGGER_ACTION_TYPES, CLIENT_TICKET_STATUSES, CLIENT_TICKET_PRIORITIES,
+)
+from serviceops_core.email_ingest import (
+    parse_inbound_email, extract_ticket_token, is_free_mail_domain,
+    referenced_message_ids, build_references_header, MAX_ATTACHMENT_TOTAL_BYTES,
 )
 
 # VERSION is the release source of truth; shown in the UI, API, and health
@@ -1389,6 +1395,68 @@ def validate_attachment_upload(upload):
     return ext, mime_type
 
 
+def validate_attachment_bytes(filename, data):
+    """Same allowlist/magic-byte check as validate_attachment_upload(), for
+    raw bytes (an email attachment) instead of a Flask FileStorage."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ATTACHMENT_ALLOWED_TYPES:
+        return None
+    signature, mime_type = ATTACHMENT_ALLOWED_TYPES[ext]
+    if signature and data[:len(signature)] != signature:
+        return None
+    return ext, mime_type
+
+
+def save_email_attachment(client_ticket, filename, data, uploaded_by_id):
+    """The raw-bytes counterpart to save_ticket_attachment() -- same
+    validation/malware-scan/hash/object-storage tail, adapted for an email
+    attachment's already-decoded bytes instead of a Flask upload. Returns
+    the FileAttachment on success, or None (silently skipped, matching
+    Zendesk's own documented "infected attachments are dropped without
+    surfacing them" convention -- logged via audit(), not raised, so one
+    bad attachment never aborts the whole message)."""
+    original = secure_filename(filename) or "attachment"
+    validated = validate_attachment_bytes(original, data)
+    if not validated:
+        current_app.logger.info(
+            "Skipped inbound email attachment of a disallowed type: ticket=%s file=%s",
+            client_ticket.number, original,
+        )
+        return None
+    _, verified_mime_type = validated
+    stored = f"{uuid.uuid4().hex}-{original}"
+    path = os.path.join(current_app.config["UPLOAD_FOLDER"], stored)
+    with open(path, "wb") as handle:
+        handle.write(data)
+    scan_status = scan_attachment(path)
+    if scan_status == "infected":
+        os.remove(path)
+        audit("attach-blocked", client_ticket.number, f"{original} (malware scan positive, inbound email)",
+              user_id=uploaded_by_id, tenant_id=client_ticket.tenant_id)
+        return None
+    sha256 = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            sha256.update(chunk)
+    file_size = os.path.getsize(path)
+    if object_storage_enabled():
+        object_storage_client().upload_file(
+            path, os.environ["OBJECT_STORAGE_BUCKET"], stored,
+            ExtraArgs={"ContentType": verified_mime_type},
+        )
+        os.remove(path)
+    attachment = FileAttachment(
+        client_ticket_id=client_ticket.id, uploaded_by_id=uploaded_by_id,
+        original_name=original, stored_name=stored,
+        mime_type=verified_mime_type, size_bytes=file_size,
+        sha256=sha256.hexdigest(), scan_status=scan_status, tenant_id=client_ticket.tenant_id,
+    )
+    db.session.add(attachment)
+    audit("attach", client_ticket.number, f"{original} (inbound email)",
+          user_id=uploaded_by_id, tenant_id=client_ticket.tenant_id)
+    return attachment
+
+
 CLAMAV_MAX_CHUNK = 4096
 
 
@@ -2552,6 +2620,235 @@ def sync_slas(target_type, target_id, state):
             current = current.replace(tzinfo=None)
         if task_sla.stage == "In Progress" and current > task_sla.breach_at:
             task_sla.breached = True
+
+
+def _match_existing_client_ticket(tenant_id, parsed):
+    """Threading: Message-ID/References headers first (most robust, per
+    Zendesk's own documented convention), the bracketed [CXT...] subject
+    token as fallback. Returns None if nothing matches (a new ticket)."""
+    ref_ids = referenced_message_ids(parsed["in_reply_to"], parsed["references"])
+    if ref_ids:
+        message = ClientTicketMessage.query.filter(
+            ClientTicketMessage.tenant_id == tenant_id,
+            ClientTicketMessage.message_id.in_(ref_ids),
+        ).first()
+        if message:
+            return message.ticket
+    token = extract_ticket_token(parsed["subject"])
+    if token:
+        ticket = ClientTicket.query.filter_by(tenant_id=tenant_id, number=token).first()
+        if ticket:
+            return ticket
+    return None
+
+
+def _create_client_ticket_from_email(mailbox, parsed):
+    """Auto-creates the ClientContact (always, from the From address) and,
+    for a non-free-mail domain when the mailbox allows it, the
+    ClientOrganization too (matching Freshdesk's documented "blacklist
+    free-mail domains from company auto-linking" convention) -- otherwise
+    falls back to the mailbox's configured default organization. Returns
+    None (message dropped, logged) if there's nowhere to attach the ticket
+    at all, rather than crashing the whole inbox poll on one bad sender."""
+    tenant_id = mailbox.tenant_id
+    contact = ClientContact.query.filter_by(tenant_id=tenant_id, email=parsed["from_email"]).first()
+    if not contact:
+        domain = parsed["from_email"].split("@")[-1] if "@" in parsed["from_email"] else ""
+        organization = None
+        if domain and mailbox.auto_create_organization_by_domain and not is_free_mail_domain(domain):
+            organization = ClientOrganization.query.filter_by(tenant_id=tenant_id, domain=domain).first()
+            if not organization:
+                organization = ClientOrganization(tenant_id=tenant_id, name=domain, domain=domain)
+                db.session.add(organization)
+                db.session.flush()
+        if not organization:
+            organization = mailbox.default_organization
+        if not organization:
+            current_app.logger.warning(
+                "No organization available for inbound email from %s (mailbox=%s) -- dropping",
+                parsed["from_email"], mailbox.name,
+            )
+            return None
+        contact = ClientContact(
+            tenant_id=tenant_id, organization_id=organization.id,
+            name=parsed["from_name"] or parsed["from_email"], email=parsed["from_email"],
+        )
+        db.session.add(contact)
+        db.session.flush()
+    group = client_sysops_group(tenant_id)
+    if not group:
+        current_app.logger.warning(
+            "No SysOps team configured for tenant %s -- dropping inbound email", tenant_id,
+        )
+        return None
+    subject = (parsed["subject"] or "(no subject)")[:200]
+    description = (parsed["body_text"] or "(no message body)")[:5000]
+
+    def build():
+        row = ClientTicket(
+            number=sequence_number(ClientTicket, "CXT"), tenant_id=tenant_id,
+            subject=subject, description=description,
+            status="New", priority="Normal", ticket_type="Question", channel="Email",
+            contact_id=contact.id, organization_id=contact.organization_id,
+            support_group_id=group.id, created_by_id=mailbox.created_by_id,
+            mailbox_id=mailbox.id,
+        )
+        db.session.add(row)
+        return row
+    return create_with_retry_on_number_collision(
+        build, error_description="Could not allocate a client ticket number for inbound email.",
+    )
+
+
+def _process_one_inbound_email(mailbox, connection, msg_num):
+    status, msg_data = connection.fetch(msg_num, "(RFC822)")
+    if status != "OK" or not msg_data or not isinstance(msg_data[0], tuple):
+        return False
+    raw_bytes = msg_data[0][1]
+    connection.store(msg_num, "+FLAGS", "\\Seen")
+    parsed = parse_inbound_email(raw_bytes)
+    if parsed["is_auto_generated"] or not parsed["from_email"]:
+        return False
+    # Last-resort loop/flood defense, on top of the Auto-Submitted check
+    # above -- Zendesk documents an identical per-sender rate ceiling for
+    # exactly this reason (a broken auto-responder loop that somehow
+    # doesn't set Auto-Submitted correctly).
+    if not route_rate_limit("inbound_email", parsed["from_email"], 20, window_seconds=3600):
+        current_app.logger.warning("Inbound email rate limit exceeded for %s", parsed["from_email"])
+        return False
+
+    ticket = _match_existing_client_ticket(mailbox.tenant_id, parsed)
+    is_new_ticket = ticket is None
+    if is_new_ticket:
+        ticket = _create_client_ticket_from_email(mailbox, parsed)
+        if ticket is None:
+            return False
+    elif ticket.status in ("Solved", "Closed"):
+        ticket.status = "Open"
+
+    db.session.add(ClientTicketMessage(
+        tenant_id=ticket.tenant_id, client_ticket_id=ticket.id, author_id=None,
+        body=parsed["body_text"] or "(no message body)", visibility="public",
+        event_type="opened" if is_new_ticket else "inbound_email",
+        message_id=parsed["message_id"] or None, in_reply_to=parsed["in_reply_to"] or None,
+    ))
+    ticket.updated_at = now()
+
+    total_size = 0
+    for attachment in parsed["attachments"]:
+        if total_size + len(attachment["data"]) > MAX_ATTACHMENT_TOTAL_BYTES:
+            current_app.logger.info(
+                "Skipped inbound email attachment over the size ceiling: ticket=%s", ticket.number,
+            )
+            continue
+        if save_email_attachment(ticket, attachment["filename"], attachment["data"], mailbox.created_by_id):
+            total_size += len(attachment["data"])
+
+    if is_new_ticket:
+        attach_slas("client_ticket", ticket.id, ticket.priority, organization_id=ticket.organization_id)
+        agents = User.query.filter(
+            User.tenant_id == ticket.tenant_id, User.active.is_(True),
+            User.role.in_(["agent", "manager", "admin"]),
+        ).all()
+        evaluate_client_triggers("created", ticket, agents)
+    audit("client email ingested", ticket.number, parsed["from_email"], tenant_id=ticket.tenant_id)
+    db.session.commit()
+    return True
+
+
+def _poll_client_mailbox(mailbox, limit=50):
+    connection_cls = imaplib.IMAP4_SSL if mailbox.imap_use_ssl else imaplib.IMAP4
+    connection = connection_cls(mailbox.imap_host, mailbox.imap_port)
+    try:
+        connection.login(mailbox.imap_username, mailbox.imap_password)
+        connection.select(mailbox.imap_folder)
+        status, data = connection.search(None, "UNSEEN")
+        if status != "OK":
+            raise RuntimeError(f"IMAP search failed: {status}")
+        message_numbers = data[0].split()[:limit]
+        processed = 0
+        for msg_num in message_numbers:
+            try:
+                if _process_one_inbound_email(mailbox, connection, msg_num):
+                    processed += 1
+            except Exception:
+                current_app.logger.exception(
+                    "Failed to process inbound email num=%s mailbox=%s", msg_num, mailbox.name,
+                )
+                db.session.rollback()
+        mailbox.last_polled_at = now()
+        mailbox.last_poll_status = "ok"
+        mailbox.last_poll_error = ""
+        db.session.commit()
+        return processed
+    finally:
+        try:
+            connection.logout()
+        except Exception:
+            pass
+
+
+def process_client_email_inbox(limit=50):
+    """Client Management email channel: polls every active ClientMailbox
+    over IMAP. Mirrors process_sla_breaches()'s periodic-scan shape --
+    returns an int count, isolates each mailbox's own failure so one
+    broken mailbox config never stops another tenant's mailbox (or the
+    rest of the worker loop) from running."""
+    processed = 0
+    for mailbox in ClientMailbox.query.filter_by(active=True).all():
+        try:
+            processed += _poll_client_mailbox(mailbox, limit=limit)
+        except Exception as error:
+            mailbox.last_polled_at = now()
+            mailbox.last_poll_status = "error"
+            mailbox.last_poll_error = str(error)[:2000]
+            db.session.commit()
+            current_app.logger.exception("Client mailbox poll failed: %s", mailbox.name)
+    return processed
+
+
+def deliver_client_email_reply(ticket, message, mailbox):
+    """Sends an agent's public reply on a Client Management ticket as a
+    real email to the customer, via `mailbox`'s SMTP settings. Threads
+    correctly (In-Reply-To/References from the ticket's latest known
+    Message-ID) and embeds the bracketed ticket token in the subject as
+    the documented fallback signal for the customer's own reply to thread
+    back in correctly, mirroring Zendesk's own encoded-ticket-ID
+    convention. Stores the generated Message-ID back onto `message` so a
+    later customer reply threads via the headers (the primary signal)."""
+    prior = ClientTicketMessage.query.filter(
+        ClientTicketMessage.client_ticket_id == ticket.id,
+        ClientTicketMessage.id != message.id,
+        ClientTicketMessage.message_id.isnot(None),
+    ).order_by(ClientTicketMessage.created_at.desc()).first()
+
+    outbound = EmailMessage()
+    generated_message_id = email_module.utils.make_msgid()
+    outbound["Message-ID"] = generated_message_id
+    outbound["From"] = f"{mailbox.from_name} <{mailbox.from_address}>" if mailbox.from_name else mailbox.from_address
+    outbound["To"] = ticket.contact.email
+    subject = ticket.subject
+    if f"[{ticket.number}]" not in subject:
+        subject = f"Re: [{ticket.number}] {subject}"
+    outbound["Subject"] = subject
+    # This is a human-authored agent reply, not an automated notification --
+    # deliberately the inverse of what an autoresponder would set, so this
+    # message is never itself mistaken for auto-generated mail downstream.
+    outbound["Auto-Submitted"] = "no"
+    if prior:
+        outbound["In-Reply-To"] = prior.message_id
+        outbound["References"] = build_references_header(prior.message_id, prior.in_reply_to or "")
+    outbound.set_content(message.body)
+
+    with smtplib.SMTP(mailbox.smtp_host, mailbox.smtp_port, timeout=10) as smtp:
+        smtp.ehlo()
+        if mailbox.smtp_use_tls:
+            smtp.starttls(context=ssl.create_default_context())
+            smtp.ehlo()
+        if mailbox.smtp_username:
+            smtp.login(mailbox.smtp_username, mailbox.smtp_password)
+        smtp.send_message(outbound)
+    message.message_id = generated_message_id
 
 
 def process_client_escalation_policies(limit=100):
@@ -8777,10 +9074,47 @@ def create_app(test_config=None):
                 if not body:
                     flash("Enter a reply or internal note.", "error")
                 else:
-                    db.session.add(ClientTicketMessage(
+                    reply_message = ClientTicketMessage(
                         tenant_id=current_user.tenant_id, client_ticket_id=ticket.id,
                         author_id=current_user.id, body=body, visibility=visibility,
-                    ))
+                    )
+                    db.session.add(reply_message)
+                    db.session.flush()
+                    if visibility == "public":
+                        # Prefer the mailbox the ticket actually came in on
+                        # (or has since been replying through) so a reply
+                        # never goes out from an unrelated mailbox just
+                        # because it happens to be the first active one for
+                        # the tenant. Manually-created tickets have no
+                        # mailbox_id, so fall back to the tenant's sole
+                        # active mailbox in that case only.
+                        mailbox = ticket.mailbox if ticket.mailbox and ticket.mailbox.active else None
+                        if not mailbox and not ticket.mailbox_id:
+                            mailbox = ClientMailbox.query.filter_by(
+                                tenant_id=ticket.tenant_id, active=True
+                            ).first()
+                        if mailbox:
+                            try:
+                                deliver_client_email_reply(ticket, reply_message, mailbox)
+                            except Exception:
+                                # A delivery failure must never lose the reply itself --
+                                # it's already saved and visible in-app either way; only
+                                # the "also emailed to the customer" half failed.
+                                current_app.logger.exception(
+                                    "Failed to email client ticket reply: ticket=%s", ticket.number,
+                                )
+                                flash(
+                                    "Reply saved, but sending it by email failed -- check the mailbox configuration.",
+                                    "error",
+                                )
+                        else:
+                            current_app.logger.warning(
+                                "No active mailbox available to email reply for ticket=%s", ticket.number,
+                            )
+                            flash(
+                                "Reply saved, but no active mailbox is configured -- the customer was not emailed.",
+                                "error",
+                            )
                     ticket.updated_at = now()
                     audit("client ticket message", ticket.number, visibility)
                     db.session.commit()
@@ -9206,6 +9540,79 @@ def create_app(test_config=None):
                 User.tenant_id == current_user.tenant_id, User.active.is_(True),
                 User.role.in_(["agent", "manager", "admin"]),
             ).order_by(User.name).all(),
+        )
+
+    @app.route("/client-management/mailboxes", methods=["GET", "POST"])
+    @require_client_management
+    def client_mailboxes_admin():
+        if request.method == "POST":
+            if not role_at_least(current_user.effective_role, "admin"):
+                abort(403, description="Only an administrator can manage mailboxes.")
+            action = request.form.get("action", "create")
+            if action == "create":
+                name = request.form.get("name", "").strip()
+                if not name:
+                    flash("Mailbox name is required.", "error")
+                elif tenant_query(ClientMailbox).filter_by(name=name).first():
+                    flash("A mailbox with that name already exists.", "error")
+                else:
+                    default_org_id = request.form.get("default_organization_id", type=int)
+                    if default_org_id:
+                        tenant_record_or_404(ClientOrganization, default_org_id)
+                    mailbox = ClientMailbox(
+                        tenant_id=current_user.tenant_id, name=name,
+                        imap_host=request.form.get("imap_host", "").strip(),
+                        imap_port=request.form.get("imap_port", type=int) or 993,
+                        imap_use_ssl=bool(request.form.get("imap_use_ssl")),
+                        imap_username=request.form.get("imap_username", "").strip(),
+                        imap_folder=request.form.get("imap_folder", "INBOX").strip() or "INBOX",
+                        smtp_host=request.form.get("smtp_host", "").strip(),
+                        smtp_port=request.form.get("smtp_port", type=int) or 587,
+                        smtp_use_tls=bool(request.form.get("smtp_use_tls")),
+                        smtp_username=request.form.get("smtp_username", "").strip(),
+                        from_address=request.form.get("from_address", "").strip(),
+                        from_name=request.form.get("from_name", "").strip(),
+                        default_organization_id=default_org_id or None,
+                        auto_create_organization_by_domain=bool(request.form.get("auto_create_organization_by_domain")),
+                        created_by_id=current_user.id,
+                    )
+                    if request.form.get("imap_password"):
+                        mailbox.imap_password = request.form["imap_password"]
+                    if request.form.get("smtp_password"):
+                        mailbox.smtp_password = request.form["smtp_password"]
+                    db.session.add(mailbox)
+                    audit("client mailbox created", name, mailbox.imap_host)
+                    db.session.commit()
+                    flash(f"{name} added.", "success")
+            elif action == "toggle_active":
+                mailbox = tenant_record_or_404(ClientMailbox, request.form.get("mailbox_id", type=int))
+                mailbox.active = not mailbox.active
+                audit("client mailbox toggled", mailbox.name, "Active" if mailbox.active else "Inactive")
+                db.session.commit()
+                flash(f"{mailbox.name} is now {'active' if mailbox.active else 'inactive'}.", "success")
+            elif action == "delete":
+                mailbox = tenant_record_or_404(ClientMailbox, request.form.get("mailbox_id", type=int))
+                name = mailbox.name
+                db.session.delete(mailbox)
+                audit("client mailbox deleted", name, "")
+                db.session.commit()
+                flash(f"{name} removed.", "success")
+            elif action == "poll_now":
+                mailbox = tenant_record_or_404(ClientMailbox, request.form.get("mailbox_id", type=int))
+                try:
+                    count = _poll_client_mailbox(mailbox)
+                    flash(f"Checked {mailbox.name}: {count} new ticket/message(s) created.", "success")
+                except Exception as error:
+                    mailbox.last_polled_at = now()
+                    mailbox.last_poll_status = "error"
+                    mailbox.last_poll_error = str(error)[:2000]
+                    db.session.commit()
+                    flash(f"Could not connect to {mailbox.name}: {error}", "error")
+            return redirect(url_for("client_mailboxes_admin"))
+        mailboxes = tenant_query(ClientMailbox).order_by(ClientMailbox.name).all()
+        organizations = tenant_query(ClientOrganization).order_by(ClientOrganization.name).all()
+        return render_template(
+            "client_mailboxes_admin.html", mailboxes=mailboxes, organizations=organizations,
         )
 
     @app.route("/client-management/contacts", methods=["GET", "POST"])
@@ -13463,6 +13870,9 @@ def create_app(test_config=None):
         if attachment.enterprise_record_id:
             if not user_can_view_enterprise_record(current_user, attachment.enterprise_record):
                 abort(403)
+        elif attachment.client_ticket_id:
+            if not visible_client_ticket_query(current_user).filter_by(id=attachment.client_ticket_id).first():
+                abort(404)
         elif not user_can_view_ticket(current_user, attachment.ticket):
             abort(403)
         # Only the handful of types a browser renders safely natively

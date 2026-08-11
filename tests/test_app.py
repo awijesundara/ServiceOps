@@ -16,7 +16,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  ApprovalGate, ApprovalVote, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy,
                  BusinessSchedule, CatalogRequest, CatalogTask, ChangeGovernance, ChangeOwnership, ChangeRevision,
                  ClientContact, ClientOrganization, ClientOrganizationAccess, ClientCustomFieldDefinition,
-                 ClientView, ClientMacro, ClientTrigger, ClientTicket, ClientTicketMessage,
+                 ClientView, ClientMacro, ClientTrigger, ClientMailbox, ClientTicket, ClientTicketMessage,
                  Comment,
                  ChecklistItem, CIRelationship, CiClassPermission, ConfigurationItem, DiscoveryCandidate, DiscoveryTarget,
                  EnterpriseRecord, CatalogItem,
@@ -4237,6 +4237,295 @@ def test_client_organization_branding_and_escalation_policy(app, client):
 
     ticket_page = client.get(f"/client-management/tickets/{escalation_ticket_id}")
     assert b"Escalation Test Co." in ticket_page.data
+
+
+def test_client_mailbox_admin_requires_admin_and_is_tenant_isolated(app, client):
+    with app.app_context():
+        sysops = SupportGroup.query.filter_by(name="SysOps", tenant_id=1).one()
+        manager = User.query.filter_by(username="database.manager").one()
+        db.session.add(GroupMember(group_id=sysops.id, user_id=manager.id, role="member", tenant_id=1))
+        db.session.commit()
+
+    login(client, "database.manager", "Manager123!")
+    assert client.post("/client-management/mailboxes", data={
+        "action": "create", "name": "Support", "imap_host": "imap.example.test",
+        "smtp_host": "smtp.example.test", "from_address": "support@example.test",
+    }).status_code == 403
+    client.post("/logout")
+
+    login(client)
+    assert client.post("/client-management/mailboxes", data={
+        "action": "create", "name": "Support", "imap_host": "imap.example.test",
+        "imap_port": "993", "imap_use_ssl": "on", "imap_username": "support@example.test",
+        "imap_password": "secret-imap-pw", "smtp_host": "smtp.example.test", "smtp_port": "587",
+        "smtp_use_tls": "on", "from_address": "support@example.test", "from_name": "Example Support",
+    }).status_code == 302
+    with app.app_context():
+        mailbox = ClientMailbox.query.filter_by(name="Support").one()
+        mailbox_id = mailbox.id
+        # Password round-trips through the encrypted column, never stored plaintext.
+        assert mailbox.imap_password == "secret-imap-pw"
+        assert mailbox.imap_password_encrypted != "secret-imap-pw"
+
+    with app.app_context():
+        db.session.add(Tenant(id=2, slug="mailbox-other", name="Other Tenant"))
+        db.session.commit()
+        other_mailbox = ClientMailbox(
+            tenant_id=2, name="Other Tenant Mailbox", imap_host="x", smtp_host="x", from_address="x@x.test",
+        )
+        db.session.add(other_mailbox)
+        db.session.commit()
+        other_mailbox_id = other_mailbox.id
+
+    listing = client.get("/client-management/mailboxes")
+    assert b"Other Tenant Mailbox" not in listing.data
+    assert client.post("/client-management/mailboxes", data={
+        "action": "toggle_active", "mailbox_id": other_mailbox_id,
+    }).status_code == 404
+
+    assert client.post("/client-management/mailboxes", data={
+        "action": "toggle_active", "mailbox_id": mailbox_id,
+    }).status_code == 302
+    with app.app_context():
+        assert db.session.get(ClientMailbox, mailbox_id).active is False
+
+
+class _FakeIMAPConnection:
+    """A minimal stand-in for imaplib.IMAP4_SSL exercising exactly the
+    calls _poll_client_mailbox() makes, so the full inbound pipeline
+    (parsing, threading, contact/org auto-creation, attachment save, SLA/
+    trigger evaluation) is tested against real ClientTicketMessage
+    construction and real DB writes -- without real network I/O. Real
+    protocol-level IMAP/SMTP behavior is covered separately by a live
+    GreenMail end-to-end pass, not by this mock."""
+
+    def __init__(self, raw_messages):
+        self._raw_messages = {str(i + 1).encode(): raw for i, raw in enumerate(raw_messages)}
+        self.stored_flags = {}
+
+    def login(self, username, password):
+        return "OK", []
+
+    def select(self, folder):
+        return "OK", []
+
+    def search(self, charset, criteria):
+        return "OK", [b" ".join(self._raw_messages.keys())]
+
+    def fetch(self, num, parts):
+        raw = self._raw_messages[num]
+        return "OK", [(b"1 (RFC822 {%d})" % len(raw), raw)]
+
+    def store(self, num, flag_op, flags):
+        self.stored_flags[num] = flags
+        return "OK", []
+
+    def logout(self):
+        return "BYE", []
+
+
+def test_client_email_inbox_creates_ticket_and_auto_creates_contact_and_org(app, client, monkeypatch):
+    """Regression coverage for the Client Management email channel: a real
+    inbound email from an unrecognized corporate-domain sender auto-creates
+    both the ClientContact and a matching ClientOrganization (by domain),
+    creates a new ClientTicket, attaches an SLA and evaluates triggers
+    exactly like a manually-created ticket, and marks the message seen."""
+    from email.message import EmailMessage as _EmailMessage
+    import app as app_module
+
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        mailbox = ClientMailbox(
+            tenant_id=1, name="Inbound Test", imap_host="imap.example.test",
+            smtp_host="smtp.example.test", from_address="support@ourcompany.test",
+            created_by_id=admin.id,
+        )
+        db.session.add(mailbox)
+        db.session.commit()
+        mailbox_id = mailbox.id
+
+    raw = _EmailMessage()
+    raw["From"] = "New Customer <newcustomer@realcompany.test>"
+    raw["To"] = "support@ourcompany.test"
+    raw["Subject"] = "Can't access my account"
+    raw["Message-ID"] = "<inbound-1@realcompany.test>"
+    raw.set_content("Please help, I can't log in.")
+
+    fake_connection = _FakeIMAPConnection([raw.as_bytes()])
+    monkeypatch.setattr(app_module.imaplib, "IMAP4_SSL", lambda host, port: fake_connection)
+
+    with app.app_context():
+        mailbox = db.session.get(ClientMailbox, mailbox_id)
+        processed = app_module._poll_client_mailbox(mailbox)
+        assert processed == 1
+        assert fake_connection.stored_flags[b"1"] == "\\Seen"
+
+        ticket = ClientTicket.query.filter_by(subject="Can't access my account").one()
+        assert ticket.channel == "Email"
+        assert ticket.contact.email == "newcustomer@realcompany.test"
+        assert ticket.organization.domain == "realcompany.test"
+        inbound_message = ClientTicketMessage.query.filter_by(client_ticket_id=ticket.id).one()
+        assert inbound_message.author_id is None
+        assert inbound_message.message_id == "<inbound-1@realcompany.test>"
+        assert db.session.get(ClientMailbox, mailbox_id).last_poll_status == "ok"
+
+    detail = client.get(f"/client-management/tickets/{ticket.id}")
+    assert detail.status_code == 200
+    assert b"(via email)" in detail.data
+
+
+def test_client_email_inbox_threads_reply_by_message_id_not_new_ticket(app, client, monkeypatch):
+    """A reply email whose In-Reply-To references an already-known
+    Message-ID must thread into the SAME ticket, not create a second one --
+    the core "don't duplicate on every reply" requirement of any email
+    channel."""
+    from email.message import EmailMessage as _EmailMessage
+    import app as app_module
+
+    login(client)
+    client.post("/client-management/organizations", data={"name": "Thread Test Co", "domain": "threadtest.test"})
+    with app.app_context():
+        organization = ClientOrganization.query.filter_by(name="Thread Test Co").one()
+        organization_id = organization.id
+        admin = User.query.filter_by(username="admin").one()
+        mailbox = ClientMailbox(
+            tenant_id=1, name="Thread Test Mailbox", imap_host="imap.example.test",
+            smtp_host="smtp.example.test", from_address="support@ourcompany.test",
+            created_by_id=admin.id,
+        )
+        db.session.add(mailbox)
+        db.session.commit()
+        mailbox_id = mailbox.id
+    client.post("/client-management/contacts", data={
+        "organization_id": organization_id, "name": "Thread Contact", "email": "thread@threadtest.test",
+    })
+    with app.app_context():
+        contact = ClientContact.query.filter_by(email="thread@threadtest.test").one()
+        contact_id = contact.id
+
+    first = _EmailMessage()
+    first["From"] = "thread@threadtest.test"
+    first["Subject"] = "Billing question"
+    first["Message-ID"] = "<first@threadtest.test>"
+    first.set_content("Why was I charged twice?")
+    reply = _EmailMessage()
+    reply["From"] = "thread@threadtest.test"
+    reply["Subject"] = "Re: Billing question"
+    reply["Message-ID"] = "<reply@threadtest.test>"
+    reply["In-Reply-To"] = "<first@threadtest.test>"
+    reply.set_content("Following up on this.")
+
+    with app.app_context():
+        mailbox = db.session.get(ClientMailbox, mailbox_id)
+        fake_connection = _FakeIMAPConnection([first.as_bytes()])
+        monkeypatch.setattr(app_module.imaplib, "IMAP4_SSL", lambda host, port: fake_connection)
+        app_module._poll_client_mailbox(mailbox)
+        assert ClientTicket.query.filter_by(contact_id=contact_id).count() == 1
+
+        fake_connection_2 = _FakeIMAPConnection([reply.as_bytes()])
+        monkeypatch.setattr(app_module.imaplib, "IMAP4_SSL", lambda host, port: fake_connection_2)
+        app_module._poll_client_mailbox(mailbox)
+        tickets = ClientTicket.query.filter_by(contact_id=contact_id).all()
+        assert len(tickets) == 1, "the reply must thread into the existing ticket, not create a new one"
+        assert ClientTicketMessage.query.filter_by(client_ticket_id=tickets[0].id).count() == 2
+
+
+def test_client_email_inbox_skips_auto_generated_mail(app, client, monkeypatch):
+    """An autoresponder/out-of-office reply must never become a ticket --
+    the primary mail-loop defense."""
+    from email.message import EmailMessage as _EmailMessage
+    import app as app_module
+
+    login(client)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        mailbox = ClientMailbox(
+            tenant_id=1, name="Loop Test Mailbox", imap_host="imap.example.test",
+            smtp_host="smtp.example.test", from_address="support@ourcompany.test",
+            created_by_id=admin.id,
+        )
+        db.session.add(mailbox)
+        db.session.commit()
+        mailbox_id = mailbox.id
+
+    autoreply = _EmailMessage()
+    autoreply["From"] = "outofoffice@somesender.test"
+    autoreply["Subject"] = "Automatic reply: Out of office"
+    autoreply["Message-ID"] = "<autoreply@somesender.test>"
+    autoreply["Auto-Submitted"] = "auto-replied"
+    autoreply.set_content("I am currently out of the office.")
+
+    with app.app_context():
+        mailbox = db.session.get(ClientMailbox, mailbox_id)
+        fake_connection = _FakeIMAPConnection([autoreply.as_bytes()])
+        monkeypatch.setattr(app_module.imaplib, "IMAP4_SSL", lambda host, port: fake_connection)
+        processed = app_module._poll_client_mailbox(mailbox)
+        assert processed == 0
+        assert ClientTicket.query.filter_by(tenant_id=1, subject="Automatic reply: Out of office").first() is None
+
+
+def test_deliver_client_email_reply_sends_via_smtp_and_stores_message_id(app, client, monkeypatch):
+    import app as app_module
+
+    login(client)
+    client.post("/client-management/organizations", data={"name": "Outbound Test Co"})
+    with app.app_context():
+        organization_id = ClientOrganization.query.filter_by(name="Outbound Test Co").one().id
+        admin = User.query.filter_by(username="admin").one()
+        mailbox = ClientMailbox(
+            tenant_id=1, name="Outbound Test Mailbox", imap_host="imap.example.test",
+            smtp_host="smtp.example.test", smtp_port=587, smtp_use_tls=True,
+            from_address="support@ourcompany.test", from_name="Our Company Support",
+            active=True, created_by_id=admin.id,
+        )
+        db.session.add(mailbox)
+        db.session.commit()
+    client.post("/client-management/contacts", data={
+        "organization_id": organization_id, "name": "Outbound Contact", "email": "outbound@example.test",
+    })
+    with app.app_context():
+        contact_id = ClientContact.query.filter_by(email="outbound@example.test").one().id
+    client.post("/client-management/tickets/new", data={
+        "contact_id": contact_id, "subject": "Need help", "description": "x",
+    })
+    with app.app_context():
+        ticket_id = ClientTicket.query.filter_by(subject="Need help").one().id
+
+    sent_messages = []
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout):
+            assert (host, port) == ("smtp.example.test", 587)
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def ehlo(self):
+            return None
+        def starttls(self, context):
+            assert context
+        def login(self, username, password):
+            pass
+        def send_message(self, message):
+            sent_messages.append(message)
+
+    monkeypatch.setattr(app_module.smtplib, "SMTP", FakeSMTP)
+
+    reply_response = client.post(f"/client-management/tickets/{ticket_id}", data={
+        "action": "reply", "visibility": "public", "body": "We're looking into this now.",
+    })
+    assert reply_response.status_code == 302
+    assert len(sent_messages) == 1
+    outbound = sent_messages[0]
+    assert outbound["To"] == "outbound@example.test"
+    assert "Message-ID" in outbound
+    assert outbound["Auto-Submitted"] == "no"
+    with app.app_context():
+        message = ClientTicketMessage.query.filter_by(
+            client_ticket_id=ticket_id, body="We're looking into this now.",
+        ).one()
+        assert message.message_id == outbound["Message-ID"]
 
 
 def test_admin_can_update_live_platform_branding(client, app):
