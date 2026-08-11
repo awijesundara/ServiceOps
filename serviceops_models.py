@@ -138,6 +138,9 @@ __all__ = [
     "UserPreference",
     "ChecklistItem",
     "FileAttachment",
+    "DATA_CLASSIFICATION_REGISTRY",
+    "DataRetentionPolicy",
+    "RecordLegalHold",
 ]
 
 db = SQLAlchemy()
@@ -530,6 +533,77 @@ class AuditRetentionPolicy(db.Model):
         default=tenant_context_id, unique=True, index=True,
     )
     updated_by = db.relationship("User")
+
+
+# Data classification is deliberately a static, Git-backed registry rather
+# than an admin-editable table (matches CLAUDE.md's "configuration should
+# be Git-backed and declarative where practical" direction) -- what counts
+# as PII/confidential for a given record type is a governance decision, not
+# a runtime setting. Retention days and legal-hold state, which genuinely
+# vary per tenant, live in DataRetentionPolicy below instead.
+DATA_CLASSIFICATION_REGISTRY = {
+    "client_contact": {
+        "label": "Client contact", "classification": "PII",
+        "description": "External customer name, email, phone, job title.",
+    },
+    "client_ticket": {
+        "label": "Client ticket", "classification": "Confidential",
+        "description": "Customer support conversations; may contain PII in free-text bodies.",
+    },
+    "user": {
+        "label": "Internal user", "classification": "PII",
+        "description": "Employee/agent identity and contact details.",
+    },
+    "audit": {
+        "label": "Audit log", "classification": "Confidential",
+        "description": "Tamper-evident record of security-relevant actions. Governed separately by AuditRetentionPolicy.",
+    },
+}
+
+
+class DataRetentionPolicy(db.Model):
+    """Per-tenant, per-record-type retention window (B-090). Distinct from
+    AuditRetentionPolicy (audit log has its own long, compliance-driven
+    minimum unrelated to customer-data lifecycle). A row's absence means
+    "no automatic purge configured" for that record_type -- opt-in, so an
+    existing tenant sees zero behavior change until an admin sets one."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    record_type = db.Column(db.String(40), nullable=False)
+    retention_days = db.Column(db.Integer, nullable=False, default=730)
+    # Blanket hold on the whole record_type, distinct from a RecordLegalHold
+    # on one specific record -- e.g. "freeze all client_contact purges
+    # tenant-wide" without having to hold every row individually.
+    legal_hold = db.Column(db.Boolean, nullable=False, default=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    last_run_at = db.Column(db.DateTime(timezone=True))
+    last_run_count = db.Column(db.Integer, nullable=False, default=0)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    updated_by = db.relationship("User")
+    __table_args__ = (db.UniqueConstraint("tenant_id", "record_type", name="uq_data_retention_policy_tenant_record_type"),)
+
+
+class RecordLegalHold(db.Model):
+    """Exempts one specific record from the automatic retention purge
+    regardless of DataRetentionPolicy, for active litigation/investigation/
+    regulatory-request holds that don't justify freezing an entire record
+    type. Mirrors AuditRetentionPolicy/DataRetentionPolicy's legal_hold
+    concept but scoped to a single row via (record_type, record_id)."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    record_type = db.Column(db.String(40), nullable=False)
+    record_id = db.Column(db.Integer, nullable=False)
+    reason = db.Column(db.String(500), nullable=False)
+    applied_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    applied_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    released_at = db.Column(db.DateTime(timezone=True))
+    released_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    applied_by = db.relationship("User", foreign_keys=[applied_by_id])
+    released_by = db.relationship("User", foreign_keys=[released_by_id])
+    __table_args__ = (
+        db.Index("ix_record_legal_hold_lookup", "tenant_id", "record_type", "record_id"),
+    )
 
 
 class ApplicationLog(db.Model):
@@ -1060,6 +1134,12 @@ class ClientContact(db.Model):
     custom_fields = db.Column(db.JSON, nullable=False, default=dict)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    # GDPR Art. 17 (right to erasure), mirroring User.erased_at exactly:
+    # set when this contact's personal data has been scrubbed, either by an
+    # admin's explicit request or by the automatic retention purge (see
+    # DataRetentionPolicy/process_data_retention_purge). Distinct from
+    # `active` -- deactivation alone retains name/email/phone indefinitely.
+    erased_at = db.Column(db.DateTime(timezone=True))
     __table_args__ = (db.UniqueConstraint("tenant_id", "email", name="uq_client_contact_tenant_email"),)
 
 
