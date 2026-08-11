@@ -596,6 +596,45 @@ def test_audit_log_page_paginates_and_defers_integrity_check(client, app):
     assert filtered.status_code == 200
 
 
+def test_audit_verify_degrades_gracefully_when_a_signing_key_is_undecryptable(client, app):
+    """Found via a real recovery-rehearsal run against a long-lived dev
+    database (B-009/B-004): an audit event signed under a key whose
+    secret_encrypted no longer decrypts with the current
+    SETTINGS_ENCRYPTION_KEY (e.g. the environment's encryption key was
+    regenerated at some point, an unrecoverable but real condition) used to
+    crash /admin/audit?verify=1 and the recovery_verify.py CLI entirely
+    with an unhandled cryptography.fernet.InvalidToken. It must instead be
+    reported as an unverified/invalid chain -- correct tamper-evidence
+    semantics -- not silently ignored and not a 500."""
+    from cryptography.fernet import Fernet as _Fernet
+
+    login(client)  # writes an audit event signed under the environment-v1 key
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        # Rotating persists an "environment-v1" AuditIntegrityKey row for
+        # the first time (previously it only existed as an env-var fallback,
+        # never stored) -- needed so there's a real row to corrupt below.
+        rotate_audit_integrity_key(admin.tenant_id, admin.id)
+        db.session.commit()
+        row = AuditIntegrityKey.query.filter_by(
+            tenant_id=admin.tenant_id, key_id="environment-v1"
+        ).one()
+        # Encrypted under a different, unrelated key -- simulates the real
+        # condition found in the rehearsal: the current SETTINGS_ENCRYPTION_KEY
+        # no longer matches whatever key this row was actually encrypted under.
+        row.secret_encrypted = _Fernet(_Fernet.generate_key()).encrypt(b"wrong-key-entirely").decode()
+        db.session.commit()
+        tenant_id = admin.tenant_id
+
+    response = client.get("/admin/audit?verify=1")
+    assert response.status_code == 200
+    assert b"FAILED" in response.data
+    with app.app_context():
+        result = verify_audit_chain(tenant_id)
+        assert result["valid"] is False
+        assert "could not be decrypted" in result["reason"]
+
+
 def test_ritm_detail_page_shows_approvals_tasks_and_form_responses(client, app):
     login(client, "employee", "Employee123!")
     client.post("/catalog/1/order", data={"details": "Standalone RITM page test"}, follow_redirects=True)
