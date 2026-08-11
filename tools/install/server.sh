@@ -125,7 +125,7 @@ umask 077
   printf "SETTINGS_ENCRYPTION_KEY=%s\n" "$SETTINGS_ENCRYPTION_KEY"
   printf "AUDIT_INTEGRITY_KEY=%s\n" "$AUDIT_INTEGRITY_KEY"
   printf "API_TOKEN_PEPPER=%s\n" "$API_TOKEN_PEPPER"
-  printf "SERVICEOPS_IMAGE=serviceops-app:1.62.0\n"
+  printf "SERVICEOPS_IMAGE=serviceops-app:1.62.1\n"
   if [[ "$MODE" == "bundled" ]]; then
     printf "POSTGRES_DB=serviceops\nPOSTGRES_USER=serviceops\nPOSTGRES_PASSWORD=%s\n" "$POSTGRES_PASSWORD"
   else
