@@ -5706,7 +5706,20 @@ def create_app(test_config=None):
 
     @app.get("/health")
     def health():
-        db.session.execute(db.select(func.count(User.id))).scalar()
+        # Found via real failure-injection testing (B-071): a DB outage
+        # previously made this raise an unhandled OperationalError straight
+        # into a generic 500, logged as an ERROR-level "Unhandled exception"
+        # stack trace on every poll -- indistinguishable from a real bug and
+        # noisy for the whole outage, since this is also the container
+        # healthcheck target (see compose.yaml) polled on a short interval.
+        # /ready already degrades gracefully on the same failure; this now
+        # matches that pattern instead of letting Flask's default handler
+        # treat a downstream outage as an application bug.
+        try:
+            db.session.execute(db.select(func.count(User.id))).scalar()
+        except Exception:
+            db.session.rollback()
+            return jsonify(status="unhealthy", version=APP_VERSION), 503
         return jsonify(status="ok", version=APP_VERSION)
 
     @app.get("/live")

@@ -1,0 +1,24 @@
+# Renames the named volumes compose.yaml declares so a load-test rehearsal
+# stack never attaches to the live deployment's actual Postgres/uploads/
+# logs volumes (compose.yaml pins fixed volume names, which Compose
+# refuses to share across a different -p project -- safely, but only by
+# erroring out rather than silently isolating -- this override makes a
+# second project's volumes genuinely separate instead).
+#
+# Usage (B-071 load-test rehearsal): copy .env to .env.loadtest, override
+# APP_PORT and POSTGRES_PASSWORD to something disposable, then:
+#   docker compose -p serviceops-loadtest --env-file .env.loadtest \
+#     -f compose.yaml -f compose.loadtest-override.yaml up -d
+#   docker exec serviceops-loadtest-app-1 python3 \
+#     tools/seed_load_test_dataset.py --confirm-non-production --tickets 5000
+#   python3 tools/authenticated_load_test.py --url http://localhost:<APP_PORT> ...
+# Tear down completely when done, including volumes:
+#   docker compose -p serviceops-loadtest --env-file .env.loadtest \
+#     -f compose.yaml -f compose.loadtest-override.yaml down -v
+volumes:
+  serviceops_data:
+    name: serviceops_loadtest_postgres_data
+  serviceops_uploads:
+    name: serviceops_loadtest_uploads
+  serviceops_logs:
+    name: serviceops_loadtest_logs
