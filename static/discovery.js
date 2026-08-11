@@ -89,12 +89,15 @@
     });
   });
 
-  document.querySelectorAll("[data-confirm]").forEach((element) => {
-    element.addEventListener("submit", (event) => {
-      if (!window.confirm(element.dataset.confirm)) event.preventDefault();
-    });
-    if (element.matches("button")) element.addEventListener("click", (event) => {
-      if (!window.confirm(element.dataset.confirm)) event.preventDefault();
+  // Plain <form data-confirm> submits are handled globally by platform.js's
+  // delegated listener. Only the button-level case remains here: a button
+  // with both `formaction` (targeting a different form than the one it
+  // sits in) and its own `data-confirm` -- platform.js's submit listener
+  // only ever sees the target <form>, never the button that triggered it,
+  // so it can't catch this variant.
+  document.querySelectorAll("button[data-confirm][formaction]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      if (!window.confirm(button.dataset.confirm)) event.preventDefault();
     });
   });
 })();

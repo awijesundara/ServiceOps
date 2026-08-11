@@ -1,6 +1,36 @@
 {% extends "base.html" %}{% block title %}Customer tickets · {{ instance_name }}{% endblock %}
 {% block content %}<section class="client-shell">{% include '_client_views.html' %}<div class="client-main">
-  <header class="client-head"><div><p class="eyebrow">CLIENT MANAGEMENT</p><h1>{{ {'mine':'Your unsolved tickets','unassigned':'Unassigned tickets','unsolved':'All unsolved tickets','recent':'Recently updated tickets','pending':'Pending tickets','solved':'Recently solved tickets'}[view] }}</h1><p>{{ tickets|length }} ticket{{ '' if tickets|length == 1 else 's' }} shown</p></div><a class="primary button" href="{{ url_for('client_ticket_new') }}">+ New ticket</a></header>
-  <div class="client-toolbar"><form><input type="hidden" name="view" value="{{ view }}"><input type="search" name="q" value="{{ q }}" placeholder="Search ticket, customer, email, or organization" aria-label="Search customer tickets"><button>Search</button></form>{% if q %}<a class="button" href="{{ url_for('client_tickets', view=view) }}">Clear</a>{% endif %}</div>
+  <header class="client-head"><div><p class="eyebrow">CLIENT MANAGEMENT</p><h1>{{ active_view.name if active_view else {'mine':'Your unsolved tickets','unassigned':'Unassigned tickets','unsolved':'All unsolved tickets','recent':'Recently updated tickets','pending':'Pending tickets','solved':'Recently solved tickets'}[view] }}</h1><p>{{ tickets|length }} ticket{{ '' if tickets|length == 1 else 's' }} shown</p></div><a class="primary button" href="{{ url_for('client_ticket_new') }}">+ New ticket</a></header>
+  <div class="client-toolbar">
+    <form class="list-search">
+      {% if view %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
+      {% if active_view %}<input type="hidden" name="view_id" value="{{ active_view.id }}">{% endif %}
+      <input type="hidden" name="filter" value="{{ raw_filter }}">
+      <input type="search" name="q" value="{{ q }}" placeholder="Search ticket, customer, email, or organization" aria-label="Search customer tickets">
+      <button>Search</button>
+      <div class="list-filter" data-filter-fields='{{ filter_fields|tojson }}' data-filter-value='{{ raw_filter or "[]" }}'>
+        <button type="button" class="list-filter-toggle">▽ Filter</button>
+        <div class="list-filter-builder" hidden>
+          <div class="list-filter-rows"></div>
+          <div class="list-filter-actions">
+            <button type="button" class="list-filter-add">+ Add condition</button>
+            <button type="submit" class="primary">Run</button>
+            <button type="button" class="list-filter-clear">Clear filter</button>
+          </div>
+        </div>
+      </div>
+    </form>
+    {% if q or raw_filter and raw_filter != '[]' %}<a class="button" href="{{ url_for('client_tickets', view=view) }}">Clear</a>{% endif %}
+    <details class="save-view"><summary class="button">Save as view</summary>
+      <form method="post" action="{{ url_for('client_view_create') }}" class="stack">
+        <input type="hidden" name="conditions_json" value="{{ raw_filter or '[]' }}">
+        <input type="hidden" name="sort_field" value="{{ sort_field }}">
+        <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
+        <label>Name<input name="name" maxlength="120" required placeholder="e.g. High priority, Enterprise clients"></label>
+        <label class="check"><input type="checkbox" name="shared"> Share with every SysOps member</label>
+        <button class="primary">Save view</button>
+      </form>
+    </details>
+  </div>
   <table class="client-list"><thead><tr><th>Status</th><th>Subject</th><th>Requester</th><th>Organization</th><th>Priority</th><th>Assignee</th><th>Updated</th></tr></thead><tbody>{% for t in tickets %}<tr><td><span class="client-status {{ t.status|lower|replace(' ','-') }}">{{ t.status }}</span></td><td><a class="client-subject" href="{{ url_for('client_ticket_detail', ticket_id=t.id) }}">{{ t.subject }}<small>{{ t.number }} · {{ t.ticket_type }} · {{ t.channel }}</small></a></td><td>{{ t.contact.name }}<br><small>{{ t.contact.email }}</small></td><td>{{ t.organization.name }}</td><td><span class="client-priority {{ t.priority|lower }}">{{ t.priority }}</span></td><td>{{ t.assignee.name if t.assignee else 'Unassigned' }}</td><td>{{ t.updated_at|usertime('%b %d, %H:%M') }}</td></tr>{% else %}<tr><td colspan="7" class="client-empty">No tickets match this view.</td></tr>{% endfor %}</tbody></table>
 </div></section>{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% block title %}Custom fields · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('client_management_home') }}">CLIENT MANAGEMENT</a> / CUSTOM FIELDS</p><h1>Custom fields</h1><p>Field existence is tenant-wide; an organization can override whether a field is required or visible for it from that organization's own page.</p></div></header>
+{% for entity_type in entity_types %}
+<section class="panel" id="fields-{{ entity_type }}">
+  <div class="panel-head"><div><h2>{{ {'client_ticket': 'Ticket fields', 'organization': 'Organization fields', 'contact': 'Contact fields'}[entity_type] }}</h2></div></div>
+  <table><thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Required by default</th><th>Status</th><th></th></tr></thead><tbody>
+    {% for field in fields_by_entity[entity_type] %}
+    <tr><td>{{ field.label }}</td><td><code>{{ field.key }}</code></td><td>{{ field.field_type }}</td><td>{{ 'Yes' if field.required else 'No' }}</td><td><span class="badge">{{ 'Active' if field.active else 'Inactive' }}</span></td>
+      <td><form method="post"><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="field_id" value="{{ field.id }}"><button class="link-button">{{ 'Deactivate' if field.active else 'Activate' }}</button></form></td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="empty">No custom fields defined yet.</td></tr>{% endfor %}
+  </tbody></table>
+  <details><summary>Add a field</summary>
+    <form method="post" class="stack">
+      <input type="hidden" name="action" value="create">
+      <input type="hidden" name="entity_type" value="{{ entity_type }}">
+      <label>Label<input name="label" maxlength="120" required placeholder="e.g. Account tier"></label>
+      <label>Key<input name="key" maxlength="60" required placeholder="e.g. account_tier" pattern="[a-z][a-z0-9_]{0,58}[a-z0-9]"><small class="muted">Lowercase letters, numbers, underscores. Used internally and cannot be changed later.</small></label>
+      <label>Type<select name="field_type">{% for type in field_types %}<option value="{{ type }}">{{ type|capitalize }}</option>{% endfor %}</select></label>
+      <label>Options (one per line, only used for Select)<textarea name="options" rows="3" placeholder="Bronze&#10;Silver&#10;Gold"></textarea></label>
+      <label class="check"><input type="checkbox" name="required"> Required by default</label>
+      <button class="primary">Add field</button>
+    </form>
+  </details>
+</section>
+{% endfor %}
+{% endblock %}

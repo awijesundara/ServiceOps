@@ -424,16 +424,17 @@
       <label>Name<input name="name" maxlength="160" required></label>
       <label>Agreement type<span class="info-tip" tabindex="0" data-tip="SLA: customer-facing commitment. OLA: internal agreement between two support teams. UC: underpinning contract with an external vendor.">i</span><select name="agreement_type">{% for value in ['SLA','OLA','UC'] %}<option>{{ value }}</option>{% endfor %}</select></label>
       <label>Counterparty (OLA/UC only)<input name="counterparty" placeholder="Team name or vendor"></label>
-      <label>Target<select name="target_type"><option value="ticket">Ticket</option><option value="ritm">Requested item</option></select></label>
-      <label>Priority<select name="priority"><option value="">All</option>{% for value in ['P1','P2','P3','P4'] %}<option>{{ value }}</option>{% endfor %}</select></label>
+      <label>Target<select name="target_type" id="sla-target-type"><option value="ticket">Ticket</option><option value="ritm">Requested item</option><option value="client_ticket">Customer ticket (Client Management)</option></select></label>
+      <label>Priority<select name="priority"><option value="">All</option><optgroup label="Incidents/changes">{% for value in ['P1','P2','P3','P4'] %}<option>{{ value }}</option>{% endfor %}</optgroup><optgroup label="Customer tickets">{% for value in ['Low','Normal','High','Urgent'] %}<option>{{ value }}</option>{% endfor %}</optgroup></select></label>
+      <label id="sla-client-org-field" class="wide" hidden>Organization override<span class="info-tip" tabindex="0" data-tip="Only used for customer tickets. Leave unselected for the tenant-wide default; select an organization to override it for that organization's tickets specifically, for this same priority.">i</span><select name="client_organization_id"><option value="">Tenant-wide default</option>{% for org in client_organizations %}<option value="{{ org.id }}">{{ org.name }}</option>{% endfor %}</select></label>
       <label>Duration (business minutes)<input type="number" name="duration_minutes" min="1" max="525600" required></label>
       <label>Calendar<select name="schedule_id"><option value="">24x7 wall clock</option>{% for schedule in business_schedules %}<option value="{{ schedule.id }}">{{ schedule.name }}</option>{% endfor %}</select></label>
-      <label>Pause states<input name="pause_states" value="Pending,On Hold"></label>
+      <label>Pause states<input name="pause_states" value="Pending,On Hold"><small class="muted">Comma-separated, must exactly match this target's own status values (e.g. customer tickets use "Pending,On-hold", not "On Hold").</small></label>
       <div class="wide actions"><button class="primary">Create agreement</button></div>
     </form>
   </details>
   <table><thead><tr><th>Name</th><th>Type</th><th>Target</th><th>Priority</th><th>Duration</th><th>Calendar</th><th>Pause states</th></tr></thead>
-    <tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td><span class="badge">{{ sla.agreement_type }}</span>{% if sla.counterparty %} {{ sla.counterparty }}{% endif %}</td><td>{{ sla.target_type }}</td><td>{{ sla.priority or "All" }}</td><td>{{ sla.duration_minutes }} minutes</td><td>{{ sla.schedule.name if sla.schedule else "24x7" }}</td><td>{{ sla.pause_states }}</td></tr>{% endfor %}</tbody>
+    <tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td><span class="badge">{{ sla.agreement_type }}</span>{% if sla.counterparty %} {{ sla.counterparty }}{% endif %}</td><td>{{ sla.target_type }}{% if sla.client_organization %} · {{ sla.client_organization.name }}{% endif %}</td><td>{{ sla.priority or "All" }}</td><td>{{ sla.duration_minutes }} minutes</td><td>{{ sla.schedule.name if sla.schedule else "24x7" }}</td><td>{{ sla.pause_states }}</td></tr>{% endfor %}</tbody>
   </table>
 </section>
   </div>

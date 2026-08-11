@@ -65,7 +65,7 @@
   {% elif user.active %}
   <p class="muted">Deactivate this account (uncheck "Active" above and save) before its personal data can be erased.</p>
   {% else %}
-  <form method="post" action="{{ url_for('user_erase', user_id=user.id) }}" onsubmit="return confirm('Permanently erase {{ user.name }}\'s name, email, and other personal details? This cannot be undone.');">
+  <form method="post" action="{{ url_for('user_erase', user_id=user.id) }}" data-confirm="Permanently erase {{ user.name }}'s name, email, and other personal details? This cannot be undone.">
     <p class="muted">Permanently replaces this account's name, email, phone, title, and department with an anonymous placeholder. Cannot be undone.</p>
     <button class="button">Erase personal data</button>
   </form>

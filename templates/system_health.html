@@ -112,7 +112,7 @@
     {% endfor %}
   </tbody></table>
   </div>
-  <form method="post" action="{{ url_for('system_health_clear_errors') }}" class="actions" onsubmit="return confirm('Clear all recorded error log entries visible to this tenant? This cannot be undone.');">
+  <form method="post" action="{{ url_for('system_health_clear_errors') }}" class="actions" data-confirm="Clear all recorded error log entries visible to this tenant? This cannot be undone.">
     <button class="button">Clear error log</button>
   </form>
 </section>

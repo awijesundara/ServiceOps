@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% block title %}Macros · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('client_management_home') }}">CLIENT MANAGEMENT</a> / MACROS</p><h1>Macros</h1><p>One-click bulk actions and canned replies agents can apply to a customer ticket.</p></div></header>
+<section class="panel">
+  <table><thead><tr><th>Name</th><th>Actions</th><th>Reply</th><th>Status</th><th></th></tr></thead><tbody>
+    {% for row in macro_rows %}
+    <tr>
+      <td>{{ row.macro.name }}</td>
+      <td>{% for key, value in row.actions.items() %}<span class="badge">{{ key }}: {{ value }}</span> {% else %}—{% endfor %}</td>
+      <td>{{ 'Yes (' + row.macro.reply_visibility + ')' if row.macro.reply_body else 'No' }}</td>
+      <td><span class="badge">{{ 'Active' if row.macro.active else 'Inactive' }}</span></td>
+      <td><form method="post"><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="macro_id" value="{{ row.macro.id }}"><button class="link-button">{{ 'Deactivate' if row.macro.active else 'Activate' }}</button></form></td>
+    </tr>
+    {% else %}<tr><td colspan="5" class="empty">No macros defined yet.</td></tr>{% endfor %}
+  </tbody></table>
+  <details><summary>Add a macro</summary>
+    <form method="post" class="stack">
+      <input type="hidden" name="action" value="create">
+      <label>Name<input name="name" maxlength="120" required placeholder="e.g. Close as resolved"></label>
+      <label>Set status<select name="macro_status"><option value="">Don't change</option>{% for value in statuses %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
+      <label>Set priority<select name="macro_priority"><option value="">Don't change</option>{% for value in priorities %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
+      <label>Set type<select name="macro_ticket_type"><option value="">Don't change</option>{% for value in ticket_types %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
+      <label>Set tags<input name="macro_tags" maxlength="500" placeholder="Leave blank to leave tags unchanged"></label>
+      <label>Canned reply<textarea name="reply_body" rows="4" placeholder="Optional -- leave blank for a silent field-only macro"></textarea></label>
+      <label>Reply visibility<select name="reply_visibility"><option value="public">Public reply</option><option value="internal">Internal note</option></select></label>
+      <button class="primary">Add macro</button>
+    </form>
+  </details>
+</section>
+{% endblock %}

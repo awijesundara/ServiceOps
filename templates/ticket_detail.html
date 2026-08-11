@@ -15,7 +15,7 @@
       {% if can_manage_ticket %}<button class="button" type="submit" form="task-record-form">Update</button>{% endif %}
       {% if can_reopen %}<button class="button" type="submit" form="ticket-reopen-form">Reopen</button>{% endif %}
       {% if can_manage_ticket and ticket.kind == 'change' and not ticket.deleted_at and ticket.state in ('New', 'Awaiting Approval') %}
-      <button class="button" type="submit" form="change-delete-form" onclick="return confirm('Delete {{ ticket.number }}? It will be marked Cancelled and kept for the audit trail — this cannot be undone from here.');">Delete</button>
+      <button class="button" type="submit" form="change-delete-form">Delete</button>
       {% endif %}
     </div>
   </header>
@@ -52,7 +52,7 @@
     {% if can_manage_ticket %}<footer class="record-footer-actions"><button class="primary">Save changes</button></footer>{% endif %}
   </form>
   {% if can_manage_ticket and ticket.kind == 'change' and not ticket.deleted_at and ticket.state in ('New', 'Awaiting Approval') %}
-  <form method="post" id="change-delete-form" action="{{ url_for('change_delete', ticket_id=ticket.id) }}" hidden></form>
+  <form method="post" id="change-delete-form" action="{{ url_for('change_delete', ticket_id=ticket.id) }}" data-confirm="Delete {{ ticket.number }}? It will be marked Cancelled and kept for the audit trail — this cannot be undone from here." hidden></form>
   {% endif %}
   {% if ticket.change_governance %}
   {% set related_dup_types = ['problem_change','underlying_problem','resolution_change','caused_by_change'] %}

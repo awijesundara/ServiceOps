@@ -15,7 +15,8 @@ from sqlalchemy.exc import DBAPIError
 from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, ApprovalChain,
                  ApprovalGate, ApprovalVote, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy,
                  BusinessSchedule, CatalogRequest, CatalogTask, ChangeGovernance, ChangeOwnership, ChangeRevision,
-                 ClientContact, ClientOrganization, ClientOrganizationAccess, ClientTicket, ClientTicketMessage,
+                 ClientContact, ClientOrganization, ClientOrganizationAccess, ClientCustomFieldDefinition,
+                 ClientView, ClientMacro, ClientTrigger, ClientTicket, ClientTicketMessage,
                  Comment,
                  ChecklistItem, CIRelationship, CiClassPermission, ConfigurationItem, DiscoveryCandidate, DiscoveryTarget,
                  EnterpriseRecord, CatalogItem,
@@ -34,6 +35,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  audit, change_approval_stages, create_api_token, create_app, create_notification, db,
                  deploy_workflow_package, find_and_merge_duplicate_groups, ldap_authenticate,
                  mapped_roles, merge_support_group_into, normalize_environment, now, process_discovery_schedule,
+                 process_client_escalation_policies,
                  process_workflow_jobs,
                  recompute_base_role,
                  process_workflow_schedules, queue_workflow_event,
@@ -214,6 +216,31 @@ def test_csrf_protects_login_and_authenticated_mutations():
     )
     assert accepted.status_code == 200
     os.unlink(path)
+
+
+def test_no_template_uses_an_inline_event_handler_blocked_by_csp():
+    """Regression test for a real bug found during live verification: a
+    confirmation dialog on a delete/destructive form used an inline
+    onsubmit="return confirm(...)" attribute, which this app's own CSP
+    (script-src 'self', no 'unsafe-inline') silently blocks -- the browser
+    just submits the form immediately with no prompt, exactly the same
+    class of bug the print-button fix (see platform.js's data-print-page
+    listener) already fixed once for a different attribute. Confirmation
+    prompts must use the data-confirm attribute (handled by a delegated
+    listener in platform.js, or the button+formaction variant in
+    discovery.js) instead. This scans every shipped template so a future
+    inline handler is caught here rather than only by a live browser check."""
+    templates_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates")
+    offenders = []
+    inline_handler = re.compile(r'\bon[a-z]+\s*=\s*["\']', re.IGNORECASE)
+    for name in os.listdir(templates_dir):
+        if not name.endswith(".html"):
+            continue
+        with open(os.path.join(templates_dir, name), encoding="utf-8") as handle:
+            content = handle.read()
+        if inline_handler.search(content):
+            offenders.append(name)
+    assert offenders == []
 
 
 def test_csrf_token_survives_a_validation_error_resubmit_on_the_same_page():
@@ -3770,6 +3797,446 @@ def test_client_organization_visibility_toggle_and_grants_require_admin(app, cli
     }).status_code == 403
     with app.app_context():
         assert db.session.get(ClientOrganization, organization_id).restricted_visibility is False
+
+
+def test_client_custom_field_definition_required_on_ticket_and_org_override(app, client):
+    """Regression coverage for Client Management phase 2: a tenant-wide
+    required custom field blocks ticket creation until filled in, its value
+    round-trips, and a per-organization override can make an
+    otherwise-optional field required (or hide a field) for that org's
+    tickets specifically without affecting any other organization."""
+    login(client)
+    assert client.post("/client-management/custom-fields", data={
+        "action": "create", "entity_type": "client_ticket", "key": "account_tier",
+        "label": "Account tier", "field_type": "select", "options": "Bronze\nSilver\nGold",
+        "required": "on",
+    }).status_code == 302
+    assert client.post("/client-management/custom-fields", data={
+        "action": "create", "entity_type": "organization", "key": "renewal_date",
+        "label": "Renewal date", "field_type": "date",
+    }).status_code == 302
+
+    org_resp = client.post("/client-management/organizations", data={"name": "Custom Field Client"})
+    assert org_resp.status_code == 302
+    with app.app_context():
+        organization_id = ClientOrganization.query.filter_by(name="Custom Field Client").one().id
+    contact_resp = client.post("/client-management/contacts", data={
+        "organization_id": organization_id, "name": "Field Test Contact",
+        "email": "fieldtest@example.invalid",
+    })
+    assert contact_resp.status_code == 302
+    with app.app_context():
+        contact_id = ClientContact.query.filter_by(email="fieldtest@example.invalid").one().id
+
+    missing_required = client.post("/client-management/tickets/new", data={
+        "contact_id": contact_id, "subject": "No tier set", "description": "Should be rejected.",
+    }, follow_redirects=True)
+    assert missing_required.status_code == 200
+    assert b"Account tier is required" in missing_required.data
+    with app.app_context():
+        assert ClientTicket.query.filter_by(subject="No tier set").first() is None
+
+    created = client.post("/client-management/tickets/new", data={
+        "contact_id": contact_id, "subject": "Tier set", "description": "Should succeed.",
+        "custom__account_tier": "Gold",
+    })
+    assert created.status_code == 302
+    with app.app_context():
+        ticket = ClientTicket.query.filter_by(subject="Tier set").one()
+        assert ticket.custom_fields == {"account_tier": "Gold"}
+        organization_id = ticket.organization_id
+
+    org_field_response = client.post(f"/client-management/organizations/{organization_id}", data={
+        "action": "update_custom_fields", "custom__renewal_date": "2027-01-15",
+    })
+    assert org_field_response.status_code == 302
+    with app.app_context():
+        assert db.session.get(ClientOrganization, organization_id).custom_fields == {"renewal_date": "2027-01-15"}
+
+    override_response = client.post(f"/client-management/organizations/{organization_id}", data={
+        "action": "update_field_overrides",
+    })
+    assert override_response.status_code == 302
+    with app.app_context():
+        organization = db.session.get(ClientOrganization, organization_id)
+        assert organization.settings["custom_field_overrides"]["account_tier"] == {
+            "visible": False, "required": False,
+        }
+
+    hidden_field_form = client.get("/client-management/tickets/new")
+    assert hidden_field_form.status_code == 200
+
+    other_org_resp = client.post("/client-management/organizations", data={"name": "Unaffected Client"})
+    assert other_org_resp.status_code == 302
+    with app.app_context():
+        other_organization = ClientOrganization.query.filter_by(name="Unaffected Client").one()
+        assert other_organization.settings == {}
+
+
+def test_client_saved_view_filters_tickets_and_sharing_and_delete_permissions(app, client):
+    """Regression coverage for Client Management phase 3: a saved view's
+    stored filter conditions actually narrow the ticket list the same way
+    the ad-hoc filter bar does (same apply_filter_conditions() engine,
+    confirming the reuse rather than a parallel bespoke implementation),
+    an unshared view is private to its creator, a shared view is visible
+    tenant-wide, and only the view's own creator or an admin can delete it."""
+    with app.app_context():
+        sysops = SupportGroup.query.filter_by(name="SysOps", tenant_id=1).one()
+        manager = User.query.filter_by(username="database.manager").one()
+        db.session.add(GroupMember(group_id=sysops.id, user_id=manager.id, role="member", tenant_id=1))
+        db.session.commit()
+
+    login(client)
+    client.post("/client-management/organizations", data={"name": "View Test Client"})
+    with app.app_context():
+        organization_id = ClientOrganization.query.filter_by(name="View Test Client").one().id
+    client.post("/client-management/contacts", data={
+        "organization_id": organization_id, "name": "View Test Contact", "email": "viewtest@example.invalid",
+    })
+    with app.app_context():
+        contact_id = ClientContact.query.filter_by(email="viewtest@example.invalid").one().id
+    for subject, priority in [("Urgent one", "Urgent"), ("Normal one", "Normal")]:
+        assert client.post("/client-management/tickets/new", data={
+            "contact_id": contact_id, "subject": subject, "description": "x", "priority": priority,
+        }).status_code == 302
+
+    import json as _json
+    conditions = _json.dumps([{"field": "priority", "op": "eq", "value": "Urgent"}])
+    saved = client.post("/client-management/views", data={
+        "name": "Urgent only", "conditions_json": conditions, "sort_field": "updated", "sort_dir": "desc",
+    })
+    assert saved.status_code == 302
+    with app.app_context():
+        view = ClientView.query.filter_by(name="Urgent only").one()
+        assert view.shared is False
+        view_id = view.id
+
+    filtered = client.get(f"/client-management/tickets?view_id={view_id}")
+    assert filtered.status_code == 200
+    assert b"Urgent one" in filtered.data
+    assert b"Normal one" not in filtered.data
+
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+    unshared_check = client.get(f"/client-management/tickets?view_id={view_id}")
+    assert b"Urgent only" not in unshared_check.data
+    assert client.post(f"/client-management/views/{view_id}/delete").status_code == 403
+    client.post("/logout")
+
+    login(client)
+    shared = client.post("/client-management/views", data={
+        "name": "Shared urgent view", "conditions_json": conditions, "shared": "on",
+    })
+    assert shared.status_code == 302
+    with app.app_context():
+        shared_view_id = ClientView.query.filter_by(name="Shared urgent view").one().id
+    client.post("/logout")
+
+    login(client, "database.manager", "Manager123!")
+    shared_visible = client.get("/client-management/tickets")
+    assert b"Shared urgent view" in shared_visible.data
+    # Manager is neither the creator nor an admin, so still can't delete it.
+    assert client.post(f"/client-management/views/{shared_view_id}/delete").status_code == 403
+    client.post("/logout")
+
+    login(client)
+    assert client.post(f"/client-management/views/{view_id}/delete").status_code == 302
+    with app.app_context():
+        assert db.session.get(ClientView, view_id) is None
+        assert db.session.get(ClientView, shared_view_id) is not None
+
+
+def test_client_macro_applies_field_changes_and_canned_reply(app, client):
+    """Regression coverage for Client Management phase 4: applying a macro
+    changes exactly the fields it specifies, leaves others untouched, posts
+    its canned reply as a real message, and requires admin to create."""
+    with app.app_context():
+        sysops = SupportGroup.query.filter_by(name="SysOps", tenant_id=1).one()
+        manager = User.query.filter_by(username="database.manager").one()
+        db.session.add(GroupMember(group_id=sysops.id, user_id=manager.id, role="member", tenant_id=1))
+        db.session.commit()
+
+    login(client, "database.manager", "Manager123!")
+    assert client.post("/client-management/macros", data={
+        "action": "create", "name": "Escalate and reply",
+    }).status_code == 403
+    client.post("/logout")
+
+    login(client)
+    assert client.post("/client-management/macros", data={
+        "action": "create", "name": "Escalate and reply", "macro_priority": "Urgent",
+        "reply_body": "We've escalated this to our senior team.", "reply_visibility": "public",
+    }).status_code == 302
+    with app.app_context():
+        macro = ClientMacro.query.filter_by(name="Escalate and reply").one()
+        macro_id = macro.id
+        assert json.loads(macro.actions_json) == {"priority": "Urgent"}
+
+    client.post("/client-management/organizations", data={"name": "Macro Test Client"})
+    with app.app_context():
+        organization_id = ClientOrganization.query.filter_by(name="Macro Test Client").one().id
+    client.post("/client-management/contacts", data={
+        "organization_id": organization_id, "name": "Macro Test Contact", "email": "macrotest@example.invalid",
+    })
+    with app.app_context():
+        contact_id = ClientContact.query.filter_by(email="macrotest@example.invalid").one().id
+    client.post("/client-management/tickets/new", data={
+        "contact_id": contact_id, "subject": "Macro target ticket", "description": "x",
+        "priority": "Normal", "ticket_type": "Question",
+    })
+    with app.app_context():
+        ticket = ClientTicket.query.filter_by(subject="Macro target ticket").one()
+        ticket_id = ticket.id
+        assert ticket.priority == "Normal"
+
+    applied = client.post(f"/client-management/tickets/{ticket_id}", data={
+        "action": "apply_macro", "macro_id": macro_id,
+    })
+    assert applied.status_code == 302
+    with app.app_context():
+        ticket = db.session.get(ClientTicket, ticket_id)
+        assert ticket.priority == "Urgent"
+        assert ticket.ticket_type == "Question"  # untouched -- macro didn't specify it
+        reply = ClientTicketMessage.query.filter_by(
+            client_ticket_id=ticket_id, body="We've escalated this to our senior team.",
+        ).one()
+        assert reply.visibility == "public"
+
+    assert client.post("/client-management/macros", data={
+        "action": "toggle_active", "macro_id": macro_id,
+    }).status_code == 302
+    with app.app_context():
+        assert db.session.get(ClientMacro, macro_id).active is False
+    disabled_apply = client.post(f"/client-management/tickets/{ticket_id}", data={
+        "action": "apply_macro", "macro_id": macro_id,
+    })
+    assert disabled_apply.status_code == 404
+
+
+def test_client_ticket_sla_prefers_organization_override_over_tenant_default(app, client):
+    """Regression coverage for Client Management phase 5: a client_ticket
+    SLA definition scoped to a specific organization overrides the
+    tenant-wide default for the same priority on that organization's
+    tickets, while a different organization still gets the tenant-wide
+    default -- confirming attach_slas()'s preference logic actually works,
+    not just that both kinds of row can be created. Also confirms sync_slas
+    marks the SLA Completed when a customer ticket reaches "Solved" (a
+    client-ticket-specific terminal state ITIL tickets don't use)."""
+    login(client)
+    client.post("/client-management/organizations", data={"name": "VIP SLA Client"})
+    client.post("/client-management/organizations", data={"name": "Standard SLA Client"})
+    with app.app_context():
+        vip_org = ClientOrganization.query.filter_by(name="VIP SLA Client").one()
+        standard_org = ClientOrganization.query.filter_by(name="Standard SLA Client").one()
+        vip_org_id, standard_org_id = vip_org.id, standard_org.id
+
+    assert client.post("/itil/administration", data={
+        "action": "create_sla_definition", "name": "Customer Urgent -- tenant default",
+        "target_type": "client_ticket", "priority": "Urgent", "duration_minutes": "240",
+        "pause_states": "Pending,On-hold",
+    }).status_code == 302
+    assert client.post("/itil/administration", data={
+        "action": "create_sla_definition", "name": "Customer Urgent -- VIP override",
+        "target_type": "client_ticket", "priority": "Urgent", "duration_minutes": "30",
+        "pause_states": "Pending,On-hold", "client_organization_id": str(vip_org_id),
+    }).status_code == 302
+    with app.app_context():
+        default_def = SLADefinition.query.filter_by(name="Customer Urgent -- tenant default").one()
+        override_def = SLADefinition.query.filter_by(name="Customer Urgent -- VIP override").one()
+        assert override_def.client_organization_id == vip_org_id
+
+    for org_id, org_name in [(vip_org_id, "VIP"), (standard_org_id, "Standard")]:
+        client.post("/client-management/contacts", data={
+            "organization_id": org_id, "name": f"{org_name} Contact",
+            "email": f"{org_name.lower()}@example.invalid",
+        })
+    with app.app_context():
+        vip_contact_id = ClientContact.query.filter_by(email="vip@example.invalid").one().id
+        standard_contact_id = ClientContact.query.filter_by(email="standard@example.invalid").one().id
+
+    client.post("/client-management/tickets/new", data={
+        "contact_id": vip_contact_id, "subject": "VIP urgent issue", "description": "x", "priority": "Urgent",
+    })
+    client.post("/client-management/tickets/new", data={
+        "contact_id": standard_contact_id, "subject": "Standard urgent issue", "description": "x", "priority": "Urgent",
+    })
+    with app.app_context():
+        vip_ticket = ClientTicket.query.filter_by(subject="VIP urgent issue").one()
+        standard_ticket = ClientTicket.query.filter_by(subject="Standard urgent issue").one()
+        vip_sla = TaskSLA.query.filter_by(target_type="client_ticket", target_id=vip_ticket.id).one()
+        standard_sla = TaskSLA.query.filter_by(target_type="client_ticket", target_id=standard_ticket.id).one()
+        assert vip_sla.definition_id == override_def.id
+        assert standard_sla.definition_id == default_def.id
+        vip_ticket_id = vip_ticket.id
+
+    solved = client.post(f"/client-management/tickets/{vip_ticket_id}", data={
+        "action": "update", "status": "Solved", "priority": "Urgent", "ticket_type": "Question",
+        "assignee_id": "", "tags": "",
+    })
+    assert solved.status_code == 302
+    with app.app_context():
+        assert db.session.get(TaskSLA, vip_sla.id).stage == "Completed"
+
+
+def test_client_trigger_fires_matching_condition_and_skips_non_matching(app, client):
+    """Regression coverage for Client Management phase 6: a trigger whose
+    condition matches the just-created ticket applies its action (and logs
+    an internal "Automation triggered" note); a ticket that doesn't match
+    the condition is left untouched by that same trigger. Also confirms
+    trigger management requires admin."""
+    with app.app_context():
+        sysops = SupportGroup.query.filter_by(name="SysOps", tenant_id=1).one()
+        manager = User.query.filter_by(username="database.manager").one()
+        db.session.add(GroupMember(group_id=sysops.id, user_id=manager.id, role="member", tenant_id=1))
+        db.session.commit()
+
+    login(client, "database.manager", "Manager123!")
+    assert client.post("/client-management/triggers", data={
+        "action": "create", "name": "Auto-escalate urgent",
+    }).status_code == 403
+    client.post("/logout")
+
+    login(client)
+    assert client.post("/client-management/triggers", data={
+        "action": "create", "name": "Auto-escalate urgent", "event": "created",
+        "condition_field": "priority", "condition_op": "eq", "condition_value": "Urgent",
+        "action_type": "add_tag", "action_value": "escalated",
+    }).status_code == 302
+    with app.app_context():
+        trigger = ClientTrigger.query.filter_by(name="Auto-escalate urgent").one()
+        assert trigger.active is True
+
+    client.post("/client-management/organizations", data={"name": "Trigger Test Client"})
+    with app.app_context():
+        organization_id = ClientOrganization.query.filter_by(name="Trigger Test Client").one().id
+    client.post("/client-management/contacts", data={
+        "organization_id": organization_id, "name": "Trigger Test Contact", "email": "triggertest@example.invalid",
+    })
+    with app.app_context():
+        contact_id = ClientContact.query.filter_by(email="triggertest@example.invalid").one().id
+
+    client.post("/client-management/tickets/new", data={
+        "contact_id": contact_id, "subject": "Urgent trigger match", "description": "x", "priority": "Urgent",
+    })
+    client.post("/client-management/tickets/new", data={
+        "contact_id": contact_id, "subject": "Normal no trigger", "description": "x", "priority": "Normal",
+    })
+    with app.app_context():
+        matched = ClientTicket.query.filter_by(subject="Urgent trigger match").one()
+        unmatched = ClientTicket.query.filter_by(subject="Normal no trigger").one()
+        assert "escalated" in matched.tags
+        assert "escalated" not in unmatched.tags
+        assert ClientTicketMessage.query.filter_by(
+            client_ticket_id=matched.id, event_type="automation",
+        ).first() is not None
+        assert ClientTicketMessage.query.filter_by(
+            client_ticket_id=unmatched.id, event_type="automation",
+        ).first() is None
+
+    assert client.post("/client-management/triggers", data={
+        "action": "toggle_active", "trigger_id": trigger.id,
+    }).status_code == 302
+    with app.app_context():
+        assert db.session.get(ClientTrigger, trigger.id).active is False
+    client.post("/client-management/tickets/new", data={
+        "contact_id": contact_id, "subject": "Urgent but trigger disabled", "description": "x", "priority": "Urgent",
+    })
+    with app.app_context():
+        disabled_case = ClientTicket.query.filter_by(subject="Urgent but trigger disabled").one()
+        assert "escalated" not in disabled_case.tags
+
+
+def test_client_organization_branding_and_escalation_policy(app, client):
+    """Regression coverage for Client Management phase 7: branding saves to
+    the organization's settings JSON and renders on its tickets; an
+    escalation policy reassigns an old open ticket to the configured team,
+    posts an internal note, notifies the manager, and does so only once
+    (idempotent via the auto-escalated tag) -- a second run doesn't
+    re-escalate or re-notify. A policy-free organization is left untouched."""
+    login(client)
+    client.post("/client-management/organizations", data={"name": "Escalation Test Client"})
+    client.post("/client-management/organizations", data={"name": "No Policy Client"})
+    with app.app_context():
+        escalation_org = ClientOrganization.query.filter_by(name="Escalation Test Client").one()
+        no_policy_org = ClientOrganization.query.filter_by(name="No Policy Client").one()
+        escalation_org_id, no_policy_org_id = escalation_org.id, no_policy_org.id
+        network_group = SupportGroup.query.filter_by(name="Network", tenant_id=1).one()
+        network_group_id = network_group.id
+        admin = User.query.filter_by(username="admin").one()
+        admin_id = admin.id
+        network_group.manager_id = admin.id
+        db.session.commit()
+
+    branding_resp = client.post(f"/client-management/organizations/{escalation_org_id}", data={
+        "action": "update_branding", "display_name": "Escalation Test Co.", "color": "#ff0000",
+    })
+    assert branding_resp.status_code == 302
+    with app.app_context():
+        assert db.session.get(ClientOrganization, escalation_org_id).settings["branding"] == {
+            "display_name": "Escalation Test Co.", "color": "#ff0000",
+        }
+
+    policy_resp = client.post(f"/client-management/organizations/{escalation_org_id}", data={
+        "action": "update_notification_policy", "escalation_hours": "1", "escalation_group_id": str(network_group_id),
+    })
+    assert policy_resp.status_code == 302
+
+    client.post("/client-management/contacts", data={
+        "organization_id": escalation_org_id, "name": "Escalation Contact", "email": "escalation@example.invalid",
+    })
+    client.post("/client-management/contacts", data={
+        "organization_id": no_policy_org_id, "name": "No Policy Contact", "email": "nopolicy@example.invalid",
+    })
+    with app.app_context():
+        escalation_contact_id = ClientContact.query.filter_by(email="escalation@example.invalid").one().id
+        no_policy_contact_id = ClientContact.query.filter_by(email="nopolicy@example.invalid").one().id
+
+    client.post("/client-management/tickets/new", data={
+        "contact_id": escalation_contact_id, "subject": "Old ticket to escalate", "description": "x",
+    })
+    client.post("/client-management/tickets/new", data={
+        "contact_id": no_policy_contact_id, "subject": "Old ticket, no policy configured", "description": "x",
+    })
+    with app.app_context():
+        escalation_ticket = ClientTicket.query.filter_by(subject="Old ticket to escalate").one()
+        no_policy_ticket = ClientTicket.query.filter_by(subject="Old ticket, no policy configured").one()
+        escalation_ticket_id, no_policy_ticket_id = escalation_ticket.id, no_policy_ticket.id
+        original_group_id = escalation_ticket.support_group_id
+        # Backdate creation past the 1-hour escalation threshold.
+        escalation_ticket.created_at = now() - timedelta(hours=2)
+        no_policy_ticket.created_at = now() - timedelta(hours=2)
+        db.session.commit()
+
+        processed = process_client_escalation_policies()
+        assert processed == 1
+
+        escalated = db.session.get(ClientTicket, escalation_ticket_id)
+        assert escalated.support_group_id == network_group_id
+        assert escalated.support_group_id != original_group_id
+        assert "auto-escalated" in escalated.tags
+        assert ClientTicketMessage.query.filter_by(
+            client_ticket_id=escalation_ticket_id, event_type="escalation",
+        ).count() == 1
+        assert Notification.query.filter_by(
+            user_id=admin_id, target_type="client_ticket", target_id=escalation_ticket_id,
+        ).count() == 1
+
+        untouched = db.session.get(ClientTicket, no_policy_ticket_id)
+        assert untouched.support_group_id != network_group_id
+        assert "auto-escalated" not in untouched.tags
+
+        # Idempotent: running again must not re-escalate or re-notify.
+        again = process_client_escalation_policies()
+        assert again == 0
+        assert ClientTicketMessage.query.filter_by(
+            client_ticket_id=escalation_ticket_id, event_type="escalation",
+        ).count() == 1
+        assert Notification.query.filter_by(
+            user_id=admin_id, target_type="client_ticket", target_id=escalation_ticket_id,
+        ).count() == 1
+
+    ticket_page = client.get(f"/client-management/tickets/{escalation_ticket_id}")
+    assert b"Escalation Test Co." in ticket_page.data
 
 
 def test_admin_can_update_live_platform_branding(client, app):
