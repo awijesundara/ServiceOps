@@ -2901,6 +2901,78 @@ def process_client_escalation_policies(limit=100):
     return processed
 
 
+def _has_active_legal_hold(tenant_id, record_type, record_id):
+    return RecordLegalHold.query.filter_by(
+        tenant_id=tenant_id, record_type=record_type, record_id=record_id, released_at=None,
+    ).first() is not None
+
+
+def erase_client_contact(contact, reason=""):
+    """GDPR Art. 17 (right to erasure) for a customer contact, mirroring
+    user_erase() exactly: scrubs personal fields to an opaque placeholder
+    (keeping the row so ClientTicket/ClientTicketMessage foreign keys keep
+    resolving) rather than deleting it. Shared by the admin-triggered route
+    and the automatic retention purge below; raises ValueError (caller's
+    responsibility to handle) if the contact is under an active legal hold
+    or already erased, so both callers get the same guard for free."""
+    if contact.erased_at:
+        raise ValueError("This contact's personal data has already been erased.")
+    if _has_active_legal_hold(contact.tenant_id, "client_contact", contact.id):
+        raise ValueError("This contact is under an active legal hold and cannot be erased.")
+    placeholder = f"erased-contact-{contact.id}"
+    contact.name = f"Erased contact #{contact.id}"
+    contact.email = f"{placeholder}@erased.invalid"
+    contact.phone = ""
+    contact.job_title = ""
+    contact.erased_at = now()
+    audit("erase", placeholder, f"Client contact personal data erased (GDPR Art. 17){': ' + reason if reason else ''}")
+
+
+def process_data_retention_purge(limit=200):
+    """B-090: enforces each tenant's DataRetentionPolicy rows by erasing
+    (via erase_client_contact -- same scrub-not-delete pattern as manual
+    GDPR erasure) client contacts whose most recent activity is older than
+    the configured retention window, skipping anything under a blanket
+    policy-level or a per-record RecordLegalHold. Only client_contact is
+    enforced automatically this pass -- client_ticket has a Confidential,
+    not PII, classification (see DATA_CLASSIFICATION_REGISTRY) and its
+    conversation history has independent business/audit value, so it is
+    deliberately not auto-purged; a ClientMailbox record_type policy row
+    would currently have no effect. Mirrors process_sla_breaches()'s
+    periodic-scan shape: returns an int count, isolates per-tenant failure."""
+    processed = 0
+    for policy in DataRetentionPolicy.query.filter_by(
+        record_type="client_contact", active=True, legal_hold=False,
+    ).all():
+        try:
+            threshold = now() - timedelta(days=policy.retention_days)
+            candidates = ClientContact.query.filter(
+                ClientContact.tenant_id == policy.tenant_id,
+                ClientContact.erased_at.is_(None),
+                ClientContact.active.is_(False),
+                ClientContact.updated_at <= threshold,
+            ).limit(limit).all()
+            purged = 0
+            for contact in candidates:
+                if _has_active_legal_hold(policy.tenant_id, "client_contact", contact.id):
+                    continue
+                try:
+                    erase_client_contact(contact, reason="Automatic retention purge")
+                    purged += 1
+                except ValueError:
+                    continue
+            policy.last_run_at = now()
+            policy.last_run_count = purged
+            db.session.commit()
+            processed += purged
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception(
+                "Data retention purge failed for tenant=%s record_type=client_contact", policy.tenant_id,
+            )
+    return processed
+
+
 def process_sla_breaches(limit=50):
     """Claim newly breached SLAs once and create durable escalation notifications."""
     current = now()
@@ -9619,6 +9691,19 @@ def create_app(test_config=None):
     @require_client_management
     def client_contacts():
         organizations = visible_client_organization_query(current_user).filter_by(active=True).order_by(ClientOrganization.name).all()
+        if request.method == "POST" and request.form.get("action") == "erase":
+            if not role_at_least(current_user.effective_role, "admin"):
+                abort(403, description="Only an administrator can erase a client contact's personal data.")
+            contact = tenant_record_or_404(ClientContact, request.form.get("contact_id", type=int))
+            original_email = contact.email
+            try:
+                erase_client_contact(contact)
+                db.session.commit()
+                flash(f"{original_email}'s personal data has been erased.", "success")
+            except ValueError as error:
+                db.session.rollback()
+                flash(str(error), "error")
+            return redirect(url_for("client_contacts"))
         if request.method == "POST":
             organization = visible_client_organization_query(current_user).filter_by(id=request.form.get("organization_id", type=int), active=True).first_or_404()
             name, email = request.form.get("name", "").strip(), request.form.get("email", "").strip().lower()
@@ -9648,6 +9733,44 @@ def create_app(test_config=None):
         return render_template(
             "client_contacts.html", contacts=contacts, organizations=organizations, contact_fields=contact_fields,
         )
+
+    @app.get("/client-management/contacts/<int:contact_id>/export")
+    @require_client_management
+    def client_contact_export(contact_id):
+        """GDPR Art. 20 (data portability) for a customer contact, mirroring
+        profile_export() -- a structured, machine-readable export of this
+        contact's own data and support conversation history."""
+        contact = visible_client_contact_query(current_user).filter_by(id=contact_id).first_or_404()
+        payload = {
+            "name": contact.name, "email": contact.email, "phone": contact.phone,
+            "job_title": contact.job_title, "preferred_language": contact.preferred_language,
+            "organization": contact.organization.name if contact.organization else None,
+            "created_at": contact.created_at.isoformat() if contact.created_at else None,
+            "erased_at": contact.erased_at.isoformat() if contact.erased_at else None,
+            "tickets": [
+                {
+                    "number": ticket.number, "subject": ticket.subject, "status": ticket.status,
+                    "created_at": ticket.created_at.isoformat(),
+                    "messages": [
+                        {
+                            "body": message.body, "visibility": message.visibility,
+                            "created_at": message.created_at.isoformat(),
+                        }
+                        for message in ticket.messages if message.visibility == "public"
+                    ],
+                }
+                for ticket in ClientTicket.query.filter_by(
+                    tenant_id=contact.tenant_id, contact_id=contact.id,
+                ).order_by(ClientTicket.created_at.desc()).all()
+            ],
+        }
+        response = Response(
+            json.dumps(payload, indent=2, sort_keys=True), mimetype="application/json",
+        )
+        response.headers["Content-Disposition"] = f'attachment; filename="client-contact-{contact.id}-data-export.json"'
+        audit("export", contact.email, "Client contact data export (GDPR Art. 20)")
+        db.session.commit()
+        return response
 
     @app.get("/admin")
     @roles("admin")
@@ -10469,6 +10592,100 @@ def create_app(test_config=None):
             abort(409, description=str(error))
         flash(f"Audit signing key rotated to {key.key_id}.", "success")
         return redirect(url_for("audit_log"))
+
+    @app.route("/admin/data-governance", methods=["GET", "POST"])
+    @roles("admin")
+    @require_action("security_administer")
+    def data_governance_admin():
+        """B-090: data classification reference, per-record-type retention
+        policy, legal holds, and a regional-data note. Distinct from
+        /admin/audit/retention (audit log has its own long, compliance-
+        driven minimum unrelated to customer-data lifecycle)."""
+        if request.method == "POST":
+            action = request.form.get("action", "")
+            if action == "save_retention_policy":
+                record_type = request.form.get("record_type", "").strip()
+                if record_type not in DATA_CLASSIFICATION_REGISTRY:
+                    abort(400, description="Unknown record type.")
+                try:
+                    retention_days = int(request.form.get("retention_days", "0"))
+                except ValueError:
+                    abort(400, description="Retention must be an integer number of days.")
+                if retention_days < 30 or retention_days > 36500:
+                    abort(400, description="Retention must be between 30 and 36500 days.")
+                policy = DataRetentionPolicy.query.filter_by(
+                    tenant_id=current_user.tenant_id, record_type=record_type,
+                ).one_or_none()
+                if not policy:
+                    policy = DataRetentionPolicy(
+                        tenant_id=current_user.tenant_id, record_type=record_type,
+                        updated_by_id=current_user.id,
+                    )
+                    db.session.add(policy)
+                policy.retention_days = retention_days
+                policy.legal_hold = request.form.get("legal_hold") == "on"
+                policy.active = request.form.get("policy_active") == "on"
+                policy.updated_by_id = current_user.id
+                policy.updated_at = now()
+                audit(
+                    "data retention policy update", record_type,
+                    f"days={retention_days}; legal_hold={policy.legal_hold}; active={policy.active}",
+                )
+                db.session.commit()
+                flash(f"Retention policy for {DATA_CLASSIFICATION_REGISTRY[record_type]['label']} saved.", "success")
+            elif action == "run_purge_now":
+                count = process_data_retention_purge()
+                flash(f"Retention purge complete: {count} record(s) erased.", "success")
+            elif action == "add_legal_hold":
+                record_type = request.form.get("record_type", "").strip()
+                record_id = request.form.get("record_id", type=int)
+                reason = request.form.get("reason", "").strip()[:500]
+                if record_type not in DATA_CLASSIFICATION_REGISTRY or not record_id or not reason:
+                    flash("Record type, record ID, and a reason are all required for a legal hold.", "error")
+                else:
+                    db.session.add(RecordLegalHold(
+                        tenant_id=current_user.tenant_id, record_type=record_type,
+                        record_id=record_id, reason=reason, applied_by_id=current_user.id,
+                    ))
+                    audit("legal hold applied", f"{record_type}:{record_id}", reason)
+                    db.session.commit()
+                    flash("Legal hold applied.", "success")
+            elif action == "release_legal_hold":
+                hold = tenant_record_or_404(RecordLegalHold, request.form.get("hold_id", type=int))
+                hold.released_at = now()
+                hold.released_by_id = current_user.id
+                audit("legal hold released", f"{hold.record_type}:{hold.record_id}", hold.reason)
+                db.session.commit()
+                flash("Legal hold released.", "success")
+            elif action == "save_data_region":
+                region = request.form.get("data_region", "").strip()[:200]
+                setting = PlatformSetting.query.filter_by(
+                    tenant_id=current_user.tenant_id, key="DATA_REGION",
+                ).one_or_none()
+                if not setting:
+                    setting = PlatformSetting(tenant_id=current_user.tenant_id, key="DATA_REGION", encrypted=False)
+                    db.session.add(setting)
+                setting.value = region
+                audit("data region update", "DATA_REGION", region)
+                db.session.commit()
+                flash("Data region note saved.", "success")
+            return redirect(url_for("data_governance_admin"))
+        policies = {
+            policy.record_type: policy
+            for policy in DataRetentionPolicy.query.filter_by(tenant_id=current_user.tenant_id).all()
+        }
+        holds = RecordLegalHold.query.filter_by(
+            tenant_id=current_user.tenant_id, released_at=None,
+        ).order_by(RecordLegalHold.applied_at.desc()).all()
+        region_setting = PlatformSetting.query.filter_by(
+            tenant_id=current_user.tenant_id, key="DATA_REGION",
+        ).one_or_none()
+        return render_template(
+            "data_governance_admin.html",
+            classification_registry=DATA_CLASSIFICATION_REGISTRY,
+            policies=policies, holds=holds,
+            data_region=region_setting.value if region_setting else "",
+        )
 
     @app.post("/admin/audit/retention")
     @roles("admin")

@@ -1,0 +1,68 @@
+{% extends "base.html" %}{% block title %}Data governance · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = 'Data governance' %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>Data governance</h1><p>Data classification reference, retention policy, legal holds, and regional data notes.</p></div></header>
+<div class="detail-grid">
+<section class="panel">
+  <h2>Data classification</h2>
+  <p>Governed statically alongside the source, not admin-editable — what counts as PII/confidential for a record type is a governance decision, not a runtime setting.</p>
+  <table><thead><tr><th>Record type</th><th>Classification</th><th>Description</th></tr></thead><tbody>
+  {% for record_type, info in classification_registry.items() %}
+    <tr><td>{{ info.label }}</td><td><span class="client-status {{ info.classification|lower }}">{{ info.classification }}</span></td><td>{{ info.description }}</td></tr>
+  {% endfor %}
+  </tbody></table>
+</section>
+<aside class="panel">
+  <h2>Regional data note</h2>
+  <p>Descriptive only — this environment does not enforce multi-region data residency. Recorded here so it's documented for audits and customer questions.</p>
+  <form method="post" action="{{ url_for('data_governance_admin') }}" class="stack">
+    <input type="hidden" name="action" value="save_data_region">
+    <label>Data region<input name="data_region" maxlength="200" value="{{ data_region }}" placeholder="e.g. Hosted in ap-northeast-1 (Tokyo)"></label>
+    <button>Save data region</button>
+  </form>
+</aside>
+</div>
+<section class="panel">
+  <h2>Retention policy</h2>
+  <p>Only <strong>Client contact</strong> is automatically enforced this pass (see the worker job's own disclosure) — records inactive past the window are erased (GDPR Art. 17 style scrub, same as an admin-triggered erasure), unless under a policy-level or per-record legal hold. Other record types can still be configured for documentation purposes.</p>
+  <table><thead><tr><th>Record type</th><th>Retention (days)</th><th>Legal hold</th><th>Active</th><th>Last run</th><th></th></tr></thead><tbody>
+  {% for record_type, info in classification_registry.items() %}
+    {% set policy = policies.get(record_type) %}
+    <tr>
+      <td>{{ info.label }}</td>
+      <td colspan="4">
+        <form method="post" action="{{ url_for('data_governance_admin') }}" class="inline-form">
+          <input type="hidden" name="action" value="save_retention_policy">
+          <input type="hidden" name="record_type" value="{{ record_type }}">
+          <input name="retention_days" type="number" min="30" max="36500" value="{{ policy.retention_days if policy else 730 }}" required style="width:6rem">
+          <label class="check"><input name="legal_hold" type="checkbox" {% if policy and policy.legal_hold %}checked{% endif %}> Legal hold (blanket)</label>
+          <label class="check"><input name="policy_active" type="checkbox" {% if not policy or policy.active %}checked{% endif %}> Active</label>
+          <small>{{ policy.last_run_at|usertime('%Y-%m-%d %H:%M') if policy and policy.last_run_at else 'Never run' }}{% if policy and policy.last_run_at %} · {{ policy.last_run_count }} erased{% endif %}</small>
+          <button class="button">Save</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody></table>
+  <form method="post" action="{{ url_for('data_governance_admin') }}"><input type="hidden" name="action" value="run_purge_now"><button class="button">Run retention purge now</button></form>
+</section>
+<section class="panel">
+  <h2>Legal holds</h2>
+  <p>Exempts one specific record from the automatic retention purge, regardless of the policy above.</p>
+  <table><thead><tr><th>Record</th><th>Reason</th><th>Applied</th><th>By</th><th></th></tr></thead><tbody>
+  {% for hold in holds %}
+    <tr><td>{{ classification_registry.get(hold.record_type, {}).get('label', hold.record_type) }} #{{ hold.record_id }}</td><td>{{ hold.reason }}</td><td>{{ hold.applied_at|usertime('%Y-%m-%d %H:%M') }}</td><td>{{ hold.applied_by.name if hold.applied_by else '—' }}</td>
+    <td><form method="post" action="{{ url_for('data_governance_admin') }}" class="inline-form"><input type="hidden" name="action" value="release_legal_hold"><input type="hidden" name="hold_id" value="{{ hold.id }}"><button class="button">Release</button></form></td></tr>
+  {% else %}
+    <tr><td colspan="5" class="client-empty">No active legal holds.</td></tr>
+  {% endfor %}
+  </tbody></table>
+  <form method="post" action="{{ url_for('data_governance_admin') }}" class="stack">
+    <input type="hidden" name="action" value="add_legal_hold">
+    <label>Record type<select name="record_type">{% for record_type, info in classification_registry.items() %}<option value="{{ record_type }}">{{ info.label }}</option>{% endfor %}</select></label>
+    <label>Record ID<input name="record_id" type="number" min="1" required></label>
+    <label>Reason<input name="reason" maxlength="500" required placeholder="e.g. Active litigation hold, matter #4471"></label>
+    <button class="primary">Apply legal hold</button>
+  </form>
+</section>
+{% endblock %}
