@@ -6,7 +6,7 @@
 </header>
 
 <form class="filters">
-  <select name="status" onchange="this.form.submit()">
+  <select name="status" data-auto-submit>
     <option value="">All statuses</option>
     {% for state in states %}<option value="{{ state }}" {% if status_filter==state %}selected{% endif %}>{{ state }}</option>{% endfor %}
   </select>

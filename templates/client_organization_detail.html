@@ -10,6 +10,67 @@
       <dt>Notes</dt><dd>{{ organization.notes or '—' }}</dd>
     </dl>
   </section>
+  {% if is_admin %}
+  <section class="panel">
+    <h2>Branding<span class="info-tip" tabindex="0" data-tip="This app has no separate branded portal per organization -- these show as an accent on this organization's own tickets, not a different site.">i</span></h2>
+    <form method="post" class="stack">
+      <input type="hidden" name="action" value="update_branding">
+      <label>Display name<input name="display_name" maxlength="180" value="{{ branding.get('display_name', '') }}" placeholder="Defaults to the organization name"></label>
+      <label>Accent color<input type="color" name="color" value="{{ branding.get('color') or '#003e4c' }}"></label>
+      <p class="muted">A logo image isn't supported yet -- this app's Content Security Policy (<code>img-src 'self' data:</code>) blocks externally-hosted images, and there's no file upload/storage for one built yet.</p>
+      <button class="button">Save branding</button>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>Notification &amp; escalation policy<span class="info-tip" tabindex="0" data-tip="An open ticket for this organization older than the configured hours is automatically reassigned to the escalation team and its manager notified. Runs on the background worker's regular schedule, same as SLA breach detection. Leave escalation hours blank to disable.">i</span></h2>
+    <form method="post" class="stack">
+      <input type="hidden" name="action" value="update_notification_policy">
+      <label>Escalate after (hours)<input type="number" name="escalation_hours" min="1" step="0.5" value="{{ notification_policy.get('escalation_hours', '') }}" placeholder="Leave blank to disable"></label>
+      <label>Escalate to team<select name="escalation_group_id"><option value="">Select a team…</option>{% for group in groups %}<option value="{{ group.id }}" {% if notification_policy.get('escalation_group_id') == group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
+      <button class="button">Save policy</button>
+    </form>
+  </section>
+  {% endif %}
+  {% if org_custom_fields %}
+  <section class="panel">
+    <h2>Custom fields</h2>
+    <form method="post" class="stack">
+      <input type="hidden" name="action" value="update_custom_fields">
+      {% for field in org_custom_fields %}
+      <label>{{ field.definition.label }}{% if field.required %} *{% endif %}
+        {% if field.definition.field_type == 'select' %}
+        <select name="custom__{{ field.definition.key }}" {% if field.required %}required{% endif %}>
+          <option value="">—</option>
+          {% for option in field.options %}<option value="{{ option }}" {% if organization.custom_fields.get(field.definition.key) == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+        </select>
+        {% else %}
+        <input type="{{ {'number': 'number', 'date': 'date'}.get(field.definition.field_type, 'text') }}" name="custom__{{ field.definition.key }}" value="{{ organization.custom_fields.get(field.definition.key, '') }}" {% if field.required %}required{% endif %}>
+        {% endif %}
+      </label>
+      {% endfor %}
+      <button class="button">Save custom fields</button>
+    </form>
+  </section>
+  {% endif %}
+  {% if ticket_field_defs and is_admin %}
+  <section class="panel">
+    <h2>Ticket field overrides<span class="info-tip" tabindex="0" data-tip="Fields are defined tenant-wide under Custom fields. Here you can hide a field for this organization's tickets, or make an otherwise-optional field required for them specifically.">i</span></h2>
+    <form method="post" class="stack">
+      <input type="hidden" name="action" value="update_field_overrides">
+      <table><thead><tr><th>Field</th><th>Visible</th><th>Required</th></tr></thead><tbody>
+        {% for field in ticket_field_defs %}
+        {% set override = ticket_field_overrides.get(field.key, {}) %}
+        <tr>
+          <td>{{ field.label }}</td>
+          <td><input type="checkbox" name="visible__{{ field.key }}" {% if override.get('visible', True) %}checked{% endif %}></td>
+          <td><input type="checkbox" name="required__{{ field.key }}" {% if override.get('required', field.required) %}checked{% endif %}></td>
+        </tr>
+        {% endfor %}
+      </tbody></table>
+      <button class="button">Save overrides</button>
+    </form>
+  </section>
+  {% endif %}
   <aside class="facts">
     <section class="panel">
       <h2>Visibility<span class="info-tip" tabindex="0" data-tip="Open (default): every SysOps member/admin sees this organization and its tickets, exactly like before this setting existed. Restricted: only admins and users/teams explicitly granted access below can see it.">i</span></h2>

@@ -73,6 +73,10 @@ __all__ = [
     "EnterpriseRecord",
     "ClientOrganization",
     "ClientOrganizationAccess",
+    "ClientCustomFieldDefinition",
+    "ClientView",
+    "ClientMacro",
+    "ClientTrigger",
     "ClientContact",
     "ClientTicket",
     "ClientTicketMessage",
@@ -840,11 +844,46 @@ class ClientOrganization(db.Model):
     # does ClientOrganizationAccess start being consulted at all, so adding
     # the capability is zero-risk to every org that never uses it.
     restricted_visibility = db.Column(db.Boolean, nullable=False, default=False)
+    # Structured, admin-editable configuration that doesn't warrant its own
+    # column/table -- branding and notification/escalation policy (phase 7).
+    # Same db.JSON pattern as ConfigurationItem.attributes.
+    settings = db.Column(db.JSON, nullable=False, default=dict)
+    # Custom field VALUES for this org (schema lives tenant-wide in
+    # ClientCustomFieldDefinition; per-org required/visible overrides live
+    # in settings["custom_field_overrides"]).
+    custom_fields = db.Column(db.JSON, nullable=False, default=dict)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     contacts = db.relationship("ClientContact", cascade="all, delete-orphan", backref="organization")
     access_grants = db.relationship("ClientOrganizationAccess", cascade="all, delete-orphan", backref="organization")
     __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_client_organization_tenant_name"),)
+
+
+class ClientCustomFieldDefinition(db.Model):
+    """Tenant-wide custom field schema for Client Management (field
+    EXISTENCE is tenant-wide, matching Zendesk's own model -- fields aren't
+    per-organization; per-org required/visible overrides live in
+    ClientOrganization.settings["custom_field_overrides"] instead of a
+    second table). entity_type selects which of ClientOrganization/
+    ClientContact/ClientTicket this field applies to; values are stored in
+    that model's own custom_fields JSON column, keyed by `key`."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    entity_type = db.Column(db.String(20), nullable=False)
+    key = db.Column(db.String(60), nullable=False)
+    label = db.Column(db.String(120), nullable=False)
+    field_type = db.Column(db.String(20), nullable=False, default="text")
+    options_json = db.Column(db.Text, nullable=False, default="[]")
+    required = db.Column(db.Boolean, nullable=False, default=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    position = db.Column(db.Integer, nullable=False, default=0)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "entity_type", "key", name="uq_client_custom_field_tenant_entity_key"),
+    )
 
 
 class ClientOrganizationAccess(db.Model):
@@ -873,6 +912,80 @@ class ClientOrganizationAccess(db.Model):
     )
 
 
+class ClientView(db.Model):
+    """A saved filter+sort for the Client Management ticket list, sitting on
+    top of the existing generic filter-condition engine (parse_list_filter_param/
+    apply_filter_conditions, already used by CMDB/ticket lists) rather than
+    inventing bespoke filtering -- conditions_json is exactly the JSON shape
+    parse_list_filter_param() produces/consumes. `shared` makes a view
+    visible to every Client Management user in the tenant; unshared views
+    are visible only to their creator. The six built-in views (mine,
+    unassigned, pending, recent, solved, unsolved) are not rows here -- they
+    stay hardcoded in the route, unchanged, exactly as before this model
+    existed; ClientView only ever adds new views alongside them."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    shared = db.Column(db.Boolean, nullable=False, default=False)
+    conditions_json = db.Column(db.Text, nullable=False, default="[]")
+    sort_field = db.Column(db.String(30), nullable=False, default="updated")
+    sort_dir = db.Column(db.String(4), nullable=False, default="desc")
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    created_by = db.relationship("User")
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "created_by_id", "name", name="uq_client_view_tenant_owner_name"),
+    )
+
+
+class ClientTrigger(db.Model):
+    """A single condition -> single action automation rule, evaluated by
+    serviceops_core/client_automation.py against a ClientTicket whenever
+    `event` fires (created/status_changed/updated). `position` is the
+    evaluation order for a given event, matching workflow.py's stage
+    ordering convention. Kept single-condition/single-action deliberately
+    -- see client_automation.py's module docstring."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    event = db.Column(db.String(30), nullable=False)
+    condition_field = db.Column(db.String(30), nullable=False)
+    condition_op = db.Column(db.String(20), nullable=False)
+    condition_value = db.Column(db.String(200), nullable=False, default="")
+    action_type = db.Column(db.String(30), nullable=False)
+    action_value = db.Column(db.String(500), nullable=False, default="")
+    position = db.Column(db.Integer, nullable=False, default=0)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    created_by = db.relationship("User")
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_client_trigger_tenant_name"),)
+
+
+class ClientMacro(db.Model):
+    """A one-click bulk action (optionally including a canned reply) an
+    agent can apply to a ClientTicket -- Zendesk-style macro. `actions_json`
+    is a JSON dict of field -> value for any of status/priority/ticket_type/
+    tags/assignee_id (only keys present are applied; omitted fields are left
+    untouched on the ticket). A macro with no reply_body just changes fields
+    silently; one with a reply_body also posts a ClientTicketMessage in
+    reply_visibility ("public" or "internal")."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    actions_json = db.Column(db.Text, nullable=False, default="{}")
+    reply_body = db.Column(db.Text, nullable=False, default="")
+    reply_visibility = db.Column(db.String(20), nullable=False, default="public")
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    created_by = db.relationship("User")
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_client_macro_tenant_name"),)
+
+
 class ClientContact(db.Model):
     """Customer identity used for support communication, not application login."""
     id = db.Column(db.Integer, primary_key=True)
@@ -884,6 +997,7 @@ class ClientContact(db.Model):
     job_title = db.Column(db.String(120), nullable=False, default="")
     preferred_language = db.Column(db.String(30), nullable=False, default="English")
     active = db.Column(db.Boolean, nullable=False, default=True)
+    custom_fields = db.Column(db.JSON, nullable=False, default=dict)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     __table_args__ = (db.UniqueConstraint("tenant_id", "email", name="uq_client_contact_tenant_email"),)
@@ -901,6 +1015,7 @@ class ClientTicket(db.Model):
     ticket_type = db.Column(db.String(30), nullable=False, default="Question")
     channel = db.Column(db.String(30), nullable=False, default="Web")
     tags = db.Column(db.String(500), nullable=False, default="")
+    custom_fields = db.Column(db.JSON, nullable=False, default=dict)
     contact_id = db.Column(db.Integer, db.ForeignKey("client_contact.id"), nullable=False, index=True)
     organization_id = db.Column(db.Integer, db.ForeignKey("client_organization.id"), nullable=False, index=True)
     assignee_id = db.Column(db.Integer, db.ForeignKey("user.id"), index=True)
@@ -1417,6 +1532,15 @@ class SLADefinition(db.Model):
     counterparty = db.Column(db.String(160), default="")
     schedule = db.relationship("BusinessSchedule")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    # Client Management phase 5: null (the default, and every row before this
+    # column existed) means a tenant-wide default for target_type/priority,
+    # same "null = default" convention this app already uses elsewhere. A row
+    # with this set is an override specific to that organization's tickets
+    # -- only meaningful when target_type == "client_ticket". attach_slas()
+    # prefers an org-specific row over the tenant-wide default for the same
+    # priority when both exist.
+    client_organization_id = db.Column(db.Integer, db.ForeignKey("client_organization.id"))
+    client_organization = db.relationship("ClientOrganization")
     __table_args__ = (
         db.UniqueConstraint("tenant_id", "name", name="uq_sla_definition_tenant_name"),
     )

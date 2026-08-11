@@ -39,7 +39,7 @@
   <p class="muted">Discards this tenant's overrides for a role, restoring it to exactly what <code>config/authorization.json</code> grants.</p>
   <div style="display:flex;gap:10px;flex-wrap:wrap">
     {% for role in editable_roles %}
-    <form method="post" onsubmit="return confirm('Reset {{ role }} to the ITIL-recommended baseline? This discards any custom permission changes made for this role.');">
+    <form method="post" data-confirm="Reset {{ role }} to the ITIL-recommended baseline? This discards any custom permission changes made for this role.">
       <input type="hidden" name="action" value="reset">
       <input type="hidden" name="role" value="{{ role }}">
       <button type="submit" class="button" {% if not has_overrides.get(role) %}disabled{% endif %}>
