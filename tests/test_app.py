@@ -5693,6 +5693,76 @@ def test_infected_attachment_is_rejected_and_clean_attachment_gets_sha256(client
         assert len(attachment.sha256) == 64
 
 
+def test_ticket_attachment_upload_degrades_gracefully_on_object_storage_outage(client, app, monkeypatch):
+    """Found via real failure-injection testing against a disposable MinIO
+    backend (B-052): an object-storage outage previously crashed this into
+    a generic 500 and, worse, leaked the local temp file forever since the
+    cleanup line was never reached. Now returns a clean, user-facing error
+    and always removes the local temp file regardless of outcome."""
+    login(client)
+    assert client.post("/tickets/new/incident", data={
+        "title": "Object storage outage test", "description": "For failure-injection coverage.",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    }).status_code == 302
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Object storage outage test").one()
+        ticket_id = ticket.id
+
+    class BrokenS3Client:
+        def upload_file(self, *args, **kwargs):
+            raise Exception("simulated object storage outage")
+
+    monkeypatch.setattr("app.object_storage_enabled", lambda: True)
+    monkeypatch.setattr("app.object_storage_client", lambda: BrokenS3Client())
+    monkeypatch.setenv("OBJECT_STORAGE_BUCKET", "test-bucket")
+
+    with app.app_context():
+        upload_folder = app.config["UPLOAD_FOLDER"]
+        before = set(os.listdir(upload_folder))
+
+    response = client.post(
+        f"/ticket/{ticket_id}/attachments",
+        data={"file": (BytesIO(b"\xff\xd8\xffa real-looking jpeg"), "photo.jpg")},
+        content_type="multipart/form-data", follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b"temporarily unavailable" in response.data
+    with app.app_context():
+        assert FileAttachment.query.filter_by(ticket_id=ticket_id).count() == 0
+        after = set(os.listdir(upload_folder))
+        assert after == before  # no orphaned local temp file
+
+
+def test_attachment_download_degrades_gracefully_on_object_storage_outage(client, app, monkeypatch):
+    login(client)
+    assert client.post("/tickets/new/incident", data={
+        "title": "Object storage download outage test", "description": "For failure-injection coverage.",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    }).status_code == 302
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Object storage download outage test").one()
+        ticket_id = ticket.id
+        attachment = FileAttachment(
+            ticket_id=ticket_id, uploaded_by_id=User.query.filter_by(username="admin").one().id,
+            original_name="photo.jpg", stored_name="does-not-matter.jpg",
+            mime_type="image/jpeg", size_bytes=10, sha256="x" * 64, scan_status="clean",
+        )
+        db.session.add(attachment)
+        db.session.commit()
+        attachment_id = attachment.id
+
+    class BrokenS3Client:
+        def get_object(self, *args, **kwargs):
+            raise Exception("simulated object storage outage")
+
+    monkeypatch.setattr("app.object_storage_enabled", lambda: True)
+    monkeypatch.setattr("app.object_storage_client", lambda: BrokenS3Client())
+    monkeypatch.setenv("OBJECT_STORAGE_BUCKET", "test-bucket")
+
+    response = client.get(f"/attachments/{attachment_id}")
+    assert response.status_code == 503
+
+
 def test_scan_attachment_reports_not_scanned_when_unconfigured(app, tmp_path):
     """No ClamAV configured is the out-of-the-box state for most deployments;
     the adapter must say so honestly rather than silently claiming clean."""

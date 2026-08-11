@@ -1458,10 +1458,24 @@ def save_email_attachment(client_ticket, filename, data, uploaded_by_id):
             sha256.update(chunk)
     file_size = os.path.getsize(path)
     if object_storage_enabled():
-        object_storage_client().upload_file(
-            path, os.environ["OBJECT_STORAGE_BUCKET"], stored,
-            ExtraArgs={"ContentType": verified_mime_type},
-        )
+        # Found via real failure-injection testing against a disposable
+        # MinIO backend (B-052): an object-storage outage previously left
+        # this unhandled, crashing whatever called it (here, the inbound
+        # email poll loop, which isolates per-message failures anyway) and
+        # -- more importantly -- never reaching the os.remove(path) below,
+        # so the local temp file leaked forever on every failed upload.
+        try:
+            object_storage_client().upload_file(
+                path, os.environ["OBJECT_STORAGE_BUCKET"], stored,
+                ExtraArgs={"ContentType": verified_mime_type},
+            )
+        except Exception:
+            os.remove(path)
+            current_app.logger.warning(
+                "Object storage upload failed for inbound email attachment: ticket=%s file=%s",
+                client_ticket.number, original,
+            )
+            return None
         os.remove(path)
     attachment = FileAttachment(
         client_ticket_id=client_ticket.id, uploaded_by_id=uploaded_by_id,
@@ -14403,10 +14417,26 @@ def create_app(test_config=None):
                 sha256.update(chunk)
         file_size = os.path.getsize(path)
         if object_storage_enabled():
-            object_storage_client().upload_file(
-                path, os.environ["OBJECT_STORAGE_BUCKET"], stored,
-                ExtraArgs={"ContentType": verified_mime_type},
-            )
+            # Found via real failure-injection testing against a disposable
+            # MinIO backend (B-052): an object-storage outage previously
+            # crashed this into a generic 500 (confirmed via a real ~8s
+            # timeout-then-retry-exhausted EndpointConnectionError) and
+            # -- more importantly -- never reached the os.remove(path)
+            # below, so the local temp file leaked forever on every failed
+            # upload. Now a clean, user-facing error instead, matching the
+            # existing malware-scan-rejected return shape.
+            try:
+                object_storage_client().upload_file(
+                    path, os.environ["OBJECT_STORAGE_BUCKET"], stored,
+                    ExtraArgs={"ContentType": verified_mime_type},
+                )
+            except Exception:
+                os.remove(path)
+                current_app.logger.warning(
+                    "Object storage upload failed: ticket=%s file=%s user=%s",
+                    ticket.number, original, current_user.id,
+                )
+                return None, "Attachment storage is temporarily unavailable. Please try again shortly."
             os.remove(path)
         attachment = FileAttachment(
             ticket_id=ticket.id, comment_id=comment_id, uploaded_by_id=current_user.id,
@@ -14457,9 +14487,18 @@ def create_app(test_config=None):
             and attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES
         )
         if object_storage_enabled():
-            response = object_storage_client().get_object(
-                Bucket=os.environ["OBJECT_STORAGE_BUCKET"], Key=attachment.stored_name,
-            )
+            # Found via the same real failure-injection pass as the upload
+            # fix above (B-052): an outage here previously crashed into a
+            # generic 500 instead of a clean, expected "try again" response.
+            try:
+                response = object_storage_client().get_object(
+                    Bucket=os.environ["OBJECT_STORAGE_BUCKET"], Key=attachment.stored_name,
+                )
+            except Exception:
+                current_app.logger.warning(
+                    "Object storage download failed: attachment_id=%s", attachment.id,
+                )
+                abort(503, description="Attachment storage is temporarily unavailable. Please try again shortly.")
             headers = {
                 "Content-Disposition": (
                     f"inline; filename={json.dumps(attachment.original_name)}" if inline
