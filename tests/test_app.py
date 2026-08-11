@@ -150,6 +150,25 @@ def test_health(client):
     assert readiness.json["checks"]["database"]["ok"] is True
 
 
+def test_health_degrades_gracefully_on_a_database_outage(client, app, monkeypatch):
+    """Found via real failure-injection load testing (B-071): a database
+    outage previously made /health raise an unhandled OperationalError into
+    a generic 500 rather than a clean, structured unhealthy response --
+    noisy (a full stack trace logged on every poll) and indistinguishable
+    from a real application bug on the same endpoint Docker's own container
+    healthcheck polls (see compose.yaml)."""
+    from app import APP_VERSION, db
+
+    def broken_execute(*args, **kwargs):
+        raise Exception("simulated database outage")
+
+    with app.app_context():
+        monkeypatch.setattr(db.session, "execute", broken_execute)
+        response = client.get("/health")
+    assert response.status_code == 503
+    assert response.json == {"status": "unhealthy", "version": APP_VERSION}
+
+
 def test_live_api_documentation_matches_supported_contract(client):
     guide = client.get("/api/v1/docs")
     assert guide.status_code == 200
