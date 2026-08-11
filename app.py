@@ -337,6 +337,16 @@ def require_action(action):
 
 
 def audit_integrity_key(key_id="environment-v1", tenant_id=None):
+    # Found via a real recovery/audit-verification rehearsal (B-009/B-004):
+    # settings_cipher().decrypt() raises cryptography's InvalidToken when
+    # the current SETTINGS_ENCRYPTION_KEY doesn't match whatever key a row
+    # was encrypted under (e.g. the environment's encryption key was
+    # regenerated at some point without a proper re-encryption migration --
+    # a real, unrecoverable local-environment condition on at least one
+    # deployment, not something this function can repair). Re-raised as a
+    # RuntimeError with the same message shape as the "key row missing"
+    # case below, so every caller already has one exception type to handle
+    # instead of two.
     tenant_id = tenant_id or tenant_context_id()
     if key_id != "environment-v1":
         stored = AuditIntegrityKey.query.filter_by(
@@ -344,12 +354,18 @@ def audit_integrity_key(key_id="environment-v1", tenant_id=None):
         ).one_or_none()
         if not stored:
             raise RuntimeError(f"Audit integrity key {key_id!r} is unavailable.")
-        return settings_cipher().decrypt(stored.secret_encrypted.encode())
+        try:
+            return settings_cipher().decrypt(stored.secret_encrypted.encode())
+        except InvalidToken:
+            raise RuntimeError(f"Audit integrity key {key_id!r} could not be decrypted.")
     stored = AuditIntegrityKey.query.filter_by(
         tenant_id=tenant_id, key_id="environment-v1"
     ).one_or_none()
     if stored:
-        return settings_cipher().decrypt(stored.secret_encrypted.encode())
+        try:
+            return settings_cipher().decrypt(stored.secret_encrypted.encode())
+        except InvalidToken:
+            raise RuntimeError("Audit integrity key 'environment-v1' could not be decrypted.")
     configured = secret_value("AUDIT_INTEGRITY_KEY") or os.getenv(
         "SETTINGS_ENCRYPTION_KEY"
     )
@@ -399,7 +415,18 @@ def verify_audit_chain(tenant_id):
                 "valid": False, "checked": checked,
                 "event_id": row.event_id, "reason": "previous hash mismatch",
             }
-        if not hmac.compare_digest(row.event_hash, calculate_audit_hash(row)):
+        try:
+            computed_hash = calculate_audit_hash(row)
+        except RuntimeError as error:
+            # A row whose signing key can't be decrypted must be reported
+            # as unverified, not silently skipped or allowed to crash the
+            # whole chain walk -- tamper-evidence means "we can't confirm
+            # this wasn't altered," which is exactly what this reports.
+            return {
+                "valid": False, "checked": checked,
+                "event_id": row.event_id, "reason": str(error),
+            }
+        if not hmac.compare_digest(row.event_hash, computed_hash):
             return {
                 "valid": False, "checked": checked,
                 "event_id": row.event_id, "reason": "event hash mismatch",
