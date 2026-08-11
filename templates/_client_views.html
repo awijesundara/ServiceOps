@@ -8,4 +8,17 @@
     <a href="{{ url_for('client_tickets', view='pending') }}" {% if view|default('') == 'pending' %}class="active" aria-current="page"{% endif %}><span>Pending tickets</span>{% if counts is defined %}<b>{{ counts.pending }}</b>{% endif %}</a>
     <a href="{{ url_for('client_tickets', view='solved') }}" {% if view|default('') == 'solved' %}class="active" aria-current="page"{% endif %}><span>Recently solved</span>{% if counts is defined %}<b>{{ counts.solved }}</b>{% endif %}</a>
   </nav>
+  {% if views is defined and views %}
+  <h2>Saved views</h2>
+  <nav aria-label="Saved client ticket views">
+    {% for saved in views %}
+    <a href="{{ url_for('client_tickets', view_id=saved.id) }}" {% if active_view is defined and active_view and active_view.id == saved.id %}class="active" aria-current="page"{% endif %}>
+      <span>{{ saved.name }}{% if saved.shared %} <small class="muted">(shared)</small>{% endif %}</span>
+      {% if active_view is defined and active_view and active_view.id == saved.id and (active_view.created_by_id == current_user.id or role_at_least(current_user.effective_role, 'admin')) %}
+      <form method="post" action="{{ url_for('client_view_delete', view_id=saved.id) }}" data-confirm="Delete the view '{{ saved.name }}'?"><button type="submit" class="link-button" aria-label="Delete view">✕</button></form>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </nav>
+  {% endif %}
 </aside>

@@ -1,0 +1,40 @@
+{% extends "base.html" %}{% block title %}Triggers · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('client_management_home') }}">CLIENT MANAGEMENT</a> / TRIGGERS</p><h1>Triggers</h1><p>Automatically apply an action to a customer ticket when it's created, updated, or its status changes and one condition matches.</p></div></header>
+<section class="panel">
+  <table><thead><tr><th>Name</th><th>Event</th><th>Condition</th><th>Action</th><th>Status</th><th></th></tr></thead><tbody>
+    {% for trigger in triggers %}
+    <tr>
+      <td>{{ trigger.name }}</td>
+      <td><span class="badge">{{ trigger.event }}</span></td>
+      <td>{{ trigger.condition_field }} {{ trigger.condition_op }} {{ trigger.condition_value }}</td>
+      <td>{{ trigger.action_type }}{% if trigger.action_value %}: {{ trigger.action_value }}{% endif %}</td>
+      <td><span class="badge">{{ 'Active' if trigger.active else 'Inactive' }}</span></td>
+      <td><form method="post"><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="trigger_id" value="{{ trigger.id }}"><button class="link-button">{{ 'Deactivate' if trigger.active else 'Activate' }}</button></form></td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="empty">No triggers defined yet.</td></tr>{% endfor %}
+  </tbody></table>
+  <details><summary>Add a trigger</summary>
+    <form method="post" class="stack">
+      <input type="hidden" name="action" value="create">
+      <label>Name<input name="name" maxlength="120" required placeholder="e.g. Auto-escalate urgent tickets"></label>
+      <label>When<select name="event">{% for value in events %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
+      <div class="field-pair">
+        <label>If field<select name="condition_field">{% for value in fields %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
+        <label>Operator<select name="condition_op">{% for value in operators %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
+        <label>Value<input name="condition_value" maxlength="200" placeholder="e.g. Urgent"></label>
+      </div>
+      <label>Then<select name="action_type">{% for value in action_types %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
+      <label>Action value<input name="action_value" maxlength="500" placeholder="Status/priority value, group or user ID, tag text, or message body depending on the action above"></label>
+      <p class="muted">Assign actions need the numeric team or agent ID; set_status/set_priority need an exact status/priority value ({{ statuses|join(', ') }} / {{ priorities|join(', ') }}); notify actions post the value as the message.</p>
+      <button class="primary">Add trigger</button>
+    </form>
+  </details>
+  {% if groups or agents %}
+  <details><summary>Team and agent IDs for assign actions</summary>
+    <p class="muted">Teams: {% for group in groups %}{{ group.name }} = {{ group.id }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    <p class="muted">Agents: {% for agent in agents %}{{ agent.name }} = {{ agent.id }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+  </details>
+  {% endif %}
+</section>
+{% endblock %}

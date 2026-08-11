@@ -11,7 +11,7 @@
       <td>{{ row.ip_address or '—' }}</td><td>{{ row.provider }}</td>
       <td>{{ row.last_seen_at|usertime('%Y-%m-%d %H:%M:%S') }}</td><td>{{ row.expires_at|usertime('%Y-%m-%d %H:%M:%S') }}</td>
       <td>{{ 'Revoked' if row.revoked_at else 'Active' }}</td>
-      <td>{% if not row.revoked_at %}<form method="post" action="{{ url_for('revoke_session', session_record_id=row.id) }}"><input type="hidden" name="admin_view" value="{{ '1' if admin_view else '' }}"><button class="button" onclick="return confirm('Revoke this session now?');">Revoke</button></form>{% endif %}</td>
+      <td>{% if not row.revoked_at %}<form method="post" action="{{ url_for('revoke_session', session_record_id=row.id) }}" data-confirm="Revoke this session now?"><input type="hidden" name="admin_view" value="{{ '1' if admin_view else '' }}"><button class="button">Revoke</button></form>{% endif %}</td>
     </tr>
   {% else %}<tr><td colspan="8" class="empty">No sessions recorded.</td></tr>{% endfor %}
   </tbody></table>

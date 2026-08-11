@@ -67,6 +67,11 @@ from serviceops_core.ci_class_policy import (
 from serviceops_core.dns_lookup import resolve_hostname, resolve_ip
 from serviceops_core.dns_pin import pin_resolved_addresses
 from serviceops_core.analytics import overdue_enterprise_records, OVERDUE_RECORDS_LIMIT
+from serviceops_core.client_automation import (
+    condition_matches, validate_trigger, ClientTriggerConfigurationError,
+    CLIENT_TRIGGER_EVENTS, CLIENT_TRIGGER_FIELDS, CLIENT_TRIGGER_OPERATORS,
+    CLIENT_TRIGGER_ACTION_TYPES, CLIENT_TICKET_STATUSES, CLIENT_TICKET_PRIORITIES,
+)
 
 # VERSION is the release source of truth; shown in the UI, API, and health
 # endpoint so operators can confirm the running build without host access.
@@ -2462,8 +2467,25 @@ def decide_vote(vote, decision, comments):
             create_catalog_task(ritm)
 
 
-def attach_slas(target_type, target_id, priority):
-    for definition in SLADefinition.query.filter_by(target_type=target_type, active=True).all():
+def attach_slas(target_type, target_id, priority, organization_id=None):
+    """`organization_id` (only meaningful for target_type == "client_ticket")
+    lets a Client Management organization's own SLADefinition rows
+    (client_organization_id set) override the tenant-wide default (rows with
+    client_organization_id null) for the same priority -- every existing
+    caller passes no organization_id, and every row before this parameter
+    existed has client_organization_id null, so this is a no-op everywhere
+    else in the app."""
+    definitions = SLADefinition.query.filter_by(target_type=target_type, active=True).all()
+    definitions = [d for d in definitions if d.client_organization_id in (None, organization_id)]
+    if organization_id is not None:
+        overridden_priorities = {
+            d.priority for d in definitions if d.client_organization_id == organization_id
+        }
+        definitions = [
+            d for d in definitions
+            if d.client_organization_id == organization_id or d.priority not in overridden_priorities
+        ]
+    for definition in definitions:
         if definition.priority and definition.priority != priority:
             continue
         exists = TaskSLA.query.filter_by(definition_id=definition.id, target_type=target_type,
@@ -2495,7 +2517,7 @@ def sync_slas(target_type, target_id, state):
         if task_sla.stage in ("Completed", "Cancelled"):
             continue
         pause_states = {value.strip() for value in task_sla.definition.pause_states.split(",")}
-        if state in ("Resolved", "Closed", "Completed", "Closed Complete"):
+        if state in ("Resolved", "Closed", "Completed", "Closed Complete", "Solved"):
             task_sla.stage = "Completed"
             task_sla.stopped_at = now()
             db.session.add(SLAEvent(
@@ -2530,6 +2552,56 @@ def sync_slas(target_type, target_id, state):
             current = current.replace(tzinfo=None)
         if task_sla.stage == "In Progress" and current > task_sla.breach_at:
             task_sla.breached = True
+
+
+def process_client_escalation_policies(limit=100):
+    """Client Management phase 7: an organization whose settings configure
+    an escalation policy (settings["notification"] = {"escalation_hours",
+    "escalation_group_id"}) gets its open tickets older than that threshold
+    escalated once -- reassigned to the escalation team, an internal note
+    posted, and the team manager notified. Idempotent via an "auto-escalated"
+    tag (mirrors process_sla_breaches()'s claim-once periodic-scan shape,
+    but ClientTicket has no dedicated "already escalated" boolean column, so
+    the tag is the marker instead of inventing a new column for one flag)."""
+    processed = 0
+    for organization in ClientOrganization.query.filter(ClientOrganization.active.is_(True)).all():
+        policy = (organization.settings or {}).get("notification", {})
+        hours, group_id = policy.get("escalation_hours"), policy.get("escalation_group_id")
+        if not hours or not group_id:
+            continue
+        try:
+            hours, group_id = float(hours), int(group_id)
+        except (TypeError, ValueError):
+            continue
+        group = db.session.get(SupportGroup, group_id)
+        if not group or not group.active or group.tenant_id != organization.tenant_id:
+            continue
+        threshold = now() - timedelta(hours=hours)
+        candidates = ClientTicket.query.filter(
+            ClientTicket.organization_id == organization.id,
+            ClientTicket.status.notin_(["Solved", "Closed"]),
+            ClientTicket.created_at <= threshold,
+            db.not_(ClientTicket.tags.ilike("%auto-escalated%")),
+        ).limit(limit).all()
+        for ticket in candidates:
+            ticket.support_group_id = group.id
+            existing_tags = {value.strip() for value in ticket.tags.split(",") if value.strip()}
+            existing_tags.add("auto-escalated")
+            ticket.tags = ", ".join(sorted(existing_tags))[:500]
+            db.session.add(ClientTicketMessage(
+                tenant_id=organization.tenant_id, client_ticket_id=ticket.id,
+                author_id=ticket.created_by_id, event_type="escalation", visibility="internal",
+                body=f"Escalated to {group.name}: open longer than {hours:g} hours ({organization.name}'s escalation policy).",
+            ))
+            if group.manager_id:
+                create_notification(
+                    group.manager_id, f"Escalated: {ticket.number}",
+                    f"{ticket.subject} has been open past {organization.name}'s escalation threshold.",
+                    tenant_id=organization.tenant_id, target_type="client_ticket", target_id=ticket.id,
+                )
+            processed += 1
+    db.session.commit()
+    return processed
 
 
 def process_sla_breaches(limit=50):
@@ -3307,6 +3379,113 @@ def visible_client_contact_query(user):
         return query
     visible_org_ids = visible_client_organization_query(user).with_entities(ClientOrganization.id)
     return query.filter(ClientContact.organization_id.in_(visible_org_ids))
+
+
+CLIENT_CUSTOM_FIELD_ENTITY_TYPES = ("client_ticket", "organization", "contact")
+CLIENT_CUSTOM_FIELD_TYPES = ("text", "number", "date", "select")
+
+
+def client_custom_fields_for(entity_type, organization=None):
+    """Active tenant-wide field definitions for `entity_type`, each resolved
+    against `organization`'s per-org required/visible overrides (stored in
+    ClientOrganization.settings["custom_field_overrides"][key] -- field
+    EXISTENCE is tenant-wide, matching Zendesk's own custom-field model;
+    only required/visible are ever overridden per organization). A field
+    with no override uses its tenant-wide `required` default and is always
+    visible. Returns a list of {"definition", "required", "options"} dicts,
+    already filtered to only the currently-visible fields."""
+    definitions = ClientCustomFieldDefinition.query.filter_by(
+        tenant_id=current_user.tenant_id, entity_type=entity_type, active=True,
+    ).order_by(ClientCustomFieldDefinition.position, ClientCustomFieldDefinition.label).all()
+    overrides = ((organization.settings or {}).get("custom_field_overrides", {}) if organization else {})
+    resolved = []
+    for definition in definitions:
+        override = overrides.get(definition.key, {})
+        if not override.get("visible", True):
+            continue
+        try:
+            options = json.loads(definition.options_json or "[]")
+        except (TypeError, ValueError):
+            options = []
+        resolved.append({
+            "definition": definition,
+            "required": override.get("required", definition.required),
+            "options": options,
+        })
+    return resolved
+
+
+def parse_client_custom_field_values(fields, form):
+    """Reads `custom__<key>` form inputs for the given resolved `fields`
+    (client_custom_fields_for()'s return value), enforcing required-ness.
+    Returns (values, error) -- error is a user-facing string naming the
+    first missing required field, or None."""
+    values = {}
+    for field in fields:
+        key = field["definition"].key
+        value = form.get(f"custom__{key}", "").strip()
+        if field["required"] and not value:
+            return {}, f"{field['definition'].label} is required."
+        if value:
+            values[key] = value
+    return values, None
+
+
+def evaluate_client_triggers(event, ticket, agents):
+    """Evaluates active ClientTrigger rows for `event` (in position order)
+    against `ticket`'s current field values, applying the first-matching
+    action of each. Mutates `ticket` in place; caller is responsible for
+    db.session.commit(). Returns the list of trigger names that fired, for
+    the caller to surface (or not) to the user -- always logged internally
+    on the ticket so "why did this change" is never a mystery."""
+    context = {
+        "status": ticket.status, "priority": ticket.priority, "ticket_type": ticket.ticket_type,
+        "channel": ticket.channel, "tags": ticket.tags, "subject": ticket.subject,
+    }
+    triggers = tenant_query(ClientTrigger).filter_by(event=event, active=True).order_by(
+        ClientTrigger.position, ClientTrigger.id
+    ).all()
+    agent_ids = {agent.id for agent in agents}
+    fired = []
+    for trigger in triggers:
+        if not condition_matches(trigger.condition_field, trigger.condition_op, trigger.condition_value, context):
+            continue
+        if trigger.action_type == "set_status" and trigger.action_value in CLIENT_TICKET_STATUSES:
+            ticket.status = trigger.action_value
+            context["status"] = trigger.action_value
+        elif trigger.action_type == "set_priority" and trigger.action_value in CLIENT_TICKET_PRIORITIES:
+            ticket.priority = trigger.action_value
+            context["priority"] = trigger.action_value
+        elif trigger.action_type == "add_tag":
+            existing_tags = {value.strip() for value in ticket.tags.split(",") if value.strip()}
+            existing_tags.add(trigger.action_value.strip())
+            ticket.tags = ", ".join(sorted(existing_tags))[:500]
+            context["tags"] = ticket.tags
+        elif trigger.action_type == "assign_to_group":
+            group_id = int(trigger.action_value) if trigger.action_value.isdigit() else None
+            if group_id and tenant_query(SupportGroup).filter_by(id=group_id, active=True).first():
+                ticket.support_group_id = group_id
+        elif trigger.action_type == "assign_to_user":
+            user_id = int(trigger.action_value) if trigger.action_value.isdigit() else None
+            if user_id in agent_ids:
+                ticket.assignee_id = user_id
+        elif trigger.action_type == "notify_assignee" and ticket.assignee_id:
+            create_notification(
+                ticket.assignee_id, f"Automation: {trigger.name}", trigger.action_value,
+                tenant_id=ticket.tenant_id, target_type="client_ticket", target_id=ticket.id,
+            )
+        elif trigger.action_type == "notify_org_contact":
+            db.session.add(ClientTicketMessage(
+                tenant_id=ticket.tenant_id, client_ticket_id=ticket.id,
+                author_id=ticket.created_by_id, body=trigger.action_value, visibility="public",
+            ))
+        fired.append(trigger.name)
+    if fired:
+        db.session.add(ClientTicketMessage(
+            tenant_id=ticket.tenant_id, client_ticket_id=ticket.id, author_id=ticket.created_by_id,
+            body=f"Automation triggered: {', '.join(fired)}.", visibility="internal", event_type="automation",
+        ))
+    return fired
 
 
 def visible_catalog_request_query(user):
@@ -4980,6 +5159,7 @@ def create_app(test_config=None):
     app.jinja_env.globals["IMAGE_ATTACHMENT_TYPES"] = IMAGE_ATTACHMENT_TYPES
     app.jinja_env.globals["now"] = now
     app.jinja_env.globals["all_roles"] = ALL_ROLES
+    app.jinja_env.globals["role_at_least"] = role_at_least
 
     @app.context_processor
     def ui_context():
@@ -8398,36 +8578,134 @@ def create_app(test_config=None):
         ).order_by(ClientTicket.updated_at.desc()).limit(8).all()
         return render_template("client_management_home.html", counts=counts, recent=recent)
 
+    def client_ticket_filter_field_spec():
+        return {
+            "number": {"label": "Number", "type": "text", "column": ClientTicket.number},
+            "subject": {"label": "Subject", "type": "text", "column": ClientTicket.subject},
+            "status": {"label": "Status", "type": "choice", "column": ClientTicket.status,
+                       "options": [(s, s) for s in ["New", "Open", "Pending", "On-hold", "Solved", "Closed"]]},
+            "priority": {"label": "Priority", "type": "choice", "column": ClientTicket.priority,
+                         "options": [(p, p) for p in ["Low", "Normal", "High", "Urgent"]]},
+            "ticket_type": {"label": "Type", "type": "choice", "column": ClientTicket.ticket_type,
+                            "options": [(t, t) for t in ["Question", "Incident", "Problem", "Task"]]},
+            "channel": {"label": "Channel", "type": "choice", "column": ClientTicket.channel,
+                        "options": [(c, c) for c in ["Web", "Email", "Phone", "Chat"]]},
+            "tags": {"label": "Tags", "type": "text", "column": ClientTicket.tags},
+            "created": {"label": "Opened", "type": "date", "column": ClientTicket.created_at},
+            "updated": {"label": "Updated", "type": "date", "column": ClientTicket.updated_at},
+        }
+
+    CLIENT_VIEW_SORT_COLUMNS = {
+        "updated": ClientTicket.updated_at, "created": ClientTicket.created_at,
+        "priority": ClientTicket.priority, "status": ClientTicket.status,
+    }
+
+    def visible_client_views(user):
+        return ClientView.query.filter(
+            ClientView.tenant_id == user.tenant_id,
+            db.or_(ClientView.created_by_id == user.id, ClientView.shared.is_(True)),
+        ).order_by(ClientView.name).all()
+
     @app.get("/client-management/tickets")
     @require_client_management
     def client_tickets():
-        view = request.args.get("view", "unsolved")
         q = request.args.get("q", "").strip()
+        view_id = request.args.get("view_id", type=int)
+        active_view = None
+        if view_id:
+            active_view = ClientView.query.filter(
+                ClientView.id == view_id, ClientView.tenant_id == current_user.tenant_id,
+                db.or_(ClientView.created_by_id == current_user.id, ClientView.shared.is_(True)),
+            ).first()
         query = visible_client_ticket_query(current_user).options(
             selectinload(ClientTicket.contact), selectinload(ClientTicket.assignee),
             selectinload(ClientTicket.organization),
         )
-        if view == "mine":
-            query = query.filter(ClientTicket.assignee_id == current_user.id, ClientTicket.status.notin_(["Solved", "Closed"]))
-        elif view == "unassigned":
-            query = query.filter(ClientTicket.assignee_id.is_(None), ClientTicket.status.notin_(["Solved", "Closed"]))
-        elif view == "pending":
-            query = query.filter(ClientTicket.status == "Pending")
-        elif view == "recent":
-            query = query.filter(ClientTicket.updated_at >= now() - timedelta(days=7))
-        elif view == "solved":
-            query = query.filter(ClientTicket.status.in_(["Solved", "Closed"]))
+        if active_view:
+            view = None
+            raw_filter = active_view.conditions_json
+            sort_field, sort_dir = active_view.sort_field, active_view.sort_dir
         else:
-            view = "unsolved"
-            query = query.filter(ClientTicket.status.notin_(["Solved", "Closed"]))
+            view = request.args.get("view", "unsolved")
+            raw_filter = request.args.get("filter", "")
+            sort_field, sort_dir = "updated", "desc"
+            if view == "mine":
+                query = query.filter(ClientTicket.assignee_id == current_user.id, ClientTicket.status.notin_(["Solved", "Closed"]))
+            elif view == "unassigned":
+                query = query.filter(ClientTicket.assignee_id.is_(None), ClientTicket.status.notin_(["Solved", "Closed"]))
+            elif view == "pending":
+                query = query.filter(ClientTicket.status == "Pending")
+            elif view == "recent":
+                query = query.filter(ClientTicket.updated_at >= now() - timedelta(days=7))
+            elif view == "solved":
+                query = query.filter(ClientTicket.status.in_(["Solved", "Closed"]))
+            else:
+                view = "unsolved"
+                query = query.filter(ClientTicket.status.notin_(["Solved", "Closed"]))
+        conditions = parse_list_filter_param(raw_filter)
+        field_spec = client_ticket_filter_field_spec()
+        query = apply_filter_conditions(query, conditions, field_spec)
         if q:
             query = query.join(ClientContact).join(ClientOrganization).filter(db.or_(
                 ClientTicket.number.ilike(f"%{q}%"), ClientTicket.subject.ilike(f"%{q}%"),
                 ClientContact.name.ilike(f"%{q}%"), ClientContact.email.ilike(f"%{q}%"),
                 ClientOrganization.name.ilike(f"%{q}%"),
             ))
-        tickets = query.order_by(ClientTicket.updated_at.desc()).limit(250).all()
-        return render_template("client_tickets.html", tickets=tickets, view=view, q=q)
+        sort_column = CLIENT_VIEW_SORT_COLUMNS.get(sort_field, ClientTicket.updated_at)
+        order = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+        tickets = query.order_by(order).limit(250).all()
+        client_fields = {
+            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            for key, spec in field_spec.items()
+        }
+        return render_template(
+            "client_tickets.html", tickets=tickets, view=view, q=q,
+            raw_filter=raw_filter, filter_fields=client_fields,
+            views=visible_client_views(current_user), active_view=active_view,
+            sort_field=sort_field, sort_dir=sort_dir,
+        )
+
+    @app.post("/client-management/views")
+    @require_client_management
+    def client_view_create():
+        name = request.form.get("name", "").strip()
+        raw_conditions = request.form.get("conditions_json", "[]")
+        conditions = parse_list_filter_param(raw_conditions)
+        sort_field = request.form.get("sort_field", "updated")
+        if sort_field not in CLIENT_VIEW_SORT_COLUMNS:
+            sort_field = "updated"
+        sort_dir = request.form.get("sort_dir", "desc")
+        if sort_dir not in ("asc", "desc"):
+            sort_dir = "desc"
+        if not name:
+            flash("Name your view before saving it.", "error")
+        elif ClientView.query.filter_by(
+            tenant_id=current_user.tenant_id, created_by_id=current_user.id, name=name
+        ).first():
+            flash("You already have a view with that name.", "error")
+        else:
+            db.session.add(ClientView(
+                tenant_id=current_user.tenant_id, name=name, created_by_id=current_user.id,
+                shared=bool(request.form.get("shared")), conditions_json=json.dumps(conditions),
+                sort_field=sort_field, sort_dir=sort_dir,
+            ))
+            audit("client view created", name, "shared" if request.form.get("shared") else "private")
+            db.session.commit()
+            flash(f'View "{name}" saved.', "success")
+        return redirect(url_for("client_tickets"))
+
+    @app.post("/client-management/views/<int:view_id>/delete")
+    @require_client_management
+    def client_view_delete(view_id):
+        view = ClientView.query.filter_by(id=view_id, tenant_id=current_user.tenant_id).first_or_404()
+        if view.created_by_id != current_user.id and not role_at_least(current_user.effective_role, "admin"):
+            abort(403, description="Only the view's creator or an admin can delete it.")
+        name = view.name
+        db.session.delete(view)
+        audit("client view deleted", name, "")
+        db.session.commit()
+        flash(f'View "{name}" deleted.', "success")
+        return redirect(url_for("client_tickets"))
 
     @app.route("/client-management/tickets/new", methods=["GET", "POST"])
     @require_client_management
@@ -8440,8 +8718,12 @@ def create_app(test_config=None):
             contact = visible_client_contact_query(current_user).filter_by(id=request.form.get("contact_id", type=int), active=True).first_or_404()
             subject = request.form.get("subject", "").strip()
             description = request.form.get("description", "").strip()
+            resolved_fields = client_custom_fields_for("client_ticket", organization=contact.organization)
+            custom_values, custom_error = parse_client_custom_field_values(resolved_fields, request.form)
             if not subject or not description:
                 flash("Subject and description are required.", "error")
+            elif custom_error:
+                flash(custom_error, "error")
             else:
                 agent_ids = {agent.id for agent in agents}
                 assignee_id = request.form.get("assignee_id", type=int)
@@ -8455,7 +8737,8 @@ def create_app(test_config=None):
                         status="New", priority=request.form.get("priority") if request.form.get("priority") in ["Low", "Normal", "High", "Urgent"] else "Normal",
                         ticket_type=request.form.get("ticket_type") if request.form.get("ticket_type") in ["Question", "Incident", "Problem", "Task"] else "Question",
                         channel=request.form.get("channel") if request.form.get("channel") in ["Web", "Email", "Phone", "Chat"] else "Web",
-                        tags=request.form.get("tags", "").strip()[:500], contact_id=contact.id,
+                        tags=request.form.get("tags", "").strip()[:500], custom_fields=custom_values,
+                        contact_id=contact.id,
                         organization_id=contact.organization_id, assignee_id=assignee_id,
                         support_group_id=group.id, created_by_id=current_user.id,
                     )
@@ -8467,10 +8750,13 @@ def create_app(test_config=None):
                     tenant_id=current_user.tenant_id, client_ticket_id=ticket.id,
                     author_id=current_user.id, body=description, visibility="public", event_type="opened",
                 ))
+                evaluate_client_triggers("created", ticket, agents)
+                attach_slas("client_ticket", ticket.id, ticket.priority, organization_id=ticket.organization_id)
                 audit("client ticket created", ticket.number, f"Customer {contact.email}; organization {contact.organization.name}")
                 db.session.commit()
                 return redirect(url_for("client_ticket_detail", ticket_id=ticket.id))
-        return render_template("client_ticket_form.html", contacts=contacts, agents=agents)
+        ticket_fields = client_custom_fields_for("client_ticket")
+        return render_template("client_ticket_form.html", contacts=contacts, agents=agents, ticket_fields=ticket_fields)
 
     @app.route("/client-management/tickets/<int:ticket_id>", methods=["GET", "POST"])
     @require_client_management
@@ -8508,6 +8794,12 @@ def create_app(test_config=None):
                     abort(400)
                 if priority not in ["Low", "Normal", "High", "Urgent"] or ticket_type not in ["Question", "Incident", "Problem", "Task"]:
                     abort(400)
+                resolved_fields = client_custom_fields_for("client_ticket", organization=ticket.organization)
+                custom_values, custom_error = parse_client_custom_field_values(resolved_fields, request.form)
+                if custom_error:
+                    flash(custom_error, "error")
+                    return redirect(url_for("client_ticket_detail", ticket_id=ticket.id))
+                ticket.custom_fields = custom_values
                 agent_ids = {agent.id for agent in agents}
                 assignee_id = request.form.get("assignee_id", type=int)
                 ticket.assignee_id = assignee_id if assignee_id in agent_ids else None
@@ -8520,10 +8812,63 @@ def create_app(test_config=None):
                         author_id=current_user.id, body=f"Status changed from {old_status} to {status}.",
                         visibility="internal", event_type="status",
                     ))
+                    evaluate_client_triggers("status_changed", ticket, agents)
+                    sync_slas("client_ticket", ticket.id, ticket.status)
+                evaluate_client_triggers("updated", ticket, agents)
                 audit("client ticket updated", ticket.number, f"Status {old_status} -> {status}")
                 db.session.commit()
                 return redirect(url_for("client_ticket_detail", ticket_id=ticket.id))
-        return render_template("client_ticket_detail.html", ticket=ticket, agents=agents)
+            elif action == "apply_macro":
+                macro = tenant_query(ClientMacro).filter_by(
+                    id=request.form.get("macro_id", type=int), active=True
+                ).first_or_404()
+                try:
+                    macro_actions = json.loads(macro.actions_json or "{}")
+                except (TypeError, ValueError):
+                    macro_actions = {}
+                old_status = ticket.status
+                if "status" in macro_actions and macro_actions["status"] in ["New", "Open", "Pending", "On-hold", "Solved", "Closed"]:
+                    ticket.status = macro_actions["status"]
+                if "priority" in macro_actions and macro_actions["priority"] in ["Low", "Normal", "High", "Urgent"]:
+                    ticket.priority = macro_actions["priority"]
+                if "ticket_type" in macro_actions and macro_actions["ticket_type"] in ["Question", "Incident", "Problem", "Task"]:
+                    ticket.ticket_type = macro_actions["ticket_type"]
+                if "tags" in macro_actions:
+                    ticket.tags = str(macro_actions["tags"])[:500]
+                if "assignee_id" in macro_actions:
+                    agent_ids = {agent.id for agent in agents}
+                    macro_assignee_id = macro_actions["assignee_id"]
+                    ticket.assignee_id = macro_assignee_id if macro_assignee_id in agent_ids else None
+                if ticket.status == "Solved" and old_status != "Solved":
+                    ticket.solved_at = now()
+                elif ticket.status not in ("Solved", "Closed"):
+                    ticket.solved_at = None
+                if old_status != ticket.status:
+                    db.session.add(ClientTicketMessage(
+                        tenant_id=current_user.tenant_id, client_ticket_id=ticket.id,
+                        author_id=current_user.id, body=f"Status changed from {old_status} to {ticket.status}.",
+                        visibility="internal", event_type="status",
+                    ))
+                    evaluate_client_triggers("status_changed", ticket, agents)
+                    sync_slas("client_ticket", ticket.id, ticket.status)
+                if macro.reply_body:
+                    db.session.add(ClientTicketMessage(
+                        tenant_id=current_user.tenant_id, client_ticket_id=ticket.id,
+                        author_id=current_user.id, body=macro.reply_body,
+                        visibility=macro.reply_visibility if macro.reply_visibility in ("public", "internal") else "public",
+                    ))
+                evaluate_client_triggers("updated", ticket, agents)
+                ticket.updated_at = now()
+                audit("client macro applied", ticket.number, macro.name)
+                db.session.commit()
+                flash(f'Applied "{macro.name}".', "success")
+                return redirect(url_for("client_ticket_detail", ticket_id=ticket.id))
+        ticket_fields = client_custom_fields_for("client_ticket", organization=ticket.organization)
+        macros = tenant_query(ClientMacro).filter_by(active=True).order_by(ClientMacro.name).all()
+        return render_template(
+            "client_ticket_detail.html", ticket=ticket, agents=agents, ticket_fields=ticket_fields, macros=macros,
+            branding=(ticket.organization.settings or {}).get("branding", {}),
+        )
 
     @app.route("/client-management/organizations", methods=["GET", "POST"])
     @require_client_management
@@ -8613,15 +8958,254 @@ def create_app(test_config=None):
                 audit("client organization access revoked", organization.name, label)
                 db.session.commit()
                 flash("Access grant removed.", "success")
+            elif action == "update_custom_fields":
+                org_fields = client_custom_fields_for("organization")
+                values, error = parse_client_custom_field_values(org_fields, request.form)
+                if error:
+                    flash(error, "error")
+                else:
+                    organization.custom_fields = values
+                    audit("client organization custom fields updated", organization.name, "")
+                    db.session.commit()
+                    flash("Custom fields saved.", "success")
+            elif action == "update_field_overrides":
+                ticket_field_defs = tenant_query(ClientCustomFieldDefinition).filter_by(
+                    entity_type="client_ticket", active=True,
+                ).all()
+                overrides = dict(organization.settings or {})
+                field_overrides = {}
+                for field in ticket_field_defs:
+                    visible = request.form.get(f"visible__{field.key}") == "on"
+                    required = request.form.get(f"required__{field.key}") == "on"
+                    if not visible or required != field.required:
+                        field_overrides[field.key] = {"visible": visible, "required": required}
+                overrides["custom_field_overrides"] = field_overrides
+                organization.settings = overrides
+                audit("client organization field overrides updated", organization.name, "")
+                db.session.commit()
+                flash("Ticket field overrides saved.", "success")
+            elif action == "update_branding":
+                # This app has no real multi-domain/multi-portal hosting --
+                # "branding per organization" is scoped honestly to what
+                # actually renders: a display name/accent color/logo shown
+                # on that organization's own tickets, not a separate
+                # branded site.
+                settings = dict(organization.settings or {})
+                settings["branding"] = {
+                    "display_name": request.form.get("display_name", "").strip()[:180],
+                    "color": request.form.get("color", "").strip()[:20],
+                }
+                organization.settings = settings
+                audit("client organization branding updated", organization.name, "")
+                db.session.commit()
+                flash("Branding saved.", "success")
+            elif action == "update_notification_policy":
+                escalation_hours = request.form.get("escalation_hours", "").strip()
+                escalation_group_id = request.form.get("escalation_group_id", "").strip()
+                settings = dict(organization.settings or {})
+                notification = {}
+                if escalation_hours and escalation_group_id:
+                    try:
+                        hours_value = float(escalation_hours)
+                    except ValueError:
+                        flash("Escalation hours must be a number.", "error")
+                        return redirect(url_for("client_organization_detail", organization_id=organization.id))
+                    tenant_record_or_404(SupportGroup, int(escalation_group_id))
+                    notification = {"escalation_hours": hours_value, "escalation_group_id": int(escalation_group_id)}
+                settings["notification"] = notification
+                organization.settings = settings
+                audit("client organization notification policy updated", organization.name, "")
+                db.session.commit()
+                flash("Notification and escalation policy saved.", "success")
             return redirect(url_for("client_organization_detail", organization_id=organization.id))
         agents = User.query.filter(
             User.tenant_id == current_user.tenant_id, User.active.is_(True),
             User.role.in_(["agent", "manager", "admin"]),
         ).order_by(User.name).all()
         groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
+        org_custom_fields = client_custom_fields_for("organization")
+        ticket_field_defs = tenant_query(ClientCustomFieldDefinition).filter_by(
+            entity_type="client_ticket", active=True,
+        ).order_by(ClientCustomFieldDefinition.position, ClientCustomFieldDefinition.label).all()
+        ticket_field_overrides = (organization.settings or {}).get("custom_field_overrides", {})
         return render_template(
             "client_organization_detail.html", organization=organization, agents=agents, groups=groups,
             is_admin=role_at_least(current_user.effective_role, "admin"),
+            org_custom_fields=org_custom_fields, ticket_field_defs=ticket_field_defs,
+            ticket_field_overrides=ticket_field_overrides,
+            branding=(organization.settings or {}).get("branding", {}),
+            notification_policy=(organization.settings or {}).get("notification", {}),
+        )
+
+    @app.route("/client-management/custom-fields", methods=["GET", "POST"])
+    @require_client_management
+    def client_custom_fields_admin():
+        if request.method == "POST":
+            if not role_at_least(current_user.effective_role, "admin"):
+                abort(403, description="Only an administrator can manage custom fields.")
+            action = request.form.get("action", "create")
+            if action == "create":
+                entity_type = request.form.get("entity_type", "")
+                key = request.form.get("key", "").strip().lower().replace(" ", "_")
+                label = request.form.get("label", "").strip()
+                field_type = request.form.get("field_type", "text")
+                options_raw = request.form.get("options", "")
+                if entity_type not in CLIENT_CUSTOM_FIELD_ENTITY_TYPES:
+                    abort(400, description="Select a valid entity type.")
+                if field_type not in CLIENT_CUSTOM_FIELD_TYPES:
+                    abort(400, description="Select a valid field type.")
+                if not key or not re.match(r"^[a-z][a-z0-9_]{0,58}[a-z0-9]$", key):
+                    flash("Field key must be lowercase letters, numbers, and underscores.", "error")
+                elif not label:
+                    flash("Field label is required.", "error")
+                elif tenant_query(ClientCustomFieldDefinition).filter_by(
+                    entity_type=entity_type, key=key
+                ).first():
+                    flash("A field with that key already exists for this record type.", "error")
+                else:
+                    options = [line.strip() for line in options_raw.splitlines() if line.strip()] if field_type == "select" else []
+                    db.session.add(ClientCustomFieldDefinition(
+                        tenant_id=current_user.tenant_id, entity_type=entity_type, key=key,
+                        label=label, field_type=field_type, options_json=json.dumps(options),
+                        required=bool(request.form.get("required")), created_by_id=current_user.id,
+                    ))
+                    audit("client custom field created", label, entity_type)
+                    db.session.commit()
+                    flash(f"{label} added.", "success")
+            elif action == "toggle_active":
+                field = tenant_record_or_404(ClientCustomFieldDefinition, request.form.get("field_id", type=int))
+                field.active = not field.active
+                audit("client custom field toggled", field.label, "Active" if field.active else "Inactive")
+                db.session.commit()
+                flash(f"{field.label} is now {'active' if field.active else 'inactive'}.", "success")
+            return redirect(url_for("client_custom_fields_admin"))
+        fields_by_entity = {
+            entity_type: tenant_query(ClientCustomFieldDefinition).filter_by(
+                entity_type=entity_type
+            ).order_by(ClientCustomFieldDefinition.position, ClientCustomFieldDefinition.label).all()
+            for entity_type in CLIENT_CUSTOM_FIELD_ENTITY_TYPES
+        }
+        return render_template(
+            "client_custom_fields_admin.html", fields_by_entity=fields_by_entity,
+            entity_types=CLIENT_CUSTOM_FIELD_ENTITY_TYPES, field_types=CLIENT_CUSTOM_FIELD_TYPES,
+        )
+
+    @app.route("/client-management/macros", methods=["GET", "POST"])
+    @require_client_management
+    def client_macros_admin():
+        if request.method == "POST":
+            if not role_at_least(current_user.effective_role, "admin"):
+                abort(403, description="Only an administrator can manage macros.")
+            action = request.form.get("action", "create")
+            if action == "create":
+                name = request.form.get("name", "").strip()
+                if not name:
+                    flash("Macro name is required.", "error")
+                elif tenant_query(ClientMacro).filter_by(name=name).first():
+                    flash("A macro with that name already exists.", "error")
+                else:
+                    actions = {}
+                    status = request.form.get("macro_status", "")
+                    if status and status in ["New", "Open", "Pending", "On-hold", "Solved", "Closed"]:
+                        actions["status"] = status
+                    priority = request.form.get("macro_priority", "")
+                    if priority and priority in ["Low", "Normal", "High", "Urgent"]:
+                        actions["priority"] = priority
+                    ticket_type = request.form.get("macro_ticket_type", "")
+                    if ticket_type and ticket_type in ["Question", "Incident", "Problem", "Task"]:
+                        actions["ticket_type"] = ticket_type
+                    tags = request.form.get("macro_tags", "").strip()
+                    if tags:
+                        actions["tags"] = tags[:500]
+                    reply_body = request.form.get("reply_body", "").strip()
+                    reply_visibility = request.form.get("reply_visibility", "public")
+                    if reply_visibility not in ("public", "internal"):
+                        reply_visibility = "public"
+                    db.session.add(ClientMacro(
+                        tenant_id=current_user.tenant_id, name=name, actions_json=json.dumps(actions),
+                        reply_body=reply_body, reply_visibility=reply_visibility, created_by_id=current_user.id,
+                    ))
+                    audit("client macro created", name, "")
+                    db.session.commit()
+                    flash(f"{name} added.", "success")
+            elif action == "toggle_active":
+                macro = tenant_record_or_404(ClientMacro, request.form.get("macro_id", type=int))
+                macro.active = not macro.active
+                audit("client macro toggled", macro.name, "Active" if macro.active else "Inactive")
+                db.session.commit()
+                flash(f"{macro.name} is now {'active' if macro.active else 'inactive'}.", "success")
+            return redirect(url_for("client_macros_admin"))
+        macros = tenant_query(ClientMacro).order_by(ClientMacro.name).all()
+        macro_rows = []
+        for macro in macros:
+            try:
+                actions = json.loads(macro.actions_json or "{}")
+            except (TypeError, ValueError):
+                actions = {}
+            macro_rows.append({"macro": macro, "actions": actions})
+        return render_template(
+            "client_macros_admin.html", macro_rows=macro_rows,
+            statuses=["New", "Open", "Pending", "On-hold", "Solved", "Closed"],
+            priorities=["Low", "Normal", "High", "Urgent"],
+            ticket_types=["Question", "Incident", "Problem", "Task"],
+        )
+
+    @app.route("/client-management/triggers", methods=["GET", "POST"])
+    @require_client_management
+    def client_triggers_admin():
+        if request.method == "POST":
+            if not role_at_least(current_user.effective_role, "admin"):
+                abort(403, description="Only an administrator can manage triggers.")
+            action = request.form.get("action", "create")
+            if action == "create":
+                name = request.form.get("name", "").strip()
+                event = request.form.get("event", "")
+                condition_field = request.form.get("condition_field", "")
+                condition_op = request.form.get("condition_op", "")
+                condition_value = request.form.get("condition_value", "").strip()
+                action_type = request.form.get("action_type", "")
+                action_value = request.form.get("action_value", "").strip()
+                if not name:
+                    flash("Trigger name is required.", "error")
+                elif tenant_query(ClientTrigger).filter_by(name=name).first():
+                    flash("A trigger with that name already exists.", "error")
+                else:
+                    try:
+                        validate_trigger(event, condition_field, condition_op, action_type, action_value)
+                    except ClientTriggerConfigurationError as error:
+                        flash(str(error), "error")
+                    else:
+                        max_position = db.session.query(
+                            func.coalesce(func.max(ClientTrigger.position), -1)
+                        ).filter(ClientTrigger.tenant_id == current_user.tenant_id, ClientTrigger.event == event).scalar()
+                        db.session.add(ClientTrigger(
+                            tenant_id=current_user.tenant_id, name=name, event=event,
+                            condition_field=condition_field, condition_op=condition_op,
+                            condition_value=condition_value, action_type=action_type,
+                            action_value=action_value, position=max_position + 1,
+                            created_by_id=current_user.id,
+                        ))
+                        audit("client trigger created", name, event)
+                        db.session.commit()
+                        flash(f"{name} added.", "success")
+            elif action == "toggle_active":
+                trigger = tenant_record_or_404(ClientTrigger, request.form.get("trigger_id", type=int))
+                trigger.active = not trigger.active
+                audit("client trigger toggled", trigger.name, "Active" if trigger.active else "Inactive")
+                db.session.commit()
+                flash(f"{trigger.name} is now {'active' if trigger.active else 'inactive'}.", "success")
+            return redirect(url_for("client_triggers_admin"))
+        triggers = tenant_query(ClientTrigger).order_by(ClientTrigger.event, ClientTrigger.position).all()
+        return render_template(
+            "client_triggers_admin.html", triggers=triggers, events=CLIENT_TRIGGER_EVENTS,
+            fields=CLIENT_TRIGGER_FIELDS, operators=CLIENT_TRIGGER_OPERATORS,
+            action_types=CLIENT_TRIGGER_ACTION_TYPES, statuses=CLIENT_TICKET_STATUSES,
+            priorities=CLIENT_TICKET_PRIORITIES,
+            groups=tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all(),
+            agents=User.query.filter(
+                User.tenant_id == current_user.tenant_id, User.active.is_(True),
+                User.role.in_(["agent", "manager", "admin"]),
+            ).order_by(User.name).all(),
         )
 
     @app.route("/client-management/contacts", methods=["GET", "POST"])
@@ -8636,18 +9220,27 @@ def create_app(test_config=None):
             elif tenant_query(ClientContact).filter(func.lower(ClientContact.email) == email).first():
                 flash("That client email address already exists.", "error")
             else:
+                contact_fields = client_custom_fields_for("contact")
+                custom_values, custom_error = parse_client_custom_field_values(contact_fields, request.form)
+                if custom_error:
+                    flash(custom_error, "error")
+                    return redirect(url_for("client_contacts"))
                 row = ClientContact(
                     tenant_id=current_user.tenant_id, organization_id=organization.id,
                     name=name, email=email, phone=request.form.get("phone", "").strip(),
                     job_title=request.form.get("job_title", "").strip(),
                     preferred_language=request.form.get("preferred_language", "English").strip() or "English",
+                    custom_fields=custom_values,
                 )
                 db.session.add(row)
                 audit("client contact created", email, organization.name)
                 db.session.commit()
                 return redirect(url_for("client_contacts"))
         contacts = visible_client_contact_query(current_user).options(selectinload(ClientContact.organization)).order_by(ClientContact.name).all()
-        return render_template("client_contacts.html", contacts=contacts, organizations=organizations)
+        contact_fields = client_custom_fields_for("contact")
+        return render_template(
+            "client_contacts.html", contacts=contacts, organizations=organizations, contact_fields=contact_fields,
+        )
 
     @app.get("/admin")
     @roles("admin")
@@ -11754,11 +12347,19 @@ def create_app(test_config=None):
                     schedule_id = int(request.form["schedule_id"]) if request.form.get("schedule_id") else None
                 except (TypeError, ValueError):
                     abort(400, description="SLA duration and schedule are invalid.")
-                if not name or target_type not in ("ticket", "ritm") or priority not in (None, "P1", "P2", "P3", "P4"):
+                if not name or target_type not in ("ticket", "ritm", "client_ticket") or priority not in (None, "P1", "P2", "P3", "P4", "Low", "Normal", "High", "Urgent"):
                     abort(400, description="SLA name, target and priority are invalid.")
                 if duration < 1 or duration > 525600:
                     abort(400, description="SLA duration must be between 1 and 525600 minutes.")
                 schedule = tenant_record_or_404(BusinessSchedule, schedule_id) if schedule_id else None
+                # Only meaningful (and only ever accepted) for a client_ticket
+                # SLA -- an org-specific row overrides the tenant-wide default
+                # for the same priority, see attach_slas()'s docstring.
+                client_organization = None
+                if target_type == "client_ticket" and request.form.get("client_organization_id"):
+                    client_organization = tenant_record_or_404(
+                        ClientOrganization, request.form.get("client_organization_id", type=int)
+                    )
                 if tenant_query(SLADefinition).filter(
                     func.lower(SLADefinition.name) == name.casefold()
                 ).first():
@@ -11773,9 +12374,11 @@ def create_app(test_config=None):
                     schedule_id=schedule.id if schedule else None,
                     agreement_type=agreement_type,
                     counterparty=counterparty if agreement_type != "SLA" else "",
+                    client_organization_id=client_organization.id if client_organization else None,
                 ))
                 audit("create", f"SLA definition: {name}",
-                      f"{agreement_type}; {duration} minutes; {schedule.name if schedule else '24x7'}")
+                      f"{agreement_type}; {duration} minutes; {schedule.name if schedule else '24x7'}"
+                      + (f"; org override for {client_organization.name}" if client_organization else ""))
                 flash(f"{agreement_type} definition {name} created.", "success")
             elif action == "create_change_freeze":
                 title = request.form.get("title", "").strip()
@@ -11925,6 +12528,7 @@ def create_app(test_config=None):
             ).all(),
             services=tenant_query(ServiceOffering).all(),
             sla_definitions=tenant_query(SLADefinition).all(),
+            client_organizations=tenant_query(ClientOrganization).order_by(ClientOrganization.name).all(),
             business_schedules=tenant_query(BusinessSchedule).order_by(
                 BusinessSchedule.name
             ).all(),

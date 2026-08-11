@@ -165,6 +165,36 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-print-page]").forEach(button => {
     button.addEventListener("click", () => window.print());
   });
+  // Confirmation prompts on destructive forms can't use an inline
+  // onsubmit="return confirm(...)" attribute -- this app's CSP is
+  // script-src 'self' with no 'unsafe-inline', which silently blocks
+  // inline event handlers (the form still submits, just with no prompt,
+  // exactly the print-button bug this same pattern already fixed once).
+  // A single delegated listener reading data-confirm works with the CSP
+  // unchanged, same as data-print-page above.
+  document.addEventListener("submit", event => {
+    const form = event.target.closest("[data-confirm]");
+    if (form && !window.confirm(form.dataset.confirm)) {
+      event.preventDefault();
+    }
+  });
+  // Same CSP issue, different attribute: an inline onchange="this.form.submit()"
+  // on a filter <select> is blocked exactly like the confirm() handlers
+  // above, so choosing a filter option silently did nothing.
+  document.addEventListener("change", event => {
+    if (event.target.matches("[data-auto-submit]")) {
+      event.target.form?.submit();
+    }
+  });
+  const slaTargetType = document.getElementById("sla-target-type");
+  const slaClientOrgField = document.getElementById("sla-client-org-field");
+  if (slaTargetType && slaClientOrgField) {
+    const syncSlaClientOrgField = () => {
+      slaClientOrgField.hidden = slaTargetType.value !== "client_ticket";
+    };
+    slaTargetType.addEventListener("change", syncSlaClientOrgField);
+    syncSlaClientOrgField();
+  }
   document.querySelectorAll(".org2-toggle:not(.org2-toggle-leaf)").forEach(toggle => {
     toggle.setAttribute("data-org2-toggle", "");
     toggle.addEventListener("click", () => {
