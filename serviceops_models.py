@@ -77,6 +77,7 @@ __all__ = [
     "ClientView",
     "ClientMacro",
     "ClientTrigger",
+    "ClientMailbox",
     "ClientContact",
     "ClientTicket",
     "ClientTicketMessage",
@@ -986,6 +987,65 @@ class ClientMacro(db.Model):
     __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_client_macro_tenant_name"),)
 
 
+class ClientMailbox(db.Model):
+    """A support email address polled via IMAP (inbound -> ClientTicket)
+    and sent through via SMTP (agent public replies -> real email). Modeled
+    as a list even though most tenants configure just one, mirroring
+    IntegrationConnection's per-row shape rather than the global
+    PlatformSetting mechanism, since this needs tenant scoping and
+    eventual multi-mailbox support the global settings mechanism doesn't
+    offer. Passwords use the same settings_cipher()-encrypted-column
+    pattern as IntegrationConnection.secret_encrypted/.secret."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    imap_host = db.Column(db.String(255), nullable=False, default="")
+    imap_port = db.Column(db.Integer, nullable=False, default=993)
+    imap_use_ssl = db.Column(db.Boolean, nullable=False, default=True)
+    imap_username = db.Column(db.String(255), nullable=False, default="")
+    imap_password_encrypted = db.Column(db.Text)
+    imap_folder = db.Column(db.String(120), nullable=False, default="INBOX")
+    smtp_host = db.Column(db.String(255), nullable=False, default="")
+    smtp_port = db.Column(db.Integer, nullable=False, default=587)
+    smtp_use_tls = db.Column(db.Boolean, nullable=False, default=True)
+    smtp_username = db.Column(db.String(255), nullable=False, default="")
+    smtp_password_encrypted = db.Column(db.Text)
+    from_address = db.Column(db.String(254), nullable=False, default="")
+    from_name = db.Column(db.String(160), nullable=False, default="")
+    default_organization_id = db.Column(db.Integer, db.ForeignKey("client_organization.id"))
+    auto_create_organization_by_domain = db.Column(db.Boolean, nullable=False, default=True)
+    last_polled_at = db.Column(db.DateTime(timezone=True))
+    last_poll_status = db.Column(db.String(20), nullable=False, default="never_run")
+    last_poll_error = db.Column(db.Text, nullable=False, default="")
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    default_organization = db.relationship("ClientOrganization")
+    created_by = db.relationship("User")
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_client_mailbox_tenant_name"),)
+
+    @property
+    def imap_password(self):
+        if not self.imap_password_encrypted:
+            return ""
+        return settings_cipher().decrypt(self.imap_password_encrypted.encode()).decode()
+
+    @imap_password.setter
+    def imap_password(self, value):
+        self.imap_password_encrypted = settings_cipher().encrypt(value.encode()).decode() if value else None
+
+    @property
+    def smtp_password(self):
+        if not self.smtp_password_encrypted:
+            return ""
+        return settings_cipher().decrypt(self.smtp_password_encrypted.encode()).decode()
+
+    @smtp_password.setter
+    def smtp_password(self, value):
+        self.smtp_password_encrypted = settings_cipher().encrypt(value.encode()).decode() if value else None
+
+
 class ClientContact(db.Model):
     """Customer identity used for support communication, not application login."""
     id = db.Column(db.Integer, primary_key=True)
@@ -1021,6 +1081,12 @@ class ClientTicket(db.Model):
     assignee_id = db.Column(db.Integer, db.ForeignKey("user.id"), index=True)
     support_group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False, index=True)
     created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    # Nullable: only set when the ticket originated from (or has since
+    # replied through) a specific ClientMailbox, so outbound replies go out
+    # via the same mailbox the customer is actually talking to -- not
+    # "whichever mailbox happens to be active" (see deliver reply wiring in
+    # app.py's client_ticket_detail).
+    mailbox_id = db.Column(db.Integer, db.ForeignKey("client_mailbox.id"), index=True)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     solved_at = db.Column(db.DateTime(timezone=True))
@@ -1029,6 +1095,7 @@ class ClientTicket(db.Model):
     assignee = db.relationship("User", foreign_keys=[assignee_id])
     created_by = db.relationship("User", foreign_keys=[created_by_id])
     support_group = db.relationship("SupportGroup")
+    mailbox = db.relationship("ClientMailbox")
     messages = db.relationship("ClientTicketMessage", cascade="all, delete-orphan", backref="ticket", order_by="ClientTicketMessage.created_at")
 
 
@@ -1036,10 +1103,20 @@ class ClientTicketMessage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     client_ticket_id = db.Column(db.Integer, db.ForeignKey("client_ticket.id"), nullable=False, index=True)
-    author_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    # Nullable: a message ingested from an inbound email has no internal
+    # User author -- it's attributed to the ticket's own contact instead
+    # (see event_type "inbound_email"; rendered as "<contact name> (via
+    # email)" rather than an agent's name).
+    author_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     body = db.Column(db.Text, nullable=False)
     visibility = db.Column(db.String(20), nullable=False, default="public")
     event_type = db.Column(db.String(30), nullable=False, default="reply")
+    # Email threading (Client Management email channel): message_id is the
+    # inbound email's own Message-ID, or our generated one for an outbound
+    # reply; in_reply_to is the raw header from an inbound email, kept to
+    # build outbound References chains. Both null for in-app-only messages.
+    message_id = db.Column(db.String(255), index=True)
+    in_reply_to = db.Column(db.String(255))
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     author = db.relationship("User")
 
@@ -2068,6 +2145,10 @@ class FileAttachment(db.Model):
     ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=True)
     enterprise_record_id = db.Column(db.Integer, db.ForeignKey("enterprise_record.id"), nullable=True)
     comment_id = db.Column(db.Integer, db.ForeignKey("comment.id"), nullable=True)
+    # A fourth parent option: a Client Management customer ticket -- email
+    # attachments land on the ticket directly (not per-message), matching
+    # how ITIL ticket attachments already work.
+    client_ticket_id = db.Column(db.Integer, db.ForeignKey("client_ticket.id"), nullable=True)
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     original_name = db.Column(db.String(255), nullable=False)
     stored_name = db.Column(db.String(255), unique=True, nullable=False)
@@ -2079,6 +2160,7 @@ class FileAttachment(db.Model):
     ticket = db.relationship("Ticket", backref=db.backref("attachments", cascade="all, delete-orphan"))
     enterprise_record = db.relationship("EnterpriseRecord", backref=db.backref("attachments", cascade="all, delete-orphan"))
     comment = db.relationship("Comment", backref=db.backref("attachments", cascade="all, delete-orphan"))
+    client_ticket = db.relationship("ClientTicket", backref=db.backref("attachments", cascade="all, delete-orphan"))
     uploaded_by = db.relationship("User")
     # File bytes are the most sensitive data this table points at, and its
     # tenant is otherwise only reachable through whichever ONE of three

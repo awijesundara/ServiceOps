@@ -2,7 +2,7 @@
 {% from "_client_custom_fields.html" import render_custom_fields %}
 {% block content %}<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('client_tickets') }}">CLIENT TICKETS</a> / {{ ticket.number }}</p><h1>{{ ticket.subject }}</h1><p>{{ ticket.organization.name }} · {{ ticket.contact.name }}</p></div></header>
 <div class="client-workspace"><section class="client-conversation"><header class="client-ticket-title"><span class="client-status {{ ticket.status|lower|replace(' ','-') }}">{{ ticket.status }}</span><h1>{{ ticket.subject }}</h1><p>{{ ticket.number }} · via {{ ticket.channel }} · opened {{ ticket.created_at|usertime('%b %d, %Y %H:%M') }}</p></header>
-  <div>{% for message in ticket.messages %}<article class="client-message {{ message.visibility }}">{{ user_avatar(message.author) }}<div class="client-message-body"><header><div><strong>{{ message.author.name }}</strong> <small>{{ 'Internal note' if message.visibility == 'internal' else 'Public reply' }}</small></div><time>{{ message.created_at|usertime('%b %d, %H:%M') }}</time></header><p>{{ message.body }}</p></div></article>{% endfor %}</div>
+  <div>{% for message in ticket.messages %}<article class="client-message {{ message.visibility }}">{{ user_avatar(message.author) }}<div class="client-message-body"><header><div><strong>{{ message.author.name if message.author else ticket.contact.name + ' (via email)' }}</strong> <small>{{ 'Internal note' if message.visibility == 'internal' else 'Public reply' }}</small></div><time>{{ message.created_at|usertime('%b %d, %H:%M') }}</time></header><p>{{ message.body }}</p></div></article>{% endfor %}</div>
   <form method="post" class="client-reply"><input type="hidden" name="action" value="reply"><label><span class="eyebrow">ADD TO CONVERSATION</span><textarea name="body" required placeholder="Write a response to the customer or an internal note…"></textarea></label><div class="client-reply-actions"><select name="visibility" aria-label="Message visibility"><option value="public">Public reply</option><option value="internal">Internal note</option></select><button class="primary">Submit</button></div></form>
   {% if macros %}
   <form method="post" class="client-reply"><input type="hidden" name="action" value="apply_macro"><label><span class="eyebrow">MACROS</span><select name="macro_id" required><option value="">Select a macro…</option>{% for macro in macros %}<option value="{{ macro.id }}">{{ macro.name }}</option>{% endfor %}</select></label><div class="client-reply-actions"><button class="button">Apply macro</button><a class="button" href="{{ url_for('client_macros_admin') }}">Manage macros</a></div></form>
@@ -15,4 +15,8 @@
   <label>Tags<input name="tags" maxlength="500" value="{{ ticket.tags }}"></label>
   {{ render_custom_fields(ticket_fields, ticket.custom_fields) }}
   <button class="primary">Update ticket</button>
-</form></aside></div>{% endblock %}
+</form>
+{% if ticket.attachments %}
+<div class="wide"><h2>Attachments</h2><div class="rack-connections-list">{% for attachment in ticket.attachments %}<a class="rack-connection-row" href="{{ url_for('attachment_download', attachment_id=attachment.id) }}"><div><strong>{{ attachment.original_name }}</strong><small>{{ (attachment.size_bytes / 1024)|round(1) }} KB</small></div></a>{% endfor %}</div></div>
+{% endif %}
+</aside></div>{% endblock %}
