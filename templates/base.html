@@ -20,8 +20,9 @@
   <script src="{{ url_for('static', filename='columns-picker.js', v=app_version) }}" defer></script>
   <script src="{{ url_for('static', filename='admin-nav.js', v=app_version) }}" defer></script>
   <script src="{{ url_for('static', filename='admin-context.js', v=app_version) }}" defer></script>
+  {% if current_user.is_authenticated %}<script src="{{ url_for('static', filename='guided-tour.js', v=app_version) }}" defer></script>{% endif %}
 </head>
-<body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}">
+<body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}" {% if current_user.is_authenticated %}data-tour-route="{{ request.endpoint }}"{% endif %}>
 <a class="skip-link" href="#main-content">Skip to main content</a>
 {% if current_user.is_authenticated %}
 {% set admin_endpoints = ['admin_home','itil_admin','system_settings','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
@@ -110,6 +111,7 @@
         <a href="{{ url_for('api_clients_admin') }}" {% if nav_active('api_clients_admin') %}class="active" aria-current="page"{% endif %}>API access</a>
         <a href="{{ url_for('audit_log') }}" {% if nav_active('audit_log') %}class="active" aria-current="page"{% endif %}>Audit &amp; evidence</a>
         <a href="{{ url_for('data_governance_admin') }}" {% if nav_active('data_governance_admin') %}class="active" aria-current="page"{% endif %}>Data governance</a>
+        <a href="{{ url_for('guided_tours_admin') }}" {% if nav_active('guided_tours_admin') %}class="active" aria-current="page"{% endif %}>Guided tours</a>
         <a href="{{ url_for('system_health') }}" {% if request.endpoint in ['system_health','system_health_log_file'] %}class="active" aria-current="page"{% endif %}>System health</a>
         {% if current_user.effective_role == 'superadmin' %}<a href="{{ url_for('platform_tenants') }}" {% if nav_active('platform_tenants') %}class="active" aria-current="page"{% endif %}>Platform tenants</a>{% endif %}
       </div>

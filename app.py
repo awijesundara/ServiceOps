@@ -9496,6 +9496,166 @@ def create_app(test_config=None):
             entity_types=CLIENT_CUSTOM_FIELD_ENTITY_TYPES, field_types=CLIENT_CUSTOM_FIELD_TYPES,
         )
 
+    GUIDED_TOUR_ROLES = ("requester", "agent", "manager", "admin")
+
+    @app.route("/admin/guided-tours", methods=["GET", "POST"])
+    @roles("admin")
+    @require_action("security_administer")
+    def guided_tours_admin():
+        """B-120: admin authoring page for contextual guided tours. DB-backed
+        (not Git-backed config) so a non-engineer admin can author/edit tour
+        content without a deploy, matching ClientMacro/ClientTrigger's
+        existing precedent for admin-editable per-tenant content."""
+        if request.method == "POST":
+            action = request.form.get("action", "create")
+            if action == "create":
+                key = request.form.get("key", "").strip().lower().replace(" ", "-")
+                title = request.form.get("title", "").strip()
+                if not key or not title:
+                    flash("A key and title are required.", "error")
+                elif tenant_query(GuidedTour).filter_by(key=key).first():
+                    flash("A tour with that key already exists.", "error")
+                else:
+                    roles_selected = [r for r in request.form.getlist("target_roles") if r in GUIDED_TOUR_ROLES]
+                    tour = GuidedTour(
+                        tenant_id=current_user.tenant_id, key=key, title=title,
+                        description=request.form.get("description", "").strip()[:500],
+                        target_route=request.form.get("target_route", "*").strip() or "*",
+                        target_roles=",".join(roles_selected),
+                        created_by_id=current_user.id,
+                    )
+                    db.session.add(tour)
+                    audit("guided tour created", key, title)
+                    db.session.commit()
+                    flash(f"{title} created. Add steps below.", "success")
+            elif action == "update_tour":
+                tour = tenant_record_or_404(GuidedTour, request.form.get("tour_id", type=int))
+                title = request.form.get("title", "").strip()
+                if not title:
+                    flash("Title is required.", "error")
+                else:
+                    roles_selected = [r for r in request.form.getlist("target_roles") if r in GUIDED_TOUR_ROLES]
+                    tour.title = title
+                    tour.description = request.form.get("description", "").strip()[:500]
+                    tour.target_route = request.form.get("target_route", "*").strip() or "*"
+                    tour.target_roles = ",".join(roles_selected)
+                    # Content changed -- bump version so users who already
+                    # dismissed/completed the prior version are re-prompted
+                    # (see UserTourProgress.tour_version_seen).
+                    tour.version += 1
+                    audit("guided tour updated", tour.key, f"version={tour.version}")
+                    db.session.commit()
+                    flash(f"{tour.title} updated (now version {tour.version}).", "success")
+            elif action == "toggle_active":
+                tour = tenant_record_or_404(GuidedTour, request.form.get("tour_id", type=int))
+                tour.active = not tour.active
+                audit("guided tour toggled", tour.key, "Active" if tour.active else "Inactive")
+                db.session.commit()
+                flash(f"{tour.title} is now {'active' if tour.active else 'inactive'}.", "success")
+            elif action == "delete":
+                tour = tenant_record_or_404(GuidedTour, request.form.get("tour_id", type=int))
+                title = tour.title
+                # GuidedTourStep cascades via the ORM relationship, but
+                # UserTourProgress has no FK cascade -- delete it explicitly
+                # first or this fails with a ForeignKeyViolation for any
+                # tour a user has actually seen (found during verification).
+                UserTourProgress.query.filter_by(tour_id=tour.id).delete()
+                db.session.delete(tour)
+                audit("guided tour deleted", title, "")
+                db.session.commit()
+                flash(f"{title} deleted.", "success")
+            elif action == "add_step":
+                tour = tenant_record_or_404(GuidedTour, request.form.get("tour_id", type=int))
+                title = request.form.get("step_title", "").strip()
+                body = request.form.get("step_body", "").strip()
+                if not title or not body:
+                    flash("Step title and body are required.", "error")
+                else:
+                    next_order = (
+                        db.session.query(db.func.max(GuidedTourStep.step_order))
+                        .filter_by(tour_id=tour.id).scalar() or 0
+                    ) + 1
+                    db.session.add(GuidedTourStep(
+                        tenant_id=current_user.tenant_id, tour_id=tour.id, step_order=next_order,
+                        target_selector=request.form.get("target_selector", "").strip()[:300],
+                        title=title, body=body,
+                        placement=request.form.get("placement", "bottom") if request.form.get("placement") in
+                        ("top", "bottom", "left", "right", "center") else "bottom",
+                    ))
+                    tour.version += 1
+                    audit("guided tour step added", tour.key, title)
+                    db.session.commit()
+                    flash("Step added.", "success")
+            elif action == "delete_step":
+                step = GuidedTourStep.query.join(GuidedTour).filter(
+                    GuidedTourStep.id == request.form.get("step_id", type=int),
+                    GuidedTour.tenant_id == current_user.tenant_id,
+                ).first_or_404()
+                tour = step.tour
+                db.session.delete(step)
+                tour.version += 1
+                audit("guided tour step deleted", tour.key, step.title)
+                db.session.commit()
+                flash("Step removed.", "success")
+            return redirect(url_for("guided_tours_admin"))
+        tours = tenant_query(GuidedTour).options(selectinload(GuidedTour.steps)).order_by(GuidedTour.title).all()
+        return render_template("guided_tours_admin.html", tours=tours, roles=GUIDED_TOUR_ROLES)
+
+    @app.get("/api/guided-tours/active")
+    @login_required
+    def guided_tours_active():
+        """Returns tours the current user should be offered on the current
+        route: active, role-targeted (or untargeted), route-matched (or
+        global "*"), and not yet seen at the tour's current version. Scoped
+        by tenant/role/route server-side -- the frontend player never
+        decides eligibility itself, only rendering."""
+        route = request.args.get("route", "")
+        seen = {
+            row.tour_id: row.tour_version_seen
+            for row in UserTourProgress.query.filter_by(user_id=current_user.id).all()
+        }
+        candidates = tenant_query(GuidedTour).filter(
+            GuidedTour.active.is_(True),
+            db.or_(GuidedTour.target_route == "*", GuidedTour.target_route == route),
+        ).options(selectinload(GuidedTour.steps)).all()
+        results = []
+        for tour in candidates:
+            allowed_roles = [r for r in tour.target_roles.split(",") if r]
+            if allowed_roles and current_user.effective_role not in allowed_roles:
+                continue
+            if seen.get(tour.id, 0) >= tour.version:
+                continue
+            if not tour.steps:
+                continue
+            results.append({
+                "id": tour.id, "key": tour.key, "title": tour.title,
+                "version": tour.version,
+                "steps": [
+                    {
+                        "target_selector": step.target_selector, "title": step.title,
+                        "body": step.body, "placement": step.placement,
+                    }
+                    for step in tour.steps
+                ],
+            })
+        return jsonify({"tours": results})
+
+    @app.post("/api/guided-tours/<int:tour_id>/progress")
+    @login_required
+    def guided_tours_progress(tour_id):
+        tour = tenant_record_or_404(GuidedTour, tour_id)
+        status = request.form.get("status", "dismissed")
+        if status not in ("dismissed", "completed"):
+            abort(400)
+        row = UserTourProgress.query.filter_by(user_id=current_user.id, tour_id=tour.id).one_or_none()
+        if not row:
+            row = UserTourProgress(tenant_id=current_user.tenant_id, user_id=current_user.id, tour_id=tour.id)
+            db.session.add(row)
+        row.status = status
+        row.tour_version_seen = tour.version
+        db.session.commit()
+        return ("", 204)
+
     @app.route("/client-management/macros", methods=["GET", "POST"])
     @require_client_management
     def client_macros_admin():

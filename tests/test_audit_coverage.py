@@ -21,6 +21,7 @@ ALLOWLIST = {
     "favorite_toggle": "toggles the caller's own bookmark; no shared record changes",
     "history_record": "records the caller's own recently-viewed pages; no shared record changes",
     "set_acting_role": "switches which of the caller's own already-granted roles this session acts as; no shared record changes, and only ever narrows/restores the caller's own authority",
+    "guided_tours_progress": "records the caller's own dismiss/completion state for a guided tour; no shared record changes",
 }
 
 LOGGING_CALLS = {"audit", "log_history", "log_field_changes"}

@@ -141,6 +141,9 @@ __all__ = [
     "DATA_CLASSIFICATION_REGISTRY",
     "DataRetentionPolicy",
     "RecordLegalHold",
+    "GuidedTour",
+    "GuidedTourStep",
+    "UserTourProgress",
 ]
 
 db = SQLAlchemy()
@@ -2206,6 +2209,67 @@ class UserPreference(db.Model):
     keyboard_shortcuts = db.Column(db.Boolean, nullable=False, default=True)
     date_time_display = db.Column(db.String(20), nullable=False, default="both")
     user = db.relationship("User")
+
+
+class GuidedTour(db.Model):
+    """B-120: admin-authored contextual help, DB-backed (not Git-backed
+    config) since the whole point is non-engineer admins can author/edit
+    tour content without a deploy -- same reasoning that already makes
+    ClientMacro/ClientTrigger DB rows instead of Git-backed config.
+    target_route is a Flask endpoint name ("dashboard") or "*" for every
+    page; target_roles is a comma-separated ROLE_RANK role list, empty
+    meaning every role. `version` increments on any content edit so a
+    user who already saw an older version is correctly re-prompted (see
+    UserTourProgress.tour_version_seen) rather than the tour going silent
+    forever the moment it changes."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    key = db.Column(db.String(80), nullable=False)
+    title = db.Column(db.String(160), nullable=False)
+    description = db.Column(db.String(500), nullable=False, default="")
+    target_route = db.Column(db.String(120), nullable=False, default="*")
+    target_roles = db.Column(db.String(200), nullable=False, default="")
+    version = db.Column(db.Integer, nullable=False, default=1)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    created_by = db.relationship("User")
+    steps = db.relationship(
+        "GuidedTourStep", cascade="all, delete-orphan", backref="tour",
+        order_by="GuidedTourStep.step_order",
+    )
+    __table_args__ = (db.UniqueConstraint("tenant_id", "key", name="uq_guided_tour_tenant_key"),)
+
+
+class GuidedTourStep(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    tour_id = db.Column(db.Integer, db.ForeignKey("guided_tour.id"), nullable=False, index=True)
+    step_order = db.Column(db.Integer, nullable=False, default=0)
+    # A CSS selector for the element this step highlights, e.g.
+    # "[data-tour='dashboard-kpis']" -- pages opt into being tour targets
+    # by adding a data-tour attribute, not by the tour reaching into
+    # arbitrary markup. Empty selector means an unanchored, centered step
+    # (an intro/outro slide with no specific element to point at).
+    target_selector = db.Column(db.String(300), nullable=False, default="")
+    title = db.Column(db.String(160), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    placement = db.Column(db.String(20), nullable=False, default="bottom")
+
+
+class UserTourProgress(db.Model):
+    """Per-user dismiss/completion state so a tour doesn't nag every page
+    load, and so a content edit (GuidedTour.version bump) correctly
+    re-prompts a user who saw an older version."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    tour_id = db.Column(db.Integer, db.ForeignKey("guided_tour.id"), nullable=False, index=True)
+    status = db.Column(db.String(20), nullable=False, default="dismissed")
+    tour_version_seen = db.Column(db.Integer, nullable=False, default=0)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    __table_args__ = (db.UniqueConstraint("user_id", "tour_id", name="uq_user_tour_progress_user_tour"),)
 
 
 class ChecklistItem(db.Model):
