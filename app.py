@@ -4825,9 +4825,15 @@ def ldap_authenticate(username, password):
     entry = entries[0]
     user_conn = Connection(server, user=entry.entry_dn, password=password, auto_bind=False)
     user_conn.open()
+    # Every early return below must unbind first -- only the success path
+    # used to, leaking one open socket per failed login attempt (wrong
+    # password, or a server that always rejects StartTLS) until GC/timeout
+    # reclaimed it.
     if not use_ssl and setting_bool("LDAP_START_TLS", True) and not user_conn.start_tls():
+        user_conn.unbind()
         return None
     if not user_conn.bind():
+        user_conn.unbind()
         return None
     user_conn.unbind()
     values = entry.entry_attributes_as_dict
@@ -7588,6 +7594,7 @@ def create_app(test_config=None):
                     if not request.form.get(field, "").strip():
                         return render_form(f"{label} is required.")
             ci_id = None
+            selected_ci = None
             additional_ci_ids = set()
             if kind == "change":
                 try:
@@ -7595,18 +7602,23 @@ def create_app(test_config=None):
                 except (TypeError, ValueError):
                     return render_form("One of the selected configuration items is invalid.")
                 seen_ci_ids = list(dict.fromkeys(change_ci_ids))
+                seen_cis = {}
                 for candidate_id in seen_ci_ids:
-                    if not tenant_query(ConfigurationItem).filter_by(id=candidate_id).first():
+                    candidate = tenant_query(ConfigurationItem).filter_by(id=candidate_id).first()
+                    if not candidate:
                         return render_form("One of the selected configuration items does not exist.")
+                    seen_cis[candidate_id] = candidate
                 if seen_ci_ids:
                     ci_id = seen_ci_ids[0]
+                    selected_ci = seen_cis[ci_id]
                     additional_ci_ids = set(seen_ci_ids[1:])
             elif request.form.get("ci_id"):
                 try:
                     ci_id = int(request.form["ci_id"])
                 except (TypeError, ValueError):
                     return render_form("The selected configuration item is invalid.")
-                if not tenant_query(ConfigurationItem).filter_by(id=ci_id).first():
+                selected_ci = tenant_query(ConfigurationItem).filter_by(id=ci_id).first()
+                if not selected_ci:
                     return render_form("The selected configuration item does not exist.")
             if kind == "change" and ci_id:
                 conflicts = precreate_change_conflicts(current_user.tenant_id, ci_id, planned_start, planned_end)
@@ -7625,8 +7637,7 @@ def create_app(test_config=None):
                         f"{': ' + freeze.reason if freeze.reason else ''}). Only Emergency changes are permitted during a freeze."
                     )
             calculated_risk_score = calculate_change_risk_score(
-                request.form.get("change_type", "Normal"),
-                db.session.get(ConfigurationItem, ci_id) if ci_id else None,
+                request.form.get("change_type", "Normal"), selected_ci,
             )
             risk_score_input = request.form.get("risk_score", "").strip()
             if risk_score_input:
@@ -8105,9 +8116,16 @@ def create_app(test_config=None):
             ci_id = int(request.form["ci_id"]) if request.form.get("ci_id") else None
         except (TypeError, ValueError):
             return plan_form_error("Change plan dates or CI are invalid.")
+        # Tenant-scope the CI lookup before it's used for anything, including
+        # the risk-score calculation below -- fetching it unscoped first
+        # would let a cross-tenant ci_id's attributes (class,
+        # environment/criticality) feed calculated_risk_score before the
+        # request is ultimately rejected for not owning that CI.
+        ci = tenant_query(ConfigurationItem).filter(ConfigurationItem.id == ci_id).first() if ci_id else None
+        if ci_id and not ci:
+            return plan_form_error("The selected configuration item does not exist.")
         calculated_risk_score = calculate_change_risk_score(
-            request.form.get("change_type", governance.change_type),
-            db.session.get(ConfigurationItem, ci_id) if ci_id else None,
+            request.form.get("change_type", governance.change_type), ci,
         )
         risk_score_input = request.form.get("risk_score", "").strip()
         try:
@@ -8123,8 +8141,6 @@ def create_app(test_config=None):
             return plan_form_error("Planned start and planned end are required for a change.")
         if planned_end <= planned_start:
             return plan_form_error("Planned end must be later than planned start.")
-        if ci_id and not tenant_query(ConfigurationItem).filter(ConfigurationItem.id == ci_id).first():
-            return plan_form_error("The selected configuration item does not exist.")
         if ci_id:
             conflicts = _conflict_descriptions(
                 ticket.tenant_id, {ci_id}, planned_start, planned_end,
@@ -11997,13 +12013,29 @@ def create_app(test_config=None):
                     if "gid=" in sheet_url:
                         gid = sheet_url.split("gid=")[1].split("&")[0].split("#")[0] or "0"
                     export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-                    if not integration_endpoint_valid(export_url) or not integration_endpoint_resolves_safely(export_url):
+                    if not integration_endpoint_valid(export_url):
+                        flash("That sheet URL could not be reached safely.", "error")
+                        return render_template("cmdb_import.html", preview=None, csv_text="",
+                                                netbox_enabled=setting_bool("NETBOX_ENABLED"),
+                                                netbox_sync_result=session.pop("netbox_sync_result", None))
+                    ok, hostname, infos = resolve_endpoint_addresses_safely(export_url)
+                    if not ok:
                         flash("That sheet URL could not be reached safely.", "error")
                         return render_template("cmdb_import.html", preview=None, csv_text="",
                                                 netbox_enabled=setting_bool("NETBOX_ENABLED"),
                                                 netbox_sync_result=session.pop("netbox_sync_result", None))
                     try:
-                        response = requests.get(export_url, timeout=15, allow_redirects=False)
+                        # Pin the addresses just validated: requests' own
+                        # internal DNS lookup would otherwise re-resolve
+                        # `hostname` independently of the safety check above,
+                        # reopening the same DNS-rebinding TOCTOU window
+                        # deliver_webhook() already closes for outbound
+                        # webhooks (see serviceops_core/dns_pin.py).
+                        if hostname and infos:
+                            with pin_resolved_addresses(hostname, infos):
+                                response = requests.get(export_url, timeout=15, allow_redirects=False)
+                        else:
+                            response = requests.get(export_url, timeout=15, allow_redirects=False)
                         response.raise_for_status()
                         csv_text = response.text
                     except requests.RequestException as error:
