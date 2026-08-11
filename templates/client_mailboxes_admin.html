@@ -1,0 +1,46 @@
+{% extends "base.html" %}{% block title %}Mailboxes · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('client_management_home') }}">CLIENT MANAGEMENT</a> / MAILBOXES</p><h1>Mailboxes</h1><p>A dedicated support email address, polled over IMAP into customer tickets and replied to over SMTP. Basic username/password auth only -- providers like Gmail/Office 365 need an app password, not your normal login password.</p></div></header>
+<section class="panel">
+  <table><thead><tr><th>Name</th><th>IMAP</th><th>SMTP from</th><th>Status</th><th>Last checked</th><th></th></tr></thead><tbody>
+    {% for mailbox in mailboxes %}
+    <tr>
+      <td>{{ mailbox.name }}{% if not mailbox.active %} <span class="badge">Inactive</span>{% endif %}</td>
+      <td>{{ mailbox.imap_username }}@{{ mailbox.imap_host }}:{{ mailbox.imap_port }}</td>
+      <td>{{ mailbox.from_address }}</td>
+      <td>{% if mailbox.last_poll_status == 'ok' %}<span class="badge">OK</span>{% elif mailbox.last_poll_status == 'error' %}<span class="badge stat-alert-text">Error</span>{% else %}<span class="badge">Never checked</span>{% endif %}
+        {% if mailbox.last_poll_error %}<span class="info-tip" tabindex="0" data-tip="{{ mailbox.last_poll_error }}">i</span>{% endif %}
+      </td>
+      <td>{{ mailbox.last_polled_at|usertime('%b %d, %H:%M') if mailbox.last_polled_at else '—' }}</td>
+      <td>
+        <form method="post" style="display:inline"><input type="hidden" name="action" value="poll_now"><input type="hidden" name="mailbox_id" value="{{ mailbox.id }}"><button class="link-button">Check now</button></form>
+        <form method="post" style="display:inline"><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="mailbox_id" value="{{ mailbox.id }}"><button class="link-button">{{ 'Deactivate' if mailbox.active else 'Activate' }}</button></form>
+        <form method="post" style="display:inline" data-confirm="Remove mailbox {{ mailbox.name }}? This deletes its stored credentials."><input type="hidden" name="action" value="delete"><input type="hidden" name="mailbox_id" value="{{ mailbox.id }}"><button class="link-button">Remove</button></form>
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="empty">No mailboxes configured yet.</td></tr>{% endfor %}
+  </tbody></table>
+  <details><summary>Add a mailbox</summary>
+    <form method="post" class="form-grid">
+      <input type="hidden" name="action" value="create">
+      <label class="wide"><span>Name</span><input name="name" maxlength="120" required placeholder="e.g. Support"></label>
+      <label><span>IMAP host</span><input name="imap_host" maxlength="255" required placeholder="imap.example.com"></label>
+      <label><span>IMAP port</span><input type="number" name="imap_port" value="993" required></label>
+      <label class="check"><input type="checkbox" name="imap_use_ssl" checked> IMAP uses SSL (port 993)</label>
+      <label><span>IMAP username</span><input name="imap_username" maxlength="255" required></label>
+      <label><span>IMAP password</span><input type="password" name="imap_password" autocomplete="new-password"></label>
+      <label><span>IMAP folder</span><input name="imap_folder" value="INBOX"></label>
+      <label><span>SMTP host</span><input name="smtp_host" maxlength="255" required placeholder="smtp.example.com"></label>
+      <label><span>SMTP port</span><input type="number" name="smtp_port" value="587" required></label>
+      <label class="check"><input type="checkbox" name="smtp_use_tls" checked> SMTP uses STARTTLS</label>
+      <label><span>SMTP username</span><input name="smtp_username" maxlength="255"></label>
+      <label><span>SMTP password</span><input type="password" name="smtp_password" autocomplete="new-password"></label>
+      <label><span>From address</span><input type="email" name="from_address" maxlength="254" required placeholder="support@yourcompany.com"></label>
+      <label><span>From name</span><input name="from_name" maxlength="160" placeholder="Your Company Support"></label>
+      <label><span>Default organization</span><span class="info-tip" tabindex="0" data-tip="Used for senders whose email domain isn't recognized or is a free-mail provider (Gmail, Outlook, etc.) -- otherwise a new organization is auto-created from the sender's domain.">i</span><select name="default_organization_id"><option value="">None</option>{% for org in organizations %}<option value="{{ org.id }}">{{ org.name }}</option>{% endfor %}</select></label>
+      <label class="check"><input type="checkbox" name="auto_create_organization_by_domain" checked> Auto-create an organization from the sender's domain</label>
+      <div class="wide actions"><button class="primary">Add mailbox</button></div>
+    </form>
+  </details>
+</section>
+{% endblock %}
