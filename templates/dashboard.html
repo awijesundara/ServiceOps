@@ -3,7 +3,7 @@
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">SERVICE OPERATIONS</p><h1>Good day, {{ current_user.name.split()[0] }}</h1><p>Here’s what’s happening across your service desk.</p></div>
 <a class="primary button" href="{{ url_for('ticket_new', kind='incident') }}">+ Report an incident</a></header>
-<section class="stats">
+<section class="stats" data-tour="dashboard-stats">
   <a href="{{ url_for('tickets', kind='incident') }}" class="{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}stat-alert{% endif %}"><span>Incidents</span><strong>{{ counts.incident }}</strong>{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}<small class="stat-alert-text">P1: {{ incident_priority_counts.p1 }} · P2: {{ incident_priority_counts.p2 }}</small>{% else %}<small>View queue →</small>{% endif %}</a>
   <a href="{{ url_for('requests_list') }}"><span>Requests</span><strong>{{ counts.request }}</strong><small>View REQ / RITM →</small></a>
   <a href="{{ url_for('tickets', kind='change') }}"><span>Changes</span><strong>{{ counts.change }}</strong><small>View schedule →</small></a>

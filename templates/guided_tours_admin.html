@@ -1,0 +1,68 @@
+{% extends "base.html" %}{% block title %}Guided tours · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = 'Guided tours' %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>Guided tours</h1><p>Contextual onboarding content shown to matching users on matching pages. Editing a tour's title, description, role/route targeting, or steps bumps its version so anyone who already dismissed it is re-prompted.</p></div></header>
+<section class="panel">
+  <table><thead><tr><th>Title</th><th>Route</th><th>Roles</th><th>Steps</th><th>Version</th><th>Status</th><th></th></tr></thead><tbody>
+  {% for tour in tours %}
+    <tr>
+      <td><strong>{{ tour.title }}</strong><br><small>{{ tour.description }}</small></td>
+      <td><code>{{ tour.target_route }}</code></td>
+      <td>{{ tour.target_roles or 'All roles' }}</td>
+      <td>{{ tour.steps|length }}</td>
+      <td>v{{ tour.version }}</td>
+      <td><span class="badge">{{ 'Active' if tour.active else 'Inactive' }}</span></td>
+      <td>
+        <form method="post" class="inline-form"><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="tour_id" value="{{ tour.id }}"><button class="link-button">{{ 'Deactivate' if tour.active else 'Activate' }}</button></form>
+        <form method="post" class="inline-form" data-confirm="Delete this tour and all its steps? This cannot be undone."><input type="hidden" name="action" value="delete"><input type="hidden" name="tour_id" value="{{ tour.id }}"><button class="link-button">Delete</button></form>
+      </td>
+    </tr>
+    <tr><td colspan="7">
+      <details>
+        <summary>Edit "{{ tour.title }}" and its steps</summary>
+        <form method="post" class="stack">
+          <input type="hidden" name="action" value="update_tour">
+          <input type="hidden" name="tour_id" value="{{ tour.id }}">
+          <label>Title<input name="title" maxlength="160" value="{{ tour.title }}" required></label>
+          <label>Description<input name="description" maxlength="500" value="{{ tour.description }}"></label>
+          <label>Target route (a page's Flask endpoint name, or * for every page)<input name="target_route" value="{{ tour.target_route }}" required></label>
+          <label>Target roles (none selected = every role)
+            {% for role in roles %}<label class="check"><input type="checkbox" name="target_roles" value="{{ role }}" {% if role in tour.target_roles.split(',') %}checked{% endif %}> {{ role }}</label>{% endfor %}
+          </label>
+          <button class="primary">Save tour</button>
+        </form>
+        <h3>Steps</h3>
+        <table><thead><tr><th>#</th><th>Title</th><th>Target selector</th><th>Placement</th><th></th></tr></thead><tbody>
+        {% for step in tour.steps %}
+          <tr><td>{{ step.step_order }}</td><td>{{ step.title }}<br><small>{{ step.body }}</small></td><td><code>{{ step.target_selector or '(centered, no target)' }}</code></td><td>{{ step.placement }}</td>
+          <td><form method="post" class="inline-form"><input type="hidden" name="action" value="delete_step"><input type="hidden" name="step_id" value="{{ step.id }}"><button class="link-button">Remove</button></form></td></tr>
+        {% else %}<tr><td colspan="5" class="empty">No steps yet -- add one below.</td></tr>{% endfor %}
+        </tbody></table>
+        <form method="post" class="stack">
+          <input type="hidden" name="action" value="add_step">
+          <input type="hidden" name="tour_id" value="{{ tour.id }}">
+          <label>Step title<input name="step_title" maxlength="160" required></label>
+          <label>Step body<textarea name="step_body" rows="3" required></textarea></label>
+          <label>Target CSS selector (leave blank to center the step with no highlighted element)<input name="target_selector" maxlength="300" placeholder="e.g. [data-tour='dashboard-kpis']"></label>
+          <label>Placement<select name="placement"><option value="bottom">Bottom</option><option value="top">Top</option><option value="left">Left</option><option value="right">Right</option><option value="center">Center</option></select></label>
+          <button class="primary">Add step</button>
+        </form>
+      </details>
+    </td></tr>
+  {% else %}<tr><td colspan="7" class="empty">No guided tours defined yet.</td></tr>{% endfor %}
+  </tbody></table>
+  <details><summary>Create a tour</summary>
+    <form method="post" class="stack">
+      <input type="hidden" name="action" value="create">
+      <label>Key (unique, lowercase, e.g. "dashboard-intro")<input name="key" maxlength="80" required></label>
+      <label>Title<input name="title" maxlength="160" required></label>
+      <label>Description<input name="description" maxlength="500"></label>
+      <label>Target route (a page's Flask endpoint name, or * for every page)<input name="target_route" value="*" required></label>
+      <label>Target roles (none selected = every role)
+        {% for role in roles %}<label class="check"><input type="checkbox" name="target_roles" value="{{ role }}"> {{ role }}</label>{% endfor %}
+      </label>
+      <button class="primary">Create tour</button>
+    </form>
+  </details>
+</section>
+{% endblock %}
