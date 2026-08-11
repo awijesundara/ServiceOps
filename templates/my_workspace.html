@@ -1,0 +1,72 @@
+{% extends "base.html" %}{% block title %}My Workspace · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">PERSONAL WORKSPACE</p><h1>My Workspace</h1><p>Pick and arrange the widgets you want on your own landing page.</p></div><a class="button" href="{{ url_for('dashboard') }}">Back to dashboard</a></header>
+
+<div class="dashboard-columns">
+{% for widget in widgets %}
+  <section class="panel{% if widget.span == 2 %} wide{% endif %}">
+    <h2>{{ widget.label }}</h2>
+    {% if widget.key == "ticket_stats" %}
+      <div class="stats">
+        <a href="{{ url_for('tickets', kind='incident') }}"><span>Incidents</span><strong>{{ widget.context.counts.incident }}</strong></a>
+        <a href="{{ url_for('tickets', kind='change') }}"><span>Changes</span><strong>{{ widget.context.counts.change }}</strong></a>
+        <a href="{{ url_for('open_work') }}"><span>Open work</span><strong>{{ widget.context.counts.open }}</strong></a>
+      </div>
+    {% elif widget.key in ("my_open_tickets", "recent_tickets", "sla_at_risk") %}
+      <table><tbody>
+      {% for ticket in widget.context.tickets %}
+        <tr><td><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a></td><td>{{ ticket.title }}</td><td><span class="priority {{ ticket.priority|lower }}">{{ ticket.priority }}</span></td><td>{{ ticket.state }}</td></tr>
+      {% else %}<tr><td class="empty">Nothing here right now.</td></tr>{% endfor %}
+      </tbody></table>
+    {% elif widget.key == "approvals_awaiting_me" %}
+      <ul class="plain-list">
+      {% for vote in widget.context.votes %}
+        <li><a href="{{ url_for('approval_chains') }}">{{ vote.gate.chain.name }}</a> · {{ vote.gate.name }}</li>
+      {% else %}<li class="empty">Nothing awaiting your approval.</li>{% endfor %}
+      </ul>
+    {% elif widget.key == "favorites" %}
+      <ul class="plain-list">
+      {% for favorite in widget.context.favorites %}
+        <li><a href="{{ favorite.url }}">{{ favorite.label }}</a></li>
+      {% else %}<li class="empty">No favorites saved yet.</li>{% endfor %}
+      </ul>
+    {% elif widget.key == "recently_viewed" %}
+      <ul class="plain-list">
+      {% for view in widget.context.views %}
+        <li><a href="{{ view.url }}">{{ view.label }}</a></li>
+      {% else %}<li class="empty">Nothing viewed recently.</li>{% endfor %}
+      </ul>
+    {% elif widget.key == "notifications" %}
+      <ul class="plain-list">
+      {% for notification in widget.context.notifications %}
+        <li{% if not notification.read %} class="unread"{% endif %}><strong>{{ notification.title }}</strong><br><small>{{ notification.body }}</small></li>
+      {% else %}<li class="empty">No notifications.</li>{% endfor %}
+      </ul>
+    {% endif %}
+  </section>
+{% else %}
+  <section class="panel wide"><p class="empty">No widgets selected. Use "Customize" below to add some.</p></section>
+{% endfor %}
+</div>
+
+<section class="panel">
+  <details><summary>Customize</summary>
+    <form method="post" class="stack">
+      <input type="hidden" name="action" value="save">
+      {% for key, entry in available.items() %}
+        <label class="check">
+          <input type="checkbox" name="widget_key" value="{{ key }}" {% if key in selected_keys %}checked{% endif %}>
+          {{ entry.label }}
+          {% set current_span = selected_spans.get(key, entry.default_span) %}
+          <select name="span_{{ key }}">
+            <option value="1" {% if current_span == 1 %}selected{% endif %}>Half width</option>
+            <option value="2" {% if current_span == 2 %}selected{% endif %}>Full width</option>
+          </select>
+        </label>
+      {% endfor %}
+      <button class="primary">Save layout</button>
+    </form>
+    <form method="post"><input type="hidden" name="action" value="reset"><button class="link-button">Reset to default</button></form>
+  </details>
+</section>
+{% endblock %}
