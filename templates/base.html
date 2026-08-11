@@ -33,6 +33,7 @@
   <nav class="application-nav" aria-label="Application navigation" data-application-nav>
     <label class="nav-filter"><span aria-hidden="true">⌕</span><input type="search" placeholder="Find menu" aria-label="Find a menu item" data-nav-filter></label>
     <a class="nav-home{% if nav_active('dashboard') %} active{% endif %}" href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">⌂</span><span>Home</span></a>
+    <a class="nav-home{% if nav_active('my_workspace') %} active{% endif %}" href="{{ url_for('my_workspace') }}" {% if nav_active('my_workspace') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">▤</span><span>My Workspace</span></a>
 
     {% if client_management_access %}
     <details class="nav-group nav-group-client" {% if request.endpoint in ['client_management_home','client_tickets','client_ticket_new','client_ticket_detail','client_organizations','client_contacts'] %}open{% endif %}>

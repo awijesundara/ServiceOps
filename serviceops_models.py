@@ -144,6 +144,7 @@ __all__ = [
     "GuidedTour",
     "GuidedTourStep",
     "UserTourProgress",
+    "UserWorkspaceLayout",
 ]
 
 db = SQLAlchemy()
@@ -2270,6 +2271,33 @@ class UserTourProgress(db.Model):
     tour_version_seen = db.Column(db.Integer, nullable=False, default=0)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     __table_args__ = (db.UniqueConstraint("user_id", "tour_id", name="uq_user_tour_progress_user_tour"),)
+
+
+class UserWorkspaceLayout(db.Model):
+    """B-121: a user's personal "My Workspace" page -- which widgets from
+    the fixed, code-defined WORKSPACE_WIDGET_REGISTRY they've chosen and in
+    what order/width. Deliberately not a general page builder: widgets are
+    pre-built server-rendered Jinja partials picked from a closed catalog,
+    never arbitrary user-supplied HTML/JS/CSS -- that boundary is the whole
+    security model here (this app's CSP is script-src 'self' only, so a
+    free-text "custom widget" would either be inert or require an entirely
+    different, much larger sandboxing architecture this pass doesn't
+    attempt). One row per user (like UserPreference), not multiple named
+    layouts -- a single personal workspace is what was asked for. Storing
+    layout_json rather than a rows-per-widget table (e.g. Favorite's shape)
+    trades some queryability for a natural fit to the actual mutation
+    pattern (the whole ordered list is replaced together on every save)."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
+    # [{"widget_key": "my_open_tickets", "span": 1}, ...] -- a widget_key
+    # no longer present in WORKSPACE_WIDGET_REGISTRY (removed/renamed in a
+    # later release) is silently skipped when rendering, not an error, so
+    # an old saved layout never breaks on upgrade (this is B-121's
+    # "upgrade safety" requirement).
+    layout_json = db.Column(db.JSON, nullable=False, default=list)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    user = db.relationship("User")
 
 
 class ChecklistItem(db.Model):

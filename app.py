@@ -894,6 +894,23 @@ SETTING_DEFINITIONS = {
         {"key": "DASHBOARD_SHOW_RECENT", "label": "Show \"Recently updated\"", "type": "bool", "default": "true", "live": True},
         {"key": "SLA_AT_RISK_HOURS", "label": "SLA \"at risk\" warning window (hours)", "type": "int", "default": "4", "min": 1, "max": 72, "live": True},
     ],
+    "my_workspace_widgets": [
+        # One bool per WORKSPACE_WIDGET_REGISTRY entry (B-121 governance):
+        # an admin can disable a widget tenant-wide, which drops it from
+        # both the picker and any layout that already included it (skipped
+        # at render time, not an error) without deleting anyone's saved
+        # layout. Kept as a hand-written list (not generated from the
+        # registry at import time) to match this file's existing
+        # convention of a static, readable settings schema.
+        {"key": "WORKSPACE_WIDGET_TICKET_STATS_ENABLED", "label": "Ticket counts", "type": "bool", "default": "true", "live": True},
+        {"key": "WORKSPACE_WIDGET_MY_OPEN_TICKETS_ENABLED", "label": "My open tickets", "type": "bool", "default": "true", "live": True},
+        {"key": "WORKSPACE_WIDGET_RECENT_TICKETS_ENABLED", "label": "Recently updated tickets", "type": "bool", "default": "true", "live": True},
+        {"key": "WORKSPACE_WIDGET_SLA_AT_RISK_ENABLED", "label": "SLA at risk", "type": "bool", "default": "true", "live": True},
+        {"key": "WORKSPACE_WIDGET_APPROVALS_AWAITING_ME_ENABLED", "label": "Approvals awaiting me", "type": "bool", "default": "true", "live": True},
+        {"key": "WORKSPACE_WIDGET_FAVORITES_ENABLED", "label": "Favorites", "type": "bool", "default": "true", "live": True},
+        {"key": "WORKSPACE_WIDGET_RECENTLY_VIEWED_ENABLED", "label": "Recently viewed", "type": "bool", "default": "true", "live": True},
+        {"key": "WORKSPACE_WIDGET_NOTIFICATIONS_ENABLED", "label": "Notifications", "type": "bool", "default": "true", "live": True},
+    ],
     "email_delivery": [
         {"key": "SMTP_ENABLED", "label": "Enable SMTP delivery", "type": "bool", "default": "false", "live": True},
         {"key": "SMTP_HOST", "label": "SMTP host", "type": "text", "default": "", "live": True},
@@ -937,6 +954,7 @@ SETTING_GROUP_META = {
     "sign_in_and_directory": ("Sign-in and directory", "Local login, AD/LDAP, Keycloak, directory attributes, and synchronization."),
     "security": ("Security and limits", "Sessions, passwords, MFA, rate limits, uploads, malware scanning, and audit streaming."),
     "workspace_defaults": ("Workspace defaults", "Dashboard content and service-level warning thresholds."),
+    "my_workspace_widgets": ("My Workspace widgets", "Which widgets are available for users to add to their personal My Workspace page."),
     "email_delivery": ("Email delivery", "SMTP connection and sender identity used for outgoing notifications."),
     "netbox_connection": ("NetBox connection", "Connection used to synchronize configuration items from NetBox."),
     "request_tracker_connection": ("Request Tracker connection", "Connection used to import records from Request Tracker."),
@@ -5105,6 +5123,106 @@ def _read_and_filter_log_file():
     return parsed, error_message, log_path, filters
 
 
+def _workspace_widget_my_open_tickets(user):
+    terminal = ("Resolved", "Closed", "Cancelled")
+    rows = visible_ticket_query(user).filter(
+        Ticket.assignee_id == user.id, Ticket.state.notin_(terminal),
+    ).order_by(Ticket.priority, Ticket.updated_at.desc()).limit(8).all()
+    return {"tickets": rows}
+
+
+def _workspace_widget_recent_tickets(user):
+    rows = visible_ticket_query(user).filter(Ticket.deleted_at.is_(None)).order_by(
+        Ticket.updated_at.desc()
+    ).limit(8).all()
+    return {"tickets": rows}
+
+
+def _workspace_widget_sla_at_risk(user):
+    terminal = ("Resolved", "Closed", "Cancelled")
+    ticket_ids = [
+        row[0] for row in visible_ticket_query(user).filter(Ticket.state.notin_(terminal))
+        .with_entities(Ticket.id).all()
+    ]
+    rows = []
+    if ticket_ids:
+        breach_horizon = now() + timedelta(hours=setting_int("SLA_AT_RISK_HOURS", 4))
+        sla_rows = TaskSLA.query.filter(
+            TaskSLA.target_type == "ticket", TaskSLA.target_id.in_(ticket_ids),
+            TaskSLA.stage == "In Progress", TaskSLA.breached.is_(False),
+        ).order_by(TaskSLA.breach_at).all()
+        tickets_by_id = {t.id: t for t in Ticket.query.filter(Ticket.id.in_(ticket_ids)).all()}
+        for row in sla_rows:
+            breach_at = row.breach_at if row.breach_at.tzinfo else row.breach_at.replace(tzinfo=timezone.utc)
+            if breach_at <= breach_horizon and row.target_id in tickets_by_id:
+                rows.append(tickets_by_id[row.target_id])
+    return {"tickets": rows[:8]}
+
+
+def _workspace_widget_approvals_awaiting_me(user):
+    votes = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
+        ApprovalVote.approver_id == user.id, ApprovalVote.state == "Requested",
+        ApprovalChain.tenant_id == user.tenant_id,
+    ).limit(8).all()
+    return {"votes": votes}
+
+
+def _workspace_widget_favorites(user):
+    rows = Favorite.query.filter_by(user_id=user.id).order_by(Favorite.created_at.desc()).limit(8).all()
+    return {"favorites": rows}
+
+
+def _workspace_widget_recently_viewed(user):
+    rows = RecentView.query.filter_by(user_id=user.id).order_by(RecentView.viewed_at.desc()).limit(8).all()
+    return {"views": rows}
+
+
+def _workspace_widget_notifications(user):
+    rows = Notification.query.filter_by(user_id=user.id).order_by(
+        Notification.read.asc(), Notification.created_at.desc()
+    ).limit(8).all()
+    return {"notifications": rows}
+
+
+def _workspace_widget_ticket_stats(user):
+    terminal = ("Resolved", "Closed", "Cancelled")
+    rows = visible_ticket_query(user).with_entities(Ticket.kind, Ticket.state).all()
+    counts = {"incident": 0, "change": 0, "open": 0}
+    for kind, state in rows:
+        if kind in ("incident", "change"):
+            counts[kind] += 1
+        if state not in terminal:
+            counts["open"] += 1
+    return {"counts": counts}
+
+
+# B-121: the closed catalog a personal workspace layout can be built from --
+# pre-built, server-rendered widgets reusing existing queries/authorization
+# (visible_ticket_query etc.), never arbitrary user-supplied content. Adding
+# a widget here means adding both a data function above and rendering logic
+# in my_workspace.html; removing/renaming one is safe -- UserWorkspaceLayout
+# .layout_json rows referencing a since-removed key are silently skipped at
+# render time. Enablement is governed instance-wide via the
+# WORKSPACE_WIDGET_<KEY>_ENABLED settings (see SETTING_DEFINITIONS) --
+# PlatformSetting is a single global row per key across the whole install,
+# same as every other entry in SETTING_DEFINITIONS, not actually per-tenant
+# despite the column existing on the table.
+WORKSPACE_WIDGET_REGISTRY = {
+    "ticket_stats": {"label": "Ticket counts", "default_span": 2, "data": _workspace_widget_ticket_stats},
+    "my_open_tickets": {"label": "My open tickets", "default_span": 1, "data": _workspace_widget_my_open_tickets},
+    "recent_tickets": {"label": "Recently updated tickets", "default_span": 1, "data": _workspace_widget_recent_tickets},
+    "sla_at_risk": {"label": "SLA at risk", "default_span": 1, "data": _workspace_widget_sla_at_risk},
+    "approvals_awaiting_me": {"label": "Approvals awaiting me", "default_span": 1, "data": _workspace_widget_approvals_awaiting_me},
+    "favorites": {"label": "Favorites", "default_span": 1, "data": _workspace_widget_favorites},
+    "recently_viewed": {"label": "Recently viewed", "default_span": 1, "data": _workspace_widget_recently_viewed},
+    "notifications": {"label": "Notifications", "default_span": 1, "data": _workspace_widget_notifications},
+}
+
+
+def workspace_widget_enabled(widget_key):
+    return setting_bool(f"WORKSPACE_WIDGET_{widget_key.upper()}_ENABLED", True)
+
+
 def create_app(test_config=None):
     app = Flask(__name__)
     # ISO 27001 A.8.11: never let passwords/tokens/connection strings/LDAP
@@ -6884,6 +7002,71 @@ def create_app(test_config=None):
             sla_at_risk_hours=sla_at_risk_hours,
             my_assigned=my_assigned, incident_priority_counts=incident_priority_counts,
             sla_breached=sla_breached, sla_at_risk=sla_at_risk, sla_tickets=sla_tickets,
+        )
+
+    @app.route("/workspace", methods=["GET", "POST"])
+    @login_required
+    def my_workspace():
+        """B-121: a user's personal, configurable landing page -- widgets
+        picked from WORKSPACE_WIDGET_REGISTRY's closed catalog, arranged in
+        a simple ordered list with a 1- or 2-column span each. Distinct
+        from /dashboard (the fixed, admin-configured default), which is
+        untouched by this feature."""
+        layout_row = UserWorkspaceLayout.query.filter_by(user_id=current_user.id).one_or_none()
+        if request.method == "POST":
+            action = request.form.get("action", "save")
+            if action == "save":
+                new_layout = []
+                for widget_key in request.form.getlist("widget_key"):
+                    if widget_key not in WORKSPACE_WIDGET_REGISTRY:
+                        continue
+                    span = 2 if request.form.get(f"span_{widget_key}") == "2" else 1
+                    new_layout.append({"widget_key": widget_key, "span": span})
+                if not layout_row:
+                    layout_row = UserWorkspaceLayout(
+                        tenant_id=current_user.tenant_id, user_id=current_user.id, layout_json=new_layout,
+                    )
+                    db.session.add(layout_row)
+                else:
+                    layout_row.layout_json = new_layout
+                db.session.commit()
+                flash("Workspace layout saved.", "success")
+            elif action == "reset":
+                if layout_row:
+                    db.session.delete(layout_row)
+                    db.session.commit()
+                flash("Workspace reset to the default widget set.", "success")
+            return redirect(url_for("my_workspace"))
+
+        available = {
+            key: entry for key, entry in WORKSPACE_WIDGET_REGISTRY.items()
+            if workspace_widget_enabled(key)
+        }
+        if layout_row and layout_row.layout_json:
+            selected = [
+                item for item in layout_row.layout_json
+                if isinstance(item, dict) and item.get("widget_key") in available
+            ]
+        else:
+            # No saved layout yet -- a reasonable default so /workspace
+            # isn't a blank page on first visit, not auto-seeded data.
+            selected = [
+                {"widget_key": key, "span": entry["default_span"]}
+                for key, entry in available.items()
+                if key in ("ticket_stats", "my_open_tickets", "recent_tickets")
+            ]
+        widgets = []
+        for item in selected:
+            key = item["widget_key"]
+            context = available[key]["data"](current_user)
+            widgets.append({
+                "key": key, "label": available[key]["label"], "span": item.get("span", 1),
+                "context": context,
+            })
+        return render_template(
+            "my_workspace.html", widgets=widgets, available=available,
+            selected_keys={item["widget_key"] for item in selected},
+            selected_spans={item["widget_key"]: item.get("span", 1) for item in selected},
         )
 
     def visible_tickets():
