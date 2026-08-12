@@ -27,10 +27,7 @@
     {% else %}
     <input type="hidden" name="provider" value="local">
     {% endif %}
-    <label>Username
-      <input name="username" autocomplete="username" required autofocus data-username-input>
-      <small class="field-hint" data-username-hint hidden></small>
-    </label>
+    <label>Username<input name="username" autocomplete="username" required autofocus placeholder="{{ ldap_username_placeholder if ldap_enabled else 'Username' }}" data-username-input data-ldap-placeholder="{{ ldap_username_placeholder }}"></label>
     <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
   <button class="primary">Sign in</button>
   {% if local_enabled %}

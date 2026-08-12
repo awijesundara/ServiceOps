@@ -5743,6 +5743,35 @@ def test_login_forgot_password_link_hidden_by_default_when_ldap_also_enabled(cli
     assert b'data-forgot-password-link hidden' in page.data
 
 
+def test_login_username_placeholder_derives_domain_from_ldap_base_dn(client, app):
+    """The username field's ghost text should show the site's real UPN-style
+    domain, derived from LDAP_BASE_DN's DC= components, not a generic
+    placeholder -- and must fall back cleanly when LDAP is off or the base
+    DN isn't configured yet."""
+    with app.app_context():
+        db.session.add(PlatformSetting(key="LDAP_ENABLED", value="true", encrypted=False))
+        db.session.add(PlatformSetting(
+            key="LDAP_BASE_DN", value="OU=Users,DC=corp,DC=example,DC=com", encrypted=False,
+        ))
+        db.session.commit()
+    page = client.get("/login")
+    assert b'placeholder="jsmith or jsmith@corp.example.com"' in page.data
+    assert b'data-ldap-placeholder="jsmith or jsmith@corp.example.com"' in page.data
+
+    with app.app_context():
+        PlatformSetting.query.filter_by(key="LDAP_BASE_DN").delete()
+        db.session.commit()
+    page = client.get("/login")
+    assert b'placeholder="jsmith"' in page.data
+
+    with app.app_context():
+        PlatformSetting.query.filter_by(key="LDAP_ENABLED").delete()
+        db.session.add(PlatformSetting(key="LDAP_ENABLED", value="false", encrypted=False))
+        db.session.commit()
+    page = client.get("/login")
+    assert b'placeholder="Username"' in page.data
+
+
 def test_api_rate_limit_returns_429_with_retry_after(client, app):
     """B-258 fix #4: /api/v1/* previously had no request-rate protection."""
     with app.app_context():
