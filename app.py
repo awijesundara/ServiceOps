@@ -4791,6 +4791,19 @@ def sync_ldap_manager_on_login(user, entry_dn, manager_dn, merged_attr_map):
         )
 
 
+def ldap_login_local_part(username):
+    """Strip a UPN suffix (user@company.com) or down-level domain prefix
+    (CORP\\user) so any of the three Windows login forms a user might type
+    still resolve to the same bare account name. Returns the input
+    unchanged if it carries neither form.
+    """
+    if "\\" in username:
+        return username.split("\\", 1)[1]
+    if "@" in username:
+        return username.split("@", 1)[0]
+    return username
+
+
 def ldap_authenticate(username, password):
     if not password or not setting_bool("LDAP_ENABLED"):
         return None
@@ -4799,10 +4812,10 @@ def ldap_authenticate(username, password):
     except LdapBindError:
         return None
     use_ssl = bool(server.ssl)
-    safe_username = escape_filter_chars(username)
-    search_filter = setting_value(
+    filter_template = setting_value(
         "LDAP_USER_FILTER", "(&(objectClass=user)(sAMAccountName={username}))"
-    ).replace("{username}", safe_username)
+    )
+    base_dn = setting_value("LDAP_BASE_DN", "")
     try:
         ldap_attr_map = json.loads(setting_value("LDAP_ATTR_MAP", "{}"))
     except (TypeError, json.JSONDecodeError):
@@ -4814,11 +4827,25 @@ def ldap_authenticate(username, password):
         if isinstance(mapped, str) and mapped.strip():
             attr_names.add(mapped.strip())
     attrs = sorted(attr_names)
-    if not service.search(setting_value("LDAP_BASE_DN", ""), search_filter,
-                          search_scope=SUBTREE, attributes=attrs, size_limit=2):
-        service.unbind()
-        return None
-    entries = list(service.entries)
+    # Try the bare local part first (e.g. "jsmith" from either "jsmith",
+    # "jsmith@company.com", or "CORP\jsmith") since sAMAccountName -- what
+    # the default filter and most deployments match against -- only ever
+    # holds that bare form. If a site has customized LDAP_USER_FILTER to
+    # match userPrincipalName instead, the bare local part alone won't
+    # match a full UPN there, so fall back to the exact string the user
+    # typed. This fixes every existing deployment (default or
+    # sAMAccountName-based custom filters) immediately, with no settings
+    # change required, while staying backward-compatible with filters that
+    # deliberately expect a full UPN.
+    local_part = ldap_login_local_part(username)
+    candidates = [local_part] if local_part == username else [local_part, username]
+    entries = []
+    for candidate in candidates:
+        search_filter = filter_template.replace("{username}", escape_filter_chars(candidate))
+        if service.search(base_dn, search_filter, search_scope=SUBTREE, attributes=attrs, size_limit=2):
+            entries = list(service.entries)
+            if len(entries) == 1:
+                break
     service.unbind()
     if len(entries) != 1:
         return None
@@ -4852,8 +4879,16 @@ def ldap_authenticate(username, password):
         val = first(ldap_attr, "")
         if val:
             profile_attrs[field] = val
+    # Use the bare local part, not whatever form the user happened to type
+    # this time, as the new account's username -- entry.entry_dn is the
+    # actual matching key for returning logins (see
+    # provision_external_user's ExternalIdentity lookup), so this only
+    # affects the username assigned the very first time this person logs
+    # in, but "jsmith@company.com" as a permanent account name would be an
+    # ugly, confusing artifact of whichever login form they happened to
+    # type first.
     user = provision_external_user(
-        "ldap", entry.entry_dn, username, first("displayName", first("cn", username)),
+        "ldap", entry.entry_dn, local_part, first("displayName", first("cn", local_part)),
         first("mail", first("userPrincipalName", "")), matched_roles, groups=groups,
         profile_attrs=profile_attrs,
     )

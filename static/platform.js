@@ -153,6 +153,43 @@ document.addEventListener("DOMContentLoaded", () => {
     authProviderSelect.addEventListener("change", syncForgotPasswordVisibility);
     syncForgotPasswordVisibility();
   }
+  // A directory (AD/LDAP) account only ever needs the bare username --
+  // typing the full "jsmith@company.com" or "CORP\jsmith" forms Windows
+  // itself accepts elsewhere works server-side too, but silently, so a
+  // user who's unsure keeps second-guessing what they typed. Mirror it
+  // back live, the way Google's own sign-in field confirms a typed
+  // address, instead of leaving it to a failed-login guess.
+  const usernameInput = document.querySelector("[data-username-input]");
+  const usernameHint = document.querySelector("[data-username-hint]");
+  if (usernameInput && usernameHint) {
+    const ldapLocalPart = value => {
+      if (value.includes("\\")) return value.split("\\").slice(1).join("\\");
+      if (value.includes("@")) return value.split("@")[0];
+      return value;
+    };
+    const providerField = authProviderSelect || document.querySelector('input[name="provider"]');
+    const syncUsernameHint = () => {
+      const usingDirectory = (providerField?.value || "ldap") === "ldap";
+      const typed = usernameInput.value.trim();
+      if (!usingDirectory) {
+        usernameHint.hidden = true;
+        return;
+      }
+      const local = ldapLocalPart(typed);
+      if (typed && local !== typed && local) {
+        usernameHint.textContent = `Signing in as "${local}"`;
+        usernameHint.classList.add("field-hint-live");
+        usernameHint.hidden = false;
+      } else {
+        usernameHint.textContent = "Just your username -- no need for @company.com or DOMAIN\\";
+        usernameHint.classList.remove("field-hint-live");
+        usernameHint.hidden = false;
+      }
+    };
+    usernameInput.addEventListener("input", syncUsernameHint);
+    authProviderSelect?.addEventListener("change", syncUsernameHint);
+    syncUsernameHint();
+  }
   const navToggle = document.querySelector("[data-nav-toggle]");
   if (navToggle) {
     navToggle.setAttribute("aria-expanded", body.classList.contains("nav-collapsed") ? "false" : "true");
