@@ -78,6 +78,18 @@ from serviceops_core.email_ingest import (
     parse_inbound_email, extract_ticket_token, is_free_mail_domain,
     referenced_message_ids, build_references_header, MAX_ATTACHMENT_TOTAL_BYTES,
 )
+from serviceops_core.identity import (
+    ldap_login_local_part, ldap_domain_suffix_from_base_dn,
+    normalized_directory_groups, match_directory_role_mappings,
+)
+from serviceops_core.task_lifecycle import (
+    TICKET_TRANSITIONS, ENTERPRISE_TRANSITIONS, CATALOG_TASK_TRANSITIONS,
+    OPERATIONAL_TASK_TRANSITIONS, STATE_TRACK_ORDER, build_state_track, allowed_states,
+)
+from serviceops_core.config_schema import (
+    SETTING_DEFINITIONS, SETTING_GROUP_META, find_setting_definition,
+    coerce_bool, coerce_int,
+)
 
 # VERSION is the release source of truth; shown in the UI, API, and health
 # endpoint so operators can confirm the running build without host access.
@@ -848,151 +860,12 @@ DOMAIN_CONFIG = {
 }
 
 
-SETTING_DEFINITIONS = {
-    "organization": [
-        {"key": "INSTANCE_NAME", "label": "Instance name", "type": "text", "default": "ServiceOps", "live": True},
-        {"key": "COMPANY_NAME", "label": "Company name", "type": "text", "default": "Your Company", "live": True},
-        {"key": "SUPPORT_EMAIL", "label": "Support email", "type": "email", "default": "", "live": True},
-    ],
-    "appearance": [
-        {"key": "BRAND_TEAL", "label": "Primary brand color", "type": "color", "default": "#003e4c", "live": True},
-        {"key": "BRAND_AMBER", "label": "Accent brand color", "type": "color", "default": "#f9aa3c", "live": True},
-        {"key": "DEFAULT_DENSITY", "label": "Default density", "type": "choice", "choices": ["comfortable", "compact"], "default": "comfortable", "live": True},
-    ],
-    "sign_in_and_directory": [
-        {"key": "LOCAL_AUTH_ENABLED", "label": "Enable local authentication", "type": "bool", "default": "true", "live": True},
-        {"key": "LDAP_ENABLED", "label": "Enable AD/LDAP", "type": "bool", "default": "false", "live": True},
-        {"key": "LDAP_SERVER_URI", "label": "LDAP server URI", "type": "text", "default": "", "live": True},
-        {"key": "LDAP_BIND_DN", "label": "LDAP bind DN", "type": "text", "default": "", "live": True},
-        {"key": "LDAP_BIND_PASSWORD", "label": "LDAP bind password", "type": "secret", "default": "", "live": True},
-        {"key": "LDAP_BASE_DN", "label": "LDAP base DN", "type": "text", "default": "", "live": True},
-        {"key": "LDAP_USER_FILTER", "label": "LDAP user filter", "type": "text", "default": "(&(objectClass=user)(sAMAccountName={username}))", "live": True},
-        {"key": "LDAP_START_TLS", "label": "Use LDAP StartTLS", "type": "bool", "default": "true", "live": True},
-        {"key": "LDAP_VALIDATE_CERT", "label": "Validate LDAP certificate", "type": "bool", "default": "true", "live": True},
-        {"key": "LDAP_ROLE_MAPPINGS", "label": "LDAP group role mappings", "type": "json", "default": "{}", "live": True},
-        {
-            "key": "LDAP_ATTR_MAP", "label": "LDAP directory attribute map", "type": "json",
-            "default": json.dumps({
-                "title": "title", "department": "department", "division": "division",
-                "employee_id": "employeeID", "employee_type": "employeeType", "manager": "manager",
-                "email": "mail", "display_name": "displayName", "username": "sAMAccountName",
-                "business_phone": "telephoneNumber", "mobile_phone": "mobile",
-                "location": "physicalDeliveryOfficeName",
-            }),
-            "live": True,
-        },
-        {
-            "key": "KEYCLOAK_ATTR_MAP", "label": "Keycloak/OIDC directory attribute map", "type": "json",
-            "default": json.dumps({
-                "title": "title", "department": "department", "division": "division",
-                "employee_id": "employee_id", "employee_type": "employee_type",
-                "business_phone": "phone_number", "mobile_phone": "mobile_number",
-                "location": "location",
-            }),
-            "live": True,
-        },
-        {"key": "LDAP_SYNC_ENABLED", "label": "Enable scheduled LDAP directory sync", "type": "bool", "default": "false", "live": True},
-        {"key": "LDAP_SYNC_INTERVAL_MINUTES", "label": "LDAP directory sync interval (minutes)", "type": "int", "default": "60", "min": 5, "max": 10080, "live": True},
-        {"key": "KEYCLOAK_ENABLED", "label": "Enable Keycloak", "type": "bool", "default": "false", "live": False},
-        {"key": "KEYCLOAK_DISCOVERY_URL", "label": "Keycloak discovery URL", "type": "url", "default": "", "live": False},
-        {"key": "KEYCLOAK_CLIENT_ID", "label": "Keycloak client ID", "type": "text", "default": "", "live": False},
-        {"key": "KEYCLOAK_CLIENT_SECRET", "label": "Keycloak client secret", "type": "secret", "default": "", "live": False},
-        {"key": "KEYCLOAK_ROLE_MAPPINGS", "label": "Keycloak realm-role mappings", "type": "json", "default": "{}", "live": True},
-    ],
-    "security": [
-        {"key": "ENABLE_HSTS", "label": "Enable HSTS", "type": "bool", "default": "false", "live": True},
-        {"key": "SESSION_HOURS", "label": "Session lifetime in hours", "type": "int", "default": "8", "min": 1, "max": 168, "live": False},
-        {"key": "PASSWORD_MIN_LENGTH", "label": "Minimum local password length", "type": "int", "default": "14", "min": 8, "max": 64, "live": True},
-        {"key": "MAX_UPLOAD_MB", "label": "Maximum upload size (MB)", "type": "int", "default": "20", "min": 1, "max": 500, "live": True},
-        {"key": "AUDIT_STREAM_ENABLED", "label": "Stream audit events to SIEM", "type": "bool", "default": "false", "live": True},
-        {"key": "LOGIN_MAX_ATTEMPTS", "label": "Failed logins before lockout", "type": "int", "default": "5", "min": 3, "max": 20, "live": True},
-        {"key": "LOGIN_LOCKOUT_MINUTES", "label": "Lockout duration in minutes", "type": "int", "default": "15", "min": 1, "max": 1440, "live": True},
-        {"key": "API_RATE_LIMIT_PER_MINUTE", "label": "REST API requests per minute (per client)", "type": "int", "default": "120", "min": 10, "max": 6000, "live": True},
-        {"key": "LOGIN_RATE_LIMIT_PER_IP_PER_MINUTE", "label": "Login attempts per minute (per source IP)", "type": "int", "default": "20", "min": 5, "max": 1000, "live": True},
-        {"key": "LOGIN_RATE_LIMIT_PER_ACCOUNT_PER_MINUTE", "label": "Login attempts per minute (per account)", "type": "int", "default": "10", "min": 3, "max": 1000, "live": True},
-        {"key": "REQUIRE_MFA_FOR_ADMIN", "label": "Require MFA for admin and CCB accounts", "type": "bool", "default": "false", "live": True},
-        {"key": "CLAMAV_ENABLED", "label": "Scan attachments with ClamAV", "type": "bool", "default": "false", "live": True},
-        {"key": "CLAMAV_HOST", "label": "ClamAV daemon host", "type": "text", "default": "", "live": True},
-        {"key": "CLAMAV_PORT", "label": "ClamAV daemon port", "type": "int", "default": "3310", "min": 1, "max": 65535, "live": True},
-    ],
-    "workspace_defaults": [
-        {"key": "DASHBOARD_SHOW_MY_ASSIGNED", "label": "Show \"Assigned to me\"", "type": "bool", "default": "true", "live": True},
-        {"key": "DASHBOARD_SHOW_SLA_WIDGETS", "label": "Show SLA breached / at-risk widgets", "type": "bool", "default": "true", "live": True},
-        {"key": "DASHBOARD_SHOW_RECENT", "label": "Show \"Recently updated\"", "type": "bool", "default": "true", "live": True},
-        {"key": "SLA_AT_RISK_HOURS", "label": "SLA \"at risk\" warning window (hours)", "type": "int", "default": "4", "min": 1, "max": 72, "live": True},
-    ],
-    "my_workspace_widgets": [
-        # One bool per WORKSPACE_WIDGET_REGISTRY entry (B-121 governance):
-        # an admin can disable a widget tenant-wide, which drops it from
-        # both the picker and any layout that already included it (skipped
-        # at render time, not an error) without deleting anyone's saved
-        # layout. Kept as a hand-written list (not generated from the
-        # registry at import time) to match this file's existing
-        # convention of a static, readable settings schema.
-        {"key": "WORKSPACE_WIDGET_TICKET_STATS_ENABLED", "label": "Ticket counts", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_MY_OPEN_TICKETS_ENABLED", "label": "My open tickets", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_RECENT_TICKETS_ENABLED", "label": "Recently updated tickets", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_SLA_AT_RISK_ENABLED", "label": "SLA at risk", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_APPROVALS_AWAITING_ME_ENABLED", "label": "Approvals awaiting me", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_FAVORITES_ENABLED", "label": "Favorites", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_RECENTLY_VIEWED_ENABLED", "label": "Recently viewed", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_NOTIFICATIONS_ENABLED", "label": "Notifications", "type": "bool", "default": "true", "live": True},
-    ],
-    "email_delivery": [
-        {"key": "SMTP_ENABLED", "label": "Enable SMTP delivery", "type": "bool", "default": "false", "live": True},
-        {"key": "SMTP_HOST", "label": "SMTP host", "type": "text", "default": "", "live": True},
-        {"key": "SMTP_PORT", "label": "SMTP port", "type": "int", "default": "587", "min": 1, "max": 65535, "live": True},
-        {"key": "SMTP_STARTTLS", "label": "Require SMTP STARTTLS", "type": "bool", "default": "true", "live": True},
-        {"key": "SMTP_USERNAME", "label": "SMTP username", "type": "text", "default": "", "live": True},
-        {"key": "SMTP_PASSWORD", "label": "SMTP password", "type": "secret", "default": "", "live": True},
-        {"key": "SMTP_FROM", "label": "SMTP from address", "type": "email", "default": "", "live": True},
-    ],
-    "netbox_connection": [
-        {"key": "NETBOX_ENABLED", "label": "Enable NetBox sync", "type": "bool", "default": "false", "live": True},
-        {"key": "NETBOX_BASE_URL", "label": "NetBox base URL", "type": "url", "default": "", "live": True},
-        {"key": "NETBOX_API_TOKEN", "label": "NetBox API token", "type": "secret", "default": "", "live": True},
-        {
-            "key": "NETBOX_CA_CERT", "type": "text", "default": "", "live": True,
-            "label": "NetBox CA certificate (PEM, only needed if NetBox uses an internal CA)",
-        },
-        {
-            "key": "NETBOX_TLS_INSECURE", "type": "bool", "default": "false", "live": True,
-            "label": "Skip NetBox TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
-        },
-    ],
-    "request_tracker_connection": [
-        {"key": "RT_ENABLED", "label": "Enable Request Tracker (RT) import", "type": "bool", "default": "false", "live": True},
-        {"key": "RT_BASE_URL", "label": "RT base URL", "type": "url", "default": "", "live": True},
-        {"key": "RT_API_TOKEN", "label": "RT API token", "type": "secret", "default": "", "live": True},
-        {
-            "key": "RT_CA_CERT", "type": "text", "default": "", "live": True,
-            "label": "RT CA certificate (PEM, only needed if RT uses an internal CA)",
-        },
-        {
-            "key": "RT_TLS_INSECURE", "type": "bool", "default": "false", "live": True,
-            "label": "Skip RT TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
-        },
-    ],
-}
-
-SETTING_GROUP_META = {
-    "organization": ("Organization", "Company identity, support contact, and instance-wide naming."),
-    "appearance": ("Appearance", "Brand colors and the default screen density for new users."),
-    "sign_in_and_directory": ("Sign-in and directory", "Local login, AD/LDAP, Keycloak, directory attributes, and synchronization."),
-    "security": ("Security and limits", "Sessions, passwords, MFA, rate limits, uploads, malware scanning, and audit streaming."),
-    "workspace_defaults": ("Workspace defaults", "Dashboard content and service-level warning thresholds."),
-    "my_workspace_widgets": ("My Workspace widgets", "Which widgets are available for users to add to their personal My Workspace page."),
-    "email_delivery": ("Email delivery", "SMTP connection and sender identity used for outgoing notifications."),
-    "netbox_connection": ("NetBox connection", "Connection used to synchronize configuration items from NetBox."),
-    "request_tracker_connection": ("Request Tracker connection", "Connection used to import records from Request Tracker."),
-}
 
 
 
 
 def setting_value(key, default=None):
-    definition = next((item for group in SETTING_DEFINITIONS.values()
-                       for item in group if item["key"] == key), None)
+    definition = find_setting_definition(key)
     fallback = default if default is not None else (
         os.getenv(key) if os.getenv(key) is not None else (definition or {}).get("default", ""))
     try:
@@ -1011,14 +884,11 @@ def setting_value(key, default=None):
 
 
 def setting_bool(key, default=False):
-    return str(setting_value(key, str(default))).lower() in {"1", "true", "yes", "on"}
+    return coerce_bool(setting_value(key, str(default)))
 
 
 def setting_int(key, default=0):
-    try:
-        return int(setting_value(key, str(default)))
-    except (TypeError, ValueError):
-        return default
+    return coerce_int(setting_value(key, str(default)), default)
 
 
 def create_notification(user_id, title, body, tenant_id=None, target_type=None, target_id=None):
@@ -1695,68 +1565,10 @@ def set_target_state(target_type, target_id, state):
         target.state = state
 
 
-TICKET_TRANSITIONS = {
-    "New": ("New", "In Progress", "Pending", "Resolved", "Cancelled"),
-    "In Progress": ("In Progress", "Pending", "Resolved", "Cancelled"),
-    "Pending": ("Pending", "In Progress", "Resolved", "Cancelled"),
-    "Resolved": ("Resolved", "In Progress", "Closed"),
-    "Closed": ("Closed",),
-    "Cancelled": ("Cancelled",),
-    "Approved": ("Approved", "In Progress", "Cancelled"),
-    "Awaiting Approval": ("Awaiting Approval", "Cancelled"),
-    "Rejected": ("Rejected",),
-}
-ENTERPRISE_TRANSITIONS = {
-    "New": ("New", "Open", "In Progress", "Pending", "Resolved", "Completed", "Closed"),
-    "Open": ("Open", "In Progress", "Pending", "Resolved", "Completed", "Closed"),
-    "In Progress": ("In Progress", "Pending", "Resolved", "Completed", "Closed"),
-    "Pending": ("Pending", "In Progress", "Resolved", "Completed", "Closed"),
-    "Resolved": ("Resolved", "In Progress", "Closed"),
-    "Completed": ("Completed", "Closed"),
-    "Closed": ("Closed",),
-    "Approved": ("Approved", "In Progress", "Pending", "Completed", "Closed"),
-    "Awaiting Approval": ("Awaiting Approval",),
-    "Rejected": ("Rejected",),
-}
-STATE_TRACK_ORDER = {
-    "incident": ["New", "In Progress", "Pending", "Resolved", "Closed"],
-    "request": ["New", "In Progress", "Pending", "Resolved", "Closed"],
-    "change": ["New", "Awaiting Approval", "Approved", "In Progress", "Pending", "Resolved", "Closed"],
-    "problem": ["New", "Open", "In Progress", "Pending", "Resolved", "Completed", "Closed"],
-    "ritm": ["Awaiting Approval", "Open", "Closed Complete"],
-    "catalog_task": ["Open", "Work in Progress", "Pending", "Closed Complete"],
-}
-
-
-def build_state_track(kind, current_state):
-    order = STATE_TRACK_ORDER.get(kind, STATE_TRACK_ORDER["incident"])
-    if current_state not in order:
-        return [{"name": step, "status": "upcoming"} for step in order] + [
-            {"name": current_state, "status": "current"}
-        ]
-    idx = order.index(current_state)
-    return [
-        {"name": step, "status": "done" if i < idx else ("current" if i == idx else "upcoming")}
-        for i, step in enumerate(order)
-    ]
-
-
-CATALOG_TASK_TRANSITIONS = {
-    "Open": ("Open", "Work in Progress", "Pending", "Closed Incomplete", "Closed Skipped"),
-    "Work in Progress": ("Work in Progress", "Pending", "Closed Complete", "Closed Incomplete", "Closed Skipped"),
-    "Pending": ("Pending", "Work in Progress", "Closed Complete", "Closed Incomplete", "Closed Skipped"),
-    "Closed Complete": ("Closed Complete",),
-    "Closed Incomplete": ("Closed Incomplete",),
-    "Closed Skipped": ("Closed Skipped",),
-}
-OPERATIONAL_TASK_TRANSITIONS = {
-    "Open": ("Open", "Work in Progress", "Pending", "Closed Complete", "Closed Incomplete", "Cancelled"),
-    "Work in Progress": ("Work in Progress", "Pending", "Closed Complete", "Closed Incomplete", "Cancelled"),
-    "Pending": ("Pending", "Work in Progress", "Closed Complete", "Closed Incomplete", "Cancelled"),
-    "Closed Complete": ("Closed Complete",),
-    "Closed Incomplete": ("Closed Incomplete",),
-    "Cancelled": ("Cancelled",),
-}
+# TICKET_TRANSITIONS, ENTERPRISE_TRANSITIONS, CATALOG_TASK_TRANSITIONS,
+# OPERATIONAL_TASK_TRANSITIONS, STATE_TRACK_ORDER, and build_state_track()
+# now live in serviceops_core.task_lifecycle (imported above) -- pure
+# declarative state-machine data with no Flask/database dependency.
 
 
 def approval_chain_for(target_type, target_id):
@@ -4396,40 +4208,15 @@ def role_at_least(role, minimum):
 
 
 def mapped_roles(groups, mapping_name, default="requester"):
-    """Map directory/realm groups to every ServiceOps role they grant,
-    without trusting user input. Returns {role: matched_group_or_None} --
-    a user can match more than one configured group mapping and so hold
-    more than one role at once (e.g. a "gg_admins" group granting admin
-    alongside a "gg_managers" group granting manager). Falls back to the
-    mapping's configured default role (a single entry with no matched
-    group) when nothing matched."""
+    """Thin DB-backed wrapper: fetches and parses the mapping setting, then
+    delegates the actual matching logic to
+    serviceops_core.identity.match_directory_role_mappings()."""
     try:
         mappings = json.loads(setting_value(mapping_name, "{}"))
     except json.JSONDecodeError:
         mappings = {}
-    normalized = normalized_directory_groups(groups)
-    matched = {}
-    for group, role in mappings.items():
-        if role in ROLE_RANK and str(group).strip().casefold() in normalized:
-            matched[role] = str(group).strip()
-    if matched:
-        return matched
-    configured = setting_value(f"{mapping_name}_DEFAULT", default)
-    return {configured if configured in ROLE_RANK else default: None}
-
-
-def normalized_directory_groups(groups):
-    """Return case-insensitive full-DN and first-CN aliases for AD memberships."""
-    normalized = set()
-    for value in groups or []:
-        group = str(value).strip()
-        if not group:
-            continue
-        normalized.add(group.casefold())
-        first_rdn = group.split(",", 1)[0].strip()
-        if first_rdn.casefold().startswith("cn="):
-            normalized.add(first_rdn[3:].strip().casefold())
-    return normalized
+    configured_default = setting_value(f"{mapping_name}_DEFAULT", default)
+    return match_directory_role_mappings(groups, mappings, configured_default, default)
 
 
 def sync_directory_team_memberships(user, groups):
@@ -4792,39 +4579,13 @@ def sync_ldap_manager_on_login(user, entry_dn, manager_dn, merged_attr_map):
 
 
 def ldap_username_placeholder():
-    """Ghost text for the login form's username field, e.g.
-    "jsmith or jsmith@corp.example.com" -- the domain half is derived from
-    the configured LDAP_BASE_DN's DC= components (e.g.
-    "DC=corp,DC=example,DC=com" -> "corp.example.com") rather than asking
-    the admin to separately enter a domain we can already infer from a
-    setting they've configured anyway. This is a display-only best-effort
-    hint, not authoritative -- a site's real UPN suffix can differ from its
-    base DN's domain components -- so it never affects what
-    ldap_authenticate() actually accepts.
-    """
+    """Ghost text for the login form's username field. Thin DB-backed
+    wrapper: fetches LDAP_ENABLED/LDAP_BASE_DN, delegates the actual
+    domain-derivation to serviceops_core.identity.ldap_domain_suffix_from_base_dn()."""
     if not setting_bool("LDAP_ENABLED"):
         return "Username"
-    base_dn = setting_value("LDAP_BASE_DN", "")
-    domain_parts = [
-        part.split("=", 1)[1].strip()
-        for part in base_dn.split(",")
-        if part.strip().upper().startswith("DC=") and part.split("=", 1)[1].strip()
-    ]
-    domain = ".".join(domain_parts)
+    domain = ldap_domain_suffix_from_base_dn(setting_value("LDAP_BASE_DN", ""))
     return f"jsmith or jsmith@{domain}" if domain else "jsmith"
-
-
-def ldap_login_local_part(username):
-    """Strip a UPN suffix (user@company.com) or down-level domain prefix
-    (CORP\\user) so any of the three Windows login forms a user might type
-    still resolve to the same bare account name. Returns the input
-    unchanged if it carries neither form.
-    """
-    if "\\" in username:
-        return username.split("\\", 1)[1]
-    if "@" in username:
-        return username.split("@", 1)[0]
-    return username
 
 
 def ldap_authenticate(username, password):
