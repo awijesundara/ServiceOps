@@ -94,6 +94,8 @@ __all__ = [
     "ServiceOfferingCI",
     "ServiceOutage",
     "Notification",
+    "NotificationPreference",
+    "NotificationTemplate",
     "SupportGroup",
     "GroupMember",
     "DirectoryGroupMapping",
@@ -1514,6 +1516,36 @@ class Notification(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     user = db.relationship("User")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+
+
+class NotificationPreference(db.Model):
+    """One row per user (created lazily on first access, same pattern as
+    UserPreference). email_enabled is a blanket kill switch for SMTP
+    delivery of this user's notifications; muted_event_types lets them opt
+    out of specific noisy categories (e.g. ritm.comment_added) without
+    losing every notification."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
+    email_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    muted_event_types = db.Column(db.Text, nullable=False, default="[]")
+    user = db.relationship("User")
+
+
+class NotificationTemplate(db.Model):
+    """Tenant-scoped, admin-editable subject/body for a given notification
+    event_type. When none exists (or none is active) for an event_type,
+    create_notification() falls back to the caller's own literal
+    title/body -- template coverage is additive, not required, so existing
+    call sites that don't pass an event_type are entirely unaffected."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    event_type = db.Column(db.String(64), nullable=False)
+    subject_template = db.Column(db.String(255), nullable=False)
+    body_template = db.Column(db.Text, nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    __table_args__ = (db.UniqueConstraint("tenant_id", "event_type", name="uq_notification_template_tenant_event"),)
 
 
 class SupportGroup(db.Model):

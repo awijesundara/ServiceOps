@@ -2,6 +2,7 @@
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">PERSONALIZATION</p><h1>System preferences</h1><p>Accessible, light-only workspace preferences for your account.</p></div><div class="record-actions"><a class="button" href="{{ url_for('my_sessions') }}">Review sessions</a><a class="button" href="{{ url_for('profile') }}">Edit profile</a></div></header>
 <form method="post" class="preferences-workspace">
+  <input type="hidden" name="action" value="general">
   <nav class="preferences-nav" aria-label="Preference categories">
     <button type="button" class="active" data-pref-tab="general">General</button>
     <button type="button" data-pref-tab="lists">Lists</button>
@@ -22,7 +23,18 @@
       <label>Date and time display<select name="date_time_display"><option value="calendar" {% if pref.date_time_display=='calendar' %}selected{% endif %}>Calendar date</option><option value="relative" {% if pref.date_time_display=='relative' %}selected{% endif %}>Time ago</option><option value="both" {% if pref.date_time_display=='both' %}selected{% endif %}>Both</option></select></label>
     </section>
     <section data-pref-panel="forms" hidden><h2>Forms</h2><label>Density<select name="density"><option value="comfortable" {% if pref.density=='comfortable' %}selected{% endif %}>Comfortable</option><option value="compact" {% if pref.density=='compact' %}selected{% endif %}>Compact</option></select></label><label>Font size<input type="range" name="font_scale" min="80" max="140" value="{{ pref.font_scale }}"><small>{{ pref.font_scale }}%</small></label><div class="preference-row"><div><strong>Keep navigation pinned</strong></div><label class="switch"><input type="checkbox" name="nav_pinned" {% if pref.nav_pinned %}checked{% endif %}><span></span></label></div></section>
-    <section data-pref-panel="notifications" hidden><h2>Notifications</h2><p>Channel targets and delivery health are governed by the administration integration workspace. Personal notification records remain available from your inbox.</p><a class="button" href="{{ url_for('notifications') }}">Open notification inbox</a></section>
+    <section data-pref-panel="notifications" hidden><h2>Notifications</h2>
+      <p>Channel targets and delivery health are governed by the administration integration workspace; wording for each notification below can be customized by an administrator. <a href="{{ url_for('notifications') }}">Open notification inbox</a>.</p>
+      <div class="preference-row"><div><strong>Email notifications</strong><small>Turn off to stop receiving any email for your notifications; you'll still see them in your in-app inbox.</small></div><label class="switch"><input type="checkbox" name="email_enabled" {% if notification_pref.email_enabled %}checked{% endif %}><span></span></label></div>
+      {% if mutable_event_types %}
+      <h3>Mute specific notifications</h3>
+      {% for key, meta in mutable_event_types.items() %}
+      <div class="preference-row"><div><strong>{{ meta.label }}</strong><small>{{ meta.description }}</small></div><label class="switch"><input type="checkbox" name="mute_{{ key }}" {% if key in muted_types %}checked{% endif %}><span></span></label></div>
+      {% endfor %}
+      {% endif %}
+      <p class="muted">Password recovery emails are always delivered regardless of these settings, since they're something you specifically requested by using "Forgot your password?".</p>
+      <button type="submit" name="action" value="notifications" class="primary">Save notification preferences</button>
+    </section>
     <footer><span>Theme is governed as light-only.</span><button class="primary">Save preferences</button></footer>
   </div>
 </form>
