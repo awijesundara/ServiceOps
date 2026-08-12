@@ -90,6 +90,9 @@ from serviceops_core.config_schema import (
     SETTING_DEFINITIONS, SETTING_GROUP_META, find_setting_definition,
     coerce_bool, coerce_int,
 )
+from serviceops_core.notification_templates import (
+    NOTIFICATION_EVENT_TYPES, NON_MUTABLE_EVENT_TYPES, render_notification_template, is_event_muted,
+)
 
 # VERSION is the release source of truth; shown in the UI, API, and health
 # endpoint so operators can confirm the running build without host access.
@@ -891,8 +894,26 @@ def setting_int(key, default=0):
     return coerce_int(setting_value(key, str(default)), default)
 
 
-def create_notification(user_id, title, body, tenant_id=None, target_type=None, target_id=None):
+def create_notification(user_id, title, body, tenant_id=None, target_type=None, target_id=None,
+                         event_type=None, template_vars=None):
+    """`event_type`/`template_vars` are optional (B-130): when given, (1) a
+    user who has muted that event_type in NotificationPreference gets
+    nothing at all -- no row, no outbox event, not just a suppressed email
+    -- and (2) an active tenant NotificationTemplate for that event_type
+    overrides the caller's literal title/body via ${var} substitution.
+    Callers that omit event_type behave exactly as before: always
+    delivered, using the literal title/body given."""
     tenant_id = tenant_id or tenant_context_id()
+    if event_type:
+        preference = NotificationPreference.query.filter_by(user_id=user_id).first()
+        if preference and is_event_muted(preference.muted_event_types, event_type):
+            return None
+        template = NotificationTemplate.query.filter_by(
+            tenant_id=tenant_id, event_type=event_type, active=True,
+        ).first()
+        if template:
+            title = render_notification_template(template.subject_template, template_vars)
+            body = render_notification_template(template.body_template, template_vars)
     notification = Notification(
         user_id=user_id, title=title, body=body, tenant_id=tenant_id,
         target_type=target_type, target_id=target_id,
@@ -902,6 +923,12 @@ def create_notification(user_id, title, body, tenant_id=None, target_type=None, 
         event_type="notification.created",
         payload_json=json.dumps({
             "user_id": user_id, "title": title, "body": body,
+            # Not to be confused with the OutboxEvent's own event_type
+            # above (always "notification.created", the dispatch
+            # category) -- this is B-130's per-notification category, kept
+            # under its own key so deliver_smtp() can apply the same
+            # NON_MUTABLE_EVENT_TYPES bypass create_notification() does.
+            "notification_event_type": event_type,
         }, sort_keys=True),
         tenant_id=tenant_id,
     ))
@@ -984,10 +1011,22 @@ def integration_endpoint_resolves_safely(endpoint, allow_private_network=False):
 
 
 def deliver_smtp(event):
+    """Returns True once actually sent, False if intentionally skipped
+    because the recipient has disabled email notifications (B-130) --
+    the caller must record that distinctly from a real failure, since a
+    disabled preference is a successful, terminal, non-retryable outcome,
+    not an error to back off and retry."""
     payload = event.payload
     user = db.session.get(User, payload["user_id"])
     if not user or user.tenant_id != event.tenant_id or not user.email:
         raise RuntimeError("Notification recipient is unavailable.")
+    preference = NotificationPreference.query.filter_by(user_id=user.id).first()
+    notification_event_type = payload.get("notification_event_type")
+    if (
+        preference and not preference.email_enabled
+        and notification_event_type not in NON_MUTABLE_EVENT_TYPES
+    ):
+        return False
     host = setting_value("SMTP_HOST", "")
     sender = setting_value("SMTP_FROM", "")
     if not host or not sender:
@@ -1006,6 +1045,7 @@ def deliver_smtp(event):
         if username:
             smtp.login(username, setting_value("SMTP_PASSWORD", ""))
         smtp.send_message(message)
+    return True
 
 
 def deliver_webhook(event, connection):
@@ -1079,14 +1119,15 @@ def process_outbox(limit=50):
         attempted = False
         if setting_bool("SMTP_ENABLED"):
             prior = IntegrationDelivery.query.filter_by(
-                outbox_event_id=event.id, channel="smtp", state="Delivered"
-            ).first()
+                outbox_event_id=event.id, channel="smtp",
+            ).filter(IntegrationDelivery.state.in_(["Delivered", "Skipped"])).first()
             if not prior:
                 attempted = True
                 try:
-                    deliver_smtp(event)
+                    sent = deliver_smtp(event)
                     db.session.add(IntegrationDelivery(
-                        outbox_event_id=event.id, channel="smtp", state="Delivered",
+                        outbox_event_id=event.id, channel="smtp",
+                        state="Delivered" if sent else "Skipped",
                         tenant_id=event.tenant_id,
                     ))
                 except Exception as error:
@@ -2332,6 +2373,10 @@ def user_in_group(user, group):
 
 def activate_gate(gate, notify_title=None, notify_body=None):
     gate.state = "Requested"
+    # Only route through the admin-editable template when the caller
+    # didn't supply its own custom wording -- an explicit override (used
+    # by some chain types for more specific phrasing) must always win.
+    using_default_wording = notify_title is None and notify_body is None
     title = notify_title or f"Approval requested: {gate.name}"
     body = notify_body or f"Your decision is required for approval chain {gate.chain.name}."
     for vote in gate.votes:
@@ -2339,6 +2384,8 @@ def activate_gate(gate, notify_title=None, notify_body=None):
         create_notification(
             vote.approver_id, title, body,
             tenant_id=gate.chain.tenant_id, target_type="approval_queue",
+            event_type="approval.requested" if using_default_wording else None,
+            template_vars={"gate_name": gate.name, "chain_name": gate.chain.name},
         )
 
 
@@ -2766,6 +2813,11 @@ def process_client_escalation_policies(limit=100):
                     group.manager_id, f"Escalated: {ticket.number}",
                     f"{ticket.subject} has been open past {organization.name}'s escalation threshold.",
                     tenant_id=organization.tenant_id, target_type="client_ticket", target_id=ticket.id,
+                    event_type="client_ticket.escalated",
+                    template_vars={
+                        "ticket_number": ticket.number, "ticket_subject": ticket.subject,
+                        "organization_name": organization.name, "hours": f"{hours:g}",
+                    },
                 )
             processed += 1
     db.session.commit()
@@ -2883,6 +2935,8 @@ def process_sla_breaches(limit=50):
                 f"{definition.name} breached for {reference}. Immediate attention is required.",
                 tenant_id=definition.tenant_id,
                 target_type=task_sla.target_type, target_id=task_sla.target_id,
+                event_type="sla.breached",
+                template_vars={"reference": reference, "sla_name": definition.name},
             )
         processed += 1
     db.session.commit()
@@ -6464,6 +6518,8 @@ def create_app(test_config=None):
                     user.id, "ServiceOps password recovery",
                     f"Use this single-use link within 30 minutes to reset your password: {reset_url}",
                     tenant_id=user.tenant_id,
+                    event_type="password.recovery",
+                    template_vars={"reset_url": reset_url},
                 )
                 audit("password reset request", user.username, "recovery link issued",
                       user_id=user.id, tenant_id=user.tenant_id)
@@ -8794,9 +8850,26 @@ def create_app(test_config=None):
                 if current_user.effective_role != "superadmin":
                     flash("Only a superadmin can grant or revoke the superadmin role.", "error")
                     return redirect(url_for("user_edit", user_id=user.id))
+            existing_grant_roles = {
+                g.role for g in UserRoleGrant.query.filter_by(user_id=user.id).all()
+            }
             for role in ALL_ROLES:
                 held, requested = role in current_roles, role in requested_roles
                 if requested and not held:
+                    db.session.add(UserRoleGrant(user_id=user.id, role=role))
+                elif requested and held and role not in existing_grant_roles:
+                    # `held` can be true purely because it's still reflected
+                    # in user.role (the granted_roles property merges that
+                    # column in defensively) without an actual UserRoleGrant
+                    # row ever having existed for it -- true for any account
+                    # whose role was set by a path other than the normal
+                    # create-user route (older data, an import, a fixture).
+                    # recompute_base_role() below only trusts real grant
+                    # rows, so leaving this role un-backed would make it
+                    # silently vanish the moment *any* other role changes on
+                    # this account, even though it was requested to stay.
+                    # Backfilling the row here is a one-time, permanent fix
+                    # for that account.
                     db.session.add(UserRoleGrant(user_id=user.id, role=role))
                 elif held and not requested:
                     # A manual revoke here always takes effect immediately.
@@ -9673,6 +9746,58 @@ def create_app(test_config=None):
             return redirect(url_for("guided_tours_admin"))
         tours = tenant_query(GuidedTour).options(selectinload(GuidedTour.steps)).order_by(GuidedTour.title).all()
         return render_template("guided_tours_admin.html", tours=tours, roles=GUIDED_TOUR_ROLES)
+
+    @app.route("/admin/notification-templates", methods=["GET", "POST"])
+    @roles("admin")
+    @require_action("security_administer")
+    def notification_templates_admin():
+        """B-130: admin-editable subject/body per notification event_type.
+        A row only exists once an admin has customized that event_type;
+        create_notification() falls back to the caller's own literal
+        default wording whenever no active template is found, so this page
+        is purely additive -- nothing here can be misconfigured into
+        silence the way a required-config page could."""
+        if request.method == "POST":
+            event_type = request.form.get("event_type", "")
+            if event_type not in NOTIFICATION_EVENT_TYPES:
+                abort(400, description="Unknown notification event type.")
+            action = request.form.get("action", "save")
+            template = NotificationTemplate.query.filter_by(
+                tenant_id=current_user.tenant_id, event_type=event_type,
+            ).first()
+            if action == "reset":
+                if template:
+                    db.session.delete(template)
+                    audit("notification template reset", event_type, "")
+                    db.session.commit()
+                    flash("Reverted to the default wording.", "success")
+            else:
+                subject = request.form.get("subject_template", "").strip()
+                body = request.form.get("body_template", "").strip()
+                if not subject or not body:
+                    flash("Subject and body are both required.", "error")
+                else:
+                    if template:
+                        template.subject_template = subject[:255]
+                        template.body_template = body
+                        template.active = True
+                    else:
+                        db.session.add(NotificationTemplate(
+                            tenant_id=current_user.tenant_id, event_type=event_type,
+                            subject_template=subject[:255], body_template=body,
+                        ))
+                    audit("notification template saved", event_type, "")
+                    db.session.commit()
+                    flash("Notification template saved.", "success")
+            return redirect(url_for("notification_templates_admin"))
+        templates_by_event = {
+            row.event_type: row
+            for row in tenant_query(NotificationTemplate).all()
+        }
+        return render_template(
+            "notification_templates_admin.html",
+            event_types=NOTIFICATION_EVENT_TYPES, templates_by_event=templates_by_event,
+        )
 
     @app.get("/api/guided-tours/active")
     @login_required
@@ -11095,6 +11220,8 @@ def create_app(test_config=None):
                     admin.id, f"Approval requested: {record.number}",
                     record.title, tenant_id=record.tenant_id,
                     target_type="enterprise", target_id=record.id,
+                    event_type="enterprise.approval_requested",
+                    template_vars={"record_number": record.number, "record_title": record.title},
                 )
                 record.state = "Awaiting Approval"
             log_history(
@@ -11154,6 +11281,11 @@ def create_app(test_config=None):
                     approval.comments or f"Your record was {record.state.lower()}.",
                     tenant_id=record.tenant_id,
                     target_type="enterprise", target_id=record.id,
+                    event_type="enterprise.approval_decided",
+                    template_vars={
+                        "record_number": record.number, "decision": record.state.lower(),
+                        "comments": approval.comments or f"Your record was {record.state.lower()}.",
+                    },
                 )
                 log_history(
                     "enterprise", record.id, f"Approval {approval.state.lower()}",
@@ -12833,6 +12965,8 @@ def create_app(test_config=None):
                     ritm.request.requested_for_id, f"New comment on {ritm.number}",
                     body[:500], tenant_id=task.assignment_group.tenant_id if task.assignment_group else current_user.tenant_id,
                     target_type="ritm", target_id=ritm.id,
+                    event_type="ritm.comment_added",
+                    template_vars={"ritm_number": ritm.number, "comment": body[:500]},
                 )
             audit("note", task.number, body[:120])
             db.session.commit()
@@ -14164,7 +14298,26 @@ def create_app(test_config=None):
         if not pref:
             pref = UserPreference(user_id=current_user.id)
             db.session.add(pref)
+        notification_pref = NotificationPreference.query.filter_by(user_id=current_user.id).first()
+        if not notification_pref:
+            notification_pref = NotificationPreference(user_id=current_user.id)
+            db.session.add(notification_pref)
+        mutable_event_types = {
+            key: meta for key, meta in NOTIFICATION_EVENT_TYPES.items()
+            if key not in NON_MUTABLE_EVENT_TYPES
+        }
         if request.method == "POST":
+            if request.form.get("action") == "notifications":
+                notification_pref.email_enabled = bool(request.form.get("email_enabled"))
+                muted = [
+                    key for key in mutable_event_types
+                    if request.form.get(f"mute_{key}")
+                ]
+                notification_pref.muted_event_types = json.dumps(muted)
+                audit("update", "Notification preferences", current_user.username)
+                db.session.commit()
+                flash("Notification preferences saved.", "success")
+                return redirect(url_for("preferences"))
             pref.theme = "light"
             pref.density = request.form.get("density", "comfortable")
             pref.font_scale = max(80, min(140, int(request.form.get("font_scale", 100))))
@@ -14182,7 +14335,11 @@ def create_app(test_config=None):
             db.session.commit()
             flash("Display and accessibility preferences saved.", "success")
             return redirect(url_for("preferences"))
-        return render_template("preferences.html", pref=pref)
+        muted_types = set(json.loads(notification_pref.muted_event_types or "[]"))
+        return render_template(
+            "preferences.html", pref=pref, notification_pref=notification_pref,
+            mutable_event_types=mutable_event_types, muted_types=muted_types,
+        )
 
     @app.get("/task-board")
     @login_required

@@ -2926,6 +2926,47 @@ def test_profile_and_user_administration_are_tenant_and_role_governed(client, ap
         )
 
 
+def test_editing_roles_does_not_silently_drop_a_role_with_no_backing_grant_row(client, app):
+    """Real bug found live: an account whose role was ever set through a
+    path other than the normal create-user route (older data, an import, a
+    fixture script) can end up with User.role set but no actual
+    UserRoleGrant row for it -- User.granted_roles defensively merges
+    User.role into the set anyway, so the edit form correctly shows that
+    role as checked. But the edit route used to only INSERT a grant row
+    when a role went from unchecked to checked, and DELETE one when it
+    went from checked to unchecked -- if the role stayed checked (held via
+    the column, not a row) across an edit that granted a *different*
+    additional role, recompute_base_role() (which only trusts real
+    UserRoleGrant rows) would silently drop it, even though the admin
+    never unchecked it and the redirect showed no error."""
+    with app.app_context():
+        legacy_user = User(
+            username="legacy.import", name="Legacy Import", email="legacy@test.invalid",
+            password_hash=generate_password_hash(uuid.uuid4().hex), role="agent",
+        )
+        db.session.add(legacy_user)
+        db.session.commit()
+        legacy_id = legacy_user.id
+        # Simulate the gap directly: no UserRoleGrant row for "agent" exists,
+        # only the User.role column -- exactly what an older import/fixture
+        # path could have left behind.
+        assert UserRoleGrant.query.filter_by(user_id=legacy_id, role="agent").first() is None
+
+    login(client)
+    response = client.post(f"/admin/users/{legacy_id}", data={
+        "name": "Legacy Import", "email": "legacy@test.invalid",
+        "granted_roles": ["agent", "manager"], "active": "1",
+        "title": "", "department": "", "business_phone": "", "mobile_phone": "",
+        "timezone": "UTC", "date_format": "system", "calendar_integration": "None",
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        legacy_user = db.session.get(User, legacy_id)
+        assert set(legacy_user.granted_roles) == {"agent", "manager"}
+        assert UserRoleGrant.query.filter_by(user_id=legacy_id, role="agent").first() is not None
+        assert UserRoleGrant.query.filter_by(user_id=legacy_id, role="manager").first() is not None
+
+
 def test_visual_board_checklist_and_attachment(client, app):
     login(client)
     client.post("/tickets/new/incident", data={
