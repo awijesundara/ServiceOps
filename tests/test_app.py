@@ -5659,6 +5659,76 @@ def test_ldap_bind_password_decrypt_failure_refuses_anonymous_fallback(app):
         assert ldap_authenticate("someuser", "somepassword") is None
 
 
+def test_ldap_login_accepts_upn_and_down_level_forms_not_just_bare_username(app, monkeypatch):
+    """Reported bug: a user typing "jsmith@company.com" or "CORP\\jsmith"
+    (the two other Windows-standard login forms, alongside the bare
+    "jsmith") got rejected, because the default LDAP_USER_FILTER matches
+    sAMAccountName, which only ever holds the bare form. ldap_authenticate
+    must strip a UPN suffix/down-level prefix and retry with the bare form
+    before giving up."""
+    import app as app_module
+
+    class FakeEntry:
+        def __init__(self, dn):
+            self.entry_dn = dn
+            self.entry_attributes_as_dict = {}
+
+    class FakeServiceConn:
+        """Simulates an AD directory where sAMAccountName=jsmith is the
+        only attribute the (default) filter ever matches against."""
+        def __init__(self):
+            self.entries = []
+
+        def search(self, base_dn, search_filter, search_scope=None, attributes=None, size_limit=None):
+            if "sAMAccountName=jsmith)" in search_filter:
+                self.entries = [FakeEntry("CN=Jane Smith,OU=Users,DC=example,DC=com")]
+                return True
+            self.entries = []
+            return False
+
+        def unbind(self):
+            pass
+
+    class FakeUserConn:
+        def __init__(self, server, user, password, auto_bind):
+            self.bound = password == "correct-horse"
+
+        def open(self):
+            pass
+
+        def start_tls(self):
+            return True
+
+        def bind(self):
+            return self.bound
+
+        def unbind(self):
+            pass
+
+    class FakeServer:
+        ssl = False
+
+    fake_service = FakeServiceConn()
+    monkeypatch.setattr(
+        app_module, "ldap_server_and_service_connection",
+        lambda: (FakeServer(), fake_service),
+    )
+    monkeypatch.setattr(app_module, "Connection", FakeUserConn)
+
+    with app.app_context():
+        db.session.add(PlatformSetting(key="LDAP_ENABLED", value="true", encrypted=False))
+        db.session.commit()
+
+        for typed_username in ("jsmith", "jsmith@company.com", "CORP\\jsmith"):
+            result = ldap_authenticate(typed_username, "correct-horse")
+            assert result is not None, f"login failed for {typed_username!r}"
+
+        # Wrong password still fails regardless of which form was typed.
+        assert ldap_authenticate("jsmith@company.com", "wrong-password") is None
+        # An account that genuinely doesn't exist under any form still fails.
+        assert ldap_authenticate("nosuchuser@company.com", "correct-horse") is None
+
+
 def test_login_forgot_password_link_hidden_by_default_when_ldap_also_enabled(client, app):
     """"Forgot your password?" only applies to a local account; when both
     local and AD/LDAP sign-in are available, the AD/LDAP provider is the
