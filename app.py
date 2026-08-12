@@ -4791,6 +4791,29 @@ def sync_ldap_manager_on_login(user, entry_dn, manager_dn, merged_attr_map):
         )
 
 
+def ldap_username_placeholder():
+    """Ghost text for the login form's username field, e.g.
+    "jsmith or jsmith@corp.example.com" -- the domain half is derived from
+    the configured LDAP_BASE_DN's DC= components (e.g.
+    "DC=corp,DC=example,DC=com" -> "corp.example.com") rather than asking
+    the admin to separately enter a domain we can already infer from a
+    setting they've configured anyway. This is a display-only best-effort
+    hint, not authoritative -- a site's real UPN suffix can differ from its
+    base DN's domain components -- so it never affects what
+    ldap_authenticate() actually accepts.
+    """
+    if not setting_bool("LDAP_ENABLED"):
+        return "Username"
+    base_dn = setting_value("LDAP_BASE_DN", "")
+    domain_parts = [
+        part.split("=", 1)[1].strip()
+        for part in base_dn.split(",")
+        if part.strip().upper().startswith("DC=") and part.split("=", 1)[1].strip()
+    ]
+    domain = ".".join(domain_parts)
+    return f"jsmith or jsmith@{domain}" if domain else "jsmith"
+
+
 def ldap_login_local_part(username):
     """Strip a UPN suffix (user@company.com) or down-level domain prefix
     (CORP\\user) so any of the three Windows login forms a user might type
@@ -5742,6 +5765,7 @@ def create_app(test_config=None):
             "has_company_logo": os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png")),
             "test_fixture_active": setting_bool("TEST_FIXTURE_ACTIVE"),
             "app_version": APP_VERSION,
+            "ldap_username_placeholder": ldap_username_placeholder(),
         }
         if not current_user.is_authenticated:
             return platform_context
