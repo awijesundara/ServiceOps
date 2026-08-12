@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% block title %}Notification templates · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = 'Notification templates' %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>Notification templates</h1><p>Customize the subject and body ServiceOps sends for each notification type. Use <code>${variable}</code> placeholders from the list below each one. Anything left unedited keeps its built-in default wording.</p></div></header>
+<section class="panel">
+  {% for key, meta in event_types.items() %}
+  {% set template = templates_by_event.get(key) %}
+  <details {% if template %}open{% endif %}>
+    <summary><strong>{{ meta.label }}</strong> <span class="badge">{{ 'Customized' if template else 'Default wording' }}</span><br><small>{{ meta.description }}</small></summary>
+    <form method="post" class="stack">
+      <input type="hidden" name="event_type" value="{{ key }}">
+      <label>Subject<input name="subject_template" maxlength="255" value="{{ template.subject_template if template else meta.default_subject }}" required></label>
+      <label>Body<textarea name="body_template" rows="4" required>{{ template.body_template if template else meta.default_body }}</textarea></label>
+      <p class="muted">Available variables: {% for var in meta.variables %}<code>${{ '{' }}{{ var }}{{ '}' }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+      <div class="record-actions">
+        <button name="action" value="save" class="primary">Save</button>
+        {% if template %}<button name="action" value="reset" class="link-button" data-confirm="Revert to the default wording for this notification?">Revert to default</button>{% endif %}
+      </div>
+    </form>
+  </details>
+  {% endfor %}
+</section>
+{% endblock %}

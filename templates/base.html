@@ -113,6 +113,7 @@
         <a href="{{ url_for('audit_log') }}" {% if nav_active('audit_log') %}class="active" aria-current="page"{% endif %}>Audit &amp; evidence</a>
         <a href="{{ url_for('data_governance_admin') }}" {% if nav_active('data_governance_admin') %}class="active" aria-current="page"{% endif %}>Data governance</a>
         <a href="{{ url_for('guided_tours_admin') }}" {% if nav_active('guided_tours_admin') %}class="active" aria-current="page"{% endif %}>Guided tours</a>
+        <a href="{{ url_for('notification_templates_admin') }}" {% if nav_active('notification_templates_admin') %}class="active" aria-current="page"{% endif %}>Notification templates</a>
         <a href="{{ url_for('system_health') }}" {% if request.endpoint in ['system_health','system_health_log_file'] %}class="active" aria-current="page"{% endif %}>System health</a>
         {% if current_user.effective_role == 'superadmin' %}<a href="{{ url_for('platform_tenants') }}" {% if nav_active('platform_tenants') %}class="active" aria-current="page"{% endif %}>Platform tenants</a>{% endif %}
       </div>
