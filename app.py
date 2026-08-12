@@ -10153,6 +10153,20 @@ def create_app(test_config=None):
     # existing convention -- see RolePolicyOverride's docstring).
     EDITABLE_POLICY_ROLES = ("requester", "agent", "manager", "admin")
 
+    # Every admin panel route is gated by @roles("admin")/@roles("superadmin")
+    # -- a hardcoded role-membership check that runs before, and completely
+    # independently of, this action-based policy system. Granting a
+    # non-admin role one of these three admin-tier actions here can
+    # therefore never open panel access for them (confirmed: every route
+    # checking these actions is also @roles("admin")-gated, except the
+    # CMDB Discovery routes, which check security_administer alone -- so
+    # that one exception is deliberately still left editable for agent/
+    # manager below). Hiding the other, structurally pointless checkboxes
+    # for non-admin roles avoids silently configuring something that can
+    # never take effect, with no error or explanation, the way it
+    # previously did.
+    ADMIN_PANEL_GATED_ACTIONS = {"administer", "platform_administer"}
+
     @app.route("/admin/roles", methods=["GET", "POST"])
     @roles("admin")
     @require_action("security_administer")
@@ -10235,6 +10249,7 @@ def create_app(test_config=None):
             "admin_roles.html", actions=policy["actions"], role_actions=effective_role_actions,
             editable_roles=EDITABLE_POLICY_ROLES, baseline_role_actions=policy["roles"],
             has_overrides=has_overrides,
+            admin_panel_gated_actions=ADMIN_PANEL_GATED_ACTIONS,
         )
 
     @app.get("/profile/sessions")
