@@ -27,7 +27,10 @@
     {% else %}
     <input type="hidden" name="provider" value="local">
     {% endif %}
-    <label>Username<input name="username" autocomplete="username" required autofocus></label>
+    <label>Username
+      <input name="username" autocomplete="username" required autofocus data-username-input>
+      <small class="field-hint" data-username-hint hidden></small>
+    </label>
     <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
   <button class="primary">Sign in</button>
   {% if local_enabled %}
