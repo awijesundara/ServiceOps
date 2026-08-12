@@ -329,6 +329,42 @@ def test_migration_baseline_creates_fresh_schema_and_records_revision():
     os.unlink(path)
 
 
+def test_session_hours_setting_actually_controls_session_lifetime():
+    """Real bug found during a misleading-UI audit: SESSION_HOURS was
+    defined and shown as an editable "Session lifetime in hours" setting
+    on Platform Settings, but nothing ever read it -- session lifetime
+    was purely env-var driven (SESSION_LIFETIME_MINUTES), so saving this
+    setting had zero effect. Verifies the fix across a real create_app()
+    boot, not just a unit-level check, since the wiring lives in create_app()'s
+    post-migration settings re-read."""
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    database_uri = f"sqlite:///{path}"
+    first_app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": database_uri})
+    with first_app.app_context():
+        db.session.add(PlatformSetting(key="SESSION_HOURS", value="2", encrypted=False))
+        db.session.commit()
+
+    second_app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": database_uri})
+    assert second_app.config["PERMANENT_SESSION_LIFETIME"] == timedelta(hours=2)
+    os.unlink(path)
+
+
+def test_default_density_setting_applies_to_new_user_preferences(client, app):
+    """Companion finding from the same audit: DEFAULT_DENSITY was shown as
+    configurable but every new UserPreference row got "comfortable" from
+    the model column's own hardcoded default regardless of this setting."""
+    with app.app_context():
+        db.session.add(PlatformSetting(key="DEFAULT_DENSITY", value="compact", encrypted=False))
+        db.session.commit()
+    login(client, username="employee", password="Employee123!")
+    client.get("/")  # triggers ui_context()'s lazy UserPreference creation
+    with app.app_context():
+        employee = User.query.filter_by(username="employee").one()
+        pref = UserPreference.query.filter_by(user_id=employee.id).one()
+        assert pref.density == "compact"
+
+
 def test_migration_baseline_adopts_existing_schema_without_data_loss():
     fd, path = tempfile.mkstemp()
     os.close(fd)
@@ -6986,6 +7022,44 @@ def test_admin_roles_page_hides_admin_panel_gated_actions_for_non_admin_roles(cl
     assert b'name="grant__admin__administer"' in page.data
     assert b'name="grant__agent__security_administer"' in page.data
     assert b'name="grant__manager__security_administer"' in page.data
+
+
+def test_admin_roles_page_marks_unenforced_actions_and_never_saves_overrides_for_them(client, app):
+    """Full audit finding: delete/purge/approve/accept/close/reopen/
+    delegate/relate/discover/read are never checked by any route or
+    inline effective_role_has_action() call, for any role -- real
+    authorization for those operations happens through separate,
+    hardcoded @roles(...) + team-membership rules instead. The page must
+    not present them as editable controls, and a save must never create
+    a bogus override for one even when its checkbox is (necessarily)
+    absent from the submitted form, which would otherwise be
+    misread as "explicitly revoke this role's baseline grant"."""
+    login(client)
+    page = client.get("/admin/roles")
+    assert b'name="grant__manager__approve"' not in page.data
+    assert b'name="grant__agent__reopen"' not in page.data
+    assert b"not yet enforced" in page.data
+
+    # manager's baseline includes "approve" -- saving the form (with no
+    # grant__manager__approve field submitted at all, since it's hidden)
+    # must not create an override that revokes it.
+    with app.app_context():
+        from serviceops_core.security import load_policy
+        policy = load_policy()
+        assert "approve" in policy["roles"]["manager"]
+
+    form_data = {"action": "save"}
+    with app.app_context():
+        for role in ("requester", "agent", "manager", "admin"):
+            for act in policy["actions"]:
+                if act in policy["roles"].get(role, ()):
+                    form_data[f"grant__{role}__{act}"] = "on"
+    response = client.post("/admin/roles", data=form_data)
+    assert response.status_code == 302
+    with app.app_context():
+        assert RolePolicyOverride.query.filter_by(
+            tenant_id=1, role="manager", action="approve",
+        ).first() is None
 
 
 def test_admin_roles_reset_removes_overrides_and_restores_baseline(client, app):

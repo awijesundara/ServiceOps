@@ -2,7 +2,7 @@
 {% block title %}Roles & permissions · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set admin_page_title = 'Roles & permissions' %}{% set admin_parent_title = 'Access control' %}{% set admin_parent_url = url_for('admin_access') %}{% include '_admin_context.html' %}
-<header class="page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Roles &amp; permissions</h1><p><code>config/authorization.json</code> is the Git-backed, ITIL-recommended baseline. Check or clear boxes below to grant or revoke an action for a role in this tenant &mdash; changes are stored as overrides on top of that baseline, so "Reset to recommended" can always bring a role back to it. Per-CI-class CMDB permissions are configured separately below. <strong>administer</strong> and <strong>platform_administer</strong> are only shown for admin: every admin panel page requires the admin role itself, so granting these to another role can never open panel access, regardless of this setting. <strong>security_administer</strong> stays editable for agent/manager since it also independently governs CMDB Network Discovery access.</p></div></header>
+<header class="page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Roles &amp; permissions</h1><p><code>config/authorization.json</code> is the Git-backed, ITIL-recommended baseline. Check or clear boxes below to grant or revoke an action for a role in this tenant &mdash; changes are stored as overrides on top of that baseline, so "Reset to recommended" can always bring a role back to it. Per-CI-class CMDB permissions are configured separately below. <strong>administer</strong> and <strong>platform_administer</strong> are only shown for admin: every admin panel page requires the admin role itself, so granting these to another role can never open panel access, regardless of this setting. <strong>security_administer</strong> stays editable for agent/manager since it also independently governs CMDB Network Discovery access. Rows marked <span class="badge">not yet enforced</span> aren't checked by any route yet &mdash; the operations they'd nominally cover (ticket deletion, approval decisions, task close/reopen, and similar) are already authorized through separate, fixed role and team-membership rules, so toggling these here has no effect for any role; shown for visibility into the full ITIL action catalog, not as a live control. <strong>create</strong> is a partial exception: it's enforced for REST API v1 clients but not the browser UI.</p></div></header>
 <section class="panel">
   <div class="panel-head"><h2>Role &rarr; action policy</h2></div>
   <form method="post">
@@ -15,10 +15,13 @@
         </tr></thead>
         <tbody>
           {% for act in actions %}
-          <tr><td>{{ act }}</td>
+          <tr{% if act in unenforced_actions %} class="muted"{% endif %}>
+            <td>{{ act }}{% if act in unenforced_actions %} <span class="badge" title="No route or check anywhere in the app consults this action yet; it's authorized separately and unconditionally by role/team rules instead.">not yet enforced</span>{% elif act == 'create' %} <span class="badge" title="Enforced for REST API v1 clients only; the browser ticket-creation form doesn't check this action.">API only</span>{% endif %}</td>
             {% for role in role_actions.keys() %}
             <td>
-              {% if role in editable_roles and not (role != 'admin' and act in admin_panel_gated_actions) %}
+              {% if act in unenforced_actions %}
+              {% if act in role_actions[role] %}✓{% else %}—{% endif %}
+              {% elif role in editable_roles and not (role != 'admin' and act in admin_panel_gated_actions) %}
               <input type="checkbox" name="grant__{{ role }}__{{ act }}" {% if act in role_actions[role] %}checked{% endif %}>
               {% elif role != 'admin' and act in admin_panel_gated_actions %}
               <span class="muted" title="Every admin panel route requires the admin role itself; granting this action to {{ role }} can never open panel access.">n/a</span>
