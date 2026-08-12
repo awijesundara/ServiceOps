@@ -5,7 +5,7 @@
 <header class="page-head"><div><h1>Automation rules</h1><p>Automation rules watch for events—such as a ticket changing state, an SLA being breached, or a schedule becoming due—and perform predefined, audited actions. They cannot run arbitrary scripts.</p></div></header>
 <div class="settings-scope-note"><strong>How it works</strong><span><b>When</b> an event occurs, ServiceOps checks each active rule. <b>If</b> its conditions match, ServiceOps performs its controlled actions and records the result below.</span></div>
 <section class="panel admin-section">
-  <div class="panel-head"><div><h2>Published automation rules</h2><p>{{ package.workflows|length }} rule(s) in the approved configuration · package <code>{{ package_hash }}</code></p></div>
+  <div class="panel-head"><div><h2 id="published-automation-rules">Published automation rules</h2><p>{{ package.workflows|length }} rule(s) in the approved configuration · package <code>{{ package_hash }}</code></p></div>
     <form method="post"><input type="hidden" name="action" value="deploy"><button class="primary">Validate and publish rules</button></form>
   </div>
   <table><thead><tr><th>Rule</th><th>Runs when</th><th>Published version</th><th>Status</th></tr></thead><tbody>
@@ -22,10 +22,10 @@
   </form>
   {% if simulation is not none %}<pre>{{ simulation|tojson(indent=2) }}</pre>{% endif %}
 </details>
-<section class="panel admin-section"><h2>Run an automation for a ticket</h2><p>Sends a controlled manual event for the selected ticket. Only rules explicitly configured to accept manual runs can respond.</p>
+<section class="panel admin-section"><h2 id="run-automation">Run an automation for a ticket</h2><p>Sends a controlled manual event for the selected ticket. Only rules explicitly configured to accept manual runs can respond.</p>
   <form method="post" class="inline-form"><input type="hidden" name="action" value="manual_trigger"><select name="ticket_id" required>{% for ticket in tickets %}<option value="{{ ticket.id }}">{{ ticket.number }} · {{ ticket.title }}</option>{% endfor %}</select><button class="button">Run eligible automation</button></form>
 </section>
-<section class="panel admin-section"><h2>Scheduled automation</h2><p>Run eligible rules at a controlled interval for a selected ticket. Missed intervals are not replayed in a burst after a restart.</p>
+<section class="panel admin-section"><h2 id="scheduled-automation">Scheduled automation</h2><p>Run eligible rules at a controlled interval for a selected ticket. Missed intervals are not replayed in a burst after a restart.</p>
   <details><summary>Add a schedule</summary><form method="post" class="form-grid">
     <input type="hidden" name="action" value="create_schedule">
     <label>Schedule key<input name="schedule_key" placeholder="stale-incident-review" pattern="[a-z0-9][a-z0-9-]{2,119}" required></label>
@@ -39,7 +39,7 @@
   {% for schedule in schedules %}<tr><td><strong>{{ schedule.name }}</strong><small><code>{{ schedule.schedule_key }}</code></small></td><td>{{ schedule.ticket.number }}</td><td>{{ schedule.interval_minutes }} minutes</td><td>{{ (schedule.next_run_at|usertime('%Y-%m-%d %H:%M')) }}</td><td>{{ (schedule.last_run_at|usertime('%Y-%m-%d %H:%M')) if schedule.last_run_at else 'Never' }}</td><td><form method="post"><input type="hidden" name="action" value="toggle_schedule"><input type="hidden" name="schedule_id" value="{{ schedule.id }}"><button class="button">{{ 'Disable' if schedule.active else 'Enable' }}</button></form></td></tr>{% else %}<tr><td colspan="6">No recurring schedules configured.</td></tr>{% endfor %}
   </tbody></table>
 </section>
-<section class="panel admin-section"><h2>Recent automation activity</h2><p>Each row is an event waiting to run, running now, completed, or stopped after repeated failures.</p>
+<section class="panel admin-section"><h2 id="recent-automation-activity">Recent automation activity</h2><p>Each row is an event waiting to run, running now, completed, or stopped after repeated failures.</p>
   <table><thead><tr><th>Event ID</th><th>Event</th><th>Target</th><th>State</th><th>Attempts</th><th>Error</th></tr></thead><tbody>
   {% for job in jobs %}<tr><td><code>{{ job.event_id }}</code></td><td>{{ job.event_type }}</td><td>{{ job.target_type }}:{{ job.target_id }}</td><td>{{ job.state }}</td><td>{{ job.attempts }}</td><td>{{ job.last_error or "—" }}{% if job.state == 'Dead' %}<form method="post"><input type="hidden" name="action" value="replay_dead"><input type="hidden" name="job_id" value="{{ job.id }}"><button class="button">Replay</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="6">No workflow jobs.</td></tr>{% endfor %}
   </tbody></table>
