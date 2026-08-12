@@ -5271,6 +5271,20 @@ def create_app(test_config=None):
         app.config["KEYCLOAK_ENABLED"] = setting_bool("KEYCLOAK_ENABLED")
         app.config["MAX_CONTENT_LENGTH"] = int(setting_value("MAX_UPLOAD_MB", "20")) * 1024 * 1024
         app.config["MAX_FORM_MEMORY_SIZE"] = app.config["MAX_CONTENT_LENGTH"]
+        # SESSION_HOURS ("live": False, i.e. restart-required) used to be
+        # defined in the settings schema and shown as configurable on
+        # Platform Settings, but nothing ever actually read it -- session
+        # lifetime was purely env-var driven (SESSION_LIFETIME_MINUTES,
+        # set once above before the database was even connected). An admin
+        # could set and save "Session lifetime in hours" with zero effect,
+        # no error. The env var's own value (already resolved into
+        # app.config above) is passed as the fallback default here so
+        # deployments that only ever used the env var keep working
+        # identically until an admin actually sets this in the UI.
+        env_default_hours = int(app.config["PERMANENT_SESSION_LIFETIME"].total_seconds() // 3600) or 8
+        app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(
+            hours=setting_int("SESSION_HOURS", env_default_hours)
+        )
         if app.config["KEYCLOAK_ENABLED"]:
             oauth.register(
                 name="keycloak",
@@ -5586,7 +5600,13 @@ def create_app(test_config=None):
             return platform_context
         preference = UserPreference.query.filter_by(user_id=current_user.id).first()
         if not preference:
-            preference = UserPreference(user_id=current_user.id)
+            # DEFAULT_DENSITY ("live": True, shown as configurable on
+            # Platform Settings) used to have zero effect -- new
+            # UserPreference rows always got "comfortable" from the
+            # model column's own hardcoded default, never this setting.
+            preference = UserPreference(
+                user_id=current_user.id, density=setting_value("DEFAULT_DENSITY", "comfortable"),
+            )
             db.session.add(preference)
             db.session.commit()
         favorites = Favorite.query.filter_by(user_id=current_user.id).order_by(Favorite.folder, Favorite.label).all()
@@ -10167,6 +10187,25 @@ def create_app(test_config=None):
     # previously did.
     ADMIN_PANEL_GATED_ACTIONS = {"administer", "platform_administer"}
 
+    # A full audit (every effective_role_has_action()/@require_action call
+    # site in app.py, both decorator and inline) found these actions are
+    # never checked anywhere, for any role, browser or REST API -- real
+    # authorization for the operations they'd nominally cover (ticket
+    # delete, approval decisions, task close/reopen, etc.) happens through
+    # entirely separate, hardcoded @roles(...) + team-membership checks
+    # that don't consult this policy at all. Toggling these here is a
+    # structural no-op for every role, not a role-specific gap like
+    # ADMIN_PANEL_GATED_ACTIONS above -- shown as fixed/informational
+    # rather than editable, so this page never again promises control it
+    # can't deliver. "create" is a partial case (checked for REST API v1
+    # clients, not the browser UI) and is called out separately in the
+    # page copy rather than lumped in here, since it does have real effect
+    # for one surface.
+    UNENFORCED_ACTIONS = {
+        "delete", "purge", "approve", "accept", "close", "reopen",
+        "delegate", "relate", "discover", "read",
+    }
+
     @app.route("/admin/roles", methods=["GET", "POST"])
     @roles("admin")
     @require_action("security_administer")
@@ -10198,6 +10237,18 @@ def create_app(test_config=None):
                 for role in EDITABLE_POLICY_ROLES:
                     baseline_actions = set(policy["roles"].get(role, ()))
                     for act in policy["actions"]:
+                        if act in UNENFORCED_ACTIONS or (role != "admin" and act in ADMIN_PANEL_GATED_ACTIONS):
+                            # Checkbox is hidden in the template for these
+                            # (role, action) combinations -- the form never
+                            # submits a value for them, which would
+                            # otherwise read as "unchecked" and, for any
+                            # action a role's baseline actually grants
+                            # (e.g. manager's baseline includes "approve"),
+                            # get misread as an explicit request to revoke
+                            # it. Skip entirely so a save never touches
+                            # overrides for something the UI doesn't even
+                            # let the admin see or intend to change.
+                            continue
                         granted = request.form.get(f"grant__{role}__{act}") == "on"
                         matches_baseline = granted == (act in baseline_actions)
                         row = existing.get((role, act))
@@ -10250,6 +10301,7 @@ def create_app(test_config=None):
             editable_roles=EDITABLE_POLICY_ROLES, baseline_role_actions=policy["roles"],
             has_overrides=has_overrides,
             admin_panel_gated_actions=ADMIN_PANEL_GATED_ACTIONS,
+            unenforced_actions=UNENFORCED_ACTIONS,
         )
 
     @app.get("/profile/sessions")
@@ -14311,7 +14363,9 @@ def create_app(test_config=None):
     def preferences():
         pref = UserPreference.query.filter_by(user_id=current_user.id).first()
         if not pref:
-            pref = UserPreference(user_id=current_user.id)
+            pref = UserPreference(
+                user_id=current_user.id, density=setting_value("DEFAULT_DENSITY", "comfortable"),
+            )
             db.session.add(pref)
         notification_pref = NotificationPreference.query.filter_by(user_id=current_user.id).first()
         if not notification_pref:
