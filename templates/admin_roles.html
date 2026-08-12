@@ -2,7 +2,7 @@
 {% block title %}Roles & permissions · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set admin_page_title = 'Roles & permissions' %}{% set admin_parent_title = 'Access control' %}{% set admin_parent_url = url_for('admin_access') %}{% include '_admin_context.html' %}
-<header class="page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Roles &amp; permissions</h1><p><code>config/authorization.json</code> is the Git-backed, ITIL-recommended baseline. Check or clear boxes below to grant or revoke an action for a role in this tenant &mdash; changes are stored as overrides on top of that baseline, so "Reset to recommended" can always bring a role back to it. Per-CI-class CMDB permissions are configured separately below.</p></div></header>
+<header class="page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Roles &amp; permissions</h1><p><code>config/authorization.json</code> is the Git-backed, ITIL-recommended baseline. Check or clear boxes below to grant or revoke an action for a role in this tenant &mdash; changes are stored as overrides on top of that baseline, so "Reset to recommended" can always bring a role back to it. Per-CI-class CMDB permissions are configured separately below. <strong>administer</strong> and <strong>platform_administer</strong> are only shown for admin: every admin panel page requires the admin role itself, so granting these to another role can never open panel access, regardless of this setting. <strong>security_administer</strong> stays editable for agent/manager since it also independently governs CMDB Network Discovery access.</p></div></header>
 <section class="panel">
   <div class="panel-head"><h2>Role &rarr; action policy</h2></div>
   <form method="post">
@@ -18,8 +18,10 @@
           <tr><td>{{ act }}</td>
             {% for role in role_actions.keys() %}
             <td>
-              {% if role in editable_roles %}
+              {% if role in editable_roles and not (role != 'admin' and act in admin_panel_gated_actions) %}
               <input type="checkbox" name="grant__{{ role }}__{{ act }}" {% if act in role_actions[role] %}checked{% endif %}>
+              {% elif role != 'admin' and act in admin_panel_gated_actions %}
+              <span class="muted" title="Every admin panel route requires the admin role itself; granting this action to {{ role }} can never open panel access.">n/a</span>
               {% else %}
               {% if act in role_actions[role] %}✓{% else %}—{% endif %}
               {% endif %}

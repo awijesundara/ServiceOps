@@ -6968,6 +6968,26 @@ def test_admin_roles_save_creates_override_and_takes_effect(client, app):
     assert b'name="grant__agent__comment_internal" checked' not in page_after.data
 
 
+def test_admin_roles_page_hides_admin_panel_gated_actions_for_non_admin_roles(client, app):
+    """User-reported: granting agent/manager 'administer', 'security_administer',
+    or 'platform_administer' via this page did nothing -- every admin panel
+    route is gated by @roles('admin')/@roles('superadmin'), a hardcoded
+    check independent of this action-based policy, so those two actions
+    can never take effect for a non-admin role. The page must not offer
+    them as if they would. security_administer is the one exception (it
+    also independently governs CMDB Discovery access with no role gate),
+    so it must stay editable for agent/manager."""
+    login(client)
+    page = client.get("/admin/roles")
+    assert b'name="grant__agent__administer"' not in page.data
+    assert b'name="grant__manager__administer"' not in page.data
+    assert b'name="grant__agent__platform_administer"' not in page.data
+    assert b'name="grant__manager__platform_administer"' not in page.data
+    assert b'name="grant__admin__administer"' in page.data
+    assert b'name="grant__agent__security_administer"' in page.data
+    assert b'name="grant__manager__security_administer"' in page.data
+
+
 def test_admin_roles_reset_removes_overrides_and_restores_baseline(client, app):
     with app.app_context():
         db.session.add(RolePolicyOverride(tenant_id=1, role="agent", action="comment_internal", is_granted=False))
