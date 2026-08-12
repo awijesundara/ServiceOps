@@ -2945,7 +2945,7 @@ def test_profile_and_user_administration_are_tenant_and_role_governed(client, ap
     with app.app_context():
         employee_id = User.query.filter_by(username="employee").one().id
     assert client.get("/admin").status_code == 200
-    assert b"Access control" in client.get("/admin").data
+    assert b"People and access" in client.get("/admin").data
     assert b"Updated Employee" in client.get("/admin/users?q=Updated+Employee").data
     response = client.post(f"/admin/users/{employee_id}", data={
         "name": "Governed Employee", "email": "employee@test.invalid",
@@ -3643,7 +3643,7 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
     home = client.get("/admin")
     assert home.status_code == 200
     assert b"Platform settings" in home.data
-    assert b"Service delivery and governance" in home.data
+    assert b"Service configuration" in home.data
     assert b"Automation rules" in home.data
     assert b"Rules that react to ticket changes" in home.data
     assert b"CMDB and service map" not in home.data
@@ -6957,6 +6957,31 @@ def test_cmdb_network_info_respects_class_read_permission(client, app):
         ci_id = ci.id
     login(client)
     assert client.get(f"/cmdb/{ci_id}/network-info").status_code == 403
+
+
+def test_admin_home_is_a_searchable_index_that_surfaces_deeply_nested_components(client):
+    """User-reported: small components like "LDAP directory sync" (a
+    sub-section deep inside the Service delivery & governance mega-page)
+    had no menu entry or way to find them except already knowing where to
+    look. Administration home is now a comprehensive, live-searchable
+    index -- every meaningful admin capability gets its own card with a
+    direct deep link (existing in-page anchors, not new/duplicated ones),
+    including ones nested inside other pages."""
+    login(client)
+    page = client.get("/admin")
+    assert page.status_code == 200
+    assert b"data-admin-quick-find" in page.data
+    # The exact reported example: findable, and deep-linked to the real
+    # in-page anchor (itil_admin.html's own #ldap-sync section), not just
+    # to the top of that 400-line page.
+    assert b"#ldap-sync" in page.data
+    assert b"LDAP directory sync" in page.data
+    assert b'data-keywords="ldap active directory' in page.data
+    # A sample of other previously-hard-to-find components, each a real
+    # card with a real deep link into its actual page section.
+    assert b"#change-freeze" in page.data
+    assert b"#sla" in page.data
+    assert b'href="/admin/settings#settings-security"' in page.data
 
 
 def test_admin_access_hub_requires_admin(client):

@@ -106,16 +106,26 @@
           </div>
         </details>
         <a href="{{ url_for('itil_admin') }}" {% if nav_active('itil_admin') %}class="active" aria-current="page"{% endif %}>Service delivery &amp; governance</a>
-        <a href="{{ url_for('system_settings') }}" {% if nav_active('system_settings') %}class="active" aria-current="page"{% endif %}>Platform settings</a>
-        <a href="{{ url_for('integrations_admin') }}" {% if nav_active('integrations_admin') %}class="active" aria-current="page"{% endif %}>Integrations &amp; delivery</a>
-        <a href="{{ url_for('workflows_admin') }}" {% if nav_active('workflows_admin') %}class="active" aria-current="page"{% endif %}>Automation rules</a>
-        <a href="{{ url_for('api_clients_admin') }}" {% if nav_active('api_clients_admin') %}class="active" aria-current="page"{% endif %}>API access</a>
-        <a href="{{ url_for('audit_log') }}" {% if nav_active('audit_log') %}class="active" aria-current="page"{% endif %}>Audit &amp; evidence</a>
-        <a href="{{ url_for('data_governance_admin') }}" {% if nav_active('data_governance_admin') %}class="active" aria-current="page"{% endif %}>Data governance</a>
-        <a href="{{ url_for('guided_tours_admin') }}" {% if nav_active('guided_tours_admin') %}class="active" aria-current="page"{% endif %}>Guided tours</a>
-        <a href="{{ url_for('notification_templates_admin') }}" {% if nav_active('notification_templates_admin') %}class="active" aria-current="page"{% endif %}>Notification templates</a>
-        <a href="{{ url_for('system_health') }}" {% if request.endpoint in ['system_health','system_health_log_file'] %}class="active" aria-current="page"{% endif %}>System health</a>
-        {% if current_user.effective_role == 'superadmin' %}<a href="{{ url_for('platform_tenants') }}" {% if nav_active('platform_tenants') %}class="active" aria-current="page"{% endif %}>Platform tenants</a>{% endif %}
+        <details class="nav-subgroup" {% if request.endpoint in ['integrations_admin','workflows_admin','notification_templates_admin','guided_tours_admin'] %}open{% endif %}>
+          <summary><span>Connections &amp; automation</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+          <div class="nav-subgroup-items">
+            <a href="{{ url_for('integrations_admin') }}" {% if nav_active('integrations_admin') %}class="active" aria-current="page"{% endif %}>Integrations &amp; delivery</a>
+            <a href="{{ url_for('workflows_admin') }}" {% if nav_active('workflows_admin') %}class="active" aria-current="page"{% endif %}>Automation rules</a>
+            <a href="{{ url_for('notification_templates_admin') }}" {% if nav_active('notification_templates_admin') %}class="active" aria-current="page"{% endif %}>Notification templates</a>
+            <a href="{{ url_for('guided_tours_admin') }}" {% if nav_active('guided_tours_admin') %}class="active" aria-current="page"{% endif %}>Guided tours</a>
+          </div>
+        </details>
+        <details class="nav-subgroup" {% if request.endpoint in ['system_settings','api_clients_admin','audit_log','data_governance_admin','system_health','system_health_log_file','platform_tenants'] %}open{% endif %}>
+          <summary><span>Platform &amp; security</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+          <div class="nav-subgroup-items">
+            <a href="{{ url_for('system_settings') }}" {% if nav_active('system_settings') %}class="active" aria-current="page"{% endif %}>Platform settings</a>
+            <a href="{{ url_for('api_clients_admin') }}" {% if nav_active('api_clients_admin') %}class="active" aria-current="page"{% endif %}>API access</a>
+            <a href="{{ url_for('audit_log') }}" {% if nav_active('audit_log') %}class="active" aria-current="page"{% endif %}>Audit &amp; evidence</a>
+            <a href="{{ url_for('data_governance_admin') }}" {% if nav_active('data_governance_admin') %}class="active" aria-current="page"{% endif %}>Data governance</a>
+            <a href="{{ url_for('system_health') }}" {% if request.endpoint in ['system_health','system_health_log_file'] %}class="active" aria-current="page"{% endif %}>System health</a>
+            {% if current_user.effective_role == 'superadmin' %}<a href="{{ url_for('platform_tenants') }}" {% if nav_active('platform_tenants') %}class="active" aria-current="page"{% endif %}>Platform tenants</a>{% endif %}
+          </div>
+        </details>
       </div>
     </details>
     {% endif %}
