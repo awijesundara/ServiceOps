@@ -2,7 +2,7 @@
 {% block title %}Platform settings · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set admin_page_title = 'Platform settings' %}{% include '_admin_context.html' %}
-<header class="page-head"><div><h1>Platform settings</h1><p>Manage organization identity and branding, sign-in and directory providers, security limits, workspace defaults, email delivery, NetBox and RT connections, and view the current runtime environment. Each area below is its own isolated page.</p></div></header>
+<header class="page-head"><div><h1>Platform settings</h1><p>Manage organization identity and branding, sign-in and directory providers, security limits, workspace defaults, email delivery, and NetBox connections, and view the current runtime environment. Each area below is its own isolated page. Request Tracker connection settings live alongside the RT import tool under Integrations.</p></div></header>
 <div class="settings-scope-note"><strong>Platform-wide configuration</strong><span>These settings control the shared application experience, identity integrations, security boundaries, outbound delivery, and external data connections. Ticket, team, change, service, and SLA policies are managed under Service delivery and governance.</span></div>
 {% set groups = [
   ('Identity and experience', [
@@ -19,7 +19,6 @@
   ('Connections', [
     ('email_delivery', group_meta['email_delivery'][0], group_meta['email_delivery'][1]),
     ('netbox_connection', group_meta['netbox_connection'][0], group_meta['netbox_connection'][1]),
-    ('request_tracker_connection', group_meta['request_tracker_connection'][0], group_meta['request_tracker_connection'][1]),
   ]),
   ('Deployment', [
     ('infrastructure', 'Runtime environment', 'Deployment profile and environment-level diagnostics (read-only).'),

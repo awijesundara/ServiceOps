@@ -10644,7 +10644,7 @@ def create_app(test_config=None):
                       f"{ticket.number}; every {interval} minute(s)")
                 db.session.commit()
                 flash(f"Workflow schedule {name} created.", "success")
-                return redirect(url_for("workflows_admin"))
+                return _admin_referrer_redirect("workflows_admin")
             elif action == "toggle_schedule":
                 schedule = tenant_record_or_404(
                     WorkflowSchedule, int(request.form.get("schedule_id", ""))
@@ -10658,7 +10658,7 @@ def create_app(test_config=None):
                 )
                 db.session.commit()
                 flash("Workflow schedule status updated.", "success")
-                return redirect(url_for("workflows_admin"))
+                return _admin_referrer_redirect("workflows_admin")
             else:
                 abort(400)
         definitions = tenant_query(WorkflowDefinition).order_by(
@@ -10674,6 +10674,18 @@ def create_app(test_config=None):
             executions=WorkflowExecution.query.filter_by(
                 tenant_id=current_user.tenant_id
             ).order_by(WorkflowExecution.id.desc()).limit(50).all(),
+            tickets=tenant_query(Ticket).order_by(Ticket.updated_at.desc()).limit(100).all(),
+        )
+
+    @app.get("/admin/workflows/scheduled")
+    @roles("admin")
+    @require_action("configure")
+    def workflows_scheduled():
+        """B-322: scheduled automation gets its own isolated page instead
+        of sharing a URL/anchor with the published-rules page (previously
+        both admin_home Quick Find cards led to the exact same page)."""
+        return render_template(
+            "workflows_scheduled.html",
             tickets=tenant_query(Ticket).order_by(Ticket.updated_at.desc()).limit(100).all(),
             schedules=tenant_query(WorkflowSchedule).order_by(
                 WorkflowSchedule.name
@@ -10804,7 +10816,7 @@ def create_app(test_config=None):
                 flash("Platform settings saved." + (
                     " Restart or roll out all application instances to apply marked settings."
                     if restart_required else ""), "success")
-            return redirect(url_for("system_settings_category", category=category))
+            return _admin_referrer_redirect("system_settings_category", category=category)
         values = {}
         for definition in definitions:
             value = setting_value(definition["key"], definition.get("default", ""))
@@ -10817,11 +10829,31 @@ def create_app(test_config=None):
             if category == "infrastructure" else
             SETTING_GROUP_META[category]
         )
+        ad_context = {}
+        if category == "sign_in_and_directory":
+            # B-322: AD group mapping and directory sync render on this same
+            # page, right below the LDAP/Keycloak connection fields above --
+            # user-reported complaint that "AD related configs" were split
+            # across Platform settings and Service delivery & governance.
+            teams = tenant_query(SupportGroup).filter_by(
+                group_type="IT Fulfillment"
+            ).order_by(SupportGroup.name).all()
+            ad_context = dict(
+                teams=teams,
+                directory_mappings=DirectoryGroupMapping.query.order_by(
+                    DirectoryGroupMapping.directory_group
+                ).all(),
+                ldap_enabled=setting_bool("LDAP_ENABLED"),
+                ldap_sync_enabled=setting_bool("LDAP_SYNC_ENABLED"),
+                ldap_sync_interval_minutes=setting_int("LDAP_SYNC_INTERVAL_MINUTES", 60),
+                ldap_sync_result=session.pop("ldap_sync_result", None),
+            )
         return render_template(
             "system_settings_category.html", category=category, title=title, description=description,
             definitions=definitions, values=values,
             infrastructure=_infrastructure_rows() if category == "infrastructure" else None,
             has_company_logo_field=category == "branding",
+            **ad_context,
         )
 
     @app.get("/admin/audit")
@@ -12335,8 +12367,21 @@ def create_app(test_config=None):
         recent_jobs = RTImportJob.query.filter_by(
             tenant_id=tenant_context_id()
         ).order_by(RTImportJob.id.desc()).limit(10).all()
+        # B-322: RT connection settings (host/token/TLS) render directly on
+        # this page instead of a separate Platform settings page, so every
+        # RT-related control lives in one place. Saving posts to the
+        # existing system_settings_category("request_tracker_connection")
+        # handler unchanged -- _admin_referrer_redirect there sends the
+        # admin back here since this page is the referrer.
+        rt_definitions = SETTING_DEFINITIONS["request_tracker_connection"]
+        rt_values = {}
+        for definition in rt_definitions:
+            value = setting_value(definition["key"], definition.get("default", ""))
+            rt_values[definition["key"]] = "" if definition["type"] == "secret" else value
+            definition["configured"] = bool(value) if definition["type"] == "secret" else False
         return render_template(
             "rt_import.html", rt_enabled=setting_bool("RT_ENABLED"), recent_jobs=recent_jobs,
+            rt_definitions=rt_definitions, rt_values=rt_values,
         )
 
     @app.post("/cmdb/relationships")
@@ -13266,6 +13311,41 @@ def create_app(test_config=None):
                 audit("configure", "CCB approval authority",
                       f"{user.username}: {'granted' if enabled else 'revoked'}")
                 flash("CCB approval authority updated.", "success")
+            elif action == "add_group_member":
+                # B-322: governance groups previously showed only a member
+                # *count* with no way to see who was in a group or add
+                # someone manually -- membership could only be changed
+                # indirectly (AD group sync, or the separate manager/CCB
+                # controls). This gives admins the same full manual liberty
+                # AD-driven membership already has.
+                group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
+                user = tenant_record_or_404(User, int(request.form["user_id"]))
+                if not user.active:
+                    abort(400, description="Only active users can be added to a group.")
+                existing = GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first()
+                if not existing:
+                    db.session.add(GroupMember(
+                        group_id=group.id, user_id=user.id, role="member", tenant_id=group.tenant_id,
+                    ))
+                    sync_implied_role_grants(user)
+                    audit("configure", f"{group.name} membership", f"added {user.username}")
+                    flash(f"{user.name} added to {group.name}.", "success")
+                else:
+                    flash(f"{user.name} is already a member of {group.name}.", "error")
+            elif action == "remove_group_member":
+                membership = tenant_record_or_404(GroupMember, int(request.form["member_id"]))
+                group = db.session.get(SupportGroup, membership.group_id)
+                user = membership.user
+                if membership.role in ("manager", "CCB approver"):
+                    abort(400, description=(
+                        "Remove this person's manager/CCB authority first, from Team managers "
+                        "or Approval authority, before removing their membership."
+                    ))
+                db.session.delete(membership)
+                db.session.flush()
+                sync_implied_role_grants(user)
+                audit("configure", f"{group.name} membership", f"removed {user.username}")
+                flash(f"{user.name} removed from {group.name}.", "success")
             elif action == "set_change_approval_policy":
                 submitted = request.form.get("ccb_required_environments", "")
                 environments = []
@@ -13606,9 +13686,7 @@ def create_app(test_config=None):
     ITIL_ADMIN_SECTIONS = {
         "ticket-defaults": ("Ticket defaults", "Initial priority for new tickets and parent/child incident state sync."),
         "catalog": ("Catalog and fulfillment routing", "Service catalog items and which team fulfills each one by default."),
-        "directory-mapping": ("AD group to ServiceOps team mapping", "Connect directory groups (e.g. gg_unix) to operational support teams."),
         "team-aliases": ("Team name aliases", "Historical/imported team name spellings that safely merge into one canonical team."),
-        "ldap-sync": ("Directory synchronization (LDAP/OIDC)", "Manually run the LDAP directory sync that keeps profile fields and team membership current."),
         "team-managers": ("Team managers", "The named manager who holds change-approval authority for each team."),
         "executive-approval": ("Executive approval (CEO)", "The named user required to approve every Normal/Emergency change."),
         "governance-groups": ("Governance groups", "Review accountable groups, their type, manager, and current membership."),
@@ -13618,6 +13696,16 @@ def create_app(test_config=None):
         "service-offerings": ("Service offerings", "Map services to their supporting configuration items."),
         "sla": ("SLA definitions and business calendars", "Business schedules and SLA target durations by priority."),
     }
+
+    @app.get("/service-operations/settings/directory-mapping")
+    @app.get("/service-operations/settings/ldap-sync")
+    @roles("admin")
+    @require_action("configure")
+    def itil_admin_section_ad_redirect():
+        # B-322: AD/LDAP group mapping and directory sync moved onto the
+        # Sign-in and directory settings page, alongside the rest of the
+        # AD/LDAP connection config, instead of living in a separate area.
+        return redirect(url_for("system_settings_category", category="sign_in_and_directory"))
 
     @app.route("/service-operations/settings/<section>")
     @roles("admin")
@@ -13661,15 +13749,20 @@ def create_app(test_config=None):
             db.session.add(executive_office)
             db.session.flush()
         db.session.commit()
+        directory_managed_member_keys = set()
+        if section == "governance-groups":
+            directory_managed_member_keys = {
+                (row.group_id, row.user_id) for row in DirectoryManagedMembership.query.filter(
+                    DirectoryManagedMembership.group_id.in_([group.id for group in groups])
+                )
+            }
         return render_template(
             "itil_admin_section.html", section=section, title=title, description=description,
             groups=groups, teams=teams,
             manager_candidates=manager_candidates, ccb_candidates=ccb_candidates,
             ccb=ccb, ccb_approver_ids=ccb_approver_ids,
             executive_office=executive_office,
-            directory_mappings=DirectoryGroupMapping.query.order_by(
-                DirectoryGroupMapping.directory_group
-            ).all(),
+            directory_managed_member_keys=directory_managed_member_keys,
             support_group_aliases=tenant_query(SupportGroupAlias).order_by(
                 SupportGroupAlias.alias
             ).all(),
@@ -13683,10 +13776,6 @@ def create_app(test_config=None):
                 CatalogItem.category, CatalogItem.name
             ).all(),
             fulfillment_groups=fulfillment_groups,
-            ldap_enabled=setting_bool("LDAP_ENABLED"),
-            ldap_sync_enabled=setting_bool("LDAP_SYNC_ENABLED"),
-            ldap_sync_interval_minutes=setting_int("LDAP_SYNC_INTERVAL_MINUTES", 60),
-            ldap_sync_result=session.pop("ldap_sync_result", None),
             change_freeze_windows=tenant_query(ChangeFreezeWindow).order_by(
                 ChangeFreezeWindow.starts_at.desc()
             ).all(),
@@ -14179,7 +14268,9 @@ def create_app(test_config=None):
                 ("Audit log", "Audit evidence events retention", "audit_log", {}, "admin"),
                 ("Service delivery and governance", "Routing SLA freeze teams", "itil_admin", {}, "admin"),
                 ("Integrations", "Webhooks monitoring RT import delivery", "integrations_admin", {}, "admin"),
-                ("Automation rules", "Workflow schedules executions", "workflows_admin", {}, "admin"),
+                ("Automation rules", "Workflow published executions", "workflows_admin", {}, "admin"),
+                ("Scheduled automation", "Recurring workflow interval schedule", "workflows_scheduled", {}, "admin"),
+                ("Request Tracker (RT)", "RT import connection settings", "rt_import", {}, "admin"),
             ]
             # Sub-sections within admin pages (e.g. "Security and limits"
             # inside Platform settings) previously had no search entry at
@@ -14190,6 +14281,14 @@ def create_app(test_config=None):
             # minimum_role) shape via url_for's _anchor kwarg, so no new
             # matching/rendering logic is needed below.
             for category, (group_label, group_description) in SETTING_GROUP_META.items():
+                if category == "request_tracker_connection":
+                    # B-322: RT connection settings render on the RT import
+                    # page itself now, not their own Platform settings page.
+                    navigation.append((
+                        group_label, f"{group_description} Request Tracker import",
+                        "rt_import", {}, "admin",
+                    ))
+                    continue
                 navigation.append((
                     group_label, f"{group_description} Platform settings",
                     "system_settings_category", {"category": category}, "admin",
@@ -14203,12 +14302,12 @@ def create_app(test_config=None):
                  "itil_admin_section", {"section": "ticket-defaults"}, "admin"),
                 ("Catalog routing", "Fulfillment team catalog items Service delivery and governance",
                  "itil_admin_section", {"section": "catalog"}, "admin"),
-                ("Directory group mapping", "AD LDAP group to team mapping Service delivery and governance",
-                 "itil_admin_section", {"section": "directory-mapping"}, "admin"),
+                ("Directory group mapping", "AD LDAP group to team mapping Sign-in and directory",
+                 "system_settings_category", {"category": "sign_in_and_directory"}, "admin"),
                 ("Team aliases", "Support group name aliases Service delivery and governance",
                  "itil_admin_section", {"section": "team-aliases"}, "admin"),
-                ("LDAP sync schedule", "Directory synchronization Service delivery and governance",
-                 "itil_admin_section", {"section": "ldap-sync"}, "admin"),
+                ("LDAP sync schedule", "Directory synchronization Sign-in and directory",
+                 "system_settings_category", {"category": "sign_in_and_directory"}, "admin"),
                 ("Team managers", "Support group manager assignment Service delivery and governance",
                  "itil_admin_section", {"section": "team-managers"}, "admin"),
                 ("Governance groups", "CCB executive approval group setup Service delivery and governance",

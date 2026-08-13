@@ -8,15 +8,14 @@
     <p>Manage operational records for catalog routing, teams, approval authority, freeze windows, service mapping, and service commitments. Platform defaults and credentials are kept in Platform settings. Each area below is its own isolated page.</p>
   </div>
 </header>
+<div class="settings-scope-note"><strong>Looking for AD/LDAP group mapping or directory sync?</strong><span>Those live together with the rest of the AD/LDAP connection settings under <a href="{{ url_for('system_settings_category', category='sign_in_and_directory') }}">Platform settings → Sign-in and directory</a>.</span></div>
 {% set groups = [
   ('Service delivery', [
     ('ticket-defaults', 'Ticket defaults', 'Initial priority for new tickets and parent/child incident state sync.'),
     ('catalog', 'Catalog and fulfillment routing', 'Service catalog items and which team fulfills each one by default.'),
   ]),
   ('People and routing', [
-    ('directory-mapping', 'AD group to ServiceOps team mapping', 'Connect directory groups (e.g. gg_unix) to operational support teams.'),
     ('team-aliases', 'Team name aliases', 'Historical/imported team name spellings that safely merge into one canonical team.'),
-    ('ldap-sync', 'Directory synchronization (LDAP/OIDC)', 'Manually run the LDAP directory sync that keeps profile fields and team membership current.'),
     ('team-managers', 'Team managers', 'The named manager who holds change-approval authority for each team.'),
     ('executive-approval', 'Executive approval (CEO)', 'The named user required to approve every Normal/Emergency change.'),
     ('governance-groups', 'Governance groups', 'Review accountable groups, their type, manager, and current membership.'),
