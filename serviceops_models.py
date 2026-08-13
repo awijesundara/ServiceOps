@@ -649,6 +649,14 @@ class APIClient(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     last_used_at = db.Column(db.DateTime(timezone=True))
     revoked_at = db.Column(db.DateTime(timezone=True))
+    client_kind = db.Column(db.String(20), nullable=False, default="integration")
+    refresh_token_hash = db.Column(db.String(64), unique=True)
+    access_expires_at = db.Column(db.DateTime(timezone=True))
+    refresh_expires_at = db.Column(db.DateTime(timezone=True))
+    app_version = db.Column(db.String(40))
+    app_build = db.Column(db.String(40))
+    platform = db.Column(db.String(40))
+    device_model = db.Column(db.String(120))
     tenant_id = db.Column(
         db.Integer, db.ForeignKey("tenant.id"), nullable=False,
         default=tenant_context_id, index=True,
