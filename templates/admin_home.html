@@ -8,30 +8,30 @@
     ('Users','Create, edit, deactivate, and erase accounts; assign roles and manager reporting lines','users',None,'U','user account create edit deactivate erase manager'),
     ('Roles & permissions','The role → action policy, plus per-CI-class create/read/update/delete grants','admin_roles',None,'⛊','role action policy authorization grant revoke override'),
     ('Active sessions','Review and revoke browser sessions across this organization','admin_sessions',None,'◉','session revoke logout browser device'),
-    ('Directory synchronization (LDAP/OIDC)','Manually run or schedule the LDAP directory sync that keeps profile fields and team membership current','itil_admin','ldap-sync','⌘','ldap active directory ad sso oidc sync synchronization login authentication'),
-    ('AD group → ServiceOps team mapping','Connect directory groups (e.g. gg_unix) to operational support teams','itil_admin','directory-mapping','⌘','ad group mapping directory team gg_'),
-    ('Team name aliases','Historical/imported team name spellings that safely merge into one canonical team','itil_admin','team-aliases','▤','alias duplicate merge team name'),
-    ('Groups & team ownership','Support groups, the named manager who holds change-approval authority for each team, and adding SysOps access for the customer-support workspace','itil_admin','team-managers','▤','support group team owner manager assign fulfillment client management sysops'),
-    ('Executive approval (CEO)','The named user required to approve every Normal/Emergency change','itil_admin','executive-approval','▤','ceo executive approval change'),
-    ('Governance groups','Review accountable groups, their type, manager, and current membership','itil_admin','governance-groups','▤','governance group accountable membership'),
+    ('Directory synchronization (LDAP/OIDC)','Manually run or schedule the LDAP directory sync that keeps profile fields and team membership current','itil_admin_section','ldap-sync','⌘','ldap active directory ad sso oidc sync synchronization login authentication'),
+    ('AD group → ServiceOps team mapping','Connect directory groups (e.g. gg_unix) to operational support teams','itil_admin_section','directory-mapping','⌘','ad group mapping directory team gg_'),
+    ('Team name aliases','Historical/imported team name spellings that safely merge into one canonical team','itil_admin_section','team-aliases','▤','alias duplicate merge team name'),
+    ('Groups & team ownership','Support groups, the named manager who holds change-approval authority for each team, and adding SysOps access for the customer-support workspace','itil_admin_section','team-managers','▤','support group team owner manager assign fulfillment client management sysops'),
+    ('Executive approval (CEO)','The named user required to approve every Normal/Emergency change','itil_admin_section','executive-approval','▤','ceo executive approval change'),
+    ('Governance groups','Review accountable groups, their type, manager, and current membership','itil_admin_section','governance-groups','▤','governance group accountable membership'),
   ]),
   ('Service configuration','How requests, changes, services, and commitments are governed',[
-    ('Ticket defaults','Initial priority for new tickets and parent/child incident state sync','itil_admin','ticket-defaults','↔','priority default incident sync ticket'),
-    ('Catalog & fulfillment routing','Service catalog items and which team fulfills each one by default','itil_admin','catalog','↔','catalog item routing fulfillment service request'),
-    ('Change approval policy','Which CMDB environment names require Change Control Board approval','itil_admin','change-approval-policy','↔','change approval policy ccb environment'),
-    ('Change Control Board approvers','Users granted CCB voting authority for non-standard changes','itil_admin','ccb','↔','ccb change control board approver voter'),
-    ('Change freeze windows','Blocks Standard/Normal change scheduling and approval during active windows','itil_admin','change-freeze','↔','freeze window change blackout emergency'),
-    ('Service offerings','Map services to their supporting configuration items','itil_admin','service-offerings','↔','service offering mapping ci'),
-    ('SLA definitions & business calendars','Business schedules and SLA target durations by priority','itil_admin','sla','↔','sla business calendar schedule target commitment'),
+    ('Ticket defaults','Initial priority for new tickets and parent/child incident state sync','itil_admin_section','ticket-defaults','↔','priority default incident sync ticket'),
+    ('Catalog & fulfillment routing','Service catalog items and which team fulfills each one by default','itil_admin_section','catalog','↔','catalog item routing fulfillment service request'),
+    ('Change approval policy','Which CMDB environment names require Change Control Board approval','itil_admin_section','change-approval-policy','↔','change approval policy ccb environment'),
+    ('Change Control Board approvers','Users granted CCB voting authority for non-standard changes','itil_admin_section','ccb','↔','ccb change control board approver voter'),
+    ('Change freeze windows','Blocks Standard/Normal change scheduling and approval during active windows','itil_admin_section','change-freeze','↔','freeze window change blackout emergency'),
+    ('Service offerings','Map services to their supporting configuration items','itil_admin_section','service-offerings','↔','service offering mapping ci'),
+    ('SLA definitions & business calendars','Business schedules and SLA target durations by priority','itil_admin_section','sla','↔','sla business calendar schedule target commitment'),
   ]),
   ('Connections and channels','How ServiceOps exchanges information with the outside world',[
     ('Webhook & Teams connections','Signed webhooks, SIEM streaming, and Microsoft Teams delivery targets','integrations_admin','integration-connections','✉','webhook teams siem signed delivery connection'),
     ('Monitoring sources','External monitoring/alerting sources that create IT operations events','integrations_admin','monitoring-sources','✉','monitoring alert source event ingestion'),
     ('Delivery outbox','Pending, retrying, and dead delivery attempts for outbound integrations','integrations_admin','integration-outbox','✉','outbox retry delivery queue failed'),
     ('Import from Request Tracker (RT)','Pull tickets from an RT instance into ServiceOps as IT operations events','integrations_admin','rt-import','✉','request tracker rt import migration'),
-    ('Email (SMTP) delivery','SMTP connection and sender identity used for outgoing notifications','system_settings','settings-email_delivery','✉','smtp email outgoing sender notification'),
-    ('NetBox connection','Connection used to synchronize configuration items from NetBox','system_settings','settings-netbox_connection','✉','netbox cmdb sync connection'),
-    ('Request Tracker connection','Connection settings used to import records from Request Tracker','system_settings','settings-request_tracker_connection','✉','request tracker rt connection token'),
+    ('Email (SMTP) delivery','SMTP connection and sender identity used for outgoing notifications','system_settings_category','email_delivery','✉','smtp email outgoing sender notification'),
+    ('NetBox connection','Connection used to synchronize configuration items from NetBox','system_settings_category','netbox_connection','✉','netbox cmdb sync connection'),
+    ('Request Tracker connection','Connection settings used to import records from Request Tracker','system_settings_category','request_tracker_connection','✉','request tracker rt connection token'),
   ]),
   ('Automation and content','Rules, templates, and guided content that run without a person clicking each time',[
     ('Automation rules','Rules that react to ticket changes, SLA breaches, or schedules','workflows_admin','published-automation-rules','▶','automation rule trigger workflow published'),
@@ -40,13 +40,13 @@
     ('Guided tours','Contextual onboarding content shown to matching users on matching pages','guided_tours_admin',None,'◎','guided tour onboarding help contextual'),
   ]),
   ('Platform and security','How ServiceOps looks, signs people in, protects data, and behaves by default',[
-    ('Organization','Company identity, support contact, and instance-wide naming','system_settings','settings-organization','⚙','organization company name support instance'),
-    ('Appearance','Brand colors and the default screen density for new users','system_settings','settings-appearance','⚙','appearance brand color density theme logo'),
-    ('Sign-in & directory','Local login, AD/LDAP, Keycloak, directory attributes','system_settings','settings-sign_in_and_directory','⚙','sign in login ldap keycloak oidc directory attribute'),
-    ('Security & limits','Sessions, passwords, MFA, rate limits, uploads, malware scanning, audit streaming','system_settings','settings-security','⚙','security password mfa rate limit upload malware session hours lifetime'),
-    ('Workspace defaults','Dashboard content and service-level warning thresholds','system_settings','settings-workspace_defaults','⚙','workspace dashboard default sla warning'),
-    ('My Workspace widgets','Which widgets are available for users to add to their personal My Workspace page','system_settings','settings-my_workspace_widgets','⚙','my workspace widget personal landing page'),
-    ('Runtime environment','Deployment profile and environment-level diagnostics','system_settings','settings-infrastructure','⚙','runtime environment deployment diagnostics'),
+    ('Organization','Company identity, support contact, and instance-wide naming','system_settings_category','organization','⚙','organization company name support instance'),
+    ('Appearance','Brand colors and the default screen density for new users','system_settings_category','appearance','⚙','appearance brand color density theme logo'),
+    ('Sign-in & directory','Local login, AD/LDAP, Keycloak, directory attributes','system_settings_category','sign_in_and_directory','⚙','sign in login ldap keycloak oidc directory attribute'),
+    ('Security & limits','Sessions, passwords, MFA, rate limits, uploads, malware scanning, audit streaming','system_settings_category','security','⚙','security password mfa rate limit upload malware session hours lifetime'),
+    ('Workspace defaults','Dashboard content and service-level warning thresholds','system_settings_category','workspace_defaults','⚙','workspace dashboard default sla warning'),
+    ('My Workspace widgets','Which widgets are available for users to add to their personal My Workspace page','system_settings_category','my_workspace_widgets','⚙','my workspace widget personal landing page'),
+    ('Runtime environment','Deployment profile and environment-level diagnostics','system_settings_category','infrastructure','⚙','runtime environment deployment diagnostics'),
     ('Data governance','Retention policies, legal holds, and GDPR export/erasure review','data_governance_admin',None,'▤','data governance retention legal hold gdpr privacy erasure export'),
     ('API access','Create and revoke application credentials with limited permissions','api_clients_admin',None,'⚿','api access token client credential rate limit'),
     ('Audit & evidence','Review, verify, export, and retain the record of administrative and operational changes','audit_log',None,'▤','audit log evidence verify export tamper'),
@@ -66,7 +66,7 @@
   <header><h2>{{ section_title }}</h2><p>{{ section_description }}</p></header>
   <div class="admin-capability-grid">
     {% for title, description, endpoint, anchor, icon, keywords in cards %}
-    <a class="admin-capability-card" data-admin-quick-find-card data-keywords="{{ keywords }}" href="{{ url_for(endpoint) }}{% if anchor %}#{{ anchor }}{% endif %}"><span>{{ icon }}</span><div><h3>{{ title }}</h3><p>{{ description }}</p></div></a>
+    <a class="admin-capability-card" data-admin-quick-find-card data-keywords="{{ keywords }}" href="{% if endpoint == 'itil_admin_section' %}{{ url_for(endpoint, section=anchor) }}{% elif endpoint == 'system_settings_category' %}{{ url_for(endpoint, category=anchor) }}{% else %}{{ url_for(endpoint) }}{% if anchor %}#{{ anchor }}{% endif %}{% endif %}"><span>{{ icon }}</span><div><h3>{{ title }}</h3><p>{{ description }}</p></div></a>
     {% endfor %}
   </div>
 </section>

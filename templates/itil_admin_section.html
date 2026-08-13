@@ -1,0 +1,411 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = title %}{% include '_admin_context.html' %}
+<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('itil_admin') }}">Service delivery and governance</a></p><h1>{{ title }}</h1><p>{{ description }}</p></div></header>
+{% set post_url = url_for('itil_admin') %}
+
+{% if section == 'ticket-defaults' %}
+<section class="panel admin-section">
+  <form method="post" action="{{ post_url }}" class="form-grid">
+    <input type="hidden" name="action" value="set_ticket_defaults">
+    <label>Default ticket priority
+      <select name="default_ticket_priority">{% for priority in ['P1','P2','P3','P4'] %}<option value="{{ priority }}" {% if default_ticket_priority == priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select>
+      <small>Applied when a new ticket does not declare a priority.</small>
+    </label>
+    <label class="check"><input type="checkbox" name="sync_child_incident_states" {% if sync_child_incident_states %}checked{% endif %}> Synchronize parent incident state to child incidents</label>
+    <div class="wide actions"><button class="primary">Save ticket defaults</button></div>
+  </form>
+</section>
+{% endif %}
+
+{% if section == 'catalog' %}
+<section class="panel admin-section">
+  <details open>
+    <summary>Add a catalog item</summary>
+    <form method="post" action="{{ post_url }}" class="form-grid">
+      <input type="hidden" name="action" value="create_catalog_item">
+      <label>Item name<input name="name" maxlength="160" required></label>
+      <label>Category<input name="category" maxlength="80" placeholder="Hardware, Software, Access…" required></label>
+      <label class="wide">Description<textarea name="description" rows="3" required></textarea></label>
+      <label>Delivery target (days)<input name="delivery_days" type="number" min="1" max="365" value="3" required></label>
+      <label>Fulfillment team<select name="group_id" required>{% for group in fulfillment_groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></label>
+      <label class="check"><input type="checkbox" name="approval_required" value="1"> Approval required</label>
+      <label class="check"><input type="checkbox" name="active" value="1" checked> Available in catalog</label>
+      <div class="wide actions"><button class="primary">Create catalog item</button></div>
+    </form>
+  </details>
+  <table>
+    <thead><tr><th>Catalog item</th><th>Category</th><th>Policy</th><th>Current fulfillment team</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for item in catalog_items %}
+      <tr>
+        <td><strong>{{ item.name }}</strong><small>{{ item.description }}</small></td>
+        <td>{{ item.category }}</td>
+        <td>{{ item.delivery_days }} days · {{ "Approval required" if item.approval_required else "No approval" }} · {{ "Active" if item.active else "Inactive" }}</td>
+        <td>{{ item.fulfillment_route.support_group.name if item.fulfillment_route and item.fulfillment_route.active else "Service Desk fallback" }}</td>
+        <td>
+          <details><summary>Edit</summary>
+            <form method="post" action="{{ post_url }}" class="form-grid">
+              <input type="hidden" name="action" value="update_catalog_item">
+              <input type="hidden" name="catalog_item_id" value="{{ item.id }}">
+              <label>Name<input name="name" maxlength="160" value="{{ item.name }}" required></label>
+              <label>Category<input name="category" maxlength="80" value="{{ item.category }}" required></label>
+              <label class="wide">Description<textarea name="description" rows="3" required>{{ item.description }}</textarea></label>
+              <label>Delivery days<input name="delivery_days" type="number" min="1" max="365" value="{{ item.delivery_days }}" required></label>
+              <label>Fulfillment team<select name="group_id" required>{% for group in fulfillment_groups %}<option value="{{ group.id }}" {% if item.fulfillment_route and item.fulfillment_route.support_group_id == group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
+              <label class="check"><input type="checkbox" name="approval_required" value="1" {% if item.approval_required %}checked{% endif %}> Approval required</label>
+              <label class="check"><input type="checkbox" name="active" value="1" {% if item.active %}checked{% endif %}> Available in catalog</label>
+              <div class="wide actions"><button class="button">Save item</button></div>
+            </form>
+          </details>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No catalog items are configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="panel-head" style="margin-top: 1.5rem;">
+    <div>
+      <p>Spelling/formatting variants of the same team (e.g. "CoreApps", "Core apps", "SSD Team") are detected and merged automatically on every CSV import. Use this to sweep for them on demand — a spreadsheet-imported "Core apps" and the existing "CoreApps" merge into one team; nothing is asked, since this only ever collapses format variants, never genuinely different names (that's what aliases above are for).</p>
+    </div>
+  </div>
+  <form method="post" action="{{ post_url }}" class="actions">
+    <input type="hidden" name="action" value="merge_duplicate_teams">
+    <button class="primary">Clean up duplicate teams now</button>
+  </form>
+</section>
+{% endif %}
+
+{% if section == 'directory-mapping' %}
+<section class="panel admin-section">
+  <p class="muted">Enter a short AD group such as <code>gg_unix</code> or its complete distinguished name. Membership synchronizes whenever the user signs in through AD/LDAP.</p>
+  <form method="post" action="{{ post_url }}" class="form-grid">
+    <input type="hidden" name="action" value="add_directory_mapping">
+    <label>AD group name or DN
+      <input name="directory_group" placeholder="gg_unix" maxlength="500" required>
+    </label>
+    <label>ServiceOps team
+      <select name="group_id" required>
+        {% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <div class="wide actions"><button class="primary">Save mapping</button></div>
+  </form>
+  <table>
+    <thead><tr><th>AD group</th><th>Assigned team</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for mapping in directory_mappings %}
+      <tr>
+        <td><code>{{ mapping.directory_group }}</code></td>
+        <td>{{ mapping.support_group.name }}</td>
+        <td>{{ "Active" if mapping.active else "Disabled" }}</td>
+        <td>
+          {% if mapping.active %}
+          <form method="post" action="{{ post_url }}">
+            <input type="hidden" name="action" value="delete_directory_mapping">
+            <input type="hidden" name="mapping_id" value="{{ mapping.id }}">
+            <button class="button">Disable</button>
+          </form>
+          {% else %}<span class="muted">Retained for audit</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No AD team mappings configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == 'team-aliases' %}
+<section class="panel admin-section">
+  <p class="muted">Add alternate names staff use for a team (e.g. "DBA" for "Database"). Anywhere a team name is resolved from free text — CSV/spreadsheet import's Owner column, for example — the alias resolves to the same team instead of creating a duplicate.</p>
+  <form method="post" action="{{ post_url }}" class="form-grid">
+    <input type="hidden" name="action" value="add_support_group_alias">
+    <label>Alias
+      <input name="alias" placeholder="DBA" maxlength="160" required>
+    </label>
+    <label>ServiceOps team
+      <select name="group_id" required>
+        {% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <div class="wide actions"><button class="primary">Save alias</button></div>
+  </form>
+  <table>
+    <thead><tr><th>Alias</th><th>Resolves to</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for group_alias in support_group_aliases %}
+      <tr>
+        <td><code>{{ group_alias.alias }}</code></td>
+        <td>{{ group_alias.group.name }}</td>
+        <td>
+          <form method="post" action="{{ post_url }}">
+            <input type="hidden" name="action" value="delete_support_group_alias">
+            <input type="hidden" name="alias_id" value="{{ group_alias.id }}">
+            <button class="button">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">No team name aliases configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == 'ldap-sync' %}
+<section class="panel admin-section">
+  <p class="muted">Pull title, department, division, employee ID/type, manager chain, and AD-group team membership from the directory for users who have already signed in through AD/LDAP at least once. Scheduled sync is {% if ldap_sync_enabled %}enabled every {{ ldap_sync_interval_minutes }} minute{{ '' if ldap_sync_interval_minutes == 1 else 's' }}{% else %}disabled{% endif %}; you can still trigger a manual run at any time.</p>
+  {% if not ldap_enabled %}
+  <p class="muted">AD/LDAP is not enabled. Configure it under Sign-in and directory settings first.</p>
+  {% else %}
+  <form method="post" action="{{ post_url }}" class="actions">
+    <input type="hidden" name="action" value="sync_directory">
+    <label><input type="checkbox" name="dry_run" value="1" checked> Preview only (no changes saved)</label>
+    <button class="primary">Run directory sync</button>
+  </form>
+  {% if ldap_sync_result %}
+  <table>
+    <thead><tr><th>Directory entries</th><th>Users updated</th><th>Managers resolved</th><th>Self-manager skipped</th><th>Memberships added</th><th>Memberships removed</th><th>Unmatched</th><th>Errors</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>{{ ldap_sync_result.directory_entries }}</td>
+        <td>{{ ldap_sync_result.users_updated }}</td>
+        <td>{{ ldap_sync_result.managers_resolved }}</td>
+        <td>{{ ldap_sync_result.self_manager_skipped or 0 }}</td>
+        <td>{{ ldap_sync_result.memberships_added }}</td>
+        <td>{{ ldap_sync_result.memberships_removed }}</td>
+        <td>{{ ldap_sync_result.users_unmatched }}</td>
+        <td>{{ ldap_sync_result.errors|length }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% if ldap_sync_result.dry_run %}<p class="muted">This was a preview; no changes were saved.</p>{% endif %}
+  {% if ldap_sync_result.self_manager_users %}
+  <p class="muted">Self-manager records skipped (directory manager points to own DN): {{ ldap_sync_result.self_manager_users|join(', ') }}.</p>
+  {% endif %}
+  {% for error in ldap_sync_result.errors %}<p class="muted">{{ error }}</p>{% endfor %}
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
+{% if section == 'team-managers' %}
+<section class="panel admin-section">
+  <p class="muted">The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.</p>
+  <table>
+    <thead><tr><th>Team</th><th>Current manager</th><th>Manager assignment</th><th>Members</th></tr></thead>
+    <tbody>
+      {% for team in teams %}
+      <tr>
+        <td><strong>{{ team.name }}</strong></td>
+        <td>{{ team.manager.name if team.manager else "Unassigned" }}</td>
+        <td>
+          <form method="post" action="{{ post_url }}" class="inline-form">
+            <input type="hidden" name="action" value="set_manager">
+            <input type="hidden" name="group_id" value="{{ team.id }}">
+            <select name="manager_id">
+              <option value="">Unassigned</option>
+              {% for user in manager_candidates %}
+              <option value="{{ user.id }}" {% if team.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
+              {% endfor %}
+            </select>
+            <button class="button">Save</button>
+          </form>
+        </td>
+        <td>{{ team.members|length }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == 'executive-approval' %}
+<section class="panel admin-section">
+  <p class="muted">The named user here is required to approve every Normal/Emergency change alongside CCB authorization and the owning/CI-owner team managers.</p>
+  <table>
+    <thead><tr><th>Current executive approver</th><th>Assignment</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>{{ executive_office.manager.name if executive_office.manager else "Unassigned" }}</td>
+        <td>
+          <form method="post" action="{{ post_url }}" class="inline-form">
+            <input type="hidden" name="action" value="set_manager">
+            <input type="hidden" name="group_id" value="{{ executive_office.id }}">
+            <select name="manager_id">
+              <option value="">Unassigned</option>
+              {% for user in manager_candidates %}
+              <option value="{{ user.id }}" {% if executive_office.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
+              {% endfor %}
+            </select>
+            <button class="button">Save</button>
+          </form>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == 'governance-groups' %}
+<section class="panel admin-section">
+  <p class="muted">Review accountable groups, their type, manager, and current membership in one place.</p>
+  {% for group in groups %}
+  <article class="config-row">
+    <div><strong>{{ group.name }}</strong><small>{{ group.group_type }} · manager {{ group.manager.name if group.manager else "Unassigned" }}</small></div>
+    <span>{{ group.members|length }} members</span>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if section == 'change-approval-policy' %}
+<section class="panel admin-section">
+  <p class="muted">Choose which CMDB environment names require Change Control Board approval. This policy determines <em>where</em> approval is enforced; Approval authority determines <em>who</em> can approve.</p>
+  <form method="post" action="{{ post_url }}" class="form-grid">
+    <input type="hidden" name="action" value="set_change_approval_policy">
+    <label class="wide">Environments requiring CCB approval
+      <input name="ccb_required_environments" value="{{ ccb_required_environments }}" placeholder="Production, Staging" required>
+      <small>Comma-separated CMDB environment names. Changes apply immediately to new approval decisions.</small>
+    </label>
+    <div class="wide actions"><button class="primary">Save change approval policy</button></div>
+  </form>
+</section>
+{% endif %}
+
+{% if section == 'ccb' %}
+<section class="panel admin-section">
+  <p class="muted">Only users explicitly granted CCB approval authority are selected as voters for new non-standard changes. Removing authority does not rewrite historical decisions.</p>
+  <table>
+    <thead><tr><th>User</th><th>Platform role</th><th>Team memberships</th><th>CCB authority<span class="info-tip" tabindex="0" data-tip="Change Control Board approval authority. Only users granted this can vote on Normal/Emergency change approvals. Removing it does not alter past approval decisions.">i</span></th></tr></thead>
+    <tbody>
+      {% for user in ccb_candidates %}
+      <tr>
+        <td><strong>{{ user.name }}</strong><small>{{ user.username }}</small></td>
+        <td><span class="tag">{{ user.role }}</span></td>
+        <td>
+          {% set ns = namespace(names=[]) %}
+          {% for group in groups %}{% for member in group.members %}{% if member.user_id == user.id and group.id != ccb.id %}{% set ns.names = ns.names + [group.name] %}{% endif %}{% endfor %}{% endfor %}
+          {{ ns.names|join(", ") or "None" }}
+        </td>
+        <td>
+          <form method="post" action="{{ post_url }}">
+            <input type="hidden" name="action" value="set_ccb_authority">
+            <input type="hidden" name="user_id" value="{{ user.id }}">
+            {% if user.id in ccb_approver_ids %}
+            <input type="hidden" name="enabled" value="false"><button class="button">Revoke</button>
+            {% else %}
+            <input type="hidden" name="enabled" value="true"><button class="primary">Grant</button>
+            {% endif %}
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == 'change-freeze' %}
+<section class="panel admin-section">
+  <p class="muted">While a window is active, Standard and Normal changes can't be scheduled or approved inside it — only Emergency changes are exempt. This actually blocks submission/approval, unlike a banner.</p>
+  <form method="post" action="{{ post_url }}" class="form-grid">
+    <input type="hidden" name="action" value="create_change_freeze">
+    <label class="wide">Title<input name="title" placeholder="Year-end code freeze" maxlength="160" required></label>
+    <label>Starts<input type="datetime-local" name="starts_at" required></label>
+    <label>Ends<input type="datetime-local" name="ends_at" required></label>
+    <label class="wide">Reason<textarea name="reason" rows="2" placeholder="Optional — shown to anyone blocked by this freeze"></textarea></label>
+    <div class="wide actions"><button class="primary">Create freeze window</button></div>
+  </form>
+  <table>
+    <thead><tr><th>Title</th><th>Window</th><th>Reason</th><th>Created by</th><th></th></tr></thead>
+    <tbody>
+      {% for window in change_freeze_windows %}
+      <tr>
+        <td><strong>{{ window.title }}</strong>{% if window.starts_at <= now() <= window.ends_at %}<br><span class="badge">Active now</span>{% endif %}</td>
+        <td>{{ (window.starts_at|usertime('%b %d, %Y %H:%M')) }} – {{ (window.ends_at|usertime('%b %d, %Y %H:%M')) }}</td>
+        <td>{{ window.reason or '—' }}</td>
+        <td>{{ window.created_by.name if window.created_by else 'System' }}</td>
+        <td>
+          <form method="post" action="{{ post_url }}">
+            <input type="hidden" name="action" value="delete_change_freeze">
+            <input type="hidden" name="window_id" value="{{ window.id }}">
+            <button class="button">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}<tr><td colspan="5">No change freeze windows configured.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == 'service-offerings' %}
+<section class="panel admin-section">
+    <p class="muted">Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk.</p>
+    {% for service in services %}
+    <article class="config-row" style="flex-direction:column;align-items:stretch;gap:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center"><div><strong>{{ service.name }}</strong><small>{{ service.criticality }} criticality · {{ service.status }}</small></div><span>{{ service.owner.name }}</span></div>
+      {% for link in service.ci_links %}
+      <div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div>
+        <span class="badge">{{ link.relationship_role }}</span>
+        <form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="unlink_service_ci"><input type="hidden" name="link_id" value="{{ link.id }}"><button class="link-button" aria-label="Unlink {{ link.ci.name }}">✕</button></form>
+      </div>
+      {% else %}<p class="muted">No configuration items linked yet.</p>{% endfor %}
+      <form method="post" action="{{ post_url }}" class="inline-form">
+        <input type="hidden" name="action" value="link_service_ci">
+        <input type="hidden" name="service_offering_id" value="{{ service.id }}">
+        <select name="relationship_role"><option>Primary</option><option selected>Supporting</option></select>
+        <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="Pick one or more configuration items…" autocomplete="off" required><div class="lookup-results" hidden></div></div>
+        <button>Link CIs</button>
+      </form>
+    </article>
+    {% else %}<p>No service offerings configured.</p>{% endfor %}
+</section>
+{% endif %}
+
+{% if section == 'sla' %}
+<section class="panel admin-section">
+  <p>New work uses the selected timezone-aware calendar. Existing running SLA targets are preserved.</p>
+  <details><summary>Add business schedule</summary>
+    <form method="post" action="{{ post_url }}" class="form-grid">
+      <input type="hidden" name="action" value="create_business_schedule">
+      <label>Name<input name="name" maxlength="160" required></label>
+      <label>IANA timezone<input name="timezone_name" value="Asia/Tokyo" placeholder="Australia/Sydney" required></label>
+      <label>Start time<input type="time" name="start_time" value="09:00" required></label>
+      <label>End time<input type="time" name="end_time" value="17:00" required></label>
+      <fieldset class="wide"><legend>Business days</legend>{% for value,label in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}<label class="check"><input type="checkbox" name="weekdays" value="{{ value }}" {% if value < 5 %}checked{% endif %}> {{ label }}</label>{% endfor %}</fieldset>
+      <div class="wide actions"><button class="primary">Create schedule</button></div>
+    </form>
+  </details>
+  {% for schedule in business_schedules %}
+  <article class="config-row"><div><strong>{{ schedule.name }}</strong><small>{{ schedule.timezone_name }} · {{ schedule.start_time_text }}–{{ schedule.end_time_text }} · days {{ schedule.weekdays|join(', ') }}</small></div>
+    <form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="add_schedule_holiday"><input type="hidden" name="schedule_id" value="{{ schedule.id }}"><input type="date" name="holiday_date" required><input name="name" placeholder="Holiday name" required><button class="button">Exclude date</button></form>
+  </article>
+  {% endfor %}
+  <details><summary>Add SLA definition</summary>
+    <form method="post" action="{{ post_url }}" class="form-grid">
+      <input type="hidden" name="action" value="create_sla_definition">
+      <label>Name<input name="name" maxlength="160" required></label>
+      <label>Agreement type<span class="info-tip" tabindex="0" data-tip="SLA: customer-facing commitment. OLA: internal agreement between two support teams. UC: underpinning contract with an external vendor.">i</span><select name="agreement_type">{% for value in ['SLA','OLA','UC'] %}<option>{{ value }}</option>{% endfor %}</select></label>
+      <label>Counterparty (OLA/UC only)<input name="counterparty" placeholder="Team name or vendor"></label>
+      <label>Target<select name="target_type" id="sla-target-type"><option value="ticket">Ticket</option><option value="ritm">Requested item</option><option value="client_ticket">Customer ticket (Client Management)</option></select></label>
+      <label>Priority<select name="priority"><option value="">All</option><optgroup label="Incidents/changes">{% for value in ['P1','P2','P3','P4'] %}<option>{{ value }}</option>{% endfor %}</optgroup><optgroup label="Customer tickets">{% for value in ['Low','Normal','High','Urgent'] %}<option>{{ value }}</option>{% endfor %}</optgroup></select></label>
+      <label id="sla-client-org-field" class="wide" hidden>Organization override<span class="info-tip" tabindex="0" data-tip="Only used for customer tickets. Leave unselected for the tenant-wide default; select an organization to override it for that organization's tickets specifically, for this same priority.">i</span><select name="client_organization_id"><option value="">Tenant-wide default</option>{% for org in client_organizations %}<option value="{{ org.id }}">{{ org.name }}</option>{% endfor %}</select></label>
+      <label>Duration (business minutes)<input type="number" name="duration_minutes" min="1" max="525600" required></label>
+      <label>Calendar<select name="schedule_id"><option value="">24x7 wall clock</option>{% for schedule in business_schedules %}<option value="{{ schedule.id }}">{{ schedule.name }}</option>{% endfor %}</select></label>
+      <label>Pause states<input name="pause_states" value="Pending,On Hold"><small class="muted">Comma-separated, must exactly match this target's own status values (e.g. customer tickets use "Pending,On-hold", not "On Hold").</small></label>
+      <div class="wide actions"><button class="primary">Create agreement</button></div>
+    </form>
+  </details>
+  <table><thead><tr><th>Name</th><th>Type</th><th>Target</th><th>Priority</th><th>Duration</th><th>Calendar</th><th>Pause states</th></tr></thead>
+    <tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td><span class="badge">{{ sla.agreement_type }}</span>{% if sla.counterparty %} {{ sla.counterparty }}{% endif %}</td><td>{{ sla.target_type }}{% if sla.client_organization %} · {{ sla.client_organization.name }}{% endif %}</td><td>{{ sla.priority or "All" }}</td><td>{{ sla.duration_minutes }} minutes</td><td>{{ sla.schedule.name if sla.schedule else "24x7" }}</td><td>{{ sla.pause_states }}</td></tr>{% endfor %}</tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

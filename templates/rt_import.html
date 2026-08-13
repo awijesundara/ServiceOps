@@ -54,6 +54,6 @@
   {% else %}<p class="muted">No import jobs queued yet.</p>{% endif %}
 </section>
 {% else %}
-<section class="panel"><h2>Import tickets</h2><p class="muted">RT import is not enabled. Configure it under <a href="{{ url_for('system_settings') }}#settings-request_tracker_connection">Administration home → Platform settings → Request Tracker connection</a>.</p></section>
+<section class="panel"><h2>Import tickets</h2><p class="muted">RT import is not enabled. Configure it under <a href="{{ url_for('system_settings_category', category='request_tracker_connection') }}">Administration home → Platform settings → Request Tracker connection</a>.</p></section>
 {% endif %}
 {% endblock %}
