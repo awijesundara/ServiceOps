@@ -6984,6 +6984,51 @@ def test_admin_home_is_a_searchable_index_that_surfaces_deeply_nested_components
     assert b'href="/admin/settings#settings-security"' in page.data
 
 
+def test_admin_home_has_no_duplicate_card_destinations(client):
+    """User-reported: 'duplicate links here and there' in the admin
+    section -- confirmed for real: admin_access.html previously had two
+    separate cards ("Groups & teams" and "Client management access")
+    both pointing at the exact same itil_admin#team-managers destination,
+    and admin_home.html separately had both a "Groups & teams" card
+    (routed through the admin_access hub as an extra hop) and a "Team
+    ownership" card pointing directly at the same underlying page --
+    genuinely overlapping, not just superficially similar. Every card's
+    href on both pages must now be unique."""
+    login(client)
+    for path in ("/admin", "/admin/access"):
+        page = client.get(path)
+        hrefs = re.findall(rb'class="admin-capability-card"[^>]*href="([^"]+)"', page.data)
+        assert hrefs, f"no capability cards found on {path}"
+        assert len(hrefs) == len(set(hrefs)), (
+            f"duplicate card destination(s) on {path}: "
+            f"{[h for h in hrefs if hrefs.count(h) > 1]}"
+        )
+
+
+def test_settings_pages_show_one_category_at_a_time_not_everything_at_once(client):
+    """User-reported: Platform settings and Service delivery & governance
+    "are together and unable to track different categories" -- confirmed:
+    every category's fields rendered simultaneously in one long scroll,
+    with the sidebar only jumping to a scroll position rather than
+    actually switching what's shown. Both pages now reuse the same real
+    tab-switching behavior (show one category, hide the rest) ticket
+    detail pages already use, via a generalized [data-tab-nav] attribute
+    on the existing category sidebar -- confirmed here by checking the
+    JS hook and the CSS hide-class are both wired up; the actual
+    show/hide happens client-side, exercised by the browser, not asserted
+    against server-rendered HTML here."""
+    login(client)
+    settings = client.get("/admin/settings")
+    assert b"data-tab-nav" in settings.data
+    governance = client.get("/service-operations/settings")
+    assert b"data-tab-nav" in governance.data
+    # The now-redundant numbered category dividers (duplicating what the
+    # sidebar's own group labels already say, and left as orphaned,
+    # mostly-empty headers once only one category's content shows at a
+    # time) were removed.
+    assert b"settings-section-heading" not in governance.data
+
+
 def test_admin_access_hub_requires_admin(client):
     login(client, "employee", "Employee123!")
     assert client.get("/admin/access").status_code == 403

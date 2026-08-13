@@ -6,13 +6,12 @@
 {% set sections = [
   ('People and access','Users, teams, roles, sessions, and how directory groups map to them',[
     ('Users','Create, edit, deactivate, and erase accounts; assign roles and manager reporting lines','users',None,'U','user account create edit deactivate erase manager'),
-    ('Groups & teams','Support groups, team managers, CCB approvers, and team name aliases','admin_access',None,'▤','support group fulfillment team ownership'),
     ('Roles & permissions','The role → action policy, plus per-CI-class create/read/update/delete grants','admin_roles',None,'⛊','role action policy authorization grant revoke override'),
     ('Active sessions','Review and revoke browser sessions across this organization','admin_sessions',None,'◉','session revoke logout browser device'),
     ('Directory synchronization (LDAP/OIDC)','Manually run or schedule the LDAP directory sync that keeps profile fields and team membership current','itil_admin','ldap-sync','⌘','ldap active directory ad sso oidc sync synchronization login authentication'),
     ('AD group → ServiceOps team mapping','Connect directory groups (e.g. gg_unix) to operational support teams','itil_admin','directory-mapping','⌘','ad group mapping directory team gg_'),
     ('Team name aliases','Historical/imported team name spellings that safely merge into one canonical team','itil_admin','team-aliases','▤','alias duplicate merge team name'),
-    ('Team ownership','Assign the named manager who holds change-approval authority for each team','itil_admin','team-managers','▤','team manager owner assign'),
+    ('Groups & team ownership','Support groups, the named manager who holds change-approval authority for each team, and adding SysOps access for the customer-support workspace','itil_admin','team-managers','▤','support group team owner manager assign fulfillment client management sysops'),
     ('Executive approval (CEO)','The named user required to approve every Normal/Emergency change','itil_admin','executive-approval','▤','ceo executive approval change'),
     ('Governance groups','Review accountable groups, their type, manager, and current membership','itil_admin','governance-groups','▤','governance group accountable membership'),
   ]),
