@@ -1,0 +1,19 @@
+services:
+  app:
+    ports: !override
+      - "127.0.0.1:18080:8080"
+    environment:
+      DEPLOYMENT_PROFILE: development
+      SESSION_COOKIE_SECURE: "false"
+      ALLOW_INSECURE_SESSION_COOKIES: "true"
+  worker:
+    environment:
+      DEPLOYMENT_PROFILE: development
+
+volumes:
+  serviceops_data:
+    name: "${E2E_VOLUME_PREFIX:-serviceops_e2e}_postgres_data"
+  serviceops_uploads:
+    name: "${E2E_VOLUME_PREFIX:-serviceops_e2e}_uploads"
+  serviceops_logs:
+    name: "${E2E_VOLUME_PREFIX:-serviceops_e2e}_logs"
