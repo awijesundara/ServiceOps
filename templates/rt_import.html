@@ -2,7 +2,26 @@
 {% block title %}Import from RT · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set admin_page_title = 'RT import' %}{% set admin_parent_title = 'Integrations and delivery' %}{% set admin_parent_url = url_for('integrations_admin') %}{% include '_admin_context.html' %}
-<header class="page-head"><div><h1>Import from Request Tracker (RT)</h1><p>Pull tickets from an RT instance into ServiceOps as IT operations events.</p></div></header>
+<header class="page-head"><div><h1>Request Tracker (RT)</h1><p>Everything for RT lives here: connection settings and ticket import, in one place.</p></div></header>
+
+<section class="panel settings-section">
+  <div class="panel-head"><div><h2>Connection settings</h2><p>Sessions marked "Live" apply without a restart.</p></div></div>
+  <form method="post" action="{{ url_for('system_settings_category', category='request_tracker_connection') }}" class="settings-grid">
+    {% for setting in rt_definitions %}
+    <label class="setting-field {% if setting.type in ['json','text'] and setting.key|length > 20 %}wide{% endif %}">
+      <span>{{ setting.label }} <small class="apply-badge {{ 'live' if setting.live else 'restart' }}">{{ 'Live' if setting.live else 'Restart required' }}</small></span>
+      {% if setting.type == 'bool' %}
+        <span class="switch-row"><input type="checkbox" name="{{ setting.key }}" {% if rt_values[setting.key]|lower in ['true','1','yes','on'] %}checked{% endif %}> Enabled</span>
+      {% elif setting.type == 'secret' %}
+        <input type="password" name="{{ setting.key }}" value="" placeholder="{{ 'Configured — leave blank to retain' if setting.configured else 'Not configured' }}" autocomplete="new-password">
+      {% else %}
+        <input type="{{ setting.type if setting.type in ['email','url','number'] else 'text' }}" name="{{ setting.key }}" value="{{ rt_values[setting.key] }}">
+      {% endif %}
+    </label>
+    {% endfor %}
+    <div class="wide actions"><button class="primary">Save RT connection settings</button></div>
+  </form>
+</section>
 
 {% if rt_enabled %}
 <section class="panel" id="rt-import">
@@ -54,6 +73,6 @@
   {% else %}<p class="muted">No import jobs queued yet.</p>{% endif %}
 </section>
 {% else %}
-<section class="panel"><h2>Import tickets</h2><p class="muted">RT import is not enabled. Configure it under <a href="{{ url_for('system_settings_category', category='request_tracker_connection') }}">Administration home → Platform settings → Request Tracker connection</a>.</p></section>
+<section class="panel"><h2>Import tickets</h2><p class="muted">RT import is not enabled. Enable it and set a base URL/API token above first.</p></section>
 {% endif %}
 {% endblock %}

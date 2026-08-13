@@ -3638,6 +3638,101 @@ def test_admin_configures_ad_mapping_manager_and_ccb_authority(client, app):
         ).one()
 
 
+def test_ad_ldap_config_group_mapping_and_sync_are_all_on_one_page(client):
+    """B-322: user-reported that AD-related configuration was split
+    between Platform settings (connection fields) and Service delivery &
+    governance (group mapping, directory sync) -- all three now render on
+    the single Sign-in and directory settings page."""
+    login(client)
+    page = client.get("/admin/settings/sign_in_and_directory")
+    assert page.status_code == 200
+    assert b"AD group" in page.data
+    assert b"Directory synchronization" in page.data
+    assert b"add_directory_mapping" in page.data
+    # LDAP is off by default in this fixture, so the sync trigger itself
+    # is hidden behind a "turn it on first" notice rather than rendered.
+    assert b"AD/LDAP is not enabled" in page.data
+    assert client.post("/admin/settings/sign_in_and_directory", data={
+        "LOCAL_AUTH_ENABLED": "on", "LDAP_ENABLED": "on",
+    }, headers={"Referer": "http://localhost/admin/settings/sign_in_and_directory"}).status_code == 302
+    page = client.get("/admin/settings/sign_in_and_directory")
+    assert b"sync_directory" in page.data
+    # Old, now-superseded governance URLs redirect here instead of 404ing.
+    assert client.get("/service-operations/settings/directory-mapping").headers["Location"].endswith(
+        "/admin/settings/sign_in_and_directory")
+    assert client.get("/service-operations/settings/ldap-sync").headers["Location"].endswith(
+        "/admin/settings/sign_in_and_directory")
+
+
+def test_governance_groups_shows_member_names_and_supports_manual_add_remove(client, app):
+    """B-322: user asked to see member usernames per governance group and
+    to be able to configure membership manually (not only via AD group
+    sync) -- "give the admin full liberty." """
+    login(client)
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        unix_id = unix.id
+        employee = User.query.filter_by(username="employee").one()
+        employee_id = employee.id
+    page = client.get("/service-operations/settings/governance-groups")
+    assert page.status_code == 200
+    assert b"add_group_member" in page.data
+
+    response = client.post("/itil/administration", data={
+        "action": "add_group_member", "group_id": unix_id, "user_id": employee_id,
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        membership = GroupMember.query.filter_by(group_id=unix_id, user_id=employee_id).one()
+        member_id = membership.id
+        assert membership.role == "member"
+
+    page = client.get("/service-operations/settings/governance-groups")
+    assert b"employee" in page.data
+    assert b"Manual" in page.data
+
+    response = client.post("/itil/administration", data={
+        "action": "remove_group_member", "member_id": member_id,
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        assert GroupMember.query.filter_by(group_id=unix_id, user_id=employee_id).first() is None
+
+
+def test_rt_connection_settings_render_on_the_rt_import_page(client):
+    """B-322: user-reported RT connection settings and the RT import tool
+    were on two different pages -- now both live on /tickets/import/rt."""
+    login(client)
+    page = client.get("/tickets/import/rt")
+    assert page.status_code == 200
+    assert b"Connection settings" in page.data
+    assert b'action="/admin/settings/request_tracker_connection"' in page.data
+    response = client.post("/admin/settings/request_tracker_connection", data={
+        "RT_ENABLED": "on", "RT_BASE_URL": "https://rt.example.test",
+    }, headers={"Referer": "http://localhost/tickets/import/rt"}, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Platform settings saved" in response.data
+    assert b"Import tickets" in response.data
+
+
+def test_automation_rules_and_scheduled_automation_are_separate_pages(client):
+    """B-322: user-reported the two Quick Find cards "Automation rules"
+    and "Scheduled automation" landed on the exact same page -- they're
+    now genuinely separate URLs."""
+    login(client)
+    rules = client.get("/admin/workflows")
+    assert rules.status_code == 200
+    assert b"Published automation rules" in rules.data
+    assert b"Add a schedule" not in rules.data
+    scheduled = client.get("/admin/workflows/scheduled")
+    assert scheduled.status_code == 200
+    assert b"Add a schedule" in scheduled.data
+    assert b"Published automation rules" not in scheduled.data
+    home = client.get("/admin")
+    assert b'href="/admin/workflows"' in home.data
+    assert b'href="/admin/workflows/scheduled"' in home.data
+
+
 def test_administration_is_one_hub_with_clear_child_areas(client):
     login(client)
     home = client.get("/admin")
@@ -3712,11 +3807,22 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
     assert governance.status_code == 200
     # B-320: Service delivery and governance is likewise an index of
     # genuinely isolated pages, not one long mega-page.
-    for section in ("ticket-defaults", "catalog", "directory-mapping", "team-aliases",
-                    "ldap-sync", "team-managers", "governance-groups",
+    for section in ("ticket-defaults", "catalog", "team-aliases",
+                    "team-managers", "governance-groups",
                     "change-approval-policy", "ccb", "change-freeze",
                     "service-offerings", "sla"):
         assert f'/service-operations/settings/{section}"'.encode() in governance.data
+    # B-322: AD group mapping and directory sync moved onto the Sign-in and
+    # directory settings page, so they're no longer separate governance
+    # sections; old bookmarked URLs redirect there instead of 404ing.
+    assert b"directory-mapping" not in governance.data
+    assert b"ldap-sync" not in governance.data
+    redirected = client.get("/service-operations/settings/directory-mapping")
+    assert redirected.status_code == 302
+    assert redirected.headers["Location"].endswith("/admin/settings/sign_in_and_directory")
+    redirected = client.get("/service-operations/settings/ldap-sync")
+    assert redirected.status_code == 302
+    assert redirected.headers["Location"].endswith("/admin/settings/sign_in_and_directory")
 
     change_approval_page = client.get("/service-operations/settings/change-approval-policy")
     assert change_approval_page.status_code == 200
@@ -6999,10 +7105,12 @@ def test_admin_home_is_a_searchable_index_that_surfaces_deeply_nested_components
     assert page.status_code == 200
     assert b"data-admin-quick-find" in page.data
     # The exact reported example: findable, and deep-linked to its own
-    # isolated page (B-320: real URL, not an in-page anchor).
-    assert b"/service-operations/settings/ldap-sync" in page.data
-    assert b"LDAP directory sync" in page.data
-    assert b'data-keywords="ldap active directory' in page.data
+    # isolated page. B-322: LDAP directory sync moved onto the Sign-in and
+    # directory settings page, together with the rest of the AD/LDAP
+    # config it was previously split apart from.
+    assert b"/admin/settings/sign_in_and_directory" in page.data
+    assert b"Sign-in &amp; directory" in page.data
+    assert b'data-keywords="sign in login ldap keycloak' in page.data
     # A sample of other previously-hard-to-find components, each a real
     # card with a real deep link to its own isolated settings page.
     assert b"/service-operations/settings/change-freeze" in page.data
