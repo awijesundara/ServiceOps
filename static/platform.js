@@ -330,7 +330,16 @@ document.addEventListener("DOMContentLoaded", () => {
     show();
   });
   const tabActivators = {};
-  document.querySelectorAll(".record-section-tabs").forEach(nav => {
+  // [data-tab-nav] opts any nav element into the same real show/one-at-a-
+  // time-hide tab behavior .record-section-tabs already has on ticket
+  // detail pages -- used by the admin settings pages' existing category
+  // sidebar (.settings-nav), which previously only scrolled to an anchor
+  // while every category's fields stayed rendered and visible at once
+  // ("all of them are together," reported directly). Kept as a separate
+  // attribute rather than adding the .record-section-tabs class itself so
+  // .settings-nav's own vertical-sidebar styling isn't fought by
+  // .record-section-tabs' horizontal-top-bar CSS.
+  document.querySelectorAll(".record-section-tabs, [data-tab-nav]").forEach(nav => {
     const links = Array.from(nav.querySelectorAll("a"));
     const targets = links
       .map(a => document.getElementById(a.getAttribute("href").slice(1)))
