@@ -833,6 +833,45 @@ def test_rest_api_scopes_idempotency_projection_and_pagination(client, app):
         assert verify_audit_chain(1)["valid"]
 
 
+def test_mobile_user_authentication_audit_attribution_and_revocation(client, app):
+    mobile_headers = {
+        "X-ServiceOps-App-Version": "1.1.0",
+        "X-ServiceOps-App-Build": "42",
+        "X-ServiceOps-Platform": "iOS",
+        "X-ServiceOps-Device": "iPhone17,1",
+    }
+    missing_metadata = client.post("/api/v1/auth/mobile/login", json={
+        "username": "admin", "password": "Admin123!", "provider": "local",
+    })
+    assert missing_metadata.status_code == 400
+    signed_in = client.post("/api/v1/auth/mobile/login", headers=mobile_headers, json={
+        "username": "admin", "password": "Admin123!", "provider": "local",
+    })
+    assert signed_in.status_code == 200
+    assert signed_in.json["access_token"].startswith("som_")
+    assert signed_in.json["refresh_token"].startswith("sor_")
+    access = signed_in.json["access_token"]
+    listed = client.get("/api/v1/tickets", headers={"Authorization": f"Bearer {access}"})
+    assert listed.status_code == 200
+    with app.app_context():
+        login_audit = Audit.query.filter_by(action="mobile login").one()
+        assert login_audit.user.username == "admin"
+        assert "channel=mobile" in login_audit.details
+        assert "app_version=1.1.0" in login_audit.details
+        assert "app_build=42" in login_audit.details
+        assert "device=iPhone17,1" in login_audit.details
+    refreshed = client.post("/api/v1/auth/mobile/refresh", json={
+        "refresh_token": signed_in.json["refresh_token"],
+    })
+    assert refreshed.status_code == 200
+    assert client.get("/api/v1/tickets", headers={"Authorization": f"Bearer {access}"}).status_code == 401
+    new_access = refreshed.json["access_token"]
+    assert client.post("/api/v1/auth/mobile/logout", headers={
+        "Authorization": f"Bearer {new_access}",
+    }).status_code == 204
+    assert client.get("/api/v1/tickets", headers={"Authorization": f"Bearer {new_access}"}).status_code == 401
+
+
 def test_api_client_admin_one_time_secret_and_pwa_privacy(client, app):
     login(client)
     with app.app_context():

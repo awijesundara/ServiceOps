@@ -589,6 +589,44 @@ def create_api_token():
     return token, token[:12], api_token_hash(token)
 
 
+MOBILE_API_SCOPES = {"tickets:read", "incidents:create", "tickets:update"}
+
+
+def _bounded_mobile_header(name, maximum):
+    value = request.headers.get(name, "").strip()
+    if not value or len(value) > maximum or any(ord(char) < 32 for char in value):
+        abort(400, description=f"A valid {name} header is required.")
+    return value
+
+
+def mobile_client_details(client):
+    if getattr(client, "client_kind", "integration") != "mobile":
+        return f"client={client.client_id}"
+    return (
+        f"client={client.client_id}; channel=mobile; platform={client.platform}; "
+        f"app_version={client.app_version}; app_build={client.app_build}; "
+        f"device={client.device_model}"
+    )
+
+
+def verify_mfa_code(user, code):
+    code = str(code or "").strip()
+    if not user.mfa_enabled:
+        return True, False
+    verified = False
+    if code and user.mfa_secret_encrypted:
+        secret = settings_cipher().decrypt(user.mfa_secret_encrypted.encode()).decode()
+        verified = pyotp.TOTP(secret).verify(code.replace(" ", ""), valid_window=1)
+    if not verified and code and user.mfa_backup_codes_json:
+        remaining = json.loads(user.mfa_backup_codes_json)
+        code_hash = hash_backup_code(code.lower())
+        if code_hash in remaining:
+            remaining.remove(code_hash)
+            user.mfa_backup_codes_json = json.dumps(remaining)
+            return True, True
+    return verified, False
+
+
 def authenticate_api_request():
     authorization = request.headers.get("Authorization", "")
     if not authorization.startswith("Bearer "):
@@ -600,6 +638,8 @@ def authenticate_api_request():
     client = APIClient.query.filter_by(token_hash=token_hash, active=True).first()
     if not client or not hmac.compare_digest(client.token_hash, token_hash):
         abort(401, description="The API token is invalid or revoked.")
+    if client.access_expires_at and align_tz(client.access_expires_at, now()) <= now():
+        abort(401, description="The mobile session has expired.")
     if not client.acting_user.active or client.acting_user.tenant_id != client.tenant_id:
         abort(403, description="The API identity is inactive or invalid.")
     enforce_api_rate_limit(client)
@@ -5369,6 +5409,7 @@ def create_app(test_config=None):
             (request.path.startswith("/api/v1/") or request.path.startswith("/scim/v2/"))
             and request.endpoint not in {
                 "api_openapi", "api_docs", "monitoring_ingest",
+                "api_mobile_login", "api_mobile_refresh",
             }
         ):
             authenticate_api_request()
@@ -5376,6 +5417,8 @@ def create_app(test_config=None):
     @app.before_request
     def verify_csrf():
         if (
+            request.endpoint in {"api_mobile_login", "api_mobile_refresh"}
+            or
             request.path.startswith("/api/v1/monitoring/")
             or (request.path.startswith("/api/v1/") or request.path.startswith("/scim/v2/"))
             and getattr(g, "api_client", None)
@@ -5867,6 +5910,18 @@ def create_app(test_config=None):
             },
             "security": [{"bearerAuth": []}],
             "paths": {
+                "/auth/mobile/login": {"post": {
+                    "summary": "Authenticate a native mobile user",
+                    "security": [],
+                    "description": "Local or LDAP credentials with MFA when enabled; requires mobile client metadata headers.",
+                }},
+                "/auth/mobile/refresh": {"post": {
+                    "summary": "Rotate a mobile access and refresh token",
+                    "security": [],
+                }},
+                "/auth/mobile/logout": {"post": {
+                    "summary": "Revoke the authenticated mobile session",
+                }},
                 "/openapi.json": {
                     "get": {"summary": "OpenAPI contract", "security": []}
                 },
@@ -5941,6 +5996,111 @@ def create_app(test_config=None):
                 },
             },
         })
+
+    @app.post("/api/v1/auth/mobile/login")
+    def api_mobile_login():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            abort(400, description="A JSON object is required.")
+        username = str(body.get("username", "")).strip()
+        password = str(body.get("password", ""))
+        provider = str(body.get("provider", "local"))
+        if provider not in {"local", "ldap"}:
+            abort(400, description="provider must be local or ldap.")
+        ip = request.remote_addr or "unknown"
+        allowed = route_rate_limit("mobile_login", f"ip:{ip}", setting_int("LOGIN_RATE_LIMIT_PER_IP_PER_MINUTE", 20))
+        if username:
+            allowed = route_rate_limit("mobile_login", f"user:{username.lower()}", setting_int("LOGIN_RATE_LIMIT_PER_ACCOUNT_PER_MINUTE", 10)) and allowed
+        db.session.commit()
+        if not allowed:
+            abort(429, description="Too many sign-in attempts. Try again later.")
+        user = None
+        candidate = User.query.filter_by(username=username).first()
+        if candidate and candidate.locked_until and align_tz(candidate.locked_until, now()) > now():
+            audit("login_blocked", candidate.username, "provider=mobile; reason=locked", user_id=candidate.id, tenant_id=candidate.tenant_id)
+            db.session.commit()
+            abort(423, description="This account is temporarily locked.")
+        if provider == "ldap" and setting_bool("LDAP_ENABLED"):
+            try:
+                user = ldap_authenticate(username, password)
+            except Exception:
+                app.logger.exception("Mobile LDAP authentication failed")
+        elif provider == "local" and setting_bool("LOCAL_AUTH_ENABLED", True):
+            if candidate:
+                valid, upgraded = verify_and_upgrade_password(candidate.password_hash, password)
+                if valid:
+                    user = candidate
+                    if upgraded:
+                        user.password_hash = upgraded
+        if not user or not user.active:
+            if candidate:
+                candidate.failed_login_count = (candidate.failed_login_count or 0) + 1
+                maximum = setting_int("LOGIN_MAX_ATTEMPTS", 5)
+                if candidate.failed_login_count >= maximum:
+                    candidate.failed_login_count = 0
+                    candidate.locked_until = now() + timedelta(minutes=setting_int("LOGIN_LOCKOUT_MINUTES", 15))
+                    audit("login_locked", candidate.username, f"provider=mobile; attempts={maximum}", user_id=candidate.id, tenant_id=candidate.tenant_id)
+                else:
+                    audit("login_failed", candidate.username, f"provider=mobile; attempts={candidate.failed_login_count}", user_id=candidate.id, tenant_id=candidate.tenant_id)
+                db.session.commit()
+            abort(401, description="Invalid username or password.")
+        verified, backup_used = verify_mfa_code(user, body.get("mfa_code"))
+        if not verified:
+            audit("login_failed", user.username, "provider=mobile; reason=mfa_required_or_invalid", user_id=user.id, tenant_id=user.tenant_id)
+            db.session.commit()
+            abort(401, description="A valid MFA or backup code is required.")
+        user.failed_login_count = 0
+        user.locked_until = None
+        app_version = _bounded_mobile_header("X-ServiceOps-App-Version", 40)
+        app_build = _bounded_mobile_header("X-ServiceOps-App-Build", 40)
+        platform = _bounded_mobile_header("X-ServiceOps-Platform", 40)
+        device = _bounded_mobile_header("X-ServiceOps-Device", 120)
+        access = f"som_{secrets.token_urlsafe(32)}"
+        refresh = f"sor_{secrets.token_urlsafe(48)}"
+        row = APIClient(
+            name=f"{platform} mobile session for {user.username}", token_prefix=access[:12],
+            token_hash=api_token_hash(access), refresh_token_hash=api_token_hash(refresh),
+            scopes_json=json.dumps(sorted(MOBILE_API_SCOPES)), acting_user_id=user.id,
+            created_by_id=user.id, tenant_id=user.tenant_id, client_kind="mobile",
+            access_expires_at=now() + timedelta(minutes=15), refresh_expires_at=now() + timedelta(days=30),
+            app_version=app_version, app_build=app_build, platform=platform, device_model=device,
+        )
+        db.session.add(row)
+        db.session.flush()
+        audit("mobile login", user.username, mobile_client_details(row) + ("; mfa=backup_code" if backup_used else "; mfa=totp" if user.mfa_enabled else ""), user_id=user.id, tenant_id=user.tenant_id)
+        db.session.commit()
+        return jsonify({"access_token": access, "refresh_token": refresh, "expires_in": 900,
+                        "user": {"id": user.id, "username": user.username, "name": user.name}})
+
+    @app.post("/api/v1/auth/mobile/refresh")
+    def api_mobile_refresh():
+        body = request.get_json(silent=True) or {}
+        raw = str(body.get("refresh_token", ""))
+        digest = api_token_hash(raw) if raw.startswith("sor_") else ""
+        row = APIClient.query.filter_by(refresh_token_hash=digest, client_kind="mobile", active=True).first()
+        if not row or not hmac.compare_digest(row.refresh_token_hash or "", digest) or align_tz(row.refresh_expires_at, now()) <= now() or not row.acting_user.active:
+            abort(401, description="The mobile refresh token is invalid, expired, or revoked.")
+        access = f"som_{secrets.token_urlsafe(32)}"
+        refresh = f"sor_{secrets.token_urlsafe(48)}"
+        row.token_hash = api_token_hash(access)
+        row.token_prefix = access[:12]
+        row.refresh_token_hash = api_token_hash(refresh)
+        row.access_expires_at = now() + timedelta(minutes=15)
+        row.last_used_at = now()
+        audit("mobile token refresh", row.acting_user.username, mobile_client_details(row), user_id=row.acting_user_id, tenant_id=row.tenant_id)
+        db.session.commit()
+        return jsonify({"access_token": access, "refresh_token": refresh, "expires_in": 900})
+
+    @app.post("/api/v1/auth/mobile/logout")
+    def api_mobile_logout():
+        if g.api_client.client_kind != "mobile":
+            abort(403, description="A mobile user session is required.")
+        g.api_client.active = False
+        g.api_client.revoked_at = now()
+        g.api_client.refresh_token_hash = None
+        audit("mobile logout", g.api_user.username, mobile_client_details(g.api_client), user_id=g.api_user.id, tenant_id=g.api_client.tenant_id)
+        db.session.commit()
+        return "", 204
 
     @app.get("/api/v1/docs")
     def api_docs():
@@ -6137,7 +6297,7 @@ def create_app(test_config=None):
         document = {"data": api_ticket_document(ticket, g.api_user)}
         store_api_idempotency(key, request_hash, document, 201)
         audit(
-            "api create", ticket.number, f"client={g.api_client.client_id}",
+            "api create", ticket.number, mobile_client_details(g.api_client),
             user_id=g.api_user.id, tenant_id=g.api_client.tenant_id,
         )
         db.session.commit()
@@ -6195,7 +6355,7 @@ def create_app(test_config=None):
         document = {"data": api_ticket_document(ticket, g.api_user)}
         store_api_idempotency(key, request_hash, document, 200)
         audit(
-            "api update", ticket.number, f"client={g.api_client.client_id}",
+            "api update", ticket.number, mobile_client_details(g.api_client),
             user_id=g.api_user.id, tenant_id=g.api_client.tenant_id,
         )
         db.session.commit()

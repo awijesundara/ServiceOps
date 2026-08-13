@@ -55,6 +55,18 @@ Available scopes:
 
 ## 3. Authentication and common headers
 
+Native mobile applications authenticate an actual ServiceOps user rather than
+embedding an API-client secret. `POST /api/v1/auth/mobile/login` accepts
+`username`, `password`, `provider` (`local` or `ldap`) and optional `mfa_code`;
+MFA-enabled accounts require a valid TOTP or backup code. Requests identify the
+client with `X-ServiceOps-App-Version`, `X-ServiceOps-App-Build`,
+`X-ServiceOps-Platform` and `X-ServiceOps-Device`. Success returns a 15-minute
+`som_` access token and rotating 30-day `sor_` refresh token. Store both only in
+the platform secure credential store. Refresh through `POST
+/api/v1/auth/mobile/refresh` and revoke through `POST
+/api/v1/auth/mobile/logout`. Mobile activity is authorized as the signed-in
+user and audited with authoritative user and app/device attribution.
+
 ```http
 Authorization: Bearer sop_REDACTED
 Accept: application/json
