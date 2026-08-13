@@ -5,9 +5,8 @@
 <header class="page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Access control</h1><p>Users, groups, roles, and directory sync -- who can sign in and what they can do, in one place.</p></div></header>
 <div class="admin-capability-grid">
   <a class="admin-capability-card" href="{{ url_for('users') }}"><span>U</span><div><h3>Users</h3><p>Create, edit, deactivate, and erase accounts; assign roles and manager reporting lines</p></div></a>
-  <a class="admin-capability-card" href="{{ url_for('itil_admin') }}#team-managers"><span>▤</span><div><h3>Groups &amp; teams</h3><p>Support groups, team managers, CCB approvers, and team name aliases</p></div></a>
+  <a class="admin-capability-card" href="{{ url_for('itil_admin') }}#team-managers"><span>▤</span><div><h3>Groups &amp; teams</h3><p>Support groups, team managers, CCB approvers, team name aliases -- also where to add an agent or manager to the SysOps team to grant the separate customer-support workspace</p></div></a>
   <a class="admin-capability-card" href="{{ url_for('admin_roles') }}"><span>⛊</span><div><h3>Roles &amp; permissions</h3><p>The role → action policy, plus per-CI-class create/read/update/delete grants</p></div></a>
   <a class="admin-capability-card" href="{{ url_for('itil_admin') }}#directory-mapping"><span>⌘</span><div><h3>Directory (LDAP/OIDC)</h3><p>AD group to team mapping and directory synchronization</p></div></a>
-  <a class="admin-capability-card" href="{{ url_for('itil_admin') }}#team-managers"><span>◒</span><div><h3>Client management access</h3><p>Add agents or a manager to the SysOps team to grant the separate external customer-support workspace</p></div></a>
 </div>
 {% endblock %}

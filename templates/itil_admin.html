@@ -10,7 +10,7 @@
 </header>
 
 <div class="settings-workspace">
-  <nav class="settings-nav">
+  <nav class="settings-nav" data-tab-nav>
     <div class="settings-nav-group"><strong>Service delivery</strong>
       <a href="#ticket-defaults">Ticket defaults</a>
       <a href="#catalog">Catalog and routing</a>
@@ -34,7 +34,6 @@
     </div>
   </nav>
   <div class="settings-content">
-<div class="settings-section-heading"><span>01</span><div><h2>Service delivery</h2><p>Define what people can request and where fulfillment work is routed.</p></div></div>
 <section class="panel admin-section settings-section" id="ticket-defaults">
   <div class="panel-head"><div><h2>Ticket defaults</h2><p>Set the initial priority for newly created tickets and choose whether parent incident state changes synchronize to child incidents.</p></div></div>
   <form method="post" class="form-grid">
@@ -110,7 +109,6 @@
   </form>
 </section>
 
-<div class="settings-section-heading"><span>02</span><div><h2>People and routing</h2><p>Connect directory groups to operational teams and assign accountable owners.</p></div></div>
 <section class="panel admin-section settings-section" id="directory-mapping">
   <div class="panel-head">
     <div>
@@ -300,7 +298,6 @@
   {% endfor %}
 </section>
 
-<div class="settings-section-heading"><span>03</span><div><h2>Change governance</h2><p>Control approval authority and the windows in which planned changes may proceed.</p></div></div>
 <section class="panel admin-section settings-section" id="change-approval-policy">
   <div class="panel-head"><div><h2>Change approval policy</h2><p>Choose which CMDB environment names require Change Control Board approval. This policy determines <em>where</em> approval is enforced; Approval authority below determines <em>who</em> can approve.</p></div></div>
   <form method="post" class="form-grid">
@@ -375,7 +372,6 @@
   </table>
 </section>
 
-<div class="settings-section-heading"><span>04</span><div><h2>Services and commitments</h2><p>Map services to their supporting configuration and define measurable operating commitments.</p></div></div>
 <section class="panel admin-section settings-section" id="service-offerings">
     <h2>Service offerings</h2>
     <p class="muted">Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk.</p>

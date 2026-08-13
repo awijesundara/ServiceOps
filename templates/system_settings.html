@@ -5,7 +5,7 @@
 <header class="page-head"><div><h1>Platform settings</h1><p>Manage organization identity and branding, sign-in and directory providers, security limits, workspace defaults, email delivery, NetBox and RT connections, and view the current runtime environment.</p></div></header>
 <div class="settings-scope-note"><strong>Platform-wide configuration</strong><span>These settings control the shared application experience, identity integrations, security boundaries, outbound delivery, and external data connections. Ticket, team, change, service, and SLA policies are managed under Service delivery and governance.</span></div>
 <form method="post" enctype="multipart/form-data" class="settings-workspace">
-  <nav class="settings-nav">
+  <nav class="settings-nav" data-tab-nav>
     <div class="settings-nav-group"><strong>Identity and experience</strong>
       <a href="#settings-branding">Company logo</a>
       {% for category in ['organization','appearance','sign_in_and_directory'] %}<a href="#settings-{{ category }}">{{ group_meta[category][0] }}</a>{% endfor %}
