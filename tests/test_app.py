@@ -2890,7 +2890,7 @@ def test_unified_search_favorites_and_preferences(client, app):
     # Platform settings) previously had no search entry at all -- only the
     # page itself was indexed.
     security_result = client.get("/ui/search?q=security", headers={"Accept": "application/json"}).json["results"]
-    assert any(row["label"] == "Security and limits" and "#settings-security" in row["url"] for row in security_result)
+    assert any(row["label"] == "Security and limits" and "/admin/settings/security" in row["url"] for row in security_result)
     freeze_result = client.get("/ui/search?q=freeze+windows", headers={"Accept": "application/json"}).json["results"]
     assert any(row["label"] == "Change freeze windows" for row in freeze_result)
     user_result = client.get("/ui/search?q=System+Administrator")
@@ -3682,21 +3682,19 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
     assert b'aria-label="Administration breadcrumb"' in settings.data
     assert settings.data.count(b'aria-label="Administration breadcrumb"') == 1
     assert b"ADMINISTRATION HOME / PLATFORM SETTINGS" not in settings.data
-    assert b'href="#settings-branding"' in settings.data
+    # B-320: Platform settings is now an index of isolated pages, not a
+    # single scrolling/anchored mega-page.
+    assert b'href="/admin/settings/organization"' in settings.data
     assert b"Identity and experience" in settings.data
-    assert b"organization identity and branding" in settings.data
-    assert b"NetBox and RT connections" in settings.data
-    assert b"Ticket, team, change, service, and SLA policies" in settings.data
     assert b"Protection and behavior" in settings.data
     assert b"Sign-in and directory" in settings.data
-    assert b"Change freeze message" not in settings.data
-    assert b'id="settings-change_approval_policy"' not in settings.data
     assert b"Change approval policy" not in settings.data
-    assert b'id="settings-ticket_behavior"' not in settings.data
     assert b"Default ticket priority" not in settings.data
     assert b"Runtime environment" in settings.data
-    assert b"Application replicas" in settings.data
-    assert b"1 (local Compose default)" in settings.data
+
+    infrastructure = client.get("/admin/settings/infrastructure")
+    assert b"Application replicas" in infrastructure.data
+    assert b"1 (local Compose default)" in infrastructure.data
 
     automation = client.get("/admin/workflows")
     assert b"Automation rules" in automation.data
@@ -3712,24 +3710,26 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
 
     governance = client.get("/itil/administration")
     assert governance.status_code == 200
-    expected_section_order = [
-        b'id="ticket-defaults"', b'id="catalog"', b'id="directory-mapping"', b'id="team-aliases"',
-        b'id="ldap-sync"', b'id="team-managers"', b'id="governance-groups"',
-        b'id="change-approval-policy"', b'id="ccb"', b'id="change-freeze"',
-        b'id="service-offerings"', b'id="sla"',
-    ]
-    positions = [governance.data.index(marker) for marker in expected_section_order]
-    assert positions == sorted(positions)
-    assert governance.data.count(b'id="governance-groups"') == 1
-    assert governance.data.count(b'id="service-offerings"') == 1
-    assert b"Production" in governance.data
+    # B-320: Service delivery and governance is likewise an index of
+    # genuinely isolated pages, not one long mega-page.
+    for section in ("ticket-defaults", "catalog", "directory-mapping", "team-aliases",
+                    "ldap-sync", "team-managers", "governance-groups",
+                    "change-approval-policy", "ccb", "change-freeze",
+                    "service-offerings", "sla"):
+        assert f'/service-operations/settings/{section}"'.encode() in governance.data
+
+    change_approval_page = client.get("/service-operations/settings/change-approval-policy")
+    assert change_approval_page.status_code == 200
+    assert b"Production" in change_approval_page.data
+    ticket_defaults_page = client.get("/service-operations/settings/ticket-defaults")
+    assert b"Change approval policy" not in ticket_defaults_page.data
 
     response = client.post("/itil/administration", data={
         "action": "set_change_approval_policy",
         "ccb_required_environments": "Production, Staging, production",
     })
     assert response.status_code == 302
-    updated = client.get("/itil/administration")
+    updated = client.get("/service-operations/settings/change-approval-policy")
     assert b'value="Production, Staging"' in updated.data
 
     response = client.post("/itil/administration", data={
@@ -3738,7 +3738,7 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
         "sync_child_incident_states": "on",
     })
     assert response.status_code == 302
-    updated = client.get("/itil/administration")
+    updated = client.get("/service-operations/settings/ticket-defaults")
     assert b'<option value="P2" selected>P2</option>' in updated.data
     assert b'name="sync_child_incident_states" checked' in updated.data
 
@@ -4664,31 +4664,58 @@ def test_deliver_client_email_reply_sends_via_smtp_and_stores_message_id(app, cl
 
 
 def test_admin_can_update_live_platform_branding(client, app):
+    """B-320: Platform settings are decentralized into one isolated page
+    per category, so saving spans one POST per category instead of one
+    giant form. Each category's own isolated page is exercised here."""
     login(client)
-    response = client.post("/admin/settings", data={
+    response = client.post("/admin/settings/organization", data={
         "INSTANCE_NAME": "Operations Hub",
         "COMPANY_NAME": "Example Corporation",
         "SUPPORT_EMAIL": "support@example.test",
-        "INSTANCE_TIMEZONE": "Australia/Sydney",
-        "BRAND_TEAL": "#124c5a",
-        "BRAND_AMBER": "#f4a340",
-        "DEFAULT_DENSITY": "comfortable",
-        "LOCAL_AUTH_ENABLED": "on",
-        "LDAP_USER_FILTER": "(&(objectClass=user)(sAMAccountName={username}))",
-        "LDAP_START_TLS": "on",
-        "LDAP_VALIDATE_CERT": "on",
-        "LDAP_ROLE_MAPPINGS": "{}",
-        "KEYCLOAK_ROLE_MAPPINGS": "{}",
-        "SESSION_HOURS": "8",
-        "MAX_UPLOAD_MB": "20",
-        "DEFAULT_TICKET_PRIORITY": "P3",
-        "NOTIFICATION_FROM_NAME": "Operations Hub",
     }, follow_redirects=True)
     assert response.status_code == 200
     assert b"Platform settings saved" in response.data
     assert b"Operations Hub" in response.data
     with app.app_context():
         assert db.session.get(PlatformSetting, "COMPANY_NAME").value == "Example Corporation"
+
+    response = client.post("/admin/settings/appearance", data={
+        "BRAND_TEAL": "#124c5a", "BRAND_AMBER": "#f4a340", "DEFAULT_DENSITY": "comfortable",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Platform settings saved" in response.data
+
+    response = client.post("/admin/settings/sign_in_and_directory", data={
+        "LOCAL_AUTH_ENABLED": "on",
+        "LDAP_USER_FILTER": "(&(objectClass=user)(sAMAccountName={username}))",
+        "LDAP_START_TLS": "on",
+        "LDAP_VALIDATE_CERT": "on",
+        "LDAP_ROLE_MAPPINGS": "{}",
+        "KEYCLOAK_ROLE_MAPPINGS": "{}",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Platform settings saved" in response.data
+
+    response = client.post("/admin/settings/security", data={
+        "SESSION_HOURS": "8", "MAX_UPLOAD_MB": "20",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Platform settings saved" in response.data
+
+
+def test_settings_category_page_does_not_trigger_auth_method_check_for_other_categories(client):
+    """B-320: the "at least one authentication method must remain
+    enabled" validation used to run unconditionally on every save because
+    every setting lived on one shared form; split across isolated pages,
+    saving e.g. Organization submits none of the three auth fields and
+    must not spuriously fail that check."""
+    login(client)
+    response = client.post("/admin/settings/organization", data={
+        "INSTANCE_NAME": "Operations Hub",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"At least one authentication method must remain enabled" not in response.data
+    assert b"Platform settings saved" in response.data
 
 
 def test_dark_theme_is_removed(client, app):
@@ -6971,17 +6998,16 @@ def test_admin_home_is_a_searchable_index_that_surfaces_deeply_nested_components
     page = client.get("/admin")
     assert page.status_code == 200
     assert b"data-admin-quick-find" in page.data
-    # The exact reported example: findable, and deep-linked to the real
-    # in-page anchor (itil_admin.html's own #ldap-sync section), not just
-    # to the top of that 400-line page.
-    assert b"#ldap-sync" in page.data
+    # The exact reported example: findable, and deep-linked to its own
+    # isolated page (B-320: real URL, not an in-page anchor).
+    assert b"/service-operations/settings/ldap-sync" in page.data
     assert b"LDAP directory sync" in page.data
     assert b'data-keywords="ldap active directory' in page.data
     # A sample of other previously-hard-to-find components, each a real
-    # card with a real deep link into its actual page section.
-    assert b"#change-freeze" in page.data
-    assert b"#sla" in page.data
-    assert b'href="/admin/settings#settings-security"' in page.data
+    # card with a real deep link to its own isolated settings page.
+    assert b"/service-operations/settings/change-freeze" in page.data
+    assert b"/service-operations/settings/sla" in page.data
+    assert b'href="/admin/settings/security"' in page.data
 
 
 def test_admin_home_has_no_duplicate_card_destinations(client):
@@ -7005,28 +7031,46 @@ def test_admin_home_has_no_duplicate_card_destinations(client):
         )
 
 
-def test_settings_pages_show_one_category_at_a_time_not_everything_at_once(client):
-    """User-reported: Platform settings and Service delivery & governance
-    "are together and unable to track different categories" -- confirmed:
-    every category's fields rendered simultaneously in one long scroll,
-    with the sidebar only jumping to a scroll position rather than
-    actually switching what's shown. Both pages now reuse the same real
-    tab-switching behavior (show one category, hide the rest) ticket
-    detail pages already use, via a generalized [data-tab-nav] attribute
-    on the existing category sidebar -- confirmed here by checking the
-    JS hook and the CSS hide-class are both wired up; the actual
-    show/hide happens client-side, exercised by the browser, not asserted
-    against server-rendered HTML here."""
+def test_settings_pages_are_decentralized_into_isolated_pages(client):
+    """User-reported (B-320): even correctly-working client-side tabs
+    within one mega-page were rejected outright -- "this is duplicated or
+    when i click on the icon on multiple things, comes to this same
+    place. we need to decentralized each section into isolated settings
+    pages." Platform settings and Service delivery & governance are now
+    index/card pages linking to genuinely separate URLs; each isolated
+    page renders only its own category's fields, not any other
+    category's."""
     login(client)
-    settings = client.get("/admin/settings")
-    assert b"data-tab-nav" in settings.data
-    governance = client.get("/service-operations/settings")
-    assert b"data-tab-nav" in governance.data
-    # The now-redundant numbered category dividers (duplicating what the
-    # sidebar's own group labels already say, and left as orphaned,
-    # mostly-empty headers once only one category's content shows at a
-    # time) were removed.
-    assert b"settings-section-heading" not in governance.data
+    index = client.get("/admin/settings")
+    assert index.status_code == 200
+    assert b"/admin/settings/security" in index.data
+    assert b"/admin/settings/organization" in index.data
+
+    security = client.get("/admin/settings/security")
+    assert security.status_code == 200
+    assert b"MFA" in security.data or b"Security" in security.data
+    assert b"COMPANY_NAME" not in security.data
+
+    organization = client.get("/admin/settings/organization")
+    assert organization.status_code == 200
+    assert b"security" not in organization.data.lower() or b"Security and limits" not in organization.data
+
+    governance_index = client.get("/service-operations/settings")
+    assert governance_index.status_code == 200
+    assert b"/service-operations/settings/sla" in governance_index.data
+
+    sla = client.get("/service-operations/settings/sla")
+    assert sla.status_code == 200
+    assert b"business calendar" in sla.data.lower()
+    assert b"Change freeze window" not in sla.data
+
+    freeze = client.get("/service-operations/settings/change-freeze")
+    assert freeze.status_code == 200
+    assert b"freeze" in freeze.data.lower()
+    assert b"Add business schedule" not in freeze.data
+
+    assert client.get("/service-operations/settings/not-a-real-section").status_code == 404
+    assert client.get("/admin/settings/not-a-real-category").status_code == 404
 
 
 def test_admin_access_hub_requires_admin(client):

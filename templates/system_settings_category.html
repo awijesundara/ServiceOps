@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = title %}{% include '_admin_context.html' %}
+<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('system_settings') }}">Platform settings</a></p><h1>{{ title }}</h1><p>{{ description }}</p></div></header>
+{% if category == 'infrastructure' %}
+<section class="panel settings-section">
+  <table><thead><tr><th>Runtime component</th><th>Current effective value</th><th>Where to change it</th></tr></thead><tbody>{% for name,value,source in infrastructure %}<tr><td><strong>{{ name }}</strong></td><td><code>{{ value }}</code></td><td><span class="apply-badge external">{{ source }}</span></td></tr>{% else %}<tr><td colspan="3">Runtime details are unavailable. Check the application deployment configuration.</td></tr>{% endfor %}</tbody></table>
+</section>
+{% else %}
+<form method="post" enctype="multipart/form-data" class="settings-workspace">
+  <div class="settings-content">
+    <section class="panel settings-section">
+      {% if has_company_logo_field %}
+      <div class="panel-head"><div></div>{% if has_company_logo %}<img class="settings-logo-preview" src="{{ url_for('company_logo') }}" alt="Current company logo">{% endif %}</div>
+      <label>Upload replacement PNG<input type="file" name="company_logo" accept="image/png"></label>
+      {% else %}
+      <div class="settings-grid">
+      {% for setting in definitions %}
+        <label class="setting-field {% if setting.type in ['json','text'] and setting.key|length > 20 %}wide{% endif %}">
+          <span>{{ setting.label }} <small class="apply-badge {{ 'live' if setting.live else 'restart' }}">{{ 'Live' if setting.live else 'Restart required' }}</small></span>
+          {% if setting.type == 'bool' %}
+            <span class="switch-row"><input type="checkbox" name="{{ setting.key }}" {% if values[setting.key]|lower in ['true','1','yes','on'] %}checked{% endif %}> Enabled</span>
+          {% elif setting.type == 'choice' %}
+            <select name="{{ setting.key }}">{% for choice in setting.choices %}<option value="{{ choice }}" {% if values[setting.key] == choice %}selected{% endif %}>{{ choice|title }}</option>{% endfor %}</select>
+          {% elif setting.type == 'secret' %}
+            <input type="password" name="{{ setting.key }}" value="" placeholder="{{ 'Configured — leave blank to retain' if setting.configured else 'Not configured' }}" autocomplete="new-password">
+          {% elif setting.type == 'color' %}
+            <span class="color-field"><input type="color" name="{{ setting.key }}" value="{{ values[setting.key] }}"><code>{{ values[setting.key] }}</code></span>
+          {% else %}
+            <input type="{{ setting.type if setting.type in ['email','url','number'] else 'text' }}" name="{{ setting.key }}" value="{{ values[setting.key] }}">
+          {% endif %}
+        </label>
+      {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+    <div class="settings-save"><div><strong>Audited change</strong><small>Review authentication carefully before saving.</small></div><button class="primary">Validate and save settings</button></div>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

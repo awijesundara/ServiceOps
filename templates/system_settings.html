@@ -2,55 +2,37 @@
 {% block title %}Platform settings · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set admin_page_title = 'Platform settings' %}{% include '_admin_context.html' %}
-<header class="page-head"><div><h1>Platform settings</h1><p>Manage organization identity and branding, sign-in and directory providers, security limits, workspace defaults, email delivery, NetBox and RT connections, and view the current runtime environment.</p></div></header>
+<header class="page-head"><div><h1>Platform settings</h1><p>Manage organization identity and branding, sign-in and directory providers, security limits, workspace defaults, email delivery, NetBox and RT connections, and view the current runtime environment. Each area below is its own isolated page.</p></div></header>
 <div class="settings-scope-note"><strong>Platform-wide configuration</strong><span>These settings control the shared application experience, identity integrations, security boundaries, outbound delivery, and external data connections. Ticket, team, change, service, and SLA policies are managed under Service delivery and governance.</span></div>
-<form method="post" enctype="multipart/form-data" class="settings-workspace">
-  <nav class="settings-nav" data-tab-nav>
-    <div class="settings-nav-group"><strong>Identity and experience</strong>
-      <a href="#settings-branding">Company logo</a>
-      {% for category in ['organization','appearance','sign_in_and_directory'] %}<a href="#settings-{{ category }}">{{ group_meta[category][0] }}</a>{% endfor %}
-    </div>
-    <div class="settings-nav-group"><strong>Protection and behavior</strong>
-      {% for category in ['security','workspace_defaults'] %}<a href="#settings-{{ category }}">{{ group_meta[category][0] }}</a>{% endfor %}
-    </div>
-    <div class="settings-nav-group"><strong>Connections</strong>
-      {% for category in ['email_delivery','netbox_connection','request_tracker_connection'] %}<a href="#settings-{{ category }}">{{ group_meta[category][0] }}</a>{% endfor %}
-    </div>
-    <div class="settings-nav-group"><strong>Deployment</strong><a href="#settings-infrastructure">Runtime environment</a></div>
-  </nav>
-  <div class="settings-content">
-    <section class="panel settings-section" id="settings-branding">
-      <div class="panel-head"><div><h2>Company logo</h2><p>PNG only, maximum 5 MB. Recommended transparent canvas, up to 600 × 200 px.</p></div>{% if has_company_logo %}<img class="settings-logo-preview" src="{{ url_for('company_logo') }}" alt="Current company logo">{% endif %}</div>
-      <label>Upload replacement PNG<input type="file" name="company_logo" accept="image/png"></label>
-    </section>
-    {% for category, definitions in groups.items() %}
-    <section class="panel settings-section" id="settings-{{ category }}">
-      <div class="panel-head"><div><h2>{{ group_meta[category][0] }}</h2><p>{{ group_meta[category][1] }} Settings marked “Live” apply without a restart.</p></div></div>
-      <div class="settings-grid">
-      {% for setting in definitions %}
-        <label class="setting-field {% if setting.type in ['json','text'] and setting.key|length > 20 %}wide{% endif %}">
-          <span>{{ setting.label }} <small class="apply-badge {{ 'live' if setting.live else 'restart' }}">{{ 'Live' if setting.live else 'Restart required' }}</small></span>
-          {% if setting.type == 'bool' %}
-            <span class="switch-row"><input type="checkbox" name="{{ setting.key }}" {% if values[setting.key]|lower in ['true','1','yes','on'] %}checked{% endif %}> Enabled</span>
-          {% elif setting.type == 'choice' %}
-            <select name="{{ setting.key }}">{% for choice in setting.choices %}<option value="{{ choice }}" {% if values[setting.key] == choice %}selected{% endif %}>{{ choice|title }}</option>{% endfor %}</select>
-          {% elif setting.type == 'secret' %}
-            <input type="password" name="{{ setting.key }}" value="" placeholder="{{ 'Configured — leave blank to retain' if setting.configured else 'Not configured' }}" autocomplete="new-password">
-          {% elif setting.type == 'color' %}
-            <span class="color-field"><input type="color" name="{{ setting.key }}" value="{{ values[setting.key] }}"><code>{{ values[setting.key] }}</code></span>
-          {% else %}
-            <input type="{{ setting.type if setting.type in ['email','url','number'] else 'text' }}" name="{{ setting.key }}" value="{{ values[setting.key] }}">
-          {% endif %}
-        </label>
-      {% endfor %}
-      </div>
-    </section>
+{% set groups = [
+  ('Identity and experience', [
+    ('branding', 'Company logo', 'PNG only, maximum 5 MB.'),
+    ('organization', group_meta['organization'][0], group_meta['organization'][1]),
+    ('appearance', group_meta['appearance'][0], group_meta['appearance'][1]),
+    ('sign_in_and_directory', group_meta['sign_in_and_directory'][0], group_meta['sign_in_and_directory'][1]),
+  ]),
+  ('Protection and behavior', [
+    ('security', group_meta['security'][0], group_meta['security'][1]),
+    ('workspace_defaults', group_meta['workspace_defaults'][0], group_meta['workspace_defaults'][1]),
+    ('my_workspace_widgets', group_meta['my_workspace_widgets'][0], group_meta['my_workspace_widgets'][1]),
+  ]),
+  ('Connections', [
+    ('email_delivery', group_meta['email_delivery'][0], group_meta['email_delivery'][1]),
+    ('netbox_connection', group_meta['netbox_connection'][0], group_meta['netbox_connection'][1]),
+    ('request_tracker_connection', group_meta['request_tracker_connection'][0], group_meta['request_tracker_connection'][1]),
+  ]),
+  ('Deployment', [
+    ('infrastructure', 'Runtime environment', 'Deployment profile and environment-level diagnostics (read-only).'),
+  ]),
+] %}
+{% for section_title, cards in groups %}
+<section class="admin-home-section">
+  <header><h2>{{ section_title }}</h2></header>
+  <div class="admin-capability-grid">
+    {% for category, title, description in cards %}
+    <a class="admin-capability-card" href="{{ url_for('system_settings_category', category=category) }}"><span>⚙</span><div><h3>{{ title }}</h3><p>{{ description }}</p></div></a>
     {% endfor %}
-    <section class="panel settings-section" id="settings-infrastructure">
-      <div class="panel-head"><div><h2>Runtime environment</h2><p>These values describe where this ServiceOps instance is running. They are read-only here because changing a database, volume, replica count, or TLS endpoint requires a controlled Docker Compose or Kubernetes rollout.</p></div></div>
-      <table><thead><tr><th>Runtime component</th><th>Current effective value</th><th>Where to change it</th></tr></thead><tbody>{% for name,value,source in infrastructure %}<tr><td><strong>{{ name }}</strong></td><td><code>{{ value }}</code></td><td><span class="apply-badge external">{{ source }}</span></td></tr>{% else %}<tr><td colspan="3">Runtime details are unavailable. Check the application deployment configuration.</td></tr>{% endfor %}</tbody></table>
-    </section>
-    <div class="settings-save"><div><strong>Audited change</strong><small>Review authentication carefully before saving.</small></div><button class="primary">Validate and save settings</button></div>
   </div>
-</form>
+</section>
+{% endfor %}
 {% endblock %}

@@ -10688,11 +10688,38 @@ def create_app(test_config=None):
         return send_from_directory(app.config["UPLOAD_FOLDER"], "company-logo.png",
                                    mimetype="image/png", max_age=300)
 
-    @app.route("/admin/settings", methods=["GET", "POST"])
+    @app.get("/admin/settings")
     @roles("admin")
     @require_action("administer")
     def system_settings():
-        definitions = [item for group in SETTING_DEFINITIONS.values() for item in group]
+        """B-320: isolated settings pages, not one long scrolling/tabbed
+        mega-page -- this is now just an index card grid; the actual
+        editable fields live on system_settings_category(), one real URL
+        per category, matching how every other admin destination works."""
+        return render_template(
+            "system_settings.html", group_meta=SETTING_GROUP_META,
+            categories=list(SETTING_DEFINITIONS.keys()),
+        )
+
+    def _infrastructure_rows():
+        return [
+            ("Deployment profile", app.config.get("DEPLOYMENT_PROFILE") or "Default profile", "Docker environment / Helm values"),
+            ("Database", app.config["SQLALCHEMY_DATABASE_URI"].split("@")[-1], "DATABASE_URL / Kubernetes Secret"),
+            ("Upload storage", app.config.get("UPLOAD_FOLDER") or "Not configured", "Docker volume / Kubernetes PVC"),
+            ("Application replicas", os.getenv("REPLICA_COUNT") or "1 (local Compose default)", "Docker Compose / Helm"),
+            ("Ingress and TLS", os.getenv("PUBLIC_BASE_URL") or "Managed outside ServiceOps", "Reverse proxy / Kubernetes Ingress"),
+        ]
+
+    @app.route("/admin/settings/<category>", methods=["GET", "POST"])
+    @roles("admin")
+    @require_action("administer")
+    def system_settings_category(category):
+        # "branding" (company logo) and "infrastructure" (read-only runtime
+        # values) are not real SETTING_DEFINITIONS groups, but get the same
+        # isolated-page treatment as the 9 real ones for consistency.
+        if category not in SETTING_DEFINITIONS and category not in ("branding", "infrastructure"):
+            abort(404)
+        definitions = SETTING_DEFINITIONS.get(category, [])
         if request.method == "POST":
             errors, restart_required, changed = [], False, []
             for definition in definitions:
@@ -10743,22 +10770,30 @@ def create_app(test_config=None):
                 row.value, row.encrypted, row.updated_by_id = stored, encrypted, current_user.id
                 changed.append(key)
                 restart_required = restart_required or not definition["live"]
-            logo = request.files.get("company_logo")
-            if logo and logo.filename:
-                header = logo.stream.read(8)
-                logo.stream.seek(0)
-                if header != b"\x89PNG\r\n\x1a\n":
-                    errors.append("Company logo must be a valid PNG file.")
-                elif request.content_length and request.content_length > 5 * 1024 * 1024:
-                    errors.append("Company logo must be smaller than 5 MB.")
-                else:
-                    logo.save(os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png"))
-                    changed.append("COMPANY_LOGO")
-            effective_local = request.form.get("LOCAL_AUTH_ENABLED")
-            effective_ldap = request.form.get("LDAP_ENABLED")
-            effective_keycloak = request.form.get("KEYCLOAK_ENABLED")
-            if not any((effective_local, effective_ldap, effective_keycloak)):
-                errors.append("At least one authentication method must remain enabled.")
+            if category == "branding":
+                logo = request.files.get("company_logo")
+                if logo and logo.filename:
+                    header = logo.stream.read(8)
+                    logo.stream.seek(0)
+                    if header != b"\x89PNG\r\n\x1a\n":
+                        errors.append("Company logo must be a valid PNG file.")
+                    elif request.content_length and request.content_length > 5 * 1024 * 1024:
+                        errors.append("Company logo must be smaller than 5 MB.")
+                    else:
+                        logo.save(os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png"))
+                        changed.append("COMPANY_LOGO")
+            if category == "sign_in_and_directory":
+                # Only meaningful (and only submitted at all) from this
+                # category's own page -- checking it unconditionally used to
+                # work because every category's fields lived in one shared
+                # form; split across isolated pages, saving any *other*
+                # category would submit none of these three fields and
+                # always fail this check.
+                effective_local = request.form.get("LOCAL_AUTH_ENABLED")
+                effective_ldap = request.form.get("LDAP_ENABLED")
+                effective_keycloak = request.form.get("KEYCLOAK_ENABLED")
+                if not any((effective_local, effective_ldap, effective_keycloak)):
+                    errors.append("At least one authentication method must remain enabled.")
             if errors:
                 db.session.rollback()
                 for message in errors:
@@ -10769,22 +10804,25 @@ def create_app(test_config=None):
                 flash("Platform settings saved." + (
                     " Restart or roll out all application instances to apply marked settings."
                     if restart_required else ""), "success")
-                return redirect(url_for("system_settings"))
+            return redirect(url_for("system_settings_category", category=category))
         values = {}
         for definition in definitions:
             value = setting_value(definition["key"], definition.get("default", ""))
             values[definition["key"]] = "" if definition["type"] == "secret" else value
             definition["configured"] = bool(value) if definition["type"] == "secret" else False
-        infrastructure = [
-            ("Deployment profile", app.config.get("DEPLOYMENT_PROFILE") or "Default profile", "Docker environment / Helm values"),
-            ("Database", app.config["SQLALCHEMY_DATABASE_URI"].split("@")[-1], "DATABASE_URL / Kubernetes Secret"),
-            ("Upload storage", app.config.get("UPLOAD_FOLDER") or "Not configured", "Docker volume / Kubernetes PVC"),
-            ("Application replicas", os.getenv("REPLICA_COUNT") or "1 (local Compose default)", "Docker Compose / Helm"),
-            ("Ingress and TLS", os.getenv("PUBLIC_BASE_URL") or "Managed outside ServiceOps", "Reverse proxy / Kubernetes Ingress"),
-        ]
-        return render_template("system_settings.html", groups=SETTING_DEFINITIONS,
-                               group_meta=SETTING_GROUP_META,
-                               values=values, infrastructure=infrastructure)
+        title, description = (
+            ("Company logo", "PNG only, maximum 5 MB. Recommended transparent canvas, up to 600 × 200 px.")
+            if category == "branding" else
+            ("Runtime environment", "These values describe where this ServiceOps instance is running. They are read-only here because changing a database, volume, replica count, or TLS endpoint requires a controlled Docker Compose or Kubernetes rollout.")
+            if category == "infrastructure" else
+            SETTING_GROUP_META[category]
+        )
+        return render_template(
+            "system_settings_category.html", category=category, title=title, description=description,
+            definitions=definitions, values=values,
+            infrastructure=_infrastructure_rows() if category == "infrastructure" else None,
+            has_company_logo_field=category == "branding",
+        )
 
     @app.get("/admin/audit")
     @roles("admin")
@@ -13081,6 +13119,15 @@ def create_app(test_config=None):
             return redirect(url_for("catalog_task_detail", task_id=task.id))
         return redirect(url_for("request_detail", request_id=ritm.request_id))
 
+    def _admin_referrer_redirect(fallback_endpoint, **fallback_kwargs):
+        """Isolated settings pages (B-320) all post to their one shared
+        handler endpoint; send the user back to the specific page they
+        came from instead of always landing on the handler's own index."""
+        destination = request.referrer
+        if destination and destination.startswith(request.host_url):
+            return redirect(destination)
+        return redirect(url_for(fallback_endpoint, **fallback_kwargs))
+
     @app.route("/itil/administration", methods=["GET", "POST"])
     @app.route("/service-operations/settings", methods=["GET", "POST"])
     @roles("admin")
@@ -13549,11 +13596,36 @@ def create_app(test_config=None):
                         ),
                         "success" if not result["errors"] else "warning",
                     )
-                return redirect(url_for("itil_admin"))
+                return _admin_referrer_redirect("itil_admin")
             else:
                 abort(400)
             db.session.commit()
-            return redirect(url_for("itil_admin"))
+            return _admin_referrer_redirect("itil_admin")
+        return render_template("itil_admin.html")
+
+    ITIL_ADMIN_SECTIONS = {
+        "ticket-defaults": ("Ticket defaults", "Initial priority for new tickets and parent/child incident state sync."),
+        "catalog": ("Catalog and fulfillment routing", "Service catalog items and which team fulfills each one by default."),
+        "directory-mapping": ("AD group to ServiceOps team mapping", "Connect directory groups (e.g. gg_unix) to operational support teams."),
+        "team-aliases": ("Team name aliases", "Historical/imported team name spellings that safely merge into one canonical team."),
+        "ldap-sync": ("Directory synchronization (LDAP/OIDC)", "Manually run the LDAP directory sync that keeps profile fields and team membership current."),
+        "team-managers": ("Team managers", "The named manager who holds change-approval authority for each team."),
+        "executive-approval": ("Executive approval (CEO)", "The named user required to approve every Normal/Emergency change."),
+        "governance-groups": ("Governance groups", "Review accountable groups, their type, manager, and current membership."),
+        "change-approval-policy": ("Change approval policy", "Which CMDB environment names require Change Control Board approval."),
+        "ccb": ("Change Control Board approvers", "Users granted CCB voting authority for non-standard changes."),
+        "change-freeze": ("Change freeze windows", "Blocks Standard/Normal change scheduling and approval during active windows."),
+        "service-offerings": ("Service offerings", "Map services to their supporting configuration items."),
+        "sla": ("SLA definitions and business calendars", "Business schedules and SLA target durations by priority."),
+    }
+
+    @app.route("/service-operations/settings/<section>")
+    @roles("admin")
+    @require_action("configure")
+    def itil_admin_section(section):
+        if section not in ITIL_ADMIN_SECTIONS:
+            abort(404)
+        title, description = ITIL_ADMIN_SECTIONS[section]
         groups = tenant_query(SupportGroup).order_by(SupportGroup.name).all()
         teams = [group for group in groups if group.group_type == "IT Fulfillment"]
         fulfillment_groups = [
@@ -13590,7 +13662,8 @@ def create_app(test_config=None):
             db.session.flush()
         db.session.commit()
         return render_template(
-            "itil_admin.html", groups=groups, teams=teams,
+            "itil_admin_section.html", section=section, title=title, description=description,
+            groups=groups, teams=teams,
             manager_candidates=manager_candidates, ccb_candidates=ccb_candidates,
             ccb=ccb, ccb_approver_ids=ccb_approver_ids,
             executive_office=executive_office,
@@ -14119,39 +14192,39 @@ def create_app(test_config=None):
             for category, (group_label, group_description) in SETTING_GROUP_META.items():
                 navigation.append((
                     group_label, f"{group_description} Platform settings",
-                    "system_settings", {"_anchor": f"settings-{category}"}, "admin",
+                    "system_settings_category", {"category": category}, "admin",
                 ))
             navigation.extend([
                 ("Company branding", "Logo colors company name Platform settings",
-                 "system_settings", {"_anchor": "settings-branding"}, "admin"),
+                 "system_settings_category", {"category": "branding"}, "admin"),
                 ("Runtime environment", "Deployment mode version Platform settings",
-                 "system_settings", {"_anchor": "settings-infrastructure"}, "admin"),
+                 "system_settings_category", {"category": "infrastructure"}, "admin"),
                 ("Ticket defaults", "Default priority category Service delivery and governance",
-                 "itil_admin", {"_anchor": "ticket-defaults"}, "admin"),
+                 "itil_admin_section", {"section": "ticket-defaults"}, "admin"),
                 ("Catalog routing", "Fulfillment team catalog items Service delivery and governance",
-                 "itil_admin", {"_anchor": "catalog"}, "admin"),
+                 "itil_admin_section", {"section": "catalog"}, "admin"),
                 ("Directory group mapping", "AD LDAP group to team mapping Service delivery and governance",
-                 "itil_admin", {"_anchor": "directory-mapping"}, "admin"),
+                 "itil_admin_section", {"section": "directory-mapping"}, "admin"),
                 ("Team aliases", "Support group name aliases Service delivery and governance",
-                 "itil_admin", {"_anchor": "team-aliases"}, "admin"),
+                 "itil_admin_section", {"section": "team-aliases"}, "admin"),
                 ("LDAP sync schedule", "Directory synchronization Service delivery and governance",
-                 "itil_admin", {"_anchor": "ldap-sync"}, "admin"),
+                 "itil_admin_section", {"section": "ldap-sync"}, "admin"),
                 ("Team managers", "Support group manager assignment Service delivery and governance",
-                 "itil_admin", {"_anchor": "team-managers"}, "admin"),
+                 "itil_admin_section", {"section": "team-managers"}, "admin"),
                 ("Governance groups", "CCB executive approval group setup Service delivery and governance",
-                 "itil_admin", {"_anchor": "governance-groups"}, "admin"),
+                 "itil_admin_section", {"section": "governance-groups"}, "admin"),
                 ("Change approval policy", "Normal Standard change authorization Service delivery and governance",
-                 "itil_admin", {"_anchor": "change-approval-policy"}, "admin"),
+                 "itil_admin_section", {"section": "change-approval-policy"}, "admin"),
                 ("Change Control Board", "CCB membership approval Service delivery and governance",
-                 "itil_admin", {"_anchor": "ccb"}, "admin"),
+                 "itil_admin_section", {"section": "ccb"}, "admin"),
                 ("Executive approval authority", "Executive change sign-off Service delivery and governance",
-                 "itil_admin", {"_anchor": "executive-approval"}, "admin"),
+                 "itil_admin_section", {"section": "executive-approval"}, "admin"),
                 ("Change freeze windows", "Blackout period schedule block Service delivery and governance",
-                 "itil_admin", {"_anchor": "change-freeze"}, "admin"),
+                 "itil_admin_section", {"section": "change-freeze"}, "admin"),
                 ("Service offerings", "Business service catalog Service delivery and governance",
-                 "itil_admin", {"_anchor": "service-offerings"}, "admin"),
+                 "itil_admin_section", {"section": "service-offerings"}, "admin"),
                 ("SLA definitions", "Service level agreement targets Service delivery and governance",
-                 "itil_admin", {"_anchor": "sla"}, "admin"),
+                 "itil_admin_section", {"section": "sla"}, "admin"),
                 ("Performance charts", "Response time throughput System health",
                  "system_health", {"_anchor": "performance"}, "admin"),
                 ("Application errors", "Error log System health",
@@ -14295,7 +14368,7 @@ def create_app(test_config=None):
                     SupportGroup.name.ilike(pattern)
                 ).limit(20):
                     results.append({"type": "Group", "label": row.name,
-                                    "url": url_for("itil_admin") + "#governance-groups",
+                                    "url": url_for("itil_admin_section", section="governance-groups"),
                                     "meta": row.group_type})
                 for row in tenant_query(IntegrationConnection).filter(db.or_(
                     IntegrationConnection.name.ilike(pattern),
