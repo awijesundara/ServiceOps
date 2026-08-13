@@ -93,6 +93,7 @@ from serviceops_core.config_schema import (
 from serviceops_core.notification_templates import (
     NOTIFICATION_EVENT_TYPES, NON_MUTABLE_EVENT_TYPES, render_notification_template, is_event_muted,
 )
+from serviceops_core.navigation import navigation_entries
 
 # VERSION is the release source of truth; shown in the UI, API, and health
 # endpoint so operators can confirm the running build without host access.
@@ -14240,121 +14241,22 @@ def create_app(test_config=None):
         if q:
             pattern = f"%{q}%"
             normalized_q = q.casefold()
-            navigation = [
-                ("Dashboard", "Service operations home overview", "dashboard", {}, None),
-                ("Visual task board", "Tasks and operational work board", "task_board", {}, None),
-                ("My tasks", "Work assigned to me", "my_work_tasks", {}, "agent"),
-                ("Incidents", "Incident Management open active critical", "tickets", {"kind": "incident"}, None),
-                ("Service requests", "Request Fulfilment requested items", "requests_list", {}, None),
-                ("Changes", "Change Management calendar approvals", "tickets", {"kind": "change"}, "agent"),
-                ("Service catalog", "Catalog items request services", "catalog", {}, None),
-                ("Knowledge", "Knowledge Management articles search", "knowledge", {}, None),
-                ("All workspaces", "Installed enterprise applications modules", "modules", {}, None),
-                ("My approvals", "Pending approvals", "approval_chains", {}, None),
-                ("Notifications", "Alerts messages", "notifications", {}, None),
-                ("Organization chart", "People reporting structure", "org_chart", {}, None),
-                ("Manager portal", "Leadership teams workload", "manager_portal", {}, "manager"),
-                ("Problems", "Problem Management root cause", "module_records", {"domain": "problem"}, "agent"),
-                ("Known errors", "Workarounds Problem Management", "known_errors", {}, "agent"),
-                ("IT operations", "Events infrastructure operations", "module_records", {"domain": "event"}, "agent"),
-                ("Improvements", "Continual improvement", "improvements", {}, "agent"),
-                ("CMDB and service map", "Configuration Management Database CI relationships", "cmdb", {}, "agent"),
-                ("Assets", "Asset Management inventory", "assets", {}, "agent"),
-                ("Analytics", "Reports dashboards service performance", "analytics", {}, "agent"),
-                ("Administration home", "Platform administration configuration", "admin_home", {}, "admin"),
-                ("Platform settings", "Security authentication email infrastructure", "system_settings", {}, "admin"),
-                ("Users and access", "Users roles accounts", "users", {}, "admin"),
-                ("API clients", "REST credentials tokens", "api_clients_admin", {}, "admin"),
-                ("Audit log", "Audit evidence events retention", "audit_log", {}, "admin"),
-                ("Service delivery and governance", "Routing SLA freeze teams", "itil_admin", {}, "admin"),
-                ("Integrations", "Webhooks monitoring RT import delivery", "integrations_admin", {}, "admin"),
-                ("Automation rules", "Workflow published executions", "workflows_admin", {}, "admin"),
-                ("Scheduled automation", "Recurring workflow interval schedule", "workflows_scheduled", {}, "admin"),
-                ("Request Tracker (RT)", "RT import connection settings", "rt_import", {}, "admin"),
-            ]
-            # Sub-sections within admin pages (e.g. "Security and limits"
-            # inside Platform settings) previously had no search entry at
-            # all -- only the page itself was indexed, so a user searching
-            # for a specific setting group by name found nothing even
-            # though a direct #anchor link to it already existed on the
-            # page. Reuses the same (label, keywords, endpoint, params,
-            # minimum_role) shape via url_for's _anchor kwarg, so no new
-            # matching/rendering logic is needed below.
-            for category, (group_label, group_description) in SETTING_GROUP_META.items():
-                if category == "request_tracker_connection":
-                    # B-322: RT connection settings render on the RT import
-                    # page itself now, not their own Platform settings page.
-                    navigation.append((
-                        group_label, f"{group_description} Request Tracker import",
-                        "rt_import", {}, "admin",
-                    ))
+            can_access_clients = user_can_access_client_management(current_user)
+            for entry in navigation_entries(SETTING_GROUP_META):
+                if entry.client_management and not can_access_clients:
                     continue
-                navigation.append((
-                    group_label, f"{group_description} Platform settings",
-                    "system_settings_category", {"category": category}, "admin",
-                ))
-            navigation.extend([
-                ("Company branding", "Logo colors company name Platform settings",
-                 "system_settings_category", {"category": "branding"}, "admin"),
-                ("Runtime environment", "Deployment mode version Platform settings",
-                 "system_settings_category", {"category": "infrastructure"}, "admin"),
-                ("Ticket defaults", "Default priority category Service delivery and governance",
-                 "itil_admin_section", {"section": "ticket-defaults"}, "admin"),
-                ("Catalog routing", "Fulfillment team catalog items Service delivery and governance",
-                 "itil_admin_section", {"section": "catalog"}, "admin"),
-                ("Directory group mapping", "AD LDAP group to team mapping Sign-in and directory",
-                 "system_settings_category", {"category": "sign_in_and_directory"}, "admin"),
-                ("Team aliases", "Support group name aliases Service delivery and governance",
-                 "itil_admin_section", {"section": "team-aliases"}, "admin"),
-                ("LDAP sync schedule", "Directory synchronization Sign-in and directory",
-                 "system_settings_category", {"category": "sign_in_and_directory"}, "admin"),
-                ("Team managers", "Support group manager assignment Service delivery and governance",
-                 "itil_admin_section", {"section": "team-managers"}, "admin"),
-                ("Governance groups", "CCB executive approval group setup Service delivery and governance",
-                 "itil_admin_section", {"section": "governance-groups"}, "admin"),
-                ("Change approval policy", "Normal Standard change authorization Service delivery and governance",
-                 "itil_admin_section", {"section": "change-approval-policy"}, "admin"),
-                ("Change Control Board", "CCB membership approval Service delivery and governance",
-                 "itil_admin_section", {"section": "ccb"}, "admin"),
-                ("Executive approval authority", "Executive change sign-off Service delivery and governance",
-                 "itil_admin_section", {"section": "executive-approval"}, "admin"),
-                ("Change freeze windows", "Blackout period schedule block Service delivery and governance",
-                 "itil_admin_section", {"section": "change-freeze"}, "admin"),
-                ("Service offerings", "Business service catalog Service delivery and governance",
-                 "itil_admin_section", {"section": "service-offerings"}, "admin"),
-                ("SLA definitions", "Service level agreement targets Service delivery and governance",
-                 "itil_admin_section", {"section": "sla"}, "admin"),
-                ("Performance charts", "Response time throughput System health",
-                 "system_health", {"_anchor": "performance"}, "admin"),
-                ("Application errors", "Error log System health",
-                 "system_health", {"_anchor": "application-errors"}, "admin"),
-                ("Active users", "Currently signed in System health",
-                 "system_health", {"_anchor": "active-users"}, "admin"),
-                ("Recovery set", "Backup RPO freshness System health",
-                 "system_health", {"_anchor": "recovery-set"}, "admin"),
-            ])
-            if user_can_access_client_management(current_user):
-                navigation.extend([
-                    ("Client management", "Customer support external clients SysOps", "client_management_home", {}, None),
-                    ("Customer tickets", "Client cases conversations replies internal notes", "client_tickets", {}, None),
-                    ("Client organizations", "Customer companies accounts", "client_organizations", {}, None),
-                    ("Client contacts", "Customer people email phone", "client_contacts", {}, None),
-                ])
-            for label, keywords, endpoint, params, minimum_role in navigation:
-                if minimum_role and not role_at_least(current_user.effective_role, minimum_role):
+                if entry.minimum_role and not role_at_least(current_user.effective_role, entry.minimum_role):
                     continue
-                if normalized_q in f"{label} {keywords}".casefold():
-                    results.append({"type": "Navigation", "label": label,
-                                    "url": url_for(endpoint, **params), "meta": keywords})
-            visible_ticket_ids = {
-                row.id for row in visible_ticket_query(current_user).all()
-            }
-            visible_enterprise_ids = {
-                row.id for row in visible_enterprise_record_query(current_user).all()
-            }
-            visible_request_ids = {
-                row.id for row in visible_catalog_request_query(current_user).all()
-            }
+                if normalized_q in f"{entry.label} {entry.keywords}".casefold():
+                    results.append({"type": "Navigation", "label": entry.label,
+                                    "url": url_for(entry.endpoint, **entry.params), "meta": entry.keywords})
+            # Keep authorization filtering inside PostgreSQL. The old code
+            # loaded every visible ORM object into Python simply to collect
+            # IDs, making global search memory and latency grow with the
+            # tenant. These Query projections compile to bounded subqueries.
+            visible_ticket_ids = visible_ticket_query(current_user).with_entities(Ticket.id)
+            visible_enterprise_ids = visible_enterprise_record_query(current_user).with_entities(EnterpriseRecord.id)
+            visible_request_ids = visible_catalog_request_query(current_user).with_entities(CatalogRequest.id)
             for row in Ticket.query.filter(Ticket.id.in_(visible_ticket_ids), db.or_(
                                                    Ticket.number.ilike(pattern), Ticket.title.ilike(pattern),
                                                    Ticket.description.ilike(pattern))).limit(20):
@@ -14414,9 +14316,9 @@ def create_app(test_config=None):
                 OperationalTask.number.ilike(pattern), OperationalTask.title.ilike(pattern)
             )).limit(20):
                 parent = record_reference(row.parent_type, row.parent_id)
-                if isinstance(parent, Ticket) and parent.id not in visible_ticket_ids:
+                if isinstance(parent, Ticket) and not visible_ticket_query(current_user).filter(Ticket.id == parent.id).first():
                     continue
-                if isinstance(parent, EnterpriseRecord) and parent.id not in visible_enterprise_ids:
+                if isinstance(parent, EnterpriseRecord) and not visible_enterprise_record_query(current_user).filter(EnterpriseRecord.id == parent.id).first():
                     continue
                 results.append({
                     "type": "Change task" if row.task_kind == "change" else "Problem task",

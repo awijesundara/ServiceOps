@@ -1,4 +1,4 @@
-:root{--brand-teal:var(--brand-primary,#003e4c);--brand-teal-strong:#002f3a;--brand-teal-soft:#e8f1f3;--brand-amber:var(--brand-accent,#f9aa3c);--brand-amber-strong:#e8911f;--brand-amber-soft:#fff3df;--nav:var(--brand-teal-strong);--green:var(--brand-teal);--green-dark:#002f3a;--bg:#f4f7f8;--ink:#13252b;--muted:#63767d;--line:#d8e1e4;--shadow:0 2px 8px rgba(0,47,58,.08)}
+:root{--brand-teal:var(--brand-primary,#003e4c);--brand-teal-strong:#002f3a;--brand-teal-soft:#e8f1f3;--brand-amber:var(--brand-accent,#f9aa3c);--brand-amber-strong:#e8911f;--brand-amber-soft:#fff3df;--nav:var(--brand-teal-strong);--green:var(--brand-teal);--green-dark:#002f3a;--bg:#f4f7f8;--ink:#13252b;--muted:#596d74;--line:#d8e1e4;--shadow:0 2px 8px rgba(0,47,58,.08)}
 body{letter-spacing:.002em}.sidebar{background:linear-gradient(180deg,var(--brand-teal) 0%,var(--brand-teal-strong) 100%);padding:18px 12px}
 .brand{display:flex;align-items:center;gap:11px;padding:2px 10px 20px;border-bottom:1px solid rgba(255,255,255,.13)}
 .brand .brand-mark{display:grid;place-items:center;width:55px;height:34px;margin:0;border-radius:6px;background:#fff;color:var(--brand-teal);font-size:16px;font-weight:900;letter-spacing:-.06em}
@@ -19,7 +19,7 @@ th{background:#f0f4f5;color:#4b6269;border-bottom-color:#cbd7da}tbody tr:hover{b
 .high-contrast{--green:#00566a;--green-dark:#003e4c}@media(max-width:900px){.sidebar{background:var(--brand-teal)}}
 .brand .company-logo{width:62px;height:38px;object-fit:contain;background:#fff;border-radius:6px;padding:4px}
 .brand .company-mark{display:grid;place-items:center;width:55px;height:34px;margin:0;border-radius:6px;background:#fff;color:var(--brand-teal);font-size:14px;font-weight:900;letter-spacing:-.03em}
-.sidebar-version{margin-top:10px;padding:0 7px;font-size:10px;letter-spacing:.06em;color:#7f9aa1;text-align:center}
+.sidebar-version{margin-top:10px;padding:0 7px;font-size:10px;letter-spacing:.06em;color:#b8ccd1;text-align:center}
 .login-version{margin-top:18px;font-size:11px;text-align:center}
 .settings-workspace{display:grid;grid-template-columns:210px minmax(0,1fr);gap:20px;align-items:start}
 .settings-nav{position:sticky;top:82px;display:grid;gap:12px;background:#fff;border:1px solid var(--line);border-radius:7px;padding:12px;box-shadow:var(--shadow)}

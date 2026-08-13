@@ -92,6 +92,15 @@ if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 })();
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Wide record tables intentionally scroll inside the page. Give every
+  // such region a keyboard stop and an accessible name so keyboard and
+  // screen-reader users can reach and operate the horizontal viewport.
+  document.querySelectorAll(".task-list-scroll").forEach((region) => {
+    region.tabIndex = 0;
+    region.setAttribute("role", "region");
+    if (!region.getAttribute("aria-label")) region.setAttribute("aria-label", "Scrollable records");
+  });
+
   if ("serviceWorker" in navigator && window.isSecureContext) {
     navigator.serviceWorker.register("/service-worker.js", { scope: "/" });
   }
