@@ -37,4 +37,81 @@
   <div class="settings-save"><div><strong>Audited change</strong><small>Review authentication carefully before saving.</small></div><button class="primary">Validate and save settings</button></div>
 </form>
 {% endif %}
+
+{% if category == 'sign_in_and_directory' %}
+{% set post_url = url_for('itil_admin') %}
+<section class="panel admin-section">
+  <div class="panel-head"><div><h2>AD group → ServiceOps team</h2><p>Enter a short AD group such as <code>gg_unix</code> or its complete distinguished name. Membership synchronizes whenever the user signs in through AD/LDAP.</p></div></div>
+  <form method="post" action="{{ post_url }}" class="form-grid">
+    <input type="hidden" name="action" value="add_directory_mapping">
+    <label>AD group name or DN
+      <input name="directory_group" placeholder="gg_unix" maxlength="500" required>
+    </label>
+    <label>ServiceOps team
+      <select name="group_id" required>
+        {% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <div class="wide actions"><button class="primary">Save mapping</button></div>
+  </form>
+  <table>
+    <thead><tr><th>AD group</th><th>Assigned team</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for mapping in directory_mappings %}
+      <tr>
+        <td><code>{{ mapping.directory_group }}</code></td>
+        <td>{{ mapping.support_group.name }}</td>
+        <td>{{ "Active" if mapping.active else "Disabled" }}</td>
+        <td>
+          {% if mapping.active %}
+          <form method="post" action="{{ post_url }}">
+            <input type="hidden" name="action" value="delete_directory_mapping">
+            <input type="hidden" name="mapping_id" value="{{ mapping.id }}">
+            <button class="button">Disable</button>
+          </form>
+          {% else %}<span class="muted">Retained for audit</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No AD team mappings configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel admin-section">
+  <div class="panel-head"><div><h2>Directory synchronization</h2><p>Pull title, department, division, employee ID/type, manager chain, and AD-group team membership from the directory for users who have already signed in through AD/LDAP at least once. Scheduled sync is {% if ldap_sync_enabled %}enabled every {{ ldap_sync_interval_minutes }} minute{{ '' if ldap_sync_interval_minutes == 1 else 's' }}{% else %}disabled{% endif %}; you can still trigger a manual run at any time.</p></div></div>
+  {% if not ldap_enabled %}
+  <p class="muted">AD/LDAP is not enabled. Turn it on above first.</p>
+  {% else %}
+  <form method="post" action="{{ post_url }}" class="actions">
+    <input type="hidden" name="action" value="sync_directory">
+    <label><input type="checkbox" name="dry_run" value="1" checked> Preview only (no changes saved)</label>
+    <button class="primary">Run directory sync</button>
+  </form>
+  {% if ldap_sync_result %}
+  <table>
+    <thead><tr><th>Directory entries</th><th>Users updated</th><th>Managers resolved</th><th>Self-manager skipped</th><th>Memberships added</th><th>Memberships removed</th><th>Unmatched</th><th>Errors</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>{{ ldap_sync_result.directory_entries }}</td>
+        <td>{{ ldap_sync_result.users_updated }}</td>
+        <td>{{ ldap_sync_result.managers_resolved }}</td>
+        <td>{{ ldap_sync_result.self_manager_skipped or 0 }}</td>
+        <td>{{ ldap_sync_result.memberships_added }}</td>
+        <td>{{ ldap_sync_result.memberships_removed }}</td>
+        <td>{{ ldap_sync_result.users_unmatched }}</td>
+        <td>{{ ldap_sync_result.errors|length }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% if ldap_sync_result.dry_run %}<p class="muted">This was a preview; no changes were saved.</p>{% endif %}
+  {% if ldap_sync_result.self_manager_users %}
+  <p class="muted">Self-manager records skipped (directory manager points to own DN): {{ ldap_sync_result.self_manager_users|join(', ') }}.</p>
+  {% endif %}
+  {% for error in ldap_sync_result.errors %}<p class="muted">{{ error }}</p>{% endfor %}
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}
 {% endblock %}

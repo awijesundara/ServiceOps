@@ -25,19 +25,8 @@
 <section class="panel admin-section"><h2 id="run-automation">Run an automation for a ticket</h2><p>Sends a controlled manual event for the selected ticket. Only rules explicitly configured to accept manual runs can respond.</p>
   <form method="post" class="inline-form"><input type="hidden" name="action" value="manual_trigger"><select name="ticket_id" required>{% for ticket in tickets %}<option value="{{ ticket.id }}">{{ ticket.number }} · {{ ticket.title }}</option>{% endfor %}</select><button class="button">Run eligible automation</button></form>
 </section>
-<section class="panel admin-section"><h2 id="scheduled-automation">Scheduled automation</h2><p>Run eligible rules at a controlled interval for a selected ticket. Missed intervals are not replayed in a burst after a restart.</p>
-  <details><summary>Add a schedule</summary><form method="post" class="form-grid">
-    <input type="hidden" name="action" value="create_schedule">
-    <label>Schedule key<input name="schedule_key" placeholder="stale-incident-review" pattern="[a-z0-9][a-z0-9-]{2,119}" required></label>
-    <label>Name<input name="name" maxlength="160" required></label>
-    <label>Ticket<select name="ticket_id" required>{% for ticket in tickets %}<option value="{{ ticket.id }}">{{ ticket.number }} · {{ ticket.title }}</option>{% endfor %}</select></label>
-    <label>Interval minutes<input type="number" name="interval_minutes" min="1" max="525600" value="1440" required></label>
-    <label>First run (UTC if offset omitted)<input type="datetime-local" name="next_run_at"></label>
-    <div class="wide actions"><button class="primary">Create schedule</button></div>
-  </form></details>
-  <table><thead><tr><th>Schedule</th><th>Ticket</th><th>Interval</th><th>Next run</th><th>Last run</th><th>Status</th></tr></thead><tbody>
-  {% for schedule in schedules %}<tr><td><strong>{{ schedule.name }}</strong><small><code>{{ schedule.schedule_key }}</code></small></td><td>{{ schedule.ticket.number }}</td><td>{{ schedule.interval_minutes }} minutes</td><td>{{ (schedule.next_run_at|usertime('%Y-%m-%d %H:%M')) }}</td><td>{{ (schedule.last_run_at|usertime('%Y-%m-%d %H:%M')) if schedule.last_run_at else 'Never' }}</td><td><form method="post"><input type="hidden" name="action" value="toggle_schedule"><input type="hidden" name="schedule_id" value="{{ schedule.id }}"><button class="button">{{ 'Disable' if schedule.active else 'Enable' }}</button></form></td></tr>{% else %}<tr><td colspan="6">No recurring schedules configured.</td></tr>{% endfor %}
-  </tbody></table>
+<section class="panel admin-section"><h2>Scheduled automation</h2><p>Recurring rule runs on an interval for a selected ticket now have their own page.</p>
+  <a class="button" href="{{ url_for('workflows_scheduled') }}">Go to scheduled automation →</a>
 </section>
 <section class="panel admin-section"><h2 id="recent-automation-activity">Recent automation activity</h2><p>Each row is an event waiting to run, running now, completed, or stopped after repeated failures.</p>
   <table><thead><tr><th>Event ID</th><th>Event</th><th>Target</th><th>State</th><th>Attempts</th><th>Error</th></tr></thead><tbody>
