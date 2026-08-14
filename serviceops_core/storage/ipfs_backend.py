@@ -1,10 +1,9 @@
 """IPFS-backed storage: the optional, database-less deployment mode.
 
-This first slice implements only file attachments end-to-end (the
-storage-mode plan's "suggested first concrete slice") plus the
-checkpoint boot/save mechanism that every future wave will reuse. Record
-CRUD for ITIL entities (tickets, changes, CIs, ...) is a later wave and
-raises NotImplementedError here on purpose -- see interface.py.
+The encrypted checkpoint contains the complete relational projection plus
+attachments and the legacy B-335 entity map. The generic CRUD methods remain
+for backward-compatible import of that original user/tenant checkpoint; normal
+application records are projected generically by ipfs_projection.py.
 
 State model: `self._file_index` maps a caller-chosen storage key (e.g.
 FileAttachment.stored_name) to its current IPFS CID. This is the entire
@@ -22,6 +21,9 @@ before being added to IPFS, and decrypted on read -- see attach_file()'s
 comment for why this isn't optional.
 """
 import logging
+import copy
+import threading
+import time
 
 from cryptography.fernet import Fernet
 
@@ -40,13 +42,16 @@ class IPFSStorageBackend(StorageBackend):
         self._checkpoint_key = checkpoint_encryption_key
         self._file_index = {}
         self._checkpoint_name = None
-        # Generic entity store, added for the login-only milestone (see
-        # BACKLOG B-335): {entity_type: {id: {field: value, ...}}}. This is
-        # the whole "database" for whichever entity types have been wired
-        # up to it so far (currently: user, tenant) -- exists only in
-        # memory, checkpointed to IPFS exactly like _file_index.
+        # Legacy B-335 identity map, retained so existing user/tenant
+        # checkpoints can be upgraded into the complete relational state.
         self._entities = {}
         self._next_id = {}
+        self._relational_state = {}
+        self._state_lock = threading.RLock()
+        self._publish_condition = threading.Condition()
+        self._pending_checkpoint_cid = None
+        self._last_published_checkpoint_cid = None
+        self._publisher_started = False
 
     # -- Checkpoint boot/save --------------------------------------------
     def load_checkpoint(self):
@@ -74,58 +79,105 @@ class IPFSStorageBackend(StorageBackend):
         self._next_id = {
             entity_type: next_id for entity_type, next_id in state.get("next_id", {}).items()
         }
+        self._relational_state = state.get("relational_state", {})
         logger.info(
             "Loaded IPFS checkpoint %s: %d file(s), %d entity type(s) indexed.",
             cid, len(self._file_index), len(self._entities),
         )
 
     def save_checkpoint(self):
-        """Re-snapshot the full in-memory index to IPFS and republish the
-        IPNS pointer. Called after every write in this first slice; a
-        later wave can debounce this (time- or write-count based) once
-        real usage volume makes synchronous republish-per-write too slow
-        -- correctness first, then throughput.
+        """Add and pin a full encrypted snapshot, then coalesce publication.
 
-        Found via live testing under compose.ipfs-demo.yaml (BACKLOG
-        B-335): IPNS `name/publish` can intermittently take 30+ seconds
-        even with allow-offline=true (observed on a failed-login lockout-
-        counter update, which -- like every write in this slice -- called
-        this method synchronously). A slow/failed publish must not fail
-        the caller's actual operation or hang the request that long: the
-        in-memory index this process holds is already updated and correct
-        for THIS process regardless of whether the durable checkpoint
-        publish below succeeds, so pin/publish failures are logged and
-        swallowed here, not raised. A future wave's debounced/async
-        checkpoint publisher removes the need for this trade-off; until
-        then, a publish failure means a hard restart of this process could
-        lose writes since the last successful checkpoint -- an accepted,
-        disclosed risk of the login-only milestone, not a silent one."""
+        Kubo IPNS publication can take tens of seconds. The latest CID is
+        therefore published by one retrying background thread; newer commits
+        replace the pending CID, keeping request latency independent of IPNS.
+        Readiness exposes whether publication is pending."""
         if self._checkpoint_name is None:
             self._checkpoint_name = self.client.key_gen(CHECKPOINT_KEY_NAME)
         state = {
             "file_index": self._file_index,
             "entities": self._entities,
             "next_id": self._next_id,
+            "relational_state": self._relational_state,
         }
         encrypted = encrypt_checkpoint(state, self._checkpoint_key)
         cid = self.client.add_bytes(encrypted, filename="checkpoint")
         try:
             self.client.pin_add(cid)
-            self.client.name_publish(cid, CHECKPOINT_KEY_NAME)
         except Exception:
             logger.exception(
-                "Failed to publish IPFS checkpoint %s -- in-memory state is "
+                "Failed to pin IPFS checkpoint %s -- in-memory state is "
                 "still current for this process, but a restart before the "
-                "next successful publish would lose writes since the last "
+                "next successful checkpoint would lose writes since the last "
                 "one.", cid,
             )
+            return cid
+        # Test doubles publish synchronously, keeping unit tests deterministic.
+        # Real Kubo publication is isolated from the request path because it
+        # can take tens of seconds even on a healthy single-node deployment.
+        if not isinstance(self.client, IPFSClient):
+            try:
+                self.client.name_publish(cid, CHECKPOINT_KEY_NAME)
+                self._last_published_checkpoint_cid = cid
+            except Exception:
+                logger.exception("Failed to publish IPFS checkpoint %s.", cid)
+            return cid
+        with self._publish_condition:
+            self._pending_checkpoint_cid = cid
+            if not self._publisher_started:
+                threading.Thread(
+                    target=self._publish_loop,
+                    name="serviceops-ipns-publisher",
+                    daemon=True,
+                ).start()
+                self._publisher_started = True
+            self._publish_condition.notify_all()
         return cid
 
+    def _publish_loop(self):
+        while True:
+            with self._publish_condition:
+                while not self._pending_checkpoint_cid:
+                    self._publish_condition.wait()
+                cid = self._pending_checkpoint_cid
+            try:
+                self.client.name_publish(cid, CHECKPOINT_KEY_NAME)
+            except Exception:
+                logger.exception("Failed to publish IPFS checkpoint %s; retrying.", cid)
+                time.sleep(2)
+                continue
+            with self._publish_condition:
+                self._last_published_checkpoint_cid = cid
+                if self._pending_checkpoint_cid == cid:
+                    self._pending_checkpoint_cid = None
+
+    @property
+    def checkpoint_publish_pending(self):
+        with self._publish_condition:
+            return self._pending_checkpoint_cid is not None
+
     # -- Generic record CRUD -----------------------------------------------
-    # Implemented for the login-only milestone (user, tenant); other
-    # entity types still raise NotImplementedError until their own
-    # rollout wave -- see the storage-mode plan.
+    # Backward-compatible B-335 identity CRUD. Full application models use
+    # the generic relational projection above rather than this narrow map.
     _IMPLEMENTED_ENTITY_TYPES = {"user", "tenant"}
+
+    def get_relational_state(self):
+        with self._state_lock:
+            return copy.deepcopy(self._relational_state)
+
+    def replace_relational_state(self, tables):
+        """Atomically replace and durably publish the full app projection."""
+        with self._state_lock:
+            self._relational_state = copy.deepcopy(tables)
+            return self.save_checkpoint()
+
+    def export_legacy_entities(self):
+        """Return B-335 identity rows for one-time full-state migration."""
+        with self._state_lock:
+            return {
+                entity_type: [copy.deepcopy(row) for row in rows.values()]
+                for entity_type, rows in self._entities.items()
+            }
 
     def _require_implemented(self, entity_type):
         if entity_type not in self._IMPLEMENTED_ENTITY_TYPES:
