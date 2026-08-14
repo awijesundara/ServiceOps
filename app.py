@@ -6015,14 +6015,11 @@ def create_app(test_config=None):
             "display": "standalone",
             "background_color": "#f4f7f8",
             "theme_color": setting_value("BRAND_TEAL", "#003e4c"),
+            "icons": [
+                {"src": url_for("static", filename="icons/serviceops-icon-192.png"), "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+                {"src": url_for("static", filename="icons/serviceops-icon-512.png"), "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+            ],
         }
-        if os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png")):
-            manifest["icons"] = [{
-                "src": url_for("company_logo"),
-                "sizes": "any",
-                "type": "image/png",
-                "purpose": "any maskable",
-            }]
         response = jsonify(manifest)
         response.mimetype = "application/manifest+json"
         return response
@@ -15376,7 +15373,7 @@ def create_app(test_config=None):
     @app.get("/mobile-app")
     @login_required
     def mobile_app():
-        return render_template("mobile_app.html", mobile_version="1.3.0", mobile_build="6")
+        return render_template("mobile_app.html", mobile_version="1.3.1", mobile_build="7")
 
     @app.errorhandler(403)
     def forbidden(error):

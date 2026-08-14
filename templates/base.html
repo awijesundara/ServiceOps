@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
   <link rel="manifest" href="{{ url_for('pwa_manifest') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png', v=app_version) }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png', v=app_version) }}">
   <meta name="theme-color" content="{{ brand_teal }}">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -29,7 +31,7 @@
 <script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active</div>{% endif %}
 <aside class="sidebar">
-  <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo">{% else %}<span class="company-mark">{{ company_name[:2]|upper }}</span>{% endif %}<span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span></a>
+  <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo">{% else %}<img class="serviceops-app-mark" src="{{ url_for('static', filename='icons/serviceops-icon-192.png', v=app_version) }}" alt="ServiceOps app icon">{% endif %}<span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span></a>
   <nav class="application-nav" aria-label="Application navigation" data-application-nav>
     <label class="nav-filter"><span aria-hidden="true">⌕</span><input type="search" placeholder="Find menu" aria-label="Find a menu item" data-nav-filter></label>
     <a class="nav-home{% if nav_active('dashboard') %} active{% endif %}" href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">⌂</span><span>Home</span></a>
