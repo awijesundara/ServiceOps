@@ -6064,7 +6064,21 @@ def create_app(test_config=None):
             # doesn't implement yet. Render with safe, empty defaults
             # instead of crashing every authenticated page.
             return platform_context | {
-                "ui_preference": UserPreference(user_id=current_user.id, density="comfortable"),
+                # Every column given explicitly: a transient (never
+                # db.session-added) instance does NOT apply Column
+                # `default=`s until an actual flush, which never happens
+                # here -- an omitted field stays plain None. Found live:
+                # base.html does `ui_preference.font_scale / 100`, which
+                # 500'd on None for every authenticated page (even error
+                # pages) until every field this template touches was
+                # covered.
+                "ui_preference": UserPreference(
+                    user_id=current_user.id, theme="light", density="comfortable",
+                    font_scale=100, high_contrast=False, reduced_motion=False,
+                    nav_pinned=True, start_page="/ipfs-home", accessible_tooltips=True,
+                    data_patterns=False, compact_dates=False, keyboard_shortcuts=True,
+                    date_time_display="both",
+                ),
                 "ui_favorites": [],
                 "current_user_is_local": True,
                 "ui_history": [],

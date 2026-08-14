@@ -257,6 +257,14 @@ class User(UserMixin, db.Model):
     def granted_roles(self):
         """Every role this user currently holds (may be more than one --
         e.g. both "manager" and "admin"), highest-ranked first."""
+        if os.getenv("STORAGE_MODE", "postgres").strip().lower() == "ipfs":
+            # UserRoleGrant isn't implemented against IPFSStorageBackend
+            # yet (BACKLOG B-335, login-only milestone) -- a real DB query
+            # here would crash base.html's "acting as" role switcher (and
+            # therefore any page that extends base.html, including error
+            # pages) for every authenticated request. A bootstrap admin
+            # only ever has the one role it was created with.
+            return [self.role]
         roles = {grant.role for grant in UserRoleGrant.query.filter_by(user_id=self.id).all()}
         roles.add(self.role)  # defensive: self.role should always be a member already
         return sorted(roles, key=lambda r: ROLE_RANK.get(r, -1), reverse=True)
