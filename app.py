@@ -6000,6 +6000,20 @@ def create_app(test_config=None):
                     "request_id": g.get("request_id"),
                 }
             }), 500
+        if ipfs_enabled():
+            # A generic "an administrator can review it" message is
+            # actively misleading for the single most common cause of a
+            # 500 in this mode: a page that hasn't been implemented
+            # against IPFSStorageBackend yet (BACKLOG B-335, login-only
+            # milestone) -- not a bug to investigate, a known, disclosed
+            # gap. /ipfs-home is the one page guaranteed to work.
+            return render_template(
+                "error.html", code=500,
+                message=(
+                    "This feature isn't available yet in IPFS mode (database-less deployment) -- "
+                    "only sign-in currently works end to end. See /ipfs-home."
+                ),
+            ), 500
         return render_template(
             "error.html", code=500,
             message="An unexpected error occurred. This has been logged and an administrator can review it.",
@@ -7960,6 +7974,15 @@ def create_app(test_config=None):
     @app.get("/")
     @login_required
     def dashboard():
+        if ipfs_enabled():
+            # The real dashboard queries a dozen+ Postgres-only tables not
+            # implemented against IPFSStorageBackend yet (BACKLOG B-335,
+            # login-only milestone) -- redirect to the one page that
+            # actually works in this mode instead of crashing on the
+            # first widget. Found live: a user who signed in and then
+            # navigated to "/" (the normal post-login landing page in
+            # Postgres mode) hit an unhandled 500 here.
+            return redirect(url_for("ipfs_home"))
         visible_requests = visible_catalog_request_query(current_user)
         ticket_query = visible_ticket_query(current_user)
         terminal_states = ("Resolved", "Closed", "Cancelled")
