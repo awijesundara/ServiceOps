@@ -1009,6 +1009,8 @@ def test_api_client_admin_one_time_secret_and_pwa_privacy(client, app):
     manifest = client.get("/manifest.webmanifest")
     assert manifest.status_code == 200
     assert manifest.json["display"] == "standalone"
+    assert {icon["sizes"] for icon in manifest.json["icons"]} == {"192x192", "512x512"}
+    assert all("serviceops-icon" in icon["src"] for icon in manifest.json["icons"])
     worker = client.get("/service-worker.js")
     assert worker.status_code == 200
     assert b"/api/" not in worker.data
@@ -1017,6 +1019,7 @@ def test_api_client_admin_one_time_secret_and_pwa_privacy(client, app):
     from app import APP_VERSION
     assert f"serviceops-shell-v{APP_VERSION}".encode() in worker.data
     assert f"/static/itil.css?v={APP_VERSION}".encode() in worker.data
+    assert f"/static/icons/serviceops-icon-192.png?v={APP_VERSION}".encode() in worker.data
     assert worker.data.index(b"fetch(event.request)") < worker.data.index(
         b"caches.match(event.request)"
     )
@@ -3074,7 +3077,7 @@ def test_mobile_app_page_is_authenticated_searchable_and_actionable(client):
     assert response.status_code == 200
     assert b"ServiceOps mobile" in response.data
     assert b"ServiceOps_iOS" in response.data
-    assert b"iOS 1.3.0 (6)" in response.data
+    assert b"iOS 1.3.1 (7)" in response.data
     assert b"wijesundara.com.ServiceOps" in response.data
 
 
