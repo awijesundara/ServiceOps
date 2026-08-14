@@ -61,12 +61,13 @@
       </div>
     </details>
 
-    <details class="nav-group" {% if request.endpoint in ['catalog','knowledge','modules'] %}open{% endif %}>
+    <details class="nav-group" {% if request.endpoint in ['catalog','knowledge','modules','mobile_app'] %}open{% endif %}>
       <summary><span class="nav-symbol" aria-hidden="true">◎</span><span>Self-service</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items">
         <a href="{{ url_for('catalog') }}" {% if nav_active('catalog') %}class="active" aria-current="page"{% endif %}>Service catalog</a>
         <a href="{{ url_for('knowledge') }}" {% if nav_active('knowledge') %}class="active" aria-current="page"{% endif %}>Knowledge</a>
         <a href="{{ url_for('modules') }}" {% if nav_active('modules') %}class="active" aria-current="page"{% endif %}>All workspaces</a>
+        <a href="{{ url_for('mobile_app') }}" {% if nav_active('mobile_app') %}class="active" aria-current="page"{% endif %}>ServiceOps mobile</a>
       </div>
     </details>
 
