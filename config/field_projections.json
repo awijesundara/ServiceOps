@@ -4,24 +4,24 @@
     "ticket": {
       "allowed_fields": [
         "id", "number", "type", "title", "description", "state", "priority",
-        "category", "opened_at", "updated_at", "internal"
+        "category", "opened_at", "updated_at", "attachments", "internal"
       ],
       "audiences": {
         "requester": [
           "id", "number", "type", "title", "description", "state", "priority",
-          "category", "opened_at", "updated_at"
+          "category", "opened_at", "updated_at", "attachments"
         ],
         "agent": [
           "id", "number", "type", "title", "description", "state", "priority",
-          "category", "opened_at", "updated_at", "internal"
+          "category", "opened_at", "updated_at", "attachments", "internal"
         ],
         "manager": [
           "id", "number", "type", "title", "description", "state", "priority",
-          "category", "opened_at", "updated_at", "internal"
+          "category", "opened_at", "updated_at", "attachments", "internal"
         ],
         "admin": [
           "id", "number", "type", "title", "description", "state", "priority",
-          "category", "opened_at", "updated_at", "internal"
+          "category", "opened_at", "updated_at", "attachments", "internal"
         ]
       }
     },
