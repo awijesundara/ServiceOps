@@ -15373,6 +15373,11 @@ def create_app(test_config=None):
     def help_center():
         return render_template("help.html")
 
+    @app.get("/mobile-app")
+    @login_required
+    def mobile_app():
+        return render_template("mobile_app.html", mobile_version="1.3.0", mobile_build="6")
+
     @app.errorhandler(403)
     def forbidden(error):
         if request.path.startswith("/api/"):

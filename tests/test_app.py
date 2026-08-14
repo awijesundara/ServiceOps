@@ -3033,6 +3033,8 @@ def test_unified_search_favorites_and_preferences(client, app):
     navigation_result = client.get("/ui/search?q=cmdb")
     assert b"CMDB and service map" in navigation_result.data
     assert b"Navigation" in navigation_result.data
+    mobile_result = client.get("/ui/search?q=iphone")
+    assert b"ServiceOps mobile" in mobile_result.data
     # Sub-sections within admin pages (e.g. "Security and limits" inside
     # Platform settings) previously had no search entry at all -- only the
     # page itself was indexed.
@@ -3063,6 +3065,17 @@ def test_unified_search_favorites_and_preferences(client, app):
         assert (pref.theme, pref.density, pref.font_scale, pref.start_page) == ("light", "compact", 115, "/task-board")
         assert (pref.accessible_tooltips, pref.data_patterns, pref.compact_dates) == (True, True, True)
         assert (pref.keyboard_shortcuts, pref.date_time_display) == (True, "relative")
+
+
+def test_mobile_app_page_is_authenticated_searchable_and_actionable(client):
+    assert client.get("/mobile-app").status_code == 302
+    login(client)
+    response = client.get("/mobile-app")
+    assert response.status_code == 200
+    assert b"ServiceOps mobile" in response.data
+    assert b"ServiceOps_iOS" in response.data
+    assert b"iOS 1.3.0 (6)" in response.data
+    assert b"wijesundara.com.ServiceOps" in response.data
 
 
 def test_profile_and_user_administration_are_tenant_and_role_governed(client, app):
