@@ -2425,6 +2425,10 @@ class FileAttachment(db.Model):
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     original_name = db.Column(db.String(255), nullable=False)
     stored_name = db.Column(db.String(255), unique=True, nullable=False)
+    # Set only when STORAGE_MODE=ipfs (optional database-less deployment
+    # mode); null under the default PostgreSQL mode, where stored_name
+    # alone locates the file on local disk or S3.
+    ipfs_cid = db.Column(db.String(120), nullable=True)
     mime_type = db.Column(db.String(120))
     size_bytes = db.Column(db.Integer, nullable=False)
     sha256 = db.Column(db.String(64))
