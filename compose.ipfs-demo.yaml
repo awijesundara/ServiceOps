@@ -6,17 +6,10 @@ name: serviceops-ipfs-demo
 # at the same time. Uses the same application image as the main stack;
 # only the environment differs (STORAGE_MODE=ipfs).
 #
-# Genuinely no PostgreSQL anywhere in this file (BACKLOG B-335) -- login
-# and its session/rate-limit/audit dependencies run entirely against
-# IPFSStorageBackend's in-memory + IPFS-checkpoint store. IMPORTANT,
-# disclosed here so it's not discovered the hard way: this is a
-# login-only milestone. Tickets, the dashboard, CMDB, catalog, and every
-# other ServiceOps feature still require the PostgreSQL-backed rollout
-# waves described in the storage-mode plan -- they are simply not present
-# in this deployment yet, not degraded. There is also no `worker` service
-# here: background job processing (outbox delivery, inbound email, SLA
-# sweeps, ...) is out of scope for this milestone and has no IPFS-backed
-# implementation to run against.
+# Genuinely no PostgreSQL anywhere in this file. IPFS is the sole durable
+# record and attachment store; the app rebuilds a volatile relational
+# projection from the encrypted checkpoint at boot. Background jobs run in
+# the same process so there is only one writer to the IPNS checkpoint.
 
 services:
   ipfs:

@@ -16,20 +16,17 @@ class IPFSClientError(RuntimeError):
 
 
 class IPFSClient:
-    # Found via live testing (BACKLOG B-335): name/publish can
-    # intermittently hang well past the RPC's usual sub-second response
-    # time even with allow-offline=true. 30s meant a slow publish held a
-    # whole request (e.g. a failed login attempt) open that long before
-    # IPFSStorageBackend.save_checkpoint() catches and logs the failure --
-    # 12s bounds the damage without being so tight it flags normal
-    # variance as a hard failure.
+    # Normal Kubo operations stay tightly bounded. name_publish uses its own
+    # longer timeout because it runs only in the backend's retrying publisher
+    # thread and must not leave abandoned server-side publication jobs.
     def __init__(self, api_url, timeout=12.0):
         self.api_url = api_url.rstrip("/")
         self.timeout = timeout
 
-    def _post(self, path, params=None, files=None):
+    def _post(self, path, params=None, files=None, timeout=None):
         response = httpx.post(
-            f"{self.api_url}{path}", params=params, files=files, timeout=self.timeout,
+            f"{self.api_url}{path}", params=params, files=files,
+            timeout=self.timeout if timeout is None else timeout,
         )
         response.raise_for_status()
         return response
@@ -81,6 +78,7 @@ class IPFSClient:
         self._post(
             "/api/v0/name/publish",
             params={"arg": f"/ipfs/{cid}", "key": key_name, "allow-offline": "true"},
+            timeout=120.0,
         )
 
     def name_resolve(self, name_or_peer_id):

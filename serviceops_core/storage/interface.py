@@ -7,18 +7,16 @@ thin wrapper around today's SQLAlchemy models -- no behavior change) and
 deployment mode). Both satisfy this same interface so callers don't need
 to know which one is active.
 
-This first slice only gives both backends real implementations of the
-file-attachment methods (`attach_file`/`read_file`/`delete_file`) --
-everything else raises NotImplementedError deliberately, since the
-~571 existing `db.session`/`Model.query` call sites in app.py are migrated
-to this interface in later waves, not all at once. The full method surface
-is declared now so no wave requires a breaking interface change later.
+IPFS mode preserves the existing domain/query layer through a volatile
+relational projection restored from and checkpointed to IPFS. The generic
+CRUD surface remains useful for adapters and legacy-checkpoint migration;
+attachments use the explicit methods below.
 """
 from abc import ABC, abstractmethod
 
 
 class StorageBackend(ABC):
-    # -- Generic record CRUD (future waves) -----------------------------
+    # -- Generic record CRUD --------------------------------------------
     @abstractmethod
     def get(self, entity_type, record_id):
         """Fetch one record by primary key, or None."""
@@ -53,7 +51,7 @@ class StorageBackend(ABC):
     def enforce_unique(self, entity_type, fields):
         """Declare a uniqueness constraint the backend must enforce."""
 
-    # -- File attachments (implemented in this first slice) -------------
+    # -- File attachments ------------------------------------------------
     @abstractmethod
     def attach_file(self, path, data_bytes, content_type):
         """Store file bytes under a caller-chosen storage key (`path`,

@@ -54,8 +54,8 @@ services:
       ADMIN_PASSWORD_FILE: ${ADMIN_PASSWORD_FILE:-}
       DEPLOYMENT_PROFILE: production
       DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-bundled}
-      # Optional database-less deployment mode (experimental, first slice
-      # only covers file attachments -- see the storage-mode plan).
+      # Optional database-less deployment mode. IPFS is authoritative for
+      # the complete encrypted application checkpoint and attachments.
       # STORAGE_MODE=postgres (default) is unaffected by any of this. No
       # depends_on against the `ipfs` service below: it's profile-gated
       # (only exists when --profile ipfs is active) and `app` is not, so
