@@ -18,6 +18,28 @@ services:
     stop_grace_period: 30s
     shm_size: 256mb
 
+  # Bundled IPFS node for the optional database-less deployment mode
+  # (STORAGE_MODE=ipfs, IPFS_MODE=bundled -- the installer's default when
+  # IPFS mode is chosen). Only starts when the "ipfs" Compose profile is
+  # active (docker compose --profile ipfs up, or COMPOSE_PROFILES=ipfs in
+  # .env); a default STORAGE_MODE=postgres deployment never starts this.
+  # Under IPFS_MODE=external, this service is unused -- IPFS_API_URL
+  # points at the operator's own node/gateway/pinning service instead.
+  ipfs:
+    image: ipfs/kubo:v0.33.0@sha256:a11e89f0f2a620acb3e8e1c49cdce81e80115194681924a5356f301cc6b66067
+    profiles: ["ipfs"]
+    environment:
+      IPFS_PROFILE: server
+    volumes:
+      - serviceops_ipfs_data:/data/ipfs
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    stop_grace_period: 30s
+
   app:
     image: ${SERVICEOPS_IMAGE:?Set an immutable SERVICEOPS_IMAGE tag in .env}
     build:
@@ -32,6 +54,16 @@ services:
       ADMIN_PASSWORD_FILE: ${ADMIN_PASSWORD_FILE:-}
       DEPLOYMENT_PROFILE: production
       DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-bundled}
+      # Optional database-less deployment mode (experimental, first slice
+      # only covers file attachments -- see the storage-mode plan).
+      # STORAGE_MODE=postgres (default) is unaffected by any of this. No
+      # depends_on against the `ipfs` service below: it's profile-gated
+      # (only exists when --profile ipfs is active) and `app` is not, so
+      # Compose can't express a conditional dependency between them --
+      # on a cold start in bundled IPFS mode, `app` may crash-loop briefly
+      # until `ipfs` becomes healthy; restart:unless-stopped recovers it.
+      STORAGE_MODE: ${STORAGE_MODE:-postgres}
+      IPFS_API_URL: ${IPFS_API_URL:-http://ipfs:5001}
       INSTANCE_NAME: ${INSTANCE_NAME:-ServiceOps}
       COMPANY_NAME: ${COMPANY_NAME:-Your Company}
       BRAND_TEAL: ${BRAND_TEAL:-#003e4c}
@@ -121,6 +153,15 @@ services:
       API_TOKEN_PEPPER: ${API_TOKEN_PEPPER:-}
       DEPLOYMENT_PROFILE: production
       DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-bundled}
+      # Deliberately NOT wired to STORAGE_MODE/IPFS_API_URL: this worker
+      # is a separate process with its own in-memory IPFSStorageBackend
+      # index (per the storage-mode plan's "no local index" design), so
+      # two processes independently republishing checkpoints would race
+      # and could clobber each other's file index. Until IPFS mode's
+      # process model is consolidated (a later wave), the worker always
+      # uses the default PostgresStorageBackend for any attachment it
+      # touches (e.g. inbound email), even when the main app is running
+      # in IPFS mode -- a known, documented first-slice limitation.
       AUTO_MIGRATE: "false"
       UPLOAD_FOLDER: /tmp/uploads
       LOG_DIR: /app/logs
@@ -146,3 +187,5 @@ volumes:
     name: serviceops_uploads
   serviceops_logs:
     name: serviceops_logs
+  serviceops_ipfs_data:
+    name: serviceops_ipfs_data
