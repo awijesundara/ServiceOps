@@ -16,8 +16,14 @@ fast and don't round-trip to IPFS) and calls `save_checkpoint()`, which
 re-serializes the whole index, encrypts it, adds it to IPFS, and
 republishes the IPNS pointer -- so a restart only ever needs the single
 latest checkpoint, not a replay of full history.
+
+Every file's bytes are Fernet-encrypted (same key as the checkpoint)
+before being added to IPFS, and decrypted on read -- see attach_file()'s
+comment for why this isn't optional.
 """
 import logging
+
+from cryptography.fernet import Fernet
 
 from .checkpoint import decrypt_checkpoint, encrypt_checkpoint
 from .interface import StorageBackend
@@ -105,7 +111,17 @@ class IPFSStorageBackend(StorageBackend):
 
     # -- File attachments: real, implemented in this slice. --------------
     def attach_file(self, path, data_bytes, content_type):
-        cid = self.client.add_bytes(data_bytes, filename=path)
+        # Encrypted before it ever leaves this process: public IPFS (or
+        # any pinning service/gateway under IPFS_MODE=external) has no
+        # access control of its own -- anyone who obtains a CID can fetch
+        # its content directly, bypassing every ServiceOps authorization
+        # check entirely. Confidentiality here comes only from encryption,
+        # never from the CID being hard to guess. Found and fixed after a
+        # live test showed a stored attachment's plaintext readable
+        # straight off the (private, single-node) Kubo daemon, with no
+        # app-level auth involved at all.
+        encrypted = Fernet(self._checkpoint_key).encrypt(data_bytes)
+        cid = self.client.add_bytes(encrypted, filename=path)
         self.client.pin_add(cid)
         self._file_index[path] = cid
         self.save_checkpoint()
@@ -115,7 +131,8 @@ class IPFSStorageBackend(StorageBackend):
         cid = reference or self._file_index.get(path)
         if not cid:
             raise FileNotFoundError(path)
-        return self.client.cat(cid), None
+        encrypted = self.client.cat(cid)
+        return Fernet(self._checkpoint_key).decrypt(encrypted), None
 
     def delete_file(self, path, reference):
         cid = reference or self._file_index.get(path)
