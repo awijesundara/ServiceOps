@@ -67,6 +67,15 @@ the platform secure credential store. Refresh through `POST
 /api/v1/auth/mobile/logout`. Mobile activity is authorized as the signed-in
 user and audited with authoritative user and app/device attribution.
 
+Ticket attachment access uses the same bearer identity and `tickets:read`
+scope. `GET /api/v1/tickets/{number}/attachments` returns `id`, `fileName`,
+`contentType`, `byteSize`, `createdAt`, and an authenticated relative
+`downloadURL`. `GET
+/api/v1/tickets/{number}/attachments/{attachment_id}/download` streams the
+bytes with private/no-store caching. Both calls apply the acting user's normal
+ticket visibility and tenant boundary; invisible tickets or attachments return
+404. Mobile compatibility aliases exist under `/api/v1/mobile/tickets/...`.
+
 Passkey registration is available to an existing authenticated mobile session:
 
 - `POST /api/v1/auth/passkeys/register/options` issues a five-minute,
@@ -414,11 +423,12 @@ deferred. CMDB registration (`PUT /api/v1/cmdb/configuration-items`, `cmdb:write
 scope) is the first CMDB surface exposed as a public REST resource; it is
 deliberately narrow (upsert-by-name only, five fields). The current API does
 not yet expose catalog ordering, REQ/RITM/SCTASK, PRB/PTASK, CHG/CTASK
-creation, CI relationship management, attachments, users, or reporting as
+creation, CI relationship management, attachment upload, users, or reporting as
 public integration resources. Authenticated mobile sessions additionally use
 an app-specific surface under `/api/v1/mobile` for bootstrap/profile,
 push-device registration, notification inbox, approvals, knowledge search and
-read-only CMDB; ticket comments remain under the ticket resource. These mobile
+read-only CMDB; ticket comments and attachment list/download remain under the
+ticket resource. These mobile
 routes reject non-mobile API clients and are not shared API-key automation
 contracts. Do not automate browser forms
 as a substitute. Those resources will require explicit versioned contracts,

@@ -6278,6 +6278,32 @@ def create_app(test_config=None):
                         "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}],
                     },
                 },
+                "/tickets/{number}/attachments": {
+                    "parameters": [{"name": "number", "in": "path", "required": True,
+                                    "schema": {"type": "string"}}],
+                    "get": {
+                        "summary": "List attachments on a visible ticket",
+                        "description": (
+                            "Requires tickets:read. Returns mobile-compatible metadata "
+                            "and an authenticated relative downloadURL for each file."
+                        ),
+                    },
+                },
+                "/tickets/{number}/attachments/{attachment_id}/download": {
+                    "parameters": [
+                        {"name": "number", "in": "path", "required": True,
+                         "schema": {"type": "string"}},
+                        {"name": "attachment_id", "in": "path", "required": True,
+                         "schema": {"type": "integer"}},
+                    ],
+                    "get": {
+                        "summary": "Download an attachment from a visible ticket",
+                        "description": (
+                            "Requires tickets:read and streams the file from local, "
+                            "object, or IPFS storage with private no-store caching."
+                        ),
+                    },
+                },
                 "/tickets/{number}/workflow-events": {
                     "parameters": [{"name": "number", "in": "path", "required": True,
                                     "schema": {"type": "string"}}],
