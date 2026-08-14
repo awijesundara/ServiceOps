@@ -3077,7 +3077,7 @@ def test_mobile_app_page_is_authenticated_searchable_and_actionable(client):
     assert response.status_code == 200
     assert b"ServiceOps mobile" in response.data
     assert b"ServiceOps_iOS" in response.data
-    assert b"iOS 1.3.1 (7)" in response.data
+    assert b"iOS 1.3.2 (8)" in response.data
     assert b"wijesundara.com.ServiceOps" in response.data
 
 
