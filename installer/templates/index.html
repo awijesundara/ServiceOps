@@ -20,6 +20,7 @@
         <label>Accent color<input name="brand_amber" type="color" value="#f9aa3c"></label>
         <label class="wide">Company logo (PNG)<input name="company_logo" type="file" accept="image/png"><small>Optional. Transparent PNG recommended, maximum 5 MB.</small></label>
         <label>Database deployment<select name="db_mode"><option value="bundled">Bundled PostgreSQL</option><option value="external">External PostgreSQL</option></select></label>
+        <label>Storage backend<select name="storage_mode"><option value="postgres">PostgreSQL (default, production-ready)</option><option value="ipfs">IPFS (experimental, database-less)</option></select><small>IPFS mode is experimental and only covers file attachments so far -- see the "Storage" section below.</small></label>
         <label>Application bind address<input name="bind_address" value="127.0.0.1"></label>
         <label>Application port<input name="app_port" type="number" value="8080"></label>
       </div>
@@ -54,6 +55,13 @@
         <label>Client ID<input name="keycloak_client_id" placeholder="serviceops"></label>
         <label>Client secret<input name="keycloak_client_secret" type="password"></label>
         <label class="wide">Realm-role mappings (JSON)<input name="keycloak_role_mappings" value='{"serviceops-admin":"admin","serviceops-agent":"agent"}'></label>
+      </div>
+    </section>
+    <section><h2>Storage (experimental)</h2>
+      <p>Only used when "Storage backend" above is set to IPFS. PostgreSQL remains required for everything except file attachments in this release.</p>
+      <div class="grid">
+        <label>IPFS node<select name="ipfs_mode"><option value="bundled">Bundled IPFS node</option><option value="external">External IPFS node</option></select></label>
+        <label class="wide">External IPFS API URL<input name="ipfs_api_url" placeholder="http://ipfs-host:5001"></label>
       </div>
     </section>
     <section><h2>Verification</h2><div id="checks" class="checks"><p>Run validation to test every configured dependency.</p></div>
