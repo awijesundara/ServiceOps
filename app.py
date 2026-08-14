@@ -719,8 +719,21 @@ def authenticate_api_request():
         abort(403, description="The API identity is inactive or invalid.")
     enforce_api_rate_limit(client)
     client.last_used_at = now()
+    # Mirrors track_last_seen()'s throttled web-session update below --
+    # without this, mobile app users (and any other bearer-token API
+    # client) never touched User.last_seen_at at all, since that only
+    # runs on Flask-Login's current_user, and mobile auth never calls
+    # login_user(). System Health's "Active users" list is filtered on
+    # last_seen_at, so mobile-only users silently never appeared there,
+    # even while actively using the iOS app.
+    acting_user = client.acting_user
+    if (
+        acting_user.last_seen_at is None
+        or (now() - align_tz(acting_user.last_seen_at, now())) > timedelta(minutes=1)
+    ):
+        acting_user.last_seen_at = now()
     g.api_client = client
-    g.api_user = client.acting_user
+    g.api_user = acting_user
     db.session.commit()
 
 
@@ -865,6 +878,7 @@ def api_ticket_document(ticket, user):
         "category": ticket.category,
         "opened_at": ticket.created_at.isoformat(),
         "updated_at": ticket.updated_at.isoformat(),
+        "attachments": [api_attachment_document(row, ticket.number) for row in ticket.attachments],
     }
     group = ticket_owning_group(ticket)
     document["internal"] = {
@@ -877,6 +891,21 @@ def api_ticket_document(ticket, user):
         ),
     }
     return project_document("ticket", user.role, document)
+
+
+def api_attachment_document(attachment, ticket_number):
+    return {
+        "id": attachment.id,
+        "fileName": attachment.original_name,
+        "contentType": attachment.mime_type or "application/octet-stream",
+        "byteSize": attachment.size_bytes,
+        "createdAt": attachment.created_at.isoformat(),
+        "downloadURL": url_for(
+            "api_ticket_attachment_download",
+            number=ticket_number,
+            attachment_id=attachment.id,
+        ),
+    }
 
 
 def api_idempotency_context():
@@ -1693,6 +1722,67 @@ def scan_attachment(path):
         return "clean"
     current_app.logger.warning("Unrecognized ClamAV response for %s: %r", os.path.basename(path), response)
     return "scan_error"
+
+
+def attachment_file_response(attachment, inline=False):
+    """Serve an authorized attachment from the configured storage backend.
+
+    Authorization belongs to the calling route because browser sessions and
+    bearer-token API clients use different identities. This function keeps
+    local disk, S3, and IPFS byte delivery identical once access is granted.
+    """
+    render_inline = inline and attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES
+    disposition = (
+        f"inline; filename={json.dumps(attachment.original_name)}"
+        if render_inline
+        else f"attachment; filename={json.dumps(attachment.original_name)}"
+    )
+    if object_storage_enabled():
+        try:
+            stored = object_storage_client().get_object(
+                Bucket=os.environ["OBJECT_STORAGE_BUCKET"], Key=attachment.stored_name,
+            )
+        except Exception:
+            current_app.logger.warning(
+                "Object storage download failed: attachment_id=%s", attachment.id,
+            )
+            abort(503, description="Attachment storage is temporarily unavailable. Please try again shortly.")
+        headers = {
+            "Content-Disposition": disposition,
+            "Content-Length": str(stored["ContentLength"]),
+            "Cache-Control": "private, no-store",
+        }
+        return Response(
+            stored["Body"].iter_chunks(), headers=headers,
+            mimetype=attachment.mime_type if render_inline else "application/octet-stream",
+        )
+    if attachment.ipfs_cid:
+        try:
+            data_bytes, _ = current_storage().read_file(
+                attachment.stored_name, attachment.ipfs_cid,
+            )
+        except Exception:
+            current_app.logger.warning(
+                "IPFS attachment download failed: attachment_id=%s", attachment.id,
+            )
+            abort(503, description="Attachment storage is temporarily unavailable. Please try again shortly.")
+        return Response(
+            data_bytes,
+            headers={
+                "Content-Disposition": disposition,
+                "Content-Length": str(len(data_bytes)),
+                "Cache-Control": "private, no-store",
+            },
+            mimetype=attachment.mime_type if render_inline else "application/octet-stream",
+        )
+    response = send_from_directory(
+        current_app.config["UPLOAD_FOLDER"], attachment.stored_name,
+        as_attachment=not render_inline,
+        download_name=attachment.original_name,
+        mimetype=attachment.mime_type if render_inline else None,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 def csv_response(csv_text, filename):
@@ -6600,6 +6690,33 @@ def create_app(test_config=None):
         if not ticket:
             abort(404, description="The requested ticket was not found.")
         return jsonify({"data": api_ticket_document(ticket, g.api_user)})
+
+    @app.get("/api/v1/mobile/tickets/<number>/attachments")
+    @app.get("/api/v1/tickets/<number>/attachments")
+    def api_ticket_attachments(number):
+        require_api_scope("tickets:read")
+        ticket = visible_ticket_query(g.api_user).filter(
+            func.upper(Ticket.number) == number.upper()
+        ).first_or_404()
+        rows = FileAttachment.query.filter_by(
+            ticket_id=ticket.id, tenant_id=ticket.tenant_id,
+        ).order_by(FileAttachment.created_at, FileAttachment.id).all()
+        return jsonify({
+            "data": [api_attachment_document(row, ticket.number) for row in rows],
+            "meta": {"count": len(rows), "request_id": g.request_id},
+        })
+
+    @app.get("/api/v1/mobile/tickets/<number>/attachments/<int:attachment_id>/download")
+    @app.get("/api/v1/tickets/<number>/attachments/<int:attachment_id>/download")
+    def api_ticket_attachment_download(number, attachment_id):
+        require_api_scope("tickets:read")
+        ticket = visible_ticket_query(g.api_user).filter(
+            func.upper(Ticket.number) == number.upper()
+        ).first_or_404()
+        attachment = FileAttachment.query.filter_by(
+            id=attachment_id, ticket_id=ticket.id, tenant_id=ticket.tenant_id,
+        ).first_or_404()
+        return attachment_file_response(attachment, inline=True)
 
     @app.post("/api/v1/incidents")
     def api_incident_create():
@@ -11636,6 +11753,19 @@ def create_app(test_config=None):
         active_users = tenant_query(User).filter(
             User.last_seen_at.isnot(None), User.last_seen_at >= active_cutoff,
         ).order_by(User.last_seen_at.desc()).all()
+        # Surfaces *how* each active user is connected (mobile app vs
+        # browser) -- both now correctly count as "active" (see
+        # authenticate_api_request()), but an admin watching this page
+        # during an incident still needs to tell them apart.
+        active_mobile_user_ids = {
+            row.acting_user_id for row in APIClient.query.filter(
+                APIClient.acting_user_id.in_([user.id for user in active_users]),
+                APIClient.client_kind == "mobile",
+                APIClient.active.is_(True),
+                APIClient.last_used_at.isnot(None),
+                APIClient.last_used_at >= active_cutoff,
+            )
+        } if active_users else set()
 
         error_query, filters = _filtered_application_log_query(current_user)
         try:
@@ -11664,6 +11794,7 @@ def create_app(test_config=None):
             db_healthy=db_healthy, db_latency_ms=db_latency_ms,
             worker_healthy=worker_healthy, worker_last_seen=worker_last_seen,
             active_users=active_users, active_user_count=len(active_users),
+            active_mobile_user_ids=active_mobile_user_ids,
             error_rows=error_rows, page=page, pages=pages, total_errors=total_errors,
             error_last_hour=error_last_hour, **filters,
             last_backup_at=last_backup_at, backup_healthy=backup_healthy,
@@ -15385,54 +15516,11 @@ def create_app(test_config=None):
             abort(403)
         # Only the handful of types a browser renders safely natively
         # (never HTML/SVG, which could execute script if opened inline)
-        # are ever served inline -- everything else always forces a
-        # download regardless of the `view` param.
-        inline = (
-            request.args.get("view") == "1"
-            and attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES
+        # are ever served inline. The shared response path also powers the
+        # authenticated mobile download API.
+        return attachment_file_response(
+            attachment, inline=request.args.get("view") == "1",
         )
-        if object_storage_enabled():
-            # Found via the same real failure-injection pass as the upload
-            # fix above (B-052): an outage here previously crashed into a
-            # generic 500 instead of a clean, expected "try again" response.
-            try:
-                response = object_storage_client().get_object(
-                    Bucket=os.environ["OBJECT_STORAGE_BUCKET"], Key=attachment.stored_name,
-                )
-            except Exception:
-                current_app.logger.warning(
-                    "Object storage download failed: attachment_id=%s", attachment.id,
-                )
-                abort(503, description="Attachment storage is temporarily unavailable. Please try again shortly.")
-            headers = {
-                "Content-Disposition": (
-                    f"inline; filename={json.dumps(attachment.original_name)}" if inline
-                    else f"attachment; filename={json.dumps(attachment.original_name)}"
-                ),
-                "Content-Length": str(response["ContentLength"]),
-            }
-            return Response(response["Body"].iter_chunks(), headers=headers,
-                            mimetype=attachment.mime_type if inline else "application/octet-stream")
-        if attachment.ipfs_cid:
-            try:
-                data_bytes, _ = current_storage().read_file(attachment.stored_name, attachment.ipfs_cid)
-            except Exception:
-                current_app.logger.warning(
-                    "IPFS attachment download failed: attachment_id=%s", attachment.id,
-                )
-                abort(503, description="Attachment storage is temporarily unavailable. Please try again shortly.")
-            headers = {
-                "Content-Disposition": (
-                    f"inline; filename={json.dumps(attachment.original_name)}" if inline
-                    else f"attachment; filename={json.dumps(attachment.original_name)}"
-                ),
-                "Content-Length": str(len(data_bytes)),
-            }
-            return Response(data_bytes, headers=headers,
-                            mimetype=attachment.mime_type if inline else "application/octet-stream")
-        return send_from_directory(app.config["UPLOAD_FOLDER"], attachment.stored_name,
-                                   as_attachment=not inline, download_name=attachment.original_name,
-                                   mimetype=attachment.mime_type if inline else None)
 
     @app.get("/help")
     @login_required

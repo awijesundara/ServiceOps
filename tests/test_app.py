@@ -873,6 +873,119 @@ def test_mobile_user_authentication_audit_attribution_and_revocation(client, app
     assert client.get("/api/v1/tickets", headers={"Authorization": f"Bearer {new_access}"}).status_code == 401
 
 
+def test_mobile_ticket_attachments_list_metadata_download_and_tenant_isolation(client, app):
+    mobile_headers = {
+        "X-ServiceOps-App-Version": "1.3.2", "X-ServiceOps-App-Build": "8",
+        "X-ServiceOps-Platform": "iOS", "X-ServiceOps-Device": "iPhone17,1",
+    }
+    signed_in = client.post("/api/v1/auth/mobile/login", headers=mobile_headers, json={
+        "username": "admin", "password": "Admin123!", "provider": "local",
+    })
+    assert signed_in.status_code == 200
+    headers = {"Authorization": f"Bearer {signed_in.json['access_token']}"}
+    content = b"%PDF-1.4\nServiceOps mobile attachment test\n%%EOF\n"
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        ticket = Ticket(
+            number="INC9999997", kind="incident", title="Mobile attachment ticket",
+            description="Attachment API contract test", category="Software",
+            priority="P3", state="New", requester_id=admin.id, tenant_id=admin.tenant_id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        stored_name = f"mobile-{uuid.uuid4().hex}.pdf"
+        with open(os.path.join(app.config["UPLOAD_FOLDER"], stored_name), "wb") as handle:
+            handle.write(content)
+        attachment = FileAttachment(
+            ticket_id=ticket.id, uploaded_by_id=admin.id,
+            original_name="change-plan.pdf", stored_name=stored_name,
+            mime_type="application/pdf", size_bytes=len(content),
+            scan_status="clean", tenant_id=ticket.tenant_id,
+        )
+        db.session.add(attachment)
+        db.session.commit()
+        number, attachment_id = ticket.number, attachment.id
+
+        other_tenant = Tenant(slug="attachment-isolation", name="Attachment isolation tenant")
+        db.session.add(other_tenant)
+        db.session.flush()
+        other_user = User(
+            username="attachment.other", name="Other tenant user",
+            email="attachment.other@test.invalid", password_hash=generate_password_hash("Other123!"),
+            role="admin", tenant_id=other_tenant.id,
+        )
+        db.session.add(other_user)
+        db.session.flush()
+        hidden_ticket = Ticket(
+            number="INC9999998", kind="incident", title="Hidden attachment ticket",
+            description="Must remain tenant isolated", requester_id=other_user.id,
+            tenant_id=other_tenant.id,
+        )
+        db.session.add(hidden_ticket)
+        db.session.commit()
+
+    assert client.get(f"/api/v1/tickets/{number}/attachments").status_code == 401
+    listed = client.get(f"/api/v1/tickets/{number}/attachments", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json["meta"]["count"] == 1
+    metadata = listed.json["data"][0]
+    assert metadata == {
+        "id": attachment_id,
+        "fileName": "change-plan.pdf",
+        "contentType": "application/pdf",
+        "byteSize": len(content),
+        "createdAt": metadata["createdAt"],
+        "downloadURL": f"/api/v1/tickets/{number}/attachments/{attachment_id}/download",
+    }
+    ticket_payload = client.get(f"/api/v1/tickets/{number}", headers=headers)
+    assert ticket_payload.json["data"]["attachments"] == [metadata]
+    alias = client.get(f"/api/v1/mobile/tickets/{number}/attachments", headers=headers)
+    assert alias.json["data"] == [metadata]
+
+    downloaded = client.get(metadata["downloadURL"], headers=headers)
+    assert downloaded.status_code == 200
+    assert downloaded.data == content
+    assert downloaded.mimetype == "application/pdf"
+    assert "inline" in downloaded.headers["Content-Disposition"]
+    assert downloaded.headers["Cache-Control"] == "private, no-store"
+    assert client.get(
+        f"/api/v1/tickets/{number}/attachments/{attachment_id + 1000}/download", headers=headers,
+    ).status_code == 404
+    assert client.get("/api/v1/tickets/INC9999998/attachments", headers=headers).status_code == 404
+
+
+def test_mobile_app_users_appear_in_system_health_active_users(client, app):
+    """User-reported: the iOS app's users never showed up on System Health
+    -> Active users. Confirmed root cause: authenticate_api_request()
+    (the bearer-token path every /api/v1/ mobile request goes through)
+    never touched User.last_seen_at -- only the browser-session
+    track_last_seen() hook did, and mobile auth never calls
+    Flask-Login's login_user(), so current_user.is_authenticated was
+    always False for mobile requests and that hook never ran either."""
+    mobile_headers = {
+        "X-ServiceOps-App-Version": "1.1.0", "X-ServiceOps-App-Build": "42",
+        "X-ServiceOps-Platform": "iOS", "X-ServiceOps-Device": "iPhone17,1",
+    }
+    signed_in = client.post("/api/v1/auth/mobile/login", headers=mobile_headers, json={
+        "username": "admin", "password": "Admin123!", "provider": "local",
+    })
+    access = signed_in.json["access_token"]
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        assert admin.last_seen_at is None
+
+    assert client.get("/api/v1/tickets", headers={"Authorization": f"Bearer {access}"}).status_code == 200
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        assert admin.last_seen_at is not None
+
+    login(client)
+    health = client.get("/admin/system-health")
+    assert health.status_code == 200
+    assert b"System Administrator" in health.data
+    assert b">Mobile<" in health.data
+
+
 def test_mobile_workspace_push_inbox_knowledge_and_cmdb_are_user_scoped(client, app):
     mobile_headers = {
         "X-ServiceOps-App-Version": "1.3.0", "X-ServiceOps-App-Build": "5",

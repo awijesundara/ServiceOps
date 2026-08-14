@@ -33,11 +33,11 @@
 <div class="detail-grid">
 <section class="panel" id="active-users">
   <h2>Currently active users</h2>
-  <table><thead><tr><th>User</th><th>Role</th><th>Last seen</th></tr></thead><tbody>
+  <table><thead><tr><th>User</th><th>Role</th><th>Connection</th><th>Last seen</th></tr></thead><tbody>
     {% for user in active_users %}
-    <tr><td>{{ user.name }}<small> {{ user.username }}</small></td><td><span class="tag">{{ user.role }}</span></td><td>{{ (user.last_seen_at|usertime('%Y-%m-%d %H:%M:%S')) }}</td></tr>
+    <tr><td>{{ user.name }}<small> {{ user.username }}</small></td><td><span class="tag">{{ user.role }}</span></td><td>{% if user.id in active_mobile_user_ids %}<span class="badge">Mobile</span>{% else %}<span class="muted">Web</span>{% endif %}</td><td>{{ (user.last_seen_at|usertime('%Y-%m-%d %H:%M:%S')) }}</td></tr>
     {% else %}
-    <tr><td colspan="3" class="empty">No users active in the last 15 minutes.</td></tr>
+    <tr><td colspan="4" class="empty">No users active in the last 15 minutes.</td></tr>
     {% endfor %}
   </tbody></table>
 </section>
