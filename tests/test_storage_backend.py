@@ -196,6 +196,20 @@ def test_ipfs_backend_attach_read_delete_file(ipfs_backend):
     assert cid not in ipfs_backend.client._pins
 
 
+def test_ipfs_backend_stores_file_bytes_encrypted_not_plaintext(ipfs_backend):
+    """Regression guard: found via a live test that attach_file() was
+    writing plaintext bytes straight to IPFS, retrievable by anyone with
+    the CID with zero ServiceOps authorization involved -- public IPFS
+    (or any external pinning service) has no access control of its own.
+    The raw blob on the (fake) node must never equal the plaintext."""
+    ipfs_backend.load_checkpoint()
+    cid = ipfs_backend.attach_file("secret.txt", b"sensitive ticket content", "text/plain")
+    raw_blob = ipfs_backend.client._blobs[cid]
+    assert raw_blob != b"sensitive ticket content"
+    data, _ = ipfs_backend.read_file("secret.txt", cid)
+    assert data == b"sensitive ticket content"
+
+
 def test_ipfs_backend_read_missing_file_raises(ipfs_backend):
     ipfs_backend.load_checkpoint()
     with pytest.raises(FileNotFoundError):
