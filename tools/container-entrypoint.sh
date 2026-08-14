@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-if [ "${AUTO_MIGRATE:-true}" = "true" ]; then
+if [ "${AUTO_MIGRATE:-true}" = "true" ] && [ "${STORAGE_MODE:-postgres}" != "ipfs" ]; then
   python -c "from app import create_app; create_app(); print('ServiceOps database migration gate complete')"
 fi
 

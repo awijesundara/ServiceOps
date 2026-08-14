@@ -1,8 +1,17 @@
 #!/bin/sh
 set -eu
 
+export SERVICEOPS_SERVING=1
+if [ "${STORAGE_MODE:-postgres}" = "ipfs" ]; then
+  GUNICORN_WORKERS=1
+  export GUNICORN_WORKERS
+  PRELOAD_FLAG=""
+else
+  PRELOAD_FLAG="--preload"
+fi
+
 exec gunicorn \
-  --preload \
+  ${PRELOAD_FLAG} \
   --bind "0.0.0.0:8080" \
   --workers "${GUNICORN_WORKERS:-2}" \
   --threads "${GUNICORN_THREADS:-4}" \

@@ -1,5 +1,5 @@
 """Unit tests for serviceops_core/storage/ -- the seam behind the optional
-database-less (STORAGE_MODE=ipfs) deployment mode's first slice: the
+database-less (STORAGE_MODE=ipfs) deployment mode: the
 StorageBackend interface, the PostgreSQL adapter's file-attachment path
 (byte-for-byte the same behavior as today), and the new IPFS backend's
 file-attachment + checkpoint boot/save mechanism, exercised against a
@@ -278,7 +278,7 @@ def test_ipfs_backend_write_survives_a_checkpoint_publish_failure():
     assert backend._entities["user"][row["id"]]["failed_login_count"] == 1
 
 
-# -- generic entity CRUD (user/tenant, for the login-only milestone) -----
+# -- legacy generic entity CRUD (B-335 user/tenant compatibility) --------
 
 def test_ipfs_backend_create_get_update_delete_entity(ipfs_backend):
     ipfs_backend.load_checkpoint()
@@ -325,3 +325,30 @@ def test_ipfs_backend_entities_survive_a_checkpoint_reload(ipfs_backend):
     reloaded.load_checkpoint()
     assert reloaded.get("tenant", 1)["slug"] == "default"
     assert reloaded.get("user", 1)["username"] == "admin"
+
+
+def test_ipfs_backend_full_relational_state_survives_checkpoint_reload(ipfs_backend):
+    """Every model table is carried as one encrypted checkpoint projection;
+    the backend must preserve it without knowing individual entity types."""
+    ipfs_backend.load_checkpoint()
+    tables = {
+        "tenant": [{"id": 1, "slug": "default", "active": True}],
+        "ticket": [{"id": 7, "number": "INC0000007", "priority": "P2"}],
+        "audit": [{"id": 4, "action": "ticket create", "event_hash": "abc"}],
+    }
+    ipfs_backend.replace_relational_state(tables)
+
+    reloaded = IPFSStorageBackend(
+        api_url="http://unused", checkpoint_encryption_key=ipfs_backend._checkpoint_key,
+        client=ipfs_backend.client,
+    )
+    reloaded.load_checkpoint()
+    assert reloaded.get_relational_state() == tables
+
+
+def test_ipfs_backend_relational_state_returns_a_defensive_copy(ipfs_backend):
+    ipfs_backend.load_checkpoint()
+    ipfs_backend.replace_relational_state({"ticket": [{"id": 1}]})
+    exported = ipfs_backend.get_relational_state()
+    exported["ticket"][0]["id"] = 999
+    assert ipfs_backend.get_relational_state()["ticket"][0]["id"] == 1

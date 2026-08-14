@@ -6,17 +6,15 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=app_version) }}">
 </head>
 <body style="max-width:640px;margin:60px auto;padding:0 20px;font-family:system-ui,sans-serif;">
-  <h1>Signed in -- IPFS mode, zero database</h1>
+  <h1>ServiceOps IPFS mode</h1>
   <p>Welcome, <strong>{{ user.name }}</strong> ({{ user.username }}). This session, the user record you just
   authenticated as, and everything backing it lives entirely on IPFS -- there is no PostgreSQL container in
   this deployment at all.</p>
   <div class="flash" style="background:#fff6e8;padding:14px 16px;border-radius:7px;margin:20px 0;">
-    <strong>Login-only milestone (BACKLOG B-335)</strong>
-    <p style="margin:8px 0 0;">Tickets, the dashboard, and everything else in ServiceOps still require the
-    PostgreSQL-backed rollout waves described in the storage-mode plan -- this page only proves the
-    authentication path works with genuinely zero database. Known, disclosed gaps in this mode: no persistent
-    audit trail (logged to the container's stdout instead), no session revocation, and rate-limit counters
-    reset on every restart.</p>
+    <strong>Full IPFS-backed application</strong>
+    <p style="margin:8px 0 0;">IPFS is the authoritative encrypted store for application records and
+    attachments. Dashboard, ticketing, administration, audit, session revocation, rate limits, workflows,
+    CMDB, client management, and background processing use the standard ServiceOps experience.</p>
   </div>
   <form method="post" action="{{ url_for('logout') }}">
     <button class="primary">Sign out</button>
