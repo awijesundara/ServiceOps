@@ -1,5 +1,44 @@
+# Local environment and secret material. Keep only documented templates.
 .env
-.env.backup.*
+.env.*
+!.env.example
+*.env
+*.env.*
+!*.env.example
+.envrc
+.direnv/
+
+# Credentials, certificates, signing keys, and provisioning profiles.
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.der
+*.crt
+*.csr
+*.jks
+*.keystore
+*.mobileprovision
+*.provisionprofile
+id_rsa*
+id_ed25519*
+credentials.json
+credentials.*.json
+secrets.json
+secrets.*.json
+*.tfvars
+*.tfvars.json
+
+# Local overrides can contain database passwords and integration tokens.
+compose.override.yaml
+compose.override.yml
+docker-compose.override.yaml
+docker-compose.override.yml
+values.local.yaml
+values.local.yml
+values.secret.yaml
+values.secret.yml
 .serviceops-install
 .installer-state/
 backups/
@@ -10,6 +49,8 @@ __pycache__/
 instance/
 CLAUDE.md
 dist/
+.DS_Store
+*.log
 
 # Internal planning/governance docs and release evidence: kept locally only.
 # The public repo ships the app plus the install/operations PDF.

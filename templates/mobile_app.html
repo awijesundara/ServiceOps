@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block title %}ServiceOps mobile · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">SERVICEOPS MOBILE</p><h1>Take your operations workspace with you</h1><p>Use the native iPhone app for authenticated ticket work, approvals, knowledge, CMDB, and real-time push notifications.</p></div><a class="primary button" href="https://github.com/awijesundara/ServiceOps_iOS" target="_blank" rel="noopener noreferrer">View iOS project</a></header>
+<section class="article-grid">
+  <article class="panel"><span class="tag">Current release</span><h2>iOS {{ mobile_version }} ({{ mobile_build }})</h2><p>The installed version and build are shown inside the app under More → Settings so support teams can identify the exact client in use.</p></article>
+  <article class="panel"><span class="tag">Secure access</span><h2>Your ServiceOps identity</h2><p>Sign in with a local or directory account, MFA, Face ID or Touch ID, and passkeys. Actions and audit events are attributed to the signed-in user and mobile app version.</p></article>
+  <article class="panel"><span class="tag">Operations</span><h2>Work from iPhone</h2><p>Review assigned incidents and changes, create incidents, add work notes, update records, action approvals, search knowledge, and inspect CMDB records.</p></article>
+  <article class="panel"><span class="tag">Notifications</span><h2>Real-time APNs alerts</h2><p>Receive ticket, approval, and security-event notifications when Apple push credentials are configured by an administrator and the device grants notification access.</p></article>
+</section>
+<section class="panel"><h2>Connect the app</h2><ol><li>Install a signed build from the <a href="https://github.com/awijesundara/ServiceOps_iOS" target="_blank" rel="noopener noreferrer">ServiceOps iOS repository</a>.</li><li>Enter this ServiceOps server's HTTPS address. For local development on a physical iPhone, use the Mac's LAN address rather than <code>127.0.0.1</code>.</li><li>Sign in with your own account and allow notifications when prompted.</li></ol><p class="muted">Your administrator must configure the APNs team ID, key ID, private key, and bundle identifier <code>wijesundara.com.ServiceOps</code> before remote push delivery can work.</p></section>
+{% endblock %}

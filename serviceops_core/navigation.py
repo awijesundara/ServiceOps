@@ -28,6 +28,7 @@ NAVIGATION_ENTRIES = (
     NavigationEntry("Changes", "Change Management calendar approvals", "tickets", {"kind": "change"}, "agent"),
     NavigationEntry("Service catalog", "Catalog items request services", "catalog"),
     NavigationEntry("Knowledge", "Knowledge Management articles search", "knowledge"),
+    NavigationEntry("ServiceOps mobile", "iPhone iOS native app download setup push notifications", "mobile_app"),
     NavigationEntry("All workspaces", "Installed enterprise applications modules", "modules"),
     NavigationEntry("My approvals", "Pending approvals", "approval_chains"),
     NavigationEntry("Notifications", "Alerts messages", "notifications"),

@@ -67,6 +67,10 @@ spec:
             - {name: KEYCLOAK_DISCOVERY_URL, value: {{ .Values.auth.keycloak.discoveryUrl | quote }}}
             - {name: KEYCLOAK_CLIENT_ID, value: {{ .Values.auth.keycloak.clientId | quote }}}
             - {name: KEYCLOAK_ROLE_MAPPINGS, value: {{ .Values.auth.keycloak.roleMappings | quote }}}
+            - {name: WEBAUTHN_RP_ID, value: {{ .Values.auth.passkeys.rpId | quote }}}
+            - {name: WEBAUTHN_RP_NAME, value: {{ .Values.auth.passkeys.rpName | quote }}}
+            - {name: WEBAUTHN_ORIGIN, value: {{ .Values.auth.passkeys.origin | quote }}}
+            - {name: APPLE_PASSKEY_APP_ID, value: {{ .Values.auth.passkeys.appleAppId | quote }}}
             - {name: TRUST_PROXY_HEADERS, value: {{ .Values.proxy.trustHeaders | quote }}}
             - {name: ENABLE_HSTS, value: {{ .Values.proxy.enableHsts | quote }}}
           envFrom:

@@ -55,6 +55,44 @@ Available scopes:
 
 ## 3. Authentication and common headers
 
+Native mobile applications authenticate an actual ServiceOps user rather than
+embedding an API-client secret. `POST /api/v1/auth/mobile/login` accepts
+`username`, `password`, `provider` (`local` or `ldap`) and optional `mfa_code`;
+MFA-enabled accounts require a valid TOTP or backup code. Requests identify the
+client with `X-ServiceOps-App-Version`, `X-ServiceOps-App-Build`,
+`X-ServiceOps-Platform` and `X-ServiceOps-Device`. Success returns a 15-minute
+`som_` access token and rotating 30-day `sor_` refresh token. Store both only in
+the platform secure credential store. Refresh through `POST
+/api/v1/auth/mobile/refresh` and revoke through `POST
+/api/v1/auth/mobile/logout`. Mobile activity is authorized as the signed-in
+user and audited with authoritative user and app/device attribution.
+
+Passkey registration is available to an existing authenticated mobile session:
+
+- `POST /api/v1/auth/passkeys/register/options` issues a five-minute,
+  tenant/user-bound WebAuthn creation challenge.
+- `POST /api/v1/auth/passkeys/register/complete` verifies the Apple platform
+  credential, consumes the challenge once, and stores only the credential ID,
+  public key, signature counter, display name and transports.
+- `GET /api/v1/auth/passkeys` lists the signed-in user's registered passkeys;
+  `DELETE /api/v1/auth/passkeys/{credential_id}` revokes one owned credential
+  and records the action in the audit trail.
+
+Passwordless mobile sign-in uses:
+
+- `POST /api/v1/auth/passkeys/authenticate/options` to issue a discoverable
+  credential challenge.
+- `POST /api/v1/auth/passkeys/authenticate/complete` to verify user presence,
+  user verification, origin, relying-party ID, signature and counter, then
+  issue the standard mobile access/refresh token pair.
+
+Passkeys fail closed unless `WEBAUTHN_RP_ID` and an HTTPS
+`WEBAUTHN_ORIGIN` are configured. Apple clients also require an Associated
+Domains `webcredentials:` entitlement matching the relying-party domain and
+that domain must serve `/.well-known/apple-app-site-association` containing
+the configured `APPLE_PASSKEY_APP_ID`. Plain HTTP LAN development addresses
+cannot complete an Apple passkey ceremony.
+
 ```http
 Authorization: Bearer sop_REDACTED
 Accept: application/json
@@ -376,7 +414,12 @@ deferred. CMDB registration (`PUT /api/v1/cmdb/configuration-items`, `cmdb:write
 scope) is the first CMDB surface exposed as a public REST resource; it is
 deliberately narrow (upsert-by-name only, five fields). The current API does
 not yet expose catalog ordering, REQ/RITM/SCTASK, PRB/PTASK, CHG/CTASK
-creation, CI relationship management, approvals, attachments, knowledge,
-users, or reporting as public REST resources. Do not automate browser forms
+creation, CI relationship management, attachments, users, or reporting as
+public integration resources. Authenticated mobile sessions additionally use
+an app-specific surface under `/api/v1/mobile` for bootstrap/profile,
+push-device registration, notification inbox, approvals, knowledge search and
+read-only CMDB; ticket comments remain under the ticket resource. These mobile
+routes reject non-mobile API clients and are not shared API-key automation
+contracts. Do not automate browser forms
 as a substitute. Those resources will require explicit versioned contracts,
 scopes, projections, idempotency, and compatibility tests.
