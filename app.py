@@ -5,6 +5,7 @@ import logging
 import logging.handlers
 import traceback as traceback_module
 import time as time_module
+import threading
 import os
 import sys
 import ssl
@@ -48,6 +49,7 @@ from ldap3.utils.conv import escape_filter_chars
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
+from sqlalchemy.pool import StaticPool
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -338,9 +340,6 @@ def object_storage_client():
 
 @login_manager.user_loader
 def load_user(user_id):
-    if ipfs_enabled():
-        fields = current_storage().get("user", int(user_id))
-        return ipfs_user_from_dict(fields) if fields else None
     return db.session.get(User, int(user_id))
 
 
@@ -542,20 +541,6 @@ def rotate_audit_integrity_key(tenant_id, user_id):
 
 def audit(action, target, details="", user_id=None, tenant_id=None):
     tenant_id = tenant_id or tenant_context_id()
-    if ipfs_enabled():
-        # Known first-slice gap (BACKLOG B-335): the hash-chained,
-        # tamper-evident audit trail is Postgres-specific (advisory locks,
-        # AuditIntegrityKey rows) and isn't implemented against IPFS yet.
-        # Logging instead of silently dropping the event, so an operator
-        # watching container logs still sees every audited action -- just
-        # without a durable, queryable, tamper-evident record.
-        current_app.logger.info(
-            "AUDIT (in-memory, IPFS mode -- not persisted): action=%s target=%s details=%s user_id=%s tenant_id=%s",
-            action, target, details,
-            user_id if user_id is not None else (current_user.id if has_request_context() and current_user.is_authenticated else None),
-            tenant_id,
-        )
-        return None
     if db.engine.dialect.name == "postgresql":
         db.session.execute(
             db.text("SELECT pg_advisory_xact_lock(:tenant_id)"),
@@ -892,8 +877,6 @@ def route_rate_limit(scope, key, limit, window_seconds=60):
     legitimate caller's quota. Sets `g.rate_limit_retry_after` and returns
     False (does not raise) when the limit is exceeded, so callers can render
     their own 429 response consistent with existing UX."""
-    if ipfs_enabled():
-        return _ipfs_route_rate_limit(scope, key, limit, window_seconds)
     composite_key = f"{scope}:{key}"[:160]
     current = now()
     epoch_start = (int(current.timestamp()) // window_seconds) * window_seconds
@@ -2903,7 +2886,7 @@ def sync_slas(target_type, target_id, state):
             current = now()
             if task_sla.paused_at.tzinfo is None:
                 current = current.replace(tzinfo=None)
-            paused = int((current - task_sla.paused_at).total_seconds())
+            paused = int((current - align_tz(task_sla.paused_at, current)).total_seconds())
             task_sla.paused_seconds += paused
             task_sla.breach_at += timedelta(seconds=paused)
             task_sla.paused_at = None
@@ -3655,7 +3638,10 @@ def process_kpi_snapshot_schedule(limit=50):
     for tenant in tenants:
         try:
             state = db.session.get(KpiSnapshotState, tenant.id)
-            if state and state.last_run_at and current - state.last_run_at < interval:
+            if (
+                state and state.last_run_at
+                and current - align_tz(state.last_run_at, current) < interval
+            ):
                 continue
             if not state:
                 state = KpiSnapshotState(tenant_id=tenant.id)
@@ -3664,11 +3650,9 @@ def process_kpi_snapshot_schedule(limit=50):
             state.last_run_at = current
             db.session.commit()
             processed += 1
-        except Exception as error:  # noqa: BLE001 - one tenant's failure must never block others
+        except Exception:  # noqa: BLE001 - one tenant's failure must never block others
             db.session.rollback()
-            current_app.logger.error(
-                "KPI snapshot capture failed for tenant %s: %s", tenant.id, type(error).__name__
-            )
+            current_app.logger.exception("KPI snapshot capture failed for tenant %s", tenant.id)
     return processed
 
 
@@ -5600,6 +5584,15 @@ def create_app(test_config=None):
     )
     if test_config:
         app.config.update(test_config)
+    if app.config["STORAGE_MODE"] == "ipfs":
+        # IPFS is the sole durable store. SQLAlchemy is retained as the
+        # application's domain/query engine over one process-local,
+        # volatile projection rebuilt from the encrypted IPFS checkpoint.
+        app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite+pysqlite://"
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+            "poolclass": StaticPool,
+            "connect_args": {"check_same_thread": False},
+        }
     if app.config["TESTING"]:
         if not test_config or "CSRF_ENABLED" not in test_config:
             app.config["CSRF_ENABLED"] = False
@@ -5651,19 +5644,22 @@ def create_app(test_config=None):
             object_storage_bucket=os.getenv("OBJECT_STORAGE_BUCKET", "").strip() or None,
         )
         if ipfs_enabled():
-            # No Postgres at all in this mode: no Alembic migrations, no
-            # db.create_all(), no seed_itil()/deploy_workflow_package()
-            # (Postgres-only, not yet implemented against IPFS). Settings
-            # that normally come from PlatformSetting via setting_*() fall
-            # back to their env var/schema default automatically (see
-            # setting_value()'s try/except) -- LOCAL_AUTH_ENABLED is forced
-            # on and LDAP/Keycloak forced off here explicitly rather than
-            # relying on that fallback, since login has no working
-            # alternative to local auth in this mode yet.
-            bootstrap_ipfs_tenant_and_admin()
-            app.config["LOCAL_AUTH_ENABLED"] = True
-            app.config["LDAP_ENABLED"] = False
-            app.config["KEYCLOAK_ENABLED"] = False
+            from serviceops_core.storage.ipfs_projection import IPFSRelationalProjection
+            db.create_all()
+            projection = IPFSRelationalProjection(db, current_storage())
+            restored = projection.restore()
+            if not restored:
+                projection.import_legacy_identity()
+            projection.install_commit_tracking()
+            app.extensions["ipfs_projection"] = projection
+            # The normal seed is intentionally used: catalog, workflow,
+            # service-delivery, CMDB, and administration defaults therefore
+            # exist in IPFS mode exactly as they do in PostgreSQL mode.
+            seed()
+            projection.checkpoint_if_dirty(force=True)
+            app.config["LOCAL_AUTH_ENABLED"] = setting_bool("LOCAL_AUTH_ENABLED", True)
+            app.config["LDAP_ENABLED"] = setting_bool("LDAP_ENABLED")
+            app.config["KEYCLOAK_ENABLED"] = setting_bool("KEYCLOAK_ENABLED")
             app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
             app.config["MAX_FORM_MEMORY_SIZE"] = app.config["MAX_CONTENT_LENGTH"]
         else:
@@ -5736,7 +5732,8 @@ def create_app(test_config=None):
                 )
         # Gunicorn preloads the application before forking workers. Do not let
         # workers inherit PostgreSQL connections or prepared-statement state.
-        db.engine.dispose()
+        if not ipfs_enabled():
+            db.engine.dispose()
 
     def csrf_token():
         token = session.get("_csrf_token")
@@ -5744,6 +5741,21 @@ def create_app(test_config=None):
             token = secrets.token_urlsafe(32)
             session["_csrf_token"] = token
         return token
+
+    @app.before_request
+    def serialize_ipfs_projection_access():
+        if ipfs_enabled():
+            app.extensions["ipfs_projection"]._lock.acquire()
+            g._ipfs_projection_lock_held = True
+
+    @app.teardown_request
+    def release_ipfs_projection_access(_error):
+        if g.get("_ipfs_projection_lock_held"):
+            # Return the sole StaticPool connection before another request,
+            # the checkpoint thread, or the integrated worker can acquire it.
+            db.session.remove()
+            app.extensions["ipfs_projection"]._lock.release()
+            g._ipfs_projection_lock_held = False
 
     @app.before_request
     def assign_request_id():
@@ -5765,11 +5777,6 @@ def create_app(test_config=None):
         # "currently active users").
         if not current_user.is_authenticated:
             return
-        if ipfs_enabled():
-            # Known first-slice gap (BACKLOG B-335): System Health's active-
-            # users list isn't IPFS-aware yet -- no persistent last_seen_at
-            # tracking in this mode.
-            return
         stale = (
             current_user.last_seen_at is None
             or (now() - align_tz(current_user.last_seen_at, now())) > timedelta(minutes=1)
@@ -5781,12 +5788,6 @@ def create_app(test_config=None):
     @app.before_request
     def enforce_session_inventory():
         if not current_user.is_authenticated:
-            return None
-        if ipfs_enabled():
-            # Known first-slice gap (BACKLOG B-335): admin-driven session
-            # revocation (/admin/sessions) has no backing store under IPFS
-            # mode yet -- a logged-in session simply isn't revocable until
-            # it expires client-side. Not silently pretended to work.
             return None
         session_id = session.get("_session_id")
         record = UserSession.query.filter_by(session_id=session_id).first() if session_id else None
@@ -6000,20 +6001,6 @@ def create_app(test_config=None):
                     "request_id": g.get("request_id"),
                 }
             }), 500
-        if ipfs_enabled():
-            # A generic "an administrator can review it" message is
-            # actively misleading for the single most common cause of a
-            # 500 in this mode: a page that hasn't been implemented
-            # against IPFSStorageBackend yet (BACKLOG B-335, login-only
-            # milestone) -- not a bug to investigate, a known, disclosed
-            # gap. /ipfs-home is the one page guaranteed to work.
-            return render_template(
-                "error.html", code=500,
-                message=(
-                    "This feature isn't available yet in IPFS mode (database-less deployment) -- "
-                    "only sign-in currently works end to end. See /ipfs-home."
-                ),
-            ), 500
         return render_template(
             "error.html", code=500,
             message="An unexpected error occurred. This has been logged and an administrator can review it.",
@@ -6071,39 +6058,6 @@ def create_app(test_config=None):
         }
         if not current_user.is_authenticated:
             return platform_context
-        if ipfs_enabled():
-            # Known first-slice gap (BACKLOG B-335): preferences,
-            # favorites, recent-view history, notifications, approvals,
-            # and open-task counts all still require entities this mode
-            # doesn't implement yet. Render with safe, empty defaults
-            # instead of crashing every authenticated page.
-            return platform_context | {
-                # Every column given explicitly: a transient (never
-                # db.session-added) instance does NOT apply Column
-                # `default=`s until an actual flush, which never happens
-                # here -- an omitted field stays plain None. Found live:
-                # base.html does `ui_preference.font_scale / 100`, which
-                # 500'd on None for every authenticated page (even error
-                # pages) until every field this template touches was
-                # covered.
-                "ui_preference": UserPreference(
-                    user_id=current_user.id, theme="light", density="comfortable",
-                    font_scale=100, high_contrast=False, reduced_motion=False,
-                    nav_pinned=True, start_page="/ipfs-home", accessible_tooltips=True,
-                    data_patterns=False, compact_dates=False, keyboard_shortcuts=True,
-                    date_time_display="both",
-                ),
-                "ui_favorites": [],
-                "current_user_is_local": True,
-                "ui_history": [],
-                "current_page_url": request.path,
-                "current_page_is_favorite": False,
-                "unread_notifications": 0,
-                "pending_approvals_count": 0,
-                "my_open_tasks_count": 0,
-                "client_management_access": False,
-                "client_open_ticket_count": 0,
-            }
         preference = UserPreference.query.filter_by(user_id=current_user.id).first()
         if not preference:
             # DEFAULT_DENSITY ("live": True, shown as configurable on
@@ -6165,7 +6119,9 @@ def create_app(test_config=None):
         if ipfs_enabled():
             try:
                 current_storage().client.node_id()
+                db.session.execute(db.select(func.count(User.id))).scalar()
             except Exception:
+                db.session.rollback()
                 return jsonify(status="unhealthy", version=APP_VERSION), 503
             return jsonify(status="ok", version=APP_VERSION)
         try:
@@ -6183,16 +6139,25 @@ def create_app(test_config=None):
     def ready():
         checks = {}
         if ipfs_enabled():
-            # No Postgres to check at all under this mode (BACKLOG B-335) --
-            # database/migrations/audit_encryption/worker-heartbeat are all
-            # meaningless here. IPFS reachability plus the upload-folder
-            # check (used by non-IPFS attachment fallbacks and other local
-            # writes) are the only prerequisites this mode actually has.
             try:
                 current_storage().client.node_id()
-                checks["ipfs"] = {"ok": True, "file_index_size": len(current_storage()._file_index)}
+                checks["ipfs"] = {
+                    "ok": True,
+                    "file_index_size": len(current_storage()._file_index),
+                    "table_count": len(current_storage().get_relational_state()),
+                    "checkpoint_publish_pending": (
+                        current_storage().checkpoint_publish_pending
+                        or app.extensions["ipfs_projection"].dirty
+                    ),
+                }
             except Exception as error:
                 checks["ipfs"] = {"ok": False, "reason": type(error).__name__}
+            try:
+                db.session.execute(db.text("SELECT 1"))
+                checks["volatile_projection"] = {"ok": True}
+            except Exception as error:
+                db.session.rollback()
+                checks["volatile_projection"] = {"ok": False, "reason": type(error).__name__}
             upload_folder = app.config["UPLOAD_FOLDER"]
             checks["uploads"] = {
                 "ok": os.path.isdir(upload_folder) and os.access(upload_folder, os.R_OK | os.W_OK),
@@ -7464,13 +7429,10 @@ def create_app(test_config=None):
                 route_rate_limit("login", f"user:{username.lower()}", user_limit)
                 if username else True
             )
-            # Persist the counter increment even when the request is within
-            # limits -- otherwise it's only ever committed on the request
-            # that trips the 429, and every allowed request's contribution
-            # to the window is silently lost. (No-op under STORAGE_MODE=ipfs:
-            # route_rate_limit() already persisted its own in-memory counter.)
-            if not ipfs_enabled():
-                db.session.commit()
+            # Persist every accepted counter increment. In IPFS mode the
+            # committed row joins the encrypted checkpoint like all other
+            # application state, so limits survive restarts.
+            db.session.commit()
             if not (ip_ok and user_ok):
                 response = render_template(
                     "login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
@@ -7479,14 +7441,10 @@ def create_app(test_config=None):
                     deployment_profile=app.config["DEPLOYMENT_PROFILE"])
                 flash("Too many sign-in attempts. Please wait a moment and try again.", "error")
                 return response, 429
-            lockout_record = (
-                ipfs_find_user_by_username(username) if ipfs_enabled()
-                else User.query.filter_by(username=username).first()
-            )
+            lockout_record = User.query.filter_by(username=username).first()
             if lockout_record and lockout_record.locked_until and lockout_record.locked_until > now():
                 audit("login_blocked", username, "reason=locked")
-                if not ipfs_enabled():
-                    db.session.commit()
+                db.session.commit()
                 flash("This account is temporarily locked due to repeated failed sign-ins. Try again later.", "error")
                 return render_template(
                     "login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
@@ -7500,10 +7458,7 @@ def create_app(test_config=None):
                 except Exception:
                     app.logger.exception("LDAP authentication failed")
             elif setting_bool("LOCAL_AUTH_ENABLED", True):
-                candidate = (
-                    ipfs_find_user_by_username(username) if ipfs_enabled()
-                    else User.query.filter_by(username=username).first()
-                )
+                candidate = User.query.filter_by(username=username).first()
                 if candidate:
                     valid, upgraded_hash = verify_and_upgrade_password(
                         candidate.password_hash, password
@@ -7516,8 +7471,6 @@ def create_app(test_config=None):
                             # the next successful login, no bulk migration
                             # or forced reset required.
                             candidate.password_hash = upgraded_hash
-                            if ipfs_enabled():
-                                current_storage().update("user", candidate.id, password_hash=upgraded_hash)
             if user and user.active and user.mfa_enabled:
                 # Password verified but MFA is required (ISO 27001 A.8.5):
                 # do not issue a session yet. Stash the authenticated-but-
@@ -7526,10 +7479,7 @@ def create_app(test_config=None):
                 # valid TOTP code or backup code is presented.
                 user.failed_login_count = 0
                 user.locked_until = None
-                if ipfs_enabled():
-                    current_storage().update("user", user.id, failed_login_count=0, locked_until=None)
-                else:
-                    db.session.commit()
+                db.session.commit()
                 session["_mfa_pending_user_id"] = user.id
                 session["_mfa_pending_provider"] = provider
                 return redirect(url_for("login_mfa"))
@@ -7542,9 +7492,6 @@ def create_app(test_config=None):
                 session["_auth_provider"] = provider
                 session["_csrf_token"] = secrets.token_urlsafe(32)
                 audit("login", user.username, f"provider={provider}")
-                if ipfs_enabled():
-                    current_storage().update("user", user.id, failed_login_count=0, locked_until=None)
-                    return redirect(url_for("ipfs_home"))
                 db.session.commit()
                 preference = UserPreference.query.filter_by(user_id=user.id).first()
                 start_page = preference.start_page if preference else None
@@ -7560,14 +7507,7 @@ def create_app(test_config=None):
                     audit("login_locked", username, f"attempts={max_attempts}")
                 else:
                     audit("login_failed", username, f"attempts={lockout_record.failed_login_count}")
-                if ipfs_enabled():
-                    current_storage().update(
-                        "user", lockout_record.id,
-                        failed_login_count=lockout_record.failed_login_count,
-                        locked_until=lockout_record.locked_until,
-                    )
-                else:
-                    db.session.commit()
+                db.session.commit()
             flash("Invalid username or password.", "error")
         return render_template("login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
                                keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
@@ -7577,15 +7517,9 @@ def create_app(test_config=None):
     @app.get("/ipfs-home")
     @login_required
     def ipfs_home():
-        # STORAGE_MODE=ipfs's post-login landing page (BACKLOG B-335,
-        # login-only milestone) -- deliberately not the real dashboard(),
-        # which queries a dozen Postgres-only tables. A minimal page that
-        # doesn't extend base.html (whose sidebar/nav also assume
-        # Postgres-backed data) confirming login worked with zero
-        # database.
         if not ipfs_enabled():
             abort(404)
-        return render_template("ipfs_home.html", user=current_user)
+        return redirect(url_for("dashboard"))
 
     @app.route("/forgot-password", methods=["GET", "POST"])
     def forgot_password():
@@ -7773,14 +7707,13 @@ def create_app(test_config=None):
     @login_required
     def logout():
         audit("logout", current_user.username)
-        if not ipfs_enabled():
-            active_session = UserSession.query.filter_by(
-                session_id=session.get("_session_id"), user_id=current_user.id,
-            ).first()
-            if active_session:
-                active_session.revoked_at = now()
-                active_session.revoked_by_id = current_user.id
-            db.session.commit()
+        active_session = UserSession.query.filter_by(
+            session_id=session.get("_session_id"), user_id=current_user.id,
+        ).first()
+        if active_session:
+            active_session.revoked_at = now()
+            active_session.revoked_by_id = current_user.id
+        db.session.commit()
         logout_user()
         session.clear()
         return redirect(url_for("login"))
@@ -7974,15 +7907,6 @@ def create_app(test_config=None):
     @app.get("/")
     @login_required
     def dashboard():
-        if ipfs_enabled():
-            # The real dashboard queries a dozen+ Postgres-only tables not
-            # implemented against IPFSStorageBackend yet (BACKLOG B-335,
-            # login-only milestone) -- redirect to the one page that
-            # actually works in this mode instead of crashing on the
-            # first widget. Found live: a user who signed in and then
-            # navigated to "/" (the normal post-login landing page in
-            # Postgres mode) hit an unhandled 500 here.
-            return redirect(url_for("ipfs_home"))
         visible_requests = visible_catalog_request_query(current_user)
         ticket_query = visible_ticket_query(current_user)
         terminal_states = ("Resolved", "Closed", "Cancelled")
@@ -15052,7 +14976,10 @@ def create_app(test_config=None):
         # Backlog aging: how long currently-open tickets have been sitting.
         aging_buckets = {"0-1 day": 0, "1-3 days": 0, "3-7 days": 0, "7+ days": 0}
         for row in ticket_query.filter(Ticket.state.notin_(TERMINAL_TICKET_STATES)).with_entities(Ticket.created_at).all():
-            age_days = (now() - row.created_at).total_seconds() / 86400
+            current_time = now()
+            age_days = (
+                current_time - align_tz(row.created_at, current_time)
+            ).total_seconds() / 86400
             if age_days <= 1:
                 aging_buckets["0-1 day"] += 1
             elif age_days <= 3:
@@ -15827,6 +15754,44 @@ def create_app(test_config=None):
     # function, or every log call -- including "every error must be
     # recorded" -- silently no-ops for the rest of the process.
     app.logger.disabled = False
+
+    if ipfs_enabled() and os.getenv("SERVICEOPS_SERVING") == "1":
+        app.extensions["ipfs_projection"].start_checkpoint_loop()
+
+        def ipfs_background_worker():
+            with app.app_context():
+                while True:
+                    processed = 0
+                    try:
+                        with app.extensions["ipfs_projection"]._lock:
+                            processed = (
+                                process_sla_breaches() + process_workflow_schedules()
+                                + process_workflow_jobs() + process_outbox()
+                                + process_ldap_sync_schedule() + process_kpi_snapshot_schedule()
+                                + process_rt_import_jobs() + process_discovery_schedule()
+                                + process_client_escalation_policies() + process_client_email_inbox()
+                                + process_data_retention_purge()
+                            )
+                            process_performance_sample_schedule()
+                            heartbeat = db.session.get(PlatformSetting, "WORKER_LAST_HEARTBEAT")
+                            if not heartbeat:
+                                heartbeat = PlatformSetting(
+                                    key="WORKER_LAST_HEARTBEAT", tenant_id=1, encrypted=False,
+                                )
+                                db.session.add(heartbeat)
+                            heartbeat.value = now().isoformat()
+                            db.session.commit()
+                    except Exception:
+                        app.logger.exception("Unhandled error in the IPFS background worker loop")
+                        with app.extensions["ipfs_projection"]._lock:
+                            db.session.rollback()
+                    time_module.sleep(0.25 if processed else 5)
+
+        threading.Thread(
+            target=ipfs_background_worker,
+            name="serviceops-ipfs-worker",
+            daemon=True,
+        ).start()
 
     return app
 
