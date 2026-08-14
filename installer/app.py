@@ -105,6 +105,25 @@ def test_keycloak(config):
         return result(False, "Keycloak discovery failed", str(exc))
 
 
+def test_ipfs(config):
+    if config.get("storage_mode", "postgres") != "ipfs":
+        return result(True, "PostgreSQL storage mode is selected (default)")
+    if config.get("ipfs_mode", "bundled") == "bundled":
+        return result(True, "Bundled IPFS node is selected",
+                      "The IPFS node container will be verified during deployment.")
+    api_url = clean(config.get("ipfs_api_url"))
+    if not api_url:
+        return result(False, "IPFS API URL is required for an external node")
+    try:
+        request_obj = urllib.request.Request(api_url.rstrip("/") + "/api/v0/id", method="POST")
+        context = ssl.create_default_context()
+        with urllib.request.urlopen(request_obj, timeout=8, context=context) as response:
+            payload = json.load(response)
+        return result(True, "IPFS node reachable", payload.get("ID", ""))
+    except Exception as exc:
+        return result(False, "IPFS node connection failed", str(exc))
+
+
 def test_network(config):
     port = int(config.get("app_port", 8080))
     sock = socket.socket()
@@ -122,6 +141,7 @@ def validate(config):
         "host": load_json("host-preflight.json", result(False, "Host preflight has not run")),
         "network": test_network(config),
         "database": test_database(config),
+        "ipfs": test_ipfs(config),
         "ldap": test_ldap(config),
         "keycloak": test_keycloak(config),
     }
@@ -147,9 +167,18 @@ def env_line(key, value):
 
 def write_environment(config):
     db_mode = config.get("db_mode", "bundled")
+    storage_mode = config.get("storage_mode", "postgres")
     lines = [
         env_line("DEPLOYMENT_MODE", db_mode),
         env_line("DEPLOYMENT_PROFILE", "production"),
+        # Optional database-less deployment mode (experimental): see the
+        # storage-mode plan. STORAGE_MODE=postgres (default) is the
+        # production-ready path; the IPFS_* lines are unused/ignored
+        # unless storage_mode=="ipfs".
+        env_line("STORAGE_MODE", storage_mode),
+        env_line("IPFS_MODE", config.get("ipfs_mode", "bundled")),
+        env_line("IPFS_API_URL", config.get("ipfs_api_url",
+                 "http://ipfs:5001" if storage_mode == "ipfs" else "")),
         env_line("INSTANCE_NAME", config.get("instance_name", "ServiceOps")),
         env_line("COMPANY_NAME", config.get("company_name", "Your Company")),
         env_line("BRAND_TEAL", config.get("brand_teal", "#003e4c")),
@@ -168,7 +197,7 @@ def write_environment(config):
         env_line("API_TOKEN_PEPPER",
                  config.get("api_token_pepper") or Fernet.generate_key().decode()),
         env_line("ADMIN_PASSWORD", config.get("admin_password", "")),
-        env_line("SERVICEOPS_IMAGE", config.get("serviceops_image", "serviceops-app:1.70.3")),
+        env_line("SERVICEOPS_IMAGE", config.get("serviceops_image", "serviceops-app:1.71.0")),
         'LOCAL_AUTH_ENABLED="true"',
         env_line("LDAP_ENABLED", str(bool(config.get("ldap_enabled"))).lower()),
         env_line("LDAP_SERVER_URI", config.get("ldap_uri", "")),

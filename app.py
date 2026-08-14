@@ -101,6 +101,7 @@ from serviceops_core.notification_templates import (
     NOTIFICATION_EVENT_TYPES, NON_MUTABLE_EVENT_TYPES, render_notification_template, is_event_muted,
 )
 from serviceops_core.navigation import navigation_entries
+from serviceops_core.storage import build_storage_backend, ipfs_enabled
 from serviceops_core.passkeys import (
     authentication_options as build_passkey_authentication_options,
     registration_options as build_passkey_registration_options,
@@ -300,6 +301,12 @@ def tenant_query(model):
 
 def object_storage_enabled():
     return os.getenv("OBJECT_STORAGE_BUCKET", "").strip() != ""
+
+
+def current_storage():
+    """The active StorageBackend (PostgresStorageBackend by default,
+    IPFSStorageBackend under STORAGE_MODE=ipfs), built once at app boot."""
+    return current_app.extensions["storage_backend"]
 
 
 def object_storage_client():
@@ -1621,9 +1628,21 @@ def save_email_attachment(client_ticket, filename, data, uploaded_by_id):
             )
             return None
         os.remove(path)
+    ipfs_cid = None
+    if ipfs_enabled():
+        try:
+            ipfs_cid = current_storage().attach_file(stored, data, verified_mime_type)
+        except Exception:
+            os.remove(path)
+            current_app.logger.warning(
+                "IPFS attachment upload failed for inbound email attachment: ticket=%s file=%s",
+                client_ticket.number, original,
+            )
+            return None
+        os.remove(path)
     attachment = FileAttachment(
         client_ticket_id=client_ticket.id, uploaded_by_id=uploaded_by_id,
-        original_name=original, stored_name=stored,
+        original_name=original, stored_name=stored, ipfs_cid=ipfs_cid,
         mime_type=verified_mime_type, size_bytes=file_size,
         sha256=sha256.hexdigest(), scan_status=scan_status, tenant_id=client_ticket.tenant_id,
     )
@@ -5394,6 +5413,7 @@ def create_app(test_config=None):
             minutes=int(os.getenv("SESSION_LIFETIME_MINUTES", "480"))
         ),
         AUTO_MIGRATE=env_bool("AUTO_MIGRATE", True),
+        STORAGE_MODE=os.getenv("STORAGE_MODE", "postgres").strip().lower(),
     )
     if test_config:
         app.config.update(test_config)
@@ -5500,6 +5520,19 @@ def create_app(test_config=None):
                 client_kwargs={"scope": "openid profile email"},
             )
         os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+        # Optional database-less deployment mode (STORAGE_MODE=ipfs): this
+        # first slice only moves file-attachment bytes onto IPFS -- every
+        # other entity (tickets, users, ...) still requires PostgreSQL
+        # exactly as above; that migration happens in later rollout waves
+        # per the storage-mode plan. PostgreSQL-mode deployments (the
+        # default) are unaffected: build_storage_backend() returns
+        # PostgresStorageBackend, which replicates today's local-disk/S3
+        # attachment behavior with no change.
+        app.extensions["storage_backend"] = build_storage_backend(
+            upload_folder=app.config["UPLOAD_FOLDER"],
+            object_storage_client_factory=object_storage_client,
+            object_storage_bucket=os.getenv("OBJECT_STORAGE_BUCKET", "").strip() or None,
+        )
         # Gunicorn preloads the application before forking workers. Do not let
         # workers inherit PostgreSQL connections or prepared-statement state.
         db.engine.dispose()
@@ -5931,6 +5964,12 @@ def create_app(test_config=None):
                 checks["object_storage"] = {"ok": True, "bucket_configured": True}
             except Exception as error:
                 checks["object_storage"] = {"ok": False, "reason": type(error).__name__}
+        if ipfs_enabled():
+            try:
+                current_storage().client.node_id()
+                checks["ipfs"] = {"ok": True, "file_index_size": len(current_storage()._file_index)}
+            except Exception as error:
+                checks["ipfs"] = {"ok": False, "reason": type(error).__name__}
         overall = all(check["ok"] for check in checks.values())
         return jsonify(status="ready" if overall else "not_ready", version=APP_VERSION, checks=checks), 200 if overall else 503
 
@@ -15291,9 +15330,22 @@ def create_app(test_config=None):
                 )
                 return None, "Attachment storage is temporarily unavailable. Please try again shortly."
             os.remove(path)
+        ipfs_cid = None
+        if ipfs_enabled():
+            try:
+                with open(path, "rb") as handle:
+                    ipfs_cid = current_storage().attach_file(stored, handle.read(), verified_mime_type)
+            except Exception:
+                os.remove(path)
+                current_app.logger.warning(
+                    "IPFS attachment upload failed: ticket=%s file=%s user=%s",
+                    ticket.number, original, current_user.id,
+                )
+                return None, "Attachment storage is temporarily unavailable. Please try again shortly."
+            os.remove(path)
         attachment = FileAttachment(
             ticket_id=ticket.id, comment_id=comment_id, uploaded_by_id=current_user.id,
-            original_name=original, stored_name=stored,
+            original_name=original, stored_name=stored, ipfs_cid=ipfs_cid,
             mime_type=verified_mime_type, size_bytes=file_size,
             sha256=sha256.hexdigest(), scan_status=scan_status, tenant_id=ticket.tenant_id,
         )
@@ -15360,6 +15412,23 @@ def create_app(test_config=None):
                 "Content-Length": str(response["ContentLength"]),
             }
             return Response(response["Body"].iter_chunks(), headers=headers,
+                            mimetype=attachment.mime_type if inline else "application/octet-stream")
+        if attachment.ipfs_cid:
+            try:
+                data_bytes, _ = current_storage().read_file(attachment.stored_name, attachment.ipfs_cid)
+            except Exception:
+                current_app.logger.warning(
+                    "IPFS attachment download failed: attachment_id=%s", attachment.id,
+                )
+                abort(503, description="Attachment storage is temporarily unavailable. Please try again shortly.")
+            headers = {
+                "Content-Disposition": (
+                    f"inline; filename={json.dumps(attachment.original_name)}" if inline
+                    else f"attachment; filename={json.dumps(attachment.original_name)}"
+                ),
+                "Content-Length": str(len(data_bytes)),
+            }
+            return Response(data_bytes, headers=headers,
                             mimetype=attachment.mime_type if inline else "application/octet-stream")
         return send_from_directory(app.config["UPLOAD_FOLDER"], attachment.stored_name,
                                    as_attachment=not inline, download_name=attachment.original_name,
