@@ -15373,7 +15373,7 @@ def create_app(test_config=None):
     @app.get("/mobile-app")
     @login_required
     def mobile_app():
-        return render_template("mobile_app.html", mobile_version="1.3.1", mobile_build="7")
+        return render_template("mobile_app.html", mobile_version="1.3.2", mobile_build="8")
 
     @app.errorhandler(403)
     def forbidden(error):

@@ -5,7 +5,7 @@
   {% if has_company_logo %}
   <img class="company-logo brand-login-mark" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo">
   {% else %}
-  <img class="serviceops-app-mark brand-login-mark" src="{{ url_for('static', filename='icons/serviceops-icon-192.png', v=app_version) }}" alt="ServiceOps app icon">
+  <img class="serviceops-wordmark brand-login-wordmark" src="{{ url_for('static', filename='brand/serviceops-wordmark.png', v=app_version) }}" alt="ServiceOps">
   {% endif %}
   <h1>Welcome to ServiceOps</h1>
   <p>One place for IT services, support, and operations.</p>
