@@ -1,36 +1,24 @@
 name: serviceops-ipfs-demo
 
-# Side-by-side IPFS-mode ("database-less", first slice) test stack --
-# runs alongside the main compose.yaml stack (Postgres-mode, port 80) on
-# its own project name, its own volumes, and port 8081, so both can be
-# used and compared at the same time. Uses the same application image as
-# the main stack; only the environment differs (STORAGE_MODE=ipfs).
+# Side-by-side IPFS-mode ("database-less") test stack -- runs alongside
+# the main compose.yaml stack (Postgres-mode, port 80) on its own project
+# name, its own volumes, and port 8081, so both can be used and compared
+# at the same time. Uses the same application image as the main stack;
+# only the environment differs (STORAGE_MODE=ipfs).
 #
-# IMPORTANT, disclosed here so it's not discovered the hard way: this
-# first slice of IPFS mode only moves file-attachment bytes onto IPFS.
-# Tickets, users, and every other record still require PostgreSQL
-# exactly like the main stack -- this is not yet a fully database-less
-# ServiceOps, only file attachments are. See the storage-mode plan and
-# BACKLOG B-331 for the full rollout plan and known limitations.
+# Genuinely no PostgreSQL anywhere in this file (BACKLOG B-335) -- login
+# and its session/rate-limit/audit dependencies run entirely against
+# IPFSStorageBackend's in-memory + IPFS-checkpoint store. IMPORTANT,
+# disclosed here so it's not discovered the hard way: this is a
+# login-only milestone. Tickets, the dashboard, CMDB, catalog, and every
+# other ServiceOps feature still require the PostgreSQL-backed rollout
+# waves described in the storage-mode plan -- they are simply not present
+# in this deployment yet, not degraded. There is also no `worker` service
+# here: background job processing (outbox delivery, inbound email, SLA
+# sweeps, ...) is out of scope for this milestone and has no IPFS-backed
+# implementation to run against.
 
 services:
-  db:
-    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-serviceops}
-      POSTGRES_USER: ${POSTGRES_USER:-serviceops}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.ipfs-demo}
-    volumes:
-      - serviceops_ipfs_demo_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-serviceops} -d ${POSTGRES_DB:-serviceops}"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    restart: unless-stopped
-    stop_grace_period: 30s
-    shm_size: 256mb
-
   ipfs:
     image: ipfs/kubo:v0.33.0@sha256:a11e89f0f2a620acb3e8e1c49cdce81e80115194681924a5356f301cc6b66067
     environment:
@@ -48,7 +36,6 @@ services:
   app:
     image: ${SERVICEOPS_IMAGE:?Set an immutable SERVICEOPS_IMAGE tag in .env.ipfs-demo}
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-serviceops}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.ipfs-demo}@db:5432/${POSTGRES_DB:-serviceops}
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env.ipfs-demo}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       DEPLOYMENT_PROFILE: production
@@ -67,7 +54,6 @@ services:
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
       ALLOW_INSECURE_SESSION_COOKIES: ${ALLOW_INSECURE_SESSION_COOKIES:-false}
       SESSION_LIFETIME_MINUTES: ${SESSION_LIFETIME_MINUTES:-480}
-      AUTO_MIGRATE: "true"
       LDAP_ENABLED: "false"
       KEYCLOAK_ENABLED: "false"
       UPLOAD_FOLDER: /app/uploads
@@ -79,7 +65,7 @@ services:
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8081}:8080"
     depends_on:
-      db:
+      ipfs:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
@@ -91,47 +77,19 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
+      # Never actually written to: STORAGE_MODE=ipfs routes every code
+      # path away from db.session/Model.query (see BACKLOG B-335). Only
+      # needed because Flask-SQLAlchemy's db.init_app() unconditionally
+      # tries to create app.instance_path for its (unused, default)
+      # relative-sqlite-path fallback -- without this, that mkdir fails on
+      # the read-only root filesystem before the app can even start.
+      - /app/instance:size=8m,mode=1777
     security_opt:
       - no-new-privileges:true
     stop_grace_period: 30s
     mem_limit: ${APP_MEM_LIMIT:-1g}
 
-  worker:
-    image: ${SERVICEOPS_IMAGE:?Set an immutable SERVICEOPS_IMAGE tag in .env.ipfs-demo}
-    command: ["python", "-m", "tools.outbox_worker"]
-    environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-serviceops}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.ipfs-demo}@db:5432/${POSTGRES_DB:-serviceops}
-      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env.ipfs-demo}
-      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?Set SETTINGS_ENCRYPTION_KEY in .env.ipfs-demo}
-      AUDIT_INTEGRITY_KEY: ${AUDIT_INTEGRITY_KEY:-}
-      API_TOKEN_PEPPER: ${API_TOKEN_PEPPER:-}
-      DEPLOYMENT_PROFILE: production
-      DEPLOYMENT_MODE: bundled
-      # Same documented first-slice limitation as the main stack: worker
-      # stays on PostgresStorageBackend even here (not wired to
-      # STORAGE_MODE/IPFS_API_URL) to avoid two processes racing to
-      # publish the same IPNS checkpoint pointer.
-      AUTO_MIGRATE: "false"
-      UPLOAD_FOLDER: /tmp/uploads
-      LOG_DIR: /app/logs
-    volumes:
-      - serviceops_ipfs_demo_logs:/app/logs
-    depends_on:
-      app:
-        condition: service_healthy
-    restart: unless-stopped
-    init: true
-    read_only: true
-    tmpfs:
-      - /tmp:size=64m,mode=1777
-    security_opt:
-      - no-new-privileges:true
-    stop_grace_period: 30s
-    mem_limit: ${WORKER_MEM_LIMIT:-512m}
-
 volumes:
-  serviceops_ipfs_demo_data:
-    name: serviceops_ipfs_demo_postgres_data
   serviceops_ipfs_demo_ipfs_data:
     name: serviceops_ipfs_demo_ipfs_data
   serviceops_ipfs_demo_uploads:

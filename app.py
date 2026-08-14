@@ -309,6 +309,24 @@ def current_storage():
     return current_app.extensions["storage_backend"]
 
 
+def ipfs_find_user_by_username(username):
+    rows = current_storage().query("user", tenant_id=None, filters=[("username", "eq", username)])
+    return ipfs_user_from_dict(rows[0]) if rows else None
+
+
+def ipfs_user_from_dict(fields):
+    """Wraps a plain dict from IPFSStorageBackend.get/query("user", ...) as
+    a transient (never added to a db.session) User instance, so the exact
+    same model class -- same UserMixin behavior, same plain-Column
+    attributes templates/routes already read (name, username, role,
+    tenant_id, mfa_enabled, ...) -- works under STORAGE_MODE=ipfs with no
+    database at all. Only plain Column attributes are safe to read on a
+    transient instance; relationship-backed properties (granted_roles,
+    manager, ...) would try to issue a real query and must not be touched
+    on this object -- login-only milestone, see BACKLOG B-335."""
+    return User(**fields)
+
+
 def object_storage_client():
     return boto3.client(
         "s3", endpoint_url=os.getenv("OBJECT_STORAGE_ENDPOINT") or None,
@@ -320,6 +338,9 @@ def object_storage_client():
 
 @login_manager.user_loader
 def load_user(user_id):
+    if ipfs_enabled():
+        fields = current_storage().get("user", int(user_id))
+        return ipfs_user_from_dict(fields) if fields else None
     return db.session.get(User, int(user_id))
 
 
@@ -521,6 +542,20 @@ def rotate_audit_integrity_key(tenant_id, user_id):
 
 def audit(action, target, details="", user_id=None, tenant_id=None):
     tenant_id = tenant_id or tenant_context_id()
+    if ipfs_enabled():
+        # Known first-slice gap (BACKLOG B-335): the hash-chained,
+        # tamper-evident audit trail is Postgres-specific (advisory locks,
+        # AuditIntegrityKey rows) and isn't implemented against IPFS yet.
+        # Logging instead of silently dropping the event, so an operator
+        # watching container logs still sees every audited action -- just
+        # without a durable, queryable, tamper-evident record.
+        current_app.logger.info(
+            "AUDIT (in-memory, IPFS mode -- not persisted): action=%s target=%s details=%s user_id=%s tenant_id=%s",
+            action, target, details,
+            user_id if user_id is not None else (current_user.id if has_request_context() and current_user.is_authenticated else None),
+            tenant_id,
+        )
+        return None
     if db.engine.dialect.name == "postgresql":
         db.session.execute(
             db.text("SELECT pg_advisory_xact_lock(:tenant_id)"),
@@ -819,6 +854,34 @@ def record_request_metric(method, status_code, duration_ms):
         db.session.rollback()
 
 
+_ipfs_rate_limit_windows = {}
+
+
+def _ipfs_route_rate_limit(scope, key, limit, window_seconds):
+    """In-memory equivalent of the DB-backed windowed counter below, for
+    STORAGE_MODE=ipfs (BACKLOG B-335, known first-slice gap): counters
+    live only in this process's memory, so they reset on every restart
+    and aren't shared across multiple app instances -- acceptable for now
+    since IPFS mode is already constrained to a single app process (see
+    the storage-mode plan's "Deployment/process shape" section)."""
+    composite_key = f"{scope}:{key}"[:160]
+    current = now()
+    epoch_start = (int(current.timestamp()) // window_seconds) * window_seconds
+    window_start = datetime.fromtimestamp(epoch_start, tz=timezone.utc)
+    # Opportunistic cleanup of stale windows so this dict doesn't grow
+    # unboundedly for the lifetime of a long-running process.
+    stale_cutoff = window_start - timedelta(hours=1)
+    for existing_key, existing_window in list(_ipfs_rate_limit_windows):
+        if existing_window < stale_cutoff:
+            del _ipfs_rate_limit_windows[(existing_key, existing_window)]
+    count = _ipfs_rate_limit_windows.get((composite_key, window_start), 0) + 1
+    _ipfs_rate_limit_windows[(composite_key, window_start)] = count
+    if count > limit:
+        g.rate_limit_retry_after = max(1, window_seconds - int((current - window_start).total_seconds()))
+        return False
+    return True
+
+
 def route_rate_limit(scope, key, limit, window_seconds=60):
     """General-purpose IP/account-scoped rate limiter for unauthenticated web
     routes (ISO 27001 A.8.16), generalized from `enforce_api_rate_limit`'s
@@ -829,6 +892,8 @@ def route_rate_limit(scope, key, limit, window_seconds=60):
     legitimate caller's quota. Sets `g.rate_limit_retry_after` and returns
     False (does not raise) when the limit is exceeded, so callers can render
     their own 429 response consistent with existing UX."""
+    if ipfs_enabled():
+        return _ipfs_route_rate_limit(scope, key, limit, window_seconds)
     composite_key = f"{scope}:{key}"[:160]
     current = now()
     epoch_start = (int(current.timestamp()) // window_seconds) * window_seconds
@@ -4541,6 +4606,34 @@ def seed_itil(admin):
         ])
 
 
+def bootstrap_ipfs_tenant_and_admin():
+    """Minimal STORAGE_MODE=ipfs equivalent of seed()'s bootstrap-admin
+    path (BACKLOG B-335, login-only milestone) -- creates a default
+    tenant and administrator directly in IPFSStorageBackend if none
+    exists yet. Does not call seed_itil()/deploy_workflow_package(): those
+    create dozens of Postgres-only entities (support groups, catalog
+    items, workflow definitions, ...) this storage backend doesn't
+    implement. A fresh IPFS-mode instance only has login working; there
+    is deliberately no catalog/workflow/CMDB seed data yet."""
+    storage = current_storage()
+    if storage.query("tenant", tenant_id=None):
+        return
+    admin_password = secret_value("ADMIN_PASSWORD")
+    if not admin_password:
+        raise RuntimeError("ADMIN_PASSWORD is required to bootstrap the first administrator.")
+    if len(admin_password) < 14:
+        raise RuntimeError("ADMIN_PASSWORD must contain at least 14 characters.")
+    storage.create("tenant", slug=os.getenv("DEFAULT_TENANT_SLUG", "default"),
+                    name=os.getenv("DEFAULT_TENANT_NAME", "Default organisation"))
+    storage.create(
+        "user", username="admin", name="System Administrator", email="admin@example.local",
+        password_hash=hash_password(admin_password), role="admin", tenant_id=1,
+        active=True, auth_version=1, failed_login_count=0, mfa_enabled=False,
+        title="", department="", business_phone="", mobile_phone="", location="",
+        timezone="Asia/Tokyo", date_format="system", calendar_integration="None",
+    )
+
+
 def seed():
     if User.query.first():
         admin = User.query.filter(User.role.in_(["admin", "superadmin"])).first()
@@ -5542,87 +5635,105 @@ def create_app(test_config=None):
     validate_projection_policy()
 
     with app.app_context():
-        if app.config["TESTING"] and not app.config.get("AUTO_MIGRATE_IN_TESTS"):
-            db.create_all()
-        else:
-            migration_config = AlembicConfig(
-                os.path.join(os.path.dirname(__file__), "alembic.ini")
-            )
-            migration_config.set_main_option(
-                "script_location", os.path.join(os.path.dirname(__file__), "migrations")
-            )
-            migration_config.set_main_option(
-                "sqlalchemy.url", str(db.engine.url).replace("%", "%%")
-            )
-            if app.config["AUTO_MIGRATE"]:
-                command.upgrade(migration_config, "head")
-            else:
-                with db.engine.connect() as migration_connection:
-                    current_revision = MigrationContext.configure(
-                        migration_connection
-                    ).get_current_revision()
-                required_revision = ScriptDirectory.from_config(
-                    migration_config
-                ).get_current_head()
-                if current_revision != required_revision:
-                    raise RuntimeError(
-                        "Database migration required: current revision "
-                        f"{current_revision or 'unversioned'}, required {required_revision}. "
-                        "Run the migration job before starting ServiceOps."
-                    )
-        default_tenant = db.session.get(Tenant, 1)
-        if not default_tenant:
-            default_tenant = Tenant(
-                id=1,
-                slug=os.getenv("DEFAULT_TENANT_SLUG", "default"),
-                name=os.getenv("DEFAULT_TENANT_NAME", "Default organisation"),
-            )
-            db.session.add(default_tenant)
-            db.session.commit()
-        seed()
-        UserPreference.query.filter(UserPreference.theme != "light").update({"theme": "light"})
-        db.session.commit()
-        app.config["LOCAL_AUTH_ENABLED"] = setting_bool("LOCAL_AUTH_ENABLED", True)
-        app.config["LDAP_ENABLED"] = setting_bool("LDAP_ENABLED")
-        app.config["KEYCLOAK_ENABLED"] = setting_bool("KEYCLOAK_ENABLED")
-        app.config["MAX_CONTENT_LENGTH"] = int(setting_value("MAX_UPLOAD_MB", "20")) * 1024 * 1024
-        app.config["MAX_FORM_MEMORY_SIZE"] = app.config["MAX_CONTENT_LENGTH"]
-        # SESSION_HOURS ("live": False, i.e. restart-required) used to be
-        # defined in the settings schema and shown as configurable on
-        # Platform Settings, but nothing ever actually read it -- session
-        # lifetime was purely env-var driven (SESSION_LIFETIME_MINUTES,
-        # set once above before the database was even connected). An admin
-        # could set and save "Session lifetime in hours" with zero effect,
-        # no error. The env var's own value (already resolved into
-        # app.config above) is passed as the fallback default here so
-        # deployments that only ever used the env var keep working
-        # identically until an admin actually sets this in the UI.
-        env_default_hours = int(app.config["PERMANENT_SESSION_LIFETIME"].total_seconds() // 3600) or 8
-        app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(
-            hours=setting_int("SESSION_HOURS", env_default_hours)
-        )
-        if app.config["KEYCLOAK_ENABLED"]:
-            oauth.register(
-                name="keycloak",
-                client_id=setting_value("KEYCLOAK_CLIENT_ID"),
-                client_secret=setting_value("KEYCLOAK_CLIENT_SECRET"),
-                server_metadata_url=setting_value("KEYCLOAK_DISCOVERY_URL"),
-                client_kwargs={"scope": "openid profile email"},
-            )
         os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
         # Optional database-less deployment mode (STORAGE_MODE=ipfs): this
-        # first slice only moves file-attachment bytes onto IPFS -- every
-        # other entity (tickets, users, ...) still requires PostgreSQL
-        # exactly as above; that migration happens in later rollout waves
-        # per the storage-mode plan. PostgreSQL-mode deployments (the
-        # default) are unaffected: build_storage_backend() returns
-        # PostgresStorageBackend, which replicates today's local-disk/S3
-        # attachment behavior with no change.
+        # milestone (BACKLOG B-335) covers file attachments plus login --
+        # every other entity (tickets, CMDB, catalog, workflows, ...)
+        # still requires PostgreSQL, that migration happens in later
+        # rollout waves per the storage-mode plan. PostgreSQL-mode
+        # deployments (the default) are unaffected: build_storage_backend()
+        # returns PostgresStorageBackend, which replicates today's
+        # local-disk/S3 attachment behavior with no change, and the whole
+        # Alembic/seed() branch below runs exactly as it always has.
         app.extensions["storage_backend"] = build_storage_backend(
             upload_folder=app.config["UPLOAD_FOLDER"],
             object_storage_client_factory=object_storage_client,
             object_storage_bucket=os.getenv("OBJECT_STORAGE_BUCKET", "").strip() or None,
         )
+        if ipfs_enabled():
+            # No Postgres at all in this mode: no Alembic migrations, no
+            # db.create_all(), no seed_itil()/deploy_workflow_package()
+            # (Postgres-only, not yet implemented against IPFS). Settings
+            # that normally come from PlatformSetting via setting_*() fall
+            # back to their env var/schema default automatically (see
+            # setting_value()'s try/except) -- LOCAL_AUTH_ENABLED is forced
+            # on and LDAP/Keycloak forced off here explicitly rather than
+            # relying on that fallback, since login has no working
+            # alternative to local auth in this mode yet.
+            bootstrap_ipfs_tenant_and_admin()
+            app.config["LOCAL_AUTH_ENABLED"] = True
+            app.config["LDAP_ENABLED"] = False
+            app.config["KEYCLOAK_ENABLED"] = False
+            app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
+            app.config["MAX_FORM_MEMORY_SIZE"] = app.config["MAX_CONTENT_LENGTH"]
+        else:
+            if app.config["TESTING"] and not app.config.get("AUTO_MIGRATE_IN_TESTS"):
+                db.create_all()
+            else:
+                migration_config = AlembicConfig(
+                    os.path.join(os.path.dirname(__file__), "alembic.ini")
+                )
+                migration_config.set_main_option(
+                    "script_location", os.path.join(os.path.dirname(__file__), "migrations")
+                )
+                migration_config.set_main_option(
+                    "sqlalchemy.url", str(db.engine.url).replace("%", "%%")
+                )
+                if app.config["AUTO_MIGRATE"]:
+                    command.upgrade(migration_config, "head")
+                else:
+                    with db.engine.connect() as migration_connection:
+                        current_revision = MigrationContext.configure(
+                            migration_connection
+                        ).get_current_revision()
+                    required_revision = ScriptDirectory.from_config(
+                        migration_config
+                    ).get_current_head()
+                    if current_revision != required_revision:
+                        raise RuntimeError(
+                            "Database migration required: current revision "
+                            f"{current_revision or 'unversioned'}, required {required_revision}. "
+                            "Run the migration job before starting ServiceOps."
+                        )
+            default_tenant = db.session.get(Tenant, 1)
+            if not default_tenant:
+                default_tenant = Tenant(
+                    id=1,
+                    slug=os.getenv("DEFAULT_TENANT_SLUG", "default"),
+                    name=os.getenv("DEFAULT_TENANT_NAME", "Default organisation"),
+                )
+                db.session.add(default_tenant)
+                db.session.commit()
+            seed()
+            UserPreference.query.filter(UserPreference.theme != "light").update({"theme": "light"})
+            db.session.commit()
+            app.config["LOCAL_AUTH_ENABLED"] = setting_bool("LOCAL_AUTH_ENABLED", True)
+            app.config["LDAP_ENABLED"] = setting_bool("LDAP_ENABLED")
+            app.config["KEYCLOAK_ENABLED"] = setting_bool("KEYCLOAK_ENABLED")
+            app.config["MAX_CONTENT_LENGTH"] = int(setting_value("MAX_UPLOAD_MB", "20")) * 1024 * 1024
+            app.config["MAX_FORM_MEMORY_SIZE"] = app.config["MAX_CONTENT_LENGTH"]
+            # SESSION_HOURS ("live": False, i.e. restart-required) used to be
+            # defined in the settings schema and shown as configurable on
+            # Platform Settings, but nothing ever actually read it -- session
+            # lifetime was purely env-var driven (SESSION_LIFETIME_MINUTES,
+            # set once above before the database was even connected). An admin
+            # could set and save "Session lifetime in hours" with zero effect,
+            # no error. The env var's own value (already resolved into
+            # app.config above) is passed as the fallback default here so
+            # deployments that only ever used the env var keep working
+            # identically until an admin actually sets this in the UI.
+            env_default_hours = int(app.config["PERMANENT_SESSION_LIFETIME"].total_seconds() // 3600) or 8
+            app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(
+                hours=setting_int("SESSION_HOURS", env_default_hours)
+            )
+            if app.config["KEYCLOAK_ENABLED"]:
+                oauth.register(
+                    name="keycloak",
+                    client_id=setting_value("KEYCLOAK_CLIENT_ID"),
+                    client_secret=setting_value("KEYCLOAK_CLIENT_SECRET"),
+                    server_metadata_url=setting_value("KEYCLOAK_DISCOVERY_URL"),
+                    client_kwargs={"scope": "openid profile email"},
+                )
         # Gunicorn preloads the application before forking workers. Do not let
         # workers inherit PostgreSQL connections or prepared-statement state.
         db.engine.dispose()
@@ -5654,6 +5765,11 @@ def create_app(test_config=None):
         # "currently active users").
         if not current_user.is_authenticated:
             return
+        if ipfs_enabled():
+            # Known first-slice gap (BACKLOG B-335): System Health's active-
+            # users list isn't IPFS-aware yet -- no persistent last_seen_at
+            # tracking in this mode.
+            return
         stale = (
             current_user.last_seen_at is None
             or (now() - align_tz(current_user.last_seen_at, now())) > timedelta(minutes=1)
@@ -5665,6 +5781,12 @@ def create_app(test_config=None):
     @app.before_request
     def enforce_session_inventory():
         if not current_user.is_authenticated:
+            return None
+        if ipfs_enabled():
+            # Known first-slice gap (BACKLOG B-335): admin-driven session
+            # revocation (/admin/sessions) has no backing store under IPFS
+            # mode yet -- a logged-in session simply isn't revocable until
+            # it expires client-side. Not silently pretended to work.
             return None
         session_id = session.get("_session_id")
         record = UserSession.query.filter_by(session_id=session_id).first() if session_id else None
@@ -5935,6 +6057,25 @@ def create_app(test_config=None):
         }
         if not current_user.is_authenticated:
             return platform_context
+        if ipfs_enabled():
+            # Known first-slice gap (BACKLOG B-335): preferences,
+            # favorites, recent-view history, notifications, approvals,
+            # and open-task counts all still require entities this mode
+            # doesn't implement yet. Render with safe, empty defaults
+            # instead of crashing every authenticated page.
+            return platform_context | {
+                "ui_preference": UserPreference(user_id=current_user.id, density="comfortable"),
+                "ui_favorites": [],
+                "current_user_is_local": True,
+                "ui_history": [],
+                "current_page_url": request.path,
+                "current_page_is_favorite": False,
+                "unread_notifications": 0,
+                "pending_approvals_count": 0,
+                "my_open_tasks_count": 0,
+                "client_management_access": False,
+                "client_open_ticket_count": 0,
+            }
         preference = UserPreference.query.filter_by(user_id=current_user.id).first()
         if not preference:
             # DEFAULT_DENSITY ("live": True, shown as configurable on
@@ -5993,6 +6134,12 @@ def create_app(test_config=None):
         # /ready already degrades gracefully on the same failure; this now
         # matches that pattern instead of letting Flask's default handler
         # treat a downstream outage as an application bug.
+        if ipfs_enabled():
+            try:
+                current_storage().client.node_id()
+            except Exception:
+                return jsonify(status="unhealthy", version=APP_VERSION), 503
+            return jsonify(status="ok", version=APP_VERSION)
         try:
             db.session.execute(db.select(func.count(User.id))).scalar()
         except Exception:
@@ -6007,6 +6154,24 @@ def create_app(test_config=None):
     @app.get("/ready")
     def ready():
         checks = {}
+        if ipfs_enabled():
+            # No Postgres to check at all under this mode (BACKLOG B-335) --
+            # database/migrations/audit_encryption/worker-heartbeat are all
+            # meaningless here. IPFS reachability plus the upload-folder
+            # check (used by non-IPFS attachment fallbacks and other local
+            # writes) are the only prerequisites this mode actually has.
+            try:
+                current_storage().client.node_id()
+                checks["ipfs"] = {"ok": True, "file_index_size": len(current_storage()._file_index)}
+            except Exception as error:
+                checks["ipfs"] = {"ok": False, "reason": type(error).__name__}
+            upload_folder = app.config["UPLOAD_FOLDER"]
+            checks["uploads"] = {
+                "ok": os.path.isdir(upload_folder) and os.access(upload_folder, os.R_OK | os.W_OK),
+                "path_configured": bool(upload_folder),
+            }
+            overall = all(check["ok"] for check in checks.values())
+            return jsonify(status="ready" if overall else "not_ready", version=APP_VERSION, checks=checks), 200 if overall else 503
         try:
             db.session.execute(db.text("SELECT 1"))
             checks["database"] = {"ok": True}
@@ -6054,12 +6219,6 @@ def create_app(test_config=None):
                 checks["object_storage"] = {"ok": True, "bucket_configured": True}
             except Exception as error:
                 checks["object_storage"] = {"ok": False, "reason": type(error).__name__}
-        if ipfs_enabled():
-            try:
-                current_storage().client.node_id()
-                checks["ipfs"] = {"ok": True, "file_index_size": len(current_storage()._file_index)}
-            except Exception as error:
-                checks["ipfs"] = {"ok": False, "reason": type(error).__name__}
         overall = all(check["ok"] for check in checks.values())
         return jsonify(status="ready" if overall else "not_ready", version=APP_VERSION, checks=checks), 200 if overall else 503
 
@@ -7280,8 +7439,10 @@ def create_app(test_config=None):
             # Persist the counter increment even when the request is within
             # limits -- otherwise it's only ever committed on the request
             # that trips the 429, and every allowed request's contribution
-            # to the window is silently lost.
-            db.session.commit()
+            # to the window is silently lost. (No-op under STORAGE_MODE=ipfs:
+            # route_rate_limit() already persisted its own in-memory counter.)
+            if not ipfs_enabled():
+                db.session.commit()
             if not (ip_ok and user_ok):
                 response = render_template(
                     "login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
@@ -7290,10 +7451,14 @@ def create_app(test_config=None):
                     deployment_profile=app.config["DEPLOYMENT_PROFILE"])
                 flash("Too many sign-in attempts. Please wait a moment and try again.", "error")
                 return response, 429
-            lockout_record = User.query.filter_by(username=username).first()
+            lockout_record = (
+                ipfs_find_user_by_username(username) if ipfs_enabled()
+                else User.query.filter_by(username=username).first()
+            )
             if lockout_record and lockout_record.locked_until and lockout_record.locked_until > now():
                 audit("login_blocked", username, "reason=locked")
-                db.session.commit()
+                if not ipfs_enabled():
+                    db.session.commit()
                 flash("This account is temporarily locked due to repeated failed sign-ins. Try again later.", "error")
                 return render_template(
                     "login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
@@ -7307,7 +7472,10 @@ def create_app(test_config=None):
                 except Exception:
                     app.logger.exception("LDAP authentication failed")
             elif setting_bool("LOCAL_AUTH_ENABLED", True):
-                candidate = User.query.filter_by(username=username).first()
+                candidate = (
+                    ipfs_find_user_by_username(username) if ipfs_enabled()
+                    else User.query.filter_by(username=username).first()
+                )
                 if candidate:
                     valid, upgraded_hash = verify_and_upgrade_password(
                         candidate.password_hash, password
@@ -7320,6 +7488,8 @@ def create_app(test_config=None):
                             # the next successful login, no bulk migration
                             # or forced reset required.
                             candidate.password_hash = upgraded_hash
+                            if ipfs_enabled():
+                                current_storage().update("user", candidate.id, password_hash=upgraded_hash)
             if user and user.active and user.mfa_enabled:
                 # Password verified but MFA is required (ISO 27001 A.8.5):
                 # do not issue a session yet. Stash the authenticated-but-
@@ -7328,7 +7498,10 @@ def create_app(test_config=None):
                 # valid TOTP code or backup code is presented.
                 user.failed_login_count = 0
                 user.locked_until = None
-                db.session.commit()
+                if ipfs_enabled():
+                    current_storage().update("user", user.id, failed_login_count=0, locked_until=None)
+                else:
+                    db.session.commit()
                 session["_mfa_pending_user_id"] = user.id
                 session["_mfa_pending_provider"] = provider
                 return redirect(url_for("login_mfa"))
@@ -7341,6 +7514,9 @@ def create_app(test_config=None):
                 session["_auth_provider"] = provider
                 session["_csrf_token"] = secrets.token_urlsafe(32)
                 audit("login", user.username, f"provider={provider}")
+                if ipfs_enabled():
+                    current_storage().update("user", user.id, failed_login_count=0, locked_until=None)
+                    return redirect(url_for("ipfs_home"))
                 db.session.commit()
                 preference = UserPreference.query.filter_by(user_id=user.id).first()
                 start_page = preference.start_page if preference else None
@@ -7356,12 +7532,32 @@ def create_app(test_config=None):
                     audit("login_locked", username, f"attempts={max_attempts}")
                 else:
                     audit("login_failed", username, f"attempts={lockout_record.failed_login_count}")
-                db.session.commit()
+                if ipfs_enabled():
+                    current_storage().update(
+                        "user", lockout_record.id,
+                        failed_login_count=lockout_record.failed_login_count,
+                        locked_until=lockout_record.locked_until,
+                    )
+                else:
+                    db.session.commit()
             flash("Invalid username or password.", "error")
         return render_template("login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
                                keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
                                local_enabled=setting_bool("LOCAL_AUTH_ENABLED", True),
                                deployment_profile=app.config["DEPLOYMENT_PROFILE"])
+
+    @app.get("/ipfs-home")
+    @login_required
+    def ipfs_home():
+        # STORAGE_MODE=ipfs's post-login landing page (BACKLOG B-335,
+        # login-only milestone) -- deliberately not the real dashboard(),
+        # which queries a dozen Postgres-only tables. A minimal page that
+        # doesn't extend base.html (whose sidebar/nav also assume
+        # Postgres-backed data) confirming login worked with zero
+        # database.
+        if not ipfs_enabled():
+            abort(404)
+        return render_template("ipfs_home.html", user=current_user)
 
     @app.route("/forgot-password", methods=["GET", "POST"])
     def forgot_password():
@@ -7549,13 +7745,14 @@ def create_app(test_config=None):
     @login_required
     def logout():
         audit("logout", current_user.username)
-        active_session = UserSession.query.filter_by(
-            session_id=session.get("_session_id"), user_id=current_user.id,
-        ).first()
-        if active_session:
-            active_session.revoked_at = now()
-            active_session.revoked_by_id = current_user.id
-        db.session.commit()
+        if not ipfs_enabled():
+            active_session = UserSession.query.filter_by(
+                session_id=session.get("_session_id"), user_id=current_user.id,
+            ).first()
+            if active_session:
+                active_session.revoked_at = now()
+                active_session.revoked_by_id = current_user.id
+            db.session.commit()
         logout_user()
         session.clear()
         return redirect(url_for("login"))
