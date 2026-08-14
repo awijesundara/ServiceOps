@@ -18,11 +18,15 @@ ALLOWLIST = {
     "notification_mark_read": "marks the caller's own notification read; no shared record changes",
     "notifications_mark_all_read": "marks the caller's own notifications read; no shared record changes",
     "notifications_clear": "deletes the caller's own notifications; no shared record changes",
+    "api_mobile_notification_read": "marks the caller's own notification read; no shared record changes",
+    "api_mobile_notifications_read_all": "marks the caller's own notifications read; no shared record changes",
     "favorite_toggle": "toggles the caller's own bookmark; no shared record changes",
     "history_record": "records the caller's own recently-viewed pages; no shared record changes",
     "set_acting_role": "switches which of the caller's own already-granted roles this session acts as; no shared record changes, and only ever narrows/restores the caller's own authority",
     "guided_tours_progress": "records the caller's own dismiss/completion state for a guided tour; no shared record changes",
     "my_workspace": "saves/resets the caller's own personal workspace widget layout; no shared record changes",
+    "api_passkey_registration_options": "creates a short-lived one-time protocol challenge; successful credential registration is audited on completion",
+    "api_passkey_authentication_options": "creates an unauthenticated short-lived one-time protocol challenge; successful login is audited on completion",
 }
 
 LOGGING_CALLS = {"audit", "log_history", "log_field_changes"}

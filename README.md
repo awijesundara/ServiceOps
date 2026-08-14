@@ -6,7 +6,7 @@ approvals, SLAs, and analytics, deployable with one command and no vendor
 lock-in.
 
 [![Supply chain](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml/badge.svg)](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml)
-[![Version](https://img.shields.io/badge/version-1.67.0-003E4C)](VERSION)
+[![Version](https://img.shields.io/badge/version-1.70.3-003E4C)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](Dockerfile)
 [![Docker](https://img.shields.io/badge/docker-compose%20%7C%20kubernetes-2496ED?logo=docker&logoColor=white)](#quick-start)
 [![PostgreSQL](https://img.shields.io/badge/database-postgresql-4169E1?logo=postgresql&logoColor=white)](#quick-start)
@@ -44,6 +44,15 @@ flowchart LR
 The app is stateless and horizontally scalable behind a load balancer; the
 worker is a single always-on process that drives SLA breach detection,
 workflow automation, and durable delivery of notifications/webhooks.
+
+## ServiceOps for iPhone
+
+The native [ServiceOps iOS app](https://github.com/awijesundara/ServiceOps_iOS)
+uses an authenticated ServiceOps user session—never a shared embedded API key.
+It supports incidents and changes, work notes, approvals, knowledge and CMDB
+search, Face ID or Touch ID locking, passkeys, MFA, and APNs ticket and security
+notifications. Signed-in users can also open **ServiceOps mobile** from the web
+sidebar or Help Center for connection and administrator setup guidance.
 
 ## Quick start
 
