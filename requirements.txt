@@ -22,3 +22,5 @@ pyotp==2.10.0
 pysnmp==7.1.28
 dnspython==2.8.0
 boto3==1.40.4
+webauthn==2.7.1
+httpx[http2]==0.28.1

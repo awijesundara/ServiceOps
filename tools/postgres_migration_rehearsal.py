@@ -76,12 +76,12 @@ def seed_representative_rows(row_count: int) -> None:
     ).scalar_one()
     db.session.execute(text(
         "INSERT INTO knowledge "
-        "(title, category, body, published, author_id, created_at, tenant_id) "
+        "(title, category, body, published, archived, author_id, created_at, tenant_id) "
         "SELECT "
         "'Migration rehearsal ' || lpad(value::text, 8, '0'), "
         "'Migration Rehearsal', "
         "'Synthetic isolated migration verification record ' || value::text, "
-        "true, :author_id, CURRENT_TIMESTAMP, 1 "
+        "true, false, :author_id, CURRENT_TIMESTAMP, 1 "
         "FROM generate_series(1, :row_count) AS value "
         "ON CONFLICT DO NOTHING"
     ), {"author_id": author_id, "row_count": row_count})

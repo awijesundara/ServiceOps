@@ -23,12 +23,13 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  CatalogItemRouting, DirectoryGroupMapping,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
-                 MonitoringEvent, MonitoringSource, Notification, OperationalTask,
+                 MonitoringEvent, MonitoringSource, Notification, MobilePushDevice, OperationalTask,
                  OutboxEvent, ProblemProfile, Rack, RecordLink, RolePolicyOverride, ScheduleHoliday, SLADefinition,
                  RequestedItem, PlatformSetting, ServiceOffering, ServiceOfferingCI, SupportGroup, SupportGroupAlias,
                  TaskCI, TaskHistory, TaskNote, TaskSLA,
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference, UserRoleGrant, ManagedRoleGrant,
                  ApplicationLog,
+                 PasskeyChallenge, PasskeyCredential,
                  create_ticket_with_unique_number, create_with_retry_on_number_collision, next_number,
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
@@ -870,6 +871,113 @@ def test_mobile_user_authentication_audit_attribution_and_revocation(client, app
         "Authorization": f"Bearer {new_access}",
     }).status_code == 204
     assert client.get("/api/v1/tickets", headers={"Authorization": f"Bearer {new_access}"}).status_code == 401
+
+
+def test_mobile_workspace_push_inbox_knowledge_and_cmdb_are_user_scoped(client, app):
+    mobile_headers = {
+        "X-ServiceOps-App-Version": "1.3.0", "X-ServiceOps-App-Build": "5",
+        "X-ServiceOps-Platform": "iOS", "X-ServiceOps-Device": "iPhone17,1",
+    }
+    signed_in = client.post("/api/v1/auth/mobile/login", headers=mobile_headers, json={
+        "username": "admin", "password": "Admin123!", "provider": "local",
+    })
+    assert signed_in.status_code == 200
+    headers = {"Authorization": f"Bearer {signed_in.json['access_token']}"}
+    bootstrap = client.get("/api/v1/mobile/bootstrap", headers=headers)
+    assert bootstrap.status_code == 200
+    assert bootstrap.json["data"]["user"]["username"] == "admin"
+    assert bootstrap.json["data"]["assignment_groups"]
+
+    token = "ab" * 32
+    registered = client.post("/api/v1/mobile/push-devices", headers=headers, json={
+        "token": token, "device_id": "test-device", "environment": "sandbox",
+    })
+    assert registered.status_code == 201
+    with app.app_context():
+        device = MobilePushDevice.query.one()
+        assert device.token_hash != token
+        assert settings_cipher().decrypt(device.token_encrypted.encode()).decode() == token
+        admin = User.query.filter_by(username="admin").one()
+        create_notification(admin.id, "Mobile test", "Open the record", admin.tenant_id,
+                            target_type="ticket", target_id=1)
+        db.session.commit()
+
+    inbox = client.get("/api/v1/mobile/notifications", headers=headers)
+    assert inbox.status_code == 200
+    notification_id = inbox.json["data"][0]["id"]
+    assert client.post(f"/api/v1/mobile/notifications/{notification_id}/read", headers=headers).status_code == 200
+    assert client.get("/api/v1/mobile/knowledge?q=VPN", headers=headers).status_code == 200
+    assert client.get("/api/v1/mobile/cmdb?q=core", headers=headers).status_code == 200
+    assert client.delete("/api/v1/mobile/push-devices/test-device", headers=headers).status_code == 204
+    with app.app_context():
+        assert MobilePushDevice.query.one().enabled is False
+
+
+def test_passkey_options_require_https_configuration(client):
+    response = client.post("/api/v1/auth/passkeys/authenticate/options")
+    assert response.status_code == 503
+    assert "HTTPS" in response.get_data(as_text=True)
+
+
+def test_passkey_authentication_is_user_attributed_and_challenge_is_single_use(client, app, monkeypatch):
+    import base64
+    from types import SimpleNamespace
+    import app as app_module
+
+    monkeypatch.setenv("WEBAUTHN_RP_ID", "serviceops.example.com")
+    monkeypatch.setenv("WEBAUTHN_ORIGIN", "https://serviceops.example.com")
+    mobile_headers = {
+        "X-ServiceOps-App-Version": "1.2.0",
+        "X-ServiceOps-App-Build": "50",
+        "X-ServiceOps-Platform": "iOS",
+        "X-ServiceOps-Device": "iPhone17,1",
+    }
+    credential_id = b"test-passkey-credential"
+    encoded_id = base64.urlsafe_b64encode(credential_id).rstrip(b"=").decode()
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        db.session.add(PasskeyCredential(
+            credential_id=credential_id, public_key=b"test-public-key", sign_count=1,
+            name="Test passkey", user_id=admin.id, tenant_id=admin.tenant_id,
+        ))
+        db.session.commit()
+
+    options = client.post("/api/v1/auth/passkeys/authenticate/options")
+    assert options.status_code == 200
+    challenge_id = options.json["challenge_id"]
+    monkeypatch.setattr(
+        app_module, "verify_passkey_authentication",
+        lambda **kwargs: SimpleNamespace(new_sign_count=2),
+    )
+    payload = {
+        "challenge_id": challenge_id,
+        "credential": {"id": encoded_id, "rawId": encoded_id, "type": "public-key", "response": {}},
+    }
+    signed_in = client.post(
+        "/api/v1/auth/passkeys/authenticate/complete", headers=mobile_headers, json=payload,
+    )
+    assert signed_in.status_code == 200
+    assert signed_in.json["access_token"].startswith("som_")
+    assert client.post(
+        "/api/v1/auth/passkeys/authenticate/complete", headers=mobile_headers, json=payload,
+    ).status_code == 400
+    with app.app_context():
+        credential = PasskeyCredential.query.filter_by(credential_id=credential_id).one()
+        passkey_id = credential.id
+        assert credential.sign_count == 2
+        assert PasskeyChallenge.query.filter_by(id=challenge_id).first() is None
+        audit_row = Audit.query.filter_by(action="mobile login").one()
+        assert audit_row.user.username == "admin"
+        assert "authentication=passkey" in audit_row.details
+    bearer = {"Authorization": f"Bearer {signed_in.json['access_token']}"}
+    listed = client.get("/api/v1/auth/passkeys", headers=bearer)
+    assert listed.status_code == 200
+    assert listed.json["data"][0]["name"] == "Test passkey"
+    assert client.delete(f"/api/v1/auth/passkeys/{passkey_id}", headers=bearer).status_code == 204
+    assert client.get("/api/v1/auth/passkeys", headers=bearer).json["data"] == []
+    with app.app_context():
+        assert PasskeyCredential.query.filter_by(id=passkey_id).first() is None
+        assert Audit.query.filter_by(action="passkey revoked").one().user.username == "admin"
 
 
 def test_api_client_admin_one_time_secret_and_pwa_privacy(client, app):
