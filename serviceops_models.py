@@ -60,6 +60,8 @@ __all__ = [
     "AuditRetentionPolicy",
     "ApplicationLog",
     "APIClient",
+    "PasskeyCredential",
+    "PasskeyChallenge",
     "APIIdempotencyRecord",
     "APIRateLimitWindow",
     "RouteRateLimitWindow",
@@ -96,6 +98,7 @@ __all__ = [
     "Notification",
     "NotificationPreference",
     "NotificationTemplate",
+    "MobilePushDevice",
     "SupportGroup",
     "GroupMember",
     "DirectoryGroupMapping",
@@ -299,7 +302,7 @@ class UserSession(db.Model):
     user_agent = db.Column(db.String(500))
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     last_seen_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
-    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False, index=True)
     revoked_at = db.Column(db.DateTime(timezone=True))
     revoked_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     user = db.relationship("User", foreign_keys=[user_id])
@@ -670,6 +673,36 @@ class APIClient(db.Model):
             return set(json.loads(self.scopes_json))
         except (TypeError, json.JSONDecodeError):
             return set()
+
+
+class PasskeyCredential(db.Model):
+    """Tenant-scoped WebAuthn credential owned by one ServiceOps user."""
+    id = db.Column(db.Integer, primary_key=True)
+    credential_id = db.Column(db.LargeBinary, nullable=False, unique=True)
+    public_key = db.Column(db.LargeBinary, nullable=False)
+    sign_count = db.Column(db.BigInteger, nullable=False, default=0)
+    name = db.Column(db.String(120), nullable=False, default="Passkey")
+    transports_json = db.Column(db.Text, nullable=False, default="[]")
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    last_used_at = db.Column(db.DateTime(timezone=True))
+    user = db.relationship("User")
+    __table_args__ = (
+        db.Index("ix_passkey_credential_tenant_user", "tenant_id", "user_id"),
+    )
+
+
+class PasskeyChallenge(db.Model):
+    """Short-lived, single-use WebAuthn challenge; never an authentication secret."""
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    challenge = db.Column(db.LargeBinary, nullable=False)
+    purpose = db.Column(db.String(20), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    user = db.relationship("User")
 
 
 class APIIdempotencyRecord(db.Model):
@@ -1554,6 +1587,34 @@ class NotificationTemplate(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     __table_args__ = (db.UniqueConstraint("tenant_id", "event_type", name="uq_notification_template_tenant_event"),)
+
+
+class MobilePushDevice(db.Model):
+    """An APNs installation owned by one authenticated tenant user.
+
+    The raw device token is encrypted at rest. ``token_hash`` provides a
+    non-secret stable lookup key without making tokens visible in logs or
+    administrative queries.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    device_id = db.Column(db.String(64), nullable=False)
+    token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    token_encrypted = db.Column(db.Text, nullable=False)
+    environment = db.Column(db.String(12), nullable=False, default="sandbox")
+    app_version = db.Column(db.String(40), nullable=False)
+    app_build = db.Column(db.String(40), nullable=False)
+    device_model = db.Column(db.String(120), nullable=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    last_registered_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    last_delivered_at = db.Column(db.DateTime(timezone=True))
+    last_error = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    user = db.relationship("User")
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "user_id", "device_id", name="uq_mobile_push_device_owner_device"),
+    )
 
 
 class SupportGroup(db.Model):

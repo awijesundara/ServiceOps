@@ -29,6 +29,7 @@ from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
+import httpx
 import pyotp
 import boto3
 from flask import Flask, Response, abort, current_app, flash, g, has_app_context, has_request_context, jsonify, redirect, render_template, request, send_from_directory, session, url_for
@@ -36,6 +37,7 @@ from markupsafe import Markup, escape
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_sqlalchemy import SQLAlchemy
 from authlib.integrations.flask_client import OAuth
+from authlib.jose import jwt
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from alembic.migration import MigrationContext
@@ -43,13 +45,18 @@ from alembic.script import ScriptDirectory
 from cryptography.fernet import Fernet, InvalidToken
 from ldap3 import ALL, BASE, SUBTREE, Connection, Server, Tls
 from ldap3.utils.conv import escape_filter_chars
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
+
+
+def escape_like(value):
+    """Escape user text before embedding it in a SQL LIKE pattern."""
+    return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 from serviceops_core.security import (
     hash_password, load_policy, mask_secret, redact, RedactingFilter, role_has_action,
@@ -94,6 +101,13 @@ from serviceops_core.notification_templates import (
     NOTIFICATION_EVENT_TYPES, NON_MUTABLE_EVENT_TYPES, render_notification_template, is_event_muted,
 )
 from serviceops_core.navigation import navigation_entries
+from serviceops_core.passkeys import (
+    authentication_options as build_passkey_authentication_options,
+    registration_options as build_passkey_registration_options,
+    verify_authentication as verify_passkey_authentication,
+    verify_registration as verify_passkey_registration,
+)
+from webauthn.helpers import base64url_to_bytes
 
 # VERSION is the release source of truth; shown in the UI, API, and health
 # endpoint so operators can confirm the running build without host access.
@@ -592,6 +606,60 @@ def create_api_token():
 MOBILE_API_SCOPES = {"tickets:read", "incidents:create", "tickets:update"}
 
 
+def passkey_configuration():
+    rp_id = os.getenv("WEBAUTHN_RP_ID", "").strip().lower()
+    origin = os.getenv("WEBAUTHN_ORIGIN", "").strip().rstrip("/")
+    if not rp_id or not origin or not origin.startswith("https://"):
+        abort(503, description="Passkeys require WEBAUTHN_RP_ID and an HTTPS WEBAUTHN_ORIGIN.")
+    return rp_id, origin
+
+
+def issue_mobile_session(user, authentication_method, backup_used=False):
+    app_version = _bounded_mobile_header("X-ServiceOps-App-Version", 40)
+    app_build = _bounded_mobile_header("X-ServiceOps-App-Build", 40)
+    platform = _bounded_mobile_header("X-ServiceOps-Platform", 40)
+    device = _bounded_mobile_header("X-ServiceOps-Device", 120)
+    access = f"som_{secrets.token_urlsafe(32)}"
+    refresh = f"sor_{secrets.token_urlsafe(48)}"
+    row = APIClient(
+        name=f"{platform} mobile session for {user.username}", token_prefix=access[:12],
+        token_hash=api_token_hash(access), refresh_token_hash=api_token_hash(refresh),
+        scopes_json=json.dumps(sorted(MOBILE_API_SCOPES)), acting_user_id=user.id,
+        created_by_id=user.id, tenant_id=user.tenant_id, client_kind="mobile",
+        access_expires_at=now() + timedelta(minutes=15), refresh_expires_at=now() + timedelta(days=30),
+        app_version=app_version, app_build=app_build, platform=platform, device_model=device,
+    )
+    db.session.add(row)
+    db.session.flush()
+    detail = f"; authentication={authentication_method}"
+    if backup_used:
+        detail += "; mfa=backup_code"
+    elif user.mfa_enabled and authentication_method == "password":
+        detail += "; mfa=totp"
+    audit("mobile login", user.username, mobile_client_details(row) + detail,
+          user_id=user.id, tenant_id=user.tenant_id)
+    return access, refresh
+
+
+def consume_passkey_challenge(challenge_id, purpose):
+    row = PasskeyChallenge.query.filter_by(id=challenge_id, purpose=purpose).with_for_update().first()
+    if not row or align_tz(row.expires_at, now()) <= now():
+        abort(400, description="The passkey challenge is invalid or expired.")
+    db.session.delete(row)
+    return row
+
+
+def enforce_passkey_attempt_limit():
+    ip = request.remote_addr or "unknown"
+    allowed = route_rate_limit(
+        "passkey_authentication", f"ip:{ip}",
+        setting_int("LOGIN_RATE_LIMIT_PER_IP_PER_MINUTE", 20),
+    )
+    db.session.commit()
+    if not allowed:
+        abort(429, description="Too many passkey attempts. Try again later.")
+
+
 def _bounded_mobile_header(name, maximum):
     value = request.headers.get(name, "").strip()
     if not value or len(value) > maximum or any(ord(char) < 32 for char in value):
@@ -960,10 +1028,13 @@ def create_notification(user_id, title, body, tenant_id=None, target_type=None, 
         target_type=target_type, target_id=target_id,
     )
     db.session.add(notification)
+    db.session.flush()
     db.session.add(OutboxEvent(
         event_type="notification.created",
         payload_json=json.dumps({
             "user_id": user_id, "title": title, "body": body,
+            "notification_id": notification.id,
+            "target_type": target_type, "target_id": target_id,
             # Not to be confused with the OutboxEvent's own event_type
             # above (always "notification.created", the dispatch
             # category) -- this is B-130's per-notification category, kept
@@ -974,6 +1045,81 @@ def create_notification(user_id, title, body, tenant_id=None, target_type=None, 
         tenant_id=tenant_id,
     ))
     return notification
+
+
+def _apns_authorization_token():
+    private_key = setting_value("APNS_PRIVATE_KEY", "").replace("\\n", "\n")
+    key_id = setting_value("APNS_KEY_ID", "")
+    team_id = setting_value("APNS_TEAM_ID", "")
+    if not private_key or not key_id or not team_id:
+        raise RuntimeError("APNs team ID, key ID, and private key are required.")
+    token = jwt.encode(
+        {"alg": "ES256", "kid": key_id},
+        {"iss": team_id, "iat": int(now().timestamp())},
+        private_key,
+    )
+    return token.decode() if isinstance(token, bytes) else token
+
+
+def deliver_mobile_push(event):
+    """Deliver one notification event to every active installation.
+
+    APNs responses are evaluated per device: expired/unregistered tokens are
+    disabled immediately while transient failures keep the outbox event
+    retryable. The payload contains only display text and opaque identifiers;
+    record details are fetched again under the user's current authorization.
+    """
+    if event.event_type != "notification.created":
+        return 0
+    payload = event.payload
+    devices = MobilePushDevice.query.filter_by(
+        tenant_id=event.tenant_id, user_id=payload.get("user_id"), enabled=True,
+    ).all()
+    if not devices:
+        return 0
+    topic = setting_value("APNS_BUNDLE_ID", "")
+    if not topic:
+        raise RuntimeError("APNS_BUNDLE_ID is required.")
+    authorization = _apns_authorization_token()
+    delivered = 0
+    with httpx.Client(http2=True, timeout=10.0) as client:
+        for device in devices:
+            token = settings_cipher().decrypt(device.token_encrypted.encode()).decode()
+            host = "api.sandbox.push.apple.com" if device.environment == "sandbox" else "api.push.apple.com"
+            response = client.post(
+                f"https://{host}/3/device/{token}",
+                headers={
+                    "authorization": f"bearer {authorization}", "apns-topic": topic,
+                    "apns-push-type": "alert", "apns-priority": "10",
+                },
+                json={
+                    "aps": {
+                        "alert": {"title": payload["title"], "body": payload["body"]},
+                        "sound": "default", "badge": 1,
+                    },
+                    "notification_id": payload.get("notification_id"),
+                    "target_type": payload.get("target_type"),
+                    "target_id": payload.get("target_id"),
+                },
+            )
+            if response.status_code == 200:
+                device.last_delivered_at = now()
+                device.last_error = None
+                delivered += 1
+                continue
+            reason = ""
+            try:
+                reason = str(response.json().get("reason", ""))
+            except ValueError:
+                reason = response.text[:200]
+            device.last_error = f"HTTP {response.status_code}: {reason}"[:500]
+            if response.status_code in (400, 410) and reason in {
+                "BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered",
+            }:
+                device.enabled = False
+                continue
+            raise RuntimeError(device.last_error)
+    return delivered
 
 
 def _integration_address_allowed(address, allow_private_network):
@@ -1158,6 +1304,25 @@ def process_outbox(limit=50):
     for event in events:
         failures = []
         attempted = False
+        if setting_bool("APNS_ENABLED") and event.event_type == "notification.created":
+            prior = IntegrationDelivery.query.filter_by(
+                outbox_event_id=event.id, channel="apns",
+            ).filter(IntegrationDelivery.state.in_(["Delivered", "Skipped"])).first()
+            if not prior:
+                attempted = True
+                try:
+                    count = deliver_mobile_push(event)
+                    db.session.add(IntegrationDelivery(
+                        outbox_event_id=event.id, channel="apns",
+                        state="Delivered" if count else "Skipped",
+                        tenant_id=event.tenant_id,
+                    ))
+                except Exception as error:
+                    failures.append(f"apns: {error}")
+                    db.session.add(IntegrationDelivery(
+                        outbox_event_id=event.id, channel="apns", state="Failed",
+                        error=str(error)[:1000], tenant_id=event.tenant_id,
+                    ))
         if setting_bool("SMTP_ENABLED"):
             prior = IntegrationDelivery.query.filter_by(
                 outbox_event_id=event.id, channel="smtp",
@@ -5410,6 +5575,8 @@ def create_app(test_config=None):
             and request.endpoint not in {
                 "api_openapi", "api_docs", "monitoring_ingest",
                 "api_mobile_login", "api_mobile_refresh",
+                "api_passkey_authentication_options", "api_passkey_authentication_complete",
+                "apple_app_site_association",
             }
         ):
             authenticate_api_request()
@@ -5417,7 +5584,10 @@ def create_app(test_config=None):
     @app.before_request
     def verify_csrf():
         if (
-            request.endpoint in {"api_mobile_login", "api_mobile_refresh"}
+            request.endpoint in {
+                "api_mobile_login", "api_mobile_refresh",
+                "api_passkey_authentication_options", "api_passkey_authentication_complete",
+            }
             or
             request.path.startswith("/api/v1/monitoring/")
             or (request.path.startswith("/api/v1/") or request.path.startswith("/scim/v2/"))
@@ -5922,6 +6092,26 @@ def create_app(test_config=None):
                 "/auth/mobile/logout": {"post": {
                     "summary": "Revoke the authenticated mobile session",
                 }},
+                "/auth/passkeys/register/options": {"post": {
+                    "summary": "Issue an authenticated mobile passkey registration challenge",
+                }},
+                "/auth/passkeys/register/complete": {"post": {
+                    "summary": "Verify and store a mobile passkey",
+                }},
+                "/auth/passkeys/authenticate/options": {"post": {
+                    "summary": "Issue a discoverable passkey authentication challenge",
+                    "security": [],
+                }},
+                "/auth/passkeys/authenticate/complete": {"post": {
+                    "summary": "Verify a passkey and issue a mobile user session",
+                    "security": [],
+                }},
+                "/auth/passkeys": {"get": {
+                    "summary": "List the authenticated mobile user's passkeys",
+                }},
+                "/auth/passkeys/{credential_id}": {"delete": {
+                    "summary": "Revoke one passkey owned by the authenticated mobile user",
+                }},
                 "/openapi.json": {
                     "get": {"summary": "OpenAPI contract", "security": []}
                 },
@@ -6051,26 +6241,152 @@ def create_app(test_config=None):
             abort(401, description="A valid MFA or backup code is required.")
         user.failed_login_count = 0
         user.locked_until = None
-        app_version = _bounded_mobile_header("X-ServiceOps-App-Version", 40)
-        app_build = _bounded_mobile_header("X-ServiceOps-App-Build", 40)
-        platform = _bounded_mobile_header("X-ServiceOps-Platform", 40)
-        device = _bounded_mobile_header("X-ServiceOps-Device", 120)
-        access = f"som_{secrets.token_urlsafe(32)}"
-        refresh = f"sor_{secrets.token_urlsafe(48)}"
-        row = APIClient(
-            name=f"{platform} mobile session for {user.username}", token_prefix=access[:12],
-            token_hash=api_token_hash(access), refresh_token_hash=api_token_hash(refresh),
-            scopes_json=json.dumps(sorted(MOBILE_API_SCOPES)), acting_user_id=user.id,
-            created_by_id=user.id, tenant_id=user.tenant_id, client_kind="mobile",
-            access_expires_at=now() + timedelta(minutes=15), refresh_expires_at=now() + timedelta(days=30),
-            app_version=app_version, app_build=app_build, platform=platform, device_model=device,
-        )
-        db.session.add(row)
-        db.session.flush()
-        audit("mobile login", user.username, mobile_client_details(row) + ("; mfa=backup_code" if backup_used else "; mfa=totp" if user.mfa_enabled else ""), user_id=user.id, tenant_id=user.tenant_id)
+        access, refresh = issue_mobile_session(user, "password", backup_used)
         db.session.commit()
         return jsonify({"access_token": access, "refresh_token": refresh, "expires_in": 900,
                         "user": {"id": user.id, "username": user.username, "name": user.name}})
+
+    @app.post("/api/v1/auth/passkeys/register/options")
+    def api_passkey_registration_options():
+        if g.api_client.client_kind != "mobile":
+            abort(403, description="A mobile user session is required.")
+        rp_id, _ = passkey_configuration()
+        PasskeyChallenge.query.filter(
+            PasskeyChallenge.expires_at <= now(),
+            PasskeyChallenge.user_id == g.api_user.id,
+        ).delete(synchronize_session=False)
+        credentials = PasskeyCredential.query.filter_by(
+            tenant_id=g.api_user.tenant_id, user_id=g.api_user.id,
+        ).all()
+        options, payload = build_passkey_registration_options(
+            rp_id=rp_id, rp_name=os.getenv("WEBAUTHN_RP_NAME", "ServiceOps"),
+            user=g.api_user, credentials=credentials,
+        )
+        challenge = PasskeyChallenge(
+            challenge=options.challenge, purpose="registration", user_id=g.api_user.id,
+            tenant_id=g.api_user.tenant_id, expires_at=now() + timedelta(minutes=5),
+        )
+        db.session.add(challenge)
+        db.session.commit()
+        return jsonify({"challenge_id": challenge.id, "options": payload})
+
+    @app.post("/api/v1/auth/passkeys/register/complete")
+    def api_passkey_registration_complete():
+        if g.api_client.client_kind != "mobile":
+            abort(403, description="A mobile user session is required.")
+        body = request.get_json(silent=True) or {}
+        challenge = consume_passkey_challenge(
+            str(body.get("challenge_id") or body.get("challengeId") or ""), "registration",
+        )
+        if challenge.user_id != g.api_user.id or challenge.tenant_id != g.api_user.tenant_id:
+            abort(403, description="The passkey challenge belongs to another identity.")
+        challenge_bytes = challenge.challenge
+        db.session.commit()  # Consume before cryptographic verification to prevent replay.
+        rp_id, origin = passkey_configuration()
+        try:
+            verified = verify_passkey_registration(
+                credential=body.get("credential") or {}, challenge=challenge_bytes,
+                rp_id=rp_id, origin=origin,
+            )
+        except Exception:
+            abort(400, description="Passkey registration verification failed.")
+        if PasskeyCredential.query.filter_by(credential_id=verified.credential_id).first():
+            abort(409, description="This passkey is already registered.")
+        name = str(body.get("name") or "iPhone passkey").strip()[:120] or "iPhone passkey"
+        transports = ((body.get("credential") or {}).get("response") or {}).get("transports") or []
+        row = PasskeyCredential(
+            credential_id=verified.credential_id, public_key=verified.credential_public_key,
+            sign_count=verified.sign_count, name=name, transports_json=json.dumps(transports),
+            user_id=g.api_user.id, tenant_id=g.api_user.tenant_id,
+        )
+        db.session.add(row)
+        audit("passkey registered", g.api_user.username, f"passkey={name}; channel=mobile",
+              user_id=g.api_user.id, tenant_id=g.api_user.tenant_id)
+        db.session.commit()
+        return jsonify({"id": row.id, "name": row.name}), 201
+
+    @app.get("/api/v1/auth/passkeys")
+    def api_passkeys_list():
+        if g.api_client.client_kind != "mobile":
+            abort(403, description="A mobile user session is required.")
+        rows = PasskeyCredential.query.filter_by(
+            tenant_id=g.api_user.tenant_id, user_id=g.api_user.id,
+        ).order_by(PasskeyCredential.created_at.desc()).all()
+        return jsonify({"data": [{
+            "id": row.id, "name": row.name,
+            "created_at": row.created_at.isoformat(),
+            "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
+        } for row in rows]})
+
+    @app.delete("/api/v1/auth/passkeys/<int:credential_id>")
+    def api_passkey_delete(credential_id):
+        if g.api_client.client_kind != "mobile":
+            abort(403, description="A mobile user session is required.")
+        row = PasskeyCredential.query.filter_by(
+            id=credential_id, tenant_id=g.api_user.tenant_id, user_id=g.api_user.id,
+        ).first_or_404()
+        audit("passkey revoked", g.api_user.username, f"passkey={row.name}; channel=mobile",
+              user_id=g.api_user.id, tenant_id=g.api_user.tenant_id)
+        db.session.delete(row)
+        db.session.commit()
+        return "", 204
+
+    @app.post("/api/v1/auth/passkeys/authenticate/options")
+    def api_passkey_authentication_options():
+        enforce_passkey_attempt_limit()
+        rp_id, _ = passkey_configuration()
+        PasskeyChallenge.query.filter(
+            PasskeyChallenge.expires_at <= now(),
+            PasskeyChallenge.purpose == "authentication",
+        ).delete(synchronize_session=False)
+        options, payload = build_passkey_authentication_options(rp_id=rp_id)
+        challenge = PasskeyChallenge(
+            challenge=options.challenge, purpose="authentication",
+            expires_at=now() + timedelta(minutes=5),
+        )
+        db.session.add(challenge)
+        db.session.commit()
+        return jsonify({"challenge_id": challenge.id, "options": payload})
+
+    @app.post("/api/v1/auth/passkeys/authenticate/complete")
+    def api_passkey_authentication_complete():
+        enforce_passkey_attempt_limit()
+        body = request.get_json(silent=True) or {}
+        challenge = consume_passkey_challenge(
+            str(body.get("challenge_id") or body.get("challengeId") or ""), "authentication",
+        )
+        credential = body.get("credential") or {}
+        try:
+            credential_id = base64url_to_bytes(str(credential.get("rawId") or credential.get("id") or ""))
+        except Exception:
+            abort(400, description="The passkey credential identifier is invalid.")
+        stored = PasskeyCredential.query.filter_by(credential_id=credential_id).first()
+        if not stored or not stored.user.active or stored.user.tenant_id != stored.tenant_id:
+            abort(401, description="The passkey is not registered or its user is inactive.")
+        challenge_bytes = challenge.challenge
+        db.session.commit()  # Consume before cryptographic verification to prevent replay.
+        rp_id, origin = passkey_configuration()
+        try:
+            verified = verify_passkey_authentication(
+                credential=credential, challenge=challenge_bytes, rp_id=rp_id,
+                origin=origin, stored=stored,
+            )
+        except Exception:
+            abort(401, description="Passkey authentication failed.")
+        stored.sign_count = verified.new_sign_count
+        stored.last_used_at = now()
+        access, refresh = issue_mobile_session(stored.user, "passkey")
+        db.session.commit()
+        return jsonify({"access_token": access, "refresh_token": refresh, "expires_in": 900,
+                        "user": {"id": stored.user.id, "username": stored.user.username,
+                                 "name": stored.user.name}})
+
+    @app.get("/.well-known/apple-app-site-association")
+    def apple_app_site_association():
+        app_id = os.getenv("APPLE_PASSKEY_APP_ID", "").strip()
+        if not app_id:
+            abort(404)
+        return jsonify({"webcredentials": {"apps": [app_id]}})
 
     @app.post("/api/v1/auth/mobile/refresh")
     def api_mobile_refresh():
@@ -6441,6 +6757,207 @@ def create_app(test_config=None):
         )
         db.session.commit()
         return jsonify(document), 202
+
+    def mobile_only():
+        if g.api_client.client_kind != "mobile":
+            abort(403, description="A mobile user session is required.")
+
+    @app.get("/api/v1/mobile/bootstrap")
+    def api_mobile_bootstrap():
+        mobile_only()
+        groups = SupportGroup.query.join(GroupMember).filter(
+            SupportGroup.tenant_id == g.api_user.tenant_id,
+            SupportGroup.active.is_(True), GroupMember.user_id == g.api_user.id,
+        ).order_by(SupportGroup.name).all()
+        if role_at_least(g.api_user.role, "manager"):
+            groups = SupportGroup.query.filter_by(
+                tenant_id=g.api_user.tenant_id, active=True,
+            ).order_by(SupportGroup.name).all()
+        pending = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
+            ApprovalVote.approver_id == g.api_user.id,
+            ApprovalVote.state == "Requested",
+            ApprovalChain.tenant_id == g.api_user.tenant_id,
+        ).count()
+        unread = Notification.query.filter_by(
+            tenant_id=g.api_user.tenant_id, user_id=g.api_user.id, read=False,
+        ).count()
+        return jsonify({"data": {
+            "user": {"id": g.api_user.id, "username": g.api_user.username,
+                     "name": g.api_user.name, "role": g.api_user.effective_role},
+            "assignment_groups": [{"id": row.id, "name": row.name} for row in groups],
+            "counts": {"pending_approvals": pending, "unread_notifications": unread},
+            "capabilities": {
+                "create_incident": effective_role_has_action(g.api_user.role, "create", tenant_id=g.api_user.tenant_id),
+                "manage_tickets": effective_role_has_action(g.api_user.role, "update", tenant_id=g.api_user.tenant_id),
+                "view_cmdb": role_at_least(g.api_user.effective_role, "agent"),
+            },
+        }})
+
+    @app.post("/api/v1/mobile/push-devices")
+    def api_mobile_push_register():
+        mobile_only()
+        body = request.get_json(silent=True) or {}
+        token = str(body.get("token", "")).strip().lower()
+        device_id = str(body.get("device_id", "")).strip()
+        environment = str(body.get("environment", "sandbox"))
+        if not re.fullmatch(r"[0-9a-f]{64,200}", token):
+            abort(400, description="A valid APNs device token is required.")
+        if not device_id or len(device_id) > 64 or environment not in {"sandbox", "production"}:
+            abort(400, description="A valid device_id and APNs environment are required.")
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        row = MobilePushDevice.query.filter_by(token_hash=token_hash).first()
+        if row and (row.user_id != g.api_user.id or row.tenant_id != g.api_user.tenant_id):
+            row.user_id = g.api_user.id
+            row.tenant_id = g.api_user.tenant_id
+            row.device_id = device_id
+        if not row:
+            row = MobilePushDevice(
+                token_hash=token_hash, device_id=device_id,
+                user_id=g.api_user.id, tenant_id=g.api_user.tenant_id,
+                app_version=g.api_client.app_version, app_build=g.api_client.app_build,
+                device_model=g.api_client.device_model,
+            )
+            db.session.add(row)
+        row.token_encrypted = settings_cipher().encrypt(token.encode()).decode()
+        row.environment = environment
+        row.app_version = g.api_client.app_version
+        row.app_build = g.api_client.app_build
+        row.device_model = g.api_client.device_model
+        row.enabled = True
+        row.last_registered_at = now()
+        row.last_error = None
+        audit("mobile push registered", g.api_user.username, mobile_client_details(g.api_client),
+              user_id=g.api_user.id, tenant_id=g.api_user.tenant_id)
+        db.session.commit()
+        return jsonify({"data": {"device_id": device_id, "enabled": True}}), 201
+
+    @app.delete("/api/v1/mobile/push-devices/<device_id>")
+    def api_mobile_push_unregister(device_id):
+        mobile_only()
+        MobilePushDevice.query.filter_by(
+            tenant_id=g.api_user.tenant_id, user_id=g.api_user.id, device_id=device_id,
+        ).update({"enabled": False})
+        audit("mobile push unregistered", g.api_user.username, mobile_client_details(g.api_client),
+              user_id=g.api_user.id, tenant_id=g.api_user.tenant_id)
+        db.session.commit()
+        return "", 204
+
+    @app.get("/api/v1/mobile/notifications")
+    def api_mobile_notifications():
+        mobile_only()
+        rows = Notification.query.filter_by(
+            tenant_id=g.api_user.tenant_id, user_id=g.api_user.id,
+        ).order_by(Notification.created_at.desc()).limit(100).all()
+        return jsonify({"data": [{
+            "id": row.id, "title": row.title, "body": row.body, "read": row.read,
+            "created_at": row.created_at.isoformat(), "target_type": row.target_type,
+            "target_id": row.target_id,
+        } for row in rows]})
+
+    @app.post("/api/v1/mobile/notifications/<int:notification_id>/read")
+    def api_mobile_notification_read(notification_id):
+        mobile_only()
+        row = Notification.query.filter_by(
+            id=notification_id, tenant_id=g.api_user.tenant_id, user_id=g.api_user.id,
+        ).first_or_404()
+        row.read = True
+        db.session.commit()
+        return jsonify({"data": {"id": row.id, "read": True}})
+
+    @app.post("/api/v1/mobile/notifications/read-all")
+    def api_mobile_notifications_read_all():
+        mobile_only()
+        Notification.query.filter_by(
+            tenant_id=g.api_user.tenant_id, user_id=g.api_user.id, read=False,
+        ).update({"read": True})
+        db.session.commit()
+        return "", 204
+
+    @app.get("/api/v1/mobile/approvals")
+    def api_mobile_approvals():
+        mobile_only()
+        rows = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
+            ApprovalVote.approver_id == g.api_user.id,
+            ApprovalChain.tenant_id == g.api_user.tenant_id,
+        ).order_by(ApprovalVote.id.desc()).limit(100).all()
+        return jsonify({"data": [{
+            "id": row.id, "state": row.state, "comments": row.comments or "",
+            "gate": row.gate.name, "chain": row.gate.chain.name,
+            "target_type": row.gate.chain.target_type, "target_id": row.gate.chain.target_id,
+        } for row in rows]})
+
+    @app.post("/api/v1/mobile/approvals/<int:vote_id>/decide")
+    def api_mobile_approval_decide(vote_id):
+        mobile_only()
+        body = request.get_json(silent=True) or {}
+        decision = body.get("decision")
+        if decision not in ("Approved", "Rejected"):
+            abort(400, description="decision must be Approved or Rejected.")
+        vote = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
+            ApprovalVote.id == vote_id, ApprovalVote.approver_id == g.api_user.id,
+            ApprovalChain.tenant_id == g.api_user.tenant_id,
+        ).first_or_404()
+        decide_vote(vote, decision, str(body.get("comments", "")).strip()[:2000])
+        audit("mobile approval " + decision.lower(), vote.gate.chain.name,
+              mobile_client_details(g.api_client), user_id=g.api_user.id, tenant_id=g.api_user.tenant_id)
+        db.session.commit()
+        return jsonify({"data": {"id": vote.id, "state": vote.state}})
+
+    @app.get("/api/v1/mobile/knowledge")
+    def api_mobile_knowledge():
+        mobile_only()
+        q = str(request.args.get("q", "")).strip()
+        query = Knowledge.query.filter_by(
+            tenant_id=g.api_user.tenant_id, published=True, archived=False,
+        )
+        if q:
+            pattern = f"%{escape_like(q)}%"
+            query = query.filter(or_(Knowledge.title.ilike(pattern, escape="\\"), Knowledge.body.ilike(pattern, escape="\\")))
+        rows = query.order_by(Knowledge.created_at.desc()).limit(100).all()
+        return jsonify({"data": [{"id": row.id, "title": row.title, "category": row.category,
+                                  "body": row.body, "created_at": row.created_at.isoformat()} for row in rows]})
+
+    @app.get("/api/v1/mobile/cmdb")
+    def api_mobile_cmdb():
+        mobile_only()
+        if not role_at_least(g.api_user.effective_role, "agent"):
+            abort(403, description="CMDB mobile access requires the agent role.")
+        q = str(request.args.get("q", "")).strip()
+        query = ConfigurationItem.query.filter_by(tenant_id=g.api_user.tenant_id)
+        if q:
+            pattern = f"%{escape_like(q)}%"
+            query = query.filter(or_(ConfigurationItem.name.ilike(pattern, escape="\\"),
+                                     ConfigurationItem.ip_address.ilike(pattern, escape="\\"),
+                                     ConfigurationItem.serial_number.ilike(pattern, escape="\\")))
+        rows = query.order_by(ConfigurationItem.name).limit(100).all()
+        return jsonify({"data": [{"id": row.id, "name": row.name, "ci_class": row.ci_class,
+                                  "environment": row.environment, "status": row.operational_status,
+                                  "ip_address": row.ip_address} for row in rows]})
+
+    @app.get("/api/v1/tickets/<number>/comments")
+    def api_ticket_comments(number):
+        require_api_scope("tickets:read")
+        ticket = visible_ticket_query(g.api_user).filter(func.upper(Ticket.number) == number.upper()).first_or_404()
+        return jsonify({"data": [{"id": row.id, "body": row.body, "author": row.author.name,
+                                  "created_at": row.created_at.isoformat()} for row in ticket.comments]})
+
+    @app.post("/api/v1/tickets/<number>/comments")
+    def api_ticket_comment_create(number):
+        require_api_scope("tickets:update")
+        ticket = visible_ticket_query(g.api_user).filter(func.upper(Ticket.number) == number.upper()).first_or_404()
+        if not user_can_manage_ticket(g.api_user, ticket):
+            abort(403, description="The acting user cannot comment on this ticket.")
+        body = str((request.get_json(silent=True) or {}).get("body", "")).strip()
+        if not body or len(body) > 10000:
+            abort(400, description="A comment between 1 and 10000 characters is required.")
+        row = Comment(ticket_id=ticket.id, user_id=g.api_user.id, body=body, tenant_id=ticket.tenant_id)
+        db.session.add(row)
+        log_history("ticket", ticket.id, "Comment added", details=f"Mobile app · {g.api_user.name}")
+        audit("mobile comment", ticket.number, mobile_client_details(g.api_client),
+              user_id=g.api_user.id, tenant_id=g.api_user.tenant_id)
+        db.session.commit()
+        return jsonify({"data": {"id": row.id, "body": row.body, "author": g.api_user.name,
+                                  "created_at": row.created_at.isoformat()}}), 201
 
     def scim_user_document(user):
         return {

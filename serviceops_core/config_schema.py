@@ -102,6 +102,11 @@ SETTING_DEFINITIONS = {
     "email_delivery": [
         {"key": "SMTP_ENABLED", "label": "Enable SMTP delivery", "type": "bool", "default": "false", "live": True},
         {"key": "SMTP_HOST", "label": "SMTP host", "type": "text", "default": "", "live": True},
+        {"key": "APNS_ENABLED", "label": "Enable iOS push notifications", "type": "bool", "default": "false", "live": True},
+        {"key": "APNS_TEAM_ID", "label": "Apple developer team ID", "type": "text", "default": "", "live": True},
+        {"key": "APNS_KEY_ID", "label": "APNs key ID", "type": "text", "default": "", "live": True},
+        {"key": "APNS_BUNDLE_ID", "label": "iOS bundle identifier", "type": "text", "default": "com.anushka.ServiceOps", "live": True},
+        {"key": "APNS_PRIVATE_KEY", "label": "APNs private key", "type": "secret", "default": "", "live": True},
         {"key": "SMTP_PORT", "label": "SMTP port", "type": "int", "default": "587", "min": 1, "max": 65535, "live": True},
         {"key": "SMTP_STARTTLS", "label": "Require SMTP STARTTLS", "type": "bool", "default": "true", "live": True},
         {"key": "SMTP_USERNAME", "label": "SMTP username", "type": "text", "default": "", "live": True},
