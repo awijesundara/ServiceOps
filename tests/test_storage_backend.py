@@ -164,6 +164,16 @@ class FakeIPFSClient:
         return "fake-node-id"
 
 
+class FlakyPublishIPFSClient(FakeIPFSClient):
+    """A FakeIPFSClient whose name_publish always fails -- stands in for
+    the real, live-tested finding (BACKLOG B-335) that Kubo's
+    name/publish can intermittently hang/fail even with
+    allow-offline=true."""
+
+    def name_publish(self, cid, key_name):
+        raise TimeoutError("simulated slow/failed IPNS publish")
+
+
 @pytest.fixture
 def ipfs_backend():
     return IPFSStorageBackend(
@@ -247,3 +257,71 @@ def test_ipfs_backend_reload_with_wrong_key_starts_empty_not_crashes(ipfs_backen
     )
     reloaded.load_checkpoint()
     assert reloaded._file_index == {}
+
+
+def test_ipfs_backend_write_survives_a_checkpoint_publish_failure():
+    """Regression guard for a real bug found via live testing: a slow/
+    failed IPNS publish (Kubo's name/publish can hang even with
+    allow-offline=true) must not raise out of create()/update()/
+    attach_file() -- the caller's actual operation (e.g. a login attempt)
+    must still succeed even if durable checkpoint publish fails."""
+    backend = IPFSStorageBackend(
+        api_url="http://unused", checkpoint_encryption_key=Fernet.generate_key(),
+        client=FlakyPublishIPFSClient(),
+    )
+    backend.load_checkpoint()
+    # None of these must raise, despite every save_checkpoint() call
+    # hitting the simulated publish failure.
+    row = backend.create("user", username="admin")
+    backend.update("user", row["id"], failed_login_count=1)
+    backend.attach_file("a.txt", b"data", "text/plain")
+    assert backend._entities["user"][row["id"]]["failed_login_count"] == 1
+
+
+# -- generic entity CRUD (user/tenant, for the login-only milestone) -----
+
+def test_ipfs_backend_create_get_update_delete_entity(ipfs_backend):
+    ipfs_backend.load_checkpoint()
+    row = ipfs_backend.create("user", username="alice", tenant_id=1)
+    assert row["id"] == 1
+    assert ipfs_backend.get("user", 1) == row
+
+    updated = ipfs_backend.update("user", 1, tenant_id=1, active=False)
+    assert updated["active"] is False
+    assert ipfs_backend.get("user", 1)["active"] is False
+
+    ipfs_backend.delete("user", 1)
+    assert ipfs_backend.get("user", 1) is None
+
+
+def test_ipfs_backend_query_filters_by_tenant_and_field(ipfs_backend):
+    ipfs_backend.load_checkpoint()
+    ipfs_backend.create("user", username="alice", tenant_id=1)
+    ipfs_backend.create("user", username="bob", tenant_id=1)
+    ipfs_backend.create("user", username="carol", tenant_id=2)
+
+    tenant_1_users = ipfs_backend.query("user", tenant_id=1)
+    assert {row["username"] for row in tenant_1_users} == {"alice", "bob"}
+
+    bob_only = ipfs_backend.query("user", tenant_id=None, filters=[("username", "eq", "bob")])
+    assert len(bob_only) == 1
+    assert bob_only[0]["username"] == "bob"
+
+
+def test_ipfs_backend_unimplemented_entity_type_raises(ipfs_backend):
+    with pytest.raises(NotImplementedError):
+        ipfs_backend.get("ticket", 1)
+
+
+def test_ipfs_backend_entities_survive_a_checkpoint_reload(ipfs_backend):
+    ipfs_backend.load_checkpoint()
+    ipfs_backend.create("tenant", slug="default", name="Default organisation")
+    ipfs_backend.create("user", username="admin", tenant_id=1)
+
+    reloaded = IPFSStorageBackend(
+        api_url="http://unused", checkpoint_encryption_key=ipfs_backend._checkpoint_key,
+        client=ipfs_backend.client,
+    )
+    reloaded.load_checkpoint()
+    assert reloaded.get("tenant", 1)["slug"] == "default"
+    assert reloaded.get("user", 1)["username"] == "admin"

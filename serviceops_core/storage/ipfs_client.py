@@ -16,7 +16,14 @@ class IPFSClientError(RuntimeError):
 
 
 class IPFSClient:
-    def __init__(self, api_url, timeout=30.0):
+    # Found via live testing (BACKLOG B-335): name/publish can
+    # intermittently hang well past the RPC's usual sub-second response
+    # time even with allow-offline=true. 30s meant a slow publish held a
+    # whole request (e.g. a failed login attempt) open that long before
+    # IPFSStorageBackend.save_checkpoint() catches and logs the failure --
+    # 12s bounds the damage without being so tight it flags normal
+    # variance as a hard failure.
+    def __init__(self, api_url, timeout=12.0):
         self.api_url = api_url.rstrip("/")
         self.timeout = timeout
 
