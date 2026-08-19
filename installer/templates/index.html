@@ -60,8 +60,11 @@
     <section><h2>Storage (experimental)</h2>
       <p>Only used when "Storage backend" above is set to IPFS. PostgreSQL remains required for everything except file attachments in this release.</p>
       <div class="grid">
+        <label>IPFS provider<select name="ipfs_provider"><option value="kubo">Kubo node (self-hosted)</option><option value="pinata">Pinata (free hosted pinning service)</option></select></label>
         <label>IPFS node<select name="ipfs_mode"><option value="bundled">Bundled IPFS node</option><option value="external">External IPFS node</option></select></label>
         <label class="wide">External IPFS API URL<input name="ipfs_api_url" placeholder="http://ipfs-host:5001"></label>
+        <label class="wide">Pinata JWT<input name="pinata_jwt" type="password" placeholder="Only used when IPFS provider is Pinata -- get one free at pinata.cloud"></label>
+        <label class="wide">Pinata gateway URL<input name="pinata_gateway_url" placeholder="https://your-name.mypinata.cloud -- your account's dedicated gateway (Pinata dashboard -> Gateways); the shared public gateway is unreliable"></label>
       </div>
     </section>
     <section><h2>Verification</h2><div id="checks" class="checks"><p>Run validation to test every configured dependency.</p></div>

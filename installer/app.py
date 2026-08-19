@@ -108,6 +108,29 @@ def test_keycloak(config):
 def test_ipfs(config):
     if config.get("storage_mode", "postgres") != "ipfs":
         return result(True, "PostgreSQL storage mode is selected (default)")
+    if config.get("ipfs_provider", "kubo") == "pinata":
+        jwt = clean(config.get("pinata_jwt"))
+        if not jwt:
+            return result(False, "A Pinata JWT is required (get one free at pinata.cloud)")
+        if not clean(config.get("pinata_gateway_url")):
+            return result(
+                False,
+                "A dedicated Pinata gateway URL is required",
+                "Pinata's shared public gateway is unreliable -- use your account's "
+                "free dedicated gateway (Pinata dashboard -> Gateways), e.g. "
+                "https://<your-name>.mypinata.cloud",
+            )
+        try:
+            request_obj = urllib.request.Request(
+                "https://api.pinata.cloud/data/testAuthentication",
+                headers={"Authorization": f"Bearer {jwt}"},
+            )
+            context = ssl.create_default_context()
+            with urllib.request.urlopen(request_obj, timeout=8, context=context) as response:
+                payload = json.load(response)
+            return result(True, "Pinata JWT authenticated", payload.get("message", ""))
+        except Exception as exc:
+            return result(False, "Pinata authentication failed", str(exc))
     if config.get("ipfs_mode", "bundled") == "bundled":
         return result(True, "Bundled IPFS node is selected",
                       "The IPFS node container will be verified during deployment.")
@@ -177,8 +200,19 @@ def write_environment(config):
         # unless storage_mode=="ipfs".
         env_line("STORAGE_MODE", storage_mode),
         env_line("IPFS_MODE", config.get("ipfs_mode", "bundled")),
+        # IPFS_PROVIDER selects the IPFS client implementation within
+        # STORAGE_MODE=ipfs: "kubo" (default -- bundled or external Kubo
+        # node, IPFS_API_URL below) or "pinata" (a free hosted pinning
+        # service -- no node container at all, PINATA_JWT below).
+        env_line("IPFS_PROVIDER", config.get("ipfs_provider", "kubo")),
         env_line("IPFS_API_URL", config.get("ipfs_api_url",
                  "http://ipfs:5001" if storage_mode == "ipfs" else "")),
+        env_line("PINATA_JWT", config.get("pinata_jwt", "")),
+        # Pinata's shared public gateway (the default) was found via live
+        # testing to be unreliable -- every free Pinata account gets its
+        # own dedicated gateway subdomain (e.g. https://x.mypinata.cloud),
+        # which administrators should set here instead.
+        env_line("PINATA_GATEWAY_URL", config.get("pinata_gateway_url", "")),
         env_line("INSTANCE_NAME", config.get("instance_name", "ServiceOps")),
         env_line("COMPANY_NAME", config.get("company_name", "Your Company")),
         env_line("BRAND_TEAL", config.get("brand_teal", "#003e4c")),
@@ -197,7 +231,7 @@ def write_environment(config):
         env_line("API_TOKEN_PEPPER",
                  config.get("api_token_pepper") or Fernet.generate_key().decode()),
         env_line("ADMIN_PASSWORD", config.get("admin_password", "")),
-        env_line("SERVICEOPS_IMAGE", config.get("serviceops_image", "serviceops-app:1.73.0")),
+        env_line("SERVICEOPS_IMAGE", config.get("serviceops_image", "serviceops-app:1.74.0")),
         'LOCAL_AUTH_ENABLED="true"',
         env_line("LDAP_ENABLED", str(bool(config.get("ldap_enabled"))).lower()),
         env_line("LDAP_SERVER_URI", config.get("ldap_uri", "")),
