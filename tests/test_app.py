@@ -151,6 +151,18 @@ def test_health(client):
     assert readiness.json["checks"]["database"]["ok"] is True
 
 
+def test_display_version_adds_ipfs_suffix_only_under_ipfs_storage_mode(monkeypatch):
+    # Lets an operator tell an IPFS-mode (database-less) deployment apart
+    # from the default PostgreSQL mode at a glance -- in the UI sidebar,
+    # /health, /ready, and the Prometheus build-info metric -- without
+    # checking STORAGE_MODE directly.
+    import app as app_module
+
+    assert app_module.display_version() == app_module.APP_VERSION
+    monkeypatch.setattr(app_module, "ipfs_enabled", lambda: True)
+    assert app_module.display_version() == f"{app_module.APP_VERSION}-ipfs"
+
+
 def test_health_degrades_gracefully_on_a_database_outage(client, app, monkeypatch):
     """Found via real failure-injection load testing (B-071): a database
     outage previously made /health raise an unhandled OperationalError into

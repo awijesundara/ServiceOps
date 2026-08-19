@@ -117,6 +117,15 @@ from webauthn.helpers import base64url_to_bytes
 APP_VERSION = (Path(__file__).resolve().parent / "VERSION").read_text().strip()
 APP_START_MONOTONIC = time_module.monotonic()
 
+
+def display_version():
+    # STORAGE_MODE=ipfs is a database-less deployment with real, disclosed
+    # operating-boundary differences from the default PostgreSQL mode (see
+    # docs/IPFS_STORAGE_MODE.md) -- an admin/operator looking at the UI,
+    # /health, /ready, or the Prometheus metrics should be able to tell
+    # which one they're looking at without checking STORAGE_MODE directly.
+    return f"{APP_VERSION}-ipfs" if ipfs_enabled() else APP_VERSION
+
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
 
 # Generic ServiceNow-style list filtering: a list view declares which
@@ -6053,7 +6062,7 @@ def create_app(test_config=None):
             "support_email": setting_value("SUPPORT_EMAIL", ""),
             "has_company_logo": os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png")),
             "test_fixture_active": setting_bool("TEST_FIXTURE_ACTIVE"),
-            "app_version": APP_VERSION,
+            "app_version": display_version(),
             "ldap_username_placeholder": ldap_username_placeholder(),
         }
         if not current_user.is_authenticated:
@@ -6122,14 +6131,14 @@ def create_app(test_config=None):
                 db.session.execute(db.select(func.count(User.id))).scalar()
             except Exception:
                 db.session.rollback()
-                return jsonify(status="unhealthy", version=APP_VERSION), 503
-            return jsonify(status="ok", version=APP_VERSION)
+                return jsonify(status="unhealthy", version=display_version()), 503
+            return jsonify(status="ok", version=display_version())
         try:
             db.session.execute(db.select(func.count(User.id))).scalar()
         except Exception:
             db.session.rollback()
-            return jsonify(status="unhealthy", version=APP_VERSION), 503
-        return jsonify(status="ok", version=APP_VERSION)
+            return jsonify(status="unhealthy", version=display_version()), 503
+        return jsonify(status="ok", version=display_version())
 
     @app.get("/live")
     def live():
@@ -6164,7 +6173,7 @@ def create_app(test_config=None):
                 "path_configured": bool(upload_folder),
             }
             overall = all(check["ok"] for check in checks.values())
-            return jsonify(status="ready" if overall else "not_ready", version=APP_VERSION, checks=checks), 200 if overall else 503
+            return jsonify(status="ready" if overall else "not_ready", version=display_version(), checks=checks), 200 if overall else 503
         try:
             db.session.execute(db.text("SELECT 1"))
             checks["database"] = {"ok": True}
@@ -6213,7 +6222,7 @@ def create_app(test_config=None):
             except Exception as error:
                 checks["object_storage"] = {"ok": False, "reason": type(error).__name__}
         overall = all(check["ok"] for check in checks.values())
-        return jsonify(status="ready" if overall else "not_ready", version=APP_VERSION, checks=checks), 200 if overall else 503
+        return jsonify(status="ready" if overall else "not_ready", version=display_version(), checks=checks), 200 if overall else 503
 
     def _recovery_set_status():
         """Single source of truth for backup/RPO freshness -- read by both
@@ -6259,7 +6268,7 @@ def create_app(test_config=None):
             "# HELP serviceops_up Whether the application can query its database.",
             "# TYPE serviceops_up gauge", "serviceops_up 1",
             "# HELP serviceops_info Build information.", "# TYPE serviceops_info gauge",
-            f'serviceops_info{{version="{APP_VERSION}"}} 1',
+            f'serviceops_info{{version="{display_version()}"}} 1',
             "# HELP serviceops_worker_up Whether the worker heartbeat is fresh.",
             "# TYPE serviceops_worker_up gauge", f"serviceops_worker_up {worker_up}",
             "# HELP serviceops_application_errors_last_hour Error and critical records in the last hour.",
@@ -6730,7 +6739,7 @@ def create_app(test_config=None):
         # CLAUDE.md's documentation-control policy keeps out of here.
         # Renders the always-in-sync /api/v1/openapi.json via Swagger UI,
         # vendored (no CDN) so it also works with no internet egress.
-        return render_template("api_docs.html", app_version=APP_VERSION)
+        return render_template("api_docs.html", app_version=display_version())
 
     @app.post("/api/v1/monitoring/<source_id>/events")
     def monitoring_ingest(source_id):
@@ -11973,7 +11982,7 @@ def create_app(test_config=None):
 
         return render_template(
             "system_health.html",
-            app_version=APP_VERSION,
+            app_version=display_version(),
             app_start_time=APP_START_TIME,
             db_healthy=db_healthy, db_latency_ms=db_latency_ms,
             worker_healthy=worker_healthy, worker_last_seen=worker_last_seen,
