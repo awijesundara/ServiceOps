@@ -114,7 +114,13 @@ function initLookup(container) {
   let debounceTimer = null;
   let lastQuery = "";
 
-  function render(list, options = {}) {
+  function render(rawList, options = {}) {
+    // Once a CI (or other multi-pick item) is already added as a chip,
+    // don't show it again in the dropdown -- matches the CI browse modal,
+    // which already disables/labels already-added rows the same way.
+    const list = multiName
+      ? rawList.filter((item) => !selectedValues().includes(String(item.value)))
+      : rawList;
     items = list;
     activeIndex = -1;
     results.innerHTML = "";
