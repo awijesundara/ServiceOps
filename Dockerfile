@@ -6,6 +6,15 @@ ARG PIP_TRUSTED_HOST=""
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# The base image is pinned by digest for reproducibility, so newly disclosed
+# OS-package CVEs with an upstream Debian security fix (found via the CI
+# supply-chain gate's Trivy scan, e.g. CVE-2026-53615 in libblkid/util-linux)
+# stay present until this digest is next bumped -- which can lag behind
+# Debian's own security repo by days. Pulling the security-repo fixes
+# directly here, on every build, closes that gap without waiting on (or
+# needing to track) upstream image rebuilds.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 RUN addgroup --system app && adduser --system --ingroup app app
 COPY requirements.txt .
