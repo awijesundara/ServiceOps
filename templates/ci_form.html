@@ -1,5 +1,5 @@
 {% extends "base.html" %}{% block title %}{{ 'Edit ' + ci.name if ci else 'New configuration item' }} · {{ instance_name }}{% endblock %}
-{% block content %}<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>{{ 'Edit ' + ci.name if ci else 'New configuration item' }}</h1></div></header><form method="post" class="panel form-grid">
+{% block content %}<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>{{ 'Edit ' + ci.name if ci else 'New configuration item' }}</h1></div></header><form method="post" class="panel form-grid" data-track-dirty>
 <label>Name<input name="name" value="{{ ci.name if ci else '' }}" required></label>
 <label>Class<input name="ci_class" value="{{ ci.ci_class if ci else '' }}" placeholder="Server, Database, Business Application…" required></label>
 <label class="wide">Description<textarea name="description" rows="2">{{ ci.description if ci else '' }}</textarea></label>
