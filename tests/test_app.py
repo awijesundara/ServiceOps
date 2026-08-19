@@ -31,6 +31,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  ApplicationLog,
                  PasskeyChallenge, PasskeyCredential,
                  create_ticket_with_unique_number, create_with_retry_on_number_collision, next_number,
+                 serialize_number_allocation,
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
                  audit, change_approval_stages, create_api_token, create_app, create_notification, db,
@@ -3804,6 +3805,34 @@ def test_ticket_creation_survives_a_racing_duplicate_number(app):
         assert ticket.number != colliding_number
         assert ticket.number.startswith("INC")
         assert Ticket.query.filter_by(number=ticket.number).count() == 1
+
+
+def test_serialize_number_allocation_is_a_noop_outside_postgresql(app):
+    """The unit suite runs against SQLite, which has no advisory-lock
+    equivalent -- serialize_number_allocation() must no-op there rather
+    than erroring, so next_number() and friends keep working unchanged
+    under the test suite and under STORAGE_MODE=ipfs's SQLite projection."""
+    with app.app_context():
+        assert db.engine.dialect.name == "sqlite"
+        serialize_number_allocation("ticket:incident")  # must not raise
+
+
+def test_serialize_number_allocation_locks_under_postgresql(app, monkeypatch):
+    """Found via real load testing (tools/stress_test.py against a live
+    Postgres deployment): concurrent requests computing next_number() with
+    no locking raced often enough to exhaust
+    create_with_retry_on_number_collision's retries under real concurrency
+    (measured 4.33% failure rate at concurrency 80). Under PostgreSQL,
+    serialize_number_allocation() must issue the transaction-scoped
+    advisory lock so concurrent callers serialize instead of racing."""
+    with app.app_context():
+        executed = []
+        monkeypatch.setattr(db.engine.dialect, "name", "postgresql")
+        monkeypatch.setattr(db.session, "execute", lambda stmt, params=None: executed.append((str(stmt), params)))
+        serialize_number_allocation("ticket:incident")
+        assert len(executed) == 1
+        assert "pg_advisory_xact_lock" in executed[0][0]
+        assert executed[0][1] == {"key": "ticket:incident"}
 
 
 def test_create_with_retry_gives_up_after_persistent_collisions(app):
