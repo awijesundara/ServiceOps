@@ -30,5 +30,15 @@ RUN rm -f /app/tools/load_test_fixture.py /app/tools/load_demo_dataset.py /app/t
 RUN mkdir -p /app/uploads /app/logs && chmod 755 /app/tools/container-entrypoint.sh /app/tools/gunicorn-entrypoint.sh && chown -R app:app /app
 USER app
 EXPOSE 8080
+# Docker's default stop signal is SIGTERM, but gunicorn's arbiter treats
+# SIGTERM as a *fast* shutdown and reserves SIGQUIT for graceful shutdown
+# (finish in-flight requests within --graceful-timeout, then exit -- see
+# tools/gunicorn-entrypoint.sh). Without this, every container stop/restart
+# (docker compose stop/restart/up --force-recreate, ./serviceops
+# watchdog-heal, Kubernetes pod termination) can cut off a request that is
+# actively being processed -- e.g. a user's ticket-form submit lands
+# mid-write -- instead of letting it complete within the timeout budget
+# that already exists but was never actually reached.
+STOPSIGNAL SIGQUIT
 ENTRYPOINT ["/app/tools/container-entrypoint.sh"]
 CMD ["/app/tools/gunicorn-entrypoint.sh"]

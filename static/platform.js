@@ -208,6 +208,32 @@ document.addEventListener("DOMContentLoaded", () => {
       event.target.form?.submit();
     }
   });
+  // Warn before a user loses typed-but-unsubmitted work on a long form --
+  // a restart (even a graceful one -- see Dockerfile STOPSIGNAL -- still
+  // takes the app a few seconds to come back), an accidental back/reload,
+  // or a session-timeout redirect could otherwise silently discard
+  // everything they typed with no warning at all. Opt-in via
+  // data-track-dirty (login/search/filter forms shouldn't prompt) rather
+  // than tracking every form on the page. Delegated listeners, same CSP-safe
+  // pattern as data-confirm/data-auto-submit above.
+  const dirtyForms = new Set();
+  document.addEventListener("input", event => {
+    const form = event.target.closest("[data-track-dirty]");
+    if (form) dirtyForms.add(form);
+  });
+  document.addEventListener("change", event => {
+    const form = event.target.closest("[data-track-dirty]");
+    if (form) dirtyForms.add(form);
+  });
+  document.addEventListener("submit", event => {
+    dirtyForms.delete(event.target);
+  });
+  window.addEventListener("beforeunload", event => {
+    if (dirtyForms.size === 0) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+
   const slaTargetType = document.getElementById("sla-target-type");
   const slaClientOrgField = document.getElementById("sla-client-org-field");
   if (slaTargetType && slaClientOrgField) {
