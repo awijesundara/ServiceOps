@@ -14,6 +14,7 @@ Installation:
 
 Operations:
   ./serviceops start | stop | restart | status | health | logs | doctor
+  ./serviceops watchdog-heal
   ./serviceops deploy-local | install-update-hook
   ./serviceops backup [NAME]
   ./serviceops restore DATABASE_DUMP
@@ -111,6 +112,32 @@ BACKUP_DIR="$ROOT_DIR/backups"
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 
+# Surfaces a real, previously-silent failure mode: a container from a
+# *different* compose project (e.g. a stray `serviceops_fresh` stack left
+# over from manual experimentation) is bound to the same port this
+# project expects. `docker compose` only ever manages containers under
+# its own project name, so every command below -- restart, health,
+# watchdog-heal -- can silently target or probe the wrong, possibly dead,
+# stack while a healthy-looking but unrelated container answers the port.
+# tools/safe_update.sh has its own copy of this check for `update`
+# specifically; this one runs for every command so the mismatch is
+# visible immediately, not just during an upgrade.
+warn_stray_project() {
+  local port="${APP_PORT:-}" bind="${BIND_ADDRESS:-127.0.0.1}" project conflict
+  [[ -n "$port" ]] || port="$(awk -F= '/^APP_PORT=/{value=$2; gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", value); print value}' "$ENV_FILE" | tail -1)"
+  project="$("${COMPOSE[@]}" config --format json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("name","serviceops"))' 2>/dev/null || echo serviceops)"
+  conflict="$(docker ps --format '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Ports}}' 2>/dev/null \
+    | awk -F'\t' -v port=":${port:-8080}->" -v proj="$project" '
+        $3 ~ port && $2 != proj && $2 != "" { print $1 " (project: " $2 ")" }
+      ')"
+  if [[ -n "$conflict" ]]; then
+    echo "⚠ Port ${bind}:${port:-8080} is bound by a container outside this project ($project):" >&2
+    echo "  $conflict" >&2
+    echo "  Commands below are targeting project \"$project\" per $ENV_FILE, not the container(s) above." >&2
+  fi
+}
+[[ "$command" == "config" || "$command" == "backup" || "$command" == "restore" ]] || warn_stray_project
+
 case "$command" in
   start) "${COMPOSE[@]}" up -d --remove-orphans ;;
   stop) "${COMPOSE[@]}" stop ;;
@@ -136,6 +163,64 @@ case "$command" in
       && echo "✓ Worker excludes bootstrap administrator secret" \
       || { echo "✗ Worker contains bootstrap administrator secret"; failures=$((failures+1)); }
     exit "$failures"
+    ;;
+  watchdog-heal)
+    # On-demand health check + auto-restart, for wiring into whatever
+    # recurring scheduler an operator already trusts (systemd timer, cron,
+    # an external monitoring agent's "run this on alert" hook). This
+    # command deliberately does NOT install any scheduler itself -- a
+    # crontab entry that isn't redirected mails its full output to the
+    # crontab owner on every single run (cron's default behavior), which
+    # buries a real incident under routine noise. Redirect output
+    # yourself if you wire this into cron, e.g.:
+    #   */2 * * * * cd /path/to/ServiceOps && ./serviceops watchdog-heal >>logs/watchdog-heal-cron.log 2>&1
+    mkdir -p "$ROOT_DIR/logs"
+    log="$ROOT_DIR/logs/watchdog-heal.log"
+    port="$(awk -F= '/^APP_PORT=/{value=$2; gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", value); print value}' "$ENV_FILE" | tail -1)"
+    watchdog_url="$(awk -F= '/^WATCHDOG_URL=/{value=$2; gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", value); print value}' "$ENV_FILE" | tail -1)"
+    project="$("${COMPOSE[@]}" config --format json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("name","unknown"))' 2>/dev/null || echo unknown)"
+    stamp() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+    probe() {
+      curl -fsS --max-time 10 "http://127.0.0.1:${port:-8080}/health" >/dev/null 2>&1 || return 1
+      [[ -z "$watchdog_url" ]] || curl -fsS --max-time 10 "$watchdog_url" >/dev/null 2>&1 || return 1
+      return 0
+    }
+
+    if probe; then
+      echo "$(stamp) healthy (project=$project)" | tee -a "$log"
+      exit 0
+    fi
+
+    echo "$(stamp) unhealthy on first probe -- retrying once before restarting anything" | tee -a "$log"
+    sleep 10
+    if probe; then
+      echo "$(stamp) healthy on retry -- transient, no restart needed" | tee -a "$log"
+      exit 0
+    fi
+
+    echo "$(stamp) still unhealthy after retry -- restarting" | tee -a "$log"
+    services=()
+    while IFS= read -r svc; do
+      [[ -n "$svc" ]] && services+=("$svc")
+    done < <("${COMPOSE[@]}" config --services 2>/dev/null | grep -E '^(app|worker)$' || true)
+    if [[ "${#services[@]}" -eq 0 ]]; then
+      echo "$(stamp) ERROR: no app/worker service found in $FILE -- cannot restart" | tee -a "$log" >&2
+      exit 1
+    fi
+    "${COMPOSE[@]}" up -d --force-recreate "${services[@]}" 2>&1 | tee -a "$log"
+
+    recovered=0
+    for _ in 1 2 3 4 5 6; do
+      sleep 5
+      if probe; then recovered=1; break; fi
+    done
+    if [[ "$recovered" -eq 1 ]]; then
+      echo "$(stamp) recovered after restarting: ${services[*]}" | tee -a "$log"
+      exit 0
+    fi
+    echo "$(stamp) ERROR: still unhealthy 30s after restarting: ${services[*]} -- needs manual investigation" | tee -a "$log" >&2
+    exit 1
     ;;
   retire-bootstrap-secret)
     "${COMPOSE[@]}" exec -T app python -c "from app import create_app,User; a=create_app(); c=a.app_context(); c.push(); assert User.query.filter_by(role='admin',active=True).count() > 0, 'No active administrator exists'; print('Active administrator verified')"
