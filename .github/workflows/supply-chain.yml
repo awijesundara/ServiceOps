@@ -14,8 +14,18 @@ on:
         type: boolean
   pull_request:
   push:
+    # Deliberately branches only, not tags: this repo's release convention
+    # (CLAUDE.md) pushes a commit to main and its vX.Y.Z tag together, and
+    # a tag always points at a commit already on main. Triggering on both
+    # built two separate, fully redundant workflow runs for the identical
+    # commit/image tag, racing to push the same immutable image reference
+    # to GHCR -- found via a real, reproducible failure (not theorized):
+    # the branch-triggered run's push always won the race, and the
+    # tag-triggered run's identical push consistently failed with
+    # "denied: permission_denied: read_package" on the second attempt at
+    # the same tag. The branch-triggered run alone already fully verifies
+    # and publishes every release commit.
     branches: [main]
-    tags: ["v*"]
 
 permissions:
   contents: read
