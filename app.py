@@ -1008,8 +1008,38 @@ def store_api_idempotency(key, request_hash, response_body, status):
     ))
 
 
+def serialize_number_allocation(key):
+    """Serializes the read-current-max/compute-next-number critical section
+    in next_number()/next_enterprise_number()/sequence_number()/
+    next_operational_task_number() against other concurrent callers
+    allocating the same kind of number, using a PostgreSQL transaction-scoped
+    advisory lock (auto-released at commit/rollback -- nothing to explicitly
+    unlock, and safe to call again on a retry within the same transaction:
+    re-acquiring an already-held advisory xact lock in the same session is a
+    cheap no-op in Postgres, and a savepoint rollback does not release it).
+
+    Found via real load testing (tools/stress_test.py), not theorized: at
+    concurrency 80, concurrent incident-creation requests raced to compute
+    an identical `MAX(Ticket.id) + 1` before either committed, burning
+    through create_with_retry_on_number_collision's 10 retry attempts often
+    enough to produce a measured 4.33% request failure rate (65/1500,
+    surfaced as 409s) -- optimistic retry alone doesn't scale with
+    concurrency the way true serialization does.
+
+    PostgreSQL-only: a no-op under STORAGE_MODE=ipfs's SQLite projection,
+    which has no advisory-lock equivalent. That mode is already constrained
+    to a single Gunicorn worker (see tools/gunicorn-entrypoint.sh), which
+    substantially narrows this exact race even without this lock; the
+    existing retry-on-collision behavior is unchanged there as a fallback.
+    """
+    if db.engine.dialect.name != "postgresql":
+        return
+    db.session.execute(db.text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": key})
+
+
 def next_number(kind):
     prefix = {"incident": "INC", "change": "CHG"}[kind]
+    serialize_number_allocation(f"ticket:{kind}")
     maximum = db.session.query(func.max(Ticket.id)).scalar() or 0
     return f"{prefix}{maximum + 1:07d}"
 
@@ -1481,12 +1511,14 @@ def process_outbox(limit=50):
 
 def next_enterprise_number(domain):
     prefix = DOMAIN_CONFIG[domain]["prefix"]
+    serialize_number_allocation(f"enterprise:{domain}")
     latest = EnterpriseRecord.query.filter_by(domain=domain).order_by(EnterpriseRecord.id.desc()).first()
     sequence = (latest.id + 1) if latest else 1
     return f"{prefix}{sequence:07d}"
 
 
 def sequence_number(model, prefix):
+    serialize_number_allocation(f"model:{model.__name__}")
     latest = model.query.order_by(model.id.desc()).first()
     return f"{prefix}{((latest.id if latest else 0) + 1):07d}"
 
@@ -1495,6 +1527,7 @@ def next_operational_task_number(task_kind):
     prefix = {"change": "CTASK", "problem": "PTASK", "event": "EVTASK"}.get(
         task_kind, "TASK"
     )
+    serialize_number_allocation(f"task:{task_kind}")
     latest = OperationalTask.query.filter_by(task_kind=task_kind).order_by(
         OperationalTask.id.desc()
     ).first()
