@@ -200,13 +200,28 @@ case "$command" in
     fi
 
     echo "$(stamp) still unhealthy after retry -- restarting" | tee -a "$log"
-    services=()
-    while IFS= read -r svc; do
-      [[ -n "$svc" ]] && services+=("$svc")
-    done < <("${COMPOSE[@]}" config --services 2>/dev/null | grep -E '^(app|worker)$' || true)
-    if [[ "${#services[@]}" -eq 0 ]]; then
-      echo "$(stamp) ERROR: no app/worker service found in $FILE -- cannot restart" | tee -a "$log" >&2
-      exit 1
+    if [[ "$MODE" == "blue-green" ]]; then
+      # app/worker don't exist under this topology (app_blue/app_green/
+      # worker/nginx do) -- restart only the currently ACTIVE slot's
+      # containers. nginx and the idle slot are never touched, so a
+      # healthy idle slot keeps serving/standing by throughout, exactly
+      # like a manual ./serviceops deploy cutover's fail-safe behavior.
+      active_slot="$(awk -F= '/^ACTIVE_APP_SLOT=/{value=$2; gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", value); print value}' "$ENV_FILE" | tail -1)"
+      if [[ -z "$active_slot" ]]; then
+        echo "$(stamp) ERROR: ACTIVE_APP_SLOT is not set in $ENV_FILE -- cannot determine which slot to restart" | tee -a "$log" >&2
+        exit 1
+      fi
+      services=("app_${active_slot}" "worker")
+      echo "$(stamp) blue-green mode: restarting active slot only (app_${active_slot}, worker) -- nginx and the idle slot are untouched" | tee -a "$log"
+    else
+      services=()
+      while IFS= read -r svc; do
+        [[ -n "$svc" ]] && services+=("$svc")
+      done < <("${COMPOSE[@]}" config --services 2>/dev/null | grep -E '^(app|worker)$' || true)
+      if [[ "${#services[@]}" -eq 0 ]]; then
+        echo "$(stamp) ERROR: no app/worker service found in $FILE -- cannot restart" | tee -a "$log" >&2
+        exit 1
+      fi
     fi
     "${COMPOSE[@]}" up -d --force-recreate "${services[@]}" 2>&1 | tee -a "$log"
 

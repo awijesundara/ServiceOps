@@ -2,7 +2,7 @@
 {% block title %}New {{ config.name }} record · {{ instance_name }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">{{ config.name|upper }}</p><h1>New record</h1><p>Create governed work in the {{ config.name }} workspace.</p></div></header>
-<form method="post" class="panel form-grid">
+<form method="post" class="panel form-grid" data-track-dirty>
   <label>Record type<select name="record_type">{% for type in config.types %}<option>{{ type }}</option>{% endfor %}</select></label>
   <label>Priority<select name="priority"><option>P4</option><option selected>P3</option><option>P2</option><option>P1</option></select></label>
   <label class="wide">Summary<input name="title" required autofocus></label>
