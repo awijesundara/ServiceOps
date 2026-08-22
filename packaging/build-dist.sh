@@ -27,14 +27,22 @@ mkdir -p "$STAGE_DIR/tools/install"
 cp "$ROOT_DIR/serviceops" "$STAGE_DIR/serviceops"
 cp "$ROOT_DIR/compose.yaml" "$STAGE_DIR/compose.yaml"
 cp "$ROOT_DIR/compose.external-db.yaml" "$STAGE_DIR/compose.external-db.yaml"
+cp "$ROOT_DIR/compose.blue-green.yaml" "$STAGE_DIR/compose.blue-green.yaml"
 cp "$ROOT_DIR/.env.example" "$STAGE_DIR/.env.example"
 cp "$ROOT_DIR/README.md" "$STAGE_DIR/README.md"
+cp "$ROOT_DIR/packaging/rpm/serviceops.spec" "$STAGE_DIR/serviceops.spec"
 cp "$ROOT_DIR/tools/install/server.sh" "$STAGE_DIR/tools/install/server.sh"
 cp "$ROOT_DIR/tools/install/kubernetes.sh" "$STAGE_DIR/tools/install/kubernetes.sh"
-for f in rehearse-recovery.sh rehearse-pitr.sh rehearse-postgres-migrations.sh \
-         rehearse-upgrade.sh recovery_verify.py cmdb_sync_agent.sh; do
+for f in blue_green_bootstrap.sh blue_green_deploy.sh blue_green_rollback.sh \
+         deploy-local.sh safe_update.sh safe_update_k8s.sh stability_probe.py \
+         stress_test.py rehearse-recovery.sh rehearse-pitr.sh \
+         rehearse-postgres-migrations.sh rehearse-upgrade.sh \
+         postgres_migration_rehearsal.py recovery_verify.py cmdb_sync_agent.sh; do
   cp "$ROOT_DIR/tools/$f" "$STAGE_DIR/tools/$f"
 done
+mkdir -p "$STAGE_DIR/packaging/systemd"
+cp "$ROOT_DIR/packaging/systemd/serviceops.service" \
+  "$STAGE_DIR/packaging/systemd/serviceops.service"
 cp -R "$ROOT_DIR/charts" "$STAGE_DIR/charts"
 mkdir -p "$STAGE_DIR/docs"
 cp "$ROOT_DIR"/docs/*.md "$STAGE_DIR/docs/" 2>/dev/null || true

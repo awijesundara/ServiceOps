@@ -20,6 +20,11 @@ Requires:       docker-ce
 Requires:       docker-compose-plugin
 Requires:       curl
 Requires:       openssl
+Requires:       bash
+Requires:       python3
+Requires:       python3-requests
+Requires:       tar
+Requires:       gzip
 Requires(pre):  shadow-utils
 Requires(post): systemd
 Requires(preun): systemd
@@ -54,10 +59,12 @@ install -d -m 0755 %{buildroot}%{_bindir}
 ln -sf %{install_root}/serviceops %{buildroot}%{_bindir}/serviceops
 
 install -d -m 0700 %{buildroot}%{_sysconfdir}/serviceops
+install -m 0600 .env.example %{buildroot}%{_sysconfdir}/serviceops/serviceops.env.example
 install -d -m 0700 %{buildroot}%{_sharedstatedir}/serviceops/backups
 
 install -d -m 0755 %{buildroot}%{_unitdir}
-install -m 0644 %{_sourcedir}/serviceops.service %{buildroot}%{_unitdir}/serviceops.service
+install -m 0644 packaging/systemd/serviceops.service %{buildroot}%{_unitdir}/serviceops.service
+rm -rf %{buildroot}%{install_root}/packaging
 
 %pre
 getent group %{service_user} >/dev/null || groupadd -r %{service_user}
@@ -107,11 +114,13 @@ MSG
 %{install_root}/.env.example
 %{install_root}/compose.yaml
 %{install_root}/compose.external-db.yaml
+%{install_root}/compose.blue-green.yaml
 %{install_root}/tools
 %{install_root}/charts
 %{install_root}/docs
 %{_bindir}/serviceops
 %dir %attr(0700,serviceops,serviceops) %{_sysconfdir}/serviceops
+%config(noreplace) %attr(0600,serviceops,serviceops) %{_sysconfdir}/serviceops/serviceops.env.example
 %dir %attr(0700,serviceops,serviceops) %{_sharedstatedir}/serviceops
 %dir %attr(0700,serviceops,serviceops) %{_sharedstatedir}/serviceops/backups
 %{_unitdir}/serviceops.service
