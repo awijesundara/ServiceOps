@@ -6035,6 +6035,111 @@ def test_change_gets_ci_owner_manager_approval_when_different_from_assignment_gr
         assert "Database manager assessment (CI owner)" in names
 
 
+def test_change_gets_approval_from_every_selected_ci_owner_team(client, app):
+    """Every explicitly selected CI is in the authorization scope.
+
+    The first selected CI is stored on ChangeGovernance while subsequent CIs
+    are TaskCI links, so this exercises the real create-ticket boundary rather
+    than calling the stage builder with an artificial object graph.
+    """
+    with app.app_context():
+        database = SupportGroup.query.filter_by(name="Database").one()
+        network = SupportGroup.query.filter_by(name="Network").one()
+        database_manager = User(
+            username="database.change.owner", name="Database Change Owner",
+            email="database.change.owner@test.invalid",
+            password_hash=generate_password_hash("Manager123!"), role="manager",
+        )
+        network_manager = User(
+            username="network.change.owner", name="Network Change Owner",
+            email="network.change.owner@test.invalid",
+            password_hash=generate_password_hash("Manager123!"), role="manager",
+        )
+        db.session.add_all([database_manager, network_manager])
+        db.session.flush()
+        database.manager_id = database_manager.id
+        network.manager_id = network_manager.id
+        primary_ci = ConfigurationItem(
+            name="multi-ci-database", ci_class="Database", environment="Test",
+            support_group_id=database.id,
+        )
+        affected_ci = ConfigurationItem(
+            name="multi-ci-network", ci_class="Network", environment="Test",
+            support_group_id=network.id,
+        )
+        db.session.add_all([primary_ci, affected_ci])
+        db.session.commit()
+        primary_ci_id, affected_ci_id = primary_ci.id, affected_ci.id
+        expected_approver_ids = {database_manager.id, network_manager.id}
+
+    login(client)
+    response = client.post("/tickets/new/change", data={
+        "title": "Change database and network",
+        "description": "Exercise all explicitly selected CI owner approvals.",
+        "category": "Software", "change_type": "Standard", "impact": "Low",
+        "implementation_plan": "Apply both CI changes.",
+        "test_plan": "Verify both CIs.", "backout_plan": "Restore both CIs.",
+        "planned_start": "2027-08-01T09:00", "planned_end": "2027-08-01T17:00",
+        "group_id": group_id(app, "Unix"),
+        "ci_id": [str(primary_ci_id), str(affected_ci_id)],
+    }, follow_redirects=False)
+    assert response.status_code == 302
+
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Change database and network").one()
+        chain = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket.id,
+        ).one()
+        ci_owner_gates = [gate for gate in chain.gates if "CI owner" in gate.name]
+        assert {gate.name for gate in ci_owner_gates} == {
+            "Database manager assessment (CI owner)",
+            "Network manager assessment (CI owner)",
+        }
+        assert {
+            vote.approver_id for gate in ci_owner_gates for vote in gate.votes
+        } == expected_approver_ids
+
+
+def test_additional_ci_drives_change_risk_and_ccb_authorization(client, app):
+    """A lower-risk primary CI must not hide a critical production CI."""
+    with app.app_context():
+        database = SupportGroup.query.filter_by(name="Database").one()
+        primary_ci = ConfigurationItem(
+            name="low-risk-primary", ci_class="Application",
+            environment="Development", business_criticality="Low",
+            support_group_id=database.id,
+        )
+        affected_ci = ConfigurationItem(
+            name="critical-production-affected", ci_class="Database",
+            environment="Production", business_criticality="Critical",
+            support_group_id=database.id,
+        )
+        db.session.add_all([primary_ci, affected_ci])
+        db.session.commit()
+        primary_ci_id, affected_ci_id = primary_ci.id, affected_ci.id
+
+    login(client)
+    response = client.post("/tickets/new/change", data={
+        "title": "Multi-CI risk evaluation",
+        "description": "The affected production CI controls the risk outcome.",
+        "category": "Software", "change_type": "Normal", "impact": "Medium",
+        "implementation_plan": "Implement.", "test_plan": "Validate.",
+        "backout_plan": "Back out.",
+        "planned_start": "2027-09-01T09:00", "planned_end": "2027-09-01T17:00",
+        "group_id": group_id(app, "Unix"),
+        "ci_id": [str(primary_ci_id), str(affected_ci_id)],
+    }, follow_redirects=False)
+    assert response.status_code == 302
+
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Multi-CI risk evaluation").one()
+        assert ticket.change_governance.risk_score == 85
+        chain = ApprovalChain.query.filter_by(
+            target_type="ticket", target_id=ticket.id,
+        ).one()
+        assert any("CCB" in gate.name for gate in chain.gates)
+
+
 def test_change_requires_every_service_co_owner_team_manager_approval(app):
     """The change's CI backs a business service that's also backed by CIs
     owned by two other teams -- each of those teams' managers must approve

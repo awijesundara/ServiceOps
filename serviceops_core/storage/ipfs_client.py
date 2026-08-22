@@ -92,7 +92,17 @@ class IPFSClient:
         try:
             response = self._post(
                 "/api/v0/name/resolve",
-                params={"arg": f"/ipns/{name_or_peer_id}", "nocache": "true"},
+                params={
+                    "arg": f"/ipns/{name_or_peer_id}",
+                    "nocache": "true",
+                    # A brand-new bundled node has no local IPNS record and
+                    # deliberately has no DHT peers. Without a bounded DHT
+                    # lookup Kubo waits until our HTTP timeout, turning every
+                    # first boot into a storage failure. Local records are
+                    # still checked first; this only caps the peer lookup used
+                    # when no checkpoint has ever been published.
+                    "dht-timeout": "2s",
+                },
             )
         except httpx.HTTPStatusError:
             return None
