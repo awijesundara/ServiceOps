@@ -4,15 +4,21 @@ Documentation=https://github.com/awijesundara/ServiceOps
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
+ConditionPathExists=/etc/serviceops/serviceops.env
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 User=serviceops
 Group=serviceops
+SupplementaryGroups=docker
 WorkingDirectory=/opt/serviceops
+Environment=HOME=/var/lib/serviceops
+ExecStartPre=/usr/bin/serviceops config-check
 ExecStart=/usr/bin/serviceops start
 ExecStop=/usr/bin/serviceops stop
+Restart=on-failure
+RestartSec=10
 TimeoutStartSec=300
 TimeoutStopSec=120
 
