@@ -2478,15 +2478,36 @@ def ci_always_requires_ccb(ci_class, environment, business_criticality):
     )
 
 
-def change_requires_ccb(governance):
+def change_target_cis(ticket):
+    """Return every CI explicitly in a change's governed scope.
+
+    The primary CI lives on ChangeGovernance and additional affected CIs live
+    in TaskCI.  Keeping that storage detail behind one helper prevents change
+    controls from silently evaluating only the first CI selected on the form.
+    """
+    cis_by_id = {}
+    governance = ticket.change_governance
+    if governance and governance.ci:
+        cis_by_id[governance.ci.id] = governance.ci
+    for link in TaskCI.query.filter_by(
+        target_type="ticket", target_id=ticket.id,
+    ).all():
+        if link.ci:
+            cis_by_id[link.ci_id] = link.ci
+    return [cis_by_id[ci_id] for ci_id in sorted(cis_by_id)]
+
+
+def change_requires_ccb(governance, cis=None):
     if not governance.ccb_required:
         return False
-    ci = governance.ci
-    if ci is None:
+    scoped_cis = list(cis) if cis is not None else ([governance.ci] if governance.ci else [])
+    if not scoped_cis:
         return True
-    if ci.require_ccb_approval:
-        return True
-    return normalize_environment(ci.environment) in ccb_required_environments()
+    return any(
+        ci.require_ccb_approval
+        or normalize_environment(ci.environment) in ccb_required_environments()
+        for ci in scoped_cis
+    )
 
 
 def executive_office_group(tenant_id):
@@ -2508,11 +2529,15 @@ def change_approval_stages(ticket):
         "approver_ids": [ownership.group.manager_id],
     }]
     covered_group_ids = {ownership.group_id}
-    ci = governance.ci
-    ci_group = ci.support_group if ci else None
-    if ci_group and ci_group.id != ownership.group_id:
-        if not ci_group.manager or not ci_group.manager.active:
-            abort(409, description=f"The {ci_group.name} team (owner of {ci.name}) requires an active manager.")
+    scoped_cis = change_target_cis(ticket)
+    ci_groups = {}
+    for ci in scoped_cis:
+        if ci.support_group:
+            ci_groups.setdefault(ci.support_group.id, (ci.support_group, ci))
+    for group_id in sorted(set(ci_groups) - covered_group_ids):
+        ci_group, representative_ci = ci_groups[group_id]
+        if not ci_group.active or not ci_group.manager or not ci_group.manager.active:
+            abort(409, description=f"The {ci_group.name} team (owner of {representative_ci.name}) requires an active manager.")
         stages.append({
             "name": f"{ci_group.name} manager assessment (CI owner)",
             "mode": "all",
@@ -2524,10 +2549,13 @@ def change_approval_stages(ticket):
     # is exposed to the same change even though it's not "their" CI directly
     # -- e.g. a shared load balancer's change plan matters to every team whose
     # application sits behind it. Require each such team's manager too.
-    if ci:
+    if scoped_cis:
         service_ids = [
             row[0] for row in db.session.query(ServiceOfferingCI.service_offering_id)
-            .filter_by(ci_id=ci.id, tenant_id=ticket.tenant_id).all()
+            .filter(
+                ServiceOfferingCI.ci_id.in_([ci.id for ci in scoped_cis]),
+                ServiceOfferingCI.tenant_id == ticket.tenant_id,
+            ).all()
         ]
         if service_ids:
             sibling_group_ids = {
@@ -2554,7 +2582,7 @@ def change_approval_stages(ticket):
                     "approver_ids": [sibling_group.manager_id],
                 })
                 covered_group_ids.add(group_id)
-    if governance.change_type != "Standard" and change_requires_ccb(governance):
+    if governance.change_type != "Standard" and change_requires_ccb(governance, scoped_cis):
         ccb = SupportGroup.query.filter_by(name="Change Control Board", tenant_id=ticket.tenant_id).first()
         ccb_ids = [
             member.user_id for member in (ccb.members if ccb else [])
@@ -8573,8 +8601,10 @@ def create_app(test_config=None):
                 selected_ci = tenant_query(ConfigurationItem).filter_by(id=ci_id).first()
                 if not selected_ci:
                     return render_form("The selected configuration item does not exist.")
-            if kind == "change" and ci_id:
-                conflicts = precreate_change_conflicts(current_user.tenant_id, ci_id, planned_start, planned_end)
+            if kind == "change" and seen_ci_ids:
+                conflicts = _conflict_descriptions(
+                    current_user.tenant_id, set(seen_ci_ids), planned_start, planned_end,
+                )
                 if conflicts:
                     return render_form(
                         f"This change cannot be created: it conflicts with {'; '.join(conflicts)}. "
@@ -8589,9 +8619,17 @@ def create_app(test_config=None):
                         f"\"{freeze.title}\" ({freeze.starts_at.strftime('%b %d')}–{freeze.ends_at.strftime('%b %d, %Y')}"
                         f"{': ' + freeze.reason if freeze.reason else ''}). Only Emergency changes are permitted during a freeze."
                     )
-            calculated_risk_score = calculate_change_risk_score(
-                request.form.get("change_type", "Normal"), selected_ci,
-            )
+            if kind == "change" and seen_cis:
+                calculated_risk_score = max(
+                    calculate_change_risk_score(
+                        request.form.get("change_type", "Normal"), candidate,
+                    )
+                    for candidate in seen_cis.values()
+                )
+            else:
+                calculated_risk_score = calculate_change_risk_score(
+                    request.form.get("change_type", "Normal"), selected_ci,
+                )
             risk_score_input = request.form.get("risk_score", "").strip()
             if risk_score_input:
                 try:
