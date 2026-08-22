@@ -30,7 +30,7 @@ Operations:
   ./serviceops recover-admin USERNAME
   ./serviceops recover-audit-key TENANT_SLUG
   ./serviceops retire-bootstrap-secret
-  ./serviceops update [IMAGE_REF] | update kubernetes [IMAGE_TAG] | config
+  ./serviceops update [IMAGE_REF] | update kubernetes [IMAGE_TAG] | config | config-check
   ./serviceops bootstrap-blue-green          (one-time: convert to the zero-downtime topology)
   ./serviceops deploy IMAGE_REF | rollback   (DEPLOYMENT_MODE=blue-green only -- zero-downtime)
 EOF
@@ -136,7 +136,7 @@ warn_stray_project() {
     echo "  Commands below are targeting project \"$project\" per $ENV_FILE, not the container(s) above." >&2
   fi
 }
-[[ "$command" == "config" || "$command" == "backup" || "$command" == "restore" ]] || warn_stray_project
+[[ "$command" == "config" || "$command" == "config-check" || "$command" == "backup" || "$command" == "restore" ]] || warn_stray_project
 
 case "$command" in
   start) "${COMPOSE[@]}" up -d --remove-orphans ;;
@@ -150,6 +150,7 @@ case "$command" in
     printf "\nhealthy\n"
     ;;
   config) "${COMPOSE[@]}" config ;;
+  config-check) "${COMPOSE[@]}" config --quiet ;;
   doctor)
     failures=0
     echo "ServiceOps diagnostics"

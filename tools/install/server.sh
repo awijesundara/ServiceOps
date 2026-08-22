@@ -138,6 +138,14 @@ printf "MODE=%s\nCOMPOSE_FILE=%s\nINSTALLED_AT=%s\n" "$MODE" \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$STATE_FILE"
 chmod 600 "$STATE_FILE"
 
+# RPM installs keep runtime configuration under /etc/serviceops and run the
+# systemd unit as the dedicated serviceops account. An administrator normally
+# invokes this installer with sudo, so hand the newly-created secret and state
+# files back to that account before the unit ever reads them.
+if [[ "$(id -u)" -eq 0 && "$ROOT_DIR" == "/opt/serviceops" ]] && getent passwd serviceops >/dev/null; then
+  chown serviceops:serviceops "$ENV_FILE" "$STATE_FILE"
+fi
+
 if [[ "$MODE" == "bundled" ]]; then
   COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/compose.yaml")
 else
