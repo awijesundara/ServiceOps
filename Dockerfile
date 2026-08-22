@@ -13,7 +13,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Debian's own security repo by days. Pulling the security-repo fixes
 # directly here, on every build, closes that gap without waiting on (or
 # needing to track) upstream image rebuilds.
-RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends libpq5 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 RUN addgroup --system app && adduser --system --ingroup app app

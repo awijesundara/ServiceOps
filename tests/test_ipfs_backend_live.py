@@ -17,6 +17,7 @@ single-node deployment has by design. Both are fixed in ipfs_client.py;
 this suite guards against a regression reintroducing either.
 """
 import os
+import time
 
 import pytest
 from cryptography.fernet import Fernet
@@ -30,6 +31,14 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def wait_for_checkpoint_publication(backend, timeout=30):
+    """Wait for the durability signal exposed by the async IPNS publisher."""
+    deadline = time.monotonic() + timeout
+    while backend.checkpoint_publish_pending and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not backend.checkpoint_publish_pending, "IPFS checkpoint publication did not complete"
+
+
 def test_checkpoint_round_trips_through_a_real_restart():
     key = Fernet.generate_key()
     backend = IPFSStorageBackend(api_url=API_URL, checkpoint_encryption_key=key)
@@ -38,6 +47,7 @@ def test_checkpoint_round_trips_through_a_real_restart():
     cid = backend.attach_file("live-test.txt", b"real ipfs data", "text/plain")
     data, _ = backend.read_file("live-test.txt", cid)
     assert data == b"real ipfs data"
+    wait_for_checkpoint_publication(backend)
 
     # A brand-new backend instance (simulating a real process restart)
     # against the same node/key must see the write immediately, not after
@@ -50,6 +60,7 @@ def test_checkpoint_round_trips_through_a_real_restart():
     assert data2 == b"real ipfs data"
 
     backend.delete_file("live-test.txt", cid)
+    wait_for_checkpoint_publication(backend)
     reloaded2 = IPFSStorageBackend(api_url=API_URL, checkpoint_encryption_key=key)
     reloaded2.load_checkpoint()
     assert "live-test.txt" not in reloaded2._file_index
