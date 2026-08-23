@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import re
 from pathlib import Path
 
@@ -33,8 +34,10 @@ def render(version: tuple[int, int, int]) -> str:
 
 
 def synchronized_content(version: str) -> dict[Path, str]:
+    current_version = (ROOT / "VERSION").read_text().strip()
     chart = ROOT / "charts/serviceops/Chart.yaml"
     readme = ROOT / "README.md"
+    rpm_spec = ROOT / "packaging/rpm/serviceops.spec"
     worker = ROOT / "static/service-worker.js"
     env_example = ROOT / ".env.example"
     installer = ROOT / "installer/app.py"
@@ -47,11 +50,10 @@ def synchronized_content(version: str) -> dict[Path, str]:
             lambda match: f"version: {version}" if match.group(1) else f'appVersion: "{version}"',
             chart.read_text(),
         ),
-        readme: re.sub(
-            r"version-[0-9]+\.[0-9]+\.[0-9]+-003E4C",
-            f"version-{version}-003E4C",
-            readme.read_text(),
-        ),
+        # Installation commands and release links intentionally include the
+        # current version. Advancing only the badge would leave unsafe,
+        # copy-pasteable instructions pointing at an older package.
+        readme: readme.read_text().replace(current_version, version),
         worker: re.sub(
             r"(\?v=)[0-9]+\.[0-9]+\.[0-9]+",
             rf"\g<1>{version}",
@@ -77,7 +79,19 @@ def synchronized_content(version: str) -> dict[Path, str]:
             rf"\g<1>{version}\g<2>",
             chart_values.read_text(),
         ),
+        rpm_spec: synchronized_rpm_changelog(rpm_spec.read_text(), current_version, version),
     }
+
+
+def synchronized_rpm_changelog(content: str, current_version: str, version: str) -> str:
+    if version == current_version:
+        return content
+    release_date = datetime.now(timezone.utc).strftime("%a %b %d %Y")
+    entry = (
+        f"* {release_date} ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - {version}-1\n"
+        "- Publish governed release artifacts with synchronized installation documentation.\n\n"
+    )
+    return content.replace("%changelog\n", "%changelog\n" + entry, 1)
 
 
 def main() -> int:

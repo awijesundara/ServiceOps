@@ -23,6 +23,10 @@ on:
         required: false
         default: false
         type: boolean
+    outputs:
+      image_digest:
+        description: Immutable digest of the verified application image
+        value: ${{ jobs.verify-build-publish.outputs.image_digest }}
   pull_request:
   push:
     # Deliberately branches only, not tags: this repo's release convention
@@ -47,6 +51,8 @@ env:
 jobs:
   verify-build-publish:
     runs-on: ubuntu-24.04
+    outputs:
+      image_digest: ${{ steps.image.outputs.digest }}
     permissions:
       contents: read
       packages: write
@@ -64,19 +70,21 @@ jobs:
         run: |
           repo_lower="$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
           release_sha="$(git rev-parse HEAD)"
-          echo "IMAGE_NAME=${repo_lower}-server" >> "$GITHUB_ENV"
-          echo "RELEASE_SHA=${release_sha}" >> "$GITHUB_ENV"
-          echo "IMAGE_REF=ghcr.io/${repo_lower}-server:${release_sha}" >> "$GITHUB_ENV"
+          {
+            echo "IMAGE_NAME=${repo_lower}-server"
+            echo "RELEASE_SHA=${release_sha}"
+            echo "IMAGE_REF=ghcr.io/${repo_lower}-server:${release_sha}"
+          } >> "$GITHUB_ENV"
 
       - name: Run complete application suite
         run: |
-          docker build --file Dockerfile.test --tag serviceops-test:${RELEASE_SHA} .
-          docker run --rm serviceops-test:${RELEASE_SHA} python tools/release_version.py --check
-          docker run --rm serviceops-test:${RELEASE_SHA} ruff check .
-          docker run --rm serviceops-test:${RELEASE_SHA} python -m compileall -q app.py installer serviceops_core tools
-          docker run --rm serviceops-test:${RELEASE_SHA} alembic heads | tee /tmp/alembic-heads.txt
+          docker build --file Dockerfile.test --tag "serviceops-test:${RELEASE_SHA}" .
+          docker run --rm "serviceops-test:${RELEASE_SHA}" python tools/release_version.py --check
+          docker run --rm "serviceops-test:${RELEASE_SHA}" ruff check .
+          docker run --rm "serviceops-test:${RELEASE_SHA}" python -m compileall -q app.py installer serviceops_core tools
+          docker run --rm "serviceops-test:${RELEASE_SHA}" alembic heads | tee /tmp/alembic-heads.txt
           test "$(wc -l < /tmp/alembic-heads.txt)" -eq 1
-          docker run --rm serviceops-test:${RELEASE_SHA} pytest -q
+          docker run --rm "serviceops-test:${RELEASE_SHA}" pytest -q
 
       - name: Validate shell, JavaScript, and Compose configuration
         env:
