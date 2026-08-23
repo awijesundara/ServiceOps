@@ -1,0 +1,106 @@
+name: ServiceOps RPM matrix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packaging/**"
+      - "tools/install/**"
+      - "tools/backup_retention.py"
+      - "tools/recovery_verify.py"
+      - "serviceops"
+      - "compose*.yaml"
+      - "VERSION"
+      - ".github/workflows/rpm.yml"
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: "Published ServiceOps image digest (sha256:...)"
+        required: true
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  build:
+    name: Build and install-test ${{ matrix.target }} RPM
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: EL8
+            label: el8
+            image: rockylinux/rockylinux:8
+          - target: EL9
+            label: el9
+            image: rockylinux/rockylinux:9
+          - target: EL10
+            label: el10
+            image: rockylinux/rockylinux:10
+          - target: Fedora 43
+            label: fc43
+            image: fedora:43
+          - target: Fedora 44
+            label: fc44
+            image: fedora:44
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Resolve immutable image digest
+        id: image
+        env:
+          INPUT_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          if [[ -n "$INPUT_DIGEST" ]]; then
+            digest="$INPUT_DIGEST"
+          else
+            digest="sha256:$(printf '%s' "${GITHUB_SHA}" | sha256sum | cut -d' ' -f1)"
+            echo "Non-release validation uses a deterministic placeholder digest."
+          fi
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Build distribution archive
+        run: bash packaging/build-dist.sh "$(cat VERSION)" ghcr.io/awijesundara/serviceops "${{ steps.image.outputs.digest }}"
+
+      - name: Build RPM in clean Enterprise Linux environment
+        run: |
+          mkdir -p "dist/rpm/${{ matrix.label }}"
+          docker run --rm -v "$PWD:/workspace" -w /workspace "${{ matrix.image }}" bash -lc '
+            dnf install -y -q rpm-build systemd-rpm-macros
+            rpmbuild -ta "dist/serviceops-$(cat VERSION).tar.gz" \
+              --define "_topdir /tmp/rpmbuild" \
+              --define "_rpmdir /workspace/dist/rpm/${{ matrix.label }}" \
+              --define "version $(cat VERSION)"
+          '
+
+      - name: Install-test package payload and scriptlets
+        run: |
+          rpm="$(find "dist/rpm/${{ matrix.label }}" -name '*.noarch.rpm' -print -quit)"
+          test -n "$rpm"
+          docker run --rm -v "$PWD/$rpm:/tmp/serviceops.rpm:ro" "${{ matrix.image }}" bash -lc '
+            rpm -i --nodeps /tmp/serviceops.rpm
+            rpm -q serviceops
+            id serviceops
+            test -x /opt/serviceops/serviceops
+            test -f /usr/lib/systemd/system/serviceops-backup.timer
+            test -f /usr/lib/systemd/system/serviceops-health.timer
+            test "$(stat -c %a /etc/serviceops/serviceops.env.example)" = 600
+          '
+          sha256sum "$rpm" > "$rpm.sha256"
+
+      - name: Attest RPM build provenance
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: dist/rpm/${{ matrix.label }}/**/*.noarch.rpm
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: serviceops-rpm-${{ matrix.label }}
+          path: |
+            dist/rpm/${{ matrix.label }}/**/*.noarch.rpm
+            dist/rpm/${{ matrix.label }}/**/*.sha256
+          if-no-files-found: error

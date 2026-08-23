@@ -1,0 +1,9 @@
+/opt/serviceops/logs/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0600 serviceops serviceops
+}

@@ -1,14 +1,12 @@
 [Unit]
-Description=ServiceOps ITSM platform (Docker Compose stack)
+Description=ServiceOps health check and automatic recovery
 Documentation=https://github.com/awijesundara/ServiceOps
-Requires=docker.service
-After=docker.service network-online.target
-Wants=network-online.target
+After=serviceops.service
+Requires=serviceops.service
 ConditionPathExists=/etc/serviceops/serviceops.env
 
 [Service]
 Type=oneshot
-RemainAfterExit=yes
 User=serviceops
 Group=serviceops
 SupplementaryGroups=docker
@@ -20,13 +18,5 @@ PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
 ReadWritePaths=/opt/serviceops /etc/serviceops /var/lib/serviceops
-ExecStartPre=/usr/bin/serviceops config-check
-ExecStart=/usr/bin/serviceops start
-ExecStop=/usr/bin/serviceops stop
-Restart=on-failure
-RestartSec=10
-TimeoutStartSec=300
-TimeoutStopSec=120
-
-[Install]
-WantedBy=multi-user.target
+ExecStart=/usr/bin/serviceops watchdog-heal
+TimeoutStartSec=180
