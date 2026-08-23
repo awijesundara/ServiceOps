@@ -14,11 +14,18 @@ on:
       - ".github/workflows/rpm.yml"
   workflow_dispatch:
     inputs:
+      checkout_ref:
+        description: "Immutable release tag or SHA to package (defaults to the selected ref)"
+        required: false
       image_digest:
         description: "Published ServiceOps image digest (sha256:...)"
         required: true
   workflow_call:
     inputs:
+      checkout_ref:
+        description: "Immutable release tag or SHA to package"
+        required: true
+        type: string
       image_digest:
         description: "Published ServiceOps image digest (sha256:...)"
         required: true
@@ -54,6 +61,8 @@ jobs:
             image: fedora:44
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.checkout_ref || github.ref }}
 
       - name: Resolve immutable image digest
         id: image

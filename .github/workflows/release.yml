@@ -64,7 +64,7 @@ jobs:
     secrets: inherit
 
   rpm:
-    needs: supply-chain
+    needs: [version, supply-chain]
     permissions:
       contents: read
       id-token: write
@@ -72,6 +72,7 @@ jobs:
       artifact-metadata: write
     uses: ./.github/workflows/rpm.yml
     with:
+      checkout_ref: ${{ needs.version.outputs.tag }}
       image_digest: ${{ needs.supply-chain.outputs.image_digest }}
 
   publish:
@@ -90,9 +91,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
         run: |
-          test "$(find release-assets -maxdepth 1 -type f -name '*.rpm' | wc -l)" -eq 5
-          test "$(find release-assets -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq 5
-          (cd release-assets && sha256sum --check -- ./*.sha256)
-          gh release create "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" \
+          mkdir publish-assets
+          find release-assets -type f \( -name '*.rpm' -o -name '*.sha256' \) \
+            -exec cp '{}' publish-assets/ \;
+          test "$(find publish-assets -maxdepth 1 -type f -name '*.rpm' | wc -l)" -eq 5
+          test "$(find publish-assets -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq 5
+          (cd publish-assets && sha256sum --check -- ./*.sha256)
+          gh release create "$TAG" publish-assets/* --repo "$GITHUB_REPOSITORY" \
             --verify-tag --generate-notes --title "ServiceOps $TAG"
           test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')" -eq 10
