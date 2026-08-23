@@ -132,6 +132,9 @@ MSG
 %config(noreplace) %{_sysconfdir}/logrotate.d/serviceops
 
 %changelog
+* Sun Aug 23 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.78.1-1
+- Publish the release image under a repository-owned GHCR package.
+
 * Sun Aug 23 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.78.0-1
 - Add explicit packaged-host setup, hardened systemd service management,
   two-minute health recovery, daily verified backups, conservative retention,
