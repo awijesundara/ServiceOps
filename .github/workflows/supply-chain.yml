@@ -1,6 +1,17 @@
 name: ServiceOps supply-chain gate
 
 on:
+  workflow_dispatch:
+    inputs:
+      checkout_ref:
+        description: Immutable tag or SHA to build
+        required: true
+        type: string
+      publish_release:
+        description: Publish, sign, and attest the image
+        required: true
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       checkout_ref:
