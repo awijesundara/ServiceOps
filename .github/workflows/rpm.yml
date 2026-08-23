@@ -76,6 +76,7 @@ jobs:
               --define "_rpmdir /workspace/dist/rpm/${{ matrix.label }}" \
               --define "version $(cat VERSION)"
           '
+          sudo chown -R "$(id -u):$(id -g)" "dist/rpm/${{ matrix.label }}"
 
       - name: Install-test package payload and scriptlets
         run: |
