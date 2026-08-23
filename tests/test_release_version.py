@@ -35,6 +35,8 @@ def test_governed_release_packages_the_immutable_release_tag():
     rpm_workflow = (ROOT / ".github/workflows/rpm.yml").read_text()
     assert "checkout_ref: ${{ needs.version.outputs.tag }}" in release_workflow
     assert "ref: ${{ inputs.checkout_ref || github.ref }}" in rpm_workflow
+    assert 'sha256sum "$rpm_name" > "$rpm_name.sha256"' in rpm_workflow
+    assert 'printf \'%s  %s\\n\' "$actual" "${rpm#./}" > "$checksum"' in release_workflow
 
 
 def test_no_stale_serviceops_image_versions_outside_release_managed_files():

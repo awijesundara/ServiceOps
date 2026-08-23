@@ -96,7 +96,17 @@ jobs:
             -exec cp '{}' publish-assets/ \;
           test "$(find publish-assets -maxdepth 1 -type f -name '*.rpm' | wc -l)" -eq 5
           test "$(find publish-assets -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq 5
-          (cd publish-assets && sha256sum --check -- ./*.sha256)
+          (
+            cd publish-assets
+            for checksum in ./*.rpm.sha256; do
+              rpm="${checksum%.sha256}"
+              expected="$(cut -d ' ' -f1 "$checksum")"
+              actual="$(sha256sum "$rpm" | cut -d ' ' -f1)"
+              test "$actual" = "$expected"
+              printf '%s  %s\n' "$actual" "${rpm#./}" > "$checksum"
+            done
+            sha256sum --check -- ./*.sha256
+          )
           gh release create "$TAG" publish-assets/* --repo "$GITHUB_REPOSITORY" \
             --verify-tag --generate-notes --title "ServiceOps $TAG"
           test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')" -eq 10
