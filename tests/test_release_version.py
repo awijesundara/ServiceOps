@@ -30,6 +30,13 @@ def test_readme_release_links_and_rpm_commands_use_canonical_version():
     assert referenced_versions == {version}
 
 
+def test_governed_release_packages_the_immutable_release_tag():
+    release_workflow = (ROOT / ".github/workflows/release.yml").read_text()
+    rpm_workflow = (ROOT / ".github/workflows/rpm.yml").read_text()
+    assert "checkout_ref: ${{ needs.version.outputs.tag }}" in release_workflow
+    assert "ref: ${{ inputs.checkout_ref || github.ref }}" in rpm_workflow
+
+
 def test_no_stale_serviceops_image_versions_outside_release_managed_files():
     version = (ROOT / "VERSION").read_text().strip()
     for relative_path in (
