@@ -64,7 +64,7 @@ jobs:
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Build distribution archive
-        run: bash packaging/build-dist.sh "$(cat VERSION)" ghcr.io/awijesundara/serviceops "${{ steps.image.outputs.digest }}"
+        run: bash packaging/build-dist.sh "$(cat VERSION)" ghcr.io/awijesundara/serviceops-server "${{ steps.image.outputs.digest }}"
 
       - name: Build RPM in clean Enterprise Linux environment
         run: |
