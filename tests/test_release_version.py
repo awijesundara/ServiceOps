@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -20,6 +21,13 @@ def test_release_version_is_semantic_and_synchronized():
 
 def test_application_reads_canonical_version():
     assert 'APP_VERSION = (Path(__file__).resolve().parent / "VERSION").read_text().strip()' in (ROOT / "app.py").read_text()
+
+
+def test_readme_release_links_and_rpm_commands_use_canonical_version():
+    version = (ROOT / "VERSION").read_text().strip()
+    readme = (ROOT / "README.md").read_text()
+    referenced_versions = set(re.findall(r"(?:/v|serviceops-|version-)(\d+\.\d+\.\d+)", readme))
+    assert referenced_versions == {version}
 
 
 def test_no_stale_serviceops_image_versions_outside_release_managed_files():
