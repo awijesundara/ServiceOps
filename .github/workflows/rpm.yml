@@ -106,7 +106,9 @@ jobs:
             test -f /usr/lib/systemd/system/serviceops-health.timer
             test "$(stat -c %a /etc/serviceops/serviceops.env.example)" = 600
           '
-          sha256sum "$rpm" > "$rpm.sha256"
+          rpm_dir="$(dirname "$rpm")"
+          rpm_name="$(basename "$rpm")"
+          (cd "$rpm_dir" && sha256sum "$rpm_name" > "$rpm_name.sha256")
 
       - name: Attest RPM build provenance
         uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
