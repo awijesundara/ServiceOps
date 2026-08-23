@@ -7,7 +7,7 @@
 set -Eeuo pipefail
 
 VERSION="${1:?Usage: build-dist.sh VERSION [IMAGE_REPO] [IMAGE_DIGEST]}"
-IMAGE_REPO="${2:-ghcr.io/awijesundara/serviceops}"
+IMAGE_REPO="${2:-ghcr.io/awijesundara/serviceops-server}"
 IMAGE_DIGEST="${3:-}"
 
 if [[ -n "$IMAGE_DIGEST" ]]; then

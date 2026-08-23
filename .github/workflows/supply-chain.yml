@@ -64,9 +64,9 @@ jobs:
         run: |
           repo_lower="$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
           release_sha="$(git rev-parse HEAD)"
-          echo "IMAGE_NAME=${repo_lower}" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=${repo_lower}-server" >> "$GITHUB_ENV"
           echo "RELEASE_SHA=${release_sha}" >> "$GITHUB_ENV"
-          echo "IMAGE_REF=ghcr.io/${repo_lower}:${release_sha}" >> "$GITHUB_ENV"
+          echo "IMAGE_REF=ghcr.io/${repo_lower}-server:${release_sha}" >> "$GITHUB_ENV"
 
       - name: Run complete application suite
         run: |
