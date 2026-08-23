@@ -1,0 +1,12 @@
+[Unit]
+Description=Run ServiceOps health recovery every two minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=serviceops-health.service
+
+[Install]
+WantedBy=timers.target

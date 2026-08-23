@@ -1,0 +1,22 @@
+[Unit]
+Description=ServiceOps health check and automatic recovery
+Documentation=https://github.com/awijesundara/ServiceOps
+After=serviceops.service
+Requires=serviceops.service
+ConditionPathExists=/etc/serviceops/serviceops.env
+
+[Service]
+Type=oneshot
+User=serviceops
+Group=serviceops
+SupplementaryGroups=docker
+WorkingDirectory=/opt/serviceops
+Environment=HOME=/var/lib/serviceops
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/serviceops /etc/serviceops /var/lib/serviceops
+ExecStart=/usr/bin/serviceops watchdog-heal
+TimeoutStartSec=180

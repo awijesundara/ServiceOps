@@ -11,6 +11,7 @@ Installation:
   ./serviceops install web
   ./serviceops install server [--mode bundled|external ...]
   ./serviceops install kubernetes [--preflight]
+  ./serviceops setup [server installation options]   # packaged host
 
 Operations:
   ./serviceops start | stop | restart | status | health | logs | doctor
@@ -37,6 +38,10 @@ EOF
 }
 
 command="${1:-}"
+if [[ "$command" == "setup" ]]; then
+  shift
+  exec "$ROOT_DIR/tools/install/package.sh" "$@"
+fi
 if [[ "$command" == "install" ]]; then
   target="${2:-web}"
   shift 2 || true
@@ -264,8 +269,13 @@ case "$command" in
     started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     set -a; source "$ENV_FILE"; set +a
     "${COMPOSE[@]}" exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom >"$dump"
-    docker run --rm -v serviceops_uploads:/data:ro -v "$BACKUP_DIR":/backup alpine:3.21 \
-      tar -czf "/backup/$(basename "$uploads")" -C /data .
+    # Stream the archive through the invoking process so the recovery file is
+    # owned by the dedicated service account. A rootful helper container that
+    # writes directly into the bind mount would leave a root-owned file that
+    # the systemd backup service cannot chmod, retain, or archive afterward.
+    docker run --rm -v serviceops_uploads:/data:ro \
+      alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d \
+      tar -czf - -C /data . >"$uploads"
     completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     key_reference="$(python3 -c 'import hashlib,os; print("sha256:" + hashlib.sha256(os.environ["SETTINGS_ENCRYPTION_KEY"].encode()).hexdigest()[:16])')"
     python3 "$ROOT_DIR/tools/recovery_verify.py" create-manifest \
@@ -287,6 +297,16 @@ case "$command" in
         --manifest "$(basename "$manifest")" --offsite "$offsite_status"
     else
       echo "Backup succeeded; deploy 1.39.0 before recording dashboard status." >&2
+    fi
+    ;;
+  scheduled-backup)
+    if [[ "$MODE" == "bundled" || "$MODE" == "blue-green" ]]; then
+      "$0" backup "scheduled-$(date -u +%Y%m%dT%H%M%SZ)"
+      set -a; source "$ENV_FILE"; set +a
+      python3 "$ROOT_DIR/tools/backup_retention.py" "$BACKUP_DIR" \
+        --days "${BACKUP_RETENTION_DAYS:-30}" --minimum-sets "${BACKUP_MINIMUM_SETS:-7}"
+    else
+      echo "External database mode: scheduled provider-side backups remain authoritative."
     fi
     ;;
   restore)

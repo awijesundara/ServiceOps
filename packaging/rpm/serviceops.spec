@@ -25,6 +25,7 @@ Requires:       python3
 Requires:       python3-requests
 Requires:       tar
 Requires:       gzip
+Requires:       logrotate
 Requires(pre):  shadow-utils
 Requires(post): systemd
 Requires(preun): systemd
@@ -40,7 +41,7 @@ the configured registry, so upgrading this package never requires a local
 image build.
 
 After installing, run:
-    sudo serviceops install server --yes
+    sudo serviceops setup --mode bundled --yes
 
 %prep
 %setup -q
@@ -63,7 +64,9 @@ install -m 0600 .env.example %{buildroot}%{_sysconfdir}/serviceops/serviceops.en
 install -d -m 0700 %{buildroot}%{_sharedstatedir}/serviceops/backups
 
 install -d -m 0755 %{buildroot}%{_unitdir}
-install -m 0644 packaging/systemd/serviceops.service %{buildroot}%{_unitdir}/serviceops.service
+install -m 0644 packaging/systemd/serviceops*.service packaging/systemd/serviceops*.timer %{buildroot}%{_unitdir}/
+install -d -m 0755 %{buildroot}%{_sysconfdir}/logrotate.d
+install -m 0644 packaging/logrotate/serviceops %{buildroot}%{_sysconfdir}/logrotate.d/serviceops
 rm -rf %{buildroot}%{install_root}/packaging
 
 %pre
@@ -89,22 +92,23 @@ if [ ! -L %{install_root}/backups ]; then
 fi
 chown -R %{service_user}:%{service_user} %{install_root} %{_sysconfdir}/serviceops %{_sharedstatedir}/serviceops
 chmod 750 %{install_root}
-%systemd_post serviceops.service
+%systemd_post serviceops.service serviceops-health.timer serviceops-backup.timer
 cat <<'MSG'
 
 ServiceOps control plane installed to /opt/serviceops.
 No database or secrets exist yet. Run:
 
-    sudo serviceops install server --yes
+    sudo serviceops setup --mode bundled --yes
 
-then `systemctl enable --now serviceops` to bring it up on boot.
+This explicit setup command initializes the database and enables the application,
+health-recovery, and verified-backup systemd units.
 MSG
 
 %preun
-%systemd_preun serviceops.service
+%systemd_preun serviceops.service serviceops-health.timer serviceops-backup.timer
 
 %postun
-%systemd_postun_with_restart serviceops.service
+%systemd_postun_with_restart serviceops.service serviceops-health.timer serviceops-backup.timer
 
 %files
 %dir %attr(0750,serviceops,serviceops) %{install_root}
@@ -123,9 +127,15 @@ MSG
 %config(noreplace) %attr(0600,serviceops,serviceops) %{_sysconfdir}/serviceops/serviceops.env.example
 %dir %attr(0700,serviceops,serviceops) %{_sharedstatedir}/serviceops
 %dir %attr(0700,serviceops,serviceops) %{_sharedstatedir}/serviceops/backups
-%{_unitdir}/serviceops.service
+%{_unitdir}/serviceops*.service
+%{_unitdir}/serviceops*.timer
+%config(noreplace) %{_sysconfdir}/logrotate.d/serviceops
 
 %changelog
+* Sun Aug 23 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.78.0-1
+- Add explicit packaged-host setup, hardened systemd service management,
+  two-minute health recovery, daily verified backups, conservative retention,
+  log rotation, and clean build/install testing across EL8/9/10 and Fedora 43/44.
 * Tue Jul 28 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.23.3-1
 - Security release: Flask 3.1.3, Authlib 1.6.12, requests 2.33.0, Werkzeug 3.1.6.
 - build-dist.sh now accepts an image digest to pin packaged installs to an

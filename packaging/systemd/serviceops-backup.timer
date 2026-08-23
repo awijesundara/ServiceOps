@@ -1,0 +1,11 @@
+[Unit]
+Description=Create a daily verified ServiceOps recovery set
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+RandomizedDelaySec=30min
+Persistent=true
+Unit=serviceops-backup.service
+
+[Install]
+WantedBy=timers.target
