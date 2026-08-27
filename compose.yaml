@@ -47,6 +47,8 @@ services:
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+        APT_MIRROR: ${APT_MIRROR:-https://deb.debian.org/debian}
+        APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-https://deb.debian.org/debian-security}
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-serviceops}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-serviceops}
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
@@ -143,6 +145,8 @@ services:
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+        APT_MIRROR: ${APT_MIRROR:-https://deb.debian.org/debian}
+        APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-https://deb.debian.org/debian-security}
     command: ["python", "-m", "tools.outbox_worker"]
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-serviceops}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-serviceops}
