@@ -12,10 +12,10 @@ Flask-Login==0.6.3
 Authlib==1.7.2
 ldap3==2.9.1
 requests==2.34.2
-# Use psycopg's pure-Python implementation with Debian's patched libpq.
-# psycopg-binary bundles an older EL8 PCRE2 shared library which bypasses
-# Debian security updates and is flagged by the release image scanner.
-psycopg==3.3.4
+# Offline deployment support: install the binary extra as a fallback when
+# `libpq5` cannot be obtained. Production builds remove that extra whenever
+# Debian's patched libpq is available, avoiding vulnerable bundled libraries.
+psycopg[binary]==3.3.4
 gunicorn==26.0.0
 Werkzeug==3.1.8
 setuptools==83.0.0

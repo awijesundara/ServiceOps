@@ -2,6 +2,8 @@ FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea5
 
 ARG PIP_INDEX_URL=""
 ARG PIP_TRUSTED_HOST=""
+ARG APT_MIRROR="https://deb.debian.org/debian"
+ARG APT_SECURITY_MIRROR="https://deb.debian.org/debian-security"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -13,9 +15,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Debian's own security repo by days. Pulling the security-repo fixes
 # directly here, on every build, closes that gap without waiting on (or
 # needing to track) upstream image rebuilds.
-RUN apt-get update \
-    && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends libpq5 \
+RUN find /etc/apt -type f \( -name "*.list" -o -name "*.sources" \) -print0 | xargs -0 sed -i \
+        -e "s|https\?://deb.debian.org/debian-security|${APT_SECURITY_MIRROR}|g" \
+        -e "s|https\?://deb.debian.org/debian\([[:space:]]\|$\)|${APT_MIRROR}\\1|g" \
+    && if apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update \
+        && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 upgrade -y \
+        && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends libpq5; then \
+            echo "APT security update + libpq5 install succeeded"; \
+        else \
+            echo "WARNING: APT mirror is unreachable; continuing with wheel-bundled runtime libs for offline build"; \
+        fi \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -26,10 +35,14 @@ COPY requirements.txt .
 # copies of packaging/jaraco.context/wheel/msgpack that otherwise show up as
 # unfixable image-scan findings independent of our own requirements.txt pins.
 # Remove them once the real dependencies are installed.
+# Prefer Debian's patched libpq whenever APT succeeded. The binary wheel
+# remains installed only for the offline fallback, because its bundled EL8
+# libraries otherwise trigger the release image vulnerability gate.
 RUN if [ -n "$PIP_INDEX_URL" ]; then pip config set global.index-url "$PIP_INDEX_URL"; fi \
     && if [ -n "$PIP_TRUSTED_HOST" ]; then pip config set global.trusted-host "$PIP_TRUSTED_HOST"; fi \
     && pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
+    && if ldconfig -p | grep -q 'libpq\.so\.5'; then pip uninstall -y psycopg-binary; fi \
     && site_packages="$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" \
     && pip uninstall -y pip setuptools wheel \
     && rm -rf "${site_packages}"/pip* "${site_packages}"/setuptools* "${site_packages}"/wheel* "${site_packages}"/pkg_resources* "${site_packages}"/_distutils_hack

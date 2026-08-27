@@ -39,6 +39,19 @@ def test_governed_release_packages_the_immutable_release_tag():
     assert 'printf \'%s  %s\\n\' "$actual" "${rpm#./}" > "$checksum"' in release_workflow
 
 
+def test_successful_main_gate_automatically_enters_governed_release_pipeline():
+    release_workflow = (ROOT / ".github/workflows/release.yml").read_text()
+    assert 'workflow_run:' in release_workflow
+    assert 'workflows: ["ServiceOps supply-chain gate"]' in release_workflow
+    assert "github.event.workflow_run.conclusion == 'success'" in release_workflow
+    assert "github.event.workflow_run.head_branch == 'main'" in release_workflow
+    assert "github.event.workflow_run.head_repository.full_name == github.repository" in release_workflow
+    assert "!startsWith(github.event.workflow_run.head_commit.message, 'chore(release):')" in release_workflow
+    assert 'test "$(git rev-parse HEAD)" = "$VALIDATED_SHA"' in release_workflow
+    assert "INCREMENT: ${{ inputs.increment || 'patch' }}" in release_workflow
+    assert "cancel-in-progress: false" in release_workflow
+
+
 def test_no_stale_serviceops_image_versions_outside_release_managed_files():
     version = (ROOT / "VERSION").read_text().strip()
     for relative_path in (
