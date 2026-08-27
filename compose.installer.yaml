@@ -1,7 +1,13 @@
 name: serviceops-installer
 services:
   installer:
-    build: .
+    build:
+      context: .
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+        APT_MIRROR: ${APT_MIRROR:-https://deb.debian.org/debian}
+        APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-https://deb.debian.org/debian-security}
     command: ["gunicorn", "--bind", "0.0.0.0:8090", "--workers", "1", "--threads", "4", "installer.app:create_app()"]
     environment:
       INSTALLER_STATE_DIR: /config

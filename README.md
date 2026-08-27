@@ -304,6 +304,15 @@ search, biometric locking, passkeys, MFA, and APNs notifications.
 - [REST API reference](docs/API_REFERENCE.md), also served from `/api/v1/docs`
 - [Development and release documentation](https://github.com/awijesundara/serviceops-notes)
 
+Every pull request and push to `main` enters the supply-chain quality gate.
+After a `main` run succeeds, the governed-release pipeline automatically creates
+the next patch version, re-runs the release gates against that immutable tag,
+publishes and verifies the signed image, SBOM, provenance, and install-tested RPM
+matrix, and publishes the stable GitHub release. Major and minor releases remain
+available through the manual governed-release dispatch. Failed or superseded
+validation runs cannot publish a release, and release commits do not recursively
+start another release.
+
 Application code, runtime documentation, tests, and the generated platform
 manual are maintained in this repository. Development notes, deployment
 runbooks, engineering references, and release-readiness evidence are maintained
