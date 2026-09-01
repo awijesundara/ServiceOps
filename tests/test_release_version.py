@@ -67,3 +67,21 @@ def test_no_stale_serviceops_image_versions_outside_release_managed_files():
 def test_read_only_runtime_disables_gunicorn_control_socket():
     entrypoint = (ROOT / "tools/gunicorn-entrypoint.sh").read_text()
     assert "--no-control-socket" in entrypoint
+
+
+def test_offline_bundle_is_fail_closed_and_immutable():
+    vendorize = (ROOT / "tools/offline/vendorize.sh").read_text()
+    loader = (ROOT / "tools/offline/build-offline.sh").read_text()
+    images = (ROOT / "tools/offline/docker-images.txt").read_text().splitlines()
+    assert "SERVICEOPS_IMAGE must be an immutable" in vendorize
+    assert "sha256sum --check SHA256SUMS" in vendorize
+    assert "sha256sum --check SHA256SUMS" in loader
+    assert "Unsafe archive path" in loader
+    assert all("@sha256:" in line for line in images if line and not line.startswith("#"))
+
+
+def test_developer_and_ci_commands_never_suppress_failures():
+    makefile = (ROOT / "Makefile").read_text()
+    workflows = "\n".join(path.read_text() for path in (ROOT / ".github/workflows").glob("*.yml"))
+    assert "|| true" not in makefile
+    assert "pytest -q || true" not in workflows
