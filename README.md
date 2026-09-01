@@ -48,6 +48,7 @@ verified backups.
 | Environment | Recommended use | Installation method |
 |---|---|---|
 | RPM-managed single server | Standard production or evaluation deployment | [Fresh-server RPM installation](#fresh-server-rpm-installation) |
+| Air-gapped RPM server | Restricted production network with an approved transfer host | [Offline deployment bundle](tools/offline/README.md) followed by the RPM procedure |
 | Docker Compose checkout | Development or customized source deployment | [Docker Compose installation](#docker-compose-installation) |
 | Kubernetes 1.27+ | High availability and horizontally scaled production | [Kubernetes installation](#kubernetes-installation) |
 
@@ -55,6 +56,12 @@ The RPM release supports EL8, EL9, EL10, Fedora 43, and Fedora 44. This includes
 the corresponding supported RHEL, Rocky Linux, AlmaLinux, and Oracle Linux
 families. For a new standalone deployment, **Rocky Linux 9 minimal** is the
 recommended conservative baseline.
+
+For an air-gapped server, obtain the RPM and Docker Engine packages from an
+approved signed offline OS repository. Prepare the application and runtime-image
+bundle on a connected Linux transfer host using the
+[offline deployment procedure](tools/offline/README.md); it requires immutable
+image digests and verifies every transferred file before loading any image.
 
 ## Fresh-server RPM installation
 
@@ -303,6 +310,7 @@ search, biometric locking, passkeys, MFA, and APNs notifications.
 - [Platform manual PDF](docs/ServiceOps_Complete_Platform_Manual.pdf)
 - [REST API reference](docs/API_REFERENCE.md), also served from `/api/v1/docs`
 - [Development and release documentation](https://github.com/awijesundara/serviceops-notes)
+- [Air-gapped deployment bundle](tools/offline/README.md)
 
 Every pull request and push to `main` enters the supply-chain quality gate.
 After a `main` run succeeds, the governed-release pipeline automatically creates

@@ -49,6 +49,8 @@ __pycache__/
 instance/
 CLAUDE.md
 dist/
+tools/offline/vendor/
+tools/offline/vendor.tar.gz
 .DS_Store
 *.log
 
