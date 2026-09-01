@@ -1,15 +1,15 @@
-const CACHE_NAME = "serviceops-shell-v1.78.5";
+const CACHE_NAME = "serviceops-shell-v1.78.6";
 const SHELL_ASSETS = [
-  "/static/platform.css?v=1.78.5",
-  "/static/app.css?v=1.78.5",
-  "/static/enterprise.css?v=1.78.5",
-  "/static/brand.css?v=1.78.5",
-  "/static/itil.css?v=1.78.5",
-  "/static/platform.js?v=1.78.5",
-  "/static/admin-workspace.css?v=1.78.5",
-  "/static/lookup.js?v=1.78.5",
-  "/static/icons/serviceops-icon-192.png?v=1.78.5",
-  "/static/icons/serviceops-icon-512.png?v=1.78.5"
+  "/static/platform.css?v=1.78.6",
+  "/static/app.css?v=1.78.6",
+  "/static/enterprise.css?v=1.78.6",
+  "/static/brand.css?v=1.78.6",
+  "/static/itil.css?v=1.78.6",
+  "/static/platform.js?v=1.78.6",
+  "/static/admin-workspace.css?v=1.78.6",
+  "/static/lookup.js?v=1.78.6",
+  "/static/icons/serviceops-icon-192.png?v=1.78.6",
+  "/static/icons/serviceops-icon-512.png?v=1.78.6"
 ];
 
 self.addEventListener("install", (event) => {
