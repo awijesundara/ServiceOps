@@ -81,6 +81,7 @@ def app():
         )
         db.session.add_all([employee, manager])
         db.session.flush()
+        employee.manager_id = manager.id
         admin = User.query.filter_by(username="admin").one()
         for group in SupportGroup.query.filter_by(group_type="IT Fulfillment").all():
             group.manager_id = manager.id
@@ -1637,6 +1638,8 @@ def test_shared_task_record_and_list_interface(client, app):
     assert b'id="enterprise-record-form"' in problem.data
     assert b"Event history" in problem.data
 
+    client.post("/logout")
+    login(client, "employee", "Employee123!")
     request_record = client.post("/catalog/1/order", data={
         "details": "Validate the request record workspace.",
     }, follow_redirects=True)
@@ -1863,10 +1866,111 @@ def test_catalog_request_and_cmdb(client, app):
         ritm_id = RequestedItem.query.one().id
     ritm_page = client.get(f"/ritm/{ritm_id}")
     assert ritm_page.status_code == 200
-    assert b"Manager approval" in ritm_page.data
+    assert b"Line manager approval" in ritm_page.data
     client.post("/logout")
     login(client)
     assert client.get("/cmdb").status_code == 200
+
+
+def test_catalog_routes_to_prelogin_ldap_line_manager_without_flapping(client, app):
+    """Exercise the reported form flow with a manager placeholder that has
+    never logged in, then prove LDAP DN casing and a later org-chart update do
+    not rewrite the in-flight, auditable approval target."""
+    manager_dn = "CN=Brien Fly,OU=Managers,DC=example,DC=com"
+    with app.app_context():
+        prelogin_manager = provision_external_user(
+            "ldap", manager_dn, "brien.fly", "Brien Fly",
+            "brien.fly@example.test", "requester", groups=[],
+        )
+        employee = User.query.filter_by(username="employee").one()
+        employee.manager_id = prelogin_manager.id
+        db.session.commit()
+        prelogin_manager_id = prelogin_manager.id
+        assert prelogin_manager.last_seen_at is None
+
+    login(client, "employee", "Employee123!")
+    response = client.post(
+        "/catalog/1/order",
+        data={"details": "Laptop requiring line-manager approval"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b"RITM0000001" in response.data
+
+    with app.app_context():
+        chain = ApprovalChain.query.filter_by(target_type="ritm").one()
+        first_gate = chain.gates[0]
+        assert first_gate.name == "Line manager approval"
+        assert [vote.approver_id for vote in first_gate.votes] == [prelogin_manager_id]
+        assert first_gate.votes[0].state == "Requested"
+        assert Notification.query.filter_by(
+            user_id=prelogin_manager_id, target_type="approval_queue"
+        ).count() == 1
+
+        # A subsequent reporting-line update governs future submissions only;
+        # it must not silently redirect an approval already under audit.
+        employee = User.query.filter_by(username="employee").one()
+        employee.manager_id = User.query.filter_by(username="database.manager").one().id
+        db.session.commit()
+        assert db.session.get(ApprovalVote, first_gate.votes[0].id).approver_id == prelogin_manager_id
+
+        # AD can return equivalent DNs in different casing on a later login.
+        returning_manager = provision_external_user(
+            "ldap", manager_dn.swapcase(), "brien.fly", "Brien Fly",
+            "brien.fly@example.test", "requester", groups=[],
+        )
+        db.session.commit()
+        assert returning_manager.id == prelogin_manager_id
+        assert ExternalIdentity.query.filter_by(provider="ldap", user_id=prelogin_manager_id).count() == 1
+        assert User.query.filter_by(username="brien.fly").count() == 1
+
+
+def test_catalog_approval_fails_closed_before_creating_records_without_line_manager(client, app):
+    with app.app_context():
+        employee = User.query.filter_by(username="employee").one()
+        employee.manager_id = None
+        db.session.commit()
+
+    login(client, "employee", "Employee123!")
+    response = client.post(
+        "/catalog/1/order", data={"details": "Must not bypass policy"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b"active, same-tenant line manager" in response.data
+    with app.app_context():
+        assert CatalogRequest.query.count() == 0
+        assert RequestedItem.query.count() == 0
+        assert ApprovalChain.query.count() == 0
+
+
+def test_item_added_to_existing_request_uses_requested_for_line_manager(client, app):
+    """An administrator adding an item must not become (or choose) its first
+    approver; policy follows the request beneficiary on this second creation
+    path as well."""
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        employee = User.query.filter_by(username="employee").one()
+        manager = User.query.filter_by(username="database.manager").one()
+        req = CatalogRequest(
+            number="REQ0000042", requested_by_id=admin.id,
+            requested_for_id=employee.id, state="Open",
+        )
+        db.session.add(req)
+        db.session.commit()
+        req_id, manager_id, admin_id = req.id, manager.id, admin.id
+
+    login(client)
+    response = client.post(f"/request/{req_id}/items", data={
+        "catalog_item_id": 1,
+        "details": "Added by an administrator for the employee",
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        chain = ApprovalChain.query.filter_by(target_type="ritm").one()
+        first_approvers = {vote.approver_id for vote in chain.gates[0].votes}
+        assert first_approvers == {manager_id}
+        assert admin_id not in first_approvers
 
 
 def test_ci_additional_fields_are_editable_and_exported(client, app):
@@ -2151,21 +2255,22 @@ def test_ci_lookup_includes_owning_team_for_ticket_form_confirmation(client, app
 
 
 def test_catalog_approval_chain_creates_fulfillment_task(client, app):
-    login(client)
+    login(client, "employee", "Employee123!")
     client.post("/catalog/1/order", data={"details": "Engineering laptop"}, follow_redirects=True)
     with app.app_context():
         ritm = RequestedItem.query.one()
         chain = ApprovalChain.query.filter_by(target_type="ritm", target_id=ritm.id).one()
         first_vote = chain.gates[0].votes[0]
         ritm_id, first_vote_id = ritm.id, first_vote.id
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
     client.post(f"/approval-votes/{first_vote_id}/decide",
                 data={"decision": "Approved", "comments": "Manager approved."})
     with app.app_context():
         chain = ApprovalChain.query.filter_by(target_type="ritm", target_id=ritm_id).one()
-        second_vote = chain.gates[1].votes[0]
+        manager_id = User.query.filter_by(username="database.manager").one().id
+        second_vote = next(vote for vote in chain.gates[1].votes if vote.approver_id == manager_id)
         second_vote_id = second_vote.id
-    client.post("/logout")
-    login(client, "database.manager", "Manager123!")
     client.post(f"/approval-votes/{second_vote_id}/decide",
                 data={"decision": "Approved", "comments": "Fulfillment approved."})
     with app.app_context():

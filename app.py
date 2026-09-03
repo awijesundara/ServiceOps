@@ -2847,6 +2847,46 @@ def create_approval_chain(name, target_type, target_id, stages, first_gate_title
     return chain
 
 
+def catalog_approval_stages(requested_for):
+    """Build the governed catalog chain for the request beneficiary.
+
+    The first approver is deliberately resolved once, at submission time, and
+    persisted in ApprovalVote.  Later directory or org-chart changes therefore
+    affect future requests without silently rewriting an in-flight decision.
+    """
+    manager = requested_for.manager if requested_for else None
+    if (
+        not manager
+        or not manager.active
+        or manager.tenant_id != requested_for.tenant_id
+        or manager.id == requested_for.id
+    ):
+        raise ValueError(
+            "An active, same-tenant line manager must be assigned to the "
+            "requested-for user before an approval-required item can be submitted."
+        )
+
+    fulfillment = SupportGroup.query.filter_by(
+        tenant_id=requested_for.tenant_id, name="Service Desk", active=True
+    ).first()
+    fulfillment_approver_ids = sorted({
+        member.user_id
+        for member in fulfillment.members
+        if member.user and member.user.active
+        and member.user.tenant_id == requested_for.tenant_id
+    }) if fulfillment else []
+    if not fulfillment_approver_ids:
+        raise ValueError(
+            "At least one active, same-tenant Service Desk member must be configured "
+            "for fulfillment authorization."
+        )
+    return [
+        {"name": "Line manager approval", "mode": "all", "approver_ids": [manager.id]},
+        {"name": "Fulfillment authorization", "mode": "any",
+         "approver_ids": fulfillment_approver_ids},
+    ]
+
+
 def decide_vote(vote, decision, comments):
     if vote.state != "Requested" or vote.gate.state != "Requested" or vote.gate.chain.state != "Running":
         abort(409, description="This approval is no longer active.")
@@ -4870,6 +4910,28 @@ def apply_external_profile_attrs(user, profile_attrs):
             setattr(user, field, str(value).strip())
 
 
+def find_external_identity(provider, subject):
+    """Return an existing external identity using provider-correct equality.
+
+    LDAP distinguished names are not stable byte strings: equivalent DNs can
+    be returned with different character casing (including between the user's
+    login search and the manager base-object lookup).  Treating them as exact,
+    case-sensitive subjects can create a second placeholder user and make a
+    reporting relationship appear to flap.  Other identity providers keep
+    exact subject matching because their subject identifiers are opaque.
+    """
+    provider = str(provider or "").strip()
+    subject = str(subject or "").strip()
+    if not provider or not subject:
+        return None
+    query = ExternalIdentity.query.filter_by(provider=provider)
+    if provider.casefold() == "ldap":
+        return query.filter(
+            db.func.lower(db.func.trim(ExternalIdentity.subject)) == subject.casefold()
+        ).first()
+    return query.filter_by(subject=subject).first()
+
+
 def provision_external_user(provider, subject, username, name, email, matched_roles, groups=None, profile_attrs=None):
     """`matched_roles` is normally a {role: matched_group_or_None} dict from
     mapped_roles() -- every one of these roles is granted via
@@ -4889,7 +4951,7 @@ def provision_external_user(provider, subject, username, name, email, matched_ro
     elif not isinstance(matched_roles, dict):
         matched_roles = {role: None for role in matched_roles}
 
-    identity = ExternalIdentity.query.filter_by(provider=provider, subject=subject).first()
+    identity = find_external_identity(provider, subject)
     if identity:
         user = identity.user
         user.name, user.email = name, email
@@ -5027,9 +5089,7 @@ def sync_ldap_manager_on_login(user, entry_dn, manager_dn, merged_attr_map):
         return
 
     try:
-        manager_identity = ExternalIdentity.query.filter_by(
-            provider="ldap", subject=manager_dn
-        ).first()
+        manager_identity = find_external_identity("ldap", manager_dn)
         manager_user = manager_identity.user if manager_identity else None
 
         if not manager_user:
@@ -12780,14 +12840,13 @@ def create_app(test_config=None):
         item = tenant_record_or_404(CatalogItem, item_id)
         if not item.active:
             abort(404)
+        approval_stages = None
         if item.approval_required:
-            manager = tenant_query(User).filter(User.role.in_(["admin", "superadmin"]), User.active.is_(True)).first()
-            fulfillment = tenant_query(SupportGroup).filter_by(name="Service Desk", active=True).first()
-            fulfillment_approver_ids = [member.user_id for member in fulfillment.members] if fulfillment else []
-            if not manager or not fulfillment_approver_ids:
+            try:
+                approval_stages = catalog_approval_stages(current_user)
+            except ValueError as error:
                 flash(
-                    f"{item.name} cannot be requested yet: no active administrator or "
-                    "Service Desk team member is configured to approve it. Contact an administrator.",
+                    f"{item.name} cannot be requested yet: {error} Contact an administrator.",
                     "error",
                 )
                 return redirect(url_for("catalog"))
@@ -12809,12 +12868,9 @@ def create_app(test_config=None):
         ritm = create_with_retry_on_number_collision(build_ritm)
         attach_slas("ritm", ritm.id, None)
         if item.approval_required:
-            stages = [
-                {"name": "Manager approval", "mode": "all", "approver_ids": [manager.id]},
-                {"name": "Fulfillment authorization", "mode": "any",
-                 "approver_ids": fulfillment_approver_ids},
-            ]
-            create_approval_chain(f"{ritm.number} service fulfillment", "ritm", ritm.id, stages)
+            create_approval_chain(
+                f"{ritm.number} service fulfillment", "ritm", ritm.id, approval_stages
+            )
         else:
             create_catalog_task(ritm)
         log_history("request", req.id, "Request created", details=f"{req.number} created.")
@@ -14031,6 +14087,12 @@ def create_app(test_config=None):
         if not user_can_add_request_item(current_user, req):
             abort(403, description="Only request participants or an administrator can add items.")
         item = tenant_record_or_404(CatalogItem, int(request.form["catalog_item_id"]))
+        approval_stages = None
+        if item.approval_required:
+            try:
+                approval_stages = catalog_approval_stages(req.requested_for)
+            except ValueError as error:
+                abort(409, description=str(error))
         def build_ritm():
             ritm = RequestedItem(
                 number=sequence_number(RequestedItem, "RITM"), request_id=req.id,
@@ -14045,16 +14107,8 @@ def create_app(test_config=None):
         ritm = create_with_retry_on_number_collision(build_ritm)
         attach_slas("ritm", ritm.id, None)
         if item.approval_required:
-            manager = tenant_query(User).filter(User.role.in_(["admin", "superadmin"]), User.active.is_(True)).first()
-            fulfillment = tenant_query(SupportGroup).filter_by(name="Service Desk").first()
-            approvers = [member.user_id for member in fulfillment.members if member.user.active] if fulfillment else []
-            if not manager or not approvers:
-                abort(409, description="Request approval and fulfillment approvers must be configured.")
             create_approval_chain(
-                f"{ritm.number} service fulfillment", "ritm", ritm.id, [
-                    {"name": "Manager approval", "mode": "all", "approver_ids": [manager.id]},
-                    {"name": "Fulfillment authorization", "mode": "any", "approver_ids": approvers},
-                ],
+                f"{ritm.number} service fulfillment", "ritm", ritm.id, approval_stages,
             )
         else:
             create_catalog_task(ritm)
