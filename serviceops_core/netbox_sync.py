@@ -5,7 +5,7 @@ and upserts them into ConfigurationItem, using the same "manual trigger,
 dry-run preview, per-record error isolation" shape as
 serviceops_core/ldap_sync.py.
 
-NetBox is treated as the source of truth for hardware fields (name, serial
+NetBox is treated as the source of truth for inventory fields (name, serial
 number, vendor, model, IP address, location) and physical rack placement
 (rack, position, height in U, front/rear face) — every sync overwrites those
 fields on matched CIs. Non-hardware fields (owner, cost center, description,
@@ -14,7 +14,9 @@ serviceops_core/cmdb_import.py (CSV/spreadsheet import), which in turn never
 overwrites hardware fields on a netbox-sourced CI.
 """
 import os
+import re
 import tempfile
+from contextlib import nullcontext
 
 import requests
 
@@ -75,15 +77,39 @@ COMPONENT_ENDPOINTS = (
     ("/api/dcim/inventory-items/", "Inventory Items", _format_inventory_item),
 )
 
-STATUS_MAP = {
+OPERATIONAL_STATUS_MAP = {
     "active": "Operational",
-    "offline": "Retired",
-    "planned": "Pre-production",
-    "staged": "Pre-production",
+    "offline": "Down",
+    "planned": "Maintenance",
+    "staged": "Maintenance",
     "failed": "Down",
-    "inventory": "Retired",
+    "inventory": "Maintenance",
+    "decommissioning": "Maintenance",
+}
+
+LIFECYCLE_STATUS_MAP = {
+    "active": "In Use",
+    "offline": "In Use",
+    "planned": "Planned",
+    "staged": "Planned",
+    "failed": "In Use",
+    "inventory": "Planned",
     "decommissioning": "Retired",
 }
+
+# NetBox roles are administrator-defined functional labels, not a controlled
+# CI-class vocabulary. Only well-known role terms are normalized; everything
+# else remains visible as an attribute and lands in the neutral Device class.
+ROLE_CLASS_TERMS = (
+    (("pdu", "power distribution"), "PDU"),
+    (("firewall",), "Firewall"),
+    (("load balancer", "load-balancer", "loadbalancer"), "Load Balancer"),
+    (("wireless", "access point", "wifi", "wlan"), "Wireless Access Point"),
+    (("switch",), "Switch"),
+    (("router",), "Router"),
+    (("storage", "san", "nas"), "Storage"),
+    (("server", "hypervisor", "compute"), "Server"),
+)
 
 # ConfigurationItem columns NetBox owns outright; a re-sync always overwrites
 # these on a matched CI (see cmdb_import.py's mirrored NETBOX_OWNED_FIELDS,
@@ -117,7 +143,10 @@ def _netbox_session(base_url, token):
 
     session = requests.Session()
     session.headers.update({
-        "Authorization": f"Token {token}",
+        # NetBox v2 tokens (introduced in 4.5) use Bearer authentication;
+        # legacy v1 tokens use Token. Supporting both keeps older supported
+        # installations working while avoiding a forced deprecated token.
+        "Authorization": f"{'Bearer' if token.startswith('nbt_') else 'Token'} {token}",
         "Accept": "application/json",
     })
     ca_cert = core_app.setting_value("NETBOX_CA_CERT", "").strip()
@@ -142,7 +171,9 @@ def _write_ca_bundle(pem_text):
 
 def _get(session, base_url, path, params=None):
     url = base_url.rstrip("/") + path
-    response = session.get(url, params=params, timeout=15)
+    response = session.get(url, params=params, timeout=15, allow_redirects=False)
+    if getattr(response, "is_redirect", False):
+        raise NetboxSyncError(f"NetBox unexpectedly redirected {path}; refusing to leave the configured host.")
     response.raise_for_status()
     return response.json()
 
@@ -151,11 +182,17 @@ def _paginate(session, base_url, path):
     params = {"limit": 100, "offset": 0}
     while True:
         payload = _get(session, base_url, path, params=params)
-        for result in payload.get("results", []):
+        results = payload.get("results", [])
+        for result in results:
             yield result
         if not payload.get("next"):
             return
-        params["offset"] += params["limit"]
+        # NetBox may cap a requested page below `limit`; advance by the rows
+        # actually returned or records between the server-provided pages are
+        # skipped.
+        if not results:
+            raise NetboxSyncError(f"NetBox returned an empty page with a next link for {path}.")
+        params["offset"] += len(results)
 
 
 def _fetch_all_components(session, base_url):
@@ -165,6 +202,7 @@ def _fetch_all_components(session, base_url):
     one (e.g. inventory items), that type is skipped rather than aborting
     the whole sync."""
     grouped = {}
+    warnings = []
     for path, label, formatter in COMPONENT_ENDPOINTS:
         by_device = {}
         try:
@@ -173,11 +211,12 @@ def _fetch_all_components(session, base_url):
                 if not device_id:
                     continue
                 by_device.setdefault(device_id, []).append(formatter(record))
-        except requests.RequestException:
+        except (requests.RequestException, NetboxSyncError) as error:
+            warnings.append(f"{label} were not imported: {type(error).__name__}")
             continue
         for device_id, items in by_device.items():
             grouped.setdefault(device_id, {})[f"NetBox: {label}"] = "; ".join(items)
-    return grouped
+    return grouped, warnings
 
 
 def _first_attr(record, *keys):
@@ -195,6 +234,40 @@ def _location_of(record):
     if site and location:
         return f"{site} / {location}"
     return site or location or None
+
+
+def _device_class(record):
+    role = (_first_attr(record, "role", "slug") or _first_attr(record, "role", "name") or "").casefold()
+    normalized = " ".join(re.findall(r"[a-z0-9]+", role))
+    words = set(normalized.split())
+    for terms, ci_class in ROLE_CLASS_TERMS:
+        if any((term in words) if " " not in term else (term in normalized) for term in terms):
+            return ci_class
+    return "Device"
+
+
+def _status_fields(record):
+    value = (_first_attr(record, "status", "value") or "").casefold()
+    return {
+        "operational_status": OPERATIONAL_STATUS_MAP.get(value),
+        "lifecycle_state": LIFECYCLE_STATUS_MAP.get(value),
+    }
+
+
+def _environment_from_custom_fields(record):
+    custom_fields = record.get("custom_fields") or {}
+    value = custom_fields.get("environment")
+    if isinstance(value, dict):
+        value = value.get("value") or value.get("label")
+    normalized = str(value or "").strip().casefold().replace("_", "-")
+    aliases = {
+        "prod": "Production", "production": "Production",
+        "stage": "Staging", "staging": "Staging", "preprod": "Staging",
+        "pre-production": "Staging", "preproduction": "Staging",
+        "dev": "Development", "development": "Development",
+        "test": "Test", "testing": "Test", "qa": "Test", "uat": "Test",
+    }
+    return aliases.get(normalized)
 
 
 def _ip_of(record):
@@ -247,21 +320,22 @@ def _extra_attributes(record, *, fields=()):
     return attributes
 
 
-def _map_device(record, ci_class, rack_id_map=None):
-    status_value = _first_attr(record, "status", "value")
+def _map_device(record, rack_id_map=None):
     rack_id_map = rack_id_map or {}
     netbox_rack_id = _first_attr(record, "rack", "id")
     face_value = _first_attr(record, "face", "value")
     return {
         "name": record.get("name") or f"device-{record.get('id')}",
-        "ci_class": ci_class,
+        "ci_class": _device_class(record),
         "serial_number": record.get("serial") or None,
         "vendor": _first_attr(record, "device_type", "manufacturer", "name"),
         "model": _first_attr(record, "device_type", "model"),
         "ip_address": _ip_of(record),
         "location": _location_of(record),
-        "operational_status": STATUS_MAP.get(status_value, "Operational"),
-        "netbox_id": str(record["id"]),
+        **_status_fields(record),
+        "environment": _environment_from_custom_fields(record),
+        "netbox_id": f"dcim.device:{record['id']}",
+        "legacy_netbox_id": str(record["id"]),
         # Physical rack placement -- rack_id resolved against the map of
         # already-synced racks built by sync_from_netbox this run (see
         # _upsert_rack); a device on a rack NetBox itself doesn't return
@@ -280,6 +354,10 @@ def _map_device(record, ci_class, rack_id_map=None):
             ("Role", ("role", "name")),
             ("Platform", ("platform", "name")),
             ("Status", ("status", "label")),
+            ("Asset Tag", ("asset_tag",)),
+            ("Airflow", ("airflow", "label")),
+            ("Description", ("description",)),
+            ("Cluster", ("cluster", "name")),
         )),
     }
 
@@ -289,7 +367,8 @@ def _map_rack(record):
         "name": record.get("name") or f"rack-{record.get('id')}",
         "site": _first_attr(record, "site", "name") or "",
         "u_height": record.get("u_height") or 42,
-        "netbox_id": str(record["id"]),
+        "netbox_id": f"dcim.rack:{record['id']}",
+        "legacy_netbox_id": str(record["id"]),
     }
 
 
@@ -303,6 +382,10 @@ def _upsert_rack(mapped, tenant_id, summary):
     rack = core_app.Rack.query.filter_by(
         tenant_id=tenant_id, external_source="netbox", external_id=mapped["netbox_id"],
     ).first()
+    if not rack:
+        rack = core_app.Rack.query.filter_by(
+            tenant_id=tenant_id, external_source="netbox", external_id=mapped["legacy_netbox_id"],
+        ).first()
     if not rack:
         rack = core_app.Rack.query.filter_by(tenant_id=tenant_id, name=mapped["name"]).first()
     if rack:
@@ -323,24 +406,30 @@ def _upsert_rack(mapped, tenant_id, summary):
 
 
 def _map_vm(record):
-    status_value = _first_attr(record, "status", "value")
     return {
         "name": record.get("name") or f"vm-{record.get('id')}",
         "ci_class": "Virtual Machine",
         "serial_number": None,
         "vendor": None,
-        "model": _first_attr(record, "platform", "name"),
+        "model": None,
         "ip_address": _ip_of(record),
-        "location": _first_attr(record, "cluster", "name"),
-        "operational_status": STATUS_MAP.get(status_value, "Operational"),
-        "netbox_id": str(record["id"]),
+        "location": _location_of(record),
+        **_status_fields(record),
+        "environment": _environment_from_custom_fields(record),
+        "netbox_id": f"virtualization.virtualmachine:{record['id']}",
+        "legacy_netbox_id": str(record["id"]),
         "attributes": _extra_attributes(record, fields=(
             ("Tenant", ("tenant", "name")),
             ("Role", ("role", "name")),
             ("Platform", ("platform", "name")),
+            ("Type", ("type", "name")),
+            ("Site", ("site", "name")),
+            ("Cluster", ("cluster", "name")),
+            ("Host Device", ("device", "name")),
             ("vCPUs", ("vcpus",)),
             ("Memory (MB)", ("memory",)),
-            ("Disk (GB)", ("disk",)),
+            ("Disk (MB)", ("disk",)),
+            ("Serial Number", ("serial",)),
             ("Status", ("status", "label")),
         )),
     }
@@ -353,6 +442,16 @@ def _upsert(mapped, tenant_id, summary):
     ci = core_app.ConfigurationItem.query.filter_by(
         tenant_id=tenant_id, external_source="netbox", external_id=mapped["netbox_id"],
     ).first()
+    if not ci:
+        legacy = core_app.ConfigurationItem.query.filter_by(
+            tenant_id=tenant_id, external_source="netbox", external_id=mapped["legacy_netbox_id"],
+        ).first()
+        # Safely migrate legacy untyped IDs only when the record identity also
+        # agrees. Device and VM primary keys occupy independent NetBox tables.
+        if legacy and (legacy.name == mapped["name"] or (
+            mapped["serial_number"] and legacy.serial_number == mapped["serial_number"]
+        )):
+            ci = legacy
     matched_by_serial = False
     if not ci and mapped["serial_number"]:
         ci = core_app.ConfigurationItem.query.filter_by(
@@ -375,10 +474,13 @@ def _upsert(mapped, tenant_id, summary):
 
     if ci:
         for field in HARDWARE_FIELDS:
-            value = mapped.get(field)
-            if value is not None:
-                setattr(ci, field, value)
-        ci.operational_status = mapped["operational_status"]
+            setattr(ci, field, mapped.get(field))
+        if mapped.get("operational_status"):
+            ci.operational_status = mapped["operational_status"]
+        if mapped.get("lifecycle_state"):
+            ci.lifecycle_state = mapped["lifecycle_state"]
+        if mapped.get("environment"):
+            ci.environment = mapped["environment"]
         ci.ci_class = mapped["ci_class"]
         ci.external_source = "netbox"
         ci.external_id = mapped["netbox_id"]
@@ -391,7 +493,9 @@ def _upsert(mapped, tenant_id, summary):
     else:
         db.session.add(core_app.ConfigurationItem(
             name=mapped["name"], ci_class=mapped["ci_class"],
-            operational_status=mapped["operational_status"],
+            operational_status=mapped.get("operational_status") or "Degraded",
+            lifecycle_state=mapped.get("lifecycle_state") or "In Use",
+            environment=mapped.get("environment") or "Production",
             serial_number=mapped["serial_number"], vendor=mapped["vendor"],
             model=mapped["model"], ip_address=mapped["ip_address"],
             location=mapped["location"], discovery_source="API",
@@ -418,8 +522,8 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
     if not core_app.setting_bool("NETBOX_ENABLED"):
         raise NetboxSyncError("NetBox sync is not enabled; refusing to sync.")
 
-    base_url = core_app.setting_value("NETBOX_BASE_URL", "")
-    token = core_app.setting_value("NETBOX_API_TOKEN", "")
+    base_url = core_app.setting_value("NETBOX_BASE_URL", "").strip()
+    token = core_app.setting_value("NETBOX_API_TOKEN", "").strip()
     if not base_url or not token:
         raise NetboxSyncError("NetBox base URL and API token must both be configured.")
     # allow_private_network=True: NetBox is a trusted, admin-configured
@@ -439,46 +543,55 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
         "tenant_id": tenant_id,
         "dry_run": bool(dry_run),
         "devices_seen": 0,
+        "virtual_machines_seen": 0,
         "cis_created": 0,
         "cis_updated": 0,
         "cis_matched_by_serial": 0,
         "racks_created": 0,
         "racks_updated": 0,
         "errors": [],
+        "warnings": [],
     }
 
     session = session_factory(base_url, token)
+    record_transaction = nullcontext if dry_run else db.session.begin_nested
     try:
         rack_id_map = {}
         for record in _paginate(session, base_url, RACKS_PATH):
+            counts_before = (summary["racks_created"], summary["racks_updated"])
             try:
-                rack = _upsert_rack(_map_rack(record), tenant_id, summary)
+                with record_transaction():
+                    rack = _upsert_rack(_map_rack(record), tenant_id, summary)
                 rack_id_map[str(record["id"])] = rack.id
             except Exception as error:  # noqa: BLE001 - isolate one bad record from the whole sync
+                summary["racks_created"], summary["racks_updated"] = counts_before
                 summary["errors"].append(f"rack {record.get('name', record.get('id'))}: {type(error).__name__}")
         devices = list(_paginate(session, base_url, DEVICES_PATH))
-        components_by_device = _fetch_all_components(session, base_url) if devices else {}
+        components_by_device, component_warnings = _fetch_all_components(session, base_url) if devices else ({}, [])
+        summary["warnings"].extend(component_warnings)
         for record in devices:
             summary["devices_seen"] += 1
+            counts_before = (
+                summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"],
+            )
             try:
-                # NetBox's own device role, when present, classifies the
-                # device far more usefully than a blanket "Server" -- this
-                # is what lets a PDU (or Switch/Router) ever come back
-                # correctly classified from a real sync rather than
-                # everything landing as "Server" regardless of its real
-                # role. Falls back to "Server" only when NetBox has no role
-                # set on the device at all.
-                ci_class = _first_attr(record, "role", "name") or "Server"
-                mapped = _map_device(record, ci_class, rack_id_map=rack_id_map)
-                mapped["attributes"].update(components_by_device.get(mapped["netbox_id"], {}))
-                _upsert(mapped, tenant_id, summary)
+                with record_transaction():
+                    mapped = _map_device(record, rack_id_map=rack_id_map)
+                    mapped["attributes"].update(components_by_device.get(str(record["id"]), {}))
+                    _upsert(mapped, tenant_id, summary)
             except Exception as error:  # noqa: BLE001 - isolate one bad record from the whole sync
+                summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"] = counts_before
                 summary["errors"].append(f"device {record.get('name', record.get('id'))}: {type(error).__name__}")
         for record in _paginate(session, base_url, VMS_PATH):
-            summary["devices_seen"] += 1
+            summary["virtual_machines_seen"] += 1
+            counts_before = (
+                summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"],
+            )
             try:
-                _upsert(_map_vm(record), tenant_id, summary)
+                with record_transaction():
+                    _upsert(_map_vm(record), tenant_id, summary)
             except Exception as error:  # noqa: BLE001
+                summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"] = counts_before
                 summary["errors"].append(f"vm {record.get('name', record.get('id'))}: {type(error).__name__}")
     except requests.RequestException as error:
         summary["errors"].append(f"NetBox request failed: {type(error).__name__}: {error}")
