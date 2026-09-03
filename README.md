@@ -24,7 +24,7 @@ verified backups.
 - Incident, major-incident, request, change, and problem management
 - REQ, RITM, and SCTASK service-catalog fulfillment
 - Configuration management database, assets, service maps, and CI ownership
-- Manager, CI-owner, and CCB approval workflows with material-change reapproval
+- Line-manager, CI-owner, and CCB approval workflows with material-change reapproval
 - SLA tracking, escalations, workflow automation, and durable notifications
 - Knowledge, customer service, HR, security, risk, project, and field-service workspaces
 - Tamper-evident audit history, signed exports, analytics, and a versioned REST API
