@@ -13346,7 +13346,8 @@ def create_app(test_config=None):
             audit(
                 "configure", "NetBox CMDB sync",
                 f"{'Preview' if dry_run else 'Applied'}: "
-                f"{result['devices_seen']} devices seen, {result['cis_created']} created, "
+                f"{result['devices_seen']} physical devices and {result['virtual_machines_seen']} VMs seen, "
+                f"{result['cis_created']} created, "
                 f"{result['cis_updated']} updated, {result['racks_created']} racks created, "
                 f"{result['racks_updated']} racks updated, {len(result['errors'])} errors",
             )
@@ -13355,7 +13356,8 @@ def create_app(test_config=None):
                 (
                     "NetBox sync preview: " if dry_run else "NetBox sync applied: "
                 ) + (
-                    f"{result['devices_seen']} devices seen, {result['cis_created']} created, "
+                    f"{result['devices_seen']} physical devices and {result['virtual_machines_seen']} VMs seen, "
+                    f"{result['cis_created']} created, "
                     f"{result['cis_updated']} updated, {result['racks_created']} racks created, "
                     f"{result['racks_updated']} racks updated, {len(result['errors'])} errors."
                 ),

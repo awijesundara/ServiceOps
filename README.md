@@ -282,6 +282,15 @@ flowchart LR
     W -. optional .-> N["SMTP · Webhooks · Teams"]
 ```
 
+### NetBox CMDB synchronization
+
+Configure NetBox under **Administration → Platform settings → NetBox
+connection** with an HTTPS URL, a read-only API token, and—when needed—the
+private CA certificate. Then use **CMDB → Import** to preview the reconciliation
+before applying it. The import screen documents how ServiceOps keeps NetBox
+role, platform, cluster, tenant, status, lifecycle, location, and hardware
+fields semantically separate.
+
 The application can scale horizontally behind a load balancer. The worker is a
 single always-on process responsible for SLA breach detection, workflow
 automation, and durable notification and webhook delivery.
