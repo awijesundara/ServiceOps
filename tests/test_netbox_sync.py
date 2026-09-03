@@ -10,7 +10,7 @@ import tempfile
 import pytest
 
 from app import ConfigurationItem, PlatformSetting, Rack, Tenant, create_app, db
-from serviceops_core.netbox_sync import NetboxSyncError, _netbox_session, sync_from_netbox
+from serviceops_core.netbox_sync import NetboxSyncError, _netbox_session, _paginate, sync_from_netbox
 
 
 @pytest.fixture()
@@ -25,8 +25,9 @@ def app():
 
 
 class FakeResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, *, is_redirect=False):
         self._payload = payload
+        self.is_redirect = is_redirect
 
     def raise_for_status(self):
         pass
@@ -51,7 +52,7 @@ class FakeSession:
             "/api/dcim/racks/": {"results": racks or [], "next": None},
         }
 
-    def get(self, url, params=None, timeout=None):
+    def get(self, url, params=None, timeout=None, allow_redirects=None):
         for path, payload in self._pages.items():
             if url.endswith(path):
                 return FakeResponse(payload)
@@ -112,6 +113,16 @@ def make_rack(id_, name, site="CC1", u_height=42):
     return {"id": id_, "name": name, "site": {"name": site} if site else None, "u_height": u_height}
 
 
+def make_vm(id_, name, status="active", platform="Ubuntu", cluster="compute-a", site="CC1"):
+    return {
+        "id": id_, "name": name, "status": {"value": status, "label": status.title()},
+        "platform": {"name": platform} if platform else None,
+        "cluster": {"name": cluster} if cluster else None,
+        "site": {"name": site} if site else None,
+        "primary_ip4": {"address": "10.0.1.1/24"},
+    }
+
+
 def test_creates_new_ci_from_device(app, monkeypatch):
     with app.app_context():
         device = make_device(101, "srv-01", serial="ABC123")
@@ -119,7 +130,7 @@ def test_creates_new_ci_from_device(app, monkeypatch):
         result = sync_from_netbox(1, session_factory=factory)
         assert result["cis_created"] == 1
         assert result["devices_seen"] == 1
-        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        ci = ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
         assert ci.name == "srv-01"
         assert ci.serial_number == "ABC123"
         assert ci.vendor == "Dell"
@@ -144,9 +155,10 @@ def test_resync_updates_matched_ci_idempotently(app, monkeypatch):
         assert result["cis_created"] == 0
         assert result["cis_updated"] == 1
         assert ConfigurationItem.query.count() == 1
-        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        ci = ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
         assert ci.name == "srv-01-renamed"
-        assert ci.operational_status == "Retired"
+        assert ci.operational_status == "Down"
+        assert ci.lifecycle_state == "In Use"
 
 
 def test_adopts_existing_manual_ci_by_serial_number(app, monkeypatch):
@@ -164,7 +176,7 @@ def test_adopts_existing_manual_ci_by_serial_number(app, monkeypatch):
         ci = ConfigurationItem.query.filter_by(serial_number="ABC123").one()
         assert ci.name == "srv-01"
         assert ci.external_source == "netbox"
-        assert ci.external_id == "101"
+        assert ci.external_id == "dcim.device:101"
 
 
 def test_extra_netbox_fields_are_captured_as_attributes(app, monkeypatch):
@@ -181,7 +193,7 @@ def test_extra_netbox_fields_are_captured_as_attributes(app, monkeypatch):
         })
         factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
         sync_from_netbox(1, session_factory=factory)
-        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        ci = ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
         # Rack/position are now structured columns, not free-text attributes
         # (see test_device_rack_position_face_and_role_are_synced below).
         assert "NetBox: Rack" not in ci.attributes
@@ -204,14 +216,14 @@ def test_resync_refreshes_netbox_attributes_without_dropping_csv_attributes(app,
         device["comments"] = "first sync"
         factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
         sync_from_netbox(1, session_factory=factory)
-        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        ci = ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
         ci.attributes = {**ci.attributes, "Builder": "William Yao"}
         db.session.commit()
 
         device["comments"] = "second sync"
         factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
         sync_from_netbox(1, session_factory=factory)
-        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        ci = ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
         assert ci.attributes["NetBox: Comments"] == "second sync"
         assert ci.attributes["Builder"] == "William Yao"
 
@@ -226,9 +238,9 @@ def test_device_rack_position_face_and_role_are_synced(app, monkeypatch):
         factory = enable_netbox(devices=[device], racks=[rack], monkeypatch=monkeypatch)
         result = sync_from_netbox(1, session_factory=factory)
         assert result["racks_created"] == 1
-        local_rack = Rack.query.filter_by(external_id="5").one()
+        local_rack = Rack.query.filter_by(external_id="dcim.rack:5").one()
         assert (local_rack.name, local_rack.site, local_rack.u_height) == ("9D05", "CC1", 42)
-        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        ci = ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
         assert ci.ci_class == "Switch"
         assert ci.rack_id == local_rack.id
         assert ci.rack_position == 12.0
@@ -236,13 +248,148 @@ def test_device_rack_position_face_and_role_are_synced(app, monkeypatch):
         assert ci.rack_face == "front"
 
 
-def test_device_without_role_falls_back_to_server_ci_class(app, monkeypatch):
+def test_device_without_role_uses_neutral_device_ci_class(app, monkeypatch):
     with app.app_context():
         device = make_device(101, "srv-01", serial="ABC123")
         factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
         sync_from_netbox(1, session_factory=factory)
-        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        ci = ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
+        assert ci.ci_class == "Device"
+
+
+def test_device_and_vm_with_same_netbox_numeric_id_remain_distinct(app, monkeypatch):
+    with app.app_context():
+        factory = enable_netbox(
+            devices=[make_device(101, "physical-101", serial="P101")],
+            vms=[make_vm(101, "virtual-101")], monkeypatch=monkeypatch,
+        )
+        result = sync_from_netbox(1, session_factory=factory)
+        assert result["devices_seen"] == 1
+        assert result["virtual_machines_seen"] == 1
+        assert ConfigurationItem.query.count() == 2
+        assert ConfigurationItem.query.filter_by(external_id="dcim.device:101").one().name == "physical-101"
+        assert ConfigurationItem.query.filter_by(
+            external_id="virtualization.virtualmachine:101"
+        ).one().name == "virtual-101"
+
+
+def test_vm_platform_and_cluster_are_attributes_not_model_and_location(app, monkeypatch):
+    with app.app_context():
+        vm = make_vm(22, "app-vm", platform="Red Hat Enterprise Linux", cluster="prod-esxi", site="DC-East")
+        vm.update({"type": {"name": "General purpose"}, "device": {"name": "esxi-07"}, "disk": 40960})
+        factory = enable_netbox(vms=[vm], monkeypatch=monkeypatch)
+        sync_from_netbox(1, session_factory=factory)
+        ci = ConfigurationItem.query.filter_by(external_id="virtualization.virtualmachine:22").one()
+        assert ci.ci_class == "Virtual Machine"
+        assert ci.model is None
+        assert ci.location == "DC-East"
+        assert ci.attributes["NetBox: Platform"] == "Red Hat Enterprise Linux"
+        assert ci.attributes["NetBox: Cluster"] == "prod-esxi"
+        assert ci.attributes["NetBox: Host Device"] == "esxi-07"
+        assert ci.attributes["NetBox: Type"] == "General purpose"
+        assert ci.attributes["NetBox: Disk (MB)"] == 40960
+
+
+def test_status_and_environment_map_to_controlled_cmdb_values(app, monkeypatch):
+    with app.app_context():
+        device = make_device(101, "staged-01", status="staged", role="linux-server")
+        device["custom_fields"] = {"environment": {"value": "preprod", "label": "Pre-production"}}
+        factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
+        sync_from_netbox(1, session_factory=factory)
+        ci = ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
         assert ci.ci_class == "Server"
+        assert ci.operational_status == "Maintenance"
+        assert ci.lifecycle_state == "Planned"
+        assert ci.environment == "Staging"
+
+
+def test_resync_clears_removed_netbox_owned_values(app, monkeypatch):
+    with app.app_context():
+        device = make_device(101, "srv-01", serial="ABC123", rack_id=None)
+        factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
+        sync_from_netbox(1, session_factory=factory)
+        device.update({"serial": "", "primary_ip4": None, "location": None, "device_type": None})
+        factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
+        sync_from_netbox(1, session_factory=factory)
+        ci = ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
+        assert (ci.serial_number, ci.ip_address, ci.location, ci.vendor, ci.model) == (None, None, "CC1", None, None)
+
+
+def test_legacy_untyped_external_id_is_migrated_only_when_identity_matches(app, monkeypatch):
+    with app.app_context():
+        db.session.add(ConfigurationItem(
+            name="srv-01", ci_class="Server", serial_number="ABC123", tenant_id=1,
+            external_source="netbox", external_id="101",
+        ))
+        db.session.commit()
+        factory = enable_netbox(devices=[make_device(101, "srv-01", serial="ABC123")], monkeypatch=monkeypatch)
+        sync_from_netbox(1, session_factory=factory)
+        assert ConfigurationItem.query.count() == 1
+        assert ConfigurationItem.query.one().external_id == "dcim.device:101"
+
+
+def test_pagination_advances_by_actual_server_capped_page_size():
+    class CappedSession:
+        def __init__(self):
+            self.offsets = []
+
+        def get(self, url, params=None, timeout=None, allow_redirects=None):
+            offset = params["offset"]
+            self.offsets.append(offset)
+            pages = {
+                0: {"results": [{"id": 1}, {"id": 2}], "next": "next"},
+                2: {"results": [{"id": 3}, {"id": 4}], "next": "next"},
+                4: {"results": [{"id": 5}], "next": None},
+            }
+            return FakeResponse(pages[offset])
+
+    session = CappedSession()
+    assert [row["id"] for row in _paginate(session, "https://netbox.example", "/api/dcim/devices/")] == [1, 2, 3, 4, 5]
+    assert session.offsets == [0, 2, 4]
+
+
+def test_api_redirect_is_rejected_instead_of_followed():
+    class RedirectSession:
+        def get(self, url, params=None, timeout=None, allow_redirects=None):
+            assert allow_redirects is False
+            return FakeResponse({}, is_redirect=True)
+
+    with pytest.raises(NetboxSyncError, match="redirected"):
+        list(_paginate(RedirectSession(), "https://netbox.example", "/api/dcim/devices/"))
+
+
+def test_component_permission_failure_is_reported_without_losing_devices(app, monkeypatch):
+    class PartiallyAuthorizedSession(FakeSession):
+        def get(self, url, params=None, timeout=None, allow_redirects=None):
+            if url.endswith("/api/dcim/interfaces/"):
+                import requests
+                raise requests.HTTPError("403 Forbidden")
+            return super().get(url, params=params, timeout=timeout, allow_redirects=allow_redirects)
+
+    with app.app_context():
+        enable_netbox(monkeypatch=monkeypatch)
+        factory = lambda base_url, token: PartiallyAuthorizedSession(  # noqa: E731
+            devices=[make_device(101, "srv-01")]
+        )
+        result = sync_from_netbox(1, session_factory=factory)
+        assert result["cis_created"] == 1
+        assert result["warnings"] == ["Interfaces were not imported: HTTPError"]
+
+
+def test_custom_status_preserves_existing_controlled_status(app, monkeypatch):
+    with app.app_context():
+        db.session.add(ConfigurationItem(
+            name="srv-01", ci_class="Server", tenant_id=1,
+            operational_status="Operational", lifecycle_state="Maintenance",
+        ))
+        db.session.commit()
+        device = make_device(101, "srv-01", status="awaiting-customer", role="sandbox appliance")
+        factory = enable_netbox(devices=[device], monkeypatch=monkeypatch)
+        sync_from_netbox(1, session_factory=factory)
+        ci = ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
+        assert ci.ci_class == "Device"
+        assert ci.operational_status == "Operational"
+        assert ci.lifecycle_state == "Maintenance"
 
 
 def test_rack_resync_updates_existing_rack_by_external_id(app, monkeypatch):
@@ -258,7 +405,7 @@ def test_rack_resync_updates_existing_rack_by_external_id(app, monkeypatch):
         assert result["racks_created"] == 0
         assert result["racks_updated"] == 1
         assert Rack.query.count() == 1
-        assert Rack.query.filter_by(external_id="5").one().u_height == 47
+        assert Rack.query.filter_by(external_id="dcim.rack:5").one().u_height == 47
 
 
 def test_device_components_are_captured_as_attribute_summaries(app, monkeypatch):
@@ -278,7 +425,7 @@ def test_device_components_are_captured_as_attribute_summaries(app, monkeypatch)
             console_ports=console_ports, power_ports=power_ports, inventory_items=inventory_items,
         )
         sync_from_netbox(1, session_factory=factory)
-        ci = ConfigurationItem.query.filter_by(external_id="101").one()
+        ci = ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
         assert ci.attributes["NetBox: Interfaces"] == (
             "bond0 (Link Aggregation Group (LAG)); em1 (SFP+ (10GE), AA:BB:CC:DD:EE:FF, in bond0, disabled)"
         )
@@ -301,7 +448,7 @@ def test_device_without_serial_adopts_existing_ci_by_name(app, monkeypatch):
         assert ConfigurationItem.query.filter_by(name="srv-01").count() == 1
         ci = ConfigurationItem.query.filter_by(name="srv-01").one()
         assert ci.external_source == "netbox"
-        assert ci.external_id == "101"
+        assert ci.external_id == "dcim.device:101"
 
 
 def test_one_bad_record_does_not_abort_the_batch(app, monkeypatch):
@@ -312,7 +459,7 @@ def test_one_bad_record_does_not_abort_the_batch(app, monkeypatch):
         result = sync_from_netbox(1, session_factory=factory)
         assert result["devices_seen"] == 2
         assert result["cis_created"] >= 1
-        assert ConfigurationItem.query.filter_by(external_id="101").one()
+        assert ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
 
 
 def test_dry_run_does_not_commit(app, monkeypatch):
@@ -346,6 +493,14 @@ def test_session_verifies_with_default_bundle_when_no_ca_cert_configured(app):
     with app.app_context():
         session = _netbox_session("https://netbox.example.com", "token")
         assert session.verify is True
+
+
+def test_session_uses_bearer_for_v2_token_and_token_for_legacy_token(app):
+    with app.app_context():
+        modern = _netbox_session("https://netbox.example.com", "nbt_key.secret")
+        legacy = _netbox_session("https://netbox.example.com", "legacy-secret")
+        assert modern.headers["Authorization"] == "Bearer nbt_key.secret"
+        assert legacy.headers["Authorization"] == "Token legacy-secret"
 
 
 def test_session_verifies_against_configured_internal_ca(app):

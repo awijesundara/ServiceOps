@@ -35,12 +35,34 @@ def browser():
         browser.close()
 
 
+@pytest.fixture(scope="session")
+def authenticated_storage(browser):
+    """Authenticate once; individual viewport contexts reuse the session.
+
+    Logging in separately for every route eventually exercises the production
+    login rate limiter instead of the pages under test, especially after the
+    wide-screen viewport expanded this matrix.
+    """
+    assert ADMIN_PASSWORD, "E2E_ADMIN_PASSWORD is required"
+    context = browser.new_context()
+    page = context.new_page()
+    page.goto(f"{BASE_URL}/login", wait_until="networkidle")
+    page.fill('input[name="username"]', "admin")
+    page.fill('input[name="password"]', ADMIN_PASSWORD)
+    page.click("button.primary")
+    page.wait_for_load_state("networkidle")
+    assert "/login" not in page.url, "bootstrap administrator login failed"
+    storage = context.storage_state()
+    context.close()
+    return storage
+
+
 @pytest.fixture(params=[
+    pytest.param({"name": "wide-desktop", "width": 2560, "height": 1440}, id="wide-desktop"),
     pytest.param({"name": "desktop", "width": 1440, "height": 1000}, id="desktop"),
     pytest.param({"name": "mobile", "width": 390, "height": 844}, id="mobile"),
 ])
-def authenticated_page(browser, request):
-    assert ADMIN_PASSWORD, "E2E_ADMIN_PASSWORD is required"
+def authenticated_page(browser, authenticated_storage, request):
     assert AXE_CORE_PATH and Path(AXE_CORE_PATH).is_file(), "AXE_CORE_PATH must point to axe.min.js"
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     viewport = request.param
@@ -51,6 +73,7 @@ def authenticated_page(browser, request):
     context = browser.new_context(
         viewport={"width": viewport["width"], "height": viewport["height"]},
         bypass_csp=True,
+        storage_state=authenticated_storage,
     )
     context.tracing.start(screenshots=True, snapshots=True, sources=True)
     page = context.new_page()
@@ -58,12 +81,6 @@ def authenticated_page(browser, request):
     page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
     setup_failed = False
     try:
-        page.goto(f"{BASE_URL}/login", wait_until="networkidle")
-        page.fill('input[name="username"]', "admin")
-        page.fill('input[name="password"]', ADMIN_PASSWORD)
-        page.click("button.primary")
-        page.wait_for_load_state("networkidle")
-        assert "/login" not in page.url, "bootstrap administrator login failed"
         yield page, viewport["name"], console_errors
     except Exception:
         setup_failed = True
@@ -84,6 +101,7 @@ CORE_WORKFLOWS = (
     ("dashboard", "/"),
     ("administration", "/admin"),
     ("cmdb", "/cmdb"),
+    ("cmdb-import", "/cmdb/import"),
     ("client-management", "/client-management"),
 )
 
@@ -94,6 +112,15 @@ def test_critical_journey_is_responsive_error_free_and_accessible(authenticated_
     response = page.goto(f"{BASE_URL}{path}", wait_until="networkidle")
     assert response and response.ok, f"{journey} returned HTTP {response.status if response else 'no response'}"
     assert page.locator("main").is_visible(), f"{journey} has no visible main region at {viewport_name} width"
+    if viewport_name == "wide-desktop":
+        main_box = page.locator("main").bounding_box()
+        assert main_box and main_box["x"] + main_box["width"] >= 2559, (
+            f"{journey} leaves unused horizontal space at 2560px: {main_box}"
+        )
+    if journey == "cmdb-import":
+        if not page.locator(".netbox-mapping-details").evaluate("element => element.open"):
+            page.locator(".netbox-mapping-details summary").click()
+        page.screenshot(path=ARTIFACT_DIR / f"cmdb-import-{viewport_name}.png", full_page=True)
 
     page.add_script_tag(path=AXE_CORE_PATH)
     axe_result = page.evaluate("""async () => await axe.run(document, {

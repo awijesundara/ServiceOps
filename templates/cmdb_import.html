@@ -3,13 +3,28 @@
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">CMDB</p><h1>Import configuration items</h1><p>Pull hardware data from NetBox and operational data from a spreadsheet into the CMDB.</p></div><a class="button" href="{{ url_for('cmdb') }}">← Back to CMDB</a></header>
 
-{% if netbox_enabled %}
 <section class="panel" id="netbox-sync">
-  <h2>Sync from NetBox</h2>
-  <p class="muted">NetBox is treated as the source of truth for hardware fields (name, serial number, vendor, model, IP address, location) and physical rack placement (rack, position, height in U, front/rear face — see <a href="{{ url_for('rack_list') }}">Racks</a>) — these are always overwritten on matched CIs. Whatever else NetBox has for a device (tenant, role, platform, out-of-band IP, tags, comments, custom fields, interfaces, console ports, power ports, inventory items) is captured too, under "NetBox: " prefixed entries in the CI's Additional imported fields. Devices are matched by NetBox device ID, then serial number, then hostname, so re-running a sync never creates a duplicate CI. A device's NetBox role (e.g. "PDU", "Switch") becomes its CI class directly, falling back to "Server" only when NetBox has no role set. Configure credentials and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration home → Platform settings → NetBox connection</a>.</p>
+  <div class="panel-head"><div><h2>Sync from NetBox</h2><p>Preview a controlled, read-only inventory reconciliation before applying it.</p></div><span class="source-badge">Inventory source of truth</span></div>
+  <div class="netbox-mapping-grid" aria-label="NetBox to CMDB field mapping">
+    <article><strong>Identity & hardware</strong><p>Name, serial, manufacturer/model, management IP, site/location and rack placement become structured CMDB fields.</p></article>
+    <article><strong>Classification</strong><p>Recognized role terms map to controlled CI classes. Custom NetBox roles stay visible as attributes and use the neutral Device class.</p></article>
+    <article><strong>Status & lifecycle</strong><p>Operational status and lifecycle are mapped separately. Offline is Down—not Retired; planned/staged records are Planned.</p></article>
+    <article><strong>Virtualization</strong><p>VM platform is an operating system and cluster is a logical grouping. Both remain attributes; site becomes Location.</p></article>
+  </div>
+  <details class="netbox-mapping-details"><summary>View complete synchronization rules</summary>
+    <div class="netbox-rules">
+      <p><strong>Always refreshed:</strong> identity/hardware fields, status, lifecycle, recognized environment custom field, and rack placement. Values removed in NetBox are cleared in ServiceOps.</p>
+      <p><strong>Preserved as NetBox attributes:</strong> tenant, functional role, platform, raw status, tags, comments, custom fields, interfaces, console ports, power ports and inventory items.</p>
+      <p><strong>Never inferred:</strong> NetBox tenant is not an owning support team; role is not accepted verbatim as a CI class; cluster is not a physical location. Operational ownership and business data remain ServiceOps-controlled.</p>
+      <p><strong>Matching:</strong> typed NetBox object ID, then serial number for physical devices, then exact name. Typed IDs prevent a device and VM with the same NetBox numeric ID from overwriting each other.</p>
+    </div>
+  </details>
+  {% if netbox_enabled %}
+  <p class="muted">Configure the URL, read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration home → Platform settings → NetBox connection</a>. See <a href="{{ url_for('rack_list') }}">Racks</a> for imported elevations.</p>
   {% if netbox_sync_result %}
   <div class="callout"><strong>{{ 'Preview' if netbox_sync_result.dry_run else 'Applied' }}:</strong>
-    {{ netbox_sync_result.devices_seen }} devices seen ·
+    {{ netbox_sync_result.devices_seen }} physical devices ·
+    {{ netbox_sync_result.virtual_machines_seen|default(0) }} virtual machines ·
     {{ netbox_sync_result.cis_created }} created ·
     {{ netbox_sync_result.cis_updated }} updated ·
     {{ netbox_sync_result.cis_matched_by_serial }} adopted by serial number ·
@@ -17,23 +32,24 @@
     {{ netbox_sync_result.racks_updated }} racks updated ·
     {{ netbox_sync_result.errors|length }} errors
     {% if netbox_sync_result.errors %}<ul>{% for error in netbox_sync_result.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {% if netbox_sync_result.warnings %}<ul>{% for warning in netbox_sync_result.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
   </div>
   {% endif %}
   <form method="post" action="{{ url_for('cmdb_import_netbox') }}" class="actions">
     <label><input type="checkbox" name="dry_run" value="1" checked> Preview only (dry run)</label>
     <button class="primary">Sync from NetBox</button>
   </form>
+  {% else %}
+  <div class="callout"><strong>NetBox sync is not enabled.</strong> Configure the URL, a read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration home → Platform settings → NetBox connection</a>.</div>
+  {% endif %}
 </section>
-{% else %}
-<section class="panel"><h2>Sync from NetBox</h2><p class="muted">NetBox sync is not enabled. Configure it under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration home → Platform settings → NetBox connection</a>.</p></section>
-{% endif %}
 
 <section class="panel" id="spreadsheet-import">
   <h2>Import from spreadsheet</h2>
-  <p class="muted">Upload a CSV, paste CSV text, or point at a published Google Sheet (File → Share → Publish to web, or a link shared as "Anyone with the link can view"). Recognized columns: Host/Name, Owner/System Owner (resolved to an owning support team, not an individual), Description, Environment, Serial Number, Vendor, Model, Location, Cost Center, Business Criticality, Lifecycle State, Install/Shipped Date, End of Support/Warranty Expiry, IP Address, State/Status (decommissioned rows are detected automatically). Any other column in the sheet (CPUs, RAM, Builder, iDRAC, DNS, …) is kept as-is on the CI's Additional imported fields. Fields on CIs synced from NetBox that NetBox already owns are left untouched.</p>
+  <p class="muted import-guidance">Upload a CSV, paste CSV text, or point at a published Google Sheet (File → Share → Publish to web, or a link shared as "Anyone with the link can view"). Recognized columns: Host/Name, Owner/System Owner (resolved to an owning support team, not an individual), Description, Environment, Serial Number, Vendor, Model, Location, Cost Center, Business Criticality, Lifecycle State, Install/Shipped Date, End of Support/Warranty Expiry, IP Address, State/Status (decommissioned rows are detected automatically). Any other column in the sheet (CPUs, RAM, Builder, iDRAC, DNS, …) is kept as-is on the CI's Additional imported fields. Fields on CIs synced from NetBox that NetBox already owns are left untouched.</p>
 
   {% if not preview %}
-  <form method="post" enctype="multipart/form-data" class="form-grid">
+  <form method="post" enctype="multipart/form-data" class="form-grid import-source-form">
     <input type="hidden" name="action" value="preview">
     <label class="wide">Google Sheet URL<input type="url" name="sheet_url" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
     <label class="wide">Upload CSV file<input type="file" name="file" accept=".csv,text/csv"></label>
