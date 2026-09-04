@@ -56,7 +56,7 @@
     <footer class="record-footer-actions"><button class="primary">{{ "Update user" if editing else "Create user" }}</button></footer>
   </form>
 </section>
-{% if editing and self_service %}
+{% if editing and (self_service or directory_profile) %}
 <section class="panel profile-intelligence">
   <header class="section-heading"><div><h2>Organization and directory</h2><p>Reporting-line, team, and safe directory facts used by ServiceOps. Authentication secrets, certificates, SIDs, and raw security descriptors are never copied into this profile.</p></div>{% if is_people_manager %}<span class="badge">People manager</span>{% endif %}</header>
   <div class="detail-grid">
@@ -73,15 +73,26 @@
         ('team_name','Directory team'),('object_guid','Directory object ID'),('directory_created_at','Directory created'),('directory_changed_at','Directory changed'),
         ('last_logon_at','Last directory logon'),('password_last_set_at','Password last set'),('account_expires_at','Account expiry'),
         ('logon_count','Logon count'),('bad_password_count','Bad-password count'),('primary_group_id','Primary group ID'),
-        ('uid_number','Unix UID'),('gid_number','Unix GID'),('unix_home_directory','Unix home'),('login_shell','Login shell'),('country_code','Country code')
+        ('organizational_unit','Organizational unit'),('directory_domain','Directory domain'),('website','Website'),
+        ('uid_number','Unix UID'),('gid_number','Unix GID'),('unix_username','Unix username'),('nis_domain','NIS domain'),
+        ('unix_home_directory','Unix home'),('login_shell','Login shell'),('country_code','Country code'),('sam_account_type','Directory account type'),
+        ('last_bad_password_at','Last failed password attempt'),('last_logoff_at','Last directory logoff'),('lockout_at','Lockout time')
       ] %}{% if ldap.get(key) is not none %}<div><small>{{ label }}</small><strong>{{ ldap.get(key) }}</strong></div>{% endif %}{% endfor %}
       <div><small>Account status</small><strong>{{ 'Enabled' if ldap.get('account_enabled', true) else 'Disabled' }}</strong><span>{% if ldap.get('account_locked') %}Locked · {% endif %}{% if ldap.get('password_never_expires') %}Password never expires · {% endif %}{% if ldap.get('smartcard_required') %}Smart card required{% endif %}</span></div>
     </div>
   </details>
   <details><summary><strong>Directory groups ({{ directory_profile.group_names|length }})</strong></summary><div class="chip-list">{% for group in directory_profile.group_names %}<span class="tag">{{ group }}</span>{% else %}<span class="muted">No groups returned.</span>{% endfor %}</div></details>
+  {% if ldap.get('group_categories') %}<div class="callout"><strong>Directory group context</strong><p>{% for category, count in ldap.get('group_categories').items() %}{{ category }}: {{ count }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% if ldap.get('team_candidates') %}<p>Possible team mappings for administrator review: {{ ldap.get('team_candidates')|join(', ') }}. These are never assigned automatically.</p>{% endif %}</div>{% endif %}
   {% endif %}
 </section>
-{% if is_people_manager %}<section class="panel">
+{% if assigned_assets or owned_cis %}<section class="panel profile-intelligence">
+  <header class="section-heading"><div><h2>Operational ownership</h2><p>Assets and configuration items related to this directory-backed identity.</p></div></header>
+  <div class="detail-grid">
+    <div><small>Assigned assets</small><strong>{{ assigned_assets|length }}</strong><span>{% for asset in assigned_assets %}{{ asset.asset_tag }} — {{ asset.name }}{% if not loop.last %}<br>{% endif %}{% endfor %}</span></div>
+    <div><small>Owned configuration items</small><strong>{{ owned_cis|length }}</strong><span>{% for ci in owned_cis %}{{ ci.name }} — {{ ci.ci_class }}{% if not loop.last %}<br>{% endif %}{% endfor %}</span></div>
+  </div>
+</section>{% endif %}
+{% if self_service and is_people_manager %}<section class="panel">
   <header class="section-heading"><div><h2>Approval coverage during absence</h2><p>Temporarily allow your own line manager to decide approvals assigned to you. They are not notified when the request first opens; every delegated decision preserves both identities.</p></div></header>
   {% if active_delegation %}<div class="callout"><strong>Active coverage: {{ active_delegation.to_user.name }}</strong><span>{{ active_delegation.starts_at|usertime('%Y-%m-%d %H:%M') }} to {{ active_delegation.ends_at|usertime('%Y-%m-%d %H:%M') }} · {{ active_delegation.reason }}</span><form method="post" action="{{ url_for('profile_approval_delegation_cancel', delegation_id=active_delegation.id) }}"><button class="button">Cancel coverage</button></form></div>{% endif %}
   {% if user.manager %}<form method="post" action="{{ url_for('profile_approval_delegation') }}" class="form-grid"><label><span>Starts</span><input type="datetime-local" name="starts_at" required></label><label><span>Ends</span><input type="datetime-local" name="ends_at" required></label><label class="wide"><span>Reason</span><input name="reason" required maxlength="500" placeholder="Annual leave, travel, or another recorded absence"></label><div class="wide actions"><button class="primary">Delegate to {{ user.manager.name }}</button></div></form>{% else %}<p class="callout warning">A line manager must be assigned before upward absence coverage is available.</p>{% endif %}
