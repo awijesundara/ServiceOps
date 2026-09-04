@@ -100,6 +100,10 @@ def authenticated_page(browser, authenticated_storage, request):
 CORE_WORKFLOWS = (
     ("dashboard", "/"),
     ("administration", "/admin"),
+    ("user-profile", "/profile"),
+    ("login-sessions", "/profile/sessions"),
+    ("team-management", "/service-operations/settings/team-managers"),
+    ("directory-sync", "/service-operations/settings/ldap-sync"),
     ("cmdb", "/cmdb"),
     ("cmdb-import", "/cmdb/import"),
     ("client-management", "/client-management"),

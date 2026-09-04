@@ -22,14 +22,14 @@
     <div class="record-grid">
       {% if editing %}<label><span>User ID</span><input value="{{ user.username }}" disabled></label>{% else %}<label class="required-field"><span>User ID</span><input name="username" required maxlength="80"></label>{% endif %}
       {% if self_service and email_managed_externally %}<label><span>Email</span><input type="email" value="{{ user.email }}" disabled title="Managed by your Active Directory account"><small>Synced from Active Directory</small></label>{% else %}<label class="required-field"><span>Email</span><input type="email" name="email" value="{{ user.email if editing else '' }}" required></label>{% endif %}
-      <label class="required-field"><span>Full name</span><input name="name" value="{{ user.name if editing else '' }}" required maxlength="120"></label>
+      <label class="required-field"><span>Full name</span><input name="name" value="{{ user.name if editing else '' }}" required maxlength="120" {% if self_service and directory_managed %}disabled title="Managed by Active Directory"{% endif %}>{% if self_service and directory_managed %}<small>Synced from Active Directory</small>{% endif %}</label>
       {% if self_service %}<label><span>Profile picture</span><input type="file" name="avatar" accept="image/png,image/jpeg"></label>{% endif %}
       <label><span>Time zone</span><select name="timezone">{% for zone in ['Asia/Tokyo','UTC','Australia/Sydney','Europe/London','America/New_York','America/Los_Angeles'] %}<option {% if (editing and user.timezone==zone) or (not editing and zone=='Asia/Tokyo') %}selected{% endif %}>{{ zone }}</option>{% endfor %}</select></label>
-      <label><span>Title</span><input name="title" value="{{ user.title if editing else '' }}" maxlength="120"></label>
+      <label><span>Title</span><input name="title" value="{{ user.title if editing else '' }}" maxlength="120" {% if self_service and directory_managed %}disabled{% endif %}></label>
       <label><span>Date format</span><select name="date_format"><option value="system">System (yyyy-MM-dd)</option><option value="day_first" {% if editing and user.date_format=='day_first' %}selected{% endif %}>dd/MM/yyyy</option><option value="month_first" {% if editing and user.date_format=='month_first' %}selected{% endif %}>MM/dd/yyyy</option></select></label>
       {% if not self_service %}<label><span>Department</span><input name="department" value="{{ user.department if editing else '' }}" maxlength="120"></label>{% else %}<label><span>Department</span><input value="{{ user.department or 'Not assigned' }}" disabled></label>{% endif %}
-      <label><span>Location</span><input name="location" value="{{ user.location if editing else '' }}" maxlength="120"></label>
-      <label><span>Business phone</span><input name="business_phone" value="{{ user.business_phone if editing else '' }}" maxlength="40"></label>
+      <label><span>Location</span><input name="location" value="{{ user.location if editing else '' }}" maxlength="120" {% if self_service and directory_managed %}disabled{% endif %}></label>
+      <label><span>Business phone</span><input name="business_phone" value="{{ user.business_phone if editing else '' }}" maxlength="40" {% if self_service and directory_managed %}disabled{% endif %}></label>
       {% if not self_service and not editing %}<label><span>Initial role</span><select name="role">{% for role in all_roles %}{% if role != 'superadmin' or current_user.effective_role == 'superadmin' %}<option>{{ role }}</option>{% endif %}{% endfor %}</select><small>Directory/SSO login and team assignment may grant this user additional roles automatically after creation.</small></label>{% endif %}
       {% if not self_service and editing %}
       <div class="wide field-group"><span>Granted roles<span class="info-tip" tabindex="0" data-tip="A user can hold more than one role at once (e.g. both manager and admin) and switch which one they're acting as from the nav bar. Directory/SSO login and team/manager assignment can also grant or revoke roles automatically here -- unchecking one that's still implied by AD group membership or team responsibility only removes it until their next login/team-sync re-evaluates it.">i</span></span>
@@ -47,7 +47,7 @@
       </div>
       {% endif %}
       {% if not self_service and editing %}<label><span>Reports to<span class="info-tip" tabindex="0" data-tip="Sets this person's manager for the organization chart. Team ownership is separate and still comes from AD group mapping or manual team assignment.">i</span></span><select name="manager_id"><option value="">No manager (top of chart)</option>{% for candidate in manager_choices %}<option value="{{ candidate.id }}" {% if user.manager_id==candidate.id %}selected{% endif %}>{{ candidate.name }}{% if candidate.title %} — {{ candidate.title }}{% endif %}</option>{% endfor %}</select></label>{% endif %}
-      <label><span>Mobile phone</span><input name="mobile_phone" value="{{ user.mobile_phone if editing else '' }}" maxlength="40"></label>
+      <label><span>Mobile phone</span><input name="mobile_phone" value="{{ user.mobile_phone if editing else '' }}" maxlength="40" {% if self_service and directory_managed %}disabled{% endif %}></label>
       {% if self_service %}<label><span>Team</span><input value="{{ teams|join(', ') if teams else 'Not assigned' }}" disabled title="Team membership is assigned automatically from your Active Directory group and cannot be changed here."></label>{% endif %}
       {% if not self_service %}<label for="active-toggle"><span>Active</span><span class="switch"><input type="checkbox" id="active-toggle" name="active" {% if not editing or user.active %}checked{% endif %}><span></span></span></label>{% endif %}
       {% if editing %}<label><span>Calendar integration</span><select name="calendar_integration"><option>None</option><option {% if user.calendar_integration=='Outlook' %}selected{% endif %}>Outlook</option><option {% if user.calendar_integration=='Google Calendar' %}selected{% endif %}>Google Calendar</option></select></label>{% endif %}
@@ -56,6 +56,37 @@
     <footer class="record-footer-actions"><button class="primary">{{ "Update user" if editing else "Create user" }}</button></footer>
   </form>
 </section>
+{% if editing and self_service %}
+<section class="panel profile-intelligence">
+  <header class="section-heading"><div><h2>Organization and directory</h2><p>Reporting-line, team, and safe directory facts used by ServiceOps. Authentication secrets, certificates, SIDs, and raw security descriptors are never copied into this profile.</p></div>{% if is_people_manager %}<span class="badge">People manager</span>{% endif %}</header>
+  <div class="detail-grid">
+    <div><small>Reports to</small><strong>{{ user.manager.name if user.manager else 'Top of organization chart' }}</strong>{% if manager_chain|length > 1 %}<span>Next approver: {{ manager_chain[1].name }}</span>{% endif %}</div>
+    <div><small>Direct reports</small><strong>{{ direct_reports|length }}</strong><span>{{ direct_reports|map(attribute='name')|join(', ') if direct_reports else 'No active direct reports' }}</span></div>
+    <div><small>ServiceOps teams</small><strong>{{ teams|length }}</strong><span>{{ teams|join(', ') if teams else 'Not assigned' }}{% if managed_teams %}<br>Manages: {{ managed_teams|map(attribute='name')|join(', ') }}{% endif %}</span></div>
+    <div><small>Directory sync</small><strong>{{ 'Connected' if directory_profile else 'No directory snapshot' }}</strong><span>{% if directory_profile %}Last refreshed {{ directory_profile.synchronized_at|usertime('%Y-%m-%d %H:%M:%S') }}{% else %}Sign in with LDAP or run directory sync{% endif %}</span></div>
+  </div>
+  {% if directory_profile %}{% set ldap = directory_profile.profile %}
+  <details open><summary><strong>LDAP profile details</strong></summary>
+    <div class="detail-grid directory-detail-grid">
+      {% for key, label in [
+        ('user_principal_name','User principal name'),('given_name','Given name'),('surname','Surname'),('common_name','Common name'),
+        ('team_name','Directory team'),('object_guid','Directory object ID'),('directory_created_at','Directory created'),('directory_changed_at','Directory changed'),
+        ('last_logon_at','Last directory logon'),('password_last_set_at','Password last set'),('account_expires_at','Account expiry'),
+        ('logon_count','Logon count'),('bad_password_count','Bad-password count'),('primary_group_id','Primary group ID'),
+        ('uid_number','Unix UID'),('gid_number','Unix GID'),('unix_home_directory','Unix home'),('login_shell','Login shell'),('country_code','Country code')
+      ] %}{% if ldap.get(key) is not none %}<div><small>{{ label }}</small><strong>{{ ldap.get(key) }}</strong></div>{% endif %}{% endfor %}
+      <div><small>Account status</small><strong>{{ 'Enabled' if ldap.get('account_enabled', true) else 'Disabled' }}</strong><span>{% if ldap.get('account_locked') %}Locked · {% endif %}{% if ldap.get('password_never_expires') %}Password never expires · {% endif %}{% if ldap.get('smartcard_required') %}Smart card required{% endif %}</span></div>
+    </div>
+  </details>
+  <details><summary><strong>Directory groups ({{ directory_profile.group_names|length }})</strong></summary><div class="chip-list">{% for group in directory_profile.group_names %}<span class="tag">{{ group }}</span>{% else %}<span class="muted">No groups returned.</span>{% endfor %}</div></details>
+  {% endif %}
+</section>
+{% if is_people_manager %}<section class="panel">
+  <header class="section-heading"><div><h2>Approval coverage during absence</h2><p>Temporarily allow your own line manager to decide approvals assigned to you. They are not notified when the request first opens; every delegated decision preserves both identities.</p></div></header>
+  {% if active_delegation %}<div class="callout"><strong>Active coverage: {{ active_delegation.to_user.name }}</strong><span>{{ active_delegation.starts_at|usertime('%Y-%m-%d %H:%M') }} to {{ active_delegation.ends_at|usertime('%Y-%m-%d %H:%M') }} · {{ active_delegation.reason }}</span><form method="post" action="{{ url_for('profile_approval_delegation_cancel', delegation_id=active_delegation.id) }}"><button class="button">Cancel coverage</button></form></div>{% endif %}
+  {% if user.manager %}<form method="post" action="{{ url_for('profile_approval_delegation') }}" class="form-grid"><label><span>Starts</span><input type="datetime-local" name="starts_at" required></label><label><span>Ends</span><input type="datetime-local" name="ends_at" required></label><label class="wide"><span>Reason</span><input name="reason" required maxlength="500" placeholder="Annual leave, travel, or another recorded absence"></label><div class="wide actions"><button class="primary">Delegate to {{ user.manager.name }}</button></div></form>{% else %}<p class="callout warning">A line manager must be assigned before upward absence coverage is available.</p>{% endif %}
+</section>{% endif %}
+{% endif %}
 {% if editing %}<section class="panel related-links"><h2>Related links</h2>{% if self_service %}{% if current_user_is_local %}<a href="{{ url_for('change_password') }}">Change password</a>{% endif %}<a href="{{ url_for('profile_export') }}">Download my data</a>{% else %}<a href="{{ url_for('users') }}">Return to users</a>{% endif %}<a href="{{ url_for('notifications') }}">View notifications</a></section>{% endif %}
 {% if editing and not self_service %}
 <section class="panel">
