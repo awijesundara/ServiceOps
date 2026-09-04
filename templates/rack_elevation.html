@@ -9,6 +9,12 @@
       <section class="panel"><h2>Rear</h2><svg id="rack-elevation-rear" width="220" data-face="rear"></svg></section>
     </div>
     <aside class="rack-elevation-sidebar">
+      {% if rack.attributes %}
+      <section class="panel">
+        <h2>NetBox rack details</h2>
+        <dl class="detail-list">{% for key, value in rack.attributes.items() %}<div><dt>{{ key|replace('NetBox: ', '') }}</dt><dd>{{ value }}</dd></div>{% endfor %}</dl>
+      </section>
+      {% endif %}
       <section class="panel">
         <h2>Rack statistics</h2>
         <div class="rack-stat"><span>Space</span><div class="rack-stat-bar"><div id="rack-stat-space" class="rack-stat-fill"></div></div><small id="rack-stat-space-label"></small></div>

@@ -39,6 +39,23 @@ def _format_interface(record):
         bits.append(f"in {parent}")
     if record.get("enabled") is False:
         bits.append("disabled")
+    if record.get("mtu"):
+        bits.append(f"MTU {record['mtu']}")
+    mode = _first_attr(record, "mode", "label")
+    if mode:
+        bits.append(mode)
+    untagged = _first_attr(record, "untagged_vlan", "display") or _first_attr(record, "untagged_vlan", "name")
+    if untagged:
+        bits.append(f"untagged {untagged}")
+    tagged = [item.get("display") or item.get("name") for item in (record.get("tagged_vlans") or [])]
+    tagged = [item for item in tagged if item]
+    if tagged:
+        bits.append(f"tagged {', '.join(tagged)}")
+    cable = _first_attr(record, "cable", "label") or _first_attr(record, "cable", "display")
+    if cable:
+        bits.append(f"cable {cable}")
+    if record.get("description"):
+        bits.append(str(record["description"]).strip())
     return f"{label} ({', '.join(bits)})" if bits else label
 
 
@@ -63,7 +80,49 @@ def _format_power_port(record):
 def _format_inventory_item(record):
     label = record.get("name") or "?"
     role = _first_attr(record, "role", "name")
-    return f"{label} ({role})" if role else label
+    bits = [value for value in (
+        role,
+        f"manufacturer {_first_attr(record, 'manufacturer', 'name')}" if _first_attr(record, 'manufacturer', 'name') else None,
+        f"part {record.get('part_id')}" if record.get("part_id") else None,
+        f"serial {record.get('serial')}" if record.get("serial") else None,
+        f"asset {record.get('asset_tag')}" if record.get("asset_tag") else None,
+    ) if value]
+    return f"{label} ({', '.join(bits)})" if bits else label
+
+
+def _format_component(record):
+    label = record.get("name") or record.get("label") or "?"
+    bits = []
+    for value in (
+        _first_attr(record, "type", "label"), record.get("label"),
+        record.get("description"),
+    ):
+        if value and value != label:
+            bits.append(str(value).strip())
+    if record.get("enabled") is False:
+        bits.append("disabled")
+    return f"{label} ({', '.join(bits)})" if bits else label
+
+
+def _format_virtual_disk(record):
+    label = record.get("name") or "?"
+    size = record.get("size")
+    description = str(record.get("description") or "").strip()
+    bits = [f"{size} MB" if size is not None else None, description or None]
+    return f"{label} ({', '.join(value for value in bits if value)})" if any(bits) else label
+
+
+def _format_ip(record):
+    address = record.get("address") or "?"
+    bits = []
+    for value in (
+        record.get("dns_name"), _first_attr(record, "status", "label"),
+        _first_attr(record, "role", "label"), _first_attr(record, "vrf", "display"),
+        record.get("description"),
+    ):
+        if value:
+            bits.append(str(value).strip())
+    return f"{address} ({', '.join(bits)})" if bits else address
 
 
 # Per-device components pulled in bulk (one full paginated fetch per type,
@@ -75,6 +134,20 @@ COMPONENT_ENDPOINTS = (
     ("/api/dcim/console-ports/", "Console Ports", _format_port),
     ("/api/dcim/power-ports/", "Power Ports", _format_power_port),
     ("/api/dcim/inventory-items/", "Inventory Items", _format_inventory_item),
+    ("/api/dcim/modules/", "Modules", _format_component),
+    ("/api/dcim/module-bays/", "Module Bays", _format_component),
+    ("/api/dcim/device-bays/", "Device Bays", _format_component),
+    ("/api/dcim/front-ports/", "Front Ports", _format_component),
+    ("/api/dcim/rear-ports/", "Rear Ports", _format_component),
+    ("/api/dcim/console-server-ports/", "Console Server Ports", _format_component),
+    ("/api/dcim/power-outlets/", "Power Outlets", _format_component),
+    ("/api/dcim/cooling-intakes/", "Cooling Intakes", _format_component),
+    ("/api/dcim/cooling-outflows/", "Cooling Outflows", _format_component),
+)
+
+VM_COMPONENT_ENDPOINTS = (
+    ("/api/virtualization/interfaces/", "Interfaces", _format_interface),
+    ("/api/virtualization/virtual-disks/", "Virtual Disks", _format_virtual_disk),
 )
 
 OPERATIONAL_STATUS_MAP = {
@@ -219,6 +292,44 @@ def _fetch_all_components(session, base_url):
     return grouped, warnings
 
 
+def _fetch_vm_components(session, base_url):
+    grouped = {}
+    warnings = []
+    for path, label, formatter in VM_COMPONENT_ENDPOINTS:
+        by_vm = {}
+        try:
+            for record in _paginate(session, base_url, path):
+                vm_id = str(_first_attr(record, "virtual_machine", "id") or "")
+                if vm_id:
+                    by_vm.setdefault(vm_id, []).append(formatter(record))
+        except (requests.RequestException, NetboxSyncError) as error:
+            warnings.append(f"VM {label} were not imported: {type(error).__name__}")
+            continue
+        for vm_id, items in by_vm.items():
+            grouped.setdefault(vm_id, {})[f"NetBox: {label}"] = "; ".join(items)
+    return grouped, warnings
+
+
+def _fetch_assigned_ip_addresses(session, base_url):
+    devices, vms, warnings = {}, {}, []
+    try:
+        for record in _paginate(session, base_url, "/api/ipam/ip-addresses/"):
+            assigned = record.get("assigned_object") or {}
+            device_id = _first_attr(assigned, "device", "id")
+            vm_id = _first_attr(assigned, "virtual_machine", "id")
+            target = devices if device_id is not None else vms if vm_id is not None else None
+            target_id = device_id if device_id is not None else vm_id
+            if target is not None:
+                target.setdefault(str(target_id), []).append(_format_ip(record))
+    except (requests.RequestException, NetboxSyncError) as error:
+        warnings.append(f"Assigned IP addresses were not imported: {type(error).__name__}")
+    return (
+        {key: {"NetBox: Assigned IP Addresses": "; ".join(values)} for key, values in devices.items()},
+        {key: {"NetBox: Assigned IP Addresses": "; ".join(values)} for key, values in vms.items()},
+        warnings,
+    )
+
+
 def _first_attr(record, *keys):
     node = record
     for key in keys:
@@ -350,14 +461,29 @@ def _map_device(record, rack_id_map=None):
         "rack_face": face_value,
         "attributes": _extra_attributes(record, fields=(
             ("Region", ("site", "region", "name")),
+            ("Site Group", ("site", "group", "name")),
             ("Tenant", ("tenant", "name")),
+            ("Tenant Group", ("tenant", "group", "name")),
             ("Role", ("role", "name")),
             ("Platform", ("platform", "name")),
             ("Status", ("status", "label")),
             ("Asset Tag", ("asset_tag",)),
             ("Airflow", ("airflow", "label")),
+            ("Cooling Method", ("cooling_method", "label")),
+            ("Latitude", ("latitude",)),
+            ("Longitude", ("longitude",)),
+            ("Parent Device", ("parent_device", "name")),
+            ("Owner", ("owner", "name")),
             ("Description", ("description",)),
             ("Cluster", ("cluster", "name")),
+            ("Virtual Chassis", ("virtual_chassis", "name")),
+            ("Virtual Chassis Position", ("vc_position",)),
+            ("Virtual Chassis Priority", ("vc_priority",)),
+            ("Config Template", ("config_template", "name")),
+            ("Config Context", ("config_context",)),
+            ("Local Context Data", ("local_context_data",)),
+            ("Created", ("created",)),
+            ("Last Updated", ("last_updated",)),
         )),
     }
 
@@ -369,6 +495,27 @@ def _map_rack(record):
         "u_height": record.get("u_height") or 42,
         "netbox_id": f"dcim.rack:{record['id']}",
         "legacy_netbox_id": str(record["id"]),
+        "attributes": _extra_attributes(record, fields=(
+            ("Location", ("location", "name")),
+            ("Rack Group", ("group", "name")),
+            ("Tenant", ("tenant", "name")),
+            ("Status", ("status", "label")),
+            ("Role", ("role", "name")),
+            ("Facility ID", ("facility_id",)),
+            ("Serial Number", ("serial",)),
+            ("Asset Tag", ("asset_tag",)),
+            ("Rack Type", ("rack_type", "display")),
+            ("Width", ("width", "label")),
+            ("Starting Unit", ("starting_unit",)),
+            ("Descending Units", ("desc_units",)),
+            ("Airflow", ("airflow", "label")),
+            ("Weight", ("weight",)),
+            ("Maximum Weight", ("max_weight",)),
+            ("Mounting Depth", ("mounting_depth",)),
+            ("Description", ("description",)),
+            ("Created", ("created",)),
+            ("Last Updated", ("last_updated",)),
+        )),
     }
 
 
@@ -393,11 +540,13 @@ def _upsert_rack(mapped, tenant_id, summary):
         rack.u_height = mapped["u_height"]
         rack.external_source = "netbox"
         rack.external_id = mapped["netbox_id"]
+        rack.attributes = mapped.get("attributes") or {}
         summary["racks_updated"] += 1
     else:
         rack = core_app.Rack(
             tenant_id=tenant_id, name=mapped["name"], site=mapped["site"],
             u_height=mapped["u_height"], external_source="netbox", external_id=mapped["netbox_id"],
+            attributes=mapped.get("attributes") or {},
         )
         db.session.add(rack)
         summary["racks_created"] += 1
@@ -420,9 +569,11 @@ def _map_vm(record):
         "legacy_netbox_id": str(record["id"]),
         "attributes": _extra_attributes(record, fields=(
             ("Tenant", ("tenant", "name")),
+            ("Owner", ("owner", "name")),
             ("Role", ("role", "name")),
             ("Platform", ("platform", "name")),
             ("Type", ("type", "name")),
+            ("Virtual Machine Type", ("virtual_machine_type", "name")),
             ("Site", ("site", "name")),
             ("Cluster", ("cluster", "name")),
             ("Host Device", ("device", "name")),
@@ -431,6 +582,13 @@ def _map_vm(record):
             ("Disk (MB)", ("disk",)),
             ("Serial Number", ("serial",)),
             ("Status", ("status", "label")),
+            ("Start On Boot", ("start_on_boot", "label")),
+            ("Description", ("description",)),
+            ("Config Template", ("config_template", "name")),
+            ("Config Context", ("config_context",)),
+            ("Local Context Data", ("local_context_data",)),
+            ("Created", ("created",)),
+            ("Last Updated", ("last_updated",)),
         )),
     }
 
@@ -568,7 +726,11 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
                 summary["errors"].append(f"rack {record.get('name', record.get('id'))}: {type(error).__name__}")
         devices = list(_paginate(session, base_url, DEVICES_PATH))
         components_by_device, component_warnings = _fetch_all_components(session, base_url) if devices else ({}, [])
+        vm_components, vm_component_warnings = _fetch_vm_components(session, base_url)
+        device_ips, vm_ips, ip_warnings = _fetch_assigned_ip_addresses(session, base_url)
         summary["warnings"].extend(component_warnings)
+        summary["warnings"].extend(vm_component_warnings)
+        summary["warnings"].extend(ip_warnings)
         for record in devices:
             summary["devices_seen"] += 1
             counts_before = (
@@ -578,6 +740,7 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
                 with record_transaction():
                     mapped = _map_device(record, rack_id_map=rack_id_map)
                     mapped["attributes"].update(components_by_device.get(str(record["id"]), {}))
+                    mapped["attributes"].update(device_ips.get(str(record["id"]), {}))
                     _upsert(mapped, tenant_id, summary)
             except Exception as error:  # noqa: BLE001 - isolate one bad record from the whole sync
                 summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"] = counts_before
@@ -589,7 +752,10 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
             )
             try:
                 with record_transaction():
-                    _upsert(_map_vm(record), tenant_id, summary)
+                    mapped = _map_vm(record)
+                    mapped["attributes"].update(vm_components.get(str(record["id"]), {}))
+                    mapped["attributes"].update(vm_ips.get(str(record["id"]), {}))
+                    _upsert(mapped, tenant_id, summary)
             except Exception as error:  # noqa: BLE001
                 summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"] = counts_before
                 summary["errors"].append(f"vm {record.get('name', record.get('id'))}: {type(error).__name__}")

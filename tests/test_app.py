@@ -8255,3 +8255,31 @@ def test_role_switcher_shown_only_for_multi_role_users(client, app):
     assert b"Switch your active role" in response.data
     assert b"Acting as" in response.data
     assert b"Admin</strong>" in response.data
+
+
+def test_audit_records_signed_request_and_security_context(app):
+    with app.test_request_context(
+        "/admin/example?secret=must-not-be-retained",
+        method="POST",
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/140.0",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://serviceops.example/tickets/1?token=secret",
+            "Authorization": "Bearer must-never-be-retained",
+        },
+        environ_base={"REMOTE_ADDR": "192.0.2.44"},
+    ):
+        admin = User.query.filter_by(username="admin").one()
+        audit("security test", "audit context", "safe detail", user_id=admin.id, tenant_id=admin.tenant_id)
+        db.session.commit()
+        row = Audit.query.filter_by(action="security test").one()
+        context = row.security_context
+        assert row.source_ip == "192.0.2.44"
+        assert row.integrity_version == "hmac-sha256-v3"
+        assert context["http_method"] == "POST"
+        assert context["request_path"] == "/admin/example"
+        assert context["device"] == "Chrome on Windows"
+        assert context["client_language"] == "en-US,en;q=0.9"
+        assert context["referrer"] == "https://serviceops.example/tickets/1"
+        assert "must-never-be-retained" not in row.security_context_json
+        assert verify_audit_chain(admin.tenant_id)["valid"] is True

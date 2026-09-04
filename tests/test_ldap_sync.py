@@ -214,6 +214,41 @@ def test_manager_who_never_logged_in_is_provisioned_and_resolved(app, monkeypatc
         assert User.query.filter_by(username="wei.guo").count() == 1
 
 
+def test_admin_full_sync_provisions_every_valid_directory_user(app, monkeypatch):
+    with app.app_context():
+        dn = "CN=Never Logged In,OU=Users,DC=example,DC=com"
+        entries = [FakeEntry(dn, {
+            "sAMAccountName": ["never.logged.in"],
+            "mail": ["never.logged.in@example.com"],
+            "displayName": ["Never Logged In"],
+            "department": ["Infrastructure"],
+            "userAccountControl": [512],
+            "memberOf": ["CN=gg_unix,OU=Groups,DC=example,DC=com"],
+        })]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+
+        result = sync_directory(1, provision_all=True)
+
+        user = User.query.filter_by(username="never.logged.in").one()
+        assert user.email == "never.logged.in@example.com"
+        assert user.department == "Infrastructure"
+        assert ExternalIdentity.query.filter_by(provider="ldap", subject=dn).one().user_id == user.id
+        assert DirectoryProfile.query.filter_by(user_id=user.id).one().profile["account_enabled"] is True
+        assert result["users_provisioned"] == 1
+        assert result["users_unmatched"] == 0
+
+
+def test_normal_sync_does_not_bulk_provision_unknown_users(app, monkeypatch):
+    with app.app_context():
+        dn = "CN=Unknown,OU=Users,DC=example,DC=com"
+        entries = [FakeEntry(dn, {"sAMAccountName": ["unknown"]})]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+        result = sync_directory(1)
+        assert User.query.filter_by(username="unknown").first() is None
+        assert result["users_provisioned"] == 0
+        assert result["users_unmatched"] == 1
+
+
 def test_manager_dn_outside_directory_search_is_left_unresolved(app, monkeypatch):
     """A manager DN that isn't itself a real entry in this directory search
     (out of base DN/filter scope) must never be fabricated -- manager_id

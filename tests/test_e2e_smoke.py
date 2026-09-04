@@ -104,6 +104,7 @@ CORE_WORKFLOWS = (
     ("login-sessions", "/profile/sessions"),
     ("team-management", "/service-operations/settings/team-managers"),
     ("directory-sync", "/service-operations/settings/ldap-sync"),
+    ("audit-evidence", "/admin/audit"),
     ("cmdb", "/cmdb"),
     ("cmdb-import", "/cmdb/import"),
     ("client-management", "/client-management"),
@@ -125,6 +126,8 @@ def test_critical_journey_is_responsive_error_free_and_accessible(authenticated_
         if not page.locator(".netbox-mapping-details").evaluate("element => element.open"):
             page.locator(".netbox-mapping-details summary").click()
         page.screenshot(path=ARTIFACT_DIR / f"cmdb-import-{viewport_name}.png", full_page=True)
+    if journey in {"directory-sync", "audit-evidence"}:
+        page.screenshot(path=ARTIFACT_DIR / f"{journey}-{viewport_name}.png", full_page=True)
 
     page.add_script_tag(path=AXE_CORE_PATH)
     axe_result = page.evaluate("""async () => await axe.run(document, {

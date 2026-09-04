@@ -7,20 +7,11 @@ from an existing LDAP/AD directory, using the same bind, StartTLS, and
 attribute-matching conventions already used by interactive LDAP login
 (app.ldap_authenticate).
 
-It intentionally does not:
-  * create new ServiceOps users for their own sake (only already-provisioned
-    LDAP identities are updated -- see ``ldap_authenticate``/
-    ``provision_external_user``) -- with one narrow exception: a user's
-    directory `manager` attribute is a DN that may belong to someone who has
-    never logged into ServiceOps themselves (a senior manager who never
-    touches the ticketing tool, for instance). Since that DN is already
-    present in this same directory search, this module provisions a normal
-    LDAP-identity user record for it (via provision_external_user, exactly as
-    if they'd logged in) purely so the reporting chain (User.manager_id) is
-    complete. It never fabricates a manager DN found nowhere in the
-    directory, and the provisioned account behaves identically to any other
-    LDAP user on its own eventual first login (role/groups resolved the
-    normal way at that point).
+By default it updates already-provisioned identities and pre-provisions only
+missing managers.  An administrator can explicitly request ``provision_all``
+to create an LDAP-backed ServiceOps profile for every valid directory entry.
+Scheduled/background synchronization never enables this mode: bulk account
+creation is an intentional, audited administrator action.
   * run on a schedule (manual trigger only; see app.py's admin route),
   * mutate approval-resolution logic (Approval/CCB code is unchanged; it
     merely benefits from the more complete User/GroupMember data this
@@ -214,7 +205,7 @@ def _first(values_dict, attr_name):
     return value or None
 
 
-def sync_directory(tenant_id, dry_run=False):
+def sync_directory(tenant_id, dry_run=False, provision_all=False):
     """Synchronize directory-sourced profile fields, manager chain, and
     AD-group team membership for every LDAP-provisioned user in ``tenant_id``.
 
@@ -236,6 +227,7 @@ def sync_directory(tenant_id, dry_run=False):
         "tenant_id": tenant_id,
         "dry_run": bool(dry_run),
         "directory_entries": 0,
+        "users_provisioned": 0,
         "users_updated": 0,
         "managers_resolved": 0,
         "managers_provisioned": 0,
@@ -303,6 +295,50 @@ def sync_directory(tenant_id, dry_run=False):
         entry_dn = (entry_dn_raw or "").strip().casefold()
         if entry_dn:
             dn_to_entry[entry_dn] = entry_values
+
+    if provision_all:
+        for entry_dn_raw, entry_values in entries:
+            entry_dn = (entry_dn_raw or "").strip()
+            key = entry_dn.casefold()
+            if not entry_dn or key in dn_to_user:
+                continue
+            username = _first(entry_values, attr_map.get("username", "sAMAccountName"))
+            if not username:
+                summary["errors"].append(
+                    f"{entry_dn or '(unknown dn)'}: missing mapped username; profile not provisioned"
+                )
+                continue
+            email = _first(entry_values, attr_map.get("email", "mail"))
+            display_name = (
+                _first(entry_values, attr_map.get("display_name", "displayName")) or username
+            )
+            groups = entry_values.get("memberOf") or []
+            roles = core_app.mapped_roles(groups, "LDAP_ROLE_MAPPINGS")
+            profile, friendly_groups = directory_profile_payload(entry_values, groups, attr_map)
+            profile_attrs = {
+                field: _first(entry_values, attr_map.get(field, field))
+                for field in PROFILE_FIELDS
+                if _first(entry_values, attr_map.get(field, field))
+            }
+            profile_attrs["team_name"] = profile.get("team_name")
+            try:
+                transaction = nullcontext() if dry_run else db.session.begin_nested()
+                with transaction:
+                    user = core_app.provision_external_user(
+                        "ldap", entry_dn, username, display_name, email, roles,
+                        groups=groups, profile_attrs=profile_attrs,
+                        directory_profile=profile,
+                        directory_group_names=friendly_groups,
+                    )
+                    if user.tenant_id != tenant_id:
+                        raise DirectorySyncError(
+                            "directory identity collided with an account outside this tenant"
+                        )
+                    db.session.flush()
+                    dn_to_user[key] = user
+                    summary["users_provisioned"] += 1
+            except Exception as error:  # noqa: BLE001 - isolate a malformed/colliding entry
+                summary["errors"].append(f"{entry_dn}: {type(error).__name__}")
 
     def _resolve_or_provision_manager(manager_dn, _resolving=None):
         """Return the ServiceOps User for `manager_dn`, provisioning a normal
