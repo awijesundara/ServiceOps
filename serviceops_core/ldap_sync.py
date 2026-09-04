@@ -62,6 +62,13 @@ DEFAULT_ATTR_MAP = {
     "unix_home_directory": "unixHomeDirectory",
     "login_shell": "loginShell",
     "country_code": "countryCode",
+    "website": "wWWHomePage",
+    "unix_username": "uid",
+    "nis_domain": "msSFU30NisDomain",
+    "last_bad_password_at": "badPasswordTime",
+    "last_logoff_at": "lastLogoff",
+    "lockout_at": "lockoutTime",
+    "sam_account_type": "sAMAccountType",
 }
 
 # ServiceOps User columns populated from directory attributes (excludes
@@ -77,7 +84,9 @@ DIRECTORY_DETAIL_FIELDS = (
     "last_logon_at", "password_last_set_at", "account_expires_at",
     "bad_password_count", "logon_count", "primary_group_id", "object_guid",
     "uid_number", "gid_number", "unix_home_directory", "login_shell",
-    "country_code",
+    "country_code", "website", "unix_username", "nis_domain",
+    "last_bad_password_at", "last_logoff_at", "lockout_at",
+    "sam_account_type",
 )
 
 
@@ -136,13 +145,50 @@ def _friendly_group_name(value):
     return text[:160] if "," not in text else None
 
 
-def directory_profile_payload(values, groups, attr_map=None):
+def _directory_location(dn):
+    """Return display-safe OU/domain context without retaining another raw DN."""
+    text = _safe_text(dn, 1000)
+    if not text:
+        return None, None
+    try:
+        parts = parse_dn(text, escape=True)
+    except (ValueError, TypeError):
+        return None, None
+    units = [str(value).strip()[:120] for key, value, _ in parts if key.casefold() == "ou"]
+    domains = [str(value).strip()[:120] for key, value, _ in parts if key.casefold() == "dc"]
+    return " / ".join(units)[:500] or None, ".".join(domains)[:255] or None
+
+
+def _group_context(groups):
+    """Classify directory groups for display and mapping suggestions only."""
+    categories = {}
+    team_candidates = set()
+    for raw in groups or []:
+        name = _friendly_group_name(raw)
+        if not name:
+            continue
+        text = str(raw)
+        units, _domain = _directory_location(text)
+        category = (units.split(" / ")[0] if units else "Other")[:120]
+        categories[category] = categories.get(category, 0) + 1
+        normalized = name.casefold().replace("-", "_")
+        if "team" in normalized and not any(
+            marker in normalized for marker in ("admin", "access", "viewer", "users")
+        ):
+            team_candidates.add(name)
+    return dict(sorted(categories.items(), key=lambda item: item[0].casefold())), sorted(
+        team_candidates, key=str.casefold
+    )
+
+
+def directory_profile_payload(values, groups, attr_map=None, entry_dn=None):
     """Build the allow-listed, display-safe profile snapshot stored by ServiceOps."""
     attr_map = attr_map or _attr_map()
     payload = {}
     time_fields = {
         "directory_created_at", "directory_changed_at", "last_logon_at",
-        "password_last_set_at", "account_expires_at",
+        "password_last_set_at", "account_expires_at", "last_bad_password_at",
+        "last_logoff_at", "lockout_at",
     }
     for field in DIRECTORY_DETAIL_FIELDS:
         raw = values.get(attr_map.get(field, ""))
@@ -158,6 +204,18 @@ def directory_profile_payload(values, groups, attr_map=None):
             value = _safe_text(raw)
         if value is not None:
             payload[field] = value
+    organizational_unit, directory_domain = _directory_location(
+        entry_dn or _as_scalar(values.get("distinguishedName"))
+    )
+    if organizational_unit:
+        payload["organizational_unit"] = organizational_unit
+    if directory_domain:
+        payload["directory_domain"] = directory_domain
+    group_categories, team_candidates = _group_context(groups)
+    if group_categories:
+        payload["group_categories"] = group_categories
+    if team_candidates:
+        payload["team_candidates"] = team_candidates
     control_raw = _safe_text(values.get(attr_map.get("account_control", "userAccountControl")), 20)
     if control_raw:
         try:
@@ -314,7 +372,9 @@ def sync_directory(tenant_id, dry_run=False, provision_all=False):
             )
             groups = entry_values.get("memberOf") or []
             roles = core_app.mapped_roles(groups, "LDAP_ROLE_MAPPINGS")
-            profile, friendly_groups = directory_profile_payload(entry_values, groups, attr_map)
+            profile, friendly_groups = directory_profile_payload(
+                entry_values, groups, attr_map, entry_dn
+            )
             profile_attrs = {
                 field: _first(entry_values, attr_map.get(field, field))
                 for field in PROFILE_FIELDS
@@ -366,7 +426,7 @@ def sync_directory(tenant_id, dry_run=False, provision_all=False):
         manager_groups = entry_values.get("memberOf") or []
         manager_roles = core_app.mapped_roles(manager_groups, "LDAP_ROLE_MAPPINGS")
         manager_directory_profile, manager_group_names = directory_profile_payload(
-            entry_values, manager_groups, attr_map
+            entry_values, manager_groups, attr_map, manager_dn
         )
         manager_profile_attrs = {
             field: _first(entry_values, attr_map.get(field, field))
@@ -447,7 +507,9 @@ def sync_directory(tenant_id, dry_run=False, provision_all=False):
                 if changed:
                     summary["users_updated"] += 1
 
-                directory_profile, friendly_groups = directory_profile_payload(values, groups, attr_map)
+                directory_profile, friendly_groups = directory_profile_payload(
+                    values, groups, attr_map, entry_dn
+                )
                 core_app.apply_directory_profile(user, directory_profile, friendly_groups)
                 summary["directory_profiles_updated"] += 1
                 if (

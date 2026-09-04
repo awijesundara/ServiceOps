@@ -2067,6 +2067,7 @@ def test_team_admin_can_create_update_and_assign_a_new_team(client, app):
 def test_profile_shows_safe_directory_intelligence_and_manager_flag(client, app):
     with app.app_context():
         manager = User.query.filter_by(username="database.manager").one()
+        manager_id = manager.id
         db.session.add(ExternalIdentity(
             provider="ldap", subject="CN=Database Manager,DC=example,DC=com", user_id=manager.id,
         ))
@@ -2076,8 +2077,20 @@ def test_profile_shows_safe_directory_intelligence_and_manager_flag(client, app)
                 "user_principal_name": "database.manager@example.com",
                 "team_name": "Database", "account_enabled": True,
                 "unix_home_directory": "/home/database.manager",
+                "organizational_unit": "Users / Example",
+                "directory_domain": "corp.example.com",
+                "group_categories": {"ApplicationAccess": 2},
+                "team_candidates": ["gg_database_team"],
             }),
             groups_json=json.dumps(["gg_database_users", "gg_monitoring_users"]),
+        ))
+        db.session.add(Asset(
+            asset_tag="LAP-0042", name="Manager laptop", asset_type="Laptop",
+            owner_id=manager.id, tenant_id=manager.tenant_id,
+        ))
+        db.session.add(ConfigurationItem(
+            name="Payroll service", ci_class="Business Application",
+            owner_id=manager.id, tenant_id=manager.tenant_id,
         ))
         db.session.commit()
     login(client, "database.manager", "Manager123!")
@@ -2087,7 +2100,18 @@ def test_profile_shows_safe_directory_intelligence_and_manager_flag(client, app)
     assert b"LDAP profile details" in page.data
     assert b"database.manager@example.com" in page.data
     assert b"gg_database_users" in page.data
+    assert b"corp.example.com" in page.data
+    assert b"Possible team mappings" in page.data
+    assert b"LAP-0042" in page.data
+    assert b"Payroll service" in page.data
     assert b"Authentication secrets, certificates, SIDs" in page.data
+    client.get("/logout")
+    login(client)
+    admin_view = client.get(f"/admin/users/{manager_id}")
+    assert admin_view.status_code == 200
+    assert b"LDAP profile details" in admin_view.data
+    assert b"corp.example.com" in admin_view.data
+    assert b"LAP-0042" in admin_view.data
 
 
 def test_login_session_records_compact_device_and_language_details(client, app):

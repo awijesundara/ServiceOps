@@ -126,7 +126,7 @@ def test_critical_journey_is_responsive_error_free_and_accessible(authenticated_
         if not page.locator(".netbox-mapping-details").evaluate("element => element.open"):
             page.locator(".netbox-mapping-details summary").click()
         page.screenshot(path=ARTIFACT_DIR / f"cmdb-import-{viewport_name}.png", full_page=True)
-    if journey in {"directory-sync", "audit-evidence"}:
+    if journey in {"user-profile", "directory-sync", "audit-evidence"}:
         page.screenshot(path=ARTIFACT_DIR / f"{journey}-{viewport_name}.png", full_page=True)
 
     page.add_script_tag(path=AXE_CORE_PATH)
