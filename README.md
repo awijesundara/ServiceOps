@@ -6,7 +6,7 @@ approvals, SLAs, automation, and analytics.** It is designed for controlled
 on-premises or private-cloud operation without vendor lock-in.
 
 [![Supply chain](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml/badge.svg)](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml)
-[![Version](https://img.shields.io/badge/version-1.78.8-003E4C)](VERSION)
+[![Version](https://img.shields.io/badge/version-1.78.9-003E4C)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](Dockerfile)
 [![Docker](https://img.shields.io/badge/docker-compose%20%7C%20kubernetes-2496ED?logo=docker&logoColor=white)](#deployment-options)
 [![PostgreSQL](https://img.shields.io/badge/database-postgresql-4169E1?logo=postgresql&logoColor=white)](#architecture)
@@ -91,7 +91,7 @@ image digests and verifies every transferred file before loading any image.
 
 ## Fresh-server RPM installation
 
-The following procedure installs the current stable release, **v1.78.8**, on a
+The following procedure installs the current stable release, **v1.78.9**, on a
 fresh Rocky Linux 9, AlmaLinux 9, or Oracle Linux 9 server. Run it from a normal
 administrative account with `sudo` access.
 
@@ -123,20 +123,20 @@ sudo dnf config-manager --add-repo \
 mkdir -p serviceops-install
 cd serviceops-install
 
-curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.78.8/serviceops-1.78.8-1.el9.noarch.rpm
-curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.78.8/serviceops-1.78.8-1.el9.noarch.rpm.sha256
+curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.78.9/serviceops-1.78.9-1.el9.noarch.rpm
+curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.78.9/serviceops-1.78.9-1.el9.noarch.rpm.sha256
 
-sha256sum -c serviceops-1.78.8-1.el9.noarch.rpm.sha256
+sha256sum -c serviceops-1.78.9-1.el9.noarch.rpm.sha256
 ```
 
 Do not continue unless checksum verification reports `OK`. Packages for the
 other supported platforms are available on the
-[v1.78.8 release page](https://github.com/awijesundara/ServiceOps/releases/tag/v1.78.8).
+[v1.78.9 release page](https://github.com/awijesundara/ServiceOps/releases/tag/v1.78.9).
 
 ### 3. Install and initialize ServiceOps
 
 ```bash
-sudo dnf install -y ./serviceops-1.78.8-1.el9.noarch.rpm
+sudo dnf install -y ./serviceops-1.78.9-1.el9.noarch.rpm
 sudo serviceops setup --mode bundled --yes
 ```
 
@@ -166,7 +166,7 @@ sudo serviceops health
 sudo serviceops doctor
 ```
 
-Health should report status `ok` and version `1.78.8`.
+Health should report status `ok` and version `1.78.9`.
 
 ### 5. Sign in securely
 
