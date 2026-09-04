@@ -566,6 +566,7 @@ class Audit(db.Model):
     request_id = db.Column(db.String(36), nullable=False, index=True)
     source_ip = db.Column(db.String(64))
     user_agent = db.Column(db.String(255))
+    security_context_json = db.Column(db.Text, nullable=False, default="{}")
     integrity_version = db.Column(db.String(30), nullable=False, default="hmac-sha256-v1")
     integrity_key_id = db.Column(
         db.String(80), nullable=False, default="environment-v1"
@@ -575,6 +576,14 @@ class Audit(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     user = db.relationship("User")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+
+    @property
+    def security_context(self):
+        try:
+            value = json.loads(self.security_context_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            return {}
+        return value if isinstance(value, dict) else {}
 
 
 class AuditIntegrityKey(db.Model):
@@ -1419,6 +1428,7 @@ class Rack(db.Model):
     site = db.Column(db.String(120), nullable=False, default="")
     u_height = db.Column(db.Integer, nullable=False, default=42)
     notes = db.Column(db.Text, nullable=False, default="")
+    attributes_json = db.Column(db.Text, nullable=False, default="{}")
     active = db.Column(db.Boolean, nullable=False, default=True)
     # Populated by netbox_sync.py so a re-run matches existing rows instead
     # of creating duplicates. Null for manually-created racks.
@@ -1427,6 +1437,18 @@ class Rack(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_rack_tenant_name"),)
+
+    @property
+    def attributes(self):
+        try:
+            value = json.loads(self.attributes_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    @attributes.setter
+    def attributes(self, value):
+        self.attributes_json = json.dumps(value or {}, sort_keys=True)
 
 
 class CiClassPermission(db.Model):

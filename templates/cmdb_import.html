@@ -9,12 +9,12 @@
     <article><strong>Identity & hardware</strong><p>Name, serial, manufacturer/model, management IP, site/location and rack placement become structured CMDB fields.</p></article>
     <article><strong>Classification</strong><p>Recognized role terms map to controlled CI classes. Custom NetBox roles stay visible as attributes and use the neutral Device class.</p></article>
     <article><strong>Status & lifecycle</strong><p>Operational status and lifecycle are mapped separately. Offline is Down—not Retired; planned/staged records are Planned.</p></article>
-    <article><strong>Virtualization</strong><p>VM platform is an operating system and cluster is a logical grouping. Both remain attributes; site becomes Location.</p></article>
+    <article><strong>Virtualization & IPAM</strong><p>VM platform, host, cluster, type, compute sizing, virtual disks, interfaces, primary and assigned IP details are retained without confusing logical groupings with physical locations.</p></article>
   </div>
   <details class="netbox-mapping-details"><summary>View complete synchronization rules</summary>
     <div class="netbox-rules">
       <p><strong>Always refreshed:</strong> identity/hardware fields, status, lifecycle, recognized environment custom field, and rack placement. Values removed in NetBox are cleared in ServiceOps.</p>
-      <p><strong>Preserved as NetBox attributes:</strong> tenant, functional role, platform, raw status, tags, comments, custom fields, interfaces, console ports, power ports and inventory items.</p>
+      <p><strong>Preserved as NetBox attributes:</strong> tenant hierarchy, ownership, functional role, platform, raw status, descriptions, timestamps, coordinates, configuration context, tags, custom fields, all assigned IPs/DNS/VRF context, interfaces/VLANs/cables, console, power and cooling connectivity, modules and bays, front/rear ports, inventory items, VM interfaces and virtual disks. Rack location/group/facility/status/role/type/dimensions/weight metadata is retained on the rack. Endpoints denied to the read-only token are reported as warnings.</p>
       <p><strong>Never inferred:</strong> NetBox tenant is not an owning support team; role is not accepted verbatim as a CI class; cluster is not a physical location. Operational ownership and business data remain ServiceOps-controlled.</p>
       <p><strong>Matching:</strong> typed NetBox object ID, then serial number for physical devices, then exact name. Typed IDs prevent a device and VM with the same NetBox numeric ID from overwriting each other.</p>
     </div>

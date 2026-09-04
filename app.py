@@ -455,8 +455,10 @@ def audit_payload(row):
         "user_agent": row.user_agent or "",
         "user_id": row.user_id,
     }
-    if row.integrity_version == "hmac-sha256-v2":
+    if row.integrity_version in {"hmac-sha256-v2", "hmac-sha256-v3"}:
         payload["integrity_key_id"] = row.integrity_key_id
+    if row.integrity_version == "hmac-sha256-v3":
+        payload["security_context_json"] = row.security_context_json or "{}"
     return json.dumps(
         payload, sort_keys=True, separators=(",", ":")
     ).encode()
@@ -548,6 +550,50 @@ def rotate_audit_integrity_key(tenant_id, user_id):
     return key
 
 
+def audit_security_context():
+    """Bounded request evidence useful for incident response.
+
+    Never records cookies, authorization/CSRF headers, request bodies, raw
+    proxy chains, or session/API bearer tokens. ``remote_addr`` is already the
+    proxy-trust-normalized peer address configured by the deployment.
+    """
+    if not has_request_context():
+        return {}
+    referrer = request.referrer or ""
+    if referrer:
+        parsed = urlparse(referrer)
+        referrer = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"[:500]
+    session_record = getattr(g, "user_session", None)
+    api_client = getattr(g, "api_client", None)
+    return {
+        "trace_id": getattr(g, "trace_id", None),
+        "http_method": request.method,
+        "request_path": request.path[:500],
+        "request_host": request.host[:255],
+        "referrer": referrer or None,
+        "content_type": (request.mimetype or "")[:120] or None,
+        "client_language": request.headers.get("Accept-Language", "")[:120] or None,
+        "client_hostname": (
+            getattr(session_record, "client_hostname", None)
+            or verified_client_hostname(request.remote_addr)
+        ),
+        "device": (
+            getattr(session_record, "device_label", None)
+            or describe_user_agent(request.headers.get("User-Agent", ""))
+        ),
+        "authentication_provider": (
+            getattr(session_record, "provider", None)
+            or session.get("_auth_provider")
+            or ("api" if api_client else None)
+        ),
+        "session_reference": (
+            hashlib.sha256(session_record.session_id.encode()).hexdigest()[:16]
+            if session_record and session_record.session_id else None
+        ),
+        "api_client_id": getattr(api_client, "client_id", None),
+    }
+
+
 def audit(action, target, details="", user_id=None, tenant_id=None):
     tenant_id = tenant_id or tenant_context_id()
     if db.engine.dialect.name == "postgresql":
@@ -587,7 +633,8 @@ def audit(action, target, details="", user_id=None, tenant_id=None):
         user_agent=(
             str(request.user_agent)[:255] if has_request_context() else None
         ),
-        integrity_version="hmac-sha256-v2",
+        security_context_json=json.dumps(audit_security_context(), sort_keys=True),
+        integrity_version="hmac-sha256-v3",
         integrity_key_id=active_key.key_id if active_key else "environment-v1",
         previous_hash=previous_hash,
         created_at=now(),
@@ -606,6 +653,8 @@ def audit(action, target, details="", user_id=None, tenant_id=None):
                 "target": row.target,
                 "details": row.details or "",
                 "source_ip": row.source_ip or "",
+                "user_agent": row.user_agent or "",
+                "security_context": json.loads(row.security_context_json or "{}"),
                 "integrity_version": row.integrity_version,
                 "integrity_key_id": row.integrity_key_id,
                 "previous_hash": row.previous_hash,
@@ -6397,6 +6446,14 @@ def create_app(test_config=None):
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(tz).strftime(fmt)
+
+    @app.template_filter("from_json")
+    def from_json_filter(value):
+        try:
+            parsed = json.loads(value or "{}")
+        except (TypeError, json.JSONDecodeError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
 
     def user_avatar_html(user, css_class="avatar"):
         if user is None:
@@ -12774,6 +12831,7 @@ def create_app(test_config=None):
                 "details": row.details,
                 "source_ip": row.source_ip,
                 "user_agent": row.user_agent,
+                "security_context": json.loads(row.security_context_json or "{}"),
                 "integrity_version": row.integrity_version,
                 "integrity_key_id": row.integrity_key_id,
                 "previous_hash": row.previous_hash,
@@ -15229,7 +15287,9 @@ def create_app(test_config=None):
                 from serviceops_core.ldap_sync import DirectorySyncError, sync_directory
                 dry_run = bool(request.form.get("dry_run"))
                 try:
-                    result = sync_directory(tenant_context_id(), dry_run=dry_run)
+                    result = sync_directory(
+                        tenant_context_id(), dry_run=dry_run, provision_all=True
+                    )
                 except DirectorySyncError as error:
                     flash(f"Directory sync could not run: {error}", "error")
                 except LdapBindError as error:
@@ -15239,6 +15299,7 @@ def create_app(test_config=None):
                         "configure", "LDAP directory sync",
                         f"{'Preview' if dry_run else 'Applied'}: "
                         f"{result['users_updated']} users updated, "
+                        f"{result.get('users_provisioned', 0)} users provisioned, "
                         f"{result['managers_resolved']} managers resolved, "
                         f"{result['managers_provisioned']} managers provisioned, "
                         f"{result.get('self_manager_skipped', 0)} self-manager records skipped, "
@@ -15256,6 +15317,7 @@ def create_app(test_config=None):
                             "Directory sync preview: " if dry_run else "Directory sync applied: "
                         ) + (
                             f"{result['users_updated']} users updated, "
+                            f"{result.get('users_provisioned', 0)} users provisioned, "
                             f"{result['managers_resolved']} managers resolved, "
                             f"{result['managers_provisioned']} managers provisioned, "
                             f"{result.get('self_manager_skipped', 0)} self-manager records skipped, "

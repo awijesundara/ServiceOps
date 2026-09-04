@@ -34,6 +34,9 @@ verified backups.
 
 When AD/LDAP is enabled, interactive login and scheduled synchronization build
 a bounded, tenant-scoped user profile from administrator-mapped attributes.
+An administrator-only **Sync all LDAP users** action can pre-provision every
+valid directory user before their first login; scheduled synchronization only
+refreshes already known users and cannot bulk-create the directory.
 ServiceOps can display names, title, department/division, employee identifiers
 and type, office, business/mobile phone, UPN, account state and expiry, selected
 directory timestamps, Unix identity fields, reporting chain, friendly group
@@ -316,6 +319,21 @@ private CA certificate. Then use **CMDB → Import** to preview the reconciliati
 before applying it. The import screen documents how ServiceOps keeps NetBox
 role, platform, cluster, tenant, status, lifecycle, location, and hardware
 fields semantically separate.
+The sync also retains assigned IP/DNS/VRF data, device and VM interfaces,
+VLAN/cable context, console/power/cooling components, modules and bays,
+inventory items, virtual disks, configuration context, timestamps, custom
+fields, and rich rack metadata. Permissions missing from the read-only NetBox
+token are surfaced as explicit warnings rather than silently ignored.
+
+### Audit security evidence
+
+Every governed audit event records the server-observed source IP and a bounded,
+signed security context: forward-confirmed hostname when enabled, browser/OS,
+user agent, language, authentication provider, HTTP method/path, request and
+trace correlation, sanitized referrer, and a one-way session reference. Query
+strings, cookies, authorization/CSRF headers, request bodies, passwords, and
+tokens are never copied into the audit trail. Administrators can review this
+context under **Administration → Audit and evidence** or in the verified export.
 
 The application can scale horizontally behind a load balancer. The worker is a
 single always-on process responsible for SLA breach detection, workflow
