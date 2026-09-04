@@ -80,7 +80,7 @@
 </section>
 
 <section class="panel admin-section">
-  <div class="panel-head"><div><h2>Directory synchronization</h2><p>Pull title, department, division, employee ID/type, manager chain, and AD-group team membership from the directory for users who have already signed in through AD/LDAP at least once. Scheduled sync is {% if ldap_sync_enabled %}enabled every {{ ldap_sync_interval_minutes }} minute{{ '' if ldap_sync_interval_minutes == 1 else 's' }}{% else %}disabled{% endif %}; you can still trigger a manual run at any time.</p></div></div>
+  <div class="panel-head"><div><h2>Directory synchronization</h2><p>Pull identity, organization, office/contact, account-state, login-age, Unix, manager-chain, team-name, and friendly group details for LDAP users. Certificate and security-descriptor blobs are excluded. Scheduled sync is {% if ldap_sync_enabled %}enabled every {{ ldap_sync_interval_minutes }} minute{{ '' if ldap_sync_interval_minutes == 1 else 's' }}{% else %}disabled{% endif %}; you can still trigger a manual run at any time.</p></div></div>
   {% if not ldap_enabled %}
   <p class="muted">AD/LDAP is not enabled. Turn it on above first.</p>
   {% else %}
@@ -91,15 +91,17 @@
   </form>
   {% if ldap_sync_result %}
   <table>
-    <thead><tr><th>Directory entries</th><th>Users updated</th><th>Managers resolved</th><th>Self-manager skipped</th><th>Memberships added</th><th>Memberships removed</th><th>Unmatched</th><th>Errors</th></tr></thead>
+    <thead><tr><th>Entries</th><th>Profiles</th><th>Users</th><th>Managers</th><th>Teams created</th><th>Team managers</th><th>Membership + / −</th><th>Deactivated</th><th>Unmatched</th><th>Errors</th></tr></thead>
     <tbody>
       <tr>
         <td>{{ ldap_sync_result.directory_entries }}</td>
+        <td>{{ ldap_sync_result.directory_profiles_updated or 0 }}</td>
         <td>{{ ldap_sync_result.users_updated }}</td>
         <td>{{ ldap_sync_result.managers_resolved }}</td>
-        <td>{{ ldap_sync_result.self_manager_skipped or 0 }}</td>
-        <td>{{ ldap_sync_result.memberships_added }}</td>
-        <td>{{ ldap_sync_result.memberships_removed }}</td>
+        <td>{{ ldap_sync_result.teams_created or 0 }}</td>
+        <td>{{ ldap_sync_result.team_managers_inferred or 0 }}</td>
+        <td>{{ ldap_sync_result.memberships_added }} / {{ ldap_sync_result.memberships_removed }}</td>
+        <td>{{ ldap_sync_result.accounts_deactivated or 0 }}</td>
         <td>{{ ldap_sync_result.users_unmatched }}</td>
         <td>{{ ldap_sync_result.errors|length }}</td>
       </tr>

@@ -12,8 +12,9 @@ import tempfile
 import pytest
 from werkzeug.security import generate_password_hash
 
-from app import (DirectoryGroupMapping, DirectoryManagedMembership, ExternalIdentity,
-                  GroupMember, PlatformSetting, SupportGroup, Tenant, User, create_app, db)
+from app import (DirectoryGroupMapping, DirectoryManagedMembership, DirectoryProfile,
+                  ExternalIdentity, GroupMember, ManagedRoleGrant, PlatformSetting,
+                  SupportGroup, Tenant, User, create_app, db)
 from serviceops_core.ldap_sync import DirectorySyncError, sync_directory
 
 
@@ -118,6 +119,63 @@ def test_manager_dn_resolves_to_manager_id(app, monkeypatch):
         db.session.refresh(alice)
         assert alice.manager_id == bob.id
         assert result["managers_resolved"] == 1
+
+
+def test_rich_directory_profile_team_creation_and_people_manager_role(app, monkeypatch):
+    """The representative AD attributes in the reported screenshots should
+    become useful profile intelligence without retaining certificate blobs,
+    and a real reporting line should imply manager capability deterministically."""
+    with app.app_context():
+        employee_dn = "CN=Directory Person,OU=Users,DC=example,DC=com"
+        manager_dn = "CN=Directory Manager,OU=Users,DC=example,DC=com"
+        employee = provision_ldap_user("directory.person", employee_dn)
+        manager = provision_ldap_user("directory.manager", manager_dn)
+        db.session.add(PlatformSetting(
+            key="LDAP_AUTO_CREATE_TEAMS", value="true", encrypted=False,
+        ))
+        db.session.commit()
+        entries = [
+            FakeEntry(employee_dn, {
+                "manager": [manager_dn], "displayName": ["Directory Person"],
+                "userPrincipalName": ["directory.person@example.com"],
+                "givenName": ["Directory"], "sn": ["Person"],
+                "teamName": ["Datacenter"], "physicalDeliveryOfficeName": ["CC1"],
+                "employeeID": ["490059"], "userAccountControl": [512],
+                "whenCreated": ["20221013014833.0Z"],
+                "lastLogonTimestamp": [133686782287858735],
+                "uidNumber": [11010], "gidNumber": [10005],
+                "unixHomeDirectory": ["/home/directory.person"], "loginShell": ["/bin/bash"],
+                "memberOf": [
+                    "CN=gg_unix_team,OU=Groups,DC=example,DC=com",
+                    "CN=gg_monitoring_users,OU=Groups,DC=example,DC=com",
+                ],
+                "userCertificate": [b"must never be retained"],
+            }),
+            FakeEntry(manager_dn, {
+                "sAMAccountName": ["directory.manager"],
+                "displayName": ["Directory Manager"], "userAccountControl": [512],
+            }),
+        ]
+        monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
+        result = sync_directory(1)
+        db.session.refresh(employee)
+        db.session.refresh(manager)
+        profile = DirectoryProfile.query.filter_by(user_id=employee.id).one()
+        assert profile.profile["user_principal_name"] == "directory.person@example.com"
+        assert profile.profile["account_enabled"] is True
+        assert profile.profile["unix_home_directory"] == "/home/directory.person"
+        assert "userCertificate" not in profile.profile_json
+        assert profile.group_names == ["gg_monitoring_users", "gg_unix_team"]
+        datacenter = SupportGroup.query.filter_by(name="Datacenter", tenant_id=1).one()
+        assert GroupMember.query.filter_by(user_id=employee.id, group_id=datacenter.id).one()
+        assert datacenter.manager_id == manager.id
+        assert employee.manager_id == manager.id
+        assert ManagedRoleGrant.query.filter_by(
+            user_id=manager.id, role="manager", source="team_responsibility"
+        ).one()
+        assert result["teams_created"] == 1
+        assert result["team_managers_inferred"] == 1
+        assert result["directory_profiles_updated"] == 2
         assert result["users_unmatched"] == 0
 
 

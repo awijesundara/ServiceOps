@@ -13,6 +13,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import DBAPIError
 
 from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, ApprovalChain,
+                 ApprovalDelegation,
                  ApprovalGate, ApprovalVote, Asset, Audit, AuditIntegrityKey, AuditRetentionPolicy,
                  BusinessSchedule, CatalogRequest, CatalogTask, ChangeGovernance, ChangeOwnership, ChangeRevision,
                  ClientContact, ClientOrganization, ClientOrganizationAccess, ClientCustomFieldDefinition,
@@ -20,14 +21,14 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  Comment,
                  ChecklistItem, CIRelationship, CiClassPermission, ConfigurationItem, DiscoveryCandidate, DiscoveryTarget,
                  EnterpriseRecord, CatalogItem,
-                 CatalogItemRouting, DirectoryGroupMapping,
+                 CatalogItemRouting, DirectoryGroupMapping, DirectoryProfile,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
                  GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
                  MonitoringEvent, MonitoringSource, Notification, MobilePushDevice, OperationalTask,
                  OutboxEvent, ProblemProfile, Rack, RecordLink, RolePolicyOverride, ScheduleHoliday, SLADefinition,
                  RequestedItem, PlatformSetting, ServiceOffering, ServiceOfferingCI, SupportGroup, SupportGroupAlias,
                  TaskCI, TaskHistory, TaskNote, TaskSLA,
-                 Tenant, Ticket, TicketAssignmentGroup, User, UserPreference, UserRoleGrant, ManagedRoleGrant,
+                 Tenant, Ticket, TicketAssignmentGroup, User, UserPreference, UserRoleGrant, ManagedRoleGrant, UserSession,
                  ApplicationLog,
                  PasskeyChallenge, PasskeyCredential,
                  create_ticket_with_unique_number, create_with_retry_on_number_collision, next_number,
@@ -1942,6 +1943,169 @@ def test_catalog_approval_fails_closed_before_creating_records_without_line_mana
         assert CatalogRequest.query.count() == 0
         assert RequestedItem.query.count() == 0
         assert ApprovalChain.query.count() == 0
+
+
+def test_absent_manager_can_delegate_existing_approval_upward_without_initial_notification(client, app):
+    """An absent manager's manager can cover a pending decision only inside
+    an explicit time window; the original identity remains on the vote and
+    the backup receives no noisy initial request notification."""
+    with app.app_context():
+        manager = User.query.filter_by(username="database.manager").one()
+        admin = User.query.filter_by(username="admin").one()
+        manager.manager_id = admin.id
+        db.session.commit()
+        admin_id = admin.id
+
+    login(client, "employee", "Employee123!")
+    client.post("/catalog/1/order", data={"details": "Covered approval"})
+    with app.app_context():
+        vote = ApprovalChain.query.filter_by(target_type="ritm").one().gates[0].votes[0]
+        vote_id = vote.id
+        manager_id = vote.approver_id
+        assert Notification.query.filter_by(
+            user_id=admin_id, target_type="approval_queue"
+        ).count() == 0
+
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+    start = (now() - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M")
+    end = (now() + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M")
+    delegated = client.post("/profile/approval-delegation", data={
+        "starts_at": start, "ends_at": end, "reason": "Annual leave",
+    })
+    assert delegated.status_code == 302
+
+    client.post("/logout")
+    login(client)
+    queue = client.get("/approval-chains")
+    assert b"Covering during an absence" in queue.data
+    assert b"Approve for Database Manager" in queue.data
+    decision = client.post(f"/approval-votes/{vote_id}/decide", data={
+        "decision": "Approved", "comments": "Covered during recorded leave",
+    })
+    assert decision.status_code == 302
+    with app.app_context():
+        vote = db.session.get(ApprovalVote, vote_id)
+        assert vote.state == "Approved"
+        assert vote.approver_id == admin_id
+        assert vote.delegated_from_id == manager_id
+        assert ApprovalDelegation.query.filter_by(
+            from_user_id=manager_id, to_user_id=admin_id, active=True
+        ).one()
+
+    # The same time-bounded authority and dual attribution apply to the native
+    # mobile channel; it is not a weaker alternate approval path.
+    client.post("/logout")
+    login(client, "employee", "Employee123!")
+    client.post("/catalog/1/order", data={"details": "Mobile-covered approval"})
+    with app.app_context():
+        mobile_vote = ApprovalChain.query.filter_by(target_type="ritm").order_by(
+            ApprovalChain.id.desc()
+        ).first().gates[0].votes[0]
+        mobile_vote_id = mobile_vote.id
+    mobile_headers = {
+        "X-ServiceOps-App-Version": "1.3.0", "X-ServiceOps-App-Build": "5",
+        "X-ServiceOps-Platform": "iOS", "X-ServiceOps-Device": "iPhone17,1",
+    }
+    signed_in = client.post("/api/v1/auth/mobile/login", headers=mobile_headers, json={
+        "username": "admin", "password": "Admin123!", "provider": "local",
+    })
+    bearer = {"Authorization": f"Bearer {signed_in.json['access_token']}"}
+    queue = client.get("/api/v1/mobile/approvals", headers=bearer)
+    delegated = next(row for row in queue.json["data"] if row["id"] == mobile_vote_id)
+    assert delegated["delegated_for"] == "Database Manager"
+    mobile_decision = client.post(
+        f"/api/v1/mobile/approvals/{mobile_vote_id}/decide", headers=bearer,
+        json={"decision": "Approved", "comments": "Covered from mobile"},
+    )
+    assert mobile_decision.status_code == 200
+    assert mobile_decision.json["data"]["delegated_for"] == "Database Manager"
+    with app.app_context():
+        mobile_vote = db.session.get(ApprovalVote, mobile_vote_id)
+        assert mobile_vote.approver_id == admin_id
+        assert mobile_vote.delegated_from_id == manager_id
+
+
+def test_non_manager_cannot_create_approval_absence_coverage(client):
+    login(client, "employee", "Employee123!")
+    response = client.post("/profile/approval-delegation", data={
+        "starts_at": (now() - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M"),
+        "ends_at": (now() + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M"),
+        "reason": "Not an accountable manager",
+    })
+    assert response.status_code == 403
+
+
+def test_team_admin_can_create_update_and_assign_a_new_team(client, app):
+    login(client)
+    created = client.post("/service-operations/settings", data={
+        "action": "create_support_group", "name": "Datacenter", "group_type": "IT Fulfillment",
+    })
+    assert created.status_code == 302
+    with app.app_context():
+        team = SupportGroup.query.filter_by(name="Datacenter").one()
+        team_id = team.id
+        manager_id = User.query.filter_by(username="database.manager").one().id
+    assigned = client.post("/service-operations/settings", data={
+        "action": "set_manager", "group_id": team_id, "manager_id": manager_id,
+    })
+    assert assigned.status_code == 302
+    updated = client.post("/service-operations/settings", data={
+        "action": "update_support_group", "group_id": team_id,
+        "name": "Datacenter Operations", "group_type": "IT Fulfillment", "active": "on",
+    })
+    assert updated.status_code == 302
+    with app.app_context():
+        team = db.session.get(SupportGroup, team_id)
+        assert team.name == "Datacenter Operations"
+        assert team.manager_id == manager_id
+        assert GroupMember.query.filter_by(
+            group_id=team_id, user_id=manager_id, role="manager"
+        ).one()
+
+
+def test_profile_shows_safe_directory_intelligence_and_manager_flag(client, app):
+    with app.app_context():
+        manager = User.query.filter_by(username="database.manager").one()
+        db.session.add(ExternalIdentity(
+            provider="ldap", subject="CN=Database Manager,DC=example,DC=com", user_id=manager.id,
+        ))
+        db.session.add(DirectoryProfile(
+            user_id=manager.id, tenant_id=manager.tenant_id,
+            profile_json=json.dumps({
+                "user_principal_name": "database.manager@example.com",
+                "team_name": "Database", "account_enabled": True,
+                "unix_home_directory": "/home/database.manager",
+            }),
+            groups_json=json.dumps(["gg_database_users", "gg_monitoring_users"]),
+        ))
+        db.session.commit()
+    login(client, "database.manager", "Manager123!")
+    page = client.get("/profile")
+    assert page.status_code == 200
+    assert b"People manager" in page.data
+    assert b"LDAP profile details" in page.data
+    assert b"database.manager@example.com" in page.data
+    assert b"gg_database_users" in page.data
+    assert b"Authentication secrets, certificates, SIDs" in page.data
+
+
+def test_login_session_records_compact_device_and_language_details(client, app):
+    response = client.post("/login", data={
+        "username": "admin", "password": "Admin123!",
+    }, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/140.0 Safari/537.36",
+        "Accept-Language": "en-GB,en;q=0.9",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    with app.app_context():
+        row = UserSession.query.one()
+        assert row.device_label == "Chrome on Windows"
+        assert row.client_language == "en-GB,en;q=0.9"
+        assert row.ip_address == "127.0.0.1"
+    sessions = client.get("/profile/sessions")
+    assert b"Chrome on Windows" in sessions.data
+    assert b"Hostname unavailable or not verified" in sessions.data
 
 
 def test_item_added_to_existing_request_uses_requested_for_line_manager(client, app):

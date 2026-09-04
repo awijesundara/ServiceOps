@@ -118,9 +118,15 @@
 
 {% if section == 'team-managers' %}
 <section class="panel admin-section">
-  <p class="muted">The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.</p>
+  <p class="muted">Create and maintain operational teams here. The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.</p>
+  <form method="post" action="{{ post_url }}" class="form-grid">
+    <input type="hidden" name="action" value="create_support_group">
+    <label class="required-field"><span>New team name</span><input name="name" required maxlength="120" placeholder="e.g. Datacenter"></label>
+    <label><span>Team type</span><select name="group_type"><option>IT Fulfillment</option><option>Fulfillment</option><option>Executive</option></select></label>
+    <div class="wide actions"><button class="primary">Create team</button></div>
+  </form>
   <table>
-    <thead><tr><th>Team</th><th>Current manager</th><th>Manager assignment</th><th>Members</th></tr></thead>
+    <thead><tr><th>Team</th><th>Current manager</th><th>Manager assignment</th><th>Members</th><th>Team settings</th></tr></thead>
     <tbody>
       {% for team in teams %}
       <tr>
@@ -130,7 +136,7 @@
           <form method="post" action="{{ post_url }}" class="inline-form">
             <input type="hidden" name="action" value="set_manager">
             <input type="hidden" name="group_id" value="{{ team.id }}">
-            <select name="manager_id">
+            <select name="manager_id" aria-label="Manager for {{ team.name }}">
               <option value="">Unassigned</option>
               {% for user in manager_candidates %}
               <option value="{{ user.id }}" {% if team.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
@@ -140,6 +146,18 @@
           </form>
         </td>
         <td>{{ team.members|length }}</td>
+        <td>
+          <details><summary>Edit</summary>
+            <form method="post" action="{{ post_url }}" class="stack compact-form">
+              <input type="hidden" name="action" value="update_support_group">
+              <input type="hidden" name="group_id" value="{{ team.id }}">
+              <label><span>Name</span><input name="name" value="{{ team.name }}" required maxlength="120"></label>
+              <label><span>Type</span><select name="group_type">{% for kind in ['IT Fulfillment','Fulfillment','Executive'] %}<option {% if team.group_type == kind %}selected{% endif %}>{{ kind }}</option>{% endfor %}</select></label>
+              <label class="check"><input type="checkbox" name="active" {% if team.active %}checked{% endif %}> Active</label>
+              <button class="button">Update</button>
+            </form>
+          </details>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -159,7 +177,7 @@
           <form method="post" action="{{ post_url }}" class="inline-form">
             <input type="hidden" name="action" value="set_manager">
             <input type="hidden" name="group_id" value="{{ executive_office.id }}">
-            <select name="manager_id">
+            <select name="manager_id" aria-label="Executive approver">
               <option value="">Unassigned</option>
               {% for user in manager_candidates %}
               <option value="{{ user.id }}" {% if executive_office.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
