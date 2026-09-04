@@ -395,6 +395,11 @@ def test_custom_status_preserves_existing_controlled_status(app, monkeypatch):
 def test_rack_resync_updates_existing_rack_by_external_id(app, monkeypatch):
     with app.app_context():
         rack = make_rack(5, "9D05", site="CC1", u_height=42)
+        rack.update({
+            "location": {"name": "Floor 9"}, "group": {"name": "Production"},
+            "status": {"label": "Active"}, "facility_id": "CC1-9D05",
+            "role": {"name": "Compute"}, "max_weight": 1200,
+        })
         factory = enable_netbox(racks=[rack], monkeypatch=monkeypatch)
         sync_from_netbox(1, session_factory=factory)
         assert Rack.query.count() == 1
@@ -406,6 +411,10 @@ def test_rack_resync_updates_existing_rack_by_external_id(app, monkeypatch):
         assert result["racks_updated"] == 1
         assert Rack.query.count() == 1
         assert Rack.query.filter_by(external_id="dcim.rack:5").one().u_height == 47
+        synced = Rack.query.filter_by(external_id="dcim.rack:5").one()
+        assert synced.attributes["NetBox: Location"] == "Floor 9"
+        assert synced.attributes["NetBox: Facility ID"] == "CC1-9D05"
+        assert synced.attributes["NetBox: Maximum Weight"] == 1200
 
 
 def test_device_components_are_captured_as_attribute_summaries(app, monkeypatch):
@@ -432,6 +441,36 @@ def test_device_components_are_captured_as_attribute_summaries(app, monkeypatch)
         assert ci.attributes["NetBox: Console Ports"] == "Serial (DE-9)"
         assert ci.attributes["NetBox: Power Ports"] == "Power 1 (C14, 750W)"
         assert ci.attributes["NetBox: Inventory Items"] == "onload-dkms (pkg:rpm)"
+
+
+def test_assigned_ipam_and_virtualization_details_are_retained(app, monkeypatch):
+    with app.app_context():
+        enable_netbox(monkeypatch=monkeypatch)
+        fake = FakeSession(devices=[make_device(101, "srv-01")], vms=[make_vm(22, "app-vm")])
+        fake._pages.update({
+            "/api/ipam/ip-addresses/": {"results": [
+                {"address": "10.0.0.10/24", "dns_name": "srv-01.example.com",
+                 "status": {"label": "Active"}, "vrf": {"display": "Production"},
+                 "assigned_object": {"device": {"id": 101}}},
+                {"address": "2001:db8::22/64", "dns_name": "app-vm.example.com",
+                 "status": {"label": "Active"},
+                 "assigned_object": {"virtual_machine": {"id": 22}}},
+            ], "next": None},
+            "/api/virtualization/interfaces/": {"results": [
+                {"virtual_machine": {"id": 22}, "name": "eth0", "mtu": 9000,
+                 "primary_mac_address": {"mac_address": "AA:BB:CC:DD:EE:01"}},
+            ], "next": None},
+            "/api/virtualization/virtual-disks/": {"results": [
+                {"virtual_machine": {"id": 22}, "name": "root", "size": 40960},
+            ], "next": None},
+        })
+        sync_from_netbox(1, session_factory=lambda _url, _token: fake)
+        device = ConfigurationItem.query.filter_by(external_id="dcim.device:101").one()
+        vm = ConfigurationItem.query.filter_by(external_id="virtualization.virtualmachine:22").one()
+        assert "srv-01.example.com" in device.attributes["NetBox: Assigned IP Addresses"]
+        assert "2001:db8::22/64" in vm.attributes["NetBox: Assigned IP Addresses"]
+        assert vm.attributes["NetBox: Interfaces"] == "eth0 (AA:BB:CC:DD:EE:01, MTU 9000)"
+        assert vm.attributes["NetBox: Virtual Disks"] == "root (40960 MB)"
 
 
 def test_device_without_serial_adopts_existing_ci_by_name(app, monkeypatch):

@@ -135,6 +135,12 @@ MSG
 * Fri Sep 04 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.78.9-1
 - Publish governed release artifacts with synchronized installation documentation.
 
+* Fri Sep 04 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.79.0-1
+- Publish governed release artifacts with synchronized installation documentation.
+
+* Fri Sep 04 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.78.9-1
+- Publish governed release artifacts with synchronized installation documentation.
+
 * Thu Sep 03 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.78.8-1
 - Publish governed release artifacts with synchronized installation documentation.
 
