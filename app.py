@@ -5404,7 +5404,7 @@ def sync_ldap_manager_on_login(user, entry_dn, manager_dn, merged_attr_map):
                 if val:
                     manager_profile_attrs[field] = val
             manager_directory_profile, manager_group_names = directory_profile_payload(
-                values, manager_groups, merged_attr_map
+                values, manager_groups, merged_attr_map, manager_dn
             )
             manager_profile_attrs["team_name"] = manager_directory_profile.get("team_name")
             manager_user = provision_external_user(
@@ -5524,7 +5524,7 @@ def ldap_authenticate(username, password):
         if val:
             profile_attrs[field] = val
     directory_profile, directory_group_names = directory_profile_payload(
-        values, groups, merged_attr_map
+        values, groups, merged_attr_map, entry.entry_dn
     )
     profile_attrs["team_name"] = directory_profile.get("team_name")
     # Use the bare local part, not whatever form the user happened to type
@@ -10431,9 +10431,36 @@ def create_app(test_config=None):
         manager_choices = tenant_query(User).filter(
             User.active.is_(True), User.id != user.id,
         ).order_by(User.name).all()
+        teams = [membership.group.name for membership in GroupMember.query.filter_by(
+            user_id=user.id
+        ).join(SupportGroup).filter(SupportGroup.active.is_(True)).all()]
+        direct_reports = tenant_query(User).filter_by(
+            manager_id=user.id, active=True,
+        ).order_by(User.name).all()
+        managed_teams = tenant_query(SupportGroup).filter_by(
+            manager_id=user.id, active=True,
+        ).order_by(SupportGroup.name).all()
+        manager_chain = []
+        manager = user.manager
+        seen = {user.id}
+        while manager and manager.id not in seen and len(manager_chain) < 6:
+            seen.add(manager.id)
+            manager_chain.append(manager)
+            manager = manager.manager
+        directory_profile = DirectoryProfile.query.filter_by(user_id=user.id).first()
+        assigned_assets = tenant_query(Asset).filter_by(
+            owner_id=user.id
+        ).order_by(Asset.name).all()
+        owned_cis = tenant_query(ConfigurationItem).filter_by(
+            owner_id=user.id
+        ).order_by(ConfigurationItem.name).limit(50).all()
         return render_template(
             "user_form.html", user=user, self_service=False,
             manager_choices=manager_choices,
+            teams=teams, direct_reports=direct_reports, managed_teams=managed_teams,
+            manager_chain=manager_chain, directory_profile=directory_profile,
+            assigned_assets=assigned_assets, owned_cis=owned_cis,
+            is_people_manager=bool(direct_reports or managed_teams),
         )
 
     @app.post("/admin/users/<int:user_id>/erase")
@@ -10499,6 +10526,20 @@ def create_app(test_config=None):
             ],
         }
         directory_profile = DirectoryProfile.query.filter_by(user_id=user.id).first()
+        assigned_assets = tenant_query(Asset).filter_by(owner_id=user.id).order_by(Asset.name).all()
+        owned_cis = tenant_query(ConfigurationItem).filter_by(
+            owner_id=user.id
+        ).order_by(ConfigurationItem.name).limit(50).all()
+        payload["assigned_assets"] = [
+            {"asset_tag": row.asset_tag, "name": row.name, "type": row.asset_type,
+             "status": row.status, "serial_number": row.serial_number}
+            for row in assigned_assets
+        ]
+        payload["owned_configuration_items"] = [
+            {"name": row.name, "class": row.ci_class,
+             "operational_status": row.operational_status}
+            for row in owned_cis
+        ]
         if directory_profile:
             payload["directory_profile"] = directory_profile.profile
             payload["directory_groups"] = directory_profile.group_names
@@ -10569,6 +10610,12 @@ def create_app(test_config=None):
             manager_chain.append(manager)
             manager = manager.manager
         directory_profile = DirectoryProfile.query.filter_by(user_id=user.id).first()
+        assigned_assets = tenant_query(Asset).filter_by(
+            owner_id=user.id
+        ).order_by(Asset.name).all()
+        owned_cis = tenant_query(ConfigurationItem).filter_by(
+            owner_id=user.id
+        ).order_by(ConfigurationItem.name).limit(50).all()
         delegation_history = ApprovalDelegation.query.filter_by(
             from_user_id=user.id, tenant_id=user.tenant_id,
         ).order_by(ApprovalDelegation.created_at.desc()).limit(20).all()
@@ -10579,6 +10626,7 @@ def create_app(test_config=None):
             directory_profile=directory_profile,
             direct_reports=direct_reports, managed_teams=managed_teams,
             manager_chain=manager_chain,
+            assigned_assets=assigned_assets, owned_cis=owned_cis,
             is_people_manager=bool(direct_reports or managed_teams),
             active_delegation=active_approval_delegation(user.id),
             delegation_history=delegation_history,

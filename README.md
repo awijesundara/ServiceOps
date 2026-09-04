@@ -39,8 +39,11 @@ valid directory user before their first login; scheduled synchronization only
 refreshes already known users and cannot bulk-create the directory.
 ServiceOps can display names, title, department/division, employee identifiers
 and type, office, business/mobile phone, UPN, account state and expiry, selected
-directory timestamps, Unix identity fields, reporting chain, friendly group
-names, and the last synchronization time. Certificate blobs, password material,
+directory timestamps, directory OU/domain and website, Unix/NIS identity,
+reporting chain, friendly group names grouped by directory purpose, conservative
+team-mapping suggestions, and the last synchronization time. Profile and admin
+views also connect the identity to assigned assets and owned configuration items.
+Certificate blobs, password material,
 SIDs, security descriptors, and raw authentication data are deliberately not
 copied from the directory.
 

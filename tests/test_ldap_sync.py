@@ -15,7 +15,9 @@ from werkzeug.security import generate_password_hash
 from app import (DirectoryGroupMapping, DirectoryManagedMembership, DirectoryProfile,
                   ExternalIdentity, GroupMember, ManagedRoleGrant, PlatformSetting,
                   SupportGroup, Tenant, User, create_app, db)
-from serviceops_core.ldap_sync import DirectorySyncError, sync_directory
+from serviceops_core.ldap_sync import (
+    DirectorySyncError, directory_profile_payload, sync_directory,
+)
 
 
 @pytest.fixture()
@@ -102,6 +104,33 @@ def provision_ldap_user(username, dn, tenant_id=1, **extra):
     db.session.add(ExternalIdentity(provider="ldap", subject=dn, user_id=user.id))
     db.session.commit()
     return user
+
+
+def test_screenshot_directory_context_is_normalized_without_security_blobs():
+    dn = "CN=Dikshie Fauzie,OU=GSuiteUsers,OU=DocumentsRedirection,OU=Users,OU=Example,DC=corp,DC=example,DC=com"
+    groups = [
+        "CN=gg_dcm_team,OU=UsersGroups,OU=Groups,OU=Example,DC=corp,DC=example,DC=com",
+        "CN=gg_vault_dcm_users,OU=ApplicationAccess,OU=Groups,OU=Example,DC=corp,DC=example,DC=com",
+        "CN=ipa_dcm_admins,OU=IPA,OU=Groups,OU=Example,DC=corp,DC=example,DC=com",
+    ]
+    profile, names = directory_profile_payload({
+        "wWWHomePage": ["www.example.com"], "uid": ["dikshie"],
+        "uidNumber": ["10293"], "gidNumber": ["10005"],
+        "unixHomeDirectory": ["/home/dikshie.fauzie"], "loginShell": ["/bin/bash"],
+        "msSFU30NisDomain": ["corp"], "badPasswordTime": ["134329000000000000"],
+        "lockoutTime": ["0"], "sAMAccountType": ["805306368"],
+        "objectSid": ["must-not-be-stored"], "userCertificate": ["must-not-be-stored"],
+    }, groups, entry_dn=dn)
+    assert profile["organizational_unit"] == "GSuiteUsers / DocumentsRedirection / Users / Example"
+    assert profile["directory_domain"] == "corp.example.com"
+    assert profile["unix_username"] == "dikshie"
+    assert profile["nis_domain"] == "corp"
+    assert profile["last_bad_password_at"].startswith("2026-")
+    assert "lockout_at" not in profile
+    assert profile["group_categories"] == {"ApplicationAccess": 1, "IPA": 1, "UsersGroups": 1}
+    assert profile["team_candidates"] == ["gg_dcm_team"]
+    assert names == ["gg_dcm_team", "gg_vault_dcm_users", "ipa_dcm_admins"]
+    assert "objectSid" not in profile and "userCertificate" not in profile
 
 
 def test_manager_dn_resolves_to_manager_id(app, monkeypatch):
