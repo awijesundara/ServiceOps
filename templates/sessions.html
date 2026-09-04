@@ -3,12 +3,12 @@
 {% if admin_view %}{% set admin_page_title = 'Active sessions' %}{% include '_admin_context.html' %}{% endif %}
 <header class="page-head"><div><p class="eyebrow">SECURITY</p><h1>{{ 'Organization sessions' if admin_view else 'Your sessions' }}</h1><p>Review browser sessions and immediately revoke access that is no longer trusted.</p></div>{% if not admin_view %}<a class="button" href="{{ url_for('preferences') }}">‹ Back to preferences</a>{% endif %}</header>
 <section class="list-workspace">
-  <table class="record-list"><thead><tr>{% if admin_view %}<th>User</th>{% endif %}<th>Device</th><th>Address</th><th>Provider</th><th>Last seen</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody>
+  <table class="record-list"><thead><tr>{% if admin_view %}<th>User</th>{% endif %}<th>Device</th><th>Network</th><th>Provider</th><th>Last seen</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody>
   {% for row in sessions %}
     <tr>
       {% if admin_view %}<td><strong>{{ row.user.name }}</strong><br><small>{{ row.user.username }}</small></td>{% endif %}
-      <td>{{ row.user_agent or 'Unknown device' }}{% if row.session_id == session.get('_session_id') %} <span class="badge">This session</span>{% endif %}</td>
-      <td>{{ row.ip_address or '—' }}</td><td>{{ row.provider }}</td>
+      <td><strong>{{ row.device_label or 'Unknown device' }}</strong>{% if row.session_id == session.get('_session_id') %} <span class="badge">This session</span>{% endif %}<br><small title="{{ row.user_agent or '' }}">{{ row.client_language or 'Language not reported' }}</small></td>
+      <td>{{ row.ip_address or '—' }}{% if row.client_hostname %}<br><small>{{ row.client_hostname }}</small>{% else %}<br><small>Hostname unavailable or not verified</small>{% endif %}</td><td>{{ row.provider }}</td>
       <td>{{ row.last_seen_at|usertime('%Y-%m-%d %H:%M:%S') }}</td><td>{{ row.expires_at|usertime('%Y-%m-%d %H:%M:%S') }}</td>
       <td>{{ 'Revoked' if row.revoked_at else 'Active' }}</td>
       <td>{% if not row.revoked_at %}<form method="post" action="{{ url_for('revoke_session', session_record_id=row.id) }}" data-confirm="Revoke this session now?"><input type="hidden" name="admin_view" value="{{ '1' if admin_view else '' }}"><button class="button">Revoke</button></form>{% endif %}</td>

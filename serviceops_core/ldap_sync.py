@@ -31,7 +31,12 @@ setting so this works against AD or OpenLDAP schemas without any
 hard-coded company-specific attribute, OU, or domain assumptions.
 """
 import json
+import re
+import uuid
+from contextlib import nullcontext
+from datetime import datetime, timedelta, timezone
 from ldap3 import SUBTREE
+from ldap3.utils.dn import parse_dn
 
 DEFAULT_ATTR_MAP = {
     "title": "title",
@@ -46,6 +51,26 @@ DEFAULT_ATTR_MAP = {
     "email": "mail",
     "display_name": "displayName",
     "username": "sAMAccountName",
+    "team_name": "teamName",
+    "user_principal_name": "userPrincipalName",
+    "given_name": "givenName",
+    "surname": "sn",
+    "common_name": "cn",
+    "directory_created_at": "whenCreated",
+    "directory_changed_at": "whenChanged",
+    "last_logon_at": "lastLogonTimestamp",
+    "password_last_set_at": "pwdLastSet",
+    "account_expires_at": "accountExpires",
+    "account_control": "userAccountControl",
+    "bad_password_count": "badPwdCount",
+    "logon_count": "logonCount",
+    "primary_group_id": "primaryGroupID",
+    "object_guid": "objectGUID",
+    "uid_number": "uidNumber",
+    "gid_number": "gidNumber",
+    "unix_home_directory": "unixHomeDirectory",
+    "login_shell": "loginShell",
+    "country_code": "countryCode",
 }
 
 # ServiceOps User columns populated from directory attributes (excludes
@@ -54,6 +79,112 @@ PROFILE_FIELDS = (
     "title", "department", "division", "employee_id", "employee_type",
     "business_phone", "mobile_phone", "location",
 )
+
+DIRECTORY_DETAIL_FIELDS = (
+    "user_principal_name", "given_name", "surname", "common_name",
+    "team_name", "directory_created_at", "directory_changed_at",
+    "last_logon_at", "password_last_set_at", "account_expires_at",
+    "bad_password_count", "logon_count", "primary_group_id", "object_guid",
+    "uid_number", "gid_number", "unix_home_directory", "login_shell",
+    "country_code",
+)
+
+
+def _as_scalar(value):
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else None
+    return value
+
+
+def _safe_text(value, limit=500):
+    value = _as_scalar(value)
+    if value is None or isinstance(value, (bytes, bytearray)):
+        return None
+    text = str(value).strip()
+    return text[:limit] if text else None
+
+
+def _directory_time(value):
+    """Normalize AD FILETIME/generalized-time values without exposing raw counters."""
+    value = _as_scalar(value)
+    if value in (None, "", 0, "0", 9223372036854775807, "9223372036854775807"):
+        return None
+    if isinstance(value, datetime):
+        timestamp = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return timestamp.astimezone(timezone.utc).isoformat()
+    text = str(value).strip()
+    if re.fullmatch(r"\d{14}(?:\.\d+)?Z", text):
+        try:
+            return datetime.strptime(text.split(".")[0], "%Y%m%d%H%M%S").replace(
+                tzinfo=timezone.utc
+            ).isoformat()
+        except ValueError:
+            return None
+    try:
+        ticks = int(text)
+        if ticks <= 0:
+            return None
+        return (datetime(1601, 1, 1, tzinfo=timezone.utc) + timedelta(
+            microseconds=ticks // 10
+        )).isoformat()
+    except (ValueError, OverflowError):
+        return None
+
+
+def _friendly_group_name(value):
+    text = _safe_text(value, 500)
+    if not text:
+        return None
+    try:
+        parts = parse_dn(text, escape=True)
+        for attribute, name, _separator in parts:
+            if attribute.casefold() == "cn":
+                return str(name).strip()[:160]
+    except (ValueError, TypeError):
+        pass
+    return text[:160] if "," not in text else None
+
+
+def directory_profile_payload(values, groups, attr_map=None):
+    """Build the allow-listed, display-safe profile snapshot stored by ServiceOps."""
+    attr_map = attr_map or _attr_map()
+    payload = {}
+    time_fields = {
+        "directory_created_at", "directory_changed_at", "last_logon_at",
+        "password_last_set_at", "account_expires_at",
+    }
+    for field in DIRECTORY_DETAIL_FIELDS:
+        raw = values.get(attr_map.get(field, ""))
+        if field in time_fields:
+            value = _directory_time(raw)
+        elif field == "object_guid":
+            scalar = _as_scalar(raw)
+            if isinstance(scalar, (bytes, bytearray)) and len(scalar) == 16:
+                value = str(uuid.UUID(bytes_le=bytes(scalar)))
+            else:
+                value = _safe_text(scalar, 80)
+        else:
+            value = _safe_text(raw)
+        if value is not None:
+            payload[field] = value
+    control_raw = _safe_text(values.get(attr_map.get("account_control", "userAccountControl")), 20)
+    if control_raw:
+        try:
+            control = int(control_raw)
+        except ValueError:
+            control = None
+        if control is not None:
+            payload.update({
+                "account_enabled": not bool(control & 0x0002),
+                "account_locked": bool(control & 0x0010),
+                "password_not_required": bool(control & 0x0020),
+                "password_never_expires": bool(control & 0x10000),
+                "smartcard_required": bool(control & 0x40000),
+            })
+    friendly_groups = sorted({
+        name for name in (_friendly_group_name(group) for group in (groups or [])) if name
+    }, key=str.casefold)
+    return payload, friendly_groups
 
 
 class DirectorySyncError(RuntimeError):
@@ -112,6 +243,10 @@ def sync_directory(tenant_id, dry_run=False):
         "self_manager_users": [],
         "memberships_added": 0,
         "memberships_removed": 0,
+        "teams_created": 0,
+        "team_managers_inferred": 0,
+        "directory_profiles_updated": 0,
+        "accounts_deactivated": 0,
         "users_unmatched": 0,
         "errors": [],
     }
@@ -194,9 +329,20 @@ def sync_directory(tenant_id, dry_run=False):
         manager_name = _first(entry_values, attr_map.get("display_name", "displayName")) or manager_username
         manager_groups = entry_values.get("memberOf") or []
         manager_roles = core_app.mapped_roles(manager_groups, "LDAP_ROLE_MAPPINGS")
+        manager_directory_profile, manager_group_names = directory_profile_payload(
+            entry_values, manager_groups, attr_map
+        )
+        manager_profile_attrs = {
+            field: _first(entry_values, attr_map.get(field, field))
+            for field in PROFILE_FIELDS
+            if _first(entry_values, attr_map.get(field, field))
+        }
+        manager_profile_attrs["team_name"] = manager_directory_profile.get("team_name")
         provisioned = core_app.provision_external_user(
             "ldap", manager_dn, manager_username, manager_name, manager_email,
-            manager_roles, groups=manager_groups,
+            manager_roles, groups=manager_groups, profile_attrs=manager_profile_attrs,
+            directory_profile=manager_directory_profile,
+            directory_group_names=manager_group_names,
         )
         if provisioned.tenant_id != tenant_id:
             # provision_external_user() can adopt an existing local/other-tenant
@@ -223,56 +369,91 @@ def sync_directory(tenant_id, dry_run=False):
             summary["errors"].append(f"Skipped user outside tenant scope: {entry_dn}")
             continue
 
+        counters_before = {
+            key: summary[key] for key in (
+                "users_updated", "managers_resolved", "managers_provisioned",
+                "self_manager_skipped", "memberships_added", "memberships_removed",
+                "teams_created", "directory_profiles_updated", "accounts_deactivated",
+            )
+        }
         try:
-            changed = False
-            for field in PROFILE_FIELDS:
-                ldap_attr = attr_map.get(field)
-                if not ldap_attr:
-                    continue
-                value = _first(values, ldap_attr)
-                if value is None:
-                    # Sparse directory entry: never null out existing data.
-                    continue
-                if getattr(user, field, None) != value:
-                    setattr(user, field, value)
-                    changed = True
-
-            manager_dn = _first(values, attr_map.get("manager", "manager"))
-            if manager_dn:
-                manager_user = _resolve_or_provision_manager(manager_dn)
-                if manager_user and manager_user.id == user.id:
-                    summary["self_manager_skipped"] += 1
-                    summary["self_manager_users"].append(user.username)
-                    summary["errors"].append(
-                        f"Self-manager record skipped for {user.username}: directory manager points to own DN."
-                    )
-                elif manager_user:
-                    if user.manager_id != manager_user.id:
-                        user.manager_id = manager_user.id
+            transaction = nullcontext() if dry_run else db.session.begin_nested()
+            with transaction:
+                changed = False
+                groups = values.get("memberOf") or []
+                for field in PROFILE_FIELDS:
+                    ldap_attr = attr_map.get(field)
+                    if not ldap_attr:
+                        continue
+                    value = _first(values, ldap_attr)
+                    if value is None:
+                        # Sparse directory entry: never null out existing data.
+                        continue
+                    if getattr(user, field, None) != value:
+                        setattr(user, field, value)
                         changed = True
-                    summary["managers_resolved"] += 1
-                # Manager DN outside this directory search entirely (e.g. a
-                # different base DN/filter): leave manager_id unchanged, do
-                # not error the whole sync.
 
-            if changed:
-                summary["users_updated"] += 1
+                manager_dn = _first(values, attr_map.get("manager", "manager"))
+                if manager_dn:
+                    manager_user = _resolve_or_provision_manager(manager_dn)
+                    if manager_user and manager_user.id == user.id:
+                        summary["self_manager_skipped"] += 1
+                        summary["self_manager_users"].append(user.username)
+                        summary["errors"].append(
+                            f"Self-manager record skipped for {user.username}: directory manager points to own DN."
+                        )
+                    elif manager_user:
+                        if user.manager_id != manager_user.id:
+                            user.manager_id = manager_user.id
+                            changed = True
+                        summary["managers_resolved"] += 1
 
-            groups = values.get("memberOf") or []
-            before_ids = {
-                m.group_id for m in core_app.DirectoryManagedMembership.query
-                .filter_by(user_id=user.id).all()
-            }
-            core_app.sync_directory_team_memberships(user, groups)
-            db.session.flush()
-            after_ids = {
-                m.group_id for m in core_app.DirectoryManagedMembership.query
-                .filter_by(user_id=user.id).all()
-            }
-            summary["memberships_added"] += len(after_ids - before_ids)
-            summary["memberships_removed"] += len(before_ids - after_ids)
+                if changed:
+                    summary["users_updated"] += 1
+
+                directory_profile, friendly_groups = directory_profile_payload(values, groups, attr_map)
+                core_app.apply_directory_profile(user, directory_profile, friendly_groups)
+                summary["directory_profiles_updated"] += 1
+                if (
+                    core_app.setting_bool("LDAP_SYNC_ACCOUNT_STATUS", True)
+                    and directory_profile.get("account_enabled") is False
+                    and user.active
+                ):
+                    user.active = False
+                    user.auth_version += 1
+                    core_app.UserSession.query.filter_by(
+                        user_id=user.id, revoked_at=None
+                    ).update({"revoked_at": core_app.now()})
+                    summary["accounts_deactivated"] += 1
+
+                before_ids = {
+                    m.group_id for m in core_app.DirectoryManagedMembership.query
+                    .filter_by(user_id=user.id, tenant_id=user.tenant_id).all()
+                }
+                created_team = core_app.sync_directory_team_memberships(
+                    user, groups, declared_team=directory_profile.get("team_name")
+                )
+                if created_team:
+                    summary["teams_created"] += 1
+                db.session.flush()
+                after_ids = {
+                    m.group_id for m in core_app.DirectoryManagedMembership.query
+                    .filter_by(user_id=user.id, tenant_id=user.tenant_id).all()
+                }
+                summary["memberships_added"] += len(after_ids - before_ids)
+                summary["memberships_removed"] += len(before_ids - after_ids)
         except Exception as error:  # noqa: BLE001 - isolate one bad entry from the whole sync
+            for key, value in counters_before.items():
+                summary[key] = value
             summary["errors"].append(f"{entry_dn or '(unknown dn)'}: {type(error).__name__}")
+
+    # Direct-report relationships are also an auditable source of manager
+    # authority. Reconcile after every manager link is known so processing
+    # order cannot cause the grant to flap.
+    affected_users = {user.id: user for user in dn_to_user.values()}
+    for user in affected_users.values():
+        core_app.sync_implied_role_grants(user)
+        summary["team_managers_inferred"] += core_app.reconcile_directory_team_managers(user)
 
     if dry_run:
         db.session.rollback()

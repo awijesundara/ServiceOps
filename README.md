@@ -30,6 +30,32 @@ verified backups.
 - Tamper-evident audit history, signed exports, analytics, and a versioned REST API
 - AD/LDAP and Keycloak integration, MFA, passkeys, and scoped authorization
 
+### Directory intelligence and approval continuity
+
+When AD/LDAP is enabled, interactive login and scheduled synchronization build
+a bounded, tenant-scoped user profile from administrator-mapped attributes.
+ServiceOps can display names, title, department/division, employee identifiers
+and type, office, business/mobile phone, UPN, account state and expiry, selected
+directory timestamps, Unix identity fields, reporting chain, friendly group
+names, and the last synchronization time. Certificate blobs, password material,
+SIDs, security descriptors, and raw authentication data are deliberately not
+copied from the directory.
+
+Reporting lines automatically grant the manager capability to users with active
+direct reports. Directory team names can optionally create tenant-scoped teams;
+group mappings remain explicit, and a newly created team's manager is inferred
+only when every active member resolves to the same active line manager. Teams,
+members, managers, aliases, and mappings can also be administered manually.
+
+For a recorded absence, a manager can delegate their existing approval queue
+upward to their own active line manager for a bounded period. The backup is not
+sent the initial notification, cannot bypass change-freeze policy, and every
+decision records both the acting approver and original accountable manager.
+The profile and session inventory also show server-observed IP, parsed device,
+browser language, and an optional forward-confirmed reverse-DNS hostname. A web
+browser cannot safely disclose the workstation hostname, so no client-supplied
+hostname is trusted for authorization or audit identity.
+
 ## Screenshots
 
 <table>

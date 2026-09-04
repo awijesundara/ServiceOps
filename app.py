@@ -2023,6 +2023,56 @@ def approval_chain_for(target_type, target_id):
     ).order_by(ApprovalChain.id.desc()).first()
 
 
+def active_approval_delegation(from_user_id, to_user_id=None, at=None):
+    """Return a current, tenant-safe absence delegation, if one exists."""
+    at = at or now()
+    query = ApprovalDelegation.query.filter(
+        ApprovalDelegation.from_user_id == from_user_id,
+        ApprovalDelegation.active.is_(True),
+        ApprovalDelegation.starts_at <= at,
+        ApprovalDelegation.ends_at >= at,
+    )
+    if to_user_id is not None:
+        query = query.filter(ApprovalDelegation.to_user_id == to_user_id)
+    return query.order_by(ApprovalDelegation.created_at.desc()).first()
+
+
+def delegated_pending_votes(user):
+    delegations = ApprovalDelegation.query.filter(
+        ApprovalDelegation.to_user_id == user.id,
+        ApprovalDelegation.tenant_id == user.tenant_id,
+        ApprovalDelegation.active.is_(True),
+        ApprovalDelegation.starts_at <= now(),
+        ApprovalDelegation.ends_at >= now(),
+    ).all()
+    source_ids = {row.from_user_id for row in delegations}
+    if not source_ids:
+        return []
+    return ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
+        ApprovalVote.approver_id.in_(source_ids),
+        ApprovalVote.state == "Requested",
+        ApprovalChain.tenant_id == user.tenant_id,
+    ).all()
+
+
+def enforce_approval_change_freeze(vote, decision, tenant_id):
+    """Apply the same change-freeze policy to every approval channel."""
+    if decision != "Approved" or vote.gate.chain.target_type != "ticket":
+        return
+    target = db.session.get(Ticket, vote.gate.chain.target_id)
+    governance = target.change_governance if target else None
+    if not governance or governance.change_type == "Emergency":
+        return
+    freeze = active_change_freeze(
+        tenant_id, governance.planned_start, governance.planned_end,
+    )
+    if freeze:
+        abort(409, description=(
+            f"Cannot approve: this change's planned window falls inside the "
+            f'change freeze "{freeze.title}". Only Emergency changes can be approved during a freeze.'
+        ))
+
+
 def cancel_approval_chain(chain):
     if not chain or chain.state != "Running":
         return
@@ -4775,22 +4825,56 @@ def mapped_roles(groups, mapping_name, default="requester"):
     return match_directory_role_mappings(groups, mappings, configured_default, default)
 
 
-def sync_directory_team_memberships(user, groups):
-    """Synchronize only memberships owned by AD mapping automation."""
+def sync_directory_team_memberships(user, groups, declared_team=None):
+    """Synchronize only memberships owned by directory automation.
+
+    Explicit AD-group mappings remain authoritative.  When the separately
+    controlled LDAP_AUTO_CREATE_TEAMS setting is enabled, a bounded
+    teamName-style profile attribute may also create/reuse one canonical IT
+    Fulfillment team.  We never turn every memberOf value into a ServiceOps
+    team: application/security groups are not operational support teams.
+    """
     aliases = normalized_directory_groups(groups)
-    mappings = DirectoryGroupMapping.query.filter_by(active=True).all()
+    mappings = DirectoryGroupMapping.query.join(SupportGroup).filter(
+        DirectoryGroupMapping.active.is_(True),
+        SupportGroup.tenant_id == user.tenant_id,
+    ).all()
     desired = {
-        mapping.support_group_id: mapping
+        mapping.support_group_id: mapping.directory_group
         for mapping in mappings
         if mapping.directory_group.strip().casefold() in aliases
     }
+    created_team = None
+    team_name = str(declared_team or "").strip()[:120]
+    if team_name and setting_bool("LDAP_AUTO_CREATE_TEAMS", False):
+        group = SupportGroup.query.filter(
+            SupportGroup.tenant_id == user.tenant_id,
+            func.lower(SupportGroup.name) == team_name.casefold(),
+        ).first()
+        if not group:
+            group_alias = SupportGroupAlias.query.filter(
+                SupportGroupAlias.tenant_id == user.tenant_id,
+                func.lower(SupportGroupAlias.alias) == team_name.casefold(),
+            ).first()
+            group = group_alias.group if group_alias else None
+        if not group:
+            group = SupportGroup(
+                name=team_name, group_type="IT Fulfillment", active=True,
+                tenant_id=user.tenant_id,
+            )
+            db.session.add(group)
+            db.session.flush()
+            created_team = group
+        desired[group.id] = f"profile-team:{team_name}"
     existing = {
         membership.group_id: membership
-        for membership in DirectoryManagedMembership.query.filter_by(user_id=user.id).all()
+        for membership in DirectoryManagedMembership.query.filter_by(
+            user_id=user.id, tenant_id=user.tenant_id
+        ).all()
     }
     for group_id, managed in existing.items():
         if group_id in desired:
-            managed.directory_group = desired[group_id].directory_group
+            managed.directory_group = desired[group_id]
             managed.synchronized_at = now()
             continue
         membership = GroupMember.query.filter_by(group_id=group_id, user_id=user.id).first()
@@ -4803,14 +4887,64 @@ def sync_directory_team_memberships(user, groups):
             db.session.add(GroupMember(group_id=group_id, user_id=user.id, role="member", tenant_id=user.tenant_id))
         if group_id not in existing:
             db.session.add(DirectoryManagedMembership(
-                user_id=user.id, group_id=group_id, directory_group=mapping.directory_group
+                user_id=user.id, group_id=group_id, directory_group=mapping,
+                tenant_id=user.tenant_id,
             ))
     audit(
         "directory group sync", user.username,
-        ", ".join(sorted(mapping.support_group.name for mapping in desired.values()))
+        ", ".join(sorted(
+            db.session.get(SupportGroup, group_id).name for group_id in desired
+            if db.session.get(SupportGroup, group_id)
+        ))
         or "No mapped teams",
         user_id=user.id,
     )
+    return created_team
+
+
+def reconcile_directory_team_managers(user):
+    """Infer an unassigned auto-created team's manager from its org chart.
+
+    Assignment happens only when every active, directory-managed team member
+    with a manager points to the same active same-tenant person. Ambiguity is
+    left for an administrator; an existing explicit manager is never replaced.
+    """
+    assigned = 0
+    managed_rows = DirectoryManagedMembership.query.filter_by(
+        user_id=user.id, tenant_id=user.tenant_id
+    ).all()
+    for managed in managed_rows:
+        if not managed.directory_group.startswith("profile-team:"):
+            continue
+        group = db.session.get(SupportGroup, managed.group_id)
+        if not group or group.manager_id or not group.active:
+            continue
+        member_users = [member.user for member in group.members if member.user and member.user.active]
+        manager_ids = {
+            member.manager_id for member in member_users
+            if member.manager and member.manager.active
+            and member.manager.tenant_id == group.tenant_id
+        }
+        if len(manager_ids) != 1:
+            continue
+        manager = db.session.get(User, manager_ids.pop())
+        group.manager_id = manager.id
+        membership = GroupMember.query.filter_by(group_id=group.id, user_id=manager.id).first()
+        if membership:
+            membership.role = "manager"
+        else:
+            db.session.add(GroupMember(
+                group_id=group.id, user_id=manager.id, role="manager",
+                tenant_id=group.tenant_id,
+            ))
+        sync_implied_role_grants(manager)
+        audit(
+            "directory team manager", group.name,
+            f"Inferred from consistent reporting line: {manager.username}",
+            user_id=manager.id, tenant_id=group.tenant_id,
+        )
+        assigned += 1
+    return assigned
 
 
 def sync_role_grants(user, source, desired_roles, detail_by_role=None):
@@ -4873,7 +5007,13 @@ def sync_implied_role_grants(user):
     if not user:
         return
     desired = set()
-    if SupportGroup.query.filter_by(manager_id=user.id, active=True).first():
+    manages_team = SupportGroup.query.filter_by(
+        manager_id=user.id, active=True, tenant_id=user.tenant_id,
+    ).first()
+    has_direct_report = User.query.filter_by(
+        manager_id=user.id, active=True, tenant_id=user.tenant_id,
+    ).first()
+    if manages_team or has_direct_report:
         desired.add("manager")
     if GroupMember.query.join(
         SupportGroup, GroupMember.group_id == SupportGroup.id
@@ -4896,6 +5036,51 @@ def user_is_local(user):
     return ExternalIdentity.query.filter_by(user_id=user.id).first() is None
 
 
+def describe_user_agent(user_agent):
+    """Return a compact, non-fingerprinting browser/OS label for session UI."""
+    value = str(user_agent or "")
+    browser = "Browser"
+    for marker, label in (
+        ("Edg/", "Microsoft Edge"), ("OPR/", "Opera"),
+        ("Firefox/", "Firefox"), ("Chrome/", "Chrome"),
+        ("Safari/", "Safari"),
+    ):
+        if marker in value:
+            browser = label
+            break
+    operating_system = "Unknown OS"
+    for marker, label in (
+        ("Windows", "Windows"), ("Android", "Android"),
+        ("iPhone", "iOS"), ("iPad", "iPadOS"),
+        ("Mac OS X", "macOS"), ("Linux", "Linux"),
+    ):
+        if marker in value:
+            operating_system = label
+            break
+    return f"{browser} on {operating_system}"[:160]
+
+
+def verified_client_hostname(address):
+    """Best-effort forward-confirmed reverse DNS, never a trusted identity.
+
+    Disabled by default because some sites do not want DNS lookups on web
+    requests. When enabled, a PTR name is retained only when resolving it
+    forward includes the same source address, preventing an arbitrary PTR
+    record from being presented as verified endpoint metadata.
+    """
+    if not address or not setting_bool("CLIENT_HOSTNAME_LOOKUP", False):
+        return None
+    hostname = resolve_hostname(address)
+    if not hostname:
+        return None
+    try:
+        normalized = str(ipaddress.ip_address(address))
+        resolved = {str(ipaddress.ip_address(item)) for item in resolve_ip(hostname)}
+    except ValueError:
+        return None
+    return hostname[:255] if normalized in resolved else None
+
+
 def apply_external_profile_attrs(user, profile_attrs):
     """Copy directory/SSO-sourced profile fields (title, department, employee
     id, phone, mobile, location, ...) onto ``user``, never nulling out an
@@ -4908,6 +5093,25 @@ def apply_external_profile_attrs(user, profile_attrs):
         value = profile_attrs.get(field)
         if value:
             setattr(user, field, str(value).strip())
+
+
+def apply_directory_profile(user, profile, group_names=None):
+    """Persist only the normalized LDAP snapshot produced by ldap_sync.
+
+    This is intentionally separate from User columns: it gives self-service
+    and administrators richer directory context without letting opaque AD
+    blobs leak into the database or become authorization inputs.
+    """
+    if not user or not isinstance(profile, dict):
+        return None
+    row = DirectoryProfile.query.filter_by(user_id=user.id).first()
+    if not row:
+        row = DirectoryProfile(user_id=user.id, tenant_id=user.tenant_id)
+        db.session.add(row)
+    row.profile_json = json.dumps(profile, sort_keys=True)
+    row.groups_json = json.dumps(sorted(set(group_names or []), key=str.casefold))
+    row.synchronized_at = now()
+    return row
 
 
 def find_external_identity(provider, subject):
@@ -4932,7 +5136,10 @@ def find_external_identity(provider, subject):
     return query.filter_by(subject=subject).first()
 
 
-def provision_external_user(provider, subject, username, name, email, matched_roles, groups=None, profile_attrs=None):
+def provision_external_user(
+    provider, subject, username, name, email, matched_roles, groups=None,
+    profile_attrs=None, directory_profile=None, directory_group_names=None,
+):
     """`matched_roles` is normally a {role: matched_group_or_None} dict from
     mapped_roles() -- every one of these roles is granted via
     sync_role_grants(..., source="directory"), and any previously
@@ -4957,9 +5164,13 @@ def provision_external_user(provider, subject, username, name, email, matched_ro
         user.name, user.email = name, email
         user.active = True
         apply_external_profile_attrs(user, profile_attrs)
+        if provider == "ldap" and directory_profile is not None:
+            apply_directory_profile(user, directory_profile, directory_group_names)
         sync_role_grants(user, "directory", matched_roles, detail_by_role=matched_roles)
         if provider == "ldap":
-            sync_directory_team_memberships(user, groups)
+            sync_directory_team_memberships(
+                user, groups, declared_team=(profile_attrs or {}).get("team_name")
+            )
             sync_implied_role_grants(user)
         return user
 
@@ -4988,10 +5199,14 @@ def provision_external_user(provider, subject, username, name, email, matched_ro
         existing_user.email = email or existing_user.email
         existing_user.active = True
         apply_external_profile_attrs(existing_user, profile_attrs)
+        if provider == "ldap" and directory_profile is not None:
+            apply_directory_profile(existing_user, directory_profile, directory_group_names)
         db.session.add(ExternalIdentity(provider=provider, subject=subject, user_id=existing_user.id))
         sync_role_grants(existing_user, "directory", matched_roles, detail_by_role=matched_roles)
         if provider == "ldap":
-            sync_directory_team_memberships(existing_user, groups)
+            sync_directory_team_memberships(
+                existing_user, groups, declared_team=(profile_attrs or {}).get("team_name")
+            )
             sync_implied_role_grants(existing_user)
         return existing_user
 
@@ -5011,10 +5226,14 @@ def provision_external_user(provider, subject, username, name, email, matched_ro
     db.session.add(user)
     db.session.flush()
     apply_external_profile_attrs(user, profile_attrs)
+    if provider == "ldap" and directory_profile is not None:
+        apply_directory_profile(user, directory_profile, directory_group_names)
     db.session.add(ExternalIdentity(provider=provider, subject=subject, user_id=user.id))
     sync_role_grants(user, "directory", matched_roles, detail_by_role=matched_roles)
     if provider == "ldap":
-        sync_directory_team_memberships(user, groups)
+        sync_directory_team_memberships(
+            user, groups, declared_team=(profile_attrs or {}).get("team_name")
+        )
         sync_implied_role_grants(user)
     return user
 
@@ -5089,6 +5308,7 @@ def sync_ldap_manager_on_login(user, entry_dn, manager_dn, merged_attr_map):
         return
 
     try:
+        previous_manager = db.session.get(User, user.manager_id) if user.manager_id else None
         manager_identity = find_external_identity("ldap", manager_dn)
         manager_user = manager_identity.user if manager_identity else None
 
@@ -5099,12 +5319,12 @@ def sync_ldap_manager_on_login(user, entry_dn, manager_dn, merged_attr_map):
                     search_base=manager_dn,
                     search_filter="(objectClass=*)",
                     search_scope=BASE,
-                    attributes=sorted(set([
+                    attributes=sorted(set(merged_attr_map.values()) | {
                         merged_attr_map.get("username", "sAMAccountName"),
                         merged_attr_map.get("display_name", "displayName"),
                         merged_attr_map.get("email", "mail"),
                         "memberOf",
-                    ])),
+                    }),
                     size_limit=1,
                 ):
                     return
@@ -5124,7 +5344,9 @@ def sync_ldap_manager_on_login(user, entry_dn, manager_dn, merged_attr_map):
             manager_groups = values.get("memberOf", [])
             manager_roles = mapped_roles(manager_groups, "LDAP_ROLE_MAPPINGS")
             manager_profile_attrs = {}
-            from serviceops_core.ldap_sync import PROFILE_FIELDS
+            from serviceops_core.ldap_sync import (
+                PROFILE_FIELDS, directory_profile_payload,
+            )
             for field in PROFILE_FIELDS:
                 ldap_attr = merged_attr_map.get(field)
                 if not ldap_attr:
@@ -5132,6 +5354,10 @@ def sync_ldap_manager_on_login(user, entry_dn, manager_dn, merged_attr_map):
                 val = first(ldap_attr, "")
                 if val:
                     manager_profile_attrs[field] = val
+            manager_directory_profile, manager_group_names = directory_profile_payload(
+                values, manager_groups, merged_attr_map
+            )
+            manager_profile_attrs["team_name"] = manager_directory_profile.get("team_name")
             manager_user = provision_external_user(
                 "ldap",
                 manager_dn,
@@ -5141,11 +5367,17 @@ def sync_ldap_manager_on_login(user, entry_dn, manager_dn, merged_attr_map):
                 manager_roles,
                 groups=manager_groups,
                 profile_attrs=manager_profile_attrs,
+                directory_profile=manager_directory_profile,
+                directory_group_names=manager_group_names,
             )
 
         if manager_user and manager_user.id != user.id and manager_user.tenant_id == user.tenant_id:
             if user.manager_id != manager_user.id:
                 user.manager_id = manager_user.id
+            sync_implied_role_grants(manager_user)
+            reconcile_directory_team_managers(user)
+            if previous_manager and previous_manager.id != manager_user.id:
+                sync_implied_role_grants(previous_manager)
     except Exception as error:  # noqa: BLE001 - login must not fail on manager sync
         current_app.logger.warning(
             "LDAP manager sync on login failed for %s: %s",
@@ -5180,9 +5412,13 @@ def ldap_authenticate(username, password):
         ldap_attr_map = json.loads(setting_value("LDAP_ATTR_MAP", "{}"))
     except (TypeError, json.JSONDecodeError):
         ldap_attr_map = {}
+    from serviceops_core.ldap_sync import (
+        DEFAULT_ATTR_MAP, PROFILE_FIELDS, directory_profile_payload,
+    )
     attr_names = {
         "distinguishedName", "cn", "displayName", "mail", "memberOf", "userPrincipalName"
     }
+    attr_names.update(DEFAULT_ATTR_MAP.values())
     for mapped in ldap_attr_map.values() if isinstance(ldap_attr_map, dict) else []:
         if isinstance(mapped, str) and mapped.strip():
             attr_names.add(mapped.strip())
@@ -5227,7 +5463,6 @@ def ldap_authenticate(username, password):
     first = lambda key, fallback="": (values.get(key) or [fallback])[0]
     groups = values.get("memberOf", [])
     matched_roles = mapped_roles(groups, "LDAP_ROLE_MAPPINGS")
-    from serviceops_core.ldap_sync import DEFAULT_ATTR_MAP, PROFILE_FIELDS
     merged_attr_map = dict(DEFAULT_ATTR_MAP)
     if isinstance(ldap_attr_map, dict):
         merged_attr_map.update({k: v for k, v in ldap_attr_map.items() if isinstance(v, str) and v})
@@ -5239,6 +5474,10 @@ def ldap_authenticate(username, password):
         val = first(ldap_attr, "")
         if val:
             profile_attrs[field] = val
+    directory_profile, directory_group_names = directory_profile_payload(
+        values, groups, merged_attr_map
+    )
+    profile_attrs["team_name"] = directory_profile.get("team_name")
     # Use the bare local part, not whatever form the user happened to type
     # this time, as the new account's username -- entry.entry_dn is the
     # actual matching key for returning logins (see
@@ -5251,6 +5490,8 @@ def ldap_authenticate(username, password):
         "ldap", entry.entry_dn, local_part, first("displayName", first("cn", local_part)),
         first("mail", first("userPrincipalName", "")), matched_roles, groups=groups,
         profile_attrs=profile_attrs,
+        directory_profile=directory_profile,
+        directory_group_names=directory_group_names,
     )
     manager_dn = first(merged_attr_map.get("manager", "manager"), "")
     sync_ldap_manager_on_login(user, entry.entry_dn, manager_dn, merged_attr_map)
@@ -5934,6 +6175,9 @@ def create_app(test_config=None):
                 provider=session.get("_auth_provider", "local"),
                 ip_address=(request.remote_addr or "")[:64],
                 user_agent=request.headers.get("User-Agent", "")[:500],
+                client_hostname=verified_client_hostname(request.remote_addr),
+                device_label=describe_user_agent(request.headers.get("User-Agent", "")),
+                client_language=request.headers.get("Accept-Language", "")[:120],
                 expires_at=now() + app.config["PERMANENT_SESSION_LIFETIME"],
             )
             db.session.add(record)
@@ -7234,11 +7478,12 @@ def create_app(test_config=None):
             groups = SupportGroup.query.filter_by(
                 tenant_id=g.api_user.tenant_id, active=True,
             ).order_by(SupportGroup.name).all()
-        pending = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
+        pending_direct = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
             ApprovalVote.approver_id == g.api_user.id,
             ApprovalVote.state == "Requested",
             ApprovalChain.tenant_id == g.api_user.tenant_id,
         ).count()
+        pending = pending_direct + len(delegated_pending_votes(g.api_user))
         unread = Notification.query.filter_by(
             tenant_id=g.api_user.tenant_id, user_id=g.api_user.id, read=False,
         ).count()
@@ -7337,15 +7582,21 @@ def create_app(test_config=None):
     @app.get("/api/v1/mobile/approvals")
     def api_mobile_approvals():
         mobile_only()
-        rows = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
+        direct_rows = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
             ApprovalVote.approver_id == g.api_user.id,
             ApprovalChain.tenant_id == g.api_user.tenant_id,
         ).order_by(ApprovalVote.id.desc()).limit(100).all()
+        delegated_rows = delegated_pending_votes(g.api_user)
+        rows = list({row.id: row for row in direct_rows + delegated_rows}.values())
+        rows.sort(key=lambda row: row.id, reverse=True)
         return jsonify({"data": [{
             "id": row.id, "state": row.state, "comments": row.comments or "",
             "gate": row.gate.name, "chain": row.gate.chain.name,
             "target_type": row.gate.chain.target_type, "target_id": row.gate.chain.target_id,
-        } for row in rows]})
+            "delegated_for": (
+                row.approver.name if row.approver_id != g.api_user.id else None
+            ),
+        } for row in rows[:100]]})
 
     @app.post("/api/v1/mobile/approvals/<int:vote_id>/decide")
     def api_mobile_approval_decide(vote_id):
@@ -7355,14 +7606,25 @@ def create_app(test_config=None):
         if decision not in ("Approved", "Rejected"):
             abort(400, description="decision must be Approved or Rejected.")
         vote = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
-            ApprovalVote.id == vote_id, ApprovalVote.approver_id == g.api_user.id,
+            ApprovalVote.id == vote_id,
             ApprovalChain.tenant_id == g.api_user.tenant_id,
         ).first_or_404()
+        enforce_approval_change_freeze(vote, decision, g.api_user.tenant_id)
+        if vote.approver_id != g.api_user.id:
+            delegation = active_approval_delegation(vote.approver_id, g.api_user.id)
+            if not delegation:
+                abort(403)
+            original_approver_id = vote.approver_id
+            vote.approver_id = g.api_user.id
+            vote.delegated_from_id = original_approver_id
         decide_vote(vote, decision, str(body.get("comments", "")).strip()[:2000])
         audit("mobile approval " + decision.lower(), vote.gate.chain.name,
               mobile_client_details(g.api_client), user_id=g.api_user.id, tenant_id=g.api_user.tenant_id)
         db.session.commit()
-        return jsonify({"data": {"id": vote.id, "state": vote.state}})
+        return jsonify({"data": {
+            "id": vote.id, "state": vote.state,
+            "delegated_for": vote.delegated_from.name if vote.delegated_from else None,
+        }})
 
     @app.get("/api/v1/mobile/knowledge")
     def api_mobile_knowledge():
@@ -10006,6 +10268,7 @@ def create_app(test_config=None):
     def user_edit(user_id):
         user = tenant_query(User).filter_by(id=user_id).first_or_404()
         if request.method == "POST":
+            previous_manager = user.manager
             before = {
                 "name": user.name, "email": user.email, "role": user.role,
                 "active": user.active, "department": user.department,
@@ -10089,6 +10352,11 @@ def create_app(test_config=None):
                 user.manager_id = manager_id
             else:
                 user.manager_id = None
+            db.session.flush()
+            if previous_manager:
+                sync_implied_role_grants(previous_manager)
+            if user.manager:
+                sync_implied_role_grants(user.manager)
             if user.manager and user.manager.name != before["manager"]:
                 log_history(
                     "user", user.id, "Field changed", "manager",
@@ -10163,6 +10431,7 @@ def create_app(test_config=None):
         payload = {
             "username": user.username, "name": user.name, "email": user.email,
             "title": user.title, "department": user.department, "division": user.division,
+            "employee_id": user.employee_id, "employee_type": user.employee_type,
             "business_phone": user.business_phone, "mobile_phone": user.mobile_phone,
             "location": user.location, "timezone": user.timezone, "role": user.role,
             "manager": user.manager.name if user.manager else None,
@@ -10172,6 +10441,11 @@ def create_app(test_config=None):
                 for row in tenant_query(Ticket).filter_by(requester_id=user.id).order_by(Ticket.created_at.desc()).all()
             ],
         }
+        directory_profile = DirectoryProfile.query.filter_by(user_id=user.id).first()
+        if directory_profile:
+            payload["directory_profile"] = directory_profile.profile
+            payload["directory_groups"] = directory_profile.group_names
+            payload["directory_synchronized_at"] = directory_profile.synchronized_at.isoformat()
         response = Response(
             json.dumps(payload, indent=2, sort_keys=True), mimetype="application/json",
         )
@@ -10187,13 +10461,13 @@ def create_app(test_config=None):
         ).first()
         email_managed_externally = directory_identity is not None
         if request.method == "POST":
-            user.name = request.form["name"].strip()[:120]
-            if not email_managed_externally:
+            if not directory_identity:
+                user.name = request.form["name"].strip()[:120]
                 user.email = request.form["email"].strip()[:160]
-            user.title = request.form.get("title", "").strip()[:120]
-            user.location = request.form.get("location", "").strip()[:120]
-            user.business_phone = request.form.get("business_phone", "").strip()[:40]
-            user.mobile_phone = request.form.get("mobile_phone", "").strip()[:40]
+                user.title = request.form.get("title", "").strip()[:120]
+                user.location = request.form.get("location", "").strip()[:120]
+                user.business_phone = request.form.get("business_phone", "").strip()[:40]
+                user.mobile_phone = request.form.get("mobile_phone", "").strip()[:40]
             user.timezone = request.form.get("timezone", "Asia/Tokyo")[:80]
             user.date_format = request.form.get("date_format", "system")[:40]
             avatar = request.files.get("avatar")
@@ -10224,10 +10498,94 @@ def create_app(test_config=None):
         teams = [membership.group.name for membership in GroupMember.query.filter_by(
             user_id=user.id
         ).join(SupportGroup).filter(SupportGroup.active.is_(True)).all()]
+        direct_reports = tenant_query(User).filter_by(
+            manager_id=user.id, active=True,
+        ).order_by(User.name).all()
+        managed_teams = tenant_query(SupportGroup).filter_by(
+            manager_id=user.id, active=True,
+        ).order_by(SupportGroup.name).all()
+        manager_chain = []
+        manager = user.manager
+        seen = {user.id}
+        while manager and manager.id not in seen and len(manager_chain) < 6:
+            seen.add(manager.id)
+            manager_chain.append(manager)
+            manager = manager.manager
+        directory_profile = DirectoryProfile.query.filter_by(user_id=user.id).first()
+        delegation_history = ApprovalDelegation.query.filter_by(
+            from_user_id=user.id, tenant_id=user.tenant_id,
+        ).order_by(ApprovalDelegation.created_at.desc()).limit(20).all()
         return render_template(
             "user_form.html", user=user, self_service=True,
             email_managed_externally=email_managed_externally, teams=teams,
+            directory_managed=bool(directory_identity),
+            directory_profile=directory_profile,
+            direct_reports=direct_reports, managed_teams=managed_teams,
+            manager_chain=manager_chain,
+            is_people_manager=bool(direct_reports or managed_teams),
+            active_delegation=active_approval_delegation(user.id),
+            delegation_history=delegation_history,
         )
+
+    @app.post("/profile/approval-delegation")
+    @login_required
+    def profile_approval_delegation():
+        user = tenant_query(User).filter_by(id=current_user.id).first_or_404()
+        if not (
+            tenant_query(User).filter_by(manager_id=user.id, active=True).first()
+            or tenant_query(SupportGroup).filter_by(manager_id=user.id, active=True).first()
+        ):
+            abort(403, description=(
+                "Approval absence coverage is available only to a manager with "
+                "an active direct report or managed team."
+            ))
+        if not user.manager or not user.manager.active or user.manager.tenant_id != user.tenant_id:
+            abort(409, description=(
+                "Your active line manager must be recorded before absence approval "
+                "coverage can be delegated upward."
+            ))
+        starts_at = parse_form_datetime(request.form.get("starts_at", ""))
+        ends_at = parse_form_datetime(request.form.get("ends_at", ""))
+        reason = request.form.get("reason", "").strip()[:500]
+        if not starts_at or not ends_at or ends_at <= starts_at:
+            abort(400, description="Enter a valid absence start and end time.")
+        if ends_at - starts_at > timedelta(days=90):
+            abort(400, description="An absence delegation cannot exceed 90 days.")
+        if not reason:
+            abort(400, description="A reason is required for approval delegation.")
+        ApprovalDelegation.query.filter_by(
+            from_user_id=user.id, active=True, tenant_id=user.tenant_id,
+        ).update({"active": False})
+        delegation = ApprovalDelegation(
+            from_user_id=user.id, to_user_id=user.manager.id,
+            tenant_id=user.tenant_id, starts_at=starts_at, ends_at=ends_at,
+            reason=reason, created_by_id=user.id,
+        )
+        db.session.add(delegation)
+        audit(
+            "approval delegate", user.username,
+            f"to={user.manager.username}; starts={starts_at.isoformat()}; ends={ends_at.isoformat()}",
+        )
+        db.session.commit()
+        flash(
+            f"Approval coverage delegated to {user.manager.name}. They will not receive "
+            "the initial request notification; delegated decisions remain fully attributed.",
+            "success",
+        )
+        return redirect(url_for("profile"))
+
+    @app.post("/profile/approval-delegation/<int:delegation_id>/cancel")
+    @login_required
+    def profile_approval_delegation_cancel(delegation_id):
+        delegation = ApprovalDelegation.query.filter_by(
+            id=delegation_id, from_user_id=current_user.id,
+            tenant_id=current_user.tenant_id,
+        ).first_or_404()
+        delegation.active = False
+        audit("approval delegation cancel", current_user.username, f"delegation={delegation.id}")
+        db.session.commit()
+        flash("Approval absence coverage cancelled.", "success")
+        return redirect(url_for("profile"))
 
     @app.get("/profile/avatar/<int:user_id>")
     @login_required
@@ -11995,7 +12353,9 @@ def create_app(test_config=None):
             ).order_by(SupportGroup.name).all()
             ad_context = dict(
                 teams=teams,
-                directory_mappings=DirectoryGroupMapping.query.order_by(
+                directory_mappings=DirectoryGroupMapping.query.join(SupportGroup).filter(
+                    SupportGroup.tenant_id == current_user.tenant_id
+                ).order_by(
                     DirectoryGroupMapping.directory_group
                 ).all(),
                 ldap_enabled=setting_bool("LDAP_ENABLED"),
@@ -13926,34 +14286,36 @@ def create_app(test_config=None):
     @login_required
     def approval_vote_decide(vote_id):
         vote = db.get_or_404(ApprovalVote, vote_id)
-        if (
-            vote.approver_id != current_user.id
-            or vote.gate.chain.tenant_id != current_user.tenant_id
-        ):
+        if vote.gate.chain.tenant_id != current_user.tenant_id:
             abort(403)
+        delegation = None
+        if vote.approver_id != current_user.id:
+            delegation = active_approval_delegation(vote.approver_id, current_user.id)
+            if not delegation:
+                abort(403)
+            original_approver_id = vote.approver_id
+            vote.approver_id = current_user.id
+            vote.delegated_from_id = original_approver_id
         decision = request.form.get("decision")
         if decision not in ("Approved", "Rejected"):
             abort(400)
-        if decision == "Approved" and vote.gate.chain.target_type == "ticket":
-            target = db.session.get(Ticket, vote.gate.chain.target_id)
-            governance = target.change_governance if target else None
-            if governance and governance.change_type != "Emergency":
-                freeze = active_change_freeze(current_user.tenant_id, governance.planned_start, governance.planned_end)
-                if freeze:
-                    abort(409, description=(
-                        f"Cannot approve: this change's planned window falls inside the "
-                        f'change freeze "{freeze.title}". Only Emergency changes can be approved during a freeze.'
-                    ))
+        enforce_approval_change_freeze(vote, decision, current_user.tenant_id)
         decide_vote(vote, decision, request.form.get("comments", "").strip())
         log_history(
             vote.gate.chain.target_type, vote.gate.chain.target_id,
             f"Approval {decision.lower()}",
             details=(
-                f"{vote.gate.name} · {current_user.name}: "
+                f"{vote.gate.name} · {current_user.name}"
+                f"{' acting for ' + vote.delegated_from.name if vote.delegated_from else ''}: "
                 f"{request.form.get('comments', '').strip() or 'No decision comments'}"
             ),
         )
-        audit(decision.lower(), vote.gate.chain.name, vote.gate.name)
+        audit(
+            decision.lower(), vote.gate.chain.name,
+            vote.gate.name + (
+                f"; delegated from {vote.delegated_from.username}" if vote.delegated_from else ""
+            ),
+        )
         db.session.commit()
         return redirect(request.referrer or url_for("approval_chains"))
 
@@ -13982,7 +14344,16 @@ def create_app(test_config=None):
             ApprovalVote.state == "Requested",
             ApprovalChain.tenant_id == current_user.tenant_id,
         ).all()
-        return render_template("approval_chains.html", chains=chains, pending=pending)
+        delegated_pending = delegated_pending_votes(current_user)
+        visible_chain_ids = {chain.id for chain in chains}
+        for vote in delegated_pending:
+            if vote.gate.chain.id not in visible_chain_ids:
+                chains.append(vote.gate.chain)
+                visible_chain_ids.add(vote.gate.chain.id)
+        return render_template(
+            "approval_chains.html", chains=chains, pending=pending,
+            delegated_pending=delegated_pending,
+        )
 
     @app.get("/requests")
     @login_required
@@ -14345,12 +14716,59 @@ def create_app(test_config=None):
     def itil_admin():
         if request.method == "POST":
             action = request.form.get("action")
-            if action == "add_directory_mapping":
+            if action == "create_support_group":
+                name = request.form.get("name", "").strip()
+                group_type = request.form.get("group_type", "IT Fulfillment")
+                if not name or len(name) > 120:
+                    abort(400, description="Team name must contain 1 to 120 characters.")
+                if group_type not in ("IT Fulfillment", "Fulfillment", "Executive"):
+                    abort(400, description="Select a supported team type.")
+                if tenant_query(SupportGroup).filter(
+                    func.lower(SupportGroup.name) == name.casefold()
+                ).first():
+                    abort(409, description="A team with that name already exists.")
+                group = SupportGroup(
+                    name=name, group_type=group_type, active=True,
+                    tenant_id=current_user.tenant_id,
+                )
+                db.session.add(group)
+                db.session.flush()
+                audit("create", f"Support group: {name}", group_type)
+                flash(f"Team {name} created. Assign its manager and members below.", "success")
+            elif action == "update_support_group":
+                group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
+                if group.name in ("Change Control Board", "Executive Office"):
+                    abort(400, description="Use the dedicated governance controls for this group.")
+                name = request.form.get("name", "").strip()
+                group_type = request.form.get("group_type", "IT Fulfillment")
+                if not name or len(name) > 120:
+                    abort(400, description="Team name must contain 1 to 120 characters.")
+                if group_type not in ("IT Fulfillment", "Fulfillment", "Executive"):
+                    abort(400, description="Select a supported team type.")
+                duplicate = tenant_query(SupportGroup).filter(
+                    SupportGroup.id != group.id,
+                    func.lower(SupportGroup.name) == name.casefold(),
+                ).first()
+                if duplicate:
+                    abort(409, description="A team with that name already exists.")
+                before = f"{group.name}; {group.group_type}; active={group.active}"
+                affected_users = [member.user for member in group.members]
+                if group.manager:
+                    affected_users.append(group.manager)
+                group.name = name
+                group.group_type = group_type
+                group.active = bool(request.form.get("active"))
+                for affected in {user.id: user for user in affected_users if user}.values():
+                    sync_implied_role_grants(affected)
+                audit("update", f"Support group: {name}", f"{before} -> {group_type}; active={group.active}")
+                flash(f"Team {name} updated.", "success")
+            elif action == "add_directory_mapping":
                 directory_group = request.form.get("directory_group", "").strip()
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
                 if not directory_group or len(directory_group) > 500:
                     abort(400)
-                existing = DirectoryGroupMapping.query.filter(
+                existing = DirectoryGroupMapping.query.join(SupportGroup).filter(
+                    SupportGroup.tenant_id == current_user.tenant_id,
                     func.lower(DirectoryGroupMapping.directory_group)
                     == directory_group.casefold()
                 ).first()
@@ -14359,12 +14777,16 @@ def create_app(test_config=None):
                     existing.active = True
                 else:
                     db.session.add(DirectoryGroupMapping(
-                        directory_group=directory_group, support_group_id=group.id
+                        directory_group=directory_group, support_group_id=group.id,
+                        tenant_id=group.tenant_id,
                     ))
                 audit("configure", "AD team mapping", f"{directory_group} -> {group.name}")
                 flash("AD group mapping saved. It applies at each user's next login.", "success")
             elif action == "delete_directory_mapping":
-                mapping = db.get_or_404(DirectoryGroupMapping, int(request.form["mapping_id"]))
+                mapping = DirectoryGroupMapping.query.join(SupportGroup).filter(
+                    DirectoryGroupMapping.id == int(request.form["mapping_id"]),
+                    SupportGroup.tenant_id == current_user.tenant_id,
+                ).first_or_404()
                 mapping.active = False
                 audit("disable", "AD team mapping", mapping.directory_group)
                 flash("AD group mapping disabled. Memberships reconcile at next login.", "success")
@@ -14418,7 +14840,7 @@ def create_app(test_config=None):
                 )
             elif action == "set_manager":
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
-                if group.group_type not in ("IT Fulfillment", "Executive"):
+                if group.group_type not in ("IT Fulfillment", "Fulfillment", "Executive"):
                     abort(400)
                 old_manager_id = group.manager_id
                 manager_id = int(request.form["manager_id"]) if request.form.get("manager_id") else None
@@ -14822,6 +15244,9 @@ def create_app(test_config=None):
                         f"{result.get('self_manager_skipped', 0)} self-manager records skipped, "
                         f"{result['memberships_added']} memberships added, "
                         f"{result['memberships_removed']} memberships removed, "
+                        f"{result.get('teams_created', 0)} teams created, "
+                        f"{result.get('team_managers_inferred', 0)} team managers inferred, "
+                        f"{result.get('accounts_deactivated', 0)} accounts deactivated, "
                         f"{result['users_unmatched']} unmatched, "
                         f"{len(result['errors'])} errors",
                     )
@@ -14836,6 +15261,9 @@ def create_app(test_config=None):
                             f"{result.get('self_manager_skipped', 0)} self-manager records skipped, "
                             f"{result['memberships_added']} memberships added, "
                             f"{result['memberships_removed']} memberships removed, "
+                            f"{result.get('teams_created', 0)} teams created, "
+                            f"{result.get('team_managers_inferred', 0)} team managers inferred, "
+                            f"{result.get('accounts_deactivated', 0)} accounts deactivated, "
                             f"{result['users_unmatched']} unmatched entries, "
                             f"{len(result['errors'])} errors."
                         ),
@@ -14880,7 +15308,11 @@ def create_app(test_config=None):
             abort(404)
         title, description = ITIL_ADMIN_SECTIONS[section]
         groups = tenant_query(SupportGroup).order_by(SupportGroup.name).all()
-        teams = [group for group in groups if group.group_type == "IT Fulfillment"]
+        teams = [
+            group for group in groups
+            if group.group_type in ("IT Fulfillment", "Fulfillment", "Executive")
+            and group.name not in ("Executive Office",)
+        ]
         fulfillment_groups = [
             group for group in groups
             if group.active and group.group_type in ("Fulfillment", "IT Fulfillment")

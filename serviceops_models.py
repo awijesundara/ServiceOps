@@ -43,7 +43,9 @@ __all__ = [
     "Tenant",
     "User",
     "ExternalIdentity",
+    "DirectoryProfile",
     "UserSession",
+    "ApprovalDelegation",
     "PasswordResetToken",
     "PlatformSetting",
     "KpiSnapshot",
@@ -286,6 +288,40 @@ class ExternalIdentity(db.Model):
     __table_args__ = (db.UniqueConstraint("provider", "subject", name="uq_external_identity"),)
 
 
+class DirectoryProfile(db.Model):
+    """Bounded, display-safe directory metadata for an LDAP identity.
+
+    Raw certificates, password material, security descriptors, and opaque
+    authentication blobs are deliberately never stored.  ``profile_json``
+    contains only the allow-listed operational/person attributes normalized by
+    ``serviceops_core.ldap_sync``; ``groups_json`` contains friendly group
+    names rather than full directory DNs.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    profile_json = db.Column(db.Text, nullable=False, default="{}")
+    groups_json = db.Column(db.Text, nullable=False, default="[]")
+    synchronized_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    user = db.relationship("User")
+
+    @property
+    def profile(self):
+        try:
+            value = json.loads(self.profile_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    @property
+    def group_names(self):
+        try:
+            value = json.loads(self.groups_json or "[]")
+        except (TypeError, json.JSONDecodeError):
+            return []
+        return value if isinstance(value, list) else []
+
+
 class UserSession(db.Model):
     """Server-side inventory/revocation record for a signed browser session.
 
@@ -299,7 +335,10 @@ class UserSession(db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
     provider = db.Column(db.String(30), nullable=False, default="local")
     ip_address = db.Column(db.String(64))
+    client_hostname = db.Column(db.String(255))
     user_agent = db.Column(db.String(500))
+    device_label = db.Column(db.String(160))
+    client_language = db.Column(db.String(120))
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     last_seen_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     expires_at = db.Column(db.DateTime(timezone=True), nullable=False, index=True)
@@ -307,6 +346,33 @@ class UserSession(db.Model):
     revoked_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     user = db.relationship("User", foreign_keys=[user_id])
     revoked_by = db.relationship("User", foreign_keys=[revoked_by_id])
+
+
+class ApprovalDelegation(db.Model):
+    """Time-bounded approval authority delegated during an absence.
+
+    The normal safe default is the approver's own line manager.  Existing
+    votes are not rewritten and delegates are not notified when a gate opens;
+    a delegated decision records the original approver on ApprovalVote.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    from_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    to_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    starts_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    ends_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    reason = db.Column(db.String(500), nullable=False, default="")
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    from_user = db.relationship("User", foreign_keys=[from_user_id])
+    to_user = db.relationship("User", foreign_keys=[to_user_id])
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
+
+    __table_args__ = (
+        db.CheckConstraint("ends_at > starts_at", name="ck_approval_delegation_window"),
+        db.CheckConstraint("from_user_id <> to_user_id", name="ck_approval_delegation_distinct_users"),
+    )
 
 
 class PasswordResetToken(db.Model):
@@ -1647,11 +1713,15 @@ class GroupMember(db.Model):
 class DirectoryGroupMapping(db.Model):
     """Map an AD group name or full DN to a ServiceOps support group."""
     id = db.Column(db.Integer, primary_key=True)
-    directory_group = db.Column(db.String(500), unique=True, nullable=False)
+    directory_group = db.Column(db.String(500), nullable=False)
     support_group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     active = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     support_group = db.relationship("SupportGroup")
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "directory_group", name="uq_directory_group_mapping_tenant_group"),
+    )
 
 
 class SupportGroupAlias(db.Model):
@@ -1677,9 +1747,13 @@ class DirectoryManagedMembership(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False)
     directory_group = db.Column(db.String(500), nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     synchronized_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     user = db.relationship("User")
     group = db.relationship("SupportGroup")
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "user_id", "group_id", name="uq_directory_managed_membership_owner"),
+    )
 
 
 class UserRoleGrant(db.Model):
