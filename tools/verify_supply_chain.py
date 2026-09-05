@@ -38,6 +38,24 @@ def verify_supply_chain() -> dict[str, object]:
         if required not in workflow:
             errors.append(f"Supply-chain workflow is missing {required!r}.")
 
+    deployment_workflow = (
+        ROOT / ".github/workflows/deploy-kubernetes.yml"
+    ).read_text(encoding="utf-8")
+    deployment_action_lines = [
+        line for line in deployment_workflow.splitlines()
+        if line.lstrip().startswith("uses:")
+    ]
+    if not deployment_action_lines or any(
+        not SHA_PIN.match(line) for line in deployment_action_lines
+    ):
+        errors.append("Every Kubernetes deployment action must be pinned to a full commit SHA.")
+    for required in (
+        "gh attestation verify", 'image.digest=$IMAGE_DIGEST', "--atomic --wait",
+        "KUBE_CONFIG_B64", "KUBERNETES_VALUES_B64", "environment: production",
+    ):
+        if required not in deployment_workflow:
+            errors.append(f"Kubernetes deployment workflow is missing {required!r}.")
+
     values = (ROOT / "charts/serviceops/values.yaml").read_text(encoding="utf-8")
     match = re.search(r"^\s*digest:\s*[\"']?([^\"' ]+)", values, re.MULTILINE)
     if not match or not DIGEST.fullmatch(match.group(1)):
@@ -58,7 +76,7 @@ def verify_supply_chain() -> dict[str, object]:
         raise RuntimeError("Supply-chain verification failed: " + " ".join(errors))
     return {
         "valid": True,
-        "action_pins": len(action_lines),
+        "action_pins": len(action_lines) + len(deployment_action_lines),
         "dockerfile_bases": len(from_lines),
         "kubernetes_digest_enforced": True,
         "attestation_admission_enabled": True,

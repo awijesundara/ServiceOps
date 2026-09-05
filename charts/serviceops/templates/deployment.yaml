@@ -1,6 +1,9 @@
 {{- if and (eq .Values.deploymentProfile "production") (lt (int .Values.replicaCount) 2) (not .Values.autoscaling.enabled) }}
 {{- fail "Production requires at least two application replicas" }}
 {{- end }}
+{{- if and (eq .Values.deploymentProfile "production") (not .Values.uploads.persistence.enabled) }}
+{{- fail "Production requires persistent shared upload storage; configure uploads.persistence or object storage" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,11 +20,14 @@ spec:
     type: RollingUpdate
     rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
   selector:
+    # Keep this selector stable across chart upgrades; Kubernetes treats a
+    # Deployment selector as immutable. Component scoping belongs on the pod
+    # template and consumers (Service/PDB/NetworkPolicy), below.
     matchLabels: {{- include "serviceops.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "serviceops.selectorLabels" . | nindent 8 }}
+        {{- include "serviceops.webSelectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
       annotations:
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
@@ -36,6 +42,17 @@ spec:
         runAsGroup: 101
         fsGroup: 101
         seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: database-and-schema-ready
+          image: {{ include "serviceops.imageRef" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "tools.wait_for_database", "--migrations-current", "--timeout", {{ .Values.database.readinessTimeoutSeconds | quote }}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          envFrom:
+            - secretRef: {name: {{ include "serviceops.secretName" . }}}
       containers:
         - name: serviceops
           image: {{ include "serviceops.imageRef" . | quote }}

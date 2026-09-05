@@ -17,11 +17,24 @@ spec:
         app.kubernetes.io/component: worker
     spec:
       serviceAccountName: {{ include "serviceops.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 100
         runAsGroup: 101
         seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: database-and-schema-ready
+          image: {{ include "serviceops.imageRef" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "tools.wait_for_database", "--migrations-current", "--timeout", {{ .Values.database.readinessTimeoutSeconds | quote }}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          envFrom:
+            - secretRef: {name: {{ include "serviceops.secretName" . }}}
       containers:
         - name: outbox
           image: {{ include "serviceops.imageRef" . | quote }}
@@ -44,6 +57,7 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {sizeLimit: 64Mi}
+      imagePullSecrets: {{- toYaml .Values.imagePullSecrets | nindent 8 }}
 {{- if .Values.networkPolicy.enabled }}
 ---
 apiVersion: networking.k8s.io/v1

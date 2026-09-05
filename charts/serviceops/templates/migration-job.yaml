@@ -24,6 +24,17 @@ spec:
         runAsUser: 100
         runAsGroup: 101
         seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: database-ready
+          image: {{ include "serviceops.imageRef" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "tools.wait_for_database", "--timeout", {{ .Values.database.readinessTimeoutSeconds | quote }}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          envFrom:
+            - secretRef: {name: {{ include "serviceops.secretName" . }}}
       containers:
         - name: migrate
           image: {{ include "serviceops.imageRef" . | quote }}
@@ -49,3 +60,4 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+      imagePullSecrets: {{- toYaml .Values.imagePullSecrets | nindent 8 }}
