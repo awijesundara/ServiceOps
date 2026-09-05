@@ -261,6 +261,33 @@ cp deploy/kubernetes/values-production.example.yaml \
 ./serviceops install kubernetes
 ```
 
+For upgrades, never use `kubectl set image`: the chart deploys by immutable
+digest, so changing only a tag does not change the running artifact. Use the
+safe updater with both values:
+
+```bash
+SERVICEOPS_VALUES=deploy/kubernetes/values-production.yaml \
+  ./tools/safe_update_k8s.sh v1.79.1 sha256:<verified-64-character-digest>
+```
+
+The chart runs one pre-install/pre-upgrade migration Job, waits for PostgreSQL
+before migrating, and holds web/worker pods in an init state until the exact
+Alembic head is present. `--atomic --wait` preserves the previous Kubernetes
+revision when a hook, image pull, rollout, or readiness check fails. Database
+migrations are not automatically reversed; take and verify a database backup
+and rehearse the migration before production upgrades.
+
+An opt-in protected GitHub Actions deployment is provided in
+`.github/workflows/deploy-kubernetes.yml`. Set repository variable
+`KUBERNETES_DEPLOY_ENABLED=true`, optional namespace/release/image-repository
+variables, and protected production secrets `KUBE_CONFIG_B64` and
+`KUBERNETES_VALUES_B64`. After a governed release succeeds, it resolves the
+stable tag to its signed digest, verifies GitHub provenance, lints/renders the
+exact chart, performs an atomic Helm install/upgrade, waits for web and worker
+rollouts, and runs the packaged `/ready` test. Keep production environment
+approval rules enabled so a successful build is necessary but not sufficient
+to deploy.
+
 See the [deployment guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md)
 for external-database, ingress, backup, restore, rollback, and scaling guidance.
 

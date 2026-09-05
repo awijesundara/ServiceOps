@@ -3,9 +3,12 @@ kind: Pod
 metadata:
   name: "{{ include "serviceops.fullname" . }}-health-test"
   labels: {{- include "serviceops.labels" . | nindent 4 }}
+    app.kubernetes.io/component: helm-test
   annotations:
     "helm.sh/hook": test
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    # Retain the completed pod so `helm test --logs` can collect evidence.
+    # The next test run removes it before creating its replacement.
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   automountServiceAccountToken: false
   restartPolicy: Never
@@ -21,4 +24,4 @@ spec:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
         capabilities: {drop: ["ALL"]}
-      command: ["curl", "--fail", "--silent", "--show-error", "http://{{ include "serviceops.fullname" . }}:{{ .Values.service.port }}/ready"]
+      command: ["curl", "--fail", "--silent", "--show-error", "--connect-timeout", "5", "--max-time", "15", "http://{{ include "serviceops.fullname" . }}:{{ .Values.service.port }}/ready"]

@@ -49,6 +49,7 @@ secret:
 
 database:
   mode: external
+  readinessTimeoutSeconds: 600
   bundled:
     image: postgres:16-alpine
     database: serviceops

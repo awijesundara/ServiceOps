@@ -18,8 +18,11 @@
     },
     "database": {
       "type": "object",
-      "required": ["mode"],
-      "properties": {"mode": {"type": "string", "const": "external"}}
+      "required": ["mode", "readinessTimeoutSeconds"],
+      "properties": {
+        "mode": {"type": "string", "const": "external"},
+        "readinessTimeoutSeconds": {"type": "integer", "minimum": 30, "maximum": 3600}
+      }
     },
     "security": {
       "type": "object",

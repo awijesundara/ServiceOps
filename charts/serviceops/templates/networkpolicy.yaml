@@ -6,7 +6,7 @@ metadata:
   labels: {{- include "serviceops.labels" . | nindent 4 }}
 spec:
   podSelector:
-    matchLabels: {{- include "serviceops.selectorLabels" . | nindent 6 }}
+    matchLabels: {{- include "serviceops.webSelectorLabels" . | nindent 6 }}
   policyTypes: [Ingress, Egress]
   ingress:
     - from:

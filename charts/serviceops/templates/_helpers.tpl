@@ -13,6 +13,10 @@ helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 app.kubernetes.io/name: {{ include "serviceops.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+{{- define "serviceops.webSelectorLabels" -}}
+{{ include "serviceops.selectorLabels" . }}
+app.kubernetes.io/component: web
+{{- end }}
 {{- define "serviceops.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
 {{- default (include "serviceops.fullname" .) .Values.serviceAccount.name }}
