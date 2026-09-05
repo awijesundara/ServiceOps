@@ -105,3 +105,10 @@ def test_chart_requires_operator_managed_secrets():
     assert not (ROOT / "charts/serviceops/templates/secret.yaml").exists()
     assert 'required "existingSecret is required"' in helpers
     assert 'required "existingBootstrapSecret is required"' in helpers
+
+
+def test_local_deployer_labels_checked_out_source_with_canonical_version():
+    deployer = (ROOT / "tools/deploy-local.sh").read_text()
+    assert 'version="$(tr -d \'[:space:]\' < "$ROOT_DIR/VERSION")"' in deployer
+    assert 'SERVICEOPS_IMAGE=serviceops-app:$version' in deployer
+    assert 'without rewriting the operator\'s protected .env file' in deployer
