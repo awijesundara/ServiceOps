@@ -10,6 +10,7 @@ alembic==1.18.5
 Mako==1.3.12
 Flask-Login==0.6.3
 Authlib==1.7.2
+joserfc==1.7.4
 ldap3==2.9.1
 requests==2.34.2
 # Offline deployment support: install the binary extra as a fallback when

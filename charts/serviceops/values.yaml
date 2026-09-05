@@ -36,16 +36,6 @@ ingress:
 
 existingSecret: serviceops-secrets
 existingBootstrapSecret: serviceops-bootstrap
-secret:
-  create: false
-  secretKey: ""
-  settingsEncryptionKey: ""
-  auditIntegrityKey: ""
-  apiTokenPepper: ""
-  adminPassword: ""
-  databaseUrl: ""
-  ldapBindPassword: ""
-  keycloakClientSecret: ""
 
 database:
   mode: external
@@ -118,6 +108,12 @@ podDisruptionBudget:
 networkPolicy:
   enabled: true
   ingressNamespaceSelector: {}
+
+healthTest:
+  image:
+    repository: curlimages/curl
+    tag: "8.15.0"
+    digest: "sha256:4026b29997dc7c823b51c164b71e2b51e0fd95cce4601f78202c513d97da2922"
 
 podAnnotations: {}
 podLabels: {}

@@ -1,11 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["replicaCount", "image", "deploymentProfile", "database", "existingSecret"],
+  "required": ["replicaCount", "image", "deploymentProfile", "database", "existingSecret", "existingBootstrapSecret", "healthTest"],
   "properties": {
     "replicaCount": {"type": "integer", "minimum": 1},
     "deploymentProfile": {"type": "string", "const": "production"},
     "existingSecret": {"type": "string", "minLength": 1},
+    "existingBootstrapSecret": {"type": "string", "minLength": 1},
     "image": {
       "type": "object",
       "required": ["repository", "tag", "digest"],
@@ -22,6 +23,21 @@
       "properties": {
         "mode": {"type": "string", "const": "external"},
         "readinessTimeoutSeconds": {"type": "integer", "minimum": 30, "maximum": 3600}
+      }
+    },
+    "healthTest": {
+      "type": "object",
+      "required": ["image"],
+      "properties": {
+        "image": {
+          "type": "object",
+          "required": ["repository", "tag", "digest"],
+          "properties": {
+            "repository": {"type": "string", "minLength": 1},
+            "tag": {"type": "string", "minLength": 1},
+            "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+          }
+        }
       }
     },
     "security": {

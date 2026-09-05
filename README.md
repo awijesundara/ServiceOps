@@ -257,9 +257,18 @@ controls.
 cp deploy/kubernetes/values-production.example.yaml \
   deploy/kubernetes/values-production.yaml
 # Configure image.repository, image.digest, ingress, storage class, and replicas.
+# The installer creates separate runtime and bootstrap Secrets on first install.
+# Back them up to the approved vault before continuing.
 ./serviceops install kubernetes --preflight
 ./serviceops install kubernetes
 ```
+
+The chart accepts only operator-managed `existingSecret` and
+`existingBootstrapSecret` references; it never renders credentials into a Helm
+release. The installer creates both exactly once and preserves them on upgrade.
+If only one exists it stops for operator recovery, because silently rotating
+`SETTINGS_ENCRYPTION_KEY`, `AUDIT_INTEGRITY_KEY`, or `API_TOKEN_PEPPER` can make
+encrypted settings unreadable and invalidate audit or API-token continuity.
 
 For upgrades, never use `kubectl set image`: the chart deploys by immutable
 digest, so changing only a tag does not change the running artifact. Use the
