@@ -14,6 +14,7 @@ NAMESPACE="${SERVICEOPS_NAMESPACE:-serviceops}"
 RELEASE="${SERVICEOPS_RELEASE:-serviceops}"
 VALUES_FILE="${SERVICEOPS_VALUES:-$ROOT_DIR/deploy/kubernetes/values-production.yaml}"
 TARGET_TAG="${1:-}"
+TARGET_DIGEST="${2:-}"
 
 die(){ printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 ok(){ printf '✓ %s\n' "$*"; }
@@ -29,9 +30,11 @@ current_tag="$(helm get values "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null \
 default_tag="$(sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$CHART/Chart.yaml" | tail -1)"
 [[ -n "$TARGET_TAG" ]] || TARGET_TAG="$default_tag"
 [[ -n "$TARGET_TAG" ]] || die "Unable to determine a target image tag; pass one explicitly."
+[[ "$TARGET_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "Pass the verified target image digest as the second argument (sha256:<64 hex characters>)."
 
 echo "Current release image tag: $current_tag"
 echo "Target image tag:          $TARGET_TAG"
+echo "Target image digest:       $TARGET_DIGEST"
 
 helm lint "$CHART" >/dev/null && ok "Helm chart lint passed"
 python3 "$ROOT_DIR/tools/verify_supply_chain.py" >/dev/null && ok "Supply-chain policy verification passed"
@@ -42,7 +45,8 @@ echo "Current revision: $previous_revision (helm rollback $RELEASE $previous_rev
 
 echo "Applying the update with --atomic (automatic rollback on failure)..."
 helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" -f "$VALUES_FILE" \
-  --set "image.tag=$TARGET_TAG" \
+  --set-string "image.tag=$TARGET_TAG" \
+  --set-string "image.digest=$TARGET_DIGEST" \
   --atomic --wait --timeout 10m
 
 kubectl rollout status "deployment/$RELEASE" -n "$NAMESPACE" --timeout=5m

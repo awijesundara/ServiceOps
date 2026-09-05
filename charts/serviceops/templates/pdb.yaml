@@ -8,5 +8,5 @@ spec:
   minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
-    matchLabels: {{- include "serviceops.selectorLabels" . | nindent 6 }}
+    matchLabels: {{- include "serviceops.webSelectorLabels" . | nindent 6 }}
 {{- end }}

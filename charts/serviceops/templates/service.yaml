@@ -10,4 +10,4 @@ spec:
       port: {{ .Values.service.port }}
       targetPort: http
       protocol: TCP
-  selector: {{- include "serviceops.selectorLabels" . | nindent 4 }}
+  selector: {{- include "serviceops.webSelectorLabels" . | nindent 4 }}
