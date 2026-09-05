@@ -6,7 +6,7 @@ approvals, SLAs, automation, and analytics.** It is designed for controlled
 on-premises or private-cloud operation without vendor lock-in.
 
 [![Supply chain](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml/badge.svg)](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml)
-[![Version](https://img.shields.io/badge/version-1.79.4-003E4C)](VERSION)
+[![Version](https://img.shields.io/badge/version-1.80.0-003E4C)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](Dockerfile)
 [![Docker](https://img.shields.io/badge/docker-compose%20%7C%20kubernetes-2496ED?logo=docker&logoColor=white)](#deployment-options)
 [![PostgreSQL](https://img.shields.io/badge/database-postgresql-4169E1?logo=postgresql&logoColor=white)](#architecture)
@@ -34,9 +34,12 @@ verified backups.
 
 When AD/LDAP is enabled, interactive login and scheduled synchronization build
 a bounded, tenant-scoped user profile from administrator-mapped attributes.
-An administrator-only **Sync all LDAP users** action can pre-provision every
-valid directory user before their first login; scheduled synchronization only
-refreshes already known users and cannot bulk-create the directory.
+There is deliberately no **Sync all LDAP users** action. New accounts use
+just-in-time provisioning after successful LDAP authentication. A single
+background reconciliation per tenant refreshes known users and only provisions
+a missing manager needed for an approval chain. The search uses RFC 2696 paging,
+an administrator-defined scope filter, a 100-entry default page, a hard safety
+ceiling, a minimum 15-minute cadence, and four-times backoff after failures.
 ServiceOps can display names, title, department/division, employee identifiers
 and type, office, business/mobile phone, UPN, account state and expiry, selected
 directory timestamps, directory OU/domain and website, Unix/NIS identity,
@@ -97,7 +100,7 @@ image digests and verifies every transferred file before loading any image.
 
 ## Fresh-server RPM installation
 
-The following procedure installs the current stable release, **v1.79.4**, on a
+The following procedure installs the current stable release, **v1.80.0**, on a
 fresh Rocky Linux 9, AlmaLinux 9, or Oracle Linux 9 server. Run it from a normal
 administrative account with `sudo` access.
 
@@ -129,20 +132,20 @@ sudo dnf config-manager --add-repo \
 mkdir -p serviceops-install
 cd serviceops-install
 
-curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.79.4/serviceops-1.79.4-1.el9.noarch.rpm
-curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.79.4/serviceops-1.79.4-1.el9.noarch.rpm.sha256
+curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.80.0/serviceops-1.80.0-1.el9.noarch.rpm
+curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.80.0/serviceops-1.80.0-1.el9.noarch.rpm.sha256
 
-sha256sum -c serviceops-1.79.4-1.el9.noarch.rpm.sha256
+sha256sum -c serviceops-1.80.0-1.el9.noarch.rpm.sha256
 ```
 
 Do not continue unless checksum verification reports `OK`. Packages for the
 other supported platforms are available on the
-[v1.79.4 release page](https://github.com/awijesundara/ServiceOps/releases/tag/v1.79.4).
+[v1.80.0 release page](https://github.com/awijesundara/ServiceOps/releases/tag/v1.80.0).
 
 ### 3. Install and initialize ServiceOps
 
 ```bash
-sudo dnf install -y ./serviceops-1.79.4-1.el9.noarch.rpm
+sudo dnf install -y ./serviceops-1.80.0-1.el9.noarch.rpm
 sudo serviceops setup --mode bundled --yes
 ```
 
@@ -172,7 +175,7 @@ sudo serviceops health
 sudo serviceops doctor
 ```
 
-Health should report status `ok` and version `1.79.4`.
+Health should report status `ok` and version `1.80.0`.
 
 ### 5. Sign in securely
 
@@ -276,7 +279,7 @@ safe updater with both values:
 
 ```bash
 SERVICEOPS_VALUES=deploy/kubernetes/values-production.yaml \
-  ./tools/safe_update_k8s.sh v1.79.4 sha256:<verified-64-character-digest>
+  ./tools/safe_update_k8s.sh v1.80.0 sha256:<verified-64-character-digest>
 ```
 
 The chart runs one pre-install/pre-upgrade migration Job, waits for PostgreSQL
@@ -355,7 +358,11 @@ flowchart LR
 Configure NetBox under **Administration → Platform settings → NetBox
 connection** with an HTTPS URL, a read-only API token, and—when needed—the
 private CA certificate. Then use **CMDB → Import** to preview the reconciliation
-before applying it. The import screen documents how ServiceOps keeps NetBox
+before applying it. NetBox work is queued to the dedicated worker, read in
+configurable batches (100 records by default), and shown with live phase,
+record count, progress, and safe cancellation controls. Only one job per tenant
+can run at once, and cancellation is honored between bounded API pages. The
+import screen documents how ServiceOps keeps NetBox
 role, platform, cluster, tenant, status, lifecycle, location, and hardware
 fields semantically separate.
 The sync also retains assigned IP/DNS/VRF data, device and VM interfaces,

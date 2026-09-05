@@ -21,6 +21,15 @@
   </details>
   {% if netbox_enabled %}
   <p class="muted">Configure the URL, read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration home → Platform settings → NetBox connection</a>. See <a href="{{ url_for('rack_list') }}">Racks</a> for imported elevations.</p>
+  {% if netbox_sync_job %}
+  <div class="callout" id="netbox-sync-progress" data-status-url="{{ url_for('cmdb_import_netbox_job', job_id=netbox_sync_job.id) }}" data-cancel-url="{{ url_for('cmdb_import_netbox_cancel', job_id=netbox_sync_job.id) }}">
+    <strong>Synchronization job {{ netbox_sync_job.id }}</strong>
+    <p id="netbox-sync-status" aria-live="polite">{{ netbox_sync_job.status }} · {{ netbox_sync_job.phase }}</p>
+    <progress id="netbox-sync-meter" max="100" value="{{ 100 if netbox_sync_job.status == 'Completed' else 0 }}" style="width:100%">0%</progress>
+    <p class="muted" id="netbox-sync-count">{{ netbox_sync_job.processed }} processed{% if netbox_sync_job.total %} of {{ netbox_sync_job.total }}{% endif %}</p>
+    {% if netbox_sync_job.status in ('Pending', 'Running') %}<button type="button" class="button danger" id="netbox-sync-cancel">Cancel safely</button>{% endif %}
+  </div>
+  {% endif %}
   {% if netbox_sync_result %}
   <div class="callout"><strong>{{ 'Preview' if netbox_sync_result.dry_run else 'Applied' }}:</strong>
     {{ netbox_sync_result.devices_seen }} physical devices ·
@@ -37,12 +46,13 @@
   {% endif %}
   <form method="post" action="{{ url_for('cmdb_import_netbox') }}" class="actions">
     <label><input type="checkbox" name="dry_run" value="1" checked> Preview only (dry run)</label>
-    <button class="primary">Sync from NetBox</button>
+    <button class="primary"{% if netbox_sync_job and netbox_sync_job.status in ('Pending', 'Running') %} disabled{% endif %}>Queue NetBox sync</button>
   </form>
   {% else %}
   <div class="callout"><strong>NetBox sync is not enabled.</strong> Configure the URL, a read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration home → Platform settings → NetBox connection</a>.</div>
   {% endif %}
 </section>
+{% if netbox_sync_job %}<script src="{{ url_for('static', filename='netbox-sync.js', v=app_version) }}" defer></script>{% endif %}
 
 <section class="panel" id="spreadsheet-import">
   <h2>Import from spreadsheet</h2>

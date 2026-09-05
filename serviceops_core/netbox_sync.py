@@ -251,13 +251,20 @@ def _get(session, base_url, path, params=None):
     return response.json()
 
 
-def _paginate(session, base_url, path):
-    params = {"limit": 100, "offset": 0}
+def _paginate(session, base_url, path, *, page_size=100, progress_callback=None,
+              cancel_check=None):
+    """Yield one bounded NetBox page at a time with cooperative cancellation."""
+    page_size = max(10, min(int(page_size), 500))
+    params = {"limit": page_size, "offset": 0}
     while True:
+        if cancel_check and cancel_check():
+            raise NetboxSyncError("Synchronization cancelled by an administrator.")
         payload = _get(session, base_url, path, params=params)
         results = payload.get("results", [])
         for result in results:
             yield result
+        if progress_callback:
+            progress_callback(path, len(results), payload.get("count"))
         if not payload.get("next"):
             return
         # NetBox may cap a requested page below `limit`; advance by the rows
@@ -268,7 +275,7 @@ def _paginate(session, base_url, path):
         params["offset"] += len(results)
 
 
-def _fetch_all_components(session, base_url):
+def _fetch_all_components(session, base_url, **pagination):
     """Fetches interfaces/console ports/power ports/inventory items for every
     device and groups the formatted summaries by device id. Each component
     type is fetched independently -- if the API token lacks permission for
@@ -279,7 +286,7 @@ def _fetch_all_components(session, base_url):
     for path, label, formatter in COMPONENT_ENDPOINTS:
         by_device = {}
         try:
-            for record in _paginate(session, base_url, path):
+            for record in _paginate(session, base_url, path, **pagination):
                 device_id = str(_first_attr(record, "device", "id") or "")
                 if not device_id:
                     continue
@@ -292,13 +299,13 @@ def _fetch_all_components(session, base_url):
     return grouped, warnings
 
 
-def _fetch_vm_components(session, base_url):
+def _fetch_vm_components(session, base_url, **pagination):
     grouped = {}
     warnings = []
     for path, label, formatter in VM_COMPONENT_ENDPOINTS:
         by_vm = {}
         try:
-            for record in _paginate(session, base_url, path):
+            for record in _paginate(session, base_url, path, **pagination):
                 vm_id = str(_first_attr(record, "virtual_machine", "id") or "")
                 if vm_id:
                     by_vm.setdefault(vm_id, []).append(formatter(record))
@@ -310,10 +317,10 @@ def _fetch_vm_components(session, base_url):
     return grouped, warnings
 
 
-def _fetch_assigned_ip_addresses(session, base_url):
+def _fetch_assigned_ip_addresses(session, base_url, **pagination):
     devices, vms, warnings = {}, {}, []
     try:
-        for record in _paginate(session, base_url, "/api/ipam/ip-addresses/"):
+        for record in _paginate(session, base_url, "/api/ipam/ip-addresses/", **pagination):
             assigned = record.get("assigned_object") or {}
             device_id = _first_attr(assigned, "device", "id")
             vm_id = _first_attr(assigned, "virtual_machine", "id")
@@ -665,7 +672,8 @@ def _upsert(mapped, tenant_id, summary):
         summary["cis_created"] += 1
 
 
-def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
+def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session,
+                     *, page_size=100, progress_callback=None, cancel_check=None):
     """Pull devices and VMs from NetBox and upsert them into ConfigurationItem
     for ``tenant_id``. Fails closed on missing tenant/configuration rather
     than silently defaulting."""
@@ -712,10 +720,15 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
     }
 
     session = session_factory(base_url, token)
+    pagination = {
+        "page_size": page_size,
+        "progress_callback": progress_callback,
+        "cancel_check": cancel_check,
+    }
     record_transaction = nullcontext if dry_run else db.session.begin_nested
     try:
         rack_id_map = {}
-        for record in _paginate(session, base_url, RACKS_PATH):
+        for record in _paginate(session, base_url, RACKS_PATH, **pagination):
             counts_before = (summary["racks_created"], summary["racks_updated"])
             try:
                 with record_transaction():
@@ -724,14 +737,16 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
             except Exception as error:  # noqa: BLE001 - isolate one bad record from the whole sync
                 summary["racks_created"], summary["racks_updated"] = counts_before
                 summary["errors"].append(f"rack {record.get('name', record.get('id'))}: {type(error).__name__}")
-        devices = list(_paginate(session, base_url, DEVICES_PATH))
-        components_by_device, component_warnings = _fetch_all_components(session, base_url) if devices else ({}, [])
-        vm_components, vm_component_warnings = _fetch_vm_components(session, base_url)
-        device_ips, vm_ips, ip_warnings = _fetch_assigned_ip_addresses(session, base_url)
+        devices = list(_paginate(session, base_url, DEVICES_PATH, **pagination))
+        components_by_device, component_warnings = _fetch_all_components(session, base_url, **pagination) if devices else ({}, [])
+        vm_components, vm_component_warnings = _fetch_vm_components(session, base_url, **pagination)
+        device_ips, vm_ips, ip_warnings = _fetch_assigned_ip_addresses(session, base_url, **pagination)
         summary["warnings"].extend(component_warnings)
         summary["warnings"].extend(vm_component_warnings)
         summary["warnings"].extend(ip_warnings)
         for record in devices:
+            if cancel_check and cancel_check():
+                raise NetboxSyncError("Synchronization cancelled by an administrator.")
             summary["devices_seen"] += 1
             counts_before = (
                 summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"],
@@ -745,7 +760,7 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session):
             except Exception as error:  # noqa: BLE001 - isolate one bad record from the whole sync
                 summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"] = counts_before
                 summary["errors"].append(f"device {record.get('name', record.get('id'))}: {type(error).__name__}")
-        for record in _paginate(session, base_url, VMS_PATH):
+        for record in _paginate(session, base_url, VMS_PATH, **pagination):
             summary["virtual_machines_seen"] += 1
             counts_before = (
                 summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"],

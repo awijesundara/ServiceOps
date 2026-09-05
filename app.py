@@ -47,7 +47,7 @@ from alembic.script import ScriptDirectory
 from cryptography.fernet import Fernet, InvalidToken
 from ldap3 import ALL, BASE, SUBTREE, Connection, Server, Tls
 from ldap3.utils.conv import escape_filter_chars
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.pool import StaticPool
@@ -3903,6 +3903,93 @@ def process_rt_import_jobs(limit=1):
     return processed
 
 
+def process_integration_sync_jobs(limit=1):
+    """Run bounded external reconciliations outside HTTP request workers."""
+    jobs = IntegrationSyncJob.query.filter_by(status="Pending").order_by(
+        IntegrationSyncJob.created_at, IntegrationSyncJob.id
+    ).with_for_update(skip_locked=True).limit(limit).all()
+    processed_jobs = 0
+    for job in jobs:
+        # Only one job for an integration and tenant may run at once. The UI
+        # prevents duplicates; this worker-side check is the authoritative lock.
+        running_job = IntegrationSyncJob.query.filter(
+            IntegrationSyncJob.tenant_id == job.tenant_id,
+            IntegrationSyncJob.integration == job.integration,
+            IntegrationSyncJob.status == "Running",
+            IntegrationSyncJob.id != job.id,
+        ).first()
+        if running_job:
+            continue
+        job.status = "Running"
+        job.phase = "Connecting"
+        job.started_at = now()
+        db.session.commit()
+        path_processed = {}
+        path_totals = {}
+
+        def cancelled():
+            with db.engine.connect() as connection:
+                return bool(connection.execute(
+                    select(IntegrationSyncJob.cancel_requested).where(
+                        IntegrationSyncJob.id == job.id
+                    )
+                ).scalar())
+
+        def progress(path, count, total):
+            path_processed[path] = path_processed.get(path, 0) + count
+            if isinstance(total, int):
+                path_totals[path] = total
+            values = {
+                "phase": path.replace("/api/", "").strip("/").replace("/", " / "),
+                "processed": sum(path_processed.values()),
+                "total": sum(path_totals.values()) if path_totals else None,
+                "updated_at": now(),
+            }
+            # Separate transaction keeps progress observable without committing
+            # a dry-run's in-memory reconciliation changes.
+            with db.engine.begin() as connection:
+                connection.execute(update(IntegrationSyncJob).where(
+                    IntegrationSyncJob.id == job.id
+                ).values(**values))
+
+        try:
+            if job.integration != "netbox":
+                raise RuntimeError("Unsupported integration job type")
+            from serviceops_core.netbox_sync import sync_from_netbox
+            result = sync_from_netbox(
+                job.tenant_id, dry_run=job.dry_run,
+                page_size=max(10, min(setting_int("NETBOX_SYNC_BATCH_SIZE", 100), 500)),
+                progress_callback=progress, cancel_check=cancelled,
+            )
+        except Exception as error:  # noqa: BLE001 - isolate external integration failure
+            db.session.rollback()
+            job = db.session.get(IntegrationSyncJob, job.id)
+            if job.cancel_requested or "cancelled" in str(error).casefold():
+                job.status = "Cancelled"
+                job.phase = "Cancelled safely between batches"
+                job.error = None
+            else:
+                job.status = "Failed"
+                job.phase = "Failed"
+                job.error = f"{type(error).__name__}: {str(error)[:800]}"
+        else:
+            db.session.expire_all()
+            job = db.session.get(IntegrationSyncJob, job.id)
+            job.status = "Completed"
+            job.phase = "Completed"
+            job.result_json = json.dumps(result)
+        job.finished_at = now()
+        job.updated_at = now()
+        audit(
+            "configure", f"NetBox CMDB sync {job.status.casefold()}",
+            f"Job {job.id}; processed={job.processed}; phase={job.phase}",
+            user_id=job.actor_user_id, tenant_id=job.tenant_id,
+        )
+        db.session.commit()
+        processed_jobs += 1
+    return processed_jobs
+
+
 def process_ldap_sync_schedule(limit=50):
     """Run the LDAP directory sync (serviceops_core.ldap_sync.sync_directory)
     for each active, LDAP-enabled tenant whose scheduled interval has
@@ -3912,7 +3999,7 @@ def process_ldap_sync_schedule(limit=50):
     crashes the pass for other tenants."""
     if not setting_bool("LDAP_ENABLED") or not setting_bool("LDAP_SYNC_ENABLED"):
         return 0
-    interval = timedelta(minutes=max(setting_int("LDAP_SYNC_INTERVAL_MINUTES", 60), 1))
+    interval = timedelta(minutes=max(setting_int("LDAP_SYNC_INTERVAL_MINUTES", 60), 15))
     current = now()
     processed = 0
     tenants = Tenant.query.filter_by(active=True).order_by(Tenant.id).limit(limit).all()
@@ -3924,7 +4011,11 @@ def process_ldap_sync_schedule(limit=50):
                 comparison_now = current
                 if last_run.tzinfo is None:
                     comparison_now = current.replace(tzinfo=None)
-                if comparison_now - last_run < interval:
+                # A failed/bind-rejected directory is cooled down instead of
+                # hammering AD every worker cycle. A later success restores
+                # the normal cadence automatically.
+                effective_interval = interval * (4 if state.last_status in ("error", "skipped") else 1)
+                if comparison_now - last_run < effective_interval:
                     continue
             if not state:
                 state = LdapSyncState(tenant_id=tenant.id)
@@ -13797,40 +13888,76 @@ def create_app(test_config=None):
             "cmdb_import.html", preview=preview, csv_text=csv_text,
             netbox_enabled=setting_bool("NETBOX_ENABLED"),
             netbox_sync_result=session.pop("netbox_sync_result", None),
+            netbox_sync_job=tenant_query(IntegrationSyncJob).filter_by(
+                integration="netbox"
+            ).order_by(IntegrationSyncJob.created_at.desc()).first(),
         )
 
     @app.post("/cmdb/import/netbox")
     @roles("admin")
+    @require_action("configure")
     def cmdb_import_netbox():
-        from serviceops_core.netbox_sync import NetboxSyncError, sync_from_netbox
-
         dry_run = bool(request.form.get("dry_run"))
-        try:
-            result = sync_from_netbox(tenant_context_id(), dry_run=dry_run)
-        except NetboxSyncError as error:
-            flash(f"NetBox sync could not run: {error}", "error")
-        else:
-            audit(
-                "configure", "NetBox CMDB sync",
-                f"{'Preview' if dry_run else 'Applied'}: "
-                f"{result['devices_seen']} physical devices and {result['virtual_machines_seen']} VMs seen, "
-                f"{result['cis_created']} created, "
-                f"{result['cis_updated']} updated, {result['racks_created']} racks created, "
-                f"{result['racks_updated']} racks updated, {len(result['errors'])} errors",
+        tenant_id = tenant_context_id()
+        # Serialize enqueue decisions per tenant on PostgreSQL. Without this,
+        # simultaneous browser requests could both pass the active-job check.
+        if db.engine.dialect.name == "postgresql":
+            db.session.execute(
+                db.text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                {"lock_id": tenant_id * 1000 + 349},
             )
-            session["netbox_sync_result"] = result
-            flash(
-                (
-                    "NetBox sync preview: " if dry_run else "NetBox sync applied: "
-                ) + (
-                    f"{result['devices_seen']} physical devices and {result['virtual_machines_seen']} VMs seen, "
-                    f"{result['cis_created']} created, "
-                    f"{result['cis_updated']} updated, {result['racks_created']} racks created, "
-                    f"{result['racks_updated']} racks updated, {len(result['errors'])} errors."
-                ),
-                "success" if not result["errors"] else "warning",
-            )
+        active = tenant_query(IntegrationSyncJob).filter(
+            IntegrationSyncJob.integration == "netbox",
+            IntegrationSyncJob.status.in_(("Pending", "Running")),
+        ).first()
+        if active:
+            flash("A NetBox synchronization is already queued or running.", "warning")
+            return redirect(url_for("cmdb_import") + "#netbox-sync")
+        job = IntegrationSyncJob(
+            tenant_id=tenant_id, actor_user_id=current_user.id,
+            integration="netbox", dry_run=dry_run,
+        )
+        db.session.add(job)
+        db.session.flush()
+        audit("configure", "NetBox CMDB sync queued", f"Job {job.id}; preview={dry_run}")
+        db.session.commit()
+        flash("NetBox synchronization queued. It will run in controlled batches.", "success")
         return redirect(url_for("cmdb_import"))
+
+    @app.get("/cmdb/import/netbox/jobs/<int:job_id>")
+    @roles("admin")
+    @require_action("configure")
+    def cmdb_import_netbox_job(job_id):
+        job = tenant_record_or_404(IntegrationSyncJob, job_id)
+        if job.integration != "netbox":
+            abort(404)
+        total = job.total or 0
+        percent = min(99, int(job.processed * 100 / total)) if total else 0
+        if job.status == "Completed":
+            percent = 100
+        return jsonify({
+            "id": job.id, "status": job.status, "phase": job.phase,
+            "processed": job.processed, "total": job.total, "percent": percent,
+            "cancel_requested": job.cancel_requested, "result": job.result,
+            "error": job.error,
+        })
+
+    @app.post("/cmdb/import/netbox/jobs/<int:job_id>/cancel")
+    @roles("admin")
+    @require_action("configure")
+    def cmdb_import_netbox_cancel(job_id):
+        job = tenant_record_or_404(IntegrationSyncJob, job_id)
+        if job.integration != "netbox":
+            abort(404)
+        if job.status in ("Pending", "Running"):
+            job.cancel_requested = True
+            if job.status == "Pending":
+                job.status = "Cancelled"
+                job.phase = "Cancelled before start"
+                job.finished_at = now()
+            audit("configure", "NetBox CMDB sync cancellation requested", f"Job {job.id}")
+            db.session.commit()
+        return jsonify({"status": job.status, "cancel_requested": job.cancel_requested})
 
     @app.route("/cmdb/racks", methods=["GET", "POST"])
     @roles("agent", "manager", "admin")
@@ -15329,58 +15456,6 @@ def create_app(test_config=None):
                       f"removed {link.ci.name}")
                 db.session.delete(link)
                 flash(f"{link.ci.name} unlinked from {link.service_offering.name}.", "success")
-            elif action == "sync_directory":
-                # This action manages its own transaction (sync_directory commits
-                # or rolls back internally) so it is handled separately from the
-                # generic commit-and-redirect flow below.
-                from serviceops_core.ldap_sync import DirectorySyncError, sync_directory
-                dry_run = bool(request.form.get("dry_run"))
-                try:
-                    result = sync_directory(
-                        tenant_context_id(), dry_run=dry_run, provision_all=True
-                    )
-                except DirectorySyncError as error:
-                    flash(f"Directory sync could not run: {error}", "error")
-                except LdapBindError as error:
-                    flash(f"Directory sync could not bind to LDAP: {error}", "error")
-                else:
-                    audit(
-                        "configure", "LDAP directory sync",
-                        f"{'Preview' if dry_run else 'Applied'}: "
-                        f"{result['users_updated']} users updated, "
-                        f"{result.get('users_provisioned', 0)} users provisioned, "
-                        f"{result['managers_resolved']} managers resolved, "
-                        f"{result['managers_provisioned']} managers provisioned, "
-                        f"{result.get('self_manager_skipped', 0)} self-manager records skipped, "
-                        f"{result['memberships_added']} memberships added, "
-                        f"{result['memberships_removed']} memberships removed, "
-                        f"{result.get('teams_created', 0)} teams created, "
-                        f"{result.get('team_managers_inferred', 0)} team managers inferred, "
-                        f"{result.get('accounts_deactivated', 0)} accounts deactivated, "
-                        f"{result['users_unmatched']} unmatched, "
-                        f"{len(result['errors'])} errors",
-                    )
-                    session["ldap_sync_result"] = result
-                    flash(
-                        (
-                            "Directory sync preview: " if dry_run else "Directory sync applied: "
-                        ) + (
-                            f"{result['users_updated']} users updated, "
-                            f"{result.get('users_provisioned', 0)} users provisioned, "
-                            f"{result['managers_resolved']} managers resolved, "
-                            f"{result['managers_provisioned']} managers provisioned, "
-                            f"{result.get('self_manager_skipped', 0)} self-manager records skipped, "
-                            f"{result['memberships_added']} memberships added, "
-                            f"{result['memberships_removed']} memberships removed, "
-                            f"{result.get('teams_created', 0)} teams created, "
-                            f"{result.get('team_managers_inferred', 0)} team managers inferred, "
-                            f"{result.get('accounts_deactivated', 0)} accounts deactivated, "
-                            f"{result['users_unmatched']} unmatched entries, "
-                            f"{len(result['errors'])} errors."
-                        ),
-                        "success" if not result["errors"] else "warning",
-                    )
-                return _admin_referrer_redirect("itil_admin")
             else:
                 abort(400)
             db.session.commit()

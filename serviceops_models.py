@@ -52,6 +52,7 @@ __all__ = [
     "KpiSnapshotState",
     "RTImportJob",
     "LdapSyncState",
+    "IntegrationSyncJob",
     "Ticket",
     "Comment",
     "TaskNote",
@@ -458,6 +459,31 @@ class LdapSyncState(db.Model):
     last_run_at = db.Column(db.DateTime(timezone=True))
     last_status = db.Column(db.String(20))
     last_error = db.Column(db.Text)
+
+
+class IntegrationSyncJob(db.Model):
+    """Durable, cancellable background reconciliation for external systems."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    integration = db.Column(db.String(30), nullable=False, index=True)
+    dry_run = db.Column(db.Boolean, nullable=False, default=True)
+    status = db.Column(db.String(20), nullable=False, default="Pending", index=True)
+    phase = db.Column(db.String(120), nullable=False, default="Queued")
+    processed = db.Column(db.Integer, nullable=False, default=0)
+    total = db.Column(db.Integer)
+    cancel_requested = db.Column(db.Boolean, nullable=False, default=False)
+    result_json = db.Column(db.Text)
+    error = db.Column(db.Text)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    started_at = db.Column(db.DateTime(timezone=True))
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    finished_at = db.Column(db.DateTime(timezone=True))
+    actor = db.relationship("User")
+
+    @property
+    def result(self):
+        return json.loads(self.result_json) if self.result_json else None
 
 
 class Ticket(db.Model):
