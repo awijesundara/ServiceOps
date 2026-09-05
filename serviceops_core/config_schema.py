@@ -70,7 +70,9 @@ SETTING_DEFINITIONS = {
             "live": True,
         },
         {"key": "LDAP_SYNC_ENABLED", "label": "Enable scheduled LDAP directory sync", "type": "bool", "default": "false", "live": True},
-        {"key": "LDAP_SYNC_INTERVAL_MINUTES", "label": "LDAP directory sync interval (minutes)", "type": "int", "default": "60", "min": 5, "max": 10080, "live": True},
+        {"key": "LDAP_SYNC_INTERVAL_MINUTES", "label": "LDAP reconciliation interval (minutes)", "type": "int", "default": "60", "min": 15, "max": 10080, "live": True},
+        {"key": "LDAP_SYNC_PAGE_SIZE", "label": "LDAP reconciliation page size", "type": "int", "default": "100", "min": 25, "max": 500, "live": True},
+        {"key": "LDAP_SYNC_MAX_ENTRIES", "label": "LDAP reconciliation safety ceiling", "type": "int", "default": "5000", "min": 100, "max": 50000, "live": True},
         {"key": "KEYCLOAK_ENABLED", "label": "Enable Keycloak", "type": "bool", "default": "false", "live": False},
         {"key": "KEYCLOAK_DISCOVERY_URL", "label": "Keycloak discovery URL", "type": "url", "default": "", "live": False},
         {"key": "KEYCLOAK_CLIENT_ID", "label": "Keycloak client ID", "type": "text", "default": "", "live": False},
@@ -134,6 +136,7 @@ SETTING_DEFINITIONS = {
         {"key": "NETBOX_ENABLED", "label": "Enable NetBox sync", "type": "bool", "default": "false", "live": True},
         {"key": "NETBOX_BASE_URL", "label": "NetBox base URL", "type": "url", "default": "", "live": True},
         {"key": "NETBOX_API_TOKEN", "label": "NetBox API token", "type": "secret", "default": "", "live": True},
+        {"key": "NETBOX_SYNC_BATCH_SIZE", "label": "NetBox synchronization batch size", "type": "int", "default": "100", "min": 10, "max": 500, "live": True},
         {
             "key": "NETBOX_CA_CERT", "type": "text", "default": "", "live": True,
             "label": "NetBox CA certificate (PEM, only needed if NetBox uses an internal CA)",

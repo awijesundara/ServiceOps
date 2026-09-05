@@ -80,40 +80,11 @@
 </section>
 
 <section class="panel admin-section">
-  <div class="panel-head"><div><h2>Directory synchronization</h2><p>Administrator-only full sync creates LDAP-backed profiles for every valid directory user and refreshes identity, organization, office/contact, account-state, login-age, Unix, manager-chain, team-name, and friendly group details. Passwords, certificates, security descriptors, and authentication blobs are never copied. Scheduled sync is {% if ldap_sync_enabled %}enabled every {{ ldap_sync_interval_minutes }} minute{{ '' if ldap_sync_interval_minutes == 1 else 's' }}{% else %}disabled{% endif %} and refreshes known users without creating the entire directory.</p></div></div>
+  <div class="panel-head"><div><h2>Directory reconciliation</h2><p>ServiceOps uses scoped, scheduled LDAP reconciliation and just-in-time provisioning at successful sign-in. There is no bulk "sync all users" action. Reconciliation refreshes existing profiles and only creates a missing manager needed for a verified reporting chain. RFC 2696 paging, a hard entry ceiling, one tenant job at a time, and failure backoff protect domain controllers.</p></div></div>
   {% if not ldap_enabled %}
   <p class="muted">AD/LDAP is not enabled. Turn it on above first.</p>
   {% else %}
-  <form method="post" action="{{ post_url }}" class="actions">
-    <input type="hidden" name="action" value="sync_directory">
-    <label><input type="checkbox" name="dry_run" value="1" checked> Preview only (no changes saved)</label>
-    <button class="primary">Sync all LDAP users</button>
-  </form>
-  {% if ldap_sync_result %}
-  <table>
-    <thead><tr><th>Entries</th><th>New users</th><th>Profiles</th><th>Users updated</th><th>Managers</th><th>Teams created</th><th>Team managers</th><th>Membership + / −</th><th>Deactivated</th><th>Unmatched</th><th>Errors</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>{{ ldap_sync_result.directory_entries }}</td>
-        <td>{{ ldap_sync_result.users_provisioned or 0 }}</td>
-        <td>{{ ldap_sync_result.directory_profiles_updated or 0 }}</td>
-        <td>{{ ldap_sync_result.users_updated }}</td>
-        <td>{{ ldap_sync_result.managers_resolved }}</td>
-        <td>{{ ldap_sync_result.teams_created or 0 }}</td>
-        <td>{{ ldap_sync_result.team_managers_inferred or 0 }}</td>
-        <td>{{ ldap_sync_result.memberships_added }} / {{ ldap_sync_result.memberships_removed }}</td>
-        <td>{{ ldap_sync_result.accounts_deactivated or 0 }}</td>
-        <td>{{ ldap_sync_result.users_unmatched }}</td>
-        <td>{{ ldap_sync_result.errors|length }}</td>
-      </tr>
-    </tbody>
-  </table>
-  {% if ldap_sync_result.dry_run %}<p class="muted">This was a preview; no changes were saved.</p>{% endif %}
-  {% if ldap_sync_result.self_manager_users %}
-  <p class="muted">Self-manager records skipped (directory manager points to own DN): {{ ldap_sync_result.self_manager_users|join(', ') }}.</p>
-  {% endif %}
-  {% for error in ldap_sync_result.errors %}<p class="muted">{{ error }}</p>{% endfor %}
-  {% endif %}
+  <div class="callout"><strong>{{ 'Active' if ldap_sync_enabled else 'Paused' }}.</strong> {% if ldap_sync_enabled %}The worker reconciles the configured LDAP scope every {{ ldap_sync_interval_minutes }} minutes.{% else %}Enable scheduled LDAP directory sync above after testing a narrow LDAP user filter.{% endif %} New users are created at first successful LDAP login; this avoids directory-wide provisioning and stale unused accounts.</div>
   {% endif %}
 </section>
 {% endif %}

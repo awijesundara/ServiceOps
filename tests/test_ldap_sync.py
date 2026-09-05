@@ -243,7 +243,7 @@ def test_manager_who_never_logged_in_is_provisioned_and_resolved(app, monkeypatc
         assert User.query.filter_by(username="wei.guo").count() == 1
 
 
-def test_admin_full_sync_provisions_every_valid_directory_user(app, monkeypatch):
+def test_reconciliation_never_bulk_provisions_unknown_directory_user(app, monkeypatch):
     with app.app_context():
         dn = "CN=Never Logged In,OU=Users,DC=example,DC=com"
         entries = [FakeEntry(dn, {
@@ -256,15 +256,12 @@ def test_admin_full_sync_provisions_every_valid_directory_user(app, monkeypatch)
         })]
         monkeypatch.setattr("app.ldap_server_and_service_connection", enable_ldap(entries))
 
-        result = sync_directory(1, provision_all=True)
+        result = sync_directory(1)
 
-        user = User.query.filter_by(username="never.logged.in").one()
-        assert user.email == "never.logged.in@example.com"
-        assert user.department == "Infrastructure"
-        assert ExternalIdentity.query.filter_by(provider="ldap", subject=dn).one().user_id == user.id
-        assert DirectoryProfile.query.filter_by(user_id=user.id).one().profile["account_enabled"] is True
-        assert result["users_provisioned"] == 1
-        assert result["users_unmatched"] == 0
+        assert User.query.filter_by(username="never.logged.in").first() is None
+        assert ExternalIdentity.query.filter_by(provider="ldap", subject=dn).first() is None
+        assert result["users_provisioned"] == 0
+        assert result["users_unmatched"] == 1
 
 
 def test_normal_sync_does_not_bulk_provision_unknown_users(app, monkeypatch):
@@ -415,7 +412,7 @@ def test_missing_or_invalid_tenant_id_fails_closed(app, monkeypatch):
             sync_directory(999999)  # tenant does not exist
 
 
-def test_admin_route_triggers_directory_sync_preview(client, app, monkeypatch):
+def test_admin_route_rejects_removed_directory_bulk_sync(client, app, monkeypatch):
     with app.app_context():
         dn = "CN=Grace,OU=Users,DC=example,DC=com"
         provision_ldap_user("grace", dn, title="Old Title")
@@ -427,7 +424,7 @@ def test_admin_route_triggers_directory_sync_preview(client, app, monkeypatch):
         data={"action": "sync_directory", "dry_run": "1"},
         follow_redirects=True,
     )
-    assert response.status_code == 200
+    assert response.status_code == 400
     with app.app_context():
         grace = User.query.filter_by(username="grace").one()
         # dry_run must not persist changes

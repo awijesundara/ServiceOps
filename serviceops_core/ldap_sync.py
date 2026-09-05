@@ -7,12 +7,11 @@ from an existing LDAP/AD directory, using the same bind, StartTLS, and
 attribute-matching conventions already used by interactive LDAP login
 (app.ldap_authenticate).
 
-By default it updates already-provisioned identities and pre-provisions only
-missing managers.  An administrator can explicitly request ``provision_all``
-to create an LDAP-backed ServiceOps profile for every valid directory entry.
-Scheduled/background synchronization never enables this mode: bulk account
-creation is an intentional, audited administrator action.
-  * run on a schedule (manual trigger only; see app.py's admin route),
+It updates already-provisioned identities and pre-provisions only missing
+managers needed to preserve approval chains. It deliberately has no mode that
+creates every directory account: broad provisioning must be scoped upstream
+and users are otherwise created on first successful sign-in.
+  * run only on the tenant-scoped worker schedule (there is no HTTP trigger),
   * mutate approval-resolution logic (Approval/CCB code is unchanged; it
     merely benefits from the more complete User/GroupMember data this
     produces).
@@ -263,7 +262,7 @@ def _first(values_dict, attr_name):
     return value or None
 
 
-def sync_directory(tenant_id, dry_run=False, provision_all=False):
+def sync_directory(tenant_id, dry_run=False):
     """Synchronize directory-sourced profile fields, manager chain, and
     AD-group team membership for every LDAP-provisioned user in ``tenant_id``.
 
@@ -310,12 +309,14 @@ def sync_directory(tenant_id, dry_run=False, provision_all=False):
         ).replace("{username}", "*")
         base_dn = core_app.setting_value("LDAP_BASE_DN", "")
         entries = []
+        page_size = max(25, min(core_app.setting_int("LDAP_SYNC_PAGE_SIZE", 100), 500))
+        max_entries = max(100, min(core_app.setting_int("LDAP_SYNC_MAX_ENTRIES", 5000), 50000))
         for record in service.extend.standard.paged_search(
             search_base=base_dn,
             search_filter=search_filter,
             search_scope=SUBTREE,
             attributes=wanted_attrs,
-            paged_size=500,
+            paged_size=page_size,
             generator=True,
         ):
             if record.get("type") != "searchResEntry":
@@ -323,6 +324,11 @@ def sync_directory(tenant_id, dry_run=False, provision_all=False):
             dn = str(record.get("dn") or "").strip()
             attrs = record.get("attributes") or {}
             entries.append((dn, attrs))
+            if len(entries) >= max_entries:
+                summary["errors"].append(
+                    f"Safety limit reached at {max_entries} directory entries; narrow LDAP_USER_FILTER."
+                )
+                break
     finally:
         try:
             service.unbind()
@@ -353,52 +359,6 @@ def sync_directory(tenant_id, dry_run=False, provision_all=False):
         entry_dn = (entry_dn_raw or "").strip().casefold()
         if entry_dn:
             dn_to_entry[entry_dn] = entry_values
-
-    if provision_all:
-        for entry_dn_raw, entry_values in entries:
-            entry_dn = (entry_dn_raw or "").strip()
-            key = entry_dn.casefold()
-            if not entry_dn or key in dn_to_user:
-                continue
-            username = _first(entry_values, attr_map.get("username", "sAMAccountName"))
-            if not username:
-                summary["errors"].append(
-                    f"{entry_dn or '(unknown dn)'}: missing mapped username; profile not provisioned"
-                )
-                continue
-            email = _first(entry_values, attr_map.get("email", "mail"))
-            display_name = (
-                _first(entry_values, attr_map.get("display_name", "displayName")) or username
-            )
-            groups = entry_values.get("memberOf") or []
-            roles = core_app.mapped_roles(groups, "LDAP_ROLE_MAPPINGS")
-            profile, friendly_groups = directory_profile_payload(
-                entry_values, groups, attr_map, entry_dn
-            )
-            profile_attrs = {
-                field: _first(entry_values, attr_map.get(field, field))
-                for field in PROFILE_FIELDS
-                if _first(entry_values, attr_map.get(field, field))
-            }
-            profile_attrs["team_name"] = profile.get("team_name")
-            try:
-                transaction = nullcontext() if dry_run else db.session.begin_nested()
-                with transaction:
-                    user = core_app.provision_external_user(
-                        "ldap", entry_dn, username, display_name, email, roles,
-                        groups=groups, profile_attrs=profile_attrs,
-                        directory_profile=profile,
-                        directory_group_names=friendly_groups,
-                    )
-                    if user.tenant_id != tenant_id:
-                        raise DirectorySyncError(
-                            "directory identity collided with an account outside this tenant"
-                        )
-                    db.session.flush()
-                    dn_to_user[key] = user
-                    summary["users_provisioned"] += 1
-            except Exception as error:  # noqa: BLE001 - isolate a malformed/colliding entry
-                summary["errors"].append(f"{entry_dn}: {type(error).__name__}")
 
     def _resolve_or_provision_manager(manager_dn, _resolving=None):
         """Return the ServiceOps User for `manager_dn`, provisioning a normal

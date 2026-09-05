@@ -23,7 +23,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  EnterpriseRecord, CatalogItem,
                  CatalogItemRouting, DirectoryGroupMapping, DirectoryProfile,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
-                 GroupMember, IntegrationConnection, IntegrationDelivery, Knowledge,
+                 GroupMember, IntegrationConnection, IntegrationDelivery, IntegrationSyncJob, Knowledge,
                  MonitoringEvent, MonitoringSource, Notification, MobilePushDevice, OperationalTask,
                  OutboxEvent, ProblemProfile, Rack, RecordLink, RolePolicyOverride, ScheduleHoliday, SLADefinition,
                  RequestedItem, PlatformSetting, ServiceOffering, ServiceOfferingCI, SupportGroup, SupportGroupAlias,
@@ -39,6 +39,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  deploy_workflow_package, find_and_merge_duplicate_groups, ldap_authenticate,
                  mapped_roles, merge_support_group_into, normalize_environment, now, process_discovery_schedule,
                  process_client_escalation_policies,
+                 process_integration_sync_jobs,
                  process_workflow_jobs,
                  recompute_base_role,
                  process_workflow_schedules, queue_workflow_event,
@@ -4248,7 +4249,7 @@ def test_admin_configures_ad_mapping_manager_and_ccb_authority(client, app):
         ).one()
 
 
-def test_ad_ldap_config_group_mapping_and_sync_are_all_on_one_page(client):
+def test_ad_ldap_config_group_mapping_and_safe_reconciliation_are_on_one_page(client):
     """B-322: user-reported that AD-related configuration was split
     between Platform settings (connection fields) and Service delivery &
     governance (group mapping, directory sync) -- all three now render on
@@ -4257,7 +4258,7 @@ def test_ad_ldap_config_group_mapping_and_sync_are_all_on_one_page(client):
     page = client.get("/admin/settings/sign_in_and_directory")
     assert page.status_code == 200
     assert b"AD group" in page.data
-    assert b"Directory synchronization" in page.data
+    assert b"Directory reconciliation" in page.data
     assert b"add_directory_mapping" in page.data
     # LDAP is off by default in this fixture, so the sync trigger itself
     # is hidden behind a "turn it on first" notice rather than rendered.
@@ -4266,12 +4267,61 @@ def test_ad_ldap_config_group_mapping_and_sync_are_all_on_one_page(client):
         "LOCAL_AUTH_ENABLED": "on", "LDAP_ENABLED": "on",
     }, headers={"Referer": "http://localhost/admin/settings/sign_in_and_directory"}).status_code == 302
     page = client.get("/admin/settings/sign_in_and_directory")
-    assert b"sync_directory" in page.data
+    assert b"sync_directory" not in page.data
+    assert b'sync all users' in page.data.lower()
     # Old, now-superseded governance URLs redirect here instead of 404ing.
     assert client.get("/service-operations/settings/directory-mapping").headers["Location"].endswith(
         "/admin/settings/sign_in_and_directory")
     assert client.get("/service-operations/settings/ldap-sync").headers["Location"].endswith(
         "/admin/settings/sign_in_and_directory")
+
+
+def test_netbox_sync_is_queued_observable_and_cancellable(client, app):
+    login(client)
+    with app.app_context():
+        db.session.add(PlatformSetting(
+            key="NETBOX_ENABLED", value="true", encrypted=False, tenant_id=1,
+        ))
+        db.session.commit()
+    response = client.post("/cmdb/import/netbox", data={"dry_run": "1"})
+    assert response.status_code == 302
+    duplicate = client.post("/cmdb/import/netbox", data={"dry_run": "1"})
+    assert duplicate.status_code == 302
+    with app.app_context():
+        job = IntegrationSyncJob.query.one()
+        assert job.status == "Pending"
+        job_id = job.id
+    payload = client.get(f"/cmdb/import/netbox/jobs/{job_id}").get_json()
+    assert payload["status"] == "Pending"
+    cancelled = client.post(f"/cmdb/import/netbox/jobs/{job_id}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.get_json()["cancel_requested"] is True
+    with app.app_context():
+        assert db.session.get(IntegrationSyncJob, job_id).status == "Cancelled"
+
+
+def test_netbox_worker_reports_batch_progress_and_completes(app, monkeypatch):
+    with app.app_context():
+        actor = User.query.filter_by(username="admin").one()
+        job = IntegrationSyncJob(
+            tenant_id=1, actor_user_id=actor.id, integration="netbox", dry_run=True,
+        )
+        db.session.add(job)
+        db.session.commit()
+
+        def fake_sync(_tenant_id, **options):
+            options["progress_callback"]("/api/dcim/devices/", 25, 50)
+            assert options["cancel_check"]() is False
+            return {"devices_seen": 25, "errors": []}
+
+        monkeypatch.setattr("serviceops_core.netbox_sync.sync_from_netbox", fake_sync)
+        assert process_integration_sync_jobs() == 1
+        db.session.expire_all()
+        completed = db.session.get(IntegrationSyncJob, job.id)
+        assert completed.status == "Completed"
+        assert completed.processed == 25
+        assert completed.total == 50
+        assert completed.result["devices_seen"] == 25
 
 
 def test_governance_groups_shows_member_names_and_supports_manual_add_remove(client, app):
