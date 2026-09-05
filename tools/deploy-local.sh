@@ -8,7 +8,15 @@ ENV_FILE="$ROOT_DIR/.env"
 mode="$(awk -F= '/^DEPLOYMENT_MODE=/{value=$2; gsub(/^[[:space:]\"]+|[[:space:]\"]+$/, "", value); print value}' "$ENV_FILE" | tail -1)"
 compose_file="$ROOT_DIR/compose.yaml"
 [[ "$mode" == "external" ]] && compose_file="$ROOT_DIR/compose.external-db.yaml"
-compose=(docker compose --env-file "$ENV_FILE" -f "$compose_file")
+version="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+  echo "VERSION does not contain a valid semantic version." >&2
+  exit 1
+}
+# This helper always builds the checked-out source. Override a stale local
+# SERVICEOPS_IMAGE entry without rewriting the operator's protected .env file,
+# so the container label and /health version cannot silently disagree.
+compose=(env "SERVICEOPS_IMAGE=serviceops-app:$version" docker compose --env-file "$ENV_FILE" -f "$compose_file")
 
 echo "Validating the local Compose configuration..."
 "${compose[@]}" config --quiet
