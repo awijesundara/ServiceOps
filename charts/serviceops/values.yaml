@@ -2,7 +2,7 @@ replicaCount: 2
 
 image:
   repository: serviceops
-  tag: "1.79.2"
+  tag: "1.79.3"
   digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
