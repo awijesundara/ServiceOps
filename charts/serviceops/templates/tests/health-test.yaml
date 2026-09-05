@@ -19,7 +19,7 @@ spec:
     seccompProfile: {type: RuntimeDefault}
   containers:
     - name: health
-      image: curlimages/curl:8.15.0
+      image: {{ printf "%s@%s" .Values.healthTest.image.repository (required "healthTest.image.digest is required" .Values.healthTest.image.digest) | quote }}
       securityContext:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
