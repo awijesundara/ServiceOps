@@ -4,6 +4,9 @@
 {{- if and (eq .Values.deploymentProfile "production") (not .Values.uploads.persistence.enabled) }}
 {{- fail "Production requires persistent shared upload storage; configure uploads.persistence or object storage" }}
 {{- end }}
+{{- if and (eq .Values.deploymentProfile "production") .Values.ingress.enabled .Values.networkPolicy.enabled (empty .Values.networkPolicy.ingressNamespaceSelector) }}
+{{- fail "Production ingress requires networkPolicy.ingressNamespaceSelector to identify trusted ingress-controller namespaces" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,7 +33,6 @@ spec:
         {{- include "serviceops.webSelectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
       annotations:
-        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
     spec:
       serviceAccountName: {{ include "serviceops.serviceAccountName" . }}

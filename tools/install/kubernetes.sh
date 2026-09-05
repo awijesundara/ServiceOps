@@ -15,6 +15,7 @@ ok(){ printf 'PASS: %s\n' "$*"; }
 
 command -v kubectl >/dev/null || die "kubectl is required."
 command -v helm >/dev/null || die "Helm 3 is required."
+command -v openssl >/dev/null || die "OpenSSL is required for cryptographic secret generation."
 kubectl cluster-info >/dev/null 2>&1 || die "kubectl cannot reach the selected cluster."
 server_version="$(kubectl version -o json | sed -n 's/.*"gitVersion": *"v\\([^"]*\\)".*/\\1/p' | tail -1)"
 [[ -n "$server_version" ]] || die "Unable to determine Kubernetes server version."
@@ -60,32 +61,52 @@ kubectl label namespace "$NAMESPACE" \
   policy.sigstore.dev/include=true --overwrite >/dev/null
 ok "GitHub provenance admission is enforced for the ServiceOps namespace"
 
-secret_file="$(mktemp)"
-chmod 600 "$secret_file"
-trap 'rm -f "$secret_file"' EXIT
+runtime_secret_exists=false
+bootstrap_secret_exists=false
+kubectl get secret serviceops-secrets -n "$NAMESPACE" >/dev/null 2>&1 && runtime_secret_exists=true
+kubectl get secret serviceops-bootstrap -n "$NAMESPACE" >/dev/null 2>&1 && bootstrap_secret_exists=true
+if [[ "$runtime_secret_exists" != "$bootstrap_secret_exists" ]]; then
+  die "Partial secret state detected; restore both serviceops-secrets and serviceops-bootstrap before deployment."
+fi
 
-read -rsp "ServiceOps local administrator password: " admin_password; echo
-[[ ${#admin_password} -ge 14 ]] || die "Administrator password must be at least 14 characters."
-read -rsp "External PostgreSQL SQLAlchemy URL: " database_url; echo
-[[ "$database_url" == postgresql* ]] || die "A PostgreSQL URL is required."
-read -rsp "LDAP bind password (Enter if disabled): " ldap_password; echo
-read -rsp "Keycloak client secret (Enter if disabled): " keycloak_secret; echo
-secret_key="$(openssl rand -hex 48)"
+if [[ "$runtime_secret_exists" == true ]]; then
+  ok "Existing runtime and bootstrap Secrets preserved"
+else
+  runtime_secret_file="$(mktemp)"
+  bootstrap_secret_file="$(mktemp)"
+  chmod 600 "$runtime_secret_file" "$bootstrap_secret_file"
+  trap 'rm -f "$runtime_secret_file" "$bootstrap_secret_file"' EXIT
 
-{
-  printf 'SECRET_KEY=%s\n' "$secret_key"
-  printf 'ADMIN_PASSWORD=%s\n' "$admin_password"
-  printf 'DATABASE_URL=%s\n' "$database_url"
-  printf 'LDAP_BIND_PASSWORD=%s\n' "$ldap_password"
-  printf 'KEYCLOAK_CLIENT_SECRET=%s\n' "$keycloak_secret"
-} > "$secret_file"
+  read -rsp "ServiceOps local administrator password: " admin_password; echo
+  [[ ${#admin_password} -ge 14 ]] || die "Administrator password must be at least 14 characters."
+  read -rsp "External PostgreSQL SQLAlchemy URL: " database_url; echo
+  [[ "$database_url" == postgresql* ]] || die "A PostgreSQL URL is required."
+  read -rsp "LDAP bind password (Enter if disabled): " ldap_password; echo
+  read -rsp "Keycloak client secret (Enter if disabled): " keycloak_secret; echo
 
-kubectl create secret generic serviceops-secrets -n "$NAMESPACE" \
-  --from-env-file="$secret_file" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-ok "Kubernetes Secret was created without placing secret values in command arguments"
+  {
+    printf 'SECRET_KEY=%s\n' "$(openssl rand -hex 48)"
+    printf 'SETTINGS_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32 | tr '+/' '-_')"
+    printf 'AUDIT_INTEGRITY_KEY=%s\n' "$(openssl rand -hex 48)"
+    printf 'API_TOKEN_PEPPER=%s\n' "$(openssl rand -hex 48)"
+    printf 'DATABASE_URL=%s\n' "$database_url"
+    printf 'LDAP_BIND_PASSWORD=%s\n' "$ldap_password"
+    printf 'KEYCLOAK_CLIENT_SECRET=%s\n' "$keycloak_secret"
+  } > "$runtime_secret_file"
+  printf 'ADMIN_PASSWORD=%s\n' "$admin_password" > "$bootstrap_secret_file"
+
+  kubectl create secret generic serviceops-secrets -n "$NAMESPACE" \
+    --from-env-file="$runtime_secret_file" >/dev/null
+  kubectl create secret generic serviceops-bootstrap -n "$NAMESPACE" \
+    --from-env-file="$bootstrap_secret_file" >/dev/null
+  ok "Split runtime/bootstrap Secrets created without command-line secret values"
+fi
 
 helm upgrade --install "$RELEASE" "$CHART" -n "$NAMESPACE" \
-  -f "$VALUES_FILE" --atomic --wait --timeout 10m
+  -f "$VALUES_FILE" \
+  --set-string existingSecret=serviceops-secrets \
+  --set-string existingBootstrapSecret=serviceops-bootstrap \
+  --atomic --wait --timeout 10m
 kubectl rollout status "deployment/$RELEASE" -n "$NAMESPACE" --timeout=5m
 helm test "$RELEASE" -n "$NAMESPACE" --logs
 ok "ServiceOps rollout and packaged health test passed"

@@ -60,6 +60,22 @@ def verify_supply_chain() -> dict[str, object]:
     match = re.search(r"^\s*digest:\s*[\"']?([^\"' ]+)", values, re.MULTILINE)
     if not match or not DIGEST.fullmatch(match.group(1)):
         errors.append("Helm default image digest must be a SHA-256 digest.")
+
+    health_match = re.search(
+        r"^healthTest:\s*$.*?^\s+digest:\s*[\"']?([^\"' ]+)",
+        values,
+        re.MULTILINE | re.DOTALL,
+    )
+    health_template = (
+        ROOT / "charts/serviceops/templates/tests/health-test.yaml"
+    ).read_text(encoding="utf-8")
+    if not health_match or not DIGEST.fullmatch(health_match.group(1)):
+        errors.append("Helm health-test image must use a SHA-256 digest.")
+    if not all(
+        value in health_template
+        for value in (".Values.healthTest.image.repository", ".Values.healthTest.image.digest")
+    ):
+        errors.append("Helm health-test template must consume its immutable image digest.")
     for template in ("deployment.yaml", "worker.yaml", "migration-job.yaml"):
         content = (
             ROOT / "charts/serviceops/templates" / template
@@ -79,6 +95,7 @@ def verify_supply_chain() -> dict[str, object]:
         "action_pins": len(action_lines) + len(deployment_action_lines),
         "dockerfile_bases": len(from_lines),
         "kubernetes_digest_enforced": True,
+        "kubernetes_health_test_digest_enforced": True,
         "attestation_admission_enabled": True,
     }
 

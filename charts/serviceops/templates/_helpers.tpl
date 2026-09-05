@@ -7,7 +7,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 {{- end }}
 {{- define "serviceops.bootstrapSecretName" -}}
-{{- if .Values.secret.create }}{{ include "serviceops.fullname" . }}-bootstrap{{ else }}{{ required "existingBootstrapSecret is required when secret.create=false" .Values.existingBootstrapSecret }}{{ end }}
+{{- required "existingBootstrapSecret is required" .Values.existingBootstrapSecret }}
 {{- end }}
 {{- define "serviceops.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "serviceops.name" . }}
@@ -25,7 +25,7 @@ app.kubernetes.io/component: web
 {{- end -}}
 {{- end }}
 {{- define "serviceops.secretName" -}}
-{{- if .Values.secret.create }}{{ include "serviceops.fullname" . }}-secrets{{ else }}{{ required "existingSecret is required when secret.create=false" .Values.existingSecret }}{{ end }}
+{{- required "existingSecret is required" .Values.existingSecret }}
 {{- end }}
 {{- define "serviceops.imageRef" -}}
 {{- printf "%s@%s" .Values.image.repository (required "image.digest is required" .Values.image.digest) -}}

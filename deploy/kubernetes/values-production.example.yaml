@@ -63,3 +63,6 @@ podDisruptionBudget:
 
 networkPolicy:
   enabled: true
+  ingressNamespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: ingress-nginx

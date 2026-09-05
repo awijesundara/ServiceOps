@@ -38,7 +38,8 @@ from markupsafe import Markup, escape
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_sqlalchemy import SQLAlchemy
 from authlib.integrations.flask_client import OAuth
-from authlib.jose import jwt
+from joserfc import jwt
+from joserfc.jwk import ECKey
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from alembic.migration import MigrationContext
@@ -1228,7 +1229,7 @@ def _apns_authorization_token():
     token = jwt.encode(
         {"alg": "ES256", "kid": key_id},
         {"iss": team_id, "iat": int(now().timestamp())},
-        private_key,
+        ECKey.import_key(private_key),
     )
     return token.decode() if isinstance(token, bytes) else token
 
@@ -8048,7 +8049,7 @@ def create_app(test_config=None):
         pending_user_id = session.get("_mfa_pending_user_id")
         if not pending_user_id:
             return redirect(url_for("login"))
-        user = User.query.get(pending_user_id)
+        user = db.session.get(User, pending_user_id)
         if not user or not user.active or not user.mfa_enabled:
             session.pop("_mfa_pending_user_id", None)
             session.pop("_mfa_pending_provider", None)
