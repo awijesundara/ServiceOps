@@ -121,7 +121,12 @@ jobs:
             --set-string "image.digest=$IMAGE_DIGEST" \
             --set-string "database.backupReference=$BACKUP_REFERENCE" \
             --atomic --wait --timeout 10m
-          kubectl rollout status "deployment/$RELEASE" -n "$NAMESPACE" --timeout=5m
+          if kubectl get "rollout/$RELEASE" -n "$NAMESPACE" >/dev/null 2>&1; then
+            kubectl wait "rollout/$RELEASE" -n "$NAMESPACE" \
+              --for=jsonpath='{.status.phase}'=Healthy --timeout=10m
+          else
+            kubectl rollout status "deployment/$RELEASE" -n "$NAMESPACE" --timeout=5m
+          fi
           kubectl rollout status "deployment/$RELEASE-worker" -n "$NAMESPACE" --timeout=5m
           helm test "$RELEASE" -n "$NAMESPACE" --logs
 

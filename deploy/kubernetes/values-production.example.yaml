@@ -8,6 +8,24 @@ image:
   digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
   pullPolicy: IfNotPresent
 
+# Keep standard rolling delivery unless the Argo Rollouts controller/CRDs and
+# Prometheus analysis have been installed and rehearsed in this cluster.
+progressiveDelivery:
+  enabled: false
+
+featureFlags:
+  netbox_sync: true
+
+observability:
+  serviceMonitor:
+    enabled: true
+    prometheusNamespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: monitoring
+  openTelemetry:
+    enabled: false
+    instrumentation: "serviceops-instrumentation"
+
 existingSecret: serviceops-secrets
 existingBootstrapSecret: serviceops-bootstrap
 

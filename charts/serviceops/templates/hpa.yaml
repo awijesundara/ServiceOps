@@ -5,7 +5,10 @@ metadata:
   name: {{ include "serviceops.fullname" . }}
   labels: {{- include "serviceops.labels" . | nindent 4 }}
 spec:
-  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: {{ include "serviceops.fullname" . }}}
+  scaleTargetRef:
+    apiVersion: {{ ternary "argoproj.io/v1alpha1" "apps/v1" .Values.progressiveDelivery.enabled }}
+    kind: {{ ternary "Rollout" "Deployment" .Values.progressiveDelivery.enabled }}
+    name: {{ include "serviceops.fullname" . }}
   minReplicas: {{ .Values.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.autoscaling.maxReplicas }}
   metrics:

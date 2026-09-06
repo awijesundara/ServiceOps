@@ -1,0 +1,18 @@
+{{- if and .Values.progressiveDelivery.enabled .Values.progressiveDelivery.prometheus.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: {{ include "serviceops.fullname" . }}-canary
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+spec:
+  metrics:
+    - name: http-5xx-rate
+      interval: 1m
+      count: 5
+      successCondition: {{ .Values.progressiveDelivery.prometheus.successCondition | quote }}
+      failureLimit: 1
+      provider:
+        prometheus:
+          address: {{ required "progressiveDelivery.prometheus.address is required" .Values.progressiveDelivery.prometheus.address | quote }}
+          query: {{ .Values.progressiveDelivery.prometheus.query | quote }}
+{{- end }}

@@ -4295,6 +4295,15 @@ def test_netbox_sync_is_queued_observable_and_cancellable(client, app):
         assert db.session.get(IntegrationSyncJob, job_id).status == "Cancelled"
 
 
+def test_netbox_feature_kill_switch_blocks_new_jobs(client, app, monkeypatch):
+    login(client)
+    monkeypatch.setenv("FEATURE_FLAGS", '{"netbox_sync": false}')
+    response = client.post("/cmdb/import/netbox", data={"dry_run": "1"})
+    assert response.status_code == 503
+    with app.app_context():
+        assert IntegrationSyncJob.query.count() == 0
+
+
 def test_netbox_worker_reports_batch_progress_and_completes(app, monkeypatch):
     with app.app_context():
         actor = User.query.filter_by(username="admin").one()

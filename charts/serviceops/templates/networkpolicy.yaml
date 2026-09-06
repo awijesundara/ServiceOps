@@ -18,6 +18,9 @@ spec:
         {{- if .Values.ingress.enabled }}
         - namespaceSelector: {{- toYaml .Values.networkPolicy.ingressNamespaceSelector | nindent 12 }}
         {{- end }}
+        {{- if .Values.observability.serviceMonitor.enabled }}
+        - namespaceSelector: {{- toYaml .Values.observability.serviceMonitor.prometheusNamespaceSelector | nindent 12 }}
+        {{- end }}
       ports:
         - {port: 8080, protocol: TCP}
   egress:
