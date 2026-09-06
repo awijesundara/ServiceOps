@@ -52,6 +52,12 @@ def test_successful_main_gate_automatically_enters_governed_release_pipeline():
     assert "cancel-in-progress: false" in release_workflow
 
 
+def test_supply_chain_checkout_keeps_parent_for_migration_policy():
+    supply_chain = (ROOT / ".github/workflows/supply-chain.yml").read_text()
+    assert "python tools/verify_migration_safety.py --changed-against HEAD^" in supply_chain
+    assert "fetch-depth: 2" in supply_chain
+
+
 def test_no_stale_serviceops_image_versions_outside_release_managed_files():
     version = (ROOT / "VERSION").read_text().strip()
     for relative_path in (
