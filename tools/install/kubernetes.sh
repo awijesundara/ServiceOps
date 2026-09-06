@@ -7,6 +7,7 @@ NAMESPACE="${SERVICEOPS_NAMESPACE:-serviceops}"
 RELEASE="${SERVICEOPS_RELEASE:-serviceops}"
 VALUES_FILE="${SERVICEOPS_VALUES:-$ROOT_DIR/deploy/kubernetes/values-production.yaml}"
 GITHUB_ORGANIZATION="${SERVICEOPS_GITHUB_ORGANIZATION:-}"
+BACKUP_REFERENCE="${SERVICEOPS_BACKUP_REFERENCE:-}"
 PREFLIGHT_ONLY=false
 [[ "${1:-}" == "--preflight" ]] && PREFLIGHT_ONLY=true
 
@@ -34,6 +35,13 @@ ok "Supply-chain policy verification passed"
 
 if [[ "$PREFLIGHT_ONLY" == true ]]; then exit 0; fi
 [[ -f "$VALUES_FILE" ]] || die "Create $VALUES_FILE from deploy/kubernetes/values-production.example.yaml."
+
+if helm status "$RELEASE" -n "$NAMESPACE" >/dev/null 2>&1; then
+  [[ -n "$BACKUP_REFERENCE" ]] ||
+    die "SERVICEOPS_BACKUP_REFERENCE is required for an upgrade. Take and restore-test a database backup first."
+else
+  BACKUP_REFERENCE="initial-install"
+fi
 
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 kubectl label namespace "$NAMESPACE" \
@@ -106,6 +114,7 @@ helm upgrade --install "$RELEASE" "$CHART" -n "$NAMESPACE" \
   -f "$VALUES_FILE" \
   --set-string existingSecret=serviceops-secrets \
   --set-string existingBootstrapSecret=serviceops-bootstrap \
+  --set-string "database.backupReference=$BACKUP_REFERENCE" \
   --atomic --wait --timeout 10m
 kubectl rollout status "deployment/$RELEASE" -n "$NAMESPACE" --timeout=5m
 helm test "$RELEASE" -n "$NAMESPACE" --logs

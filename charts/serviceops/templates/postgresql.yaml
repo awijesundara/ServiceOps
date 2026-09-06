@@ -22,6 +22,11 @@ metadata:
 spec:
   serviceName: {{ include "serviceops.fullname" . }}-postgresql
   replicas: 1
+  # State the data-safety default explicitly so a StatefulSet deletion or
+  # scale-down never opts into automatic PVC removal.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "serviceops.name" . }}-postgresql

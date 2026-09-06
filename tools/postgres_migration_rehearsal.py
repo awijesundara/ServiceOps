@@ -68,6 +68,22 @@ def snapshot() -> dict[str, object]:
     }
 
 
+def assert_downgrade_preserved(before: dict[str, object], after: dict[str, object]) -> None:
+    """Allow a downgrade to remove only empty tables introduced by head."""
+    before_counts = before["counts"]
+    after_counts = after["counts"]
+    removed = set(before_counts) - set(after_counts)
+    nonempty_removed = {table: before_counts[table] for table in removed if before_counts[table]}
+    if nonempty_removed:
+        raise RuntimeError(
+            f"Downgrade would discard rows from head-only tables: {sorted(nonempty_removed)}"
+        )
+    common_before = {table: before_counts[table] for table in after_counts}
+    comparable_before = {**before, "counts": common_before}
+    if comparable_before != after:
+        raise RuntimeError("Data fingerprint changed during downgrade.")
+
+
 def seed_representative_rows(row_count: int) -> None:
     if row_count < 1:
         raise ValueError("row_count must be positive")
@@ -140,8 +156,7 @@ def main() -> int:
         if downgraded_revision != prior_revision:
             raise RuntimeError("Downgrade revision verification failed.")
         after_downgrade = snapshot()
-        if after_downgrade != before:
-            raise RuntimeError("Data fingerprint changed during downgrade.")
+        assert_downgrade_preserved(before, after_downgrade)
         db.session.remove()
 
         command.upgrade(migration_config(), "head")

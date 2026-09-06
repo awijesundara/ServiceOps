@@ -44,14 +44,28 @@ def test_helm_workloads_gate_startup_on_database_and_schema():
         assert "tools.wait_for_database" in workload
     assert "database-ready" in migration
     assert '"--migrations-current"' not in migration
+    assert 'command: ["python", "-m", "tools.run_migrations"]' in migration
+    assert '"helm.sh/hook-delete-policy": before-hook-creation\n' in migration
+    assert "hook-succeeded" not in migration
+    assert "serviceops.io/pre-upgrade-backup-reference" in migration
     assert "Production requires persistent shared upload storage" in deployment
+    assert "Production upgrades require database.backupReference" in deployment
 
 
 def test_safe_update_changes_the_governed_digest_and_is_atomic():
     script = (ROOT / "tools/safe_update_k8s.sh").read_text()
     assert 'TARGET_DIGEST="${2:-}"' in script
     assert '--set-string "image.digest=$TARGET_DIGEST"' in script
+    assert 'SERVICEOPS_BACKUP_REFERENCE' in script
+    assert '--set-string "database.backupReference=$BACKUP_REFERENCE"' in script
     assert "--atomic --wait" in script
+
+
+def test_bundled_statefulset_explicitly_retains_database_claims():
+    postgresql = (ROOT / "charts/serviceops/templates/postgresql.yaml").read_text()
+    assert "persistentVolumeClaimRetentionPolicy:" in postgresql
+    assert "whenDeleted: Retain" in postgresql
+    assert "whenScaled: Retain" in postgresql
 
 
 def test_helm_health_test_is_not_captured_by_web_egress_policy_and_is_bounded():
@@ -96,6 +110,8 @@ def test_kubernetes_installer_creates_complete_split_secrets_once():
     assert '--from-env-file="$bootstrap_secret_file" --dry-run' not in installer
     assert "--set-string existingSecret=serviceops-secrets" in installer
     assert "--set-string existingBootstrapSecret=serviceops-bootstrap" in installer
+    assert "SERVICEOPS_BACKUP_REFERENCE" in installer
+    assert '--set-string "database.backupReference=$BACKUP_REFERENCE"' in installer
 
 
 def test_chart_requires_operator_managed_secrets():
@@ -112,3 +128,9 @@ def test_local_deployer_labels_checked_out_source_with_canonical_version():
     assert 'version="$(tr -d \'[:space:]\' < "$ROOT_DIR/VERSION")"' in deployer
     assert 'SERVICEOPS_IMAGE=serviceops-app:$version' in deployer
     assert 'without rewriting the operator\'s protected .env file' in deployer
+
+
+def test_migration_rehearsal_does_not_use_stale_protected_image_label():
+    rehearsal = (ROOT / "tools/rehearse-postgres-migrations.sh").read_text()
+    assert "candidate_version=" in rehearsal
+    assert 'SERVICEOPS_REHEARSAL_IMAGE:-serviceops-app:$candidate_version' in rehearsal

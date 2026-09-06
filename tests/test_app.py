@@ -4249,26 +4249,21 @@ def test_admin_configures_ad_mapping_manager_and_ccb_authority(client, app):
         ).one()
 
 
-def test_ad_ldap_config_group_mapping_and_safe_reconciliation_are_on_one_page(client):
-    """B-322: user-reported that AD-related configuration was split
-    between Platform settings (connection fields) and Service delivery &
-    governance (group mapping, directory sync) -- all three now render on
-    the single Sign-in and directory settings page."""
+def test_ad_ldap_settings_do_not_advertise_removed_bulk_reconciliation(client):
+    """The settings page exposes real configuration without a dead sync panel."""
     login(client)
     page = client.get("/admin/settings/sign_in_and_directory")
     assert page.status_code == 200
     assert b"AD group" in page.data
-    assert b"Directory reconciliation" in page.data
+    assert b"Directory reconciliation" not in page.data
     assert b"add_directory_mapping" in page.data
-    # LDAP is off by default in this fixture, so the sync trigger itself
-    # is hidden behind a "turn it on first" notice rather than rendered.
-    assert b"AD/LDAP is not enabled" in page.data
+    assert b"AD/LDAP is not enabled" not in page.data
     assert client.post("/admin/settings/sign_in_and_directory", data={
         "LOCAL_AUTH_ENABLED": "on", "LDAP_ENABLED": "on",
     }, headers={"Referer": "http://localhost/admin/settings/sign_in_and_directory"}).status_code == 302
     page = client.get("/admin/settings/sign_in_and_directory")
     assert b"sync_directory" not in page.data
-    assert b'sync all users' in page.data.lower()
+    assert b"sync all users" not in page.data.lower()
     # Old, now-superseded governance URLs redirect here instead of 404ing.
     assert client.get("/service-operations/settings/directory-mapping").headers["Location"].endswith(
         "/admin/settings/sign_in_and_directory")

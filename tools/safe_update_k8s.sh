@@ -15,6 +15,7 @@ RELEASE="${SERVICEOPS_RELEASE:-serviceops}"
 VALUES_FILE="${SERVICEOPS_VALUES:-$ROOT_DIR/deploy/kubernetes/values-production.yaml}"
 TARGET_TAG="${1:-}"
 TARGET_DIGEST="${2:-}"
+BACKUP_REFERENCE="${SERVICEOPS_BACKUP_REFERENCE:-}"
 
 die(){ printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 ok(){ printf '✓ %s\n' "$*"; }
@@ -31,10 +32,12 @@ default_tag="$(sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$CHART/
 [[ -n "$TARGET_TAG" ]] || TARGET_TAG="$default_tag"
 [[ -n "$TARGET_TAG" ]] || die "Unable to determine a target image tag; pass one explicitly."
 [[ "$TARGET_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "Pass the verified target image digest as the second argument (sha256:<64 hex characters>)."
+[[ -n "$BACKUP_REFERENCE" ]] || die "SERVICEOPS_BACKUP_REFERENCE is required. Take and restore-test a database backup, then set this to its snapshot or dump identifier."
 
 echo "Current release image tag: $current_tag"
 echo "Target image tag:          $TARGET_TAG"
 echo "Target image digest:       $TARGET_DIGEST"
+echo "Verified backup reference: $BACKUP_REFERENCE"
 
 helm lint "$CHART" >/dev/null && ok "Helm chart lint passed"
 python3 "$ROOT_DIR/tools/verify_supply_chain.py" >/dev/null && ok "Supply-chain policy verification passed"
@@ -47,6 +50,7 @@ echo "Applying the update with --atomic (automatic rollback on failure)..."
 helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" -f "$VALUES_FILE" \
   --set-string "image.tag=$TARGET_TAG" \
   --set-string "image.digest=$TARGET_DIGEST" \
+  --set-string "database.backupReference=$BACKUP_REFERENCE" \
   --atomic --wait --timeout 10m
 
 kubectl rollout status "deployment/$RELEASE" -n "$NAMESPACE" --timeout=5m

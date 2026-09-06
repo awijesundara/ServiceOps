@@ -16,6 +16,10 @@ ROWS="${1:-100000}"
 set -a
 source "$ENV_FILE"
 set +a
+# Rehearse the checked-out candidate, not a stale image label retained in the
+# protected .env. The caller may override this for an immutable registry image.
+candidate_version="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
+export SERVICEOPS_IMAGE="${SERVICEOPS_REHEARSAL_IMAGE:-serviceops-app:$candidate_version}"
 [[ "${DEPLOYMENT_MODE:-bundled}" == "bundled" ]] || {
   echo "This command is for bundled PostgreSQL. Rehearse external PostgreSQL in an isolated provider database." >&2
   exit 2

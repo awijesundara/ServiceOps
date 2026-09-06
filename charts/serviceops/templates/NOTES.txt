@@ -1,5 +1,15 @@
 ServiceOps has been installed.
 
+Database migration evidence:
+   kubectl get job/{{ include "serviceops.fullname" . }}-migrate -n {{ .Release.Namespace }}
+   kubectl logs job/{{ include "serviceops.fullname" . }}-migrate -n {{ .Release.Namespace }}
+{{- if .Release.IsUpgrade }}
+
+Pre-upgrade backup reference: {{ required "database.backupReference is required for production upgrades" .Values.database.backupReference }}
+Do not delete the PostgreSQL PVC or manually stamp alembic_version. Restore-test
+the referenced external database backup before every upgrade.
+{{- end }}
+
 1. Wait for the rollout:
    kubectl rollout status deployment/{{ include "serviceops.fullname" . }} -n {{ .Release.Namespace }} --timeout=5m
 
