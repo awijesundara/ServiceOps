@@ -12,6 +12,24 @@ revisionHistoryLimit: 5
 terminationGracePeriodSeconds: 45
 progressDeadlineSeconds: 600
 minReadySeconds: 10
+rollingUpdate:
+  maxUnavailable: 0
+  maxSurge: 1
+  preStopDelaySeconds: 10
+
+# Optional progressive delivery. Requires the Argo Rollouts CRDs/controller.
+progressiveDelivery:
+  enabled: false
+  steps:
+    - setWeight: 10
+    - pause: {duration: 5m}
+    - setWeight: 50
+    - pause: {duration: 10m}
+  prometheus:
+    enabled: false
+    address: ""
+    successCondition: "result[0] <= 0.02"
+    query: 'sum(rate(serviceops_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(serviceops_http_requests_total[5m])), 0.001)'
 
 serviceAccount:
   create: true
@@ -94,6 +112,19 @@ security:
 proxy:
   trustHeaders: true
   enableHsts: true
+
+featureFlags: {}
+
+observability:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    prometheusNamespaceSelector: {}
+  openTelemetry:
+    # Requires the OpenTelemetry Operator and an Instrumentation resource.
+    enabled: false
+    instrumentation: ""
 
 resources:
   requests: {cpu: 250m, memory: 384Mi}

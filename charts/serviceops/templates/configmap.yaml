@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "serviceops.fullname" . }}-config
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+data:
+  FEATURE_FLAGS: {{ .Values.featureFlags | toJson | quote }}
+  METRICS_ENABLED: "true"
+  OTEL_SERVICE_NAME: "serviceops"
+  OTEL_RESOURCE_ATTRIBUTES: {{ printf "service.version=%s,deployment.environment=%s" .Chart.AppVersion .Values.deploymentProfile | quote }}

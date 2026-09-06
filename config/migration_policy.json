@@ -1,0 +1,11 @@
+{
+  "baseline_revision": "20260905_0086",
+  "allowed_phases": ["expand", "contract"],
+  "expand_forbidden_operations": [
+    "drop_column",
+    "drop_constraint",
+    "drop_table",
+    "rename_table",
+    "alter_column"
+  ]
+}

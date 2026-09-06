@@ -298,6 +298,38 @@ migrations are not automatically reversed; take and verify a database backup
 and rehearse the migration before production upgrades.
 
 An opt-in protected GitHub Actions deployment is provided in
+### Kubernetes delivery architecture
+
+The web tier is stateless: browser state is held in signed cookies and
+revocation evidence is stored in PostgreSQL; attachments use shared RWX or
+S3-compatible storage. Root filesystems are read-only. Non-secret settings are
+a checksummed ConfigMap, credentials remain in operator-managed Secrets, and
+web/worker pods use the same immutable `repository@sha256:digest` image.
+
+Standard delivery uses configurable zero-unavailable rolling updates,
+database/schema-aware readiness, startup/liveness probes, preStop draining and
+an explicit termination grace period. Argo Rollouts canary delivery is opt-in
+through `progressiveDelivery.enabled`; optional Prometheus analysis aborts a
+canary when its 5xx ratio breaches policy. `featureFlags.netbox_sync=false` is
+a deployment kill switch for new NetBox jobs.
+
+`deploy/gitops/application.example.yaml` bootstraps Argo CD against a separate
+protected environment repository. Promotions update image tag, digest and a
+unique restore-tested backup reference in Git. Self-heal is enabled; automatic
+pruning is disabled to protect stateful resources.
+
+REST contracts are versioned under `/api/v1`. New Alembic revisions must
+declare an `expand` or `contract` phase. CI rejects destructive expand changes
+and requires contract revisions to declare the first application version that
+no longer needs the legacy schema. Expand, compatible-code/backfill and
+contract occur in separate releases.
+
+Prometheus scraping is available through the optional ServiceMonitor.
+OpenTelemetry Operator Python injection is also optional and requires a named,
+preinstalled Instrumentation resource. Structured logs carry request and W3C
+trace identifiers.
+
+An opt-in protected GitHub Actions deployment is provided in
 `.github/workflows/deploy-kubernetes.yml`. Set repository variable
 `KUBERNETES_DEPLOY_ENABLED=true`, optional namespace/release/image-repository
 variables, and protected production secrets `KUBE_CONFIG_B64` and

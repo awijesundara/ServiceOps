@@ -7,11 +7,14 @@
 {{- if and (eq .Values.deploymentProfile "production") .Values.ingress.enabled .Values.networkPolicy.enabled (empty .Values.networkPolicy.ingressNamespaceSelector) }}
 {{- fail "Production ingress requires networkPolicy.ingressNamespaceSelector to identify trusted ingress-controller namespaces" }}
 {{- end }}
+{{- if and (eq .Values.deploymentProfile "production") .Values.observability.serviceMonitor.enabled .Values.networkPolicy.enabled (empty .Values.observability.serviceMonitor.prometheusNamespaceSelector) }}
+{{- fail "Production ServiceMonitor requires observability.serviceMonitor.prometheusNamespaceSelector to identify trusted Prometheus namespaces" }}
+{{- end }}
 {{- if and .Release.IsUpgrade (eq .Values.deploymentProfile "production") (empty .Values.database.backupReference) }}
 {{- fail "Production upgrades require database.backupReference for a completed, restore-tested pre-upgrade backup" }}
 {{- end }}
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: {{ ternary "argoproj.io/v1alpha1" "apps/v1" .Values.progressiveDelivery.enabled }}
+kind: {{ ternary "Rollout" "Deployment" .Values.progressiveDelivery.enabled }}
 metadata:
   name: {{ include "serviceops.fullname" . }}
   labels: {{- include "serviceops.labels" . | nindent 4 }}
@@ -22,9 +25,25 @@ spec:
   revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   progressDeadlineSeconds: {{ .Values.progressDeadlineSeconds }}
   minReadySeconds: {{ .Values.minReadySeconds }}
+  {{- if .Values.progressiveDelivery.enabled }}
+  strategy:
+    canary:
+      maxUnavailable: {{ .Values.rollingUpdate.maxUnavailable }}
+      maxSurge: {{ .Values.rollingUpdate.maxSurge }}
+      steps:
+        {{- toYaml .Values.progressiveDelivery.steps | nindent 8 }}
+      {{- if .Values.progressiveDelivery.prometheus.enabled }}
+      analysis:
+        templates:
+          - templateName: {{ include "serviceops.fullname" . }}-canary
+      {{- end }}
+  {{- else }}
   strategy:
     type: RollingUpdate
-    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.rollingUpdate.maxUnavailable }}
+      maxSurge: {{ .Values.rollingUpdate.maxSurge }}
+  {{- end }}
   selector:
     # Keep this selector stable across chart upgrades; Kubernetes treats a
     # Deployment selector as immutable. Component scoping belongs on the pod
@@ -37,6 +56,10 @@ spec:
         {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
       annotations:
         serviceops.io/pre-upgrade-backup-reference: {{ default "initial-install" .Values.database.backupReference | quote }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.observability.openTelemetry.enabled }}
+        instrumentation.opentelemetry.io/inject-python: {{ required "observability.openTelemetry.instrumentation is required when OpenTelemetry injection is enabled" .Values.observability.openTelemetry.instrumentation | quote }}
+        {{- end }}
         {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
     spec:
       serviceAccountName: {{ include "serviceops.serviceAccountName" . }}
@@ -58,6 +81,7 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: {drop: ["ALL"]}
           envFrom:
+            - configMapRef: {name: {{ include "serviceops.fullname" . }}-config}
             - secretRef: {name: {{ include "serviceops.secretName" . }}}
       containers:
         - name: serviceops
@@ -120,7 +144,7 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 5
           lifecycle:
-            preStop: {exec: {command: ["/bin/sh", "-c", "sleep 10"]}}
+            preStop: {exec: {command: ["/bin/sh", "-c", "sleep {{ .Values.rollingUpdate.preStopDelaySeconds }}"]}}
           resources: {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: tmp

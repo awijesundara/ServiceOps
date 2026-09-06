@@ -42,6 +42,16 @@ echo "Verified backup reference: $BACKUP_REFERENCE"
 helm lint "$CHART" >/dev/null && ok "Helm chart lint passed"
 python3 "$ROOT_DIR/tools/verify_supply_chain.py" >/dev/null && ok "Supply-chain policy verification passed"
 
+candidate_manifest="$(helm template "$RELEASE" "$CHART" -n "$NAMESPACE" -f "$VALUES_FILE" \
+  --set-string "image.tag=$TARGET_TAG" --set-string "image.digest=$TARGET_DIGEST" \
+  --set-string "database.backupReference=$BACKUP_REFERENCE")"
+progressive_delivery=false
+if grep -q '^kind: Rollout$' <<<"$candidate_manifest"; then
+  progressive_delivery=true
+  kubectl api-resources --api-group=argoproj.io -o name | grep -qx 'rollouts.argoproj.io' \
+    || die "progressiveDelivery is enabled but the Argo Rollouts CRD is unavailable."
+fi
+
 previous_revision="$(helm history "$RELEASE" -n "$NAMESPACE" --max 1 -o json \
   | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['revision'])")"
 echo "Current revision: $previous_revision (helm rollback $RELEASE $previous_revision -n $NAMESPACE is the manual fallback)"
@@ -53,7 +63,13 @@ helm upgrade "$RELEASE" "$CHART" -n "$NAMESPACE" -f "$VALUES_FILE" \
   --set-string "database.backupReference=$BACKUP_REFERENCE" \
   --atomic --wait --timeout 10m
 
-kubectl rollout status "deployment/$RELEASE" -n "$NAMESPACE" --timeout=5m
+if [[ "$progressive_delivery" == true ]]; then
+  kubectl wait "rollout/$RELEASE" -n "$NAMESPACE" \
+    --for=jsonpath='{.status.phase}'=Healthy --timeout=10m
+else
+  kubectl rollout status "deployment/$RELEASE" -n "$NAMESPACE" --timeout=5m
+fi
+kubectl rollout status "deployment/$RELEASE-worker" -n "$NAMESPACE" --timeout=5m
 helm test "$RELEASE" -n "$NAMESPACE" --logs
 ok "Rollout and packaged health test passed"
 

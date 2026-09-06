@@ -100,6 +100,7 @@ from serviceops_core.config_schema import (
     SETTING_DEFINITIONS, SETTING_GROUP_META, find_setting_definition,
     coerce_bool, coerce_int,
 )
+from serviceops_core.feature_flags import feature_enabled
 from serviceops_core.notification_templates import (
     NOTIFICATION_EVENT_TYPES, NON_MUTABLE_EVENT_TYPES, render_notification_template, is_event_muted,
 )
@@ -13891,6 +13892,8 @@ def create_app(test_config=None):
     @roles("admin")
     @require_action("configure")
     def cmdb_import_netbox():
+        if not feature_enabled("netbox_sync", default=True):
+            abort(503, description="NetBox synchronization is temporarily disabled by an operator feature flag.")
         dry_run = bool(request.form.get("dry_run"))
         tenant_id = tenant_context_id()
         # Serialize enqueue decisions per tenant on PostgreSQL. Without this,

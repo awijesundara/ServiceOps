@@ -59,6 +59,9 @@ def test_safe_update_changes_the_governed_digest_and_is_atomic():
     assert 'SERVICEOPS_BACKUP_REFERENCE' in script
     assert '--set-string "database.backupReference=$BACKUP_REFERENCE"' in script
     assert "--atomic --wait" in script
+    assert "rollouts.argoproj.io" in script
+    assert "--for=jsonpath='{.status.phase}'=Healthy" in script
+    assert 'deployment/$RELEASE-worker' in script
 
 
 def test_bundled_statefulset_explicitly_retains_database_claims():
@@ -134,3 +137,37 @@ def test_migration_rehearsal_does_not_use_stale_protected_image_label():
     rehearsal = (ROOT / "tools/rehearse-postgres-migrations.sh").read_text()
     assert "candidate_version=" in rehearsal
     assert 'SERVICEOPS_REHEARSAL_IMAGE:-serviceops-app:$candidate_version' in rehearsal
+
+
+def test_chart_supports_deliberate_rolling_and_optional_progressive_delivery():
+    deployment = (ROOT / "charts/serviceops/templates/deployment.yaml").read_text()
+    values = (ROOT / "charts/serviceops/values.yaml").read_text()
+    hpa = (ROOT / "charts/serviceops/templates/hpa.yaml").read_text()
+    analysis = (ROOT / "charts/serviceops/templates/progressive-delivery.yaml").read_text()
+    assert ".Values.rollingUpdate.maxUnavailable" in deployment
+    assert ".Values.rollingUpdate.maxSurge" in deployment
+    assert ".Values.rollingUpdate.preStopDelaySeconds" in deployment
+    assert 'ternary "Rollout" "Deployment"' in deployment
+    assert "serviceops_http_requests_total" in values
+    assert "kind: AnalysisTemplate" in analysis
+    assert 'kind: {{ ternary "Rollout" "Deployment"' in hpa
+
+
+def test_chart_externalizes_nonsecret_config_and_observability_contracts():
+    configmap = (ROOT / "charts/serviceops/templates/configmap.yaml").read_text()
+    deployment = (ROOT / "charts/serviceops/templates/deployment.yaml").read_text()
+    monitor = (ROOT / "charts/serviceops/templates/servicemonitor.yaml").read_text()
+    assert "FEATURE_FLAGS:" in configmap
+    assert "OTEL_SERVICE_NAME:" in configmap
+    assert "checksum/config:" in deployment
+    assert "instrumentation.opentelemetry.io/inject-python" in deployment
+    assert "kind: ServiceMonitor" in monitor
+    assert "prometheusNamespaceSelector" in (ROOT / "charts/serviceops/templates/networkpolicy.yaml").read_text()
+
+
+def test_gitops_example_self_heals_without_automatic_pruning_state():
+    application = (ROOT / "deploy/gitops/application.example.yaml").read_text()
+    assert "kind: Application" in application
+    assert "selfHeal: true" in application
+    assert "prune: false" in application
+    assert "allowEmpty: false" in application
