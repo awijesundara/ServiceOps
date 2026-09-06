@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: serviceops
+  namespace: argocd
+spec:
+  project: serviceops-production
+  source:
+    repoURL: https://github.com/your-organization/serviceops-environments.git
+    targetRevision: main
+    path: production/serviceops
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: serviceops
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 3
+      backoff: {duration: 10s, factor: 2, maxDuration: 3m}
