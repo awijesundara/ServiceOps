@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from flask import current_app
+from sqlalchemy import text
 
 from app import db
 
@@ -29,7 +30,16 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
-    connection = current_app.extensions["sqlalchemy"].engine.connect()
+    engine = current_app.extensions["sqlalchemy"].engine
+    lock_connection = None
+    if engine.dialect.name == "postgresql":
+        # Hold a session-level lock on a dedicated connection. Keeping it
+        # separate preserves Alembic's normal transactional DDL/stamp commit.
+        lock_connection = engine.connect()
+        lock_connection.execute(text(
+            "SELECT pg_advisory_lock(hashtext('serviceops-alembic-migration'))"
+        ))
+    connection = engine.connect()
     try:
         context.configure(
             connection=connection,
@@ -41,6 +51,8 @@ def run_migrations_online():
             context.run_migrations()
     finally:
         connection.close()
+        if lock_connection is not None:
+            lock_connection.close()
 
 
 if context.is_offline_mode():

@@ -278,13 +278,21 @@ digest, so changing only a tag does not change the running artifact. Use the
 safe updater with both values:
 
 ```bash
+export SERVICEOPS_BACKUP_REFERENCE="snapshot-YYYYMMDD-HHMM-before-serviceops-upgrade"
 SERVICEOPS_VALUES=deploy/kubernetes/values-production.yaml \
   ./tools/safe_update_k8s.sh v1.80.1 sha256:<verified-64-character-digest>
 ```
 
+The updater and protected deployment workflow refuse a production upgrade
+without a reference to a completed, restore-tested database backup. The chart
+records that reference on the migration Job and application pods. Configure
+the workflow variable `KUBERNETES_BACKUP_REFERENCE` with the same evidence.
 The chart runs one pre-install/pre-upgrade migration Job, waits for PostgreSQL
 before migrating, and holds web/worker pods in an init state until the exact
-Alembic head is present. `--atomic --wait` preserves the previous Kubernetes
+Alembic head is present. The migration uses the supported application-context
+entrypoint, serializes PostgreSQL schema writers, and retains its completed Job
+until the next upgrade for troubleshooting. Never run raw `alembic` commands or
+edit `alembic_version` manually. `--atomic --wait` preserves the previous Kubernetes
 revision when a hook, image pull, rollout, or readiness check fails. Database
 migrations are not automatically reversed; take and verify a database backup
 and rehearse the migration before production upgrades.

@@ -88,15 +88,19 @@ jobs:
           IMAGE_REPOSITORY: ${{ steps.release.outputs.repository }}
           IMAGE_TAG: ${{ steps.release.outputs.tag }}
           IMAGE_DIGEST: ${{ steps.release.outputs.digest }}
+          BACKUP_REFERENCE: ${{ vars.KUBERNETES_BACKUP_REFERENCE }}
         run: |
+          [[ -n "$BACKUP_REFERENCE" ]] || { echo "KUBERNETES_BACKUP_REFERENCE must identify a completed, restore-tested database backup" >&2; exit 1; }
           helm lint charts/serviceops -f "$RUNNER_TEMP/serviceops-deploy/values.yaml" \
             --set-string "image.repository=$IMAGE_REPOSITORY" \
             --set-string "image.tag=$IMAGE_TAG" \
-            --set-string "image.digest=$IMAGE_DIGEST"
+            --set-string "image.digest=$IMAGE_DIGEST" \
+            --set-string "database.backupReference=$BACKUP_REFERENCE"
           helm template serviceops charts/serviceops -f "$RUNNER_TEMP/serviceops-deploy/values.yaml" \
             --set-string "image.repository=$IMAGE_REPOSITORY" \
             --set-string "image.tag=$IMAGE_TAG" \
-            --set-string "image.digest=$IMAGE_DIGEST" > "$RUNNER_TEMP/serviceops-deploy/rendered.yaml"
+            --set-string "image.digest=$IMAGE_DIGEST" \
+            --set-string "database.backupReference=$BACKUP_REFERENCE" > "$RUNNER_TEMP/serviceops-deploy/rendered.yaml"
 
       - name: Atomically install or upgrade ServiceOps
         env:
@@ -104,6 +108,7 @@ jobs:
           IMAGE_REPOSITORY: ${{ steps.release.outputs.repository }}
           IMAGE_TAG: ${{ steps.release.outputs.tag }}
           IMAGE_DIGEST: ${{ steps.release.outputs.digest }}
+          BACKUP_REFERENCE: ${{ vars.KUBERNETES_BACKUP_REFERENCE }}
           NAMESPACE: ${{ vars.KUBERNETES_NAMESPACE || 'serviceops' }}
           RELEASE: ${{ vars.KUBERNETES_RELEASE || 'serviceops' }}
         run: |
@@ -114,6 +119,7 @@ jobs:
             --set-string "image.repository=$IMAGE_REPOSITORY" \
             --set-string "image.tag=$IMAGE_TAG" \
             --set-string "image.digest=$IMAGE_DIGEST" \
+            --set-string "database.backupReference=$BACKUP_REFERENCE" \
             --atomic --wait --timeout 10m
           kubectl rollout status "deployment/$RELEASE" -n "$NAMESPACE" --timeout=5m
           kubectl rollout status "deployment/$RELEASE-worker" -n "$NAMESPACE" --timeout=5m

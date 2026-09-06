@@ -12541,10 +12541,8 @@ def create_app(test_config=None):
         )
         ad_context = {}
         if category == "sign_in_and_directory":
-            # B-322: AD group mapping and directory sync render on this same
-            # page, right below the LDAP/Keycloak connection fields above --
-            # user-reported complaint that "AD related configs" were split
-            # across Platform settings and Service delivery & governance.
+            # Keep the working sign-in-time AD group mapping controls beside
+            # the LDAP connection settings.
             teams = tenant_query(SupportGroup).filter_by(
                 group_type="IT Fulfillment"
             ).order_by(SupportGroup.name).all()
@@ -12555,10 +12553,6 @@ def create_app(test_config=None):
                 ).order_by(
                     DirectoryGroupMapping.directory_group
                 ).all(),
-                ldap_enabled=setting_bool("LDAP_ENABLED"),
-                ldap_sync_enabled=setting_bool("LDAP_SYNC_ENABLED"),
-                ldap_sync_interval_minutes=setting_int("LDAP_SYNC_INTERVAL_MINUTES", 60),
-                ldap_sync_result=session.pop("ldap_sync_result", None),
             )
         return render_template(
             "system_settings_category.html", category=category, title=title, description=description,

@@ -13,6 +13,9 @@ existingBootstrapSecret: serviceops-bootstrap
 
 database:
   mode: external
+  # Replace on every upgrade with the identifier of a completed and
+  # restore-tested provider snapshot or pg_dump archive.
+  backupReference: ""
 
 uploads:
   persistence:
