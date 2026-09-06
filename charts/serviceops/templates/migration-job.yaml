@@ -1,13 +1,15 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "serviceops.fullname" . }}-migrate-{{ .Release.Revision }}
+  name: {{ include "serviceops.fullname" . }}-migrate
   labels:
     {{- include "serviceops.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-5"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    # Keep the completed Job as migration evidence until the next upgrade.
+    "helm.sh/hook-delete-policy": before-hook-creation
+    serviceops.io/pre-upgrade-backup-reference: {{ default "initial-install" .Values.database.backupReference | quote }}
 spec:
   backoffLimit: 1
   activeDeadlineSeconds: 600
@@ -39,9 +41,7 @@ spec:
         - name: migrate
           image: {{ include "serviceops.imageRef" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["python", "-c"]
-          args:
-            - "from app import create_app; create_app(); print('ServiceOps migrations complete')"
+          command: ["python", "-m", "tools.run_migrations"]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

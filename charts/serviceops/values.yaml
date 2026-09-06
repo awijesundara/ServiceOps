@@ -40,6 +40,10 @@ existingBootstrapSecret: serviceops-bootstrap
 database:
   mode: external
   readinessTimeoutSeconds: 600
+  # Required on production upgrades. Set this to the identifier of a completed,
+  # restore-tested provider snapshot or pg_dump backup taken immediately before
+  # the upgrade. It is recorded on the migration Job and application pods.
+  backupReference: ""
   bundled:
     image: postgres:16-alpine
     database: serviceops

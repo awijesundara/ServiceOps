@@ -7,6 +7,9 @@
 {{- if and (eq .Values.deploymentProfile "production") .Values.ingress.enabled .Values.networkPolicy.enabled (empty .Values.networkPolicy.ingressNamespaceSelector) }}
 {{- fail "Production ingress requires networkPolicy.ingressNamespaceSelector to identify trusted ingress-controller namespaces" }}
 {{- end }}
+{{- if and .Release.IsUpgrade (eq .Values.deploymentProfile "production") (empty .Values.database.backupReference) }}
+{{- fail "Production upgrades require database.backupReference for a completed, restore-tested pre-upgrade backup" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,6 +36,7 @@ spec:
         {{- include "serviceops.webSelectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
       annotations:
+        serviceops.io/pre-upgrade-backup-reference: {{ default "initial-install" .Values.database.backupReference | quote }}
         {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
     spec:
       serviceAccountName: {{ include "serviceops.serviceAccountName" . }}

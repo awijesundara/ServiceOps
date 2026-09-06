@@ -22,7 +22,8 @@
       "required": ["mode", "readinessTimeoutSeconds"],
       "properties": {
         "mode": {"type": "string", "const": "external"},
-        "readinessTimeoutSeconds": {"type": "integer", "minimum": 30, "maximum": 3600}
+        "readinessTimeoutSeconds": {"type": "integer", "minimum": 30, "maximum": 3600},
+        "backupReference": {"type": "string", "maxLength": 240}
       }
     },
     "healthTest": {

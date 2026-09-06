@@ -79,13 +79,5 @@
   </table>
 </section>
 
-<section class="panel admin-section">
-  <div class="panel-head"><div><h2>Directory reconciliation</h2><p>ServiceOps uses scoped, scheduled LDAP reconciliation and just-in-time provisioning at successful sign-in. There is no bulk "sync all users" action. Reconciliation refreshes existing profiles and only creates a missing manager needed for a verified reporting chain. RFC 2696 paging, a hard entry ceiling, one tenant job at a time, and failure backoff protect domain controllers.</p></div></div>
-  {% if not ldap_enabled %}
-  <p class="muted">AD/LDAP is not enabled. Turn it on above first.</p>
-  {% else %}
-  <div class="callout"><strong>{{ 'Active' if ldap_sync_enabled else 'Paused' }}.</strong> {% if ldap_sync_enabled %}The worker reconciles the configured LDAP scope every {{ ldap_sync_interval_minutes }} minutes.{% else %}Enable scheduled LDAP directory sync above after testing a narrow LDAP user filter.{% endif %} New users are created at first successful LDAP login; this avoids directory-wide provisioning and stale unused accounts.</div>
-  {% endif %}
-</section>
 {% endif %}
 {% endblock %}
