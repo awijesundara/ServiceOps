@@ -55,6 +55,7 @@ spec:
             - {name: DEPLOYMENT_MODE, value: "kubernetes"}
             - {name: AUTO_MIGRATE, value: "false"}
             - {name: UPLOAD_FOLDER, value: /tmp/uploads}
+            - {name: LOG_DIR, value: /tmp/logs}
           envFrom:
             - secretRef: {name: {{ include "serviceops.secretName" . }}}
           volumeMounts:

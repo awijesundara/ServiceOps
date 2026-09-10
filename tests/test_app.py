@@ -36,7 +36,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
                  audit, change_approval_stages, create_api_token, create_app, create_notification, db,
-                 deliver_smtp,
+                 deliver_smtp, deliver_webhook,
                  deploy_workflow_package, find_and_merge_duplicate_groups, ldap_authenticate,
                  mapped_roles, merge_support_group_into, normalize_environment, now, process_discovery_schedule,
                  process_client_escalation_policies,
@@ -1393,6 +1393,76 @@ def test_integration_admin_creates_scoped_connection_and_can_disable(client, app
     assert response.status_code == 200
     with app.app_context():
         assert not db.session.get(IntegrationConnection, connection_id).active
+
+
+def test_telegram_connection_encrypts_token_and_provider_configuration(client, app):
+    login(client, "admin", "Admin123!")
+    response = client.post("/admin/integrations", data={
+        "action": "create_connection", "name": "On-call Telegram",
+        "kind": "telegram", "secret": "123456:secret-token",
+        "chat_id": "-10012345", "message_thread_id": "42",
+        "protect_content": "on", "event_types": "notification.created:approval.*",
+    })
+    assert response.status_code == 200
+    with app.app_context():
+        connection = IntegrationConnection.query.filter_by(name="On-call Telegram").one()
+        assert connection.endpoint == "https://api.telegram.org"
+        assert connection.secret == "123456:secret-token"
+        assert "secret-token" not in connection.secret_encrypted
+        assert connection.configuration == {
+            "chat_id": "-10012345", "message_thread_id": 42,
+            "protect_content": True,
+        }
+        assert "-10012345" not in connection.configuration_encrypted
+
+
+def test_telegram_delivery_builds_api_call_without_leaking_token(monkeypatch, app):
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        is_redirect = False
+
+    monkeypatch.setattr(
+        "app.requests.post",
+        lambda url, json, headers, timeout, allow_redirects=False: (
+            calls.append((url, json, headers)) or FakeResponse()
+        ),
+    )
+    monkeypatch.setattr(
+        "app.socket.getaddrinfo",
+        lambda host, port: [(2, 1, 6, "", ("149.154.167.220", 0))],
+    )
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        connection = IntegrationConnection(
+            name="Telegram", kind="telegram", endpoint="https://api.telegram.org",
+            secret_encrypted=settings_cipher().encrypt(b"123:top-secret").decode(),
+            configuration_encrypted=settings_cipher().encrypt(json.dumps({
+                "chat_id": "-1001", "protect_content": True,
+            }).encode()).decode(),
+            created_by_id=admin.id,
+        )
+        event = OutboxEvent(event_type="notification.created", payload_json=json.dumps({
+            "title": "Approval", "body": "Review CHG001",
+        }))
+        db.session.add_all([connection, event])
+        db.session.commit()
+        assert deliver_webhook(event, connection) == 200
+        assert calls[0][0] == "https://api.telegram.org/bot123:top-secret/sendMessage"
+        assert calls[0][1] == {
+            "chat_id": "-1001", "text": "Approval\nReview CHG001",
+            "protect_content": True,
+        }
+
+
+def test_wrong_provider_webhook_host_is_rejected(client):
+    login(client, "admin", "Admin123!")
+    response = client.post("/admin/integrations", data={
+        "action": "create_connection", "name": "Wrong Chat endpoint",
+        "kind": "google_chat", "endpoint": "https://attacker.example/hook",
+    })
+    assert response.status_code == 400
 
 
 def test_monitoring_ingestion_auth_deduplication_and_team_routing(client, app):
