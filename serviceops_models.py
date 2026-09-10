@@ -906,6 +906,7 @@ class IntegrationConnection(db.Model):
     kind = db.Column(db.String(30), nullable=False)
     endpoint = db.Column(db.String(500), nullable=False)
     endpoint_encrypted = db.Column(db.Text)
+    configuration_encrypted = db.Column(db.Text)
     event_types_json = db.Column(db.Text, nullable=False, default="[]")
     secret_encrypted = db.Column(db.Text)
     active = db.Column(db.Boolean, nullable=False, default=True)
@@ -936,6 +937,18 @@ class IntegrationConnection(db.Model):
         except (TypeError, ValueError):
             return []
         return value if isinstance(value, list) else []
+
+    @property
+    def configuration(self):
+        if not self.configuration_encrypted:
+            return {}
+        try:
+            value = json.loads(
+                settings_cipher().decrypt(self.configuration_encrypted.encode()).decode()
+            )
+        except (TypeError, ValueError):
+            return {}
+        return value if isinstance(value, dict) else {}
 
 
 class OutboxEvent(db.Model):

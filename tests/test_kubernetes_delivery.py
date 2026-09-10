@@ -42,6 +42,7 @@ def test_helm_workloads_gate_startup_on_database_and_schema():
         assert "database-and-schema-ready" in workload
         assert '"--migrations-current"' in workload
         assert "tools.wait_for_database" in workload
+        assert "{name: LOG_DIR, value: /tmp/logs}" in workload
     assert "database-ready" in migration
     assert '"--migrations-current"' not in migration
     assert 'command: ["python", "-m", "tools.run_migrations"]' in migration
