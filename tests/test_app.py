@@ -1377,12 +1377,13 @@ def test_integration_admin_creates_scoped_connection_and_can_disable(client, app
     response = client.post("/admin/integrations", data={
         "action": "create_connection", "name": "Ticket subscriber",
         "kind": "webhook", "endpoint": "https://hooks.example.test/serviceops?token=sensitive",
-        "secret": "signing-secret", "event_types": "notification.created, ticket.*",
+        "secret": "signing-secret",
+        "event_types": ["notification.created", "activity.created:incidents"],
     })
     assert response.status_code == 200
     with app.app_context():
         connection = IntegrationConnection.query.filter_by(name="Ticket subscriber").one()
-        assert connection.event_types == ["notification.created", "ticket.*"]
+        assert connection.event_types == ["notification.created", "activity.created:incidents"]
         assert connection.endpoint == "https://hooks.example.test/serviceops"
         assert connection.delivery_endpoint == "https://hooks.example.test/serviceops?token=sensitive"
         assert "hooks.example.test" not in connection.endpoint_encrypted
@@ -1401,7 +1402,7 @@ def test_telegram_connection_encrypts_token_and_provider_configuration(client, a
         "action": "create_connection", "name": "On-call Telegram",
         "kind": "telegram", "secret": "123456:secret-token",
         "chat_id": "-10012345", "message_thread_id": "42",
-        "protect_content": "on", "event_types": "notification.created:approval.*",
+        "protect_content": "on", "event_types": "notification.created:approval.requested",
     })
     assert response.status_code == 200
     with app.app_context():
@@ -1414,6 +1415,70 @@ def test_telegram_connection_encrypts_token_and_provider_configuration(client, a
             "protect_content": True,
         }
         assert "-10012345" not in connection.configuration_encrypted
+
+
+def test_integration_admin_updates_channel_event_choices(client, app):
+    login(client, "admin", "Admin123!")
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        connection = IntegrationConnection(
+            name="Editable Telegram", kind="telegram", endpoint="https://api.telegram.org",
+            event_types_json=json.dumps(["notification.created"]),
+            secret_encrypted=settings_cipher().encrypt(b"123:secret").decode(),
+            configuration_encrypted=settings_cipher().encrypt(
+                json.dumps({"chat_id": "-1001"}).encode()
+            ).decode(),
+            created_by_id=admin.id,
+        )
+        db.session.add(connection)
+        db.session.commit()
+        connection_id = connection.id
+    response = client.post("/admin/integrations", data={
+        "action": "update_connection_events", "connection_id": connection_id,
+        "event_types": ["activity.created:incidents", "activity.created:changes"],
+    })
+    assert response.status_code == 200
+    with app.app_context():
+        assert db.session.get(IntegrationConnection, connection_id).event_types == [
+            "activity.created:incidents", "activity.created:changes",
+        ]
+
+
+def test_audit_activity_routes_only_to_subscribed_chat_category(monkeypatch, app):
+    delivered = []
+    monkeypatch.setattr(
+        "app.deliver_webhook",
+        lambda event, connection: delivered.append((event.payload, connection.name)) or 200,
+    )
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        db.session.add_all([
+            IntegrationConnection(
+                name="Incident room", kind="telegram", endpoint="https://api.telegram.org",
+                event_types_json=json.dumps(["activity.created:incidents"]),
+                secret_encrypted=settings_cipher().encrypt(b"123:secret").decode(),
+                configuration_encrypted=settings_cipher().encrypt(
+                    json.dumps({"chat_id": "-1001"}).encode()
+                ).decode(), created_by_id=admin.id,
+            ),
+            IntegrationConnection(
+                name="Change room", kind="telegram", endpoint="https://api.telegram.org",
+                event_types_json=json.dumps(["activity.created:changes"]),
+                secret_encrypted=settings_cipher().encrypt(b"456:secret").decode(),
+                configuration_encrypted=settings_cipher().encrypt(
+                    json.dumps({"chat_id": "-1002"}).encode()
+                ).decode(), created_by_id=admin.id,
+            ),
+        ])
+        db.session.flush()
+        audit("resolve", "INC0000042", "Resolved after service restoration", user_id=admin.id)
+        db.session.commit()
+        assert process_outbox() >= 1
+        assert [name for _, name in delivered] == ["Incident room"]
+        payload = delivered[0][0]
+        assert payload["activity_category"] == "incidents"
+        assert "source_ip" not in payload
+        assert "security_context" not in payload
 
 
 def test_telegram_delivery_builds_api_call_without_leaking_token(monkeypatch, app):
