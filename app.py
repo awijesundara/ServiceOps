@@ -21,6 +21,7 @@ import smtplib
 import imaplib
 import email as email_module
 from pathlib import Path
+from types import SimpleNamespace
 import collections
 from collections import Counter, defaultdict
 from datetime import date, datetime, time as dt_time, timedelta, timezone
@@ -105,7 +106,10 @@ from serviceops_core.feature_flags import feature_enabled
 from serviceops_core.notification_templates import (
     NOTIFICATION_EVENT_TYPES, NON_MUTABLE_EVENT_TYPES, render_notification_template, is_event_muted,
 )
-from serviceops_core.delivery import WEBHOOK_KINDS, event_matches, google_chat_message
+from serviceops_core.delivery import (
+    PROVIDER_LABELS, WEBHOOK_KINDS, event_matches, provider_endpoint_allowed,
+    provider_payload,
+)
 from serviceops_core.navigation import navigation_entries
 from serviceops_core.storage import build_storage_backend, ipfs_enabled
 from serviceops_core.passkeys import (
@@ -1466,13 +1470,8 @@ def deliver_webhook(event, connection):
         "created_at": event.created_at.isoformat(),
         "data": event.payload,
     }
-    if connection.kind == "teams":
-        body = {
-            "text": f"**{event.payload['title']}**\n\n{event.payload['body']}"
-        }
-        headers = {"Content-Type": "application/json"}
-    elif connection.kind == "google_chat":
-        body = google_chat_message(event.payload)
+    if connection.kind in {"teams", "google_chat", "slack", "discord", "telegram"}:
+        body = provider_payload(connection.kind, event.payload, connection.configuration)
         headers = {"Content-Type": "application/json"}
     else:
         body = payload
@@ -1490,6 +1489,11 @@ def deliver_webhook(event, connection):
             "X-ServiceOps-Signature": f"sha256={signature}",
         }
     target = connection.delivery_endpoint
+    if connection.kind == "telegram":
+        token = connection.secret
+        if not token:
+            raise RuntimeError("Telegram bot token is not configured.")
+        target = f"https://api.telegram.org/bot{token}/sendMessage"
     max_redirects = 3
     for _ in range(max_redirects + 1):
         if not integration_endpoint_valid(target):
@@ -1505,13 +1509,21 @@ def deliver_webhook(event, connection):
         # has no resolver step to pin against.
         if hostname and infos:
             with pin_resolved_addresses(hostname, infos):
-                response = requests.post(
-                    target, json=body, headers=headers, timeout=10, allow_redirects=False,
-                )
+                try:
+                    response = requests.post(
+                        target, json=body, headers=headers, timeout=10,
+                        allow_redirects=False,
+                    )
+                except requests.RequestException as error:
+                    raise RuntimeError("Notification provider request failed.") from error
         else:
-            response = requests.post(
-                target, json=body, headers=headers, timeout=10, allow_redirects=False,
-            )
+            try:
+                response = requests.post(
+                    target, json=body, headers=headers, timeout=10,
+                    allow_redirects=False,
+                )
+            except requests.RequestException as error:
+                raise RuntimeError("Notification provider request failed.") from error
         if response.is_redirect:
             location = response.headers.get("Location", "")
             target = urljoin(target, location)
@@ -12227,18 +12239,35 @@ def create_app(test_config=None):
                 name = request.form.get("name", "").strip()
                 kind = request.form.get("kind", "")
                 endpoint = request.form.get("endpoint", "").strip()
+                configuration = {}
+                if kind == "telegram":
+                    endpoint = "https://api.telegram.org"
+                    chat_id = request.form.get("chat_id", "").strip()
+                    thread_id = request.form.get("message_thread_id", "").strip()
+                    if not chat_id or len(chat_id) > 120:
+                        abort(400, description="A Telegram chat ID is required.")
+                    if thread_id and (not thread_id.isdigit() or len(thread_id) > 20):
+                        abort(400, description="Telegram topic ID must be numeric.")
+                    configuration = {
+                        "chat_id": chat_id,
+                        "protect_content": request.form.get("protect_content") == "on",
+                    }
+                    if thread_id:
+                        configuration["message_thread_id"] = int(thread_id)
                 if (
                     not name or len(name) > 160
                     or kind not in WEBHOOK_KINDS
                     or not integration_endpoint_valid(endpoint)
+                    or not provider_endpoint_allowed(kind, urlparse(endpoint).hostname)
                 ):
                     abort(400, description=(
                         "A name, supported kind and public HTTPS endpoint are required."
                     ))
-                secret = (
-                    request.form.get("secret", "").strip()
-                    if kind in {"webhook", "siem"} else ""
-                )
+                secret = request.form.get("secret", "").strip() if kind in {
+                    "webhook", "siem", "telegram",
+                } else ""
+                if kind == "telegram" and not secret:
+                    abort(400, description="A Telegram bot token is required.")
                 if kind in {"webhook", "siem"} and not secret:
                     secret = secrets.token_urlsafe(32)
                     revealed_secret = secret
@@ -12249,6 +12278,10 @@ def create_app(test_config=None):
                 parsed_endpoint = urlparse(endpoint)
                 display_endpoint = parsed_endpoint._replace(query="", fragment="").geturl()
                 encrypted_endpoint = settings_cipher().encrypt(endpoint.encode()).decode()
+                encrypted_configuration = (
+                    settings_cipher().encrypt(json.dumps(configuration).encode()).decode()
+                    if configuration else None
+                )
                 raw_patterns = request.form.get("event_types", "").strip()
                 patterns = [item.strip() for item in raw_patterns.split(",") if item.strip()]
                 if len(patterns) > 50 or any(len(item) > 120 for item in patterns):
@@ -12256,12 +12289,38 @@ def create_app(test_config=None):
                 db.session.add(IntegrationConnection(
                     name=name, kind=kind, endpoint=display_endpoint,
                     endpoint_encrypted=encrypted_endpoint,
+                    configuration_encrypted=encrypted_configuration,
                     secret_encrypted=encrypted,
                     event_types_json=json.dumps(patterns),
                     created_by_id=current_user.id,
                     tenant_id=current_user.tenant_id,
                 ))
                 audit("integration create", name, kind)
+            elif action == "test_connection":
+                connection = IntegrationConnection.query.filter_by(
+                    id=request.form.get("connection_id", type=int),
+                    tenant_id=current_user.tenant_id,
+                ).first_or_404()
+                event_type = "audit.created" if connection.kind == "siem" else "notification.created"
+                synthetic = SimpleNamespace(
+                    event_id=str(uuid.uuid4()), event_type=event_type,
+                    created_at=now(), payload={
+                        "title": "ServiceOps test notification",
+                        "body": f"{connection.name} is configured and can receive messages.",
+                        "action": "integration test",
+                    },
+                )
+                try:
+                    status = deliver_webhook(synthetic, connection)
+                except Exception as error:
+                    audit("integration test failed", connection.name, type(error).__name__)
+                    db.session.commit()
+                    flash(f"Test failed: {error}", "error")
+                else:
+                    audit("integration test", connection.name, f"HTTP {status}")
+                    db.session.commit()
+                    flash("Test notification delivered successfully.", "success")
+                return redirect(url_for("integrations_admin"))
             elif action == "toggle_connection":
                 connection = IntegrationConnection.query.filter_by(
                     id=request.form.get("connection_id", type=int),
@@ -12316,6 +12375,7 @@ def create_app(test_config=None):
             ).order_by(SupportGroup.name).all(),
             revealed_token=revealed_token,
             revealed_secret=revealed_secret,
+            provider_labels=PROVIDER_LABELS,
         )
 
     @app.post("/admin/integrations/process")

@@ -1,13 +1,61 @@
-{% extends "base.html" %}{% block title %}Integrations · {{ instance_name }}{% endblock %}
+{% extends "base.html" %}
+{% block title %}Notifications and integrations · {{ instance_name }}{% endblock %}
 {% block content %}
-{% set admin_page_title = 'Integrations and delivery' %}{% include '_admin_context.html' %}
-<header class="page-head"><div><h1>Integrations and delivery</h1><p>Configure Google Workspace email, signed webhooks, Google Chat, SIEM, Microsoft Teams, and durable delivery operations.</p></div><form method="post" action="{{ url_for('integrations_process') }}"><button>Process pending delivery</button></form></header>
-<section class="panel"><h2>Email delivery</h2><p class="muted">Email is configured under <a href="{{ url_for('system_settings_category', category='email_delivery') }}">Platform settings</a>. Supported modes include Google Workspace SMTP relay, Gmail app passwords, Google OAuth 2.0, and standards-based SMTP. Credentials are encrypted at rest; delivery runs through the retrying outbox.</p></section>
-<section class="panel"><h2 id="rt-import">Import from Request Tracker (RT)</h2><p class="muted">Pull tickets from an RT instance into ServiceOps as IT operations events, admin-only, with a dry-run preview before anything commits.</p><a class="button" href="{{ url_for('rt_import') }}">⇪ Import from RT</a></section>
-{% if revealed_secret %}<section class="panel"><h2>Copy the webhook signing secret now</h2><pre class="pre">{{ revealed_secret }}</pre></section>{% endif %}
+{% set admin_page_title = 'Notifications and integrations' %}{% include '_admin_context.html' %}
+<header class="page-head">
+  <div><h1>Notifications and integrations</h1><p>Connect ServiceOps events to the channels your teams already use.</p></div>
+  <form method="post" action="{{ url_for('integrations_process') }}"><button>Retry pending deliveries</button></form>
+</header>
+{% if revealed_secret %}<section class="panel"><h2>Copy the signing secret now</h2><p class="muted">It is encrypted after this page. Store this value in your receiving system.</p><pre class="pre">{{ revealed_secret }}</pre></section>{% endif %}
 {% if revealed_token %}<section class="panel"><h2>Copy the monitoring credentials now</h2><p>Source ID: <code>{{ revealed_token.source_id }}</code></p><pre class="pre">{{ revealed_token.token }}</pre></section>{% endif %}
-<div class="detail-grid"><section class="panel"><h2 id="integration-connections">Connections</h2><table><thead><tr><th>Name</th><th>Kind</th><th>Events</th><th>Endpoint</th><th>Status</th><th>Action</th></tr></thead><tbody>{% for row in connections %}<tr><td>{{ row.name }}</td><td>{{ row.kind }}</td><td><code>{{ row.event_types|join(', ') if row.event_types else '*' }}</code></td><td>{{ row.endpoint }}</td><td>{{ 'Active' if row.active else 'Disabled' }}</td><td><form method="post"><input type="hidden" name="action" value="toggle_connection"><input type="hidden" name="connection_id" value="{{ row.id }}"><button>{{ 'Disable' if row.active else 'Enable' }}</button></form></td></tr>{% else %}<tr><td colspan="6">No connections.</td></tr>{% endfor %}</tbody></table>
-<h2 id="monitoring-sources">Monitoring sources</h2><table><thead><tr><th>Name</th><th>Source ID</th><th>Team</th><th>Last seen</th></tr></thead><tbody>{% for row in sources %}<tr><td>{{ row.name }}</td><td><code>{{ row.source_id }}</code></td><td>{{ row.assignment_group.name }}</td><td>{{ row.last_seen_at or 'Never' }}</td></tr>{% else %}<tr><td colspan="4">No sources.</td></tr>{% endfor %}</tbody></table></section>
-<aside class="panel"><h2>Add integration</h2><form method="post" class="stack"><input type="hidden" name="action" value="create_connection"><label>Name<input name="name" required></label><label>Kind<select name="kind"><option value="webhook">Signed webhook</option><option value="google_chat">Google Chat incoming webhook</option><option value="siem">Immutable audit / SIEM</option><option value="teams">Microsoft Teams</option></select></label><label>Public HTTPS endpoint<input type="url" name="endpoint" required></label><label><span>Event subscriptions<span class="info-tip" tabindex="0" data-tip="Comma-separated exact names or glob patterns. Use notification.created:approval.* for approval notifications or audit.created:ticket * for ticket audit actions. Leave blank for all events allowed by the selected connection kind.">i</span></span><input name="event_types" placeholder="notification.created:approval.*, audit.created:ticket *"></label><label><span>Signing secret (webhook or SIEM)<span class="info-tip" tabindex="0" data-tip="Used to compute an HMAC-SHA-256 signature ServiceOps sends with every delivery, so the receiving endpoint can verify the payload genuinely came from ServiceOps and was not tampered with in transit. Shown once after creation; store it securely.">i</span></span><input type="password" name="secret"></label><button>Create connection</button></form><hr><h2>Add monitoring source</h2><form method="post" class="stack"><input type="hidden" name="action" value="create_monitoring_source"><label>Name<input name="name" required></label><label>Assignment team<select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label><button>Create source</button></form></aside></div>
-<section class="panel"><h2 id="integration-outbox">Outbox</h2><table><thead><tr><th>Event</th><th>Type</th><th>State</th><th>Attempts</th><th>Error</th></tr></thead><tbody>{% for row in outbox %}<tr><td><code>{{ row.event_id[:8] }}</code></td><td>{{ row.event_type }}</td><td>{{ row.state }}</td><td>{{ row.attempts }}</td><td>{{ row.last_error or '' }}</td></tr>{% else %}<tr><td colspan="5">No events.</td></tr>{% endfor %}</tbody></table></section>
+
+<section class="integration-summary">
+  <article class="panel"><h2>Email</h2><p>Google Workspace relay, Gmail OAuth, app passwords, or standards-based SMTP.</p><a class="button" href="{{ url_for('system_settings_category', category='email_delivery') }}">Configure email</a></article>
+  <article class="panel"><h2>Chat and webhooks</h2><p>Use a guided provider form below. Endpoint credentials are encrypted at rest.</p><a class="button" href="#add-notification-channel">Add a channel</a></article>
+  <article class="panel"><h2>Request Tracker</h2><p>Preview and import RT tickets as operations events.</p><a class="button" href="{{ url_for('rt_import') }}">Import from RT</a></article>
+</section>
+
+<section class="panel table-panel" id="integration-connections">
+  <div class="panel-head"><div><h2>Notification channels</h2><p>Send a test before enabling a channel for production events.</p></div></div>
+  <table><thead><tr><th>Name</th><th>Provider</th><th>Subscribed events</th><th>Destination</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+  {% for row in connections %}<tr>
+    <td><strong>{{ row.name }}</strong></td><td>{{ provider_labels.get(row.kind, row.kind) }}</td>
+    <td><code>{{ row.event_types|join(', ') if row.event_types else 'All allowed events' }}</code></td>
+    <td><span class="endpoint-safe">{{ row.endpoint }}</span></td><td><span class="badge">{{ 'Active' if row.active else 'Paused' }}</span></td>
+    <td><div class="inline-actions"><form method="post"><input type="hidden" name="action" value="test_connection"><input type="hidden" name="connection_id" value="{{ row.id }}"><button>Send test</button></form><form method="post"><input type="hidden" name="action" value="toggle_connection"><input type="hidden" name="connection_id" value="{{ row.id }}"><button>{{ 'Pause' if row.active else 'Enable' }}</button></form></div></td>
+  </tr>{% else %}<tr><td colspan="6" class="empty">No notification channels configured.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+
+<section class="panel" id="add-notification-channel">
+  <div class="panel-head"><div><h2>Add a notification channel</h2><p>Choose a provider and enter only the information that provider requires.</p></div></div>
+  <div class="provider-grid">
+    {% set webhook_providers = [('google_chat','Google Chat','Paste the incoming webhook URL copied from the Chat space.'),('slack','Slack','Paste the incoming webhook URL for the destination channel.'),('teams','Microsoft Teams','Paste the Teams Workflow or incoming webhook URL.'),('discord','Discord','Paste the channel webhook URL.'),('webhook','Signed webhook','Send canonical JSON with an HMAC-SHA-256 signature.'),('siem','Audit / SIEM','Send only immutable audit events as signed JSON.')] %}
+    {% for kind, label, help in webhook_providers %}
+    <details class="provider-card"><summary><strong>{{ label }}</strong><span>{{ help }}</span></summary>
+      <form method="post" class="stack provider-form"><input type="hidden" name="action" value="create_connection"><input type="hidden" name="kind" value="{{ kind }}">
+        <label>Name<input name="name" required maxlength="160" placeholder="Operations channel"></label>
+        <label>Webhook URL<input type="url" name="endpoint" required autocomplete="off" placeholder="https://..."></label>
+        <label>Event filter<input name="event_types" placeholder="notification.created:approval.*"><small>Optional comma-separated exact names or patterns. Blank means all allowed events.</small></label>
+        {% if kind in ['webhook','siem'] %}<label>Signing secret<input type="password" name="secret" autocomplete="new-password"><small>Leave blank to generate a strong secret once.</small></label>{% endif %}
+        <button class="primary">Save {{ label }} channel</button>
+      </form>
+    </details>{% endfor %}
+    <details class="provider-card"><summary><strong>Telegram bot</strong><span>Use a bot token and target chat ID; no webhook URL construction required.</span></summary>
+      <form method="post" class="stack provider-form"><input type="hidden" name="action" value="create_connection"><input type="hidden" name="kind" value="telegram">
+        <label>Name<input name="name" required maxlength="160" placeholder="On-call Telegram"></label>
+        <label>Bot token<input type="password" name="secret" required autocomplete="new-password" placeholder="123456:ABC..."><small>Encrypted at rest and never displayed or logged.</small></label>
+        <label>Chat ID<input name="chat_id" required maxlength="120" placeholder="-1001234567890"></label>
+        <label>Topic ID<input name="message_thread_id" inputmode="numeric" placeholder="Optional forum topic ID"></label>
+        <label>Event filter<input name="event_types" placeholder="notification.created:approval.*"><small>Optional comma-separated exact names or patterns.</small></label>
+        <label class="check"><input type="checkbox" name="protect_content"> Prevent forwarding and saving where Telegram supports it</label>
+        <button class="primary">Save Telegram channel</button>
+      </form>
+    </details>
+  </div>
+</section>
+
+<div class="detail-grid"><section class="panel"><h2 id="monitoring-sources">Monitoring sources</h2><table><thead><tr><th>Name</th><th>Source ID</th><th>Team</th><th>Last seen</th></tr></thead><tbody>{% for row in sources %}<tr><td>{{ row.name }}</td><td><code>{{ row.source_id }}</code></td><td>{{ row.assignment_group.name }}</td><td>{{ row.last_seen_at or 'Never' }}</td></tr>{% else %}<tr><td colspan="4">No sources.</td></tr>{% endfor %}</tbody></table></section>
+<aside class="panel"><h2>Add monitoring source</h2><form method="post" class="stack"><input type="hidden" name="action" value="create_monitoring_source"><label>Name<input name="name" required></label><label>Assignment team<select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label><button>Create source</button></form></aside></div>
+<section class="panel table-panel"><h2 id="integration-outbox">Delivery activity</h2><table><thead><tr><th>Event</th><th>Type</th><th>State</th><th>Attempts</th><th>Last error</th></tr></thead><tbody>{% for row in outbox %}<tr><td><code>{{ row.event_id[:8] }}</code></td><td>{{ row.event_type }}</td><td>{{ row.state }}</td><td>{{ row.attempts }}</td><td>{{ row.last_error or '' }}</td></tr>{% else %}<tr><td colspan="5">No events.</td></tr>{% endfor %}</tbody></table></section>
 {% endblock %}
