@@ -1,12 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Notifications and integrations · {{ instance_name }}{% endblock %}
+{% block title %}Notifications · {{ instance_name }}{% endblock %}
 {% block content %}
-{% set admin_page_title = 'Notifications and integrations' %}{% include '_admin_context.html' %}
+{% set admin_page_title = 'Notifications' %}{% set admin_parent_title = 'Connections & automation' %}{% set admin_parent_url = url_for('system_settings_section', section='connections') %}{% include '_admin_context.html' %}
 {% macro subscription_picker(selected=[]) -%}
 <fieldset class="subscription-picker">
   <legend>Notify this channel for</legend>
   <p class="muted">Choose only the activity this destination needs. Changes apply to future events.</p>
-  <div class="subscription-grid">
+  <label class="event-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search event catalog" aria-label="Search notification events" data-event-search></label>
+  <div class="subscription-grid" data-event-list>
   {% for pattern, label, description in event_subscriptions %}
     <label class="subscription-option">
       <input type="checkbox" name="event_types" value="{{ pattern }}" {% if not selected or pattern in selected %}checked{% endif %}>
@@ -16,60 +17,45 @@
   </div>
 </fieldset>
 {%- endmacro %}
-<header class="page-head">
-  <div><h1>Notifications and integrations</h1><p>Connect ServiceOps events to the channels your teams already use.</p></div>
-  <form method="post" action="{{ url_for('integrations_process') }}"><button>Retry pending deliveries</button></form>
-</header>
-{% if revealed_secret %}<section class="panel"><h2>Copy the signing secret now</h2><p class="muted">It is encrypted after this page. Store this value in your receiving system.</p><pre class="pre">{{ revealed_secret }}</pre></section>{% endif %}
+<div class="settings-console">
+{% set settings_section = 'connections' %}{% include '_settings_console_nav.html' %}
+<section class="settings-console-main settings-reveal">
+<header class="settings-page-head"><div><p class="eyebrow">CONNECTIONS &amp; AUTOMATION</p><h1>Notifications</h1><p>Choose channels, select event categories, and review delivery health.</p></div><form method="post" action="{{ url_for('integrations_process') }}"><button>Retry pending deliveries</button></form></header>
+<nav class="settings-breadcrumb" aria-label="Settings hierarchy"><a href="{{ url_for('system_settings') }}">General</a><span aria-hidden="true">›</span><a href="{{ url_for('system_settings_section', section='connections') }}">Connections &amp; automation</a><span aria-hidden="true">›</span><strong>Notifications</strong></nav>
+<nav class="integration-tabs" aria-label="Notification settings">
+  <a href="{{ url_for('integrations_admin', view='overview') }}" class="{{ 'active' if active_view == 'overview' else '' }}">Overview</a>
+  <a href="{{ url_for('integrations_admin', view='channels') }}" class="{{ 'active' if active_view in ['channels','channel'] else '' }}">Channels</a>
+  <a href="{{ url_for('integrations_admin', view='add') }}" class="{{ 'active' if active_view == 'add' else '' }}">Add channel</a>
+  <a href="{{ url_for('integrations_admin', view='deliveries') }}" class="{{ 'active' if active_view == 'deliveries' else '' }}">Delivery log</a>
+  <a href="{{ url_for('integrations_admin', view='monitoring') }}" class="{{ 'active' if active_view == 'monitoring' else '' }}">Monitoring sources</a>
+</nav>
+{% if revealed_secret %}<section class="panel"><h2>Copy the signing secret now</h2><p class="muted">It is encrypted after this page. Store it in the receiving system.</p><pre class="pre">{{ revealed_secret }}</pre></section>{% endif %}
 {% if revealed_token %}<section class="panel"><h2>Copy the monitoring credentials now</h2><p>Source ID: <code>{{ revealed_token.source_id }}</code></p><pre class="pre">{{ revealed_token.token }}</pre></section>{% endif %}
 
+{% if active_view == 'overview' %}
 <section class="integration-summary">
-  <article class="panel"><h2>Email</h2><p>Google Workspace relay, Gmail OAuth, app passwords, or standards-based SMTP.</p><a class="button" href="{{ url_for('system_settings_category', category='email_delivery') }}">Configure email</a></article>
-  <article class="panel"><h2>Chat and webhooks</h2><p>Use a guided provider form below. Endpoint credentials are encrypted at rest.</p><a class="button" href="#add-notification-channel">Add a channel</a></article>
-  <article class="panel"><h2>Request Tracker</h2><p>Preview and import RT tickets as operations events.</p><a class="button" href="{{ url_for('rt_import') }}">Import from RT</a></article>
+  <a class="panel integration-overview-card" href="{{ url_for('integrations_admin', view='channels') }}"><span class="integration-icon">♧</span><div><h2>Notification channels</h2><p>{{ connections|length }} configured. Manage Telegram, Google Chat, Slack, Teams, Discord, and webhooks.</p></div><b aria-hidden="true">›</b></a>
+  <a class="panel integration-overview-card" href="{{ url_for('integrations_admin', view='deliveries') }}"><span class="integration-icon">≣</span><div><h2>Delivery log</h2><p>See delivered, failed, retried, and skipped messages by destination.</p></div><b aria-hidden="true">›</b></a>
+  <a class="panel integration-overview-card" href="{{ url_for('integrations_admin', view='monitoring') }}"><span class="integration-icon">⌁</span><div><h2>Monitoring sources</h2><p>{{ sources|length }} configured inbound monitoring sources.</p></div><b aria-hidden="true">›</b></a>
+  <a class="panel integration-overview-card" href="{{ url_for('system_settings_category', category='email_delivery') }}"><span class="integration-icon">✉</span><div><h2>Email delivery</h2><p>Google Workspace relay, Gmail OAuth, app passwords, or standard SMTP.</p></div><b aria-hidden="true">›</b></a>
 </section>
-
-<section class="panel table-panel" id="integration-connections">
-  <div class="panel-head"><div><h2>Notification channels</h2><p>Send a test before enabling a channel for production events.</p></div></div>
-  <table><thead><tr><th>Name</th><th>Provider</th><th>Subscribed events</th><th>Destination</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-  {% for row in connections %}<tr>
-    <td><strong>{{ row.name }}</strong></td><td>{{ provider_labels.get(row.kind, row.kind) }}</td>
-    <td><span class="subscription-count">{{ 'All available events' if not row.event_types else ('No events' if row.event_types == ['__none__'] else row.event_types|length ~ ' selected') }}</span></td>
-    <td><span class="endpoint-safe">{{ row.endpoint }}</span></td><td><span class="badge">{{ 'Active' if row.active else 'Paused' }}</span></td>
-    <td><div class="inline-actions"><form method="post"><input type="hidden" name="action" value="test_connection"><input type="hidden" name="connection_id" value="{{ row.id }}"><button>Send test</button></form><form method="post"><input type="hidden" name="action" value="toggle_connection"><input type="hidden" name="connection_id" value="{{ row.id }}"><button>{{ 'Pause' if row.active else 'Enable' }}</button></form></div><details class="subscription-editor"><summary>Manage events</summary><form method="post"><input type="hidden" name="action" value="update_connection_events"><input type="hidden" name="connection_id" value="{{ row.id }}">{{ subscription_picker(row.event_types) }}<button class="primary">Save event choices</button></form></details></td>
-  </tr>{% else %}<tr><td colspan="6" class="empty">No notification channels configured.</td></tr>{% endfor %}
-  </tbody></table>
-</section>
-
-<section class="panel" id="add-notification-channel">
-  <div class="panel-head"><div><h2>Add a notification channel</h2><p>Choose a provider and enter only the information that provider requires.</p></div></div>
-  <div class="provider-grid">
-    {% set webhook_providers = [('google_chat','Google Chat','Paste the incoming webhook URL copied from the Chat space.'),('slack','Slack','Paste the incoming webhook URL for the destination channel.'),('teams','Microsoft Teams','Paste the Teams Workflow or incoming webhook URL.'),('discord','Discord','Paste the channel webhook URL.'),('webhook','Signed webhook','Send canonical JSON with an HMAC-SHA-256 signature.'),('siem','Audit / SIEM','Send only immutable audit events as signed JSON.')] %}
-    {% for kind, label, help in webhook_providers %}
-    <details class="provider-card"><summary><strong>{{ label }}</strong><span>{{ help }}</span></summary>
-      <form method="post" class="stack provider-form"><input type="hidden" name="action" value="create_connection"><input type="hidden" name="kind" value="{{ kind }}">
-        <label>Name<input name="name" required maxlength="160" placeholder="Operations channel"></label>
-        <label>Webhook URL<input type="url" name="endpoint" required autocomplete="off" placeholder="https://..."></label>
-        {{ subscription_picker(['notification.created']) }}
-        {% if kind in ['webhook','siem'] %}<label>Signing secret<input type="password" name="secret" autocomplete="new-password"><small>Leave blank to generate a strong secret once.</small></label>{% endif %}
-        <button class="primary">Save {{ label }} channel</button>
-      </form>
-    </details>{% endfor %}
-    <details class="provider-card"><summary><strong>Telegram bot</strong><span>Use a bot token and target chat ID; no webhook URL construction required.</span></summary>
-      <form method="post" class="stack provider-form"><input type="hidden" name="action" value="create_connection"><input type="hidden" name="kind" value="telegram">
-        <label>Name<input name="name" required maxlength="160" placeholder="On-call Telegram"></label>
-        <label>Bot token<input type="password" name="secret" required autocomplete="new-password" placeholder="123456:ABC..."><small>Encrypted at rest and never displayed or logged.</small></label>
-        <label>Chat ID<input name="chat_id" required maxlength="120" placeholder="-1001234567890"></label>
-        <label>Topic ID<input name="message_thread_id" inputmode="numeric" placeholder="Optional forum topic ID"></label>
-        {{ subscription_picker(['notification.created']) }}
-        <label class="check"><input type="checkbox" name="protect_content"> Prevent forwarding and saving where Telegram supports it</label>
-        <button class="primary">Save Telegram channel</button>
-      </form>
-    </details>
-  </div>
-</section>
-
-<div class="detail-grid"><section class="panel"><h2 id="monitoring-sources">Monitoring sources</h2><table><thead><tr><th>Name</th><th>Source ID</th><th>Team</th><th>Last seen</th></tr></thead><tbody>{% for row in sources %}<tr><td>{{ row.name }}</td><td><code>{{ row.source_id }}</code></td><td>{{ row.assignment_group.name }}</td><td>{{ row.last_seen_at or 'Never' }}</td></tr>{% else %}<tr><td colspan="4">No sources.</td></tr>{% endfor %}</tbody></table></section>
-<aside class="panel"><h2>Add monitoring source</h2><form method="post" class="stack"><input type="hidden" name="action" value="create_monitoring_source"><label>Name<input name="name" required></label><label>Assignment team<select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label><button>Create source</button></form></aside></div>
-<section class="panel table-panel"><h2 id="integration-outbox">Channel delivery activity</h2><table><thead><tr><th>Channel</th><th>Event</th><th>Result</th><th>HTTP</th><th>Error</th></tr></thead><tbody>{% for row in deliveries %}<tr><td>{{ row.connection.name if row.connection else row.channel }}</td><td><code>{{ row.event.event_type if row.event else 'Unknown' }}</code></td><td><span class="badge">{{ row.state }}</span></td><td>{{ row.status_code or '—' }}</td><td>{{ row.error or '' }}</td></tr>{% else %}<tr><td colspan="5">No channel deliveries yet. Send a test or wait for a subscribed event.</td></tr>{% endfor %}</tbody></table></section>
+{% elif active_view == 'channels' %}
+<section class="panel table-panel" id="integration-connections"><div class="panel-head"><div><h2>Notification channels</h2><p>Select a channel to manage events and status.</p></div><a class="button primary" href="{{ url_for('integrations_admin', view='add') }}">Add channel</a></div>
+<table><thead><tr><th>Name</th><th>Provider</th><th>Subscribed events</th><th>Status</th><th></th></tr></thead><tbody>{% for row in connections %}<tr><td><strong>{{ row.name }}</strong><small class="table-secondary">{{ row.endpoint }}</small></td><td>{{ provider_labels.get(row.kind,row.kind) }}</td><td>{{ 'All available events' if not row.event_types else ('No events' if row.event_types == ['__none__'] else row.event_types|length ~ ' selected') }}</td><td><span class="badge">{{ 'Active' if row.active else 'Paused' }}</span></td><td><a class="button" href="{{ url_for('integrations_admin', view='channel', connection=row.id) }}">Settings <span aria-hidden="true">›</span></a></td></tr>{% else %}<tr><td colspan="5" class="empty">No notification channels configured.</td></tr>{% endfor %}</tbody></table></section>
+{% elif active_view == 'channel' and selected_connection %}
+<section class="panel channel-settings"><div class="panel-head"><div><p class="eyebrow"><a href="{{ url_for('integrations_admin', view='channels') }}">Channels</a> / {{ provider_labels.get(selected_connection.kind,selected_connection.kind) }}</p><h2>{{ selected_connection.name }}</h2><p>{{ selected_connection.endpoint }}</p></div><span class="badge">{{ 'Active' if selected_connection.active else 'Paused' }}</span></div>
+<div class="channel-actions"><form method="post" action="{{ url_for('integrations_admin', view='channel', connection=selected_connection.id) }}"><input type="hidden" name="action" value="test_connection"><input type="hidden" name="connection_id" value="{{ selected_connection.id }}"><button>Send test</button></form><form method="post" action="{{ url_for('integrations_admin', view='channel', connection=selected_connection.id) }}"><input type="hidden" name="action" value="toggle_connection"><input type="hidden" name="connection_id" value="{{ selected_connection.id }}"><button>{{ 'Pause channel' if selected_connection.active else 'Enable channel' }}</button></form></div>
+<form method="post" action="{{ url_for('integrations_admin', view='channel', connection=selected_connection.id) }}"><input type="hidden" name="action" value="update_connection_events"><input type="hidden" name="connection_id" value="{{ selected_connection.id }}">{{ subscription_picker(selected_connection.event_types) }}<div class="settings-save"><div><strong>Event subscription</strong><small>Only future matching events are delivered to this channel.</small></div><button class="primary">Save event choices</button></div></form></section>
+{% elif active_view == 'add' %}
+<section class="panel"><div class="panel-head"><div><h2>Add notification channel</h2><p>Choose one provider. Provider-specific credentials are encrypted at rest.</p></div></div><div class="provider-grid">
+{% set webhook_providers=[('google_chat','Google Chat','Incoming webhook URL from the Chat space.'),('slack','Slack','Incoming webhook URL for the channel.'),('teams','Microsoft Teams','Teams Workflow or incoming webhook URL.'),('discord','Discord','Discord channel webhook URL.'),('webhook','Signed webhook','Canonical JSON with an HMAC-SHA-256 signature.'),('siem','Audit / SIEM','Immutable security audit events as signed JSON.')] %}
+{% for kind,label,help in webhook_providers %}<details class="provider-card"><summary><strong>{{ label }}</strong><span>{{ help }}</span></summary><form method="post" class="stack provider-form" action="{{ url_for('integrations_admin', view='add') }}"><input type="hidden" name="action" value="create_connection"><input type="hidden" name="kind" value="{{ kind }}"><label>Name<input name="name" required maxlength="160"></label><label>Webhook URL<input type="url" name="endpoint" required autocomplete="off" placeholder="https://..."></label>{{ subscription_picker(['notification.created']) }}{% if kind in ['webhook','siem'] %}<label>Signing secret<input type="password" name="secret" autocomplete="new-password"><small>Leave blank to generate one.</small></label>{% endif %}<button class="primary">Save {{ label }}</button></form></details>{% endfor %}
+<details class="provider-card"><summary><strong>Telegram bot</strong><span>Bot token and target chat ID.</span></summary><form method="post" class="stack provider-form" action="{{ url_for('integrations_admin', view='add') }}"><input type="hidden" name="action" value="create_connection"><input type="hidden" name="kind" value="telegram"><label>Name<input name="name" required maxlength="160"></label><label>Bot token<input type="password" name="secret" required autocomplete="new-password"></label><label>Chat ID<input name="chat_id" required maxlength="120"></label><label>Topic ID<input name="message_thread_id" inputmode="numeric"></label>{{ subscription_picker(['notification.created']) }}<label class="check"><input type="checkbox" name="protect_content"> Prevent forwarding and saving where supported</label><button class="primary">Save Telegram</button></form></details>
+</div></section>
+{% elif active_view == 'monitoring' %}
+<div class="detail-grid"><section class="panel"><h2>Monitoring sources</h2><table><thead><tr><th>Name</th><th>Source ID</th><th>Team</th><th>Last seen</th></tr></thead><tbody>{% for row in sources %}<tr><td>{{ row.name }}</td><td><code>{{ row.source_id }}</code></td><td>{{ row.assignment_group.name }}</td><td>{{ row.last_seen_at or 'Never' }}</td></tr>{% else %}<tr><td colspan="4">No sources.</td></tr>{% endfor %}</tbody></table></section><aside class="panel"><h2>Add monitoring source</h2><form method="post" class="stack" action="{{ url_for('integrations_admin', view='monitoring') }}"><input type="hidden" name="action" value="create_monitoring_source"><label>Name<input name="name" required></label><label>Assignment team<select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label><button>Create source</button></form></aside></div>
+{% elif active_view == 'deliveries' %}
+<section class="panel table-panel"><div class="panel-head"><div><h2>Delivery log</h2><p>Provider-level results for the latest outbound attempts.</p></div></div><table><thead><tr><th>Channel</th><th>Event</th><th>Result</th><th>HTTP</th><th>Attempted</th><th>Error</th></tr></thead><tbody>{% for row in deliveries %}<tr><td>{{ row.connection.name if row.connection else row.channel }}</td><td><code>{{ row.event.event_type if row.event else 'Unknown' }}</code></td><td><span class="badge">{{ row.state }}</span></td><td>{{ row.status_code or '—' }}</td><td>{{ row.attempted_at }}</td><td>{{ row.error or '' }}</td></tr>{% else %}<tr><td colspan="6">No channel deliveries yet. Send a test or wait for a subscribed event.</td></tr>{% endfor %}</tbody></table></section>
+{% endif %}
+</section></div>
 {% endblock %}
