@@ -2,6 +2,20 @@
 {% block title %}Notifications and integrations · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set admin_page_title = 'Notifications and integrations' %}{% include '_admin_context.html' %}
+{% macro subscription_picker(selected=[]) -%}
+<fieldset class="subscription-picker">
+  <legend>Notify this channel for</legend>
+  <p class="muted">Choose only the activity this destination needs. Changes apply to future events.</p>
+  <div class="subscription-grid">
+  {% for pattern, label, description in event_subscriptions %}
+    <label class="subscription-option">
+      <input type="checkbox" name="event_types" value="{{ pattern }}" {% if not selected or pattern in selected %}checked{% endif %}>
+      <span><strong>{{ label }}</strong><small>{{ description }}</small></span>
+    </label>
+  {% endfor %}
+  </div>
+</fieldset>
+{%- endmacro %}
 <header class="page-head">
   <div><h1>Notifications and integrations</h1><p>Connect ServiceOps events to the channels your teams already use.</p></div>
   <form method="post" action="{{ url_for('integrations_process') }}"><button>Retry pending deliveries</button></form>
@@ -20,9 +34,9 @@
   <table><thead><tr><th>Name</th><th>Provider</th><th>Subscribed events</th><th>Destination</th><th>Status</th><th>Actions</th></tr></thead><tbody>
   {% for row in connections %}<tr>
     <td><strong>{{ row.name }}</strong></td><td>{{ provider_labels.get(row.kind, row.kind) }}</td>
-    <td><code>{{ row.event_types|join(', ') if row.event_types else 'All allowed events' }}</code></td>
+    <td><span class="subscription-count">{{ 'All available events' if not row.event_types else ('No events' if row.event_types == ['__none__'] else row.event_types|length ~ ' selected') }}</span></td>
     <td><span class="endpoint-safe">{{ row.endpoint }}</span></td><td><span class="badge">{{ 'Active' if row.active else 'Paused' }}</span></td>
-    <td><div class="inline-actions"><form method="post"><input type="hidden" name="action" value="test_connection"><input type="hidden" name="connection_id" value="{{ row.id }}"><button>Send test</button></form><form method="post"><input type="hidden" name="action" value="toggle_connection"><input type="hidden" name="connection_id" value="{{ row.id }}"><button>{{ 'Pause' if row.active else 'Enable' }}</button></form></div></td>
+    <td><div class="inline-actions"><form method="post"><input type="hidden" name="action" value="test_connection"><input type="hidden" name="connection_id" value="{{ row.id }}"><button>Send test</button></form><form method="post"><input type="hidden" name="action" value="toggle_connection"><input type="hidden" name="connection_id" value="{{ row.id }}"><button>{{ 'Pause' if row.active else 'Enable' }}</button></form></div><details class="subscription-editor"><summary>Manage events</summary><form method="post"><input type="hidden" name="action" value="update_connection_events"><input type="hidden" name="connection_id" value="{{ row.id }}">{{ subscription_picker(row.event_types) }}<button class="primary">Save event choices</button></form></details></td>
   </tr>{% else %}<tr><td colspan="6" class="empty">No notification channels configured.</td></tr>{% endfor %}
   </tbody></table>
 </section>
@@ -36,7 +50,7 @@
       <form method="post" class="stack provider-form"><input type="hidden" name="action" value="create_connection"><input type="hidden" name="kind" value="{{ kind }}">
         <label>Name<input name="name" required maxlength="160" placeholder="Operations channel"></label>
         <label>Webhook URL<input type="url" name="endpoint" required autocomplete="off" placeholder="https://..."></label>
-        <label>Event filter<input name="event_types" placeholder="notification.created:approval.*"><small>Optional comma-separated exact names or patterns. Blank means all allowed events.</small></label>
+        {{ subscription_picker(['notification.created']) }}
         {% if kind in ['webhook','siem'] %}<label>Signing secret<input type="password" name="secret" autocomplete="new-password"><small>Leave blank to generate a strong secret once.</small></label>{% endif %}
         <button class="primary">Save {{ label }} channel</button>
       </form>
@@ -47,7 +61,7 @@
         <label>Bot token<input type="password" name="secret" required autocomplete="new-password" placeholder="123456:ABC..."><small>Encrypted at rest and never displayed or logged.</small></label>
         <label>Chat ID<input name="chat_id" required maxlength="120" placeholder="-1001234567890"></label>
         <label>Topic ID<input name="message_thread_id" inputmode="numeric" placeholder="Optional forum topic ID"></label>
-        <label>Event filter<input name="event_types" placeholder="notification.created:approval.*"><small>Optional comma-separated exact names or patterns.</small></label>
+        {{ subscription_picker(['notification.created']) }}
         <label class="check"><input type="checkbox" name="protect_content"> Prevent forwarding and saving where Telegram supports it</label>
         <button class="primary">Save Telegram channel</button>
       </form>
@@ -57,5 +71,5 @@
 
 <div class="detail-grid"><section class="panel"><h2 id="monitoring-sources">Monitoring sources</h2><table><thead><tr><th>Name</th><th>Source ID</th><th>Team</th><th>Last seen</th></tr></thead><tbody>{% for row in sources %}<tr><td>{{ row.name }}</td><td><code>{{ row.source_id }}</code></td><td>{{ row.assignment_group.name }}</td><td>{{ row.last_seen_at or 'Never' }}</td></tr>{% else %}<tr><td colspan="4">No sources.</td></tr>{% endfor %}</tbody></table></section>
 <aside class="panel"><h2>Add monitoring source</h2><form method="post" class="stack"><input type="hidden" name="action" value="create_monitoring_source"><label>Name<input name="name" required></label><label>Assignment team<select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label><button>Create source</button></form></aside></div>
-<section class="panel table-panel"><h2 id="integration-outbox">Delivery activity</h2><table><thead><tr><th>Event</th><th>Type</th><th>State</th><th>Attempts</th><th>Last error</th></tr></thead><tbody>{% for row in outbox %}<tr><td><code>{{ row.event_id[:8] }}</code></td><td>{{ row.event_type }}</td><td>{{ row.state }}</td><td>{{ row.attempts }}</td><td>{{ row.last_error or '' }}</td></tr>{% else %}<tr><td colspan="5">No events.</td></tr>{% endfor %}</tbody></table></section>
+<section class="panel table-panel"><h2 id="integration-outbox">Channel delivery activity</h2><table><thead><tr><th>Channel</th><th>Event</th><th>Result</th><th>HTTP</th><th>Error</th></tr></thead><tbody>{% for row in deliveries %}<tr><td>{{ row.connection.name if row.connection else row.channel }}</td><td><code>{{ row.event.event_type if row.event else 'Unknown' }}</code></td><td><span class="badge">{{ row.state }}</span></td><td>{{ row.status_code or '—' }}</td><td>{{ row.error or '' }}</td></tr>{% else %}<tr><td colspan="5">No channel deliveries yet. Send a test or wait for a subscribed event.</td></tr>{% endfor %}</tbody></table></section>
 {% endblock %}
