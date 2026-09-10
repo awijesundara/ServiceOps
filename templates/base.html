@@ -14,8 +14,9 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v=app_version) }}">
+  {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='notification-audiences.css', v=app_version) }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='client-management.css', v=app_version) }}">
-  {% if request.endpoint == 'integrations_admin' %}<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css', v=app_version) }}">{% endif %}
+  {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css', v=app_version) }}">{% endif %}
   <script src="{{ url_for('static', filename='platform.js', v=app_version) }}" defer></script>
   <script src="{{ url_for('static', filename='lookup.js', v=app_version) }}" defer></script>
   <script src="{{ url_for('static', filename='select-enhance.js', v=app_version) }}" defer></script>
