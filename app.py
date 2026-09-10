@@ -1044,6 +1044,22 @@ def api_attachment_document(attachment, ticket_number):
     }
 
 
+def api_ctask_document(task):
+    return {
+        "number": task.number,
+        "title": task.title,
+        "taskType": task.task_type,
+        "state": task.state,
+        "required": task.required,
+        "sequence": task.sequence,
+        "assignmentGroup": task.assignment_group.name if task.assignment_group else None,
+        "assignee": task.assignee.name if task.assignee else None,
+        "plannedStart": task.planned_start.isoformat() if task.planned_start else None,
+        "plannedEnd": task.planned_end.isoformat() if task.planned_end else None,
+        "workNotes": task.work_notes or "",
+    }
+
+
 def api_idempotency_context():
     key = request.headers.get("Idempotency-Key", "").strip()
     if not key or len(key) > 128 or not re.fullmatch(r"[A-Za-z0-9._:-]+", key):
@@ -2341,6 +2357,20 @@ def transition_ticket(ticket, new_state):
             ticket_workflow_context(ticket, old_state),
             tenant_id=ticket.tenant_id,
         )
+        if ticket.kind == "change":
+            change_payload = ticket_workflow_context(ticket, old_state)
+            change_connections = IntegrationConnection.query.filter_by(
+                tenant_id=ticket.tenant_id, active=True,
+            ).filter(IntegrationConnection.kind != "siem").all()
+            if any(
+                event_matches(connection.event_types_json, "change.state_changed", change_payload)
+                for connection in change_connections
+            ):
+                db.session.add(OutboxEvent(
+                    event_type="change.state_changed",
+                    payload_json=json.dumps(change_payload, sort_keys=True),
+                    tenant_id=ticket.tenant_id,
+                ))
     if (
         ticket.kind == "incident"
         and setting_bool("SYNC_CHILD_INCIDENT_STATES", False)
@@ -7497,6 +7527,22 @@ def create_app(test_config=None):
             "meta": {"count": len(rows), "request_id": g.request_id},
         })
 
+    @app.get("/api/v1/tickets/<number>/ctasks")
+    def api_ticket_ctasks(number):
+        require_api_scope("tickets:read")
+        ticket = visible_ticket_query(g.api_user).filter(
+            func.upper(Ticket.number) == number.upper()
+        ).first_or_404()
+        if ticket.kind != "change":
+            abort(400, description="CTASKs are only available for change tickets.")
+        rows = OperationalTask.query.filter_by(
+            parent_type="ticket", parent_id=ticket.id, task_kind="change",
+        ).order_by(OperationalTask.sequence, OperationalTask.id).all()
+        return jsonify({
+            "data": [api_ctask_document(row) for row in rows],
+            "meta": {"count": len(rows), "request_id": g.request_id},
+        })
+
     @app.get("/api/v1/mobile/tickets/<number>/attachments/<int:attachment_id>/download")
     @app.get("/api/v1/tickets/<number>/attachments/<int:attachment_id>/download")
     def api_ticket_attachment_download(number, attachment_id):
@@ -11954,7 +12000,18 @@ def create_app(test_config=None):
     @roles("admin")
     @require_action("security_administer")
     def admin_home():
-        return render_template("admin_home.html")
+        return render_template("admin_home.html", active_section=None)
+
+    @app.get("/admin/section/<section>")
+    @roles("admin")
+    @require_action("security_administer")
+    def admin_section(section):
+        if section not in {
+            "people-access", "service-configuration", "connections-channels",
+            "automation-content", "platform-security",
+        }:
+            abort(404)
+        return render_template("admin_home.html", active_section=section)
 
     @app.get("/admin/access")
     @roles("admin")
@@ -12255,6 +12312,15 @@ def create_app(test_config=None):
     def integrations_admin():
         revealed_token = None
         revealed_secret = None
+        active_view = request.args.get("view", "overview")
+        if active_view not in {"overview", "channels", "channel", "add", "deliveries", "monitoring"}:
+            abort(404)
+        selected_connection = None
+        if active_view == "channel":
+            selected_connection = IntegrationConnection.query.filter_by(
+                id=request.args.get("connection", type=int),
+                tenant_id=current_user.tenant_id,
+            ).first_or_404()
         if request.method == "POST":
             action = request.form.get("action")
             if action == "create_connection":
@@ -12414,6 +12480,9 @@ def create_app(test_config=None):
             revealed_secret=revealed_secret,
             provider_labels=PROVIDER_LABELS,
             event_subscriptions=EVENT_SUBSCRIPTIONS,
+            active_view=active_view,
+            selected_connection=selected_connection,
+            settings_sections=SETTINGS_SECTIONS,
         )
 
     @app.post("/admin/integrations/process")
@@ -12580,6 +12649,37 @@ def create_app(test_config=None):
         return send_from_directory(app.config["UPLOAD_FOLDER"], "company-logo.png",
                                    mimetype="image/png", max_age=300)
 
+    SETTINGS_SECTIONS = {
+        "experience": {
+            "title": "Experience",
+            "description": "Branding, visual behavior, and workspace presentation.",
+            "icon": "◐",
+            "categories": ("branding", "organization", "appearance", "workspace_defaults", "my_workspace_widgets"),
+        },
+        "identity": {
+            "title": "Identity & security",
+            "description": "Authentication, directory integration, access protection, and limits.",
+            "icon": "♙",
+            "categories": ("sign_in_and_directory", "security"),
+        },
+        "connections": {
+            "title": "Connections & automation",
+            "description": "Outbound notifications, email delivery, and external CMDB connectivity.",
+            "icon": "⇄",
+            "categories": ("notifications", "email_delivery", "netbox_connection"),
+        },
+        "runtime": {
+            "title": "Runtime",
+            "description": "Read-only deployment, storage, database, ingress, and replica information.",
+            "icon": "▦",
+            "categories": ("infrastructure",),
+        },
+    }
+
+    def _settings_section_for(category):
+        return next((key for key, section in SETTINGS_SECTIONS.items()
+                     if category in section["categories"]), "overview")
+
     @app.get("/admin/settings")
     @roles("admin")
     @require_action("administer")
@@ -12591,6 +12691,22 @@ def create_app(test_config=None):
         return render_template(
             "system_settings.html", group_meta=SETTING_GROUP_META,
             categories=list(SETTING_DEFINITIONS.keys()),
+            settings_sections=SETTINGS_SECTIONS,
+        )
+
+    @app.get("/admin/settings/section/<section>")
+    @roles("admin")
+    @require_action("administer")
+    def system_settings_section(section):
+        section_meta = SETTINGS_SECTIONS.get(section)
+        if not section_meta:
+            abort(404)
+        return render_template(
+            "system_settings_section.html",
+            section=section,
+            section_meta=section_meta,
+            settings_sections=SETTINGS_SECTIONS,
+            group_meta=SETTING_GROUP_META,
         )
 
     def _infrastructure_rows():
@@ -12727,6 +12843,8 @@ def create_app(test_config=None):
         return render_template(
             "system_settings_category.html", category=category, title=title, description=description,
             definitions=definitions, values=values,
+            settings_section=_settings_section_for(category),
+            settings_sections=SETTINGS_SECTIONS,
             infrastructure=_infrastructure_rows() if category == "infrastructure" else None,
             has_company_logo_field=category == "branding",
             **ad_context,

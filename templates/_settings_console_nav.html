@@ -1,0 +1,19 @@
+<aside class="settings-console-nav" aria-label="Administration settings">
+  <header class="settings-nav-head">
+    <span class="settings-nav-mark" aria-hidden="true">⚙</span>
+    <span><strong>System settings</strong><small>Administration console</small></span>
+  </header>
+  <label class="settings-console-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search settings" aria-label="Search settings menu" data-settings-menu-search></label>
+  <nav>
+    <a href="{{ url_for('system_settings') }}" class="{{ 'active' if settings_section|default('overview') == 'overview' else '' }}">
+      <span class="settings-nav-icon" aria-hidden="true">⌂</span><span><strong>General</strong><small>Settings overview</small></span><b aria-hidden="true">›</b>
+    </a>
+    {% for section_key, item in settings_sections.items() %}
+    <a href="{{ url_for('system_settings_section', section=section_key) }}" class="{{ 'active' if settings_section|default('') == section_key else '' }}">
+      <span class="settings-nav-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.title }}</strong><small>{{ item.categories|length }} configuration {{ 'area' if item.categories|length == 1 else 'areas' }}</small></span><b aria-hidden="true">›</b>
+    </a>
+    {% endfor %}
+  </nav>
+  <p class="settings-menu-empty" hidden data-settings-menu-empty>No matching settings.</p>
+  <footer><span class="status-dot" aria-hidden="true"></span><span><strong>Platform settings</strong><small>Changes are audited</small></span></footer>
+</aside>

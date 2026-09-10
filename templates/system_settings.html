@@ -2,36 +2,26 @@
 {% block title %}Platform settings · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set admin_page_title = 'Platform settings' %}{% include '_admin_context.html' %}
-<header class="page-head"><div><h1>Platform settings</h1><p>Manage organization identity and branding, sign-in and directory providers, security limits, workspace defaults, email delivery, and NetBox connections, and view the current runtime environment. Each area below is its own isolated page. Request Tracker connection settings live alongside the RT import tool under Integrations.</p></div></header>
-<div class="settings-scope-note"><strong>Platform-wide configuration</strong><span>These settings control the shared application experience, identity integrations, security boundaries, outbound delivery, and external data connections. Ticket, team, change, service, and SLA policies are managed under Service delivery and governance.</span></div>
-{% set groups = [
-  ('Identity and experience', [
-    ('branding', 'Company logo', 'PNG only, maximum 5 MB.'),
-    ('organization', group_meta['organization'][0], group_meta['organization'][1]),
-    ('appearance', group_meta['appearance'][0], group_meta['appearance'][1]),
-    ('sign_in_and_directory', group_meta['sign_in_and_directory'][0], group_meta['sign_in_and_directory'][1]),
-  ]),
-  ('Protection and behavior', [
-    ('security', group_meta['security'][0], group_meta['security'][1]),
-    ('workspace_defaults', group_meta['workspace_defaults'][0], group_meta['workspace_defaults'][1]),
-    ('my_workspace_widgets', group_meta['my_workspace_widgets'][0], group_meta['my_workspace_widgets'][1]),
-  ]),
-  ('Connections', [
-    ('email_delivery', group_meta['email_delivery'][0], group_meta['email_delivery'][1]),
-    ('netbox_connection', group_meta['netbox_connection'][0], group_meta['netbox_connection'][1]),
-  ]),
-  ('Deployment', [
-    ('infrastructure', 'Runtime environment', 'Deployment profile and environment-level diagnostics (read-only).'),
-  ]),
-] %}
-{% for section_title, cards in groups %}
-<section class="admin-home-section">
-  <header><h2>{{ section_title }}</h2></header>
-  <div class="admin-capability-grid">
-    {% for category, title, description in cards %}
-    <a class="admin-capability-card" href="{{ url_for('system_settings_category', category=category) }}"><span>⚙</span><div><h3>{{ title }}</h3><p>{{ description }}</p></div></a>
+<div class="settings-console">
+{% set settings_section = 'overview' %}{% include '_settings_console_nav.html' %}
+<section class="settings-console-main settings-reveal">
+  <header class="settings-page-head settings-page-head-overview">
+    <div><p class="eyebrow">ADMINISTRATION</p><h1>System settings</h1><p>Configure the platform through focused areas. Select a category to see its next-level settings.</p></div>
+    <span class="settings-page-symbol" aria-hidden="true">⚙</span>
+  </header>
+  <section class="settings-scope-banner">
+    <span aria-hidden="true">ⓘ</span><div><strong>Platform-wide configuration</strong><p>Changes apply to this ServiceOps environment and are recorded in the audit trail.</p></div>
+  </section>
+  <section class="settings-section-list" aria-label="System settings categories">
+    <header><div><h2>Settings categories</h2><p>Each category opens a dedicated configuration level.</p></div></header>
+    {% for section_key, item in settings_sections.items() %}
+    <a class="settings-category-row" href="{{ url_for('system_settings_section', section=section_key) }}">
+      <span class="settings-category-icon" aria-hidden="true">{{ item.icon }}</span>
+      <span><strong>{{ item.title }}</strong><small>{{ item.description }}</small></span>
+      <span class="settings-category-count">{{ item.categories|length }} {{ 'area' if item.categories|length == 1 else 'areas' }}</span>
+      <b aria-hidden="true">›</b>
+    </a>
     {% endfor %}
-  </div>
-</section>
-{% endfor %}
+  </section>
+</section></div>
 {% endblock %}

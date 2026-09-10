@@ -82,6 +82,33 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const settingsSearch = document.querySelector("[data-settings-menu-search]");
+  if (settingsSearch) {
+    const navigation = settingsSearch.closest(".settings-console-nav");
+    const links = [...navigation.querySelectorAll("nav a")];
+    const headings = [...navigation.querySelectorAll("nav > p")];
+    const empty = navigation.querySelector("[data-settings-menu-empty]");
+    settingsSearch.addEventListener("input", () => {
+      const query = settingsSearch.value.trim().toLowerCase();
+      let matches = 0;
+      links.forEach((link) => {
+        const visible = !query || link.textContent.toLowerCase().includes(query);
+        link.hidden = !visible;
+        if (visible) matches += 1;
+      });
+      headings.forEach((heading) => {
+        let sibling = heading.nextElementSibling;
+        let visible = false;
+        while (sibling && sibling.tagName !== "P") {
+          if (sibling.tagName === "A" && !sibling.hidden) visible = true;
+          sibling = sibling.nextElementSibling;
+        }
+        heading.hidden = Boolean(query) && !visible;
+      });
+      if (empty) empty.hidden = !query || matches > 0;
+    });
+  }
+
   document.querySelectorAll("[data-open-nav-menu]").forEach((button) => {
     button.addEventListener("click", () => {
       const target = document.querySelector(`[data-nav-menu="${button.dataset.openNavMenu}"]`);
@@ -90,6 +117,18 @@ document.addEventListener("DOMContentLoaded", () => {
         if (menu !== target) menu.open = false;
       });
       target.open = !target.open;
+    });
+  });
+
+  document.querySelectorAll("[data-event-search]").forEach((search) => {
+    const list = search.closest("fieldset")?.querySelector("[data-event-list]");
+    if (!list) return;
+    const options = [...list.querySelectorAll(".subscription-option")];
+    search.addEventListener("input", () => {
+      const query = search.value.trim().toLowerCase();
+      options.forEach((option) => {
+        option.hidden = Boolean(query) && !option.textContent.toLowerCase().includes(query);
+      });
     });
   });
 });
