@@ -28,7 +28,7 @@
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}" {% if current_user.is_authenticated %}data-tour-route="{{ request.endpoint }}"{% endif %}>
 <a class="skip-link" href="#main-content">Skip to main content</a>
 {% if current_user.is_authenticated %}
-{% set admin_endpoints = ['admin_home','itil_admin','system_settings','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
+{% set admin_endpoints = ['admin_home','admin_section','itil_admin','system_settings','system_settings_section','system_settings_category','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin','data_governance_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
 <script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active</div>{% endif %}
 <aside class="sidebar">
@@ -119,10 +119,10 @@
             <a href="{{ url_for('guided_tours_admin') }}" {% if nav_active('guided_tours_admin') %}class="active" aria-current="page"{% endif %}>Guided tours</a>
           </div>
         </details>
-        <details class="nav-subgroup" {% if request.endpoint in ['system_settings','api_clients_admin','audit_log','data_governance_admin','system_health','system_health_log_file','platform_tenants'] %}open{% endif %}>
+        <details class="nav-subgroup" {% if request.endpoint in ['system_settings','system_settings_section','system_settings_category','api_clients_admin','audit_log','data_governance_admin','system_health','system_health_log_file','platform_tenants'] %}open{% endif %}>
           <summary><span>Platform &amp; security</span><span class="nav-chevron" aria-hidden="true"></span></summary>
           <div class="nav-subgroup-items">
-            <a href="{{ url_for('system_settings') }}" {% if nav_active('system_settings') %}class="active" aria-current="page"{% endif %}>Platform settings</a>
+            <a href="{{ url_for('system_settings') }}" {% if request.endpoint in ['system_settings','system_settings_section','system_settings_category'] %}class="active" aria-current="page"{% endif %}>Platform settings</a>
             <a href="{{ url_for('api_clients_admin') }}" {% if nav_active('api_clients_admin') %}class="active" aria-current="page"{% endif %}>API access</a>
             <a href="{{ url_for('audit_log') }}" {% if nav_active('audit_log') %}class="active" aria-current="page"{% endif %}>Audit &amp; evidence</a>
             <a href="{{ url_for('data_governance_admin') }}" {% if nav_active('data_governance_admin') %}class="active" aria-current="page"{% endif %}>Data governance</a>

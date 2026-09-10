@@ -49,6 +49,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  is_safe_internal_path, process_outbox,
                  provision_external_user, secret_value, settings_cipher, user_is_local,
                  rotate_audit_integrity_key, tenant_context_id, TenantResolutionError,
+                 transition_ticket,
                  user_can_manage_ticket, user_in_group, user_can_manage_ritm,
                  verify_audit_chain)
 from werkzeug.security import generate_password_hash
@@ -1442,6 +1443,37 @@ def test_integration_admin_updates_channel_event_choices(client, app):
         assert db.session.get(IntegrationConnection, connection_id).event_types == [
             "activity.created:incidents", "activity.created:changes",
         ]
+
+
+def test_notification_settings_console_has_isolated_second_level_views(client, app):
+    login(client, "admin", "Admin123!")
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        row = IntegrationConnection(
+            name="Navigation test", kind="telegram", endpoint="https://api.telegram.org",
+            event_types_json=json.dumps(["activity.created:incidents"]),
+            secret_encrypted=settings_cipher().encrypt(b"123:secret").decode(),
+            configuration_encrypted=settings_cipher().encrypt(
+                json.dumps({"chat_id": "-1001"}).encode()
+            ).decode(), created_by_id=admin.id,
+        )
+        db.session.add(row)
+        db.session.commit()
+        connection_id = row.id
+    overview = client.get("/admin/integrations?view=overview")
+    channels = client.get("/admin/integrations?view=channels")
+    channel = client.get(f"/admin/integrations?view=channel&connection={connection_id}")
+    add = client.get("/admin/integrations?view=add")
+    deliveries = client.get("/admin/integrations?view=deliveries")
+    assert all(response.status_code == 200 for response in (
+        overview, channels, channel, add, deliveries,
+    ))
+    assert b"Settings overview" in overview.data
+    assert b"Connections &amp; automation" in overview.data
+    assert b"Navigation test" in channels.data
+    assert b"Search event catalog" in channel.data
+    assert b"Add notification channel" in add.data
+    assert b"Delivery log" in deliveries.data
 
 
 def test_audit_activity_routes_only_to_subscribed_chat_category(monkeypatch, app):
@@ -3813,7 +3845,9 @@ def test_profile_and_user_administration_are_tenant_and_role_governed(client, ap
     with app.app_context():
         employee_id = User.query.filter_by(username="employee").one().id
     assert client.get("/admin").status_code == 200
-    assert b"People and access" in client.get("/admin").data
+    people_access = client.get("/admin/section/people-access")
+    assert people_access.status_code == 200
+    assert b"People &amp; access" in people_access.data
     assert b"Updated Employee" in client.get("/admin/users?q=Updated+Employee").data
     response = client.post(f"/admin/users/{employee_id}", data={
         "name": "Governed Employee", "email": "employee@test.invalid",
@@ -4677,9 +4711,10 @@ def test_automation_rules_and_scheduled_automation_are_separate_pages(client):
     assert scheduled.status_code == 200
     assert b"Add a schedule" in scheduled.data
     assert b"Published automation rules" not in scheduled.data
-    home = client.get("/admin")
-    assert b'href="/admin/workflows"' in home.data
-    assert b'href="/admin/workflows/scheduled"' in home.data
+    automation = client.get("/admin/section/automation-content")
+    assert automation.status_code == 200
+    assert b'href="/admin/workflows"' in automation.data
+    assert b'href="/admin/workflows/scheduled"' in automation.data
 
 
 def test_administration_is_one_hub_with_clear_child_areas(client):
@@ -4689,7 +4724,10 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
     assert b"Platform settings" in home.data
     assert b"Service configuration" in home.data
     assert b"Automation rules" in home.data
-    assert b"Rules that react to ticket changes" in home.data
+    assert b"Rules that react to ticket changes" not in home.data
+    automation = client.get("/admin/section/automation-content")
+    assert automation.status_code == 200
+    assert b"React to ticket changes" in automation.data
     assert b"CMDB and service map" not in home.data
     assert b"Reporting and analytics" not in home.data
 
@@ -4726,15 +4764,16 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
     assert b'aria-label="Administration breadcrumb"' in settings.data
     assert settings.data.count(b'aria-label="Administration breadcrumb"') == 1
     assert b"ADMINISTRATION HOME / PLATFORM SETTINGS" not in settings.data
-    # B-320: Platform settings is now an index of isolated pages, not a
-    # single scrolling/anchored mega-page.
-    assert b'href="/admin/settings/organization"' in settings.data
-    assert b"Identity and experience" in settings.data
-    assert b"Protection and behavior" in settings.data
-    assert b"Sign-in and directory" in settings.data
+    # Platform settings exposes only major areas at level one. Individual
+    # controls appear on an area hub and then a dedicated leaf page.
+    assert b'href="/admin/settings/section/experience"' in settings.data
+    assert b"Experience" in settings.data
+    assert b"Identity &amp; security" in settings.data
+    assert b"Connections &amp; automation" in settings.data
+    assert b"Sign-in and directory" not in settings.data
     assert b"Change approval policy" not in settings.data
     assert b"Default ticket priority" not in settings.data
-    assert b"Runtime environment" in settings.data
+    assert b"Runtime" in settings.data
 
     infrastructure = client.get("/admin/settings/infrastructure")
     assert b"Application replicas" in infrastructure.data
@@ -8146,7 +8185,7 @@ def test_cmdb_network_info_respects_class_read_permission(client, app):
     assert client.get(f"/cmdb/{ci_id}/network-info").status_code == 403
 
 
-def test_admin_home_is_a_searchable_index_that_surfaces_deeply_nested_components(client):
+def test_admin_home_organizes_every_capability_into_searchable_second_level_areas(client):
     """User-reported: small components like "LDAP directory sync" (a
     sub-section deep inside the Service delivery & governance mega-page)
     had no menu entry or way to find them except already knowing where to
@@ -8157,19 +8196,21 @@ def test_admin_home_is_a_searchable_index_that_surfaces_deeply_nested_components
     login(client)
     page = client.get("/admin")
     assert page.status_code == 200
-    assert b"data-admin-quick-find" in page.data
-    # The exact reported example: findable, and deep-linked to its own
-    # isolated page. B-322: LDAP directory sync moved onto the Sign-in and
-    # directory settings page, together with the rest of the AD/LDAP
-    # config it was previously split apart from.
-    assert b"/admin/settings/sign_in_and_directory" in page.data
-    assert b"Sign-in &amp; directory" in page.data
-    assert b'data-keywords="sign in login ldap keycloak' in page.data
-    # A sample of other previously-hard-to-find components, each a real
-    # card with a real deep link to its own isolated settings page.
-    assert b"/service-operations/settings/change-freeze" in page.data
-    assert b"/service-operations/settings/sla" in page.data
-    assert b'href="/admin/settings/security"' in page.data
+    assert b"data-admin-quick-find" not in page.data
+    for section in (b"people-access", b"service-configuration", b"connections-channels", b"automation-content", b"platform-security"):
+        assert b'/admin/section/' + section in page.data
+    platform = client.get("/admin/section/platform-security")
+    assert b"data-admin-quick-find" in platform.data
+    assert b"/admin/settings/sign_in_and_directory" in platform.data
+    assert b"Sign-in &amp; directory" in platform.data
+    assert b'data-keywords="ldap active directory sso' in platform.data
+    service = client.get("/admin/section/service-configuration")
+    assert b"/service-operations/settings/change-freeze" in service.data
+    assert b"/service-operations/settings/sla" in service.data
+    connections = client.get("/admin/section/connections-channels")
+    assert b"/admin/integrations?view=channels" in connections.data
+    assert b"/admin/integrations?view=deliveries" in connections.data
+    assert client.get("/admin/section/not-real").status_code == 404
 
 
 def test_admin_home_has_no_duplicate_card_destinations(client):
@@ -8183,9 +8224,13 @@ def test_admin_home_has_no_duplicate_card_destinations(client):
     genuinely overlapping, not just superficially similar. Every card's
     href on both pages must now be unique."""
     login(client)
-    for path in ("/admin", "/admin/access"):
+    for path in (
+        "/admin/section/people-access", "/admin/section/service-configuration",
+        "/admin/section/connections-channels", "/admin/section/automation-content",
+        "/admin/section/platform-security",
+    ):
         page = client.get(path)
-        hrefs = re.findall(rb'class="admin-capability-card"[^>]*href="([^"]+)"', page.data)
+        hrefs = re.findall(rb'class="settings-level-card"[^>]*href="([^"]+)"', page.data)
         assert hrefs, f"no capability cards found on {path}"
         assert len(hrefs) == len(set(hrefs)), (
             f"duplicate card destination(s) on {path}: "
@@ -8205,8 +8250,20 @@ def test_settings_pages_are_decentralized_into_isolated_pages(client):
     login(client)
     index = client.get("/admin/settings")
     assert index.status_code == 200
-    assert b"/admin/settings/security" in index.data
-    assert b"/admin/settings/organization" in index.data
+    assert b"/admin/settings/section/identity" in index.data
+    assert b"/admin/settings/security" not in index.data
+    assert b"/admin/settings/organization" not in index.data
+
+    identity_hub = client.get("/admin/settings/section/identity")
+    assert identity_hub.status_code == 200
+    assert b"/admin/settings/security" in identity_hub.data
+    assert b"/admin/settings/sign_in_and_directory" in identity_hub.data
+    assert b"/admin/settings/organization" not in identity_hub.data
+
+    experience_hub = client.get("/admin/settings/section/experience")
+    assert experience_hub.status_code == 200
+    assert b"/admin/settings/organization" in experience_hub.data
+    assert b"/admin/settings/security" not in experience_hub.data
 
     security = client.get("/admin/settings/security")
     assert security.status_code == 200
@@ -8232,6 +8289,7 @@ def test_settings_pages_are_decentralized_into_isolated_pages(client):
     assert b"Add business schedule" not in freeze.data
 
     assert client.get("/service-operations/settings/not-a-real-section").status_code == 404
+    assert client.get("/admin/settings/section/not-a-real-section").status_code == 404
     assert client.get("/admin/settings/not-a-real-category").status_code == 404
 
 
@@ -8646,3 +8704,100 @@ def test_audit_records_signed_request_and_security_context(app):
         assert context["referrer"] == "https://serviceops.example/tickets/1"
         assert "must-never-be-retained" not in row.security_context_json
         assert verify_audit_chain(admin.tenant_id)["valid"] is True
+
+
+def test_api_ticket_ctasks_lists_change_tasks_and_enforces_scope_and_kind(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        change = Ticket(
+            kind="change", number="CHG0000960", title="Database upgrade",
+            description="Upgrade the primary database cluster.", category="Software",
+            priority="P3", state="New", requester_id=admin.id,
+        )
+        incident = Ticket(
+            kind="incident", number="INC0000960", title="Unrelated incident",
+            description="Not a change.", category="Software",
+            priority="P3", state="New", requester_id=admin.id,
+        )
+        db.session.add_all([change, incident])
+        db.session.flush()
+        db.session.add(ChangeOwnership(ticket_id=change.id, group_id=unix.id))
+        db.session.add_all([
+            OperationalTask(
+                number="CTASK0000001", task_kind="change", parent_type="ticket",
+                parent_id=change.id, title="Snapshot database", task_type="Implementation",
+                state="Open", required=True, sequence=1, assignment_group_id=unix.id,
+            ),
+            OperationalTask(
+                number="CTASK0000002", task_kind="change", parent_type="ticket",
+                parent_id=change.id, title="Run upgrade script", task_type="Implementation",
+                state="Open", required=True, sequence=2, assignment_group_id=unix.id,
+            ),
+        ])
+        token, prefix, token_hash = create_api_token()
+        db.session.add(APIClient(
+            name="RunOps sync", token_prefix=prefix, token_hash=token_hash,
+            scopes_json='["tickets:read"]', acting_user_id=admin.id, created_by_id=admin.id,
+        ))
+        db.session.commit()
+        change_number, incident_number = change.number, incident.number
+
+    assert client.get(f"/api/v1/tickets/{change_number}/ctasks").status_code == 401
+
+    headers = {"Authorization": f"Bearer {token}"}
+    res = client.get(f"/api/v1/tickets/{change_number}/ctasks", headers=headers)
+    assert res.status_code == 200
+    numbers = [row["number"] for row in res.json["data"]]
+    assert numbers == ["CTASK0000001", "CTASK0000002"]
+    assert res.json["data"][0]["title"] == "Snapshot database"
+    assert res.json["data"][0]["assignmentGroup"] == "Unix"
+    assert res.json["meta"]["count"] == 2
+
+    not_a_change = client.get(f"/api/v1/tickets/{incident_number}/ctasks", headers=headers)
+    assert not_a_change.status_code == 400
+
+    missing = client.get("/api/v1/tickets/CHG9999999/ctasks", headers=headers)
+    assert missing.status_code == 404
+
+
+def test_change_state_transition_emits_change_state_changed_webhook_event(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        db.session.add(IntegrationConnection(
+            name="RunOps sync webhook", kind="webhook",
+            endpoint="https://runops.example.test/hooks/serviceops",
+            secret_encrypted=settings_cipher().encrypt(b"runops-signing-secret").decode(),
+            created_by_id=admin.id,
+        ))
+        change = Ticket(
+            kind="change", number="CHG0000961", title="Load balancer patch",
+            description="Patch the load balancer firmware.", category="Software",
+            priority="P3", state="Approved", requester_id=admin.id,
+        )
+        db.session.add(change)
+        db.session.flush()
+        db.session.add(ChangeOwnership(ticket_id=change.id, group_id=unix.id))
+        db.session.commit()
+        transition_ticket(change, "In Progress")
+        db.session.commit()
+
+        events = OutboxEvent.query.filter_by(event_type="change.state_changed").all()
+        assert len(events) == 1
+        payload = json.loads(events[0].payload_json)
+        assert payload["number"] == "CHG0000961"
+        assert payload["state"] == "In Progress"
+        assert payload["previous_state"] == "Approved"
+
+        # An incident transition must never emit a change event.
+        incident = Ticket(
+            kind="incident", number="INC0000961", title="Unrelated",
+            description="x", category="Software", priority="P3",
+            state="New", requester_id=admin.id,
+        )
+        db.session.add(incident)
+        db.session.commit()
+        transition_ticket(incident, "In Progress")
+        db.session.commit()
+        assert OutboxEvent.query.filter_by(event_type="change.state_changed").count() == 1

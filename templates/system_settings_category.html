@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ title }} · {{ instance_name }}{% endblock %}
 {% block content %}
-{% set admin_page_title = title %}{% include '_admin_context.html' %}
-<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('system_settings') }}">Platform settings</a></p><h1>{{ title }}</h1><p>{{ description }}</p></div></header>
+{% set admin_page_title = title %}{% set admin_parent_title = settings_sections[settings_section].title %}{% set admin_parent_url = url_for('system_settings_section', section=settings_section) %}{% include '_admin_context.html' %}
+<div class="settings-console">
+{% include '_settings_console_nav.html' %}
+<section class="settings-console-main settings-reveal">
+<header class="settings-page-head"><div><p class="eyebrow">{{ settings_sections[settings_section].title|upper }}</p><h1>{{ title }}</h1><p>{{ description }}</p></div><span class="settings-page-symbol" aria-hidden="true">⚙</span></header>
+<nav class="settings-breadcrumb" aria-label="Settings hierarchy"><a href="{{ url_for('system_settings') }}">General</a><span aria-hidden="true">›</span><a href="{{ url_for('system_settings_section', section=settings_section) }}">{{ settings_sections[settings_section].title }}</a><span aria-hidden="true">›</span><strong>{{ title }}</strong></nav>
 {% if category == 'infrastructure' %}
 <section class="panel settings-section">
   <table><thead><tr><th>Runtime component</th><th>Current effective value</th><th>Where to change it</th></tr></thead><tbody>{% for name,value,source in infrastructure %}<tr><td><strong>{{ name }}</strong></td><td><code>{{ value }}</code></td><td><span class="apply-badge external">{{ source }}</span></td></tr>{% else %}<tr><td colspan="3">Runtime details are unavailable. Check the application deployment configuration.</td></tr>{% endfor %}</tbody></table>
@@ -80,4 +84,5 @@
 </section>
 
 {% endif %}
+</section></div>
 {% endblock %}
