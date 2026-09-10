@@ -36,6 +36,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  WorkflowDefinition, WorkflowExecution, WorkflowJob,
                  WorkflowSchedule,
                  audit, change_approval_stages, create_api_token, create_app, create_notification, db,
+                 deliver_smtp,
                  deploy_workflow_package, find_and_merge_duplicate_groups, ldap_authenticate,
                  mapped_roles, merge_support_group_into, normalize_environment, now, process_discovery_schedule,
                  process_client_escalation_policies,
@@ -1243,6 +1244,155 @@ def test_durable_smtp_signed_webhook_and_teams_delivery(monkeypatch, app):
         assert signed[2]["X-ServiceOps-Event-ID"] == event.event_id
         teams = next(call for call in webhook_calls if "teams.example" in call[0])
         assert teams[1]["text"].startswith("**Integration test**")
+
+
+def test_google_chat_and_filtered_webhook_delivery(monkeypatch, app):
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        is_redirect = False
+
+    monkeypatch.setattr(
+        "app.requests.post",
+        lambda url, json, headers, timeout, allow_redirects=False: (
+            calls.append((url, json, headers)) or FakeResponse()
+        ),
+    )
+    monkeypatch.setattr(
+        "app.socket.getaddrinfo",
+        lambda host, port: [(2, 1, 6, "", ("93.184.216.34", 0))],
+    )
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        db.session.add_all([
+            IntegrationConnection(
+                name="Google operations room", kind="google_chat",
+                endpoint="https://chat.googleapis.com/v1/spaces/example/messages?key=x&token=y",
+                event_types_json=json.dumps(["notification.*"]), created_by_id=admin.id,
+            ),
+            IntegrationConnection(
+                name="Audit-only webhook", kind="webhook",
+                endpoint="https://hooks.example.test/audit",
+                event_types_json=json.dumps(["audit.*"]),
+                secret_encrypted=settings_cipher().encrypt(b"secret").decode(),
+                created_by_id=admin.id,
+            ),
+        ])
+        create_notification(admin.id, "Approval required", "Review CHG001")
+        db.session.commit()
+        assert process_outbox() == 1
+        assert len(calls) == 1
+        assert calls[0][0].startswith("https://chat.googleapis.com/")
+        assert calls[0][1] == {"text": "*Approval required*\nReview CHG001"}
+        assert calls[0][2] == {"Content-Type": "application/json"}
+
+
+def test_audit_outbox_never_routes_to_smtp(monkeypatch, app):
+    monkeypatch.setattr("app.deliver_smtp", lambda event: pytest.fail("audit event reached SMTP"))
+    with app.app_context():
+        db.session.add(PlatformSetting(key="SMTP_ENABLED", value="true", encrypted=False))
+        db.session.add(OutboxEvent(
+            event_type="audit.created", payload_json=json.dumps({"action": "ticket update"}),
+        ))
+        db.session.commit()
+        assert process_outbox() == 1
+        event = OutboxEvent.query.one()
+        assert event.state == "Completed"
+        assert event.last_error == "No delivery channels enabled."
+
+
+def test_google_workspace_oauth2_smtp_refresh_and_xoauth2(monkeypatch, app):
+    commands = []
+    messages = []
+
+    class FakeTokenResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"access_token": "short-lived-access-token"}
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout):
+            assert (host, port, timeout) == ("smtp.gmail.com", 587, 10)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def ehlo(self):
+            return None
+
+        def starttls(self, context):
+            assert context
+
+        def docmd(self, command, value):
+            commands.append((command, value))
+            return 235, b"accepted"
+
+        def send_message(self, message):
+            messages.append(message)
+
+    def token_post(url, data, timeout):
+        assert url == "https://oauth2.googleapis.com/token"
+        assert data["grant_type"] == "refresh_token"
+        assert data["refresh_token"] == "refresh-secret"
+        return FakeTokenResponse()
+
+    monkeypatch.setattr("app.smtplib.SMTP", FakeSMTP)
+    monkeypatch.setattr("app.requests.post", token_post)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        values = {
+            "SMTP_PROVIDER": "google_workspace_oauth2", "SMTP_AUTH_MODE": "oauth2",
+            "SMTP_USERNAME": "serviceops@example.test", "SMTP_FROM": "serviceops@example.test",
+            "SMTP_OAUTH_CLIENT_ID": "client-id",
+        }
+        for key, value in values.items():
+            db.session.add(PlatformSetting(key=key, value=value, encrypted=False))
+        for key, value in {
+            "SMTP_OAUTH_CLIENT_SECRET": "client-secret",
+            "SMTP_OAUTH_REFRESH_TOKEN": "refresh-secret",
+        }.items():
+            db.session.add(PlatformSetting(
+                key=key, value=settings_cipher().encrypt(value.encode()).decode(), encrypted=True,
+            ))
+        event = OutboxEvent(
+            event_type="notification.created",
+            payload_json=json.dumps({"user_id": admin.id, "title": "Test", "body": "Body"}),
+        )
+        db.session.add(event)
+        db.session.commit()
+        assert deliver_smtp(event)
+        assert commands[0][0] == "AUTH"
+        assert commands[0][1].startswith("XOAUTH2 ")
+        assert messages[0]["X-ServiceOps-Event-ID"] == event.event_id
+
+
+def test_integration_admin_creates_scoped_connection_and_can_disable(client, app):
+    login(client, "admin", "Admin123!")
+    response = client.post("/admin/integrations", data={
+        "action": "create_connection", "name": "Ticket subscriber",
+        "kind": "webhook", "endpoint": "https://hooks.example.test/serviceops?token=sensitive",
+        "secret": "signing-secret", "event_types": "notification.created, ticket.*",
+    })
+    assert response.status_code == 200
+    with app.app_context():
+        connection = IntegrationConnection.query.filter_by(name="Ticket subscriber").one()
+        assert connection.event_types == ["notification.created", "ticket.*"]
+        assert connection.endpoint == "https://hooks.example.test/serviceops"
+        assert connection.delivery_endpoint == "https://hooks.example.test/serviceops?token=sensitive"
+        assert "hooks.example.test" not in connection.endpoint_encrypted
+        connection_id = connection.id
+    response = client.post("/admin/integrations", data={
+        "action": "toggle_connection", "connection_id": connection_id,
+    })
+    assert response.status_code == 200
+    with app.app_context():
+        assert not db.session.get(IntegrationConnection, connection_id).active
 
 
 def test_monitoring_ingestion_auth_deduplication_and_team_routing(client, app):
