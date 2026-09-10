@@ -1,7 +1,8 @@
 {% extends "base.html" %}{% block title %}Administration · {{ instance_name }}{% endblock %}
 {% block content %}
+{% from '_admin_icons.html' import admin_icon %}
 {% set sections = [
-  ('people-access','People & access','Users, teams, roles, sessions, and accountable ownership','♙',[
+  ('people-access','People & access','Users, teams, roles, sessions, and accountable ownership','people',[
     ('Users','Create, edit, deactivate, and erase accounts; assign roles and reporting lines','users',None,'U','user account manager'),
     ('Roles & permissions','Role-to-action policy and per-CI-class permissions','admin_roles',None,'⛊','authorization grant revoke'),
     ('Active sessions','Review and revoke browser sessions across the organization','admin_sessions',None,'◉','session logout device'),
@@ -10,7 +11,7 @@
     ('Executive approval (CEO)','Choose the executive approver for Normal and Emergency changes','itil_admin_section','executive-approval','♙','ceo executive approval'),
     ('Governance groups','Review accountable groups, managers, and membership','itil_admin_section','governance-groups','▤','governance membership'),
   ]),
-  ('service-configuration','Service configuration','How tickets, requests, changes, services, and commitments are governed','↔',[
+  ('service-configuration','Service configuration','How tickets, requests, changes, services, and commitments are governed','service',[
     ('Ticket defaults','Initial priority and parent/child incident-state behavior','itil_admin_section','ticket-defaults','↔','priority incident sync'),
     ('Catalog & fulfillment routing','Catalog items and the teams that fulfill them','itil_admin_section','catalog','▦','catalog routing request'),
     ('Change approval policy','CMDB environments that require Change Control Board approval','itil_admin_section','change-approval-policy','✓','change ccb environment'),
@@ -19,7 +20,7 @@
     ('Service offerings','Map business services to supporting configuration items','itil_admin_section','service-offerings','◇','service offering ci'),
     ('SLA definitions & calendars','Schedules and target durations by priority','itil_admin_section','sla','◷','sla calendar commitment'),
   ]),
-  ('connections-channels','Connections & channels','Outbound notifications, imports, monitoring, and external systems','⇄',[
+  ('connections-channels','Connections & channels','Outbound notifications, imports, monitoring, and external systems','connections',[
     ('Notification channels','Telegram, Google Chat, Slack, Teams, Discord, and webhooks','integrations_admin','channels','♧','telegram webhook chat teams slack'),
     ('Delivery log','Delivered, failed, retrying, and skipped outbound messages','integrations_admin','deliveries','≣','outbox retry failed'),
     ('Monitoring sources','External monitoring sources that create operations events','integrations_admin','monitoring','⌁','monitoring alert ingestion'),
@@ -27,13 +28,13 @@
     ('Email delivery','Google Workspace, Gmail OAuth, app passwords, and SMTP','system_settings_category','email_delivery','✉','smtp gmail email'),
     ('NetBox connection','Connection used for controlled CMDB synchronization','system_settings_category','netbox_connection','⇄','netbox cmdb sync'),
   ]),
-  ('automation-content','Automation & content','Rules and guided content that run consistently without manual repetition','▶',[
+  ('automation-content','Automation & content','Rules and guided content that run consistently without manual repetition','automation',[
     ('Automation rules','React to ticket changes, SLA breaches, and system events','workflows_admin',None,'▶','workflow trigger rule'),
     ('Scheduled automation','Recurring automation for selected tickets','workflows_scheduled',None,'◷','scheduled recurring interval'),
     ('Notification templates','Subject and body content for notification types','notification_templates_admin',None,'✉','notification wording subject'),
     ('Guided tours','Contextual onboarding for matching users and pages','guided_tours_admin',None,'◎','tour onboarding help'),
   ]),
-  ('platform-security','Platform & security','Identity, appearance, protection, governance, APIs, audit, and runtime health','⛊',[
+  ('platform-security','Platform & security','Identity, appearance, protection, governance, APIs, audit, and runtime health','security',[
     ('Platform settings','Organized experience, identity, connection, and runtime settings','system_settings',None,'⚙','platform settings general'),
     ('Organization','Company identity, support contact, and instance naming','system_settings_category','organization','◎','company organization'),
     ('Appearance','Brand colors and default interface density','system_settings_category','appearance','◐','theme brand density'),
@@ -48,19 +49,18 @@
     ('System health','Application, database, worker, user, and error status','system_health',None,'♥','health worker database'),
   ]),
 ] %}
-{% set active = namespace(title='Administration', description='Every administrative capability, organized by responsibility.', icon='⚙', cards=[]) %}
+{% set active = namespace(title='Administration', description='Every administrative capability, organized by responsibility.', icon='settings', cards=[]) %}
 {% for key,title,description,icon,cards in sections %}{% if active_section == key %}{% set active.title=title %}{% set active.description=description %}{% set active.icon=icon %}{% set active.cards=cards %}{% endif %}{% endfor %}
 {% set admin_page_title = active.title %}{% if active_section %}{% set admin_parent_title='Administration' %}{% set admin_parent_url=url_for('admin_home') %}{% include '_admin_context.html' %}{% else %}<nav class="admin-context" aria-label="Administration breadcrumb"><strong>Administration</strong></nav>{% endif %}
-<div class="settings-console admin-console">
-{% include '_admin_console_nav.html' %}
+<div class="settings-console admin-console admin-console-single">
 <section class="settings-console-main settings-reveal">
-  <header class="settings-page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>{{ active.title }}</h1><p>{{ active.description }}</p></div><span class="settings-page-symbol" aria-hidden="true">{{ active.icon }}</span></header>
+  <header class="settings-page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>{{ active.title }}</h1><p>{{ active.description }}</p></div><span class="settings-page-symbol">{{ admin_icon(active.icon) }}</span></header>
   {% if not active_section %}
   <section class="settings-scope-banner"><span aria-hidden="true">ⓘ</span><div><strong>Administration control center</strong><p>Select a major area first. Every individual tool is available on the next level and protected by your administrator role.</p></div></section>
   <section class="settings-section-list" aria-label="Administration categories">
     <header><div><h2>Administration areas</h2><p>All controls are grouped by responsibility, with no mixed configuration pages.</p></div></header>
     {% for key,title,description,icon,cards in sections %}
-    <a class="settings-category-row" href="{{ url_for('admin_section', section=key) }}"><span class="settings-category-icon" aria-hidden="true">{{ icon }}</span><span><strong>{{ title }}</strong><small>{{ description }}</small></span><span class="settings-category-count">{{ cards|length }} tools</span><b aria-hidden="true">›</b></a>
+    <a class="settings-category-row" href="{{ url_for('admin_section', section=key) }}"><span class="settings-category-icon">{{ admin_icon(icon) }}</span><span><strong>{{ title }}</strong><small>{{ description }}</small></span><span class="settings-category-count">{{ cards|length }} tools</span><span class="settings-row-chevron" aria-hidden="true"></span></a>
     {% endfor %}
   </section>
   {% else %}
@@ -74,10 +74,10 @@
       {% elif endpoint == 'system_settings_category' %}{% set destination=url_for(endpoint,category=target) %}
       {% elif endpoint == 'integrations_admin' %}{% set destination=url_for(endpoint,view=target) %}
       {% else %}{% set destination=url_for(endpoint) %}{% endif %}
-      <a class="settings-level-card" data-admin-quick-find-card data-keywords="{{ keywords }}" href="{{ destination }}"><span class="settings-card-icon" aria-hidden="true">{{ icon }}</span><span><strong>{{ title }}</strong><small>{{ description }}</small></span><b aria-hidden="true">›</b></a>
+      <a class="settings-level-card" data-admin-quick-find-card data-keywords="{{ keywords }}" href="{{ destination }}"><span class="settings-card-icon">{{ admin_icon(icon) }}</span><span><strong>{{ title }}</strong><small>{{ description }}</small></span><span class="settings-row-chevron" aria-hidden="true"></span></a>
       {% endfor %}
       {% if active_section == 'platform-security' and current_user.effective_role == 'superadmin' %}
-      <a class="settings-level-card" data-admin-quick-find-card data-keywords="tenant platform cross-tenant" href="{{ url_for('platform_tenants') }}"><span class="settings-card-icon" aria-hidden="true">⬡</span><span><strong>Tenants</strong><small>Create, activate, and deactivate tenants across the platform.</small></span><b aria-hidden="true">›</b></a>
+      <a class="settings-level-card" data-admin-quick-find-card data-keywords="tenant platform cross-tenant" href="{{ url_for('platform_tenants') }}"><span class="settings-card-icon">{{ admin_icon('database') }}</span><span><strong>Tenants</strong><small>Create, activate, and deactivate tenants across the platform.</small></span><span class="settings-row-chevron" aria-hidden="true"></span></a>
       {% endif %}
     </div>
   </section>

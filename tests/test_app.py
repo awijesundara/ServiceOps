@@ -4721,9 +4721,10 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
     login(client)
     home = client.get("/admin")
     assert home.status_code == 200
-    assert b"Platform settings" in home.data
+    assert b'<aside class="settings-console-nav admin-console-nav"' not in home.data
+    assert b"Platform &amp; security" in home.data
     assert b"Service configuration" in home.data
-    assert b"Automation rules" in home.data
+    assert b"Automation &amp; content" in home.data
     assert b"Rules that react to ticket changes" not in home.data
     automation = client.get("/admin/section/automation-content")
     assert automation.status_code == 200
@@ -4742,13 +4743,24 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
     assert b'aria-label="Find a menu item"' in sidebar
     assert b">Management<" in sidebar
     assert b">Administration<" in sidebar
-    assert b">User management<" in sidebar
-    assert b">Users<" in sidebar
-    assert b"Groups, teams &amp; access" in sidebar
-    assert b"Roles &amp; permissions" in sidebar
-    assert b"Active sessions" in sidebar
     assert b'class="nav-group nav-group-admin" open' in sidebar
-    assert b"Administration home" in sidebar
+    assert b"Administration home" not in sidebar
+    assert b">User management<" not in sidebar
+    assert b"Service delivery &amp; governance" not in sidebar
+    assert b"Connections &amp; automation" not in sidebar
+    for path, label, help_text in (
+        ("/admin", b"General", b"Administration overview"),
+        ("/admin/section/people-access", b"People &amp; access", b"Users, teams and permissions"),
+        ("/admin/section/service-configuration", b"Service configuration", b"Requests, changes and SLAs"),
+        ("/admin/section/connections-channels", b"Connections &amp; channels", b"Integrations and delivery"),
+        ("/admin/section/automation-content", b"Automation &amp; content", b"Rules, templates and tours"),
+        ("/admin/section/platform-security", b"Platform &amp; security", b"Identity, protection and health"),
+    ):
+        assert f'href="{path}"'.encode() in sidebar
+        assert label in sidebar
+        assert help_text in sidebar
+    assert b'<span class="admin-area-icon"><svg class="admin-icon"' in sidebar
+    assert b'<span class="admin-area-chevron" aria-hidden="true"></span>' in sidebar
     assert b"Service operations settings" not in sidebar
     assert b"System settings" not in sidebar
     assert b">Workflows<" not in sidebar
@@ -8759,6 +8771,72 @@ def test_api_ticket_ctasks_lists_change_tasks_and_enforces_scope_and_kind(client
 
     missing = client.get("/api/v1/tickets/CHG9999999/ctasks", headers=headers)
     assert missing.status_code == 404
+
+
+def test_api_ticket_ctask_update_transitions_state_and_enforces_scope(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        change = Ticket(
+            kind="change", number="CHG0000970", title="Storage migration",
+            description="Migrate primary storage array.", category="Software",
+            priority="P3", state="Approved", requester_id=admin.id,
+        )
+        db.session.add(change)
+        db.session.flush()
+        db.session.add(ChangeOwnership(ticket_id=change.id, group_id=unix.id))
+        db.session.add(OperationalTask(
+            number="CTASK0000010", task_kind="change", parent_type="ticket",
+            parent_id=change.id, title="Drain traffic", task_type="Implementation",
+            state="Open", required=True, sequence=1, assignment_group_id=unix.id,
+        ))
+        read_token, read_prefix, read_hash = create_api_token()
+        db.session.add(APIClient(
+            name="Read-only client", token_prefix=read_prefix, token_hash=read_hash,
+            scopes_json='["tickets:read"]', acting_user_id=admin.id, created_by_id=admin.id,
+        ))
+        write_token, write_prefix, write_hash = create_api_token()
+        db.session.add(APIClient(
+            name="RunOps sync writer", token_prefix=write_prefix, token_hash=write_hash,
+            scopes_json='["tickets:read","tickets:update"]', acting_user_id=admin.id, created_by_id=admin.id,
+        ))
+        db.session.commit()
+        change_number = change.number
+
+    read_headers = {"Authorization": f"Bearer {read_token}"}
+    write_headers = {"Authorization": f"Bearer {write_token}", "Idempotency-Key": "flowops-task-14-complete"}
+
+    forbidden = client.patch(
+        f"/api/v1/tickets/{change_number}/ctasks/CTASK0000010",
+        headers=read_headers, json={"state": "Closed Complete"},
+    )
+    assert forbidden.status_code == 403
+
+    ok = client.patch(
+        f"/api/v1/tickets/{change_number}/ctasks/CTASK0000010",
+        headers=write_headers, json={"state": "Closed Complete", "work_notes": "Verified by runbook"},
+    )
+    assert ok.status_code == 200
+    assert ok.json["data"]["state"] == "Closed Complete"
+    assert ok.json["data"]["workNotes"] == "Verified by runbook"
+
+    with app.app_context():
+        task = OperationalTask.query.filter_by(number="CTASK0000010").one()
+        assert task.state == "Closed Complete"
+
+    invalid_transition = client.patch(
+        f"/api/v1/tickets/{change_number}/ctasks/CTASK0000010",
+        headers={"Authorization": f"Bearer {write_token}", "Idempotency-Key": "flowops-task-14-reopen"},
+        json={"state": "Open"},
+    )
+    assert invalid_transition.status_code == 409
+
+    missing_task = client.patch(
+        f"/api/v1/tickets/{change_number}/ctasks/CTASK9999999",
+        headers={"Authorization": f"Bearer {write_token}", "Idempotency-Key": "flowops-task-missing"},
+        json={"state": "Closed Complete"},
+    )
+    assert missing_task.status_code == 404
 
 
 def test_change_state_transition_emits_change_state_changed_webhook_event(app):
