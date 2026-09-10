@@ -6,7 +6,7 @@ approvals, SLAs, automation, and analytics.** It is designed for controlled
 on-premises or private-cloud operation without vendor lock-in.
 
 [![Supply chain](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml/badge.svg)](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml)
-[![Version](https://img.shields.io/badge/version-1.80.3-003E4C)](VERSION)
+[![Version](https://img.shields.io/badge/version-1.81.0-003E4C)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](Dockerfile)
 [![Docker](https://img.shields.io/badge/docker-compose%20%7C%20kubernetes-2496ED?logo=docker&logoColor=white)](#deployment-options)
 [![PostgreSQL](https://img.shields.io/badge/database-postgresql-4169E1?logo=postgresql&logoColor=white)](#architecture)
@@ -100,7 +100,7 @@ image digests and verifies every transferred file before loading any image.
 
 ## Fresh-server RPM installation
 
-The following procedure installs the current stable release, **v1.80.3**, on a
+The following procedure installs the current stable release, **v1.81.0**, on a
 fresh Rocky Linux 9, AlmaLinux 9, or Oracle Linux 9 server. Run it from a normal
 administrative account with `sudo` access.
 
@@ -132,20 +132,20 @@ sudo dnf config-manager --add-repo \
 mkdir -p serviceops-install
 cd serviceops-install
 
-curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.80.3/serviceops-1.80.3-1.el9.noarch.rpm
-curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.80.3/serviceops-1.80.3-1.el9.noarch.rpm.sha256
+curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.81.0/serviceops-1.81.0-1.el9.noarch.rpm
+curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.81.0/serviceops-1.81.0-1.el9.noarch.rpm.sha256
 
-sha256sum -c serviceops-1.80.3-1.el9.noarch.rpm.sha256
+sha256sum -c serviceops-1.81.0-1.el9.noarch.rpm.sha256
 ```
 
 Do not continue unless checksum verification reports `OK`. Packages for the
 other supported platforms are available on the
-[v1.80.3 release page](https://github.com/awijesundara/ServiceOps/releases/tag/v1.80.3).
+[v1.81.0 release page](https://github.com/awijesundara/ServiceOps/releases/tag/v1.81.0).
 
 ### 3. Install and initialize ServiceOps
 
 ```bash
-sudo dnf install -y ./serviceops-1.80.3-1.el9.noarch.rpm
+sudo dnf install -y ./serviceops-1.81.0-1.el9.noarch.rpm
 sudo serviceops setup --mode bundled --yes
 ```
 
@@ -175,7 +175,7 @@ sudo serviceops health
 sudo serviceops doctor
 ```
 
-Health should report status `ok` and version `1.80.3`.
+Health should report status `ok` and version `1.81.0`.
 
 ### 5. Sign in securely
 
@@ -280,7 +280,7 @@ safe updater with both values:
 ```bash
 export SERVICEOPS_BACKUP_REFERENCE="snapshot-YYYYMMDD-HHMM-before-serviceops-upgrade"
 SERVICEOPS_VALUES=deploy/kubernetes/values-production.yaml \
-  ./tools/safe_update_k8s.sh v1.80.3 sha256:<verified-64-character-digest>
+  ./tools/safe_update_k8s.sh v1.81.0 sha256:<verified-64-character-digest>
 ```
 
 The updater and protected deployment workflow refuse a production upgrade
@@ -390,8 +390,33 @@ flowchart LR
     A -. events and schedules .-> W["Worker<br/>(outbox · SLA · workflows)"]
     W <--> D
     A -. optional .-> ID["AD / LDAP · Keycloak"]
-    W -. optional .-> N["SMTP · Webhooks · Teams"]
+    W -. optional .-> N["SMTP / Google Workspace · Webhooks · Chat / Teams"]
 ```
+
+### Email and event delivery
+
+Administrators configure outbound email under **Administration → Platform
+settings → Email delivery**. ServiceOps supports generic SMTP plus three Google
+Workspace patterns: the recommended IP-authorized `smtp-relay.gmail.com`
+relay, Gmail SMTP with an app password, and Gmail SMTP with OAuth 2.0 refresh
+credentials. STARTTLS is the default; implicit TLS is also supported. Sender
+name, From, Reply-To, timeout, authentication, and provider are independent
+settings, while passwords, OAuth client secrets, and refresh tokens are
+encrypted at rest. Google Workspace administrators must authorize the sender,
+relay source IP or OAuth client in Google Admin before enabling delivery.
+
+Under **Administration → Integrations and delivery**, administrators can add
+signed JSON webhooks, Google Chat incoming webhooks, Microsoft Teams targets,
+and immutable SIEM streams. Each connection has an enable/disable control and
+comma-separated exact or glob subscriptions. Examples include
+`notification.created`, `notification.created:approval.*`, `audit.created`,
+and `audit.created:ticket *`. Ordinary webhooks and chat targets cannot receive
+the protected audit stream; only SIEM connections can. Generic and SIEM
+payloads are HMAC-SHA-256 signed, HTTPS-only, DNS-pinned against rebinding, and
+revalidated across bounded redirects. Full destination URLs are encrypted at
+rest and the UI shows a query-stripped form so Google Chat/Teams tokens are not
+exposed. Every channel is delivered from the
+transactional outbox with retry and per-attempt evidence.
 
 ### NetBox CMDB synchronization
 
