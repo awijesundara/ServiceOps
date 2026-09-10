@@ -25,6 +25,7 @@ import collections
 from collections import Counter, defaultdict
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from email.message import EmailMessage
+from email.utils import formataddr
 from functools import wraps
 from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -104,6 +105,7 @@ from serviceops_core.feature_flags import feature_enabled
 from serviceops_core.notification_templates import (
     NOTIFICATION_EVENT_TYPES, NON_MUTABLE_EVENT_TYPES, render_notification_template, is_event_muted,
 )
+from serviceops_core.delivery import WEBHOOK_KINDS, event_matches, google_chat_message
 from serviceops_core.navigation import navigation_entries
 from serviceops_core.storage import build_storage_backend, ipfs_enabled
 from serviceops_core.passkeys import (
@@ -1388,22 +1390,70 @@ def deliver_smtp(event):
         and notification_event_type not in NON_MUTABLE_EVENT_TYPES
     ):
         return False
-    host = setting_value("SMTP_HOST", "")
+    provider = setting_value("SMTP_PROVIDER", "generic")
+    provider_defaults = {
+        "google_workspace_relay": ("smtp-relay.gmail.com", "none"),
+        "google_workspace_app_password": ("smtp.gmail.com", "password"),
+        "google_workspace_oauth2": ("smtp.gmail.com", "oauth2"),
+    }
+    default_host, default_auth = provider_defaults.get(provider, ("", "password"))
+    host = setting_value("SMTP_HOST", "") or default_host
     sender = setting_value("SMTP_FROM", "")
     if not host or not sender:
         raise RuntimeError("SMTP host and from address are required.")
     message = EmailMessage()
-    message["From"] = sender
+    message["From"] = formataddr((setting_value("SMTP_FROM_NAME", "ServiceOps"), sender))
     message["To"] = user.email
     message["Subject"] = payload["title"]
+    reply_to = setting_value("SMTP_REPLY_TO", "")
+    if reply_to:
+        message["Reply-To"] = reply_to
+    message["X-ServiceOps-Event-ID"] = event.event_id
+    message["Auto-Submitted"] = "auto-generated"
     message.set_content(payload["body"])
-    with smtplib.SMTP(host, int(setting_value("SMTP_PORT", "587")), timeout=10) as smtp:
+    security = setting_value(
+        "SMTP_SECURITY", "starttls" if setting_bool("SMTP_STARTTLS", True) else "none"
+    )
+    port = setting_int("SMTP_PORT", 465 if security == "tls" else 587)
+    timeout = setting_int("SMTP_TIMEOUT_SECONDS", 10)
+    smtp_class = smtplib.SMTP_SSL if security == "tls" else smtplib.SMTP
+    kwargs = {"timeout": timeout}
+    if security == "tls":
+        kwargs["context"] = ssl.create_default_context()
+    with smtp_class(host, port, **kwargs) as smtp:
         smtp.ehlo()
-        if setting_bool("SMTP_STARTTLS", True):
+        if security == "starttls":
             smtp.starttls(context=ssl.create_default_context())
             smtp.ehlo()
         username = setting_value("SMTP_USERNAME", "")
-        if username:
+        auth_mode = setting_value("SMTP_AUTH_MODE", default_auth)
+        if security == "none" and auth_mode != "none":
+            raise RuntimeError("SMTP authentication requires STARTTLS or implicit TLS.")
+        if auth_mode == "oauth2":
+            client_id = setting_value("SMTP_OAUTH_CLIENT_ID", "")
+            client_secret = setting_value("SMTP_OAUTH_CLIENT_SECRET", "")
+            refresh_token = setting_value("SMTP_OAUTH_REFRESH_TOKEN", "")
+            if not all((username, client_id, client_secret, refresh_token)):
+                raise RuntimeError("Google OAuth username, client ID, client secret and refresh token are required.")
+            token_response = requests.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": client_id, "client_secret": client_secret,
+                    "refresh_token": refresh_token, "grant_type": "refresh_token",
+                },
+                timeout=timeout,
+            )
+            token_response.raise_for_status()
+            access_token = token_response.json().get("access_token")
+            if not access_token:
+                raise RuntimeError("Google OAuth token response did not include an access token.")
+            auth = base64.b64encode(
+                f"user={username}\x01auth=Bearer {access_token}\x01\x01".encode()
+            ).decode()
+            code, response = smtp.docmd("AUTH", "XOAUTH2 " + auth)
+            if code not in {235, 250}:
+                raise RuntimeError(f"Google OAuth SMTP authentication failed ({code}).")
+        elif auth_mode == "password" and username:
             smtp.login(username, setting_value("SMTP_PASSWORD", ""))
         smtp.send_message(message)
     return True
@@ -1421,6 +1471,9 @@ def deliver_webhook(event, connection):
             "text": f"**{event.payload['title']}**\n\n{event.payload['body']}"
         }
         headers = {"Content-Type": "application/json"}
+    elif connection.kind == "google_chat":
+        body = google_chat_message(event.payload)
+        headers = {"Content-Type": "application/json"}
     else:
         body = payload
         encoded = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
@@ -1436,7 +1489,7 @@ def deliver_webhook(event, connection):
             "X-ServiceOps-Timestamp": timestamp,
             "X-ServiceOps-Signature": f"sha256={signature}",
         }
-    target = connection.endpoint
+    target = connection.delivery_endpoint
     max_redirects = 3
     for _ in range(max_redirects + 1):
         if not integration_endpoint_valid(target):
@@ -1497,7 +1550,7 @@ def process_outbox(limit=50):
                         outbox_event_id=event.id, channel="apns", state="Failed",
                         error=str(error)[:1000], tenant_id=event.tenant_id,
                     ))
-        if setting_bool("SMTP_ENABLED"):
+        if setting_bool("SMTP_ENABLED") and event.event_type == "notification.created":
             prior = IntegrationDelivery.query.filter_by(
                 outbox_event_id=event.id, channel="smtp",
             ).filter(IntegrationDelivery.state.in_(["Delivered", "Skipped"])).first()
@@ -1522,6 +1575,8 @@ def process_outbox(limit=50):
             if event.event_type == "audit.created" and connection.kind != "siem":
                 continue
             if event.event_type != "audit.created" and connection.kind == "siem":
+                continue
+            if not event_matches(connection.event_types_json, event.event_type, event.payload):
                 continue
             prior = IntegrationDelivery.query.filter_by(
                 outbox_event_id=event.id, connection_id=connection.id,
@@ -12174,7 +12229,7 @@ def create_app(test_config=None):
                 endpoint = request.form.get("endpoint", "").strip()
                 if (
                     not name or len(name) > 160
-                    or kind not in {"webhook", "teams", "siem"}
+                    or kind not in WEBHOOK_KINDS
                     or not integration_endpoint_valid(endpoint)
                 ):
                     abort(400, description=(
@@ -12191,13 +12246,29 @@ def create_app(test_config=None):
                     settings_cipher().encrypt(secret.encode()).decode()
                     if secret else None
                 )
+                parsed_endpoint = urlparse(endpoint)
+                display_endpoint = parsed_endpoint._replace(query="", fragment="").geturl()
+                encrypted_endpoint = settings_cipher().encrypt(endpoint.encode()).decode()
+                raw_patterns = request.form.get("event_types", "").strip()
+                patterns = [item.strip() for item in raw_patterns.split(",") if item.strip()]
+                if len(patterns) > 50 or any(len(item) > 120 for item in patterns):
+                    abort(400, description="Use at most 50 event patterns of 120 characters each.")
                 db.session.add(IntegrationConnection(
-                    name=name, kind=kind, endpoint=endpoint,
+                    name=name, kind=kind, endpoint=display_endpoint,
+                    endpoint_encrypted=encrypted_endpoint,
                     secret_encrypted=encrypted,
+                    event_types_json=json.dumps(patterns),
                     created_by_id=current_user.id,
                     tenant_id=current_user.tenant_id,
                 ))
                 audit("integration create", name, kind)
+            elif action == "toggle_connection":
+                connection = IntegrationConnection.query.filter_by(
+                    id=request.form.get("connection_id", type=int),
+                    tenant_id=current_user.tenant_id,
+                ).first_or_404()
+                connection.active = not connection.active
+                audit("integration toggle", connection.name, "active" if connection.active else "disabled")
             elif action == "create_monitoring_source":
                 name = request.form.get("name", "").strip()
                 group = tenant_record_or_404(
