@@ -192,6 +192,45 @@ Required scope: `tickets:read`
 Ticket numbers are case-insensitive. A record outside the caller's tenant or
 visibility policy returns `404`, preventing record-existence disclosure.
 
+## 5a. List a change's tasks (CTASKs)
+
+```http
+GET /api/v1/tickets/CHG0000041/ctasks
+Authorization: Bearer sop_REDACTED
+```
+
+Required scope: `tickets:read`
+
+Returns the change tasks (CTASKs) belonging to a change ticket, ordered by
+`sequence`:
+
+```json
+{
+  "data": [
+    {
+      "number": "CTASK0000001",
+      "title": "Snapshot database",
+      "taskType": "Implementation",
+      "state": "Open",
+      "required": true,
+      "sequence": 1,
+      "assignmentGroup": "Unix",
+      "assignee": null,
+      "plannedStart": null,
+      "plannedEnd": null,
+      "workNotes": ""
+    }
+  ],
+  "meta": { "count": 1, "request_id": "..." }
+}
+```
+
+`state` follows the change-task lifecycle: `Open`, `Work in Progress`,
+`Pending`, `Closed Complete`, `Closed Incomplete`, `Cancelled`. Calling this
+against a non-change ticket returns `400`. A ticket outside the caller's
+tenant or visibility policy, or an unknown ticket number, returns `404`. This
+endpoint is read-only; there is no API to create or update CTASKs yet.
+
 ## 6. Create an incident
 
 ```http
@@ -415,6 +454,41 @@ print(response.json()["data"]["number"])
 
 Always set connect/read timeouts, validate TLS, keep tokens in a secret
 manager, and log request IDs rather than credentials or full sensitive bodies.
+
+## 13a. Outbound webhook: change ticket state transitions
+
+Administration → Integrations webhook connections (`kind: "webhook"`) can
+subscribe to `change.state_changed`, delivered whenever a change ticket's
+`state` transitions (create-time state is not an event). The connection's
+event-pattern list (fnmatch-style, e.g. `"change.state_changed"`, `"change.*"`,
+or `"*"`) controls whether it receives this event; an empty pattern list
+receives everything.
+
+```json
+{
+  "id": "8f9c9e2e-...-outbox-event-id",
+  "type": "change.state_changed",
+  "created_at": "2026-09-12T03:14:00+00:00",
+  "data": {
+    "number": "CHG0000961",
+    "kind": "change",
+    "state": "In Progress",
+    "previous_state": "Approved",
+    "priority": "P3",
+    "impact": "Medium",
+    "urgency": "Medium",
+    "category": "Software"
+  }
+}
+```
+
+Delivery is signed exactly like every other webhook event (`X-ServiceOps-
+Signature: sha256=<HMAC-SHA256 of the raw body using the connection's
+secret>`, plus `X-ServiceOps-Timestamp` and `X-ServiceOps-Event-ID`) and goes
+through the same SSRF-hardened delivery worker (DNS pinning, private-address
+rejection, bounded redirects) as every other outbound event. There is
+currently no equivalent event for CTASK state changes — poll `GET
+/api/v1/tickets/{number}/ctasks` (§5a) for that.
 
 ## 14. Current compatibility boundary
 

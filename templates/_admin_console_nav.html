@@ -1,0 +1,22 @@
+<aside class="settings-console-nav admin-console-nav" aria-label="Administration areas">
+  <header class="settings-nav-head">
+    <span class="settings-nav-mark" aria-hidden="true">⚙</span>
+    <span><strong>Administration</strong><small>ServiceOps control center</small></span>
+  </header>
+  <label class="settings-console-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search administration" aria-label="Search administration areas" data-settings-menu-search></label>
+  <nav>
+    <a href="{{ url_for('admin_home') }}" class="{{ 'active' if not active_section else '' }}"><span class="settings-nav-icon" aria-hidden="true">⌂</span><span><strong>General</strong><small>Administration overview</small></span><b aria-hidden="true">›</b></a>
+    {% set nav_areas = [
+      ('people-access','People & access','Users, teams and permissions','♙'),
+      ('service-configuration','Service configuration','Requests, changes and SLAs','↔'),
+      ('connections-channels','Connections & channels','Integrations and delivery','⇄'),
+      ('automation-content','Automation & content','Rules, templates and tours','▶'),
+      ('platform-security','Platform & security','Identity, protection and health','⛊'),
+    ] %}
+    {% for key, label, help, icon in nav_areas %}
+    <a href="{{ url_for('admin_section', section=key) }}" class="{{ 'active' if active_section == key else '' }}"><span class="settings-nav-icon" aria-hidden="true">{{ icon }}</span><span><strong>{{ label }}</strong><small>{{ help }}</small></span><b aria-hidden="true">›</b></a>
+    {% endfor %}
+  </nav>
+  <p class="settings-menu-empty" hidden data-settings-menu-empty>No matching administration area.</p>
+  <footer><span class="status-dot" aria-hidden="true"></span><span><strong>Administration</strong><small>Role protected and audited</small></span></footer>
+</aside>
