@@ -23,8 +23,8 @@
       <label>Date and time display<select name="date_time_display"><option value="calendar" {% if pref.date_time_display=='calendar' %}selected{% endif %}>Calendar date</option><option value="relative" {% if pref.date_time_display=='relative' %}selected{% endif %}>Time ago</option><option value="both" {% if pref.date_time_display=='both' %}selected{% endif %}>Both</option></select></label>
     </section>
     <section data-pref-panel="forms" hidden><h2>Forms</h2><label>Density<select name="density"><option value="comfortable" {% if pref.density=='comfortable' %}selected{% endif %}>Comfortable</option><option value="compact" {% if pref.density=='compact' %}selected{% endif %}>Compact</option></select></label><label>Font size<input type="range" name="font_scale" min="80" max="140" value="{{ pref.font_scale }}"><small>{{ pref.font_scale }}%</small></label><div class="preference-row"><div><strong>Keep navigation pinned</strong></div><label class="switch"><input type="checkbox" name="nav_pinned" {% if pref.nav_pinned %}checked{% endif %}><span></span></label></div></section>
-    <section data-pref-panel="notifications" hidden><h2>Notifications</h2>
-      <p>Channel targets and delivery health are governed by the administration integration workspace; wording for each notification below can be customized by an administrator. <a href="{{ url_for('notifications') }}">Open notification inbox</a>.</p>
+    <section id="notifications" data-pref-panel="notifications" hidden><h2>My notifications</h2>
+      <p>Your destinations receive only notifications addressed to your ServiceOps account. Team and organization channels are managed separately by administrators. <a href="{{ url_for('notifications') }}">Open notification inbox</a>.</p>
       <div class="preference-row"><div><strong>Email notifications</strong><small>Turn off to stop receiving any email for your notifications; you'll still see them in your in-app inbox.</small></div><label class="switch"><input type="checkbox" name="email_enabled" {% if notification_pref.email_enabled %}checked{% endif %}><span></span></label></div>
       {% if mutable_event_types %}
       <h3>Mute specific notifications</h3>
@@ -34,6 +34,16 @@
       {% endif %}
       <p class="muted">Password recovery emails are always delivered regardless of these settings, since they're something you specifically requested by using "Forgot your password?".</p>
       <button type="submit" name="action" value="notifications" class="primary">Save notification preferences</button>
+      <div class="personal-channel-list"><h3>My chat destinations</h3>
+      {% for row in personal_connections %}<article class="personal-channel"><div><strong>{{ row.name }}</strong><small>{{ provider_labels.get(row.kind,row.kind) }} · {{ row.event_types|length }} event types · {{ 'Active' if row.active else 'Paused' }}</small></div><div class="record-actions"><button name="action" value="test_personal_channel:{{ row.id }}">Send test</button><button name="action" value="toggle_personal_channel:{{ row.id }}">{{ 'Pause' if row.active else 'Enable' }}</button><button name="action" value="delete_personal_channel:{{ row.id }}" class="danger">Remove</button></div></article>{% else %}<p class="muted">You have no personal chat destination yet.</p>{% endfor %}
+      </div>
+      <details class="personal-channel-add"><summary>Add a personal chat destination</summary>
+        <div class="detail-grid"><label>Name<input name="name" maxlength="160" placeholder="My Telegram"></label><label>Provider<select name="kind"><option value="telegram">Telegram bot</option><option value="google_chat">Google Chat</option><option value="slack">Slack</option><option value="teams">Microsoft Teams</option><option value="discord">Discord</option></select></label></div>
+        <label>Webhook URL<input type="url" name="endpoint" placeholder="Required except for Telegram"></label>
+        <div class="detail-grid"><label>Telegram bot token<input type="password" name="secret" autocomplete="new-password"></label><label>Telegram chat ID<input name="chat_id" maxlength="120"></label></div>
+        <fieldset class="subscription-picker"><legend>Notify me for</legend><div class="subscription-grid">{% for pattern,label,description in personal_event_subscriptions %}<label class="subscription-option"><input type="checkbox" name="event_types" value="{{ pattern }}"><span><strong>{{ label }}</strong><small>{{ description }}</small></span></label>{% endfor %}</div></fieldset>
+        <button type="submit" name="action" value="create_personal_channel" class="primary">Add my destination</button>
+      </details>
     </section>
     <footer><span>Theme is governed as light-only.</span><button class="primary">Save preferences</button></footer>
   </div>

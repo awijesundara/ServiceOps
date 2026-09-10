@@ -1,5 +1,6 @@
 (function () {
-  if (localStorage.getItem("navCollapsed") === "1") document.body.classList.add("nav-collapsed");
+  var mobile = window.matchMedia("(max-width: 900px)").matches;
+  if (mobile || localStorage.getItem("navCollapsed") === "1") document.body.classList.add("nav-collapsed");
   var sidebarNav = document.querySelector(".sidebar nav");
   if (sidebarNav) {
     var savedScroll = sessionStorage.getItem("sidebarNavScrollTop");

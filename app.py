@@ -108,8 +108,10 @@ from serviceops_core.notification_templates import (
 )
 from serviceops_core.delivery import (
     EVENT_SUBSCRIPTIONS, EVENT_SUBSCRIPTION_PATTERNS, PROVIDER_LABELS,
-    WEBHOOK_KINDS, activity_category, event_matches, provider_endpoint_allowed,
-    provider_payload,
+    PERSONAL_EVENT_SUBSCRIPTIONS, PERSONAL_EVENT_SUBSCRIPTION_PATTERNS,
+    GROUP_EVENT_SUBSCRIPTIONS, GROUP_EVENT_SUBSCRIPTION_PATTERNS,
+    WEBHOOK_KINDS, activity_category, connection_accepts_event, event_matches,
+    provider_endpoint_allowed, provider_payload,
 )
 from serviceops_core.navigation import navigation_entries
 from serviceops_core.storage import build_storage_backend, ipfs_enabled
@@ -603,7 +605,31 @@ def audit_security_context():
     }
 
 
-def audit(action, target, details="", user_id=None, tenant_id=None):
+def _support_group_ids_for_target(target, tenant_id):
+    """Resolve only explicit record ownership; unknown targets remain unscoped."""
+    reference = str(target or "").split()[0].strip("#:;,()")[:30]
+    if not reference:
+        return []
+    group_ids = set()
+    ticket = Ticket.query.filter_by(number=reference, tenant_id=tenant_id).first()
+    if ticket:
+        if ticket.assignment_group_record:
+            group_ids.add(ticket.assignment_group_record.group_id)
+        if ticket.change_ownership:
+            group_ids.add(ticket.change_ownership.group_id)
+    record = EnterpriseRecord.query.filter_by(number=reference, tenant_id=tenant_id).first()
+    if record and record.support_group_id:
+        group_ids.add(record.support_group_id)
+    catalog_task = CatalogTask.query.filter_by(number=reference, tenant_id=tenant_id).first()
+    if catalog_task and catalog_task.assignment_group_id:
+        group_ids.add(catalog_task.assignment_group_id)
+    operational_task = OperationalTask.query.filter_by(number=reference).first()
+    if operational_task and operational_task.assignment_group_id:
+        group_ids.add(operational_task.assignment_group_id)
+    return sorted(group_ids)
+
+
+def audit(action, target, details="", user_id=None, tenant_id=None, support_group_ids=None):
     tenant_id = tenant_id or tenant_context_id()
     if db.engine.dialect.name == "postgresql":
         db.session.execute(
@@ -659,12 +685,17 @@ def audit(action, target, details="", user_id=None, tenant_id=None):
         "activity_category": activity_category(row.action, row.target),
         "actor_user_id": row.user_id,
         "created_at": row.created_at.isoformat(),
+        "support_group_ids": (
+            sorted({int(value) for value in support_group_ids})
+            if support_group_ids is not None
+            else _support_group_ids_for_target(target, tenant_id)
+        ),
     }
     activity_connections = IntegrationConnection.query.filter_by(
         tenant_id=tenant_id, active=True,
     ).filter(IntegrationConnection.kind != "siem").all()
     if any(
-        event_matches(connection.event_types_json, "activity.created", activity_payload)
+        connection_accepts_event(connection, "activity.created", activity_payload)
         for connection in activity_connections
     ):
         db.session.add(OutboxEvent(
@@ -1626,7 +1657,7 @@ def process_outbox(limit=50):
                 continue
             if event.event_type != "audit.created" and connection.kind == "siem":
                 continue
-            if not event_matches(connection.event_types_json, event.event_type, event.payload):
+            if not connection_accepts_event(connection, event.event_type, event.payload):
                 continue
             prior = IntegrationDelivery.query.filter_by(
                 outbox_event_id=event.id, connection_id=connection.id,
@@ -7543,6 +7574,46 @@ def create_app(test_config=None):
             "meta": {"count": len(rows), "request_id": g.request_id},
         })
 
+    @app.patch("/api/v1/tickets/<number>/ctasks/<ctask_number>")
+    def api_ticket_ctask_update(number, ctask_number):
+        require_api_scope("tickets:update")
+        ticket = visible_ticket_query(g.api_user).filter(
+            func.upper(Ticket.number) == number.upper()
+        ).first_or_404()
+        if ticket.kind != "change":
+            abort(400, description="CTASKs are only available for change tickets.")
+        if not user_can_manage_ticket(g.api_user, ticket):
+            abort(403, description="The acting user cannot manage this ticket.")
+        task = OperationalTask.query.filter_by(
+            parent_type="ticket", parent_id=ticket.id, task_kind="change",
+        ).filter(func.upper(OperationalTask.number) == ctask_number.upper()).first_or_404()
+        key, request_hash, replay = api_idempotency_context()
+        if replay:
+            return replay
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or not body:
+            abort(400, description="A non-empty JSON object is required.")
+        allowed = {"state", "work_notes"}
+        unknown = set(body) - allowed
+        if unknown:
+            abort(400, description=f"Unknown fields: {', '.join(sorted(unknown))}.")
+        before = {"state": task.state, "work notes": task.work_notes}
+        if "state" in body:
+            transition_operational_task(task, str(body["state"]))
+        if "work_notes" in body:
+            task.work_notes = str(body["work_notes"])[:2000]
+        log_field_changes(task.parent_type, task.parent_id, before, {
+            "state": task.state, "work notes": task.work_notes,
+        }, event=f"{task.number} updated via REST API")
+        document = {"data": api_ctask_document(task)}
+        store_api_idempotency(key, request_hash, document, 200)
+        audit(
+            "api update", task.number, mobile_client_details(g.api_client),
+            user_id=g.api_user.id, tenant_id=g.api_client.tenant_id,
+        )
+        db.session.commit()
+        return jsonify(document)
+
     @app.get("/api/v1/mobile/tickets/<number>/attachments/<int:attachment_id>/download")
     @app.get("/api/v1/tickets/<number>/attachments/<int:attachment_id>/download")
     def api_ticket_attachment_download(number, attachment_id):
@@ -12370,17 +12441,29 @@ def create_app(test_config=None):
                     settings_cipher().encrypt(json.dumps(configuration).encode()).decode()
                     if configuration else None
                 )
+                scope_type = request.form.get("scope_type", "tenant")
+                support_group = None
+                allowed_patterns = EVENT_SUBSCRIPTION_PATTERNS
+                if scope_type == "group":
+                    support_group = tenant_record_or_404(
+                        SupportGroup, request.form.get("support_group_id", type=int)
+                    )
+                    allowed_patterns = GROUP_EVENT_SUBSCRIPTION_PATTERNS
+                elif scope_type != "tenant":
+                    abort(400, description="Administrators can create organization or team channels here.")
                 patterns = list(dict.fromkeys(request.form.getlist("event_types")))
                 if not patterns or any(
-                    pattern not in EVENT_SUBSCRIPTION_PATTERNS for pattern in patterns
+                    pattern not in allowed_patterns for pattern in patterns
                 ):
-                    abort(400, description="Select at least one supported notification event.")
+                    abort(400, description="Select at least one event supported by this audience.")
                 db.session.add(IntegrationConnection(
                     name=name, kind=kind, endpoint=display_endpoint,
                     endpoint_encrypted=encrypted_endpoint,
                     configuration_encrypted=encrypted_configuration,
                     secret_encrypted=encrypted,
                     event_types_json=json.dumps(patterns),
+                    scope_type=scope_type,
+                    support_group_id=support_group.id if support_group else None,
                     created_by_id=current_user.id,
                     tenant_id=current_user.tenant_id,
                 ))
@@ -12423,7 +12506,11 @@ def create_app(test_config=None):
                     tenant_id=current_user.tenant_id,
                 ).first_or_404()
                 patterns = list(dict.fromkeys(request.form.getlist("event_types")))
-                if any(pattern not in EVENT_SUBSCRIPTION_PATTERNS for pattern in patterns):
+                allowed_patterns = (
+                    GROUP_EVENT_SUBSCRIPTION_PATTERNS
+                    if connection.scope_type == "group" else EVENT_SUBSCRIPTION_PATTERNS
+                )
+                if any(pattern not in allowed_patterns for pattern in patterns):
                     abort(400, description="Select only supported notification events.")
                 connection.event_types_json = json.dumps(patterns or ["__none__"])
                 audit(
@@ -12480,6 +12567,7 @@ def create_app(test_config=None):
             revealed_secret=revealed_secret,
             provider_labels=PROVIDER_LABELS,
             event_subscriptions=EVENT_SUBSCRIPTIONS,
+            group_event_subscriptions=GROUP_EVENT_SUBSCRIPTIONS,
             active_view=active_view,
             selected_connection=selected_connection,
             settings_sections=SETTINGS_SECTIONS,
@@ -16518,7 +16606,70 @@ def create_app(test_config=None):
             key: meta for key, meta in NOTIFICATION_EVENT_TYPES.items()
             if key not in NON_MUTABLE_EVENT_TYPES
         }
+        personal_connections = IntegrationConnection.query.filter_by(
+            tenant_id=current_user.tenant_id, scope_type="user",
+            owner_user_id=current_user.id,
+        ).order_by(IntegrationConnection.name).all()
         if request.method == "POST":
+            action_value = request.form.get("action", "")
+            action, _, action_identifier = action_value.partition(":")
+            if action in {"create_personal_channel", "toggle_personal_channel", "delete_personal_channel", "test_personal_channel"}:
+                if action == "create_personal_channel":
+                    name = request.form.get("name", "").strip()
+                    kind = request.form.get("kind", "")
+                    endpoint = request.form.get("endpoint", "").strip()
+                    configuration = {}
+                    secret = ""
+                    if kind == "telegram":
+                        endpoint = "https://api.telegram.org"
+                        secret = request.form.get("secret", "").strip()
+                        chat_id = request.form.get("chat_id", "").strip()
+                        if not secret or not chat_id or len(chat_id) > 120:
+                            abort(400, description="Telegram bot token and chat ID are required.")
+                        configuration = {"chat_id": chat_id, "protect_content": True}
+                    if kind not in {"google_chat", "telegram", "slack", "teams", "discord"}:
+                        abort(400, description="Select a supported personal notification provider.")
+                    if not name or len(name) > 160 or not integration_endpoint_valid(endpoint) or not provider_endpoint_allowed(kind, urlparse(endpoint).hostname):
+                        abort(400, description="A name and valid provider HTTPS endpoint are required.")
+                    patterns = list(dict.fromkeys(request.form.getlist("event_types")))
+                    if not patterns or any(value not in PERSONAL_EVENT_SUBSCRIPTION_PATTERNS for value in patterns):
+                        abort(400, description="Select at least one personal notification event.")
+                    parsed = urlparse(endpoint)
+                    db.session.add(IntegrationConnection(
+                        name=name, kind=kind,
+                        endpoint=parsed._replace(query="", fragment="").geturl(),
+                        endpoint_encrypted=settings_cipher().encrypt(endpoint.encode()).decode(),
+                        configuration_encrypted=(settings_cipher().encrypt(json.dumps(configuration).encode()).decode() if configuration else None),
+                        secret_encrypted=(settings_cipher().encrypt(secret.encode()).decode() if secret else None),
+                        event_types_json=json.dumps(patterns), scope_type="user",
+                        owner_user_id=current_user.id, created_by_id=current_user.id,
+                        tenant_id=current_user.tenant_id,
+                    ))
+                    audit("personal notification channel create", name, kind)
+                    flash("Personal notification channel added.", "success")
+                else:
+                    connection = IntegrationConnection.query.filter_by(
+                        id=int(action_identifier) if action_identifier.isdigit() else None,
+                        tenant_id=current_user.tenant_id, scope_type="user",
+                        owner_user_id=current_user.id,
+                    ).first_or_404()
+                    if action == "toggle_personal_channel":
+                        connection.active = not connection.active
+                        flash("Personal channel status updated.", "success")
+                    elif action == "delete_personal_channel":
+                        IntegrationDelivery.query.filter_by(connection_id=connection.id).update({"connection_id": None})
+                        db.session.delete(connection)
+                        flash("Personal notification channel removed.", "success")
+                    else:
+                        synthetic = SimpleNamespace(event_id=str(uuid.uuid4()), event_type="notification.created", created_at=now(), payload={"title": "ServiceOps personal notification test", "body": "This destination is connected to your account."})
+                        try:
+                            deliver_webhook(synthetic, connection)
+                        except Exception as error:
+                            flash(f"Test failed: {error}", "error")
+                        else:
+                            flash("Test notification delivered successfully.", "success")
+                db.session.commit()
+                return redirect(url_for("preferences") + "#notifications")
             if request.form.get("action") == "notifications":
                 notification_pref.email_enabled = bool(request.form.get("email_enabled"))
                 muted = [
@@ -16551,6 +16702,9 @@ def create_app(test_config=None):
         return render_template(
             "preferences.html", pref=pref, notification_pref=notification_pref,
             mutable_event_types=mutable_event_types, muted_types=muted_types,
+            personal_connections=personal_connections,
+            personal_event_subscriptions=PERSONAL_EVENT_SUBSCRIPTIONS,
+            provider_labels=PROVIDER_LABELS,
         )
 
     @app.get("/task-board")

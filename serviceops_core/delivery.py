@@ -51,6 +51,41 @@ EVENT_SUBSCRIPTIONS = (
 )
 
 EVENT_SUBSCRIPTION_PATTERNS = {item[0] for item in EVENT_SUBSCRIPTIONS}
+PERSONAL_EVENT_SUBSCRIPTIONS = tuple(
+    item for item in EVENT_SUBSCRIPTIONS
+    if item[0].startswith("notification.created:")
+)
+PERSONAL_EVENT_SUBSCRIPTION_PATTERNS = {item[0] for item in PERSONAL_EVENT_SUBSCRIPTIONS}
+GROUP_EVENT_SUBSCRIPTIONS = tuple(
+    item for item in EVENT_SUBSCRIPTIONS
+    if item[0].startswith("activity.created:")
+)
+GROUP_EVENT_SUBSCRIPTION_PATTERNS = {item[0] for item in GROUP_EVENT_SUBSCRIPTIONS}
+
+
+def connection_accepts_event(connection, event_type, payload):
+    """Apply the audience boundary before evaluating an event subscription."""
+    scope = getattr(connection, "scope_type", "tenant") or "tenant"
+    if scope == "user":
+        return (
+            event_type == "notification.created"
+            and payload.get("user_id") == getattr(connection, "owner_user_id", None)
+            and event_matches(connection.event_types_json, event_type, payload)
+        )
+    if scope == "group":
+        try:
+            group_ids = {int(value) for value in payload.get("support_group_ids", [])}
+        except (TypeError, ValueError):
+            return False
+        return (
+            event_type == "activity.created"
+            and getattr(connection, "support_group_id", None) in group_ids
+            and event_matches(connection.event_types_json, event_type, payload)
+        )
+    # Personal notification bodies never belong on organization-wide channels.
+    return event_type != "notification.created" and event_matches(
+        connection.event_types_json, event_type, payload
+    )
 
 
 def activity_category(action, target=""):
