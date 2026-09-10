@@ -1,0 +1,8 @@
+.personal-channel-list{margin-top:24px}
+.personal-channel{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid var(--line)}
+.personal-channel small{display:block;color:var(--muted);margin-top:4px}
+.personal-channel-add{margin-top:20px;padding:16px;border:1px solid var(--line);border-radius:8px}
+.personal-channel-add>summary{cursor:pointer;font-weight:750}
+.personal-channel-add[open]>summary{margin-bottom:16px}
+.audience-banner{padding:12px 14px;background:#edf7f4;border-left:4px solid var(--green);border-radius:5px}
+@media(max-width:700px){.personal-channel{align-items:flex-start;flex-direction:column}}
