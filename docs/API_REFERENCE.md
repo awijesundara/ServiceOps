@@ -228,8 +228,34 @@ Returns the change tasks (CTASKs) belonging to a change ticket, ordered by
 `state` follows the change-task lifecycle: `Open`, `Work in Progress`,
 `Pending`, `Closed Complete`, `Closed Incomplete`, `Cancelled`. Calling this
 against a non-change ticket returns `400`. A ticket outside the caller's
-tenant or visibility policy, or an unknown ticket number, returns `404`. This
-endpoint is read-only; there is no API to create or update CTASKs yet.
+tenant or visibility policy, or an unknown ticket number, returns `404`.
+
+## 5b. Update a single change task (CTASK)
+
+```http
+PATCH /api/v1/tickets/CHG0000041/ctasks/CTASK0000001
+Authorization: Bearer sop_REDACTED
+Content-Type: application/json
+Idempotency-Key: <caller-generated>
+
+{
+  "state": "Closed Complete",
+  "work_notes": "Verified by the linked runbook"
+}
+```
+
+Required scope: `tickets:update`. The caller must also be able to manage the
+parent change ticket (owning group membership/management, or `admin`) — the
+same authorization rule `PATCH /api/v1/tickets/{number}` already enforces.
+Both fields are optional but at least one field is required; `state` must be
+a valid transition from the task's current state under the same change-task
+lifecycle listed above (an invalid transition returns `409`, matching the UI's
+own task-update behavior — including the change-task gating rules, e.g. a
+Review task cannot close while required Implementation/Testing tasks remain
+open). Returns the updated CTASK using the same shape as 5a's list endpoint.
+An idempotency key is required, as with every mutating endpoint in this
+reference. A non-change ticket, unknown ticket, or unknown CTASK number
+returns `400`/`404` as appropriate.
 
 ## 6. Create an incident
 

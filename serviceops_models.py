@@ -910,6 +910,11 @@ class IntegrationConnection(db.Model):
     event_types_json = db.Column(db.Text, nullable=False, default="[]")
     secret_encrypted = db.Column(db.Text)
     active = db.Column(db.Boolean, nullable=False, default=True)
+    # Delivery audience is enforced by the worker.  A UI mistake therefore
+    # cannot fan a private notification out to a tenant or team channel.
+    scope_type = db.Column(db.String(20), nullable=False, default="tenant", index=True)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), index=True)
+    support_group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), index=True)
     created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     tenant_id = db.Column(
@@ -917,6 +922,17 @@ class IntegrationConnection(db.Model):
         default=tenant_context_id, index=True,
     )
     created_by = db.relationship("User")
+    owner_user = db.relationship("User", foreign_keys=[owner_user_id])
+    support_group = db.relationship("SupportGroup", foreign_keys=[support_group_id])
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "(scope_type = 'tenant' AND owner_user_id IS NULL AND support_group_id IS NULL) OR "
+            "(scope_type = 'user' AND owner_user_id IS NOT NULL AND support_group_id IS NULL) OR "
+            "(scope_type = 'group' AND owner_user_id IS NULL AND support_group_id IS NOT NULL)",
+            name="ck_integration_connection_scope_owner",
+        ),
+    )
 
     @property
     def secret(self):
