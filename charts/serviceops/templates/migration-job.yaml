@@ -49,6 +49,7 @@ spec:
           env:
             - {name: AUTO_MIGRATE, value: "true"}
             - {name: DEPLOYMENT_PROFILE, value: "production"}
+            - {name: LOG_DIR, value: /tmp/logs}
             - {name: UPLOAD_FOLDER, value: /tmp/uploads}
             - {name: LOCAL_AUTH_ENABLED, value: "true"}
             - {name: CSRF_ENABLED, value: "true"}

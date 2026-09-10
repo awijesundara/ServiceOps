@@ -107,7 +107,8 @@ from serviceops_core.notification_templates import (
     NOTIFICATION_EVENT_TYPES, NON_MUTABLE_EVENT_TYPES, render_notification_template, is_event_muted,
 )
 from serviceops_core.delivery import (
-    PROVIDER_LABELS, WEBHOOK_KINDS, event_matches, provider_endpoint_allowed,
+    EVENT_SUBSCRIPTIONS, EVENT_SUBSCRIPTION_PATTERNS, PROVIDER_LABELS,
+    WEBHOOK_KINDS, activity_category, event_matches, provider_endpoint_allowed,
     provider_payload,
 )
 from serviceops_core.navigation import navigation_entries
@@ -650,6 +651,27 @@ def audit(action, target, details="", user_id=None, tenant_id=None):
     )
     row.event_hash = calculate_audit_hash(row)
     db.session.add(row)
+    activity_payload = {
+        "title": f"ServiceOps activity: {row.action}",
+        "body": f"{row.target}{' — ' + row.details if row.details else ''}",
+        "action": row.action,
+        "target": row.target,
+        "activity_category": activity_category(row.action, row.target),
+        "actor_user_id": row.user_id,
+        "created_at": row.created_at.isoformat(),
+    }
+    activity_connections = IntegrationConnection.query.filter_by(
+        tenant_id=tenant_id, active=True,
+    ).filter(IntegrationConnection.kind != "siem").all()
+    if any(
+        event_matches(connection.event_types_json, "activity.created", activity_payload)
+        for connection in activity_connections
+    ):
+        db.session.add(OutboxEvent(
+            event_type="activity.created",
+            payload_json=json.dumps(activity_payload, sort_keys=True),
+            tenant_id=tenant_id,
+        ))
     if setting_bool("AUDIT_STREAM_ENABLED", False):
         db.session.add(OutboxEvent(
             event_type="audit.created",
@@ -12282,10 +12304,11 @@ def create_app(test_config=None):
                     settings_cipher().encrypt(json.dumps(configuration).encode()).decode()
                     if configuration else None
                 )
-                raw_patterns = request.form.get("event_types", "").strip()
-                patterns = [item.strip() for item in raw_patterns.split(",") if item.strip()]
-                if len(patterns) > 50 or any(len(item) > 120 for item in patterns):
-                    abort(400, description="Use at most 50 event patterns of 120 characters each.")
+                patterns = list(dict.fromkeys(request.form.getlist("event_types")))
+                if not patterns or any(
+                    pattern not in EVENT_SUBSCRIPTION_PATTERNS for pattern in patterns
+                ):
+                    abort(400, description="Select at least one supported notification event.")
                 db.session.add(IntegrationConnection(
                     name=name, kind=kind, endpoint=display_endpoint,
                     endpoint_encrypted=encrypted_endpoint,
@@ -12328,6 +12351,20 @@ def create_app(test_config=None):
                 ).first_or_404()
                 connection.active = not connection.active
                 audit("integration toggle", connection.name, "active" if connection.active else "disabled")
+            elif action == "update_connection_events":
+                connection = IntegrationConnection.query.filter_by(
+                    id=request.form.get("connection_id", type=int),
+                    tenant_id=current_user.tenant_id,
+                ).first_or_404()
+                patterns = list(dict.fromkeys(request.form.getlist("event_types")))
+                if any(pattern not in EVENT_SUBSCRIPTION_PATTERNS for pattern in patterns):
+                    abort(400, description="Select only supported notification events.")
+                connection.event_types_json = json.dumps(patterns or ["__none__"])
+                audit(
+                    "integration subscriptions updated", connection.name,
+                    ", ".join(patterns) if patterns else "No events selected",
+                )
+                flash("Notification event subscriptions updated.", "success")
             elif action == "create_monitoring_source":
                 name = request.form.get("name", "").strip()
                 group = tenant_record_or_404(
@@ -12376,6 +12413,7 @@ def create_app(test_config=None):
             revealed_token=revealed_token,
             revealed_secret=revealed_secret,
             provider_labels=PROVIDER_LABELS,
+            event_subscriptions=EVENT_SUBSCRIPTIONS,
         )
 
     @app.post("/admin/integrations/process")

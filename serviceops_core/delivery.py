@@ -30,6 +30,55 @@ PROVIDER_HOSTS = {
     "discord": {"discord.com", "discordapp.com"},
 }
 
+EVENT_SUBSCRIPTIONS = (
+    ("notification.created", "User notifications", "All notifications created for ServiceOps users."),
+    ("notification.created:approval.requested", "Approval requests", "New approval decisions requiring attention."),
+    ("notification.created:sla.breached", "SLA breaches", "Breached service-level targets."),
+    ("notification.created:client_ticket.escalated", "Client escalations", "Escalated customer tickets."),
+    ("notification.created:ritm.comment_added", "Request comments", "New customer-visible request comments."),
+    ("notification.created:enterprise.*", "Enterprise approvals", "Enterprise record approval decisions and requests."),
+    ("activity.created:approvals", "Approval activity", "Approval decisions, delegations, and workflow changes."),
+    ("activity.created:incidents", "Incident activity", "Incident creation, updates, resolution, and reviews."),
+    ("activity.created:changes", "Change activity", "Change plans, governance, implementation, and reviews."),
+    ("activity.created:requests", "Request and task activity", "Catalog requests, RITMs, and operational tasks."),
+    ("activity.created:cmdb", "CMDB and asset activity", "Configuration item, relationship, asset, and NetBox changes."),
+    ("activity.created:knowledge", "Knowledge activity", "Knowledge article lifecycle changes."),
+    ("activity.created:directory", "Users, teams, and directory", "User, team, SCIM, and LDAP administration."),
+    ("activity.created:integrations", "Integration activity", "Notification, monitoring, import, and integration changes."),
+    ("activity.created:sla", "SLA and escalation activity", "SLA, escalation, and service-impact operations."),
+    ("activity.created:security", "Security activity", "Authentication and credential security events; no secrets are sent."),
+    ("activity.created:other", "Other operational activity", "Activity not covered by another category."),
+)
+
+EVENT_SUBSCRIPTION_PATTERNS = {item[0] for item in EVENT_SUBSCRIPTIONS}
+
+
+def activity_category(action, target=""):
+    """Map an immutable audit action to a stable, administrator-friendly topic."""
+    action_text = str(action or "").lower()
+    target_text = str(target or "").upper()
+    if "approval" in action_text or "delegation" in action_text:
+        return "approvals"
+    if target_text.startswith("CHG") or any(word in action_text for word in ("change plan", "conflict check", "freeze")):
+        return "changes"
+    if target_text.startswith("INC") or any(word in action_text for word in ("major incident", "post-incident")):
+        return "incidents"
+    if target_text.startswith(("REQ", "RITM", "SCTASK")) or any(word in action_text for word in ("catalog", "task", "request item")):
+        return "requests"
+    if target_text.startswith(("CI", "AST")) or any(word in action_text for word in ("link ci", "netbox", "cmdb", "asset")):
+        return "cmdb"
+    if target_text.startswith("KB") or "knowledge" in action_text:
+        return "knowledge"
+    if any(word in action_text for word in ("ldap", "scim", "user", "team", "group", "profile")):
+        return "directory"
+    if any(word in action_text for word in ("integration", "webhook", "monitoring source", "import")):
+        return "integrations"
+    if any(word in action_text for word in ("sla", "escalat", "outage", "service impact")):
+        return "sla"
+    if any(word in action_text for word in ("login", "logout", "password", "credential", "mfa", "passkey", "token", "api client", "audit key")):
+        return "security"
+    return "other"
+
 
 def provider_endpoint_allowed(kind, hostname):
     """Reject a copied URL for the wrong provider before storing its secret."""
@@ -66,6 +115,7 @@ def event_matches(patterns_json, event_type, payload=None):
     subtype = (
         payload.get("notification_event_type")
         if event_type == "notification.created"
+        else payload.get("activity_category") if event_type == "activity.created"
         else payload.get("action") if event_type == "audit.created" else None
     )
     if subtype:
