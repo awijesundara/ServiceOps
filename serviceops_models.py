@@ -921,7 +921,7 @@ class IntegrationConnection(db.Model):
         db.Integer, db.ForeignKey("tenant.id"), nullable=False,
         default=tenant_context_id, index=True,
     )
-    created_by = db.relationship("User")
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
     owner_user = db.relationship("User", foreign_keys=[owner_user_id])
     support_group = db.relationship("SupportGroup", foreign_keys=[support_group_id])
 

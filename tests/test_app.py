@@ -1218,16 +1218,16 @@ def test_durable_smtp_signed_webhook_and_teams_delivery(monkeypatch, app):
             encrypted=True,
         ))
         db.session.add_all([
+                IntegrationConnection(
+                    name="Signed operations webhook", kind="webhook",
+                    endpoint="https://hooks.example.test/serviceops",
+                    secret_encrypted=settings_cipher().encrypt(b"signing-secret").decode(),
+                    scope_type="user", owner_user_id=admin.id, created_by_id=admin.id,
+                ),
             IntegrationConnection(
-                name="Signed operations webhook", kind="webhook",
-                endpoint="https://hooks.example.test/serviceops",
-                secret_encrypted=settings_cipher().encrypt(b"signing-secret").decode(),
-                created_by_id=admin.id,
-            ),
-            IntegrationConnection(
-                name="Operations Teams", kind="teams",
-                endpoint="https://teams.example.test/webhook",
-                created_by_id=admin.id,
+                    name="Operations Teams", kind="teams",
+                    endpoint="https://teams.example.test/webhook",
+                    scope_type="user", owner_user_id=admin.id, created_by_id=admin.id,
             ),
         ])
         create_notification(
@@ -1267,10 +1267,11 @@ def test_google_chat_and_filtered_webhook_delivery(monkeypatch, app):
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
         db.session.add_all([
-            IntegrationConnection(
-                name="Google operations room", kind="google_chat",
-                endpoint="https://chat.googleapis.com/v1/spaces/example/messages?key=x&token=y",
-                event_types_json=json.dumps(["notification.*"]), created_by_id=admin.id,
+                IntegrationConnection(
+                    name="Google operations room", kind="google_chat",
+                    endpoint="https://chat.googleapis.com/v1/spaces/example/messages?key=x&token=y",
+                    event_types_json=json.dumps(["notification.*"]),
+                    scope_type="user", owner_user_id=admin.id, created_by_id=admin.id,
             ),
             IntegrationConnection(
                 name="Audit-only webhook", kind="webhook",
@@ -1379,12 +1380,12 @@ def test_integration_admin_creates_scoped_connection_and_can_disable(client, app
         "action": "create_connection", "name": "Ticket subscriber",
         "kind": "webhook", "endpoint": "https://hooks.example.test/serviceops?token=sensitive",
         "secret": "signing-secret",
-        "event_types": ["notification.created", "activity.created:incidents"],
+        "event_types": ["activity.created:incidents"],
     })
     assert response.status_code == 200
     with app.app_context():
         connection = IntegrationConnection.query.filter_by(name="Ticket subscriber").one()
-        assert connection.event_types == ["notification.created", "activity.created:incidents"]
+        assert connection.event_types == ["activity.created:incidents"]
         assert connection.endpoint == "https://hooks.example.test/serviceops"
         assert connection.delivery_endpoint == "https://hooks.example.test/serviceops?token=sensitive"
         assert "hooks.example.test" not in connection.endpoint_encrypted
@@ -1403,7 +1404,7 @@ def test_telegram_connection_encrypts_token_and_provider_configuration(client, a
         "action": "create_connection", "name": "On-call Telegram",
         "kind": "telegram", "secret": "123456:secret-token",
         "chat_id": "-10012345", "message_thread_id": "42",
-        "protect_content": "on", "event_types": "notification.created:approval.requested",
+        "protect_content": "on", "event_types": ["activity.created:approvals", "activity.created:incidents"],
     })
     assert response.status_code == 200
     with app.app_context():
@@ -1416,6 +1417,24 @@ def test_telegram_connection_encrypts_token_and_provider_configuration(client, a
             "protect_content": True,
         }
         assert "-10012345" not in connection.configuration_encrypted
+
+
+def test_user_can_create_only_their_personal_notification_destination(client, app):
+    login(client, "employee", "Employee123!")
+    response = client.post("/preferences", data={
+        "action": "create_personal_channel", "name": "My Telegram",
+        "kind": "telegram", "secret": "123456:private-token", "chat_id": "998877",
+        "event_types": ["notification.created:approval.requested"],
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        employee = User.query.filter_by(username="employee").one()
+        row = IntegrationConnection.query.filter_by(name="My Telegram").one()
+        assert row.scope_type == "user"
+        assert row.owner_user_id == employee.id
+        assert row.support_group_id is None
+        assert row.event_types == ["notification.created:approval.requested"]
+        assert "private-token" not in row.secret_encrypted
 
 
 def test_integration_admin_updates_channel_event_choices(client, app):
