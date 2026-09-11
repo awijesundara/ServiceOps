@@ -449,13 +449,21 @@ document.addEventListener("DOMContentLoaded", () => {
     event.preventDefault();
     remove.closest(".ci-attr-row")?.remove();
   });
+  const activatePreferenceTab = selected => {
+    document.querySelectorAll("[data-pref-tab]").forEach(item => item.classList.toggle("active", item.dataset.prefTab === selected));
+    document.querySelectorAll("[data-pref-panel]").forEach(panel => {
+      panel.hidden = panel.dataset.prefPanel !== selected;
+    });
+  };
   document.querySelectorAll("[data-pref-tab]").forEach(button => {
     button.addEventListener("click", () => {
       const selected = button.dataset.prefTab;
-      document.querySelectorAll("[data-pref-tab]").forEach(item => item.classList.toggle("active", item === button));
-      document.querySelectorAll("[data-pref-panel]").forEach(panel => {
-        panel.hidden = panel.dataset.prefPanel !== selected;
-      });
+      activatePreferenceTab(selected);
+      history.replaceState(null, "", `#${selected}`);
     });
   });
+  const requestedPreferenceTab = location.hash.slice(1);
+  if (requestedPreferenceTab && document.querySelector(`[data-pref-tab="${CSS.escape(requestedPreferenceTab)}"]`)) {
+    activatePreferenceTab(requestedPreferenceTab);
+  }
 });

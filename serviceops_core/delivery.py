@@ -61,6 +61,10 @@ GROUP_EVENT_SUBSCRIPTIONS = tuple(
     if item[0].startswith("activity.created:")
 )
 GROUP_EVENT_SUBSCRIPTION_PATTERNS = {item[0] for item in GROUP_EVENT_SUBSCRIPTIONS}
+SYSTEM_EVENT_SUBSCRIPTIONS = GROUP_EVENT_SUBSCRIPTIONS + (
+    ("audit.created", "Security audit stream", "Immutable security audit events for a trusted SIEM endpoint."),
+)
+SYSTEM_EVENT_SUBSCRIPTION_PATTERNS = {item[0] for item in SYSTEM_EVENT_SUBSCRIPTIONS}
 
 
 def connection_accepts_event(connection, event_type, payload):

@@ -105,6 +105,7 @@ CORE_WORKFLOWS = (
     ("settings-overview", "/admin/settings"),
     ("settings-experience", "/admin/settings/section/experience"),
     ("settings-notifications", "/admin/integrations"),
+    ("personal-notifications", "/preferences#notifications"),
     ("user-profile", "/profile"),
     ("login-sessions", "/profile/sessions"),
     ("team-management", "/service-operations/settings/team-managers"),
@@ -131,7 +132,7 @@ def test_critical_journey_is_responsive_error_free_and_accessible(authenticated_
         if not page.locator(".netbox-mapping-details").evaluate("element => element.open"):
             page.locator(".netbox-mapping-details summary").click()
         page.screenshot(path=ARTIFACT_DIR / f"cmdb-import-{viewport_name}.png", full_page=True)
-    if journey in {"user-profile", "directory-sync", "audit-evidence", "administration", "administration-connections", "administration-platform", "settings-overview", "settings-experience", "settings-notifications"}:
+    if journey in {"user-profile", "directory-sync", "audit-evidence", "administration", "administration-connections", "administration-platform", "settings-overview", "settings-experience", "settings-notifications", "personal-notifications"}:
         page.screenshot(path=ARTIFACT_DIR / f"{journey}-{viewport_name}.png", full_page=True)
 
     page.add_script_tag(path=AXE_CORE_PATH)
