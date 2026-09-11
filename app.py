@@ -110,6 +110,7 @@ from serviceops_core.delivery import (
     EVENT_SUBSCRIPTIONS, EVENT_SUBSCRIPTION_PATTERNS, PROVIDER_LABELS,
     PERSONAL_EVENT_SUBSCRIPTIONS, PERSONAL_EVENT_SUBSCRIPTION_PATTERNS,
     GROUP_EVENT_SUBSCRIPTIONS, GROUP_EVENT_SUBSCRIPTION_PATTERNS,
+    SYSTEM_EVENT_SUBSCRIPTIONS, SYSTEM_EVENT_SUBSCRIPTION_PATTERNS,
     WEBHOOK_KINDS, activity_category, connection_accepts_event, event_matches,
     provider_endpoint_allowed, provider_payload,
 )
@@ -12443,7 +12444,7 @@ def create_app(test_config=None):
                 )
                 scope_type = request.form.get("scope_type", "tenant")
                 support_group = None
-                allowed_patterns = EVENT_SUBSCRIPTION_PATTERNS
+                allowed_patterns = SYSTEM_EVENT_SUBSCRIPTION_PATTERNS
                 if scope_type == "group":
                     support_group = tenant_record_or_404(
                         SupportGroup, request.form.get("support_group_id", type=int)
@@ -12508,7 +12509,7 @@ def create_app(test_config=None):
                 patterns = list(dict.fromkeys(request.form.getlist("event_types")))
                 allowed_patterns = (
                     GROUP_EVENT_SUBSCRIPTION_PATTERNS
-                    if connection.scope_type == "group" else EVENT_SUBSCRIPTION_PATTERNS
+                    if connection.scope_type == "group" else SYSTEM_EVENT_SUBSCRIPTION_PATTERNS
                 )
                 if any(pattern not in allowed_patterns for pattern in patterns):
                     abort(400, description="Select only supported notification events.")
@@ -12568,6 +12569,7 @@ def create_app(test_config=None):
             provider_labels=PROVIDER_LABELS,
             event_subscriptions=EVENT_SUBSCRIPTIONS,
             group_event_subscriptions=GROUP_EVENT_SUBSCRIPTIONS,
+            system_event_subscriptions=SYSTEM_EVENT_SUBSCRIPTIONS,
             active_view=active_view,
             selected_connection=selected_connection,
             settings_sections=SETTINGS_SECTIONS,
