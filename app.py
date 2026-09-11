@@ -41,7 +41,8 @@ from flask_login import LoginManager, UserMixin, current_user, login_required, l
 from flask_sqlalchemy import SQLAlchemy
 from authlib.integrations.flask_client import OAuth
 from joserfc import jwt
-from joserfc.jwk import ECKey
+from joserfc.jwk import ECKey, KeySet
+from joserfc.jwt import JWTClaimsRegistry
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from alembic.migration import MigrationContext
@@ -5689,6 +5690,45 @@ def ldap_username_placeholder():
     return f"jsmith or jsmith@{domain}" if domain else "jsmith"
 
 
+_cloudflare_access_jwks_cache = {"fetched_at": 0.0, "key_set": None}
+
+
+def _cloudflare_access_key_set():
+    """Fetches (and caches for 1 hour, per worker process) Cloudflare
+    Access's RS256 public keys for this team as a joserfc KeySet."""
+    if time_module.monotonic() - _cloudflare_access_jwks_cache["fetched_at"] < 3600 and _cloudflare_access_jwks_cache["key_set"] is not None:
+        return _cloudflare_access_jwks_cache["key_set"]
+    team_domain = current_app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]
+    response = requests.get(f"https://{team_domain}/cdn-cgi/access/certs", timeout=5)
+    response.raise_for_status()
+    key_set = KeySet.import_key_set(response.json())
+    _cloudflare_access_jwks_cache["key_set"] = key_set
+    _cloudflare_access_jwks_cache["fetched_at"] = time_module.monotonic()
+    return key_set
+
+
+def verify_cloudflare_access_jwt(token):
+    """Verifies a Cloudflare Access-issued JWT (the Cf-Access-Jwt-Assertion
+    header Access forwards to the origin once a request has passed the edge)
+    against this team's public keys: signature, audience, and expiry.
+    Returns the verified claims dict on success, None on any failure --
+    never raises, since a missing/invalid header must fall back to the
+    existing local/LDAP/Keycloak login form, not error out."""
+    team_domain = current_app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]
+    aud = current_app.config["CLOUDFLARE_ACCESS_AUD"]
+    if not team_domain or not aud or not token:
+        return None
+    try:
+        key_set = _cloudflare_access_key_set()
+        decoded = jwt.decode(token, key_set, algorithms=["RS256"])
+        claims_registry = JWTClaimsRegistry(aud={"essential": True, "value": aud})
+        claims_registry.validate(decoded.claims)
+        return decoded.claims
+    except Exception:
+        current_app.logger.info("Cloudflare Access JWT verification failed", exc_info=True)
+        return None
+
+
 def ldap_authenticate(username, password):
     if not password or not setting_bool("LDAP_ENABLED"):
         return None
@@ -6235,6 +6275,8 @@ def create_app(test_config=None):
         DEPLOYMENT_PROFILE="production",
         LDAP_ENABLED=env_bool("LDAP_ENABLED"),
         KEYCLOAK_ENABLED=env_bool("KEYCLOAK_ENABLED"),
+        CLOUDFLARE_ACCESS_TEAM_DOMAIN=os.getenv("CLOUDFLARE_ACCESS_TEAM_DOMAIN", ""),
+        CLOUDFLARE_ACCESS_AUD=os.getenv("CLOUDFLARE_ACCESS_AUD", ""),
         LOCAL_AUTH_ENABLED=env_bool("LOCAL_AUTH_ENABLED", True),
         CSRF_ENABLED=env_bool("CSRF_ENABLED", True),
         SESSION_COOKIE_HTTPONLY=True,
@@ -8158,6 +8200,28 @@ def create_app(test_config=None):
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
+        if not current_user.is_authenticated and app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]:
+            access_claims = verify_cloudflare_access_jwt(request.headers.get("Cf-Access-Jwt-Assertion", ""))
+            if access_claims and access_claims.get("email"):
+                sso_user = User.query.filter(
+                    func.lower(User.email) == access_claims["email"].strip().lower(),
+                    User.active.is_(True),
+                ).first()
+                if sso_user:
+                    login_user(sso_user)
+                    session.permanent = True
+                    session["_auth_version"] = sso_user.auth_version
+                    session["_auth_provider"] = "cloudflare_access"
+                    session["_csrf_token"] = secrets.token_urlsafe(32)
+                    sso_user.failed_login_count = 0
+                    sso_user.locked_until = None
+                    audit("login", sso_user.username, "provider=cloudflare_access")
+                    db.session.commit()
+                    preference = UserPreference.query.filter_by(user_id=sso_user.id).first()
+                    start_page = preference.start_page if preference else None
+                    if not is_safe_internal_path(start_page):
+                        start_page = url_for("dashboard")
+                    return redirect(start_page)
         if request.method == "POST":
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
@@ -12089,13 +12153,8 @@ def create_app(test_config=None):
     @roles("admin")
     @require_action("security_administer")
     def admin_access():
-        # A GLPI-style Access Control hub: Users has its own dedicated route
-        # already; Groups & Teams and Directory link into the existing
-        # itil_admin() sections (that mega-page's team/AD-mapping logic is
-        # not duplicated here, just linked to by anchor) rather than being
-        # torn out into new routes in this pass -- Roles & Permissions is
-        # the one genuinely new page (see admin_roles()).
-        return render_template("admin_access.html")
+        """Compatibility redirect for the retired duplicate access hub."""
+        return redirect(url_for("admin_section", section="people-access"), code=302)
 
     # requester/agent/manager/admin are editable; superadmin is never
     # overridable (always implicitly granted everywhere, per this app's
@@ -12572,7 +12631,6 @@ def create_app(test_config=None):
             system_event_subscriptions=SYSTEM_EVENT_SUBSCRIPTIONS,
             active_view=active_view,
             selected_connection=selected_connection,
-            settings_sections=SETTINGS_SECTIONS,
         )
 
     @app.post("/admin/integrations/process")
@@ -12739,65 +12797,27 @@ def create_app(test_config=None):
         return send_from_directory(app.config["UPLOAD_FOLDER"], "company-logo.png",
                                    mimetype="image/png", max_age=300)
 
-    SETTINGS_SECTIONS = {
-        "experience": {
-            "title": "Experience",
-            "description": "Branding, visual behavior, and workspace presentation.",
-            "icon": "◐",
-            "categories": ("branding", "organization", "appearance", "workspace_defaults", "my_workspace_widgets"),
-        },
-        "identity": {
-            "title": "Identity & security",
-            "description": "Authentication, directory integration, access protection, and limits.",
-            "icon": "♙",
-            "categories": ("sign_in_and_directory", "security"),
-        },
-        "connections": {
-            "title": "Connections & automation",
-            "description": "Outbound notifications, email delivery, and external CMDB connectivity.",
-            "icon": "⇄",
-            "categories": ("notifications", "email_delivery", "netbox_connection"),
-        },
-        "runtime": {
-            "title": "Runtime",
-            "description": "Read-only deployment, storage, database, ingress, and replica information.",
-            "icon": "▦",
-            "categories": ("infrastructure",),
-        },
-    }
-
-    def _settings_section_for(category):
-        return next((key for key, section in SETTINGS_SECTIONS.items()
-                     if category in section["categories"]), "overview")
-
     @app.get("/admin/settings")
     @roles("admin")
     @require_action("administer")
     def system_settings():
-        """B-320: isolated settings pages, not one long scrolling/tabbed
-        mega-page -- this is now just an index card grid; the actual
-        editable fields live on system_settings_category(), one real URL
-        per category, matching how every other admin destination works."""
-        return render_template(
-            "system_settings.html", group_meta=SETTING_GROUP_META,
-            categories=list(SETTING_DEFINITIONS.keys()),
-            settings_sections=SETTINGS_SECTIONS,
-        )
+        """Compatibility redirect for the retired duplicate settings hub."""
+        return redirect(url_for("admin_section", section="platform-security"), code=302)
 
     @app.get("/admin/settings/section/<section>")
     @roles("admin")
     @require_action("administer")
     def system_settings_section(section):
-        section_meta = SETTINGS_SECTIONS.get(section)
-        if not section_meta:
+        destinations = {
+            "experience": "platform-security",
+            "identity": "platform-security",
+            "connections": "connections-channels",
+            "runtime": "platform-security",
+        }
+        destination = destinations.get(section)
+        if not destination:
             abort(404)
-        return render_template(
-            "system_settings_section.html",
-            section=section,
-            section_meta=section_meta,
-            settings_sections=SETTINGS_SECTIONS,
-            group_meta=SETTING_GROUP_META,
-        )
+        return redirect(url_for("admin_section", section=destination), code=302)
 
     def _infrastructure_rows():
         return [
@@ -12897,9 +12917,9 @@ def create_app(test_config=None):
                 for message in errors:
                     flash(message, "error")
             else:
-                audit("update", "Platform settings", ", ".join(changed) or "No value changes")
+                audit("update", "Administration settings", ", ".join(changed) or "No value changes")
                 db.session.commit()
-                flash("Platform settings saved." + (
+                flash("Administration settings saved." + (
                     " Restart or roll out all application instances to apply marked settings."
                     if restart_required else ""), "success")
             return _admin_referrer_redirect("system_settings_category", category=category)
@@ -12930,11 +12950,15 @@ def create_app(test_config=None):
                     DirectoryGroupMapping.directory_group
                 ).all(),
             )
+        admin_section_key = (
+            "connections-channels"
+            if category in {"email_delivery", "netbox_connection", "request_tracker_connection"}
+            else "platform-security"
+        )
         return render_template(
             "system_settings_category.html", category=category, title=title, description=description,
             definitions=definitions, values=values,
-            settings_section=_settings_section_for(category),
-            settings_sections=SETTINGS_SECTIONS,
+            admin_section_key=admin_section_key,
             infrastructure=_infrastructure_rows() if category == "infrastructure" else None,
             has_company_logo_field=category == "branding",
             **ad_context,
@@ -14503,7 +14527,7 @@ def create_app(test_config=None):
             tenant_id=tenant_context_id()
         ).order_by(RTImportJob.id.desc()).limit(10).all()
         # B-322: RT connection settings (host/token/TLS) render directly on
-        # this page instead of a separate Platform settings page, so every
+        # this page instead of a separate administration settings page, so every
         # RT-related control lives in one place. Saving posts to the
         # existing system_settings_category("request_tracker_connection")
         # handler unchanged -- _admin_referrer_redirect there sends the
@@ -15322,6 +15346,8 @@ def create_app(test_config=None):
     @roles("admin")
     @require_action("configure")
     def itil_admin():
+        if request.method == "GET":
+            return redirect(url_for("admin_section", section="service-configuration"), code=302)
         if request.method == "POST":
             action = request.form.get("action")
             if action == "create_support_group":
@@ -15834,7 +15860,6 @@ def create_app(test_config=None):
                 abort(400)
             db.session.commit()
             return _admin_referrer_redirect("itil_admin")
-        return render_template("itil_admin.html")
 
     ITIL_ADMIN_SECTIONS = {
         "ticket-defaults": ("Ticket defaults", "Initial priority for new tickets and parent/child incident state sync."),

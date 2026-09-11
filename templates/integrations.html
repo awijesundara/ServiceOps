@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Notifications · {{ instance_name }}{% endblock %}
 {% block content %}
-{% set admin_page_title = 'Notifications' %}{% set admin_parent_title = 'Connections & automation' %}{% set admin_parent_url = url_for('system_settings_section', section='connections') %}{% include '_admin_context.html' %}
+{% set admin_page_title = 'Notifications' %}{% set admin_parent_title = 'Connections & channels' %}{% set admin_parent_url = url_for('admin_section', section='connections-channels') %}{% include '_admin_context.html' %}
 {% macro subscription_picker(selected=[], catalog=event_subscriptions) -%}
 <fieldset class="subscription-picker">
   <legend>Notify this channel for</legend>
@@ -17,11 +17,9 @@
   </div>
 </fieldset>
 {%- endmacro %}
-<div class="settings-console">
-{% set settings_section = 'connections' %}{% include '_settings_console_nav.html' %}
+<div class="settings-console admin-console admin-console-single">
 <section class="settings-console-main settings-reveal">
-<header class="settings-page-head"><div><p class="eyebrow">CONNECTIONS &amp; AUTOMATION</p><h1>Notifications</h1><p>Choose channels, select event categories, and review delivery health.</p></div><form method="post" action="{{ url_for('integrations_process') }}"><button>Retry pending deliveries</button></form></header>
-<nav class="settings-breadcrumb" aria-label="Settings hierarchy"><a href="{{ url_for('system_settings') }}">General</a><span aria-hidden="true">›</span><a href="{{ url_for('system_settings_section', section='connections') }}">Connections &amp; automation</a><span aria-hidden="true">›</span><strong>Notifications</strong></nav>
+<header class="settings-page-head"><div><p class="eyebrow">CONNECTIONS &amp; CHANNELS</p><h1>Notifications</h1><p>Choose channels, select event categories, and review delivery health.</p></div><form method="post" action="{{ url_for('integrations_process') }}"><button>Retry pending deliveries</button></form></header>
 <nav class="integration-tabs" aria-label="Notification settings">
   <a href="{{ url_for('integrations_admin', view='overview') }}" class="{{ 'active' if active_view == 'overview' else '' }}">Overview</a>
   <a href="{{ url_for('integrations_admin', view='channels') }}" class="{{ 'active' if active_view in ['channels','channel'] else '' }}">Channels</a>

@@ -152,7 +152,7 @@ def test_ci_service_mapping_can_be_linked_and_unlinked(client, app):
         assert link.relationship_role == "Primary"
         link_id = link.id
 
-    admin_page = client.get("/itil/administration")
+    admin_page = client.get("/service-operations/settings/service-offerings")
     assert b"trade-db-01" in admin_page.data
 
     unlinked = client.post("/itil/administration", data={

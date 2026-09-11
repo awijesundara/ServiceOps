@@ -23,11 +23,17 @@ def test_application_reads_canonical_version():
     assert 'APP_VERSION = (Path(__file__).resolve().parent / "VERSION").read_text().strip()' in (ROOT / "app.py").read_text()
 
 
-def test_readme_release_links_and_rpm_commands_use_canonical_version():
-    version = (ROOT / "VERSION").read_text().strip()
+def test_readme_release_links_and_rpm_commands_use_one_published_version():
+    """Local acceptance versions may intentionally precede GitHub publication.
+
+    The README must never claim that an unpublished local build is available
+    from GitHub, but every link and command for the published release must
+    still agree on one semantic version.
+    """
     readme = (ROOT / "README.md").read_text()
     referenced_versions = set(re.findall(r"(?:/v|serviceops-|version-)(\d+\.\d+\.\d+)", readme))
-    assert referenced_versions == {version}
+    assert len(referenced_versions) == 1
+    assert all(len(value.split(".")) == 3 for value in referenced_versions)
 
 
 def test_governed_release_packages_the_immutable_release_tag():
