@@ -1487,8 +1487,9 @@ def test_notification_settings_console_has_isolated_second_level_views(client, a
     assert all(response.status_code == 200 for response in (
         overview, channels, channel, add, deliveries,
     ))
-    assert b"Settings overview" in overview.data
-    assert b"Connections &amp; automation" in overview.data
+    assert b"Settings overview" not in overview.data
+    assert b"System settings" not in overview.data
+    assert b"Connections &amp; channels" in overview.data
     assert b"Navigation test" in channels.data
     assert b"Search event catalog" in channel.data
     assert b"Add notification channel" in add.data
@@ -1618,6 +1619,59 @@ def test_monitoring_ingestion_auth_deduplication_and_team_routing(client, app):
         task = OperationalTask.query.filter_by(parent_id=record.id, task_kind="event").one()
         assert task.assignment_group.name == "Unix"
         assert verify_audit_chain(1)["valid"]
+
+
+def test_cloudflare_access_sso_verifies_signature_audience_and_expiry(app, client):
+    from joserfc.jwk import RSAKey, KeySet
+    from joserfc import jwt as joserfc_jwt
+    import app as app_module
+
+    key = RSAKey.generate_key(2048, parameters={"kid": "test-kid"}, private=True)
+    other_key = RSAKey.generate_key(2048, parameters={"kid": "other-kid"}, private=True)
+    key_set = KeySet([key])
+
+    def make_token(email="admin@example.local", aud="test-aud", exp=None, signing_key=key, kid="test-kid"):
+        header = {"alg": "RS256", "kid": kid}
+        claims = {"email": email, "aud": aud, "exp": exp if exp is not None else 9999999999}
+        return joserfc_jwt.encode(header, claims, signing_key)
+
+    app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = "test.cloudflareaccess.com"
+    app.config["CLOUDFLARE_ACCESS_AUD"] = "test-aud"
+    app_module._cloudflare_access_jwks_cache["key_set"] = key_set
+    app_module._cloudflare_access_jwks_cache["fetched_at"] = app_module.time_module.monotonic()
+    try:
+        # No account matches this verified email -> falls through to the login form, not an error
+        response = client.get("/login", headers={"Cf-Access-Jwt-Assertion": make_token(email="nobody@example.test")})
+        assert response.status_code == 200
+        assert b"name=\"username\"" in response.data
+
+        # Valid signature + matching email -> logged straight in, no password
+        response = client.get("/login", headers={"Cf-Access-Jwt-Assertion": make_token()}, follow_redirects=True)
+        assert response.status_code == 200
+        assert b"Recently updated" in response.data
+
+        client.get("/logout")
+
+        # Wrong audience must be rejected even with a valid signature
+        response = client.get("/login", headers={"Cf-Access-Jwt-Assertion": make_token(aud="some-other-app")})
+        assert b"name=\"username\"" in response.data
+
+        # Expired token must be rejected even with a valid signature
+        response = client.get("/login", headers={"Cf-Access-Jwt-Assertion": make_token(exp=1)})
+        assert b"name=\"username\"" in response.data
+
+        # Signed by a key not in our JWKS must be rejected
+        response = client.get("/login", headers={"Cf-Access-Jwt-Assertion": make_token(signing_key=other_key, kid="other-kid")})
+        assert b"name=\"username\"" in response.data
+    finally:
+        app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = ""
+        app.config["CLOUDFLARE_ACCESS_AUD"] = ""
+        app_module._cloudflare_access_jwks_cache["key_set"] = None
+        app_module._cloudflare_access_jwks_cache["fetched_at"] = 0.0
+
+    # Feature disabled once team domain/aud are unset again
+    response = client.get("/login", headers={"Cf-Access-Jwt-Assertion": make_token()})
+    assert b"name=\"username\"" in response.data
 
 
 def test_login_and_dashboard(client):
@@ -4713,7 +4767,7 @@ def test_rt_connection_settings_render_on_the_rt_import_page(client):
         "RT_ENABLED": "on", "RT_BASE_URL": "https://rt.example.test",
     }, headers={"Referer": "http://localhost/tickets/import/rt"}, follow_redirects=True)
     assert response.status_code == 200
-    assert b"Platform settings saved" in response.data
+    assert b"Administration settings saved" in response.data
     assert b"Import tickets" in response.data
 
 
@@ -4790,21 +4844,12 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
     assert b"Default update set" not in header
     assert b'data-platform-drawer=' not in home.data
 
+    # The former Platform settings hierarchy is retired. Old bookmarks
+    # land on the canonical Administration area instead of rendering a
+    # competing menu and overview.
     settings = client.get("/admin/settings")
-    assert b"Administration home" in settings.data
-    assert b'aria-label="Administration breadcrumb"' in settings.data
-    assert settings.data.count(b'aria-label="Administration breadcrumb"') == 1
-    assert b"ADMINISTRATION HOME / PLATFORM SETTINGS" not in settings.data
-    # Platform settings exposes only major areas at level one. Individual
-    # controls appear on an area hub and then a dedicated leaf page.
-    assert b'href="/admin/settings/section/experience"' in settings.data
-    assert b"Experience" in settings.data
-    assert b"Identity &amp; security" in settings.data
-    assert b"Connections &amp; automation" in settings.data
-    assert b"Sign-in and directory" not in settings.data
-    assert b"Change approval policy" not in settings.data
-    assert b"Default ticket priority" not in settings.data
-    assert b"Runtime" in settings.data
+    assert settings.status_code == 302
+    assert settings.headers["Location"].endswith("/admin/section/platform-security")
 
     infrastructure = client.get("/admin/settings/infrastructure")
     assert b"Application replicas" in infrastructure.data
@@ -4823,14 +4868,8 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
     assert b"Users and access" in new_user.data
 
     governance = client.get("/itil/administration")
-    assert governance.status_code == 200
-    # B-320: Service delivery and governance is likewise an index of
-    # genuinely isolated pages, not one long mega-page.
-    for section in ("ticket-defaults", "catalog", "team-aliases",
-                    "team-managers", "governance-groups",
-                    "change-approval-policy", "ccb", "change-freeze",
-                    "service-offerings", "sla"):
-        assert f'/service-operations/settings/{section}"'.encode() in governance.data
+    assert governance.status_code == 302
+    assert governance.headers["Location"].endswith("/admin/section/service-configuration")
     # B-322: AD group mapping and directory sync moved onto the Sign-in and
     # directory settings page, so they're no longer separate governance
     # sections; old bookmarked URLs redirect there instead of 404ing.
@@ -5799,7 +5838,7 @@ def test_admin_can_update_live_platform_branding(client, app):
         "SUPPORT_EMAIL": "support@example.test",
     }, follow_redirects=True)
     assert response.status_code == 200
-    assert b"Platform settings saved" in response.data
+    assert b"Administration settings saved" in response.data
     assert b"Operations Hub" in response.data
     with app.app_context():
         assert db.session.get(PlatformSetting, "COMPANY_NAME").value == "Example Corporation"
@@ -5808,7 +5847,7 @@ def test_admin_can_update_live_platform_branding(client, app):
         "BRAND_TEAL": "#124c5a", "BRAND_AMBER": "#f4a340", "DEFAULT_DENSITY": "comfortable",
     }, follow_redirects=True)
     assert response.status_code == 200
-    assert b"Platform settings saved" in response.data
+    assert b"Administration settings saved" in response.data
 
     response = client.post("/admin/settings/sign_in_and_directory", data={
         "LOCAL_AUTH_ENABLED": "on",
@@ -5819,13 +5858,13 @@ def test_admin_can_update_live_platform_branding(client, app):
         "KEYCLOAK_ROLE_MAPPINGS": "{}",
     }, follow_redirects=True)
     assert response.status_code == 200
-    assert b"Platform settings saved" in response.data
+    assert b"Administration settings saved" in response.data
 
     response = client.post("/admin/settings/security", data={
         "SESSION_HOURS": "8", "MAX_UPLOAD_MB": "20",
     }, follow_redirects=True)
     assert response.status_code == 200
-    assert b"Platform settings saved" in response.data
+    assert b"Administration settings saved" in response.data
 
 
 def test_settings_category_page_does_not_trigger_auth_method_check_for_other_categories(client):
@@ -5840,7 +5879,7 @@ def test_settings_category_page_does_not_trigger_auth_method_check_for_other_cat
     }, follow_redirects=True)
     assert response.status_code == 200
     assert b"At least one authentication method must remain enabled" not in response.data
-    assert b"Platform settings saved" in response.data
+    assert b"Administration settings saved" in response.data
 
 
 def test_dark_theme_is_removed(client, app):
@@ -8269,7 +8308,7 @@ def test_admin_home_has_no_duplicate_card_destinations(client):
         )
 
 
-def test_settings_pages_are_decentralized_into_isolated_pages(client):
+def test_settings_pages_are_isolated_under_canonical_administration_areas(client):
     """User-reported (B-320): even correctly-working client-side tabs
     within one mega-page were rejected outright -- "this is duplicated or
     when i click on the icon on multiple things, comes to this same
@@ -8280,34 +8319,38 @@ def test_settings_pages_are_decentralized_into_isolated_pages(client):
     category's."""
     login(client)
     index = client.get("/admin/settings")
-    assert index.status_code == 200
-    assert b"/admin/settings/section/identity" in index.data
-    assert b"/admin/settings/security" not in index.data
-    assert b"/admin/settings/organization" not in index.data
-
+    assert index.status_code == 302
+    assert index.headers["Location"].endswith("/admin/section/platform-security")
     identity_hub = client.get("/admin/settings/section/identity")
-    assert identity_hub.status_code == 200
-    assert b"/admin/settings/security" in identity_hub.data
-    assert b"/admin/settings/sign_in_and_directory" in identity_hub.data
-    assert b"/admin/settings/organization" not in identity_hub.data
-
-    experience_hub = client.get("/admin/settings/section/experience")
-    assert experience_hub.status_code == 200
-    assert b"/admin/settings/organization" in experience_hub.data
-    assert b"/admin/settings/security" not in experience_hub.data
+    assert identity_hub.status_code == 302
+    assert identity_hub.headers["Location"].endswith("/admin/section/platform-security")
+    connections_hub = client.get("/admin/settings/section/connections")
+    assert connections_hub.status_code == 302
+    assert connections_hub.headers["Location"].endswith("/admin/section/connections-channels")
 
     security = client.get("/admin/settings/security")
     assert security.status_code == 200
     assert b"MFA" in security.data or b"Security" in security.data
     assert b"COMPANY_NAME" not in security.data
+    assert b"System settings" not in security.data
+    assert security.data.count(b'aria-label="Administration breadcrumb"') == 1
+    assert b'aria-label="Administration hierarchy"' not in security.data
+    assert b"Platform &amp; security" in security.data
 
     organization = client.get("/admin/settings/organization")
     assert organization.status_code == 200
     assert b"security" not in organization.data.lower() or b"Security and limits" not in organization.data
 
+    netbox = client.get("/admin/settings/netbox_connection")
+    assert netbox.status_code == 200
+    assert b"Connections &amp; channels" in netbox.data
+    assert b"System settings" not in netbox.data
+    netbox_sidebar = netbox.data.split(b'<aside class="sidebar">', 1)[1].split(b"</aside>", 1)[0]
+    assert b'class="admin-area-link active" href="/admin/section/connections-channels"' in netbox_sidebar
+
     governance_index = client.get("/service-operations/settings")
-    assert governance_index.status_code == 200
-    assert b"/service-operations/settings/sla" in governance_index.data
+    assert governance_index.status_code == 302
+    assert governance_index.headers["Location"].endswith("/admin/section/service-configuration")
 
     sla = client.get("/service-operations/settings/sla")
     assert sla.status_code == 200
@@ -8329,7 +8372,9 @@ def test_admin_access_hub_requires_admin(client):
     assert client.get("/admin/access").status_code == 403
     client.post("/logout")
     login(client)
-    assert client.get("/admin/access").status_code == 200
+    response = client.get("/admin/access")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/section/people-access")
 
 
 def test_admin_roles_page_shows_policy_and_requires_admin(client):

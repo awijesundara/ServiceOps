@@ -118,6 +118,8 @@ spec:
             - {name: WEBAUTHN_RP_ID, value: {{ .Values.auth.passkeys.rpId | quote }}}
             - {name: WEBAUTHN_RP_NAME, value: {{ .Values.auth.passkeys.rpName | quote }}}
             - {name: WEBAUTHN_ORIGIN, value: {{ .Values.auth.passkeys.origin | quote }}}
+            - {name: CLOUDFLARE_ACCESS_TEAM_DOMAIN, value: {{ .Values.auth.cloudflareAccess.teamDomain | quote }}}
+            - {name: CLOUDFLARE_ACCESS_AUD, value: {{ .Values.auth.cloudflareAccess.aud | quote }}}
             - {name: APPLE_PASSKEY_APP_ID, value: {{ .Values.auth.passkeys.appleAppId | quote }}}
             - {name: TRUST_PROXY_HEADERS, value: {{ .Values.proxy.trustHeaders | quote }}}
             - {name: ENABLE_HSTS, value: {{ .Values.proxy.enableHsts | quote }}}

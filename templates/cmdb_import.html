@@ -20,7 +20,7 @@
     </div>
   </details>
   {% if netbox_enabled %}
-  <p class="muted">Configure the URL, read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration home → Platform settings → NetBox connection</a>. See <a href="{{ url_for('rack_list') }}">Racks</a> for imported elevations.</p>
+  <p class="muted">Configure the URL, read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration → Connections &amp; channels → NetBox connection</a>. See <a href="{{ url_for('rack_list') }}">Racks</a> for imported elevations.</p>
   {% if netbox_sync_job %}
   <div class="callout" id="netbox-sync-progress" data-status-url="{{ url_for('cmdb_import_netbox_job', job_id=netbox_sync_job.id) }}" data-cancel-url="{{ url_for('cmdb_import_netbox_cancel', job_id=netbox_sync_job.id) }}">
     <strong>Synchronization job {{ netbox_sync_job.id }}</strong>
@@ -49,7 +49,7 @@
     <button class="primary"{% if netbox_sync_job and netbox_sync_job.status in ('Pending', 'Running') %} disabled{% endif %}>Queue NetBox sync</button>
   </form>
   {% else %}
-  <div class="callout"><strong>NetBox sync is not enabled.</strong> Configure the URL, a read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration home → Platform settings → NetBox connection</a>.</div>
+  <div class="callout"><strong>NetBox sync is not enabled.</strong> Configure the URL, a read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration → Connections &amp; channels → NetBox connection</a>.</div>
   {% endif %}
 </section>
 {% if netbox_sync_job %}<script src="{{ url_for('static', filename='netbox-sync.js', v=app_version) }}" defer></script>{% endif %}

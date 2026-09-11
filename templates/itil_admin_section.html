@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ title }} · {{ instance_name }}{% endblock %}
 {% block content %}
-{% set admin_page_title = title %}{% include '_admin_context.html' %}
-<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('itil_admin') }}">Service delivery and governance</a></p><h1>{{ title }}</h1><p>{{ description }}</p></div></header>
+{% set admin_page_title = title %}{% set admin_parent_title = 'Service configuration' %}{% set admin_parent_url = url_for('admin_section', section='service-configuration') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('admin_section', section='service-configuration') }}">Service configuration</a></p><h1>{{ title }}</h1><p>{{ description }}</p></div></header>
 {% set post_url = url_for('itil_admin') %}
 
 {% if section == 'ticket-defaults' %}

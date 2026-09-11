@@ -30,7 +30,7 @@
 {% from '_admin_icons.html' import admin_icon %}
 <a class="skip-link" href="#main-content">Skip to main content</a>
 {% if current_user.is_authenticated %}
-{% set admin_endpoints = ['admin_home','admin_section','itil_admin','system_settings','system_settings_section','system_settings_category','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin','data_governance_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
+{% set admin_endpoints = ['admin_home','admin_section','itil_admin','system_settings_category','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin','data_governance_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
 <script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active</div>{% endif %}
 <aside class="sidebar">
@@ -98,6 +98,15 @@
     {% endif %}
 
     {% if current_user.effective_role in ['admin','superadmin'] %}
+    {% set admin_active_section = request.view_args.get('section') if request.endpoint == 'admin_section' else none %}
+    {% if request.endpoint in ['users','user_new','user_edit','admin_sessions','admin_access','admin_roles','cmdb_permissions'] %}{% set admin_active_section = 'people-access' %}
+    {% elif request.endpoint == 'itil_admin_section' and request.view_args.get('section') in ['team-aliases','team-managers','executive-approval','governance-groups'] %}{% set admin_active_section = 'people-access' %}
+    {% elif request.endpoint in ['itil_admin','itil_admin_section'] %}{% set admin_active_section = 'service-configuration' %}
+    {% elif request.endpoint in ['integrations_admin','rt_import'] %}{% set admin_active_section = 'connections-channels' %}
+    {% elif request.endpoint == 'system_settings_category' and request.view_args.get('category') in ['email_delivery','netbox_connection','request_tracker_connection'] %}{% set admin_active_section = 'connections-channels' %}
+    {% elif request.endpoint in ['workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin'] %}{% set admin_active_section = 'automation-content' %}
+    {% elif request.endpoint in ['system_settings_category','data_governance_admin','platform_tenants','system_health','system_health_log_file','audit_log','api_clients_admin'] %}{% set admin_active_section = 'platform-security' %}
+    {% endif %}
     <details class="nav-group nav-group-admin" {% if request.endpoint in admin_endpoints %}open{% endif %}>
       <summary><span class="nav-symbol" aria-hidden="true">⚙</span><span>Administration</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items admin-area-links">
@@ -110,7 +119,7 @@
           ('platform-security','Platform & security','Identity, protection and health','security'),
         ] %}
         {% for section, label, help, icon in admin_areas %}
-        <a class="admin-area-link{% if request.endpoint == 'admin_section' and request.view_args.get('section') == section %} active{% endif %}" href="{{ url_for('admin_section', section=section) }}" {% if request.endpoint == 'admin_section' and request.view_args.get('section') == section %}aria-current="page"{% endif %}><span class="admin-area-icon">{{ admin_icon(icon) }}</span><span><strong>{{ label }}</strong><small>{{ help }}</small></span><span class="admin-area-chevron" aria-hidden="true"></span></a>
+        <a class="admin-area-link{% if admin_active_section == section %} active{% endif %}" href="{{ url_for('admin_section', section=section) }}" {% if admin_active_section == section %}aria-current="page"{% endif %}><span class="admin-area-icon">{{ admin_icon(icon) }}</span><span><strong>{{ label }}</strong><small>{{ help }}</small></span><span class="admin-area-chevron" aria-hidden="true"></span></a>
         {% endfor %}
       </div>
     </details>
