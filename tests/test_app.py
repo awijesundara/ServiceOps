@@ -6378,6 +6378,121 @@ def test_password_rotation_invalidates_other_sessions(app):
     assert stale.headers["Location"].endswith("/login")
 
 
+def test_deactivating_a_user_ends_their_live_session_immediately(app):
+    """Real bug found live: user_edit() flipped `active` to False but never
+    revoked the session or bumped auth_version (unlike the SCIM deactivation
+    path, which already did both), so a deactivated user's existing login
+    kept working for the rest of its lifetime. verify_session_version must
+    now catch `not current_user.active` the same way it already catches an
+    auth_version mismatch."""
+    admin_client = app.test_client()
+    employee_client = app.test_client()
+    assert login(admin_client).status_code == 200
+    assert login(employee_client, username="employee", password="Employee123!").status_code == 200
+    assert employee_client.get("/").status_code == 200
+    with app.app_context():
+        employee_id = User.query.filter_by(username="employee").one().id
+    response = admin_client.post(f"/admin/users/{employee_id}", data={
+        "name": "Test Employee", "email": "employee@test.invalid",
+        "granted_roles": ["requester"],
+        # "active" intentionally omitted -> bool(None) is False
+        "title": "", "department": "", "business_phone": "", "mobile_phone": "",
+        "timezone": "UTC", "date_format": "system", "calendar_integration": "None",
+    })
+    assert response.status_code == 302
+    stale = employee_client.get("/", follow_redirects=False)
+    assert stale.status_code == 302
+    assert "/login" in stale.headers["Location"]
+    with app.app_context():
+        employee = db.session.get(User, employee_id)
+        assert employee.active is False
+        assert UserSession.query.filter_by(user_id=employee.id, revoked_at=None).count() == 0
+
+
+def test_directory_login_does_not_reactivate_an_administrator_deactivated_account(app):
+    """Real bug found live: provision_external_user() force-set
+    user.active = True on every successful login, silently undoing an
+    administrator's explicit deactivation the next time the person
+    authenticated against LDAP/Keycloak -- contradicting the documented
+    "re-enablement remains an explicit administrative decision" guarantee."""
+    with app.app_context():
+        user = provision_external_user(
+            "keycloak", "subject-deactivated", "carol", "Carol",
+            "carol@example.test", "agent",
+        )
+        db.session.commit()
+        user.active = False
+        db.session.commit()
+        relogged = provision_external_user(
+            "keycloak", "subject-deactivated", "carol", "Carol",
+            "carol@example.test", "agent",
+        )
+        db.session.commit()
+        assert relogged.active is False
+
+
+def test_cloudflare_access_login_respects_lockout_and_mfa(app):
+    """Real bug found live: the Cloudflare Access branch of login() called
+    login_user() directly with no check of locked_until or mfa_enabled,
+    letting a verified edge identity bypass both controls even though
+    CLAUDE.md documents this feature as a login *shortcut* that must
+    preserve every other requirement (lockout, MFA) on the account being
+    logged into."""
+    from joserfc.jwk import RSAKey, KeySet
+    from joserfc import jwt as joserfc_jwt
+    import app as app_module
+
+    key = RSAKey.generate_key(2048, parameters={"kid": "test-kid"}, private=True)
+    key_set = KeySet([key])
+
+    def make_token(email):
+        header = {"alg": "RS256", "kid": "test-kid"}
+        claims = {"email": email, "aud": "test-aud", "exp": 9999999999}
+        return joserfc_jwt.encode(header, claims, key)
+
+    app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = "test.cloudflareaccess.com"
+    app.config["CLOUDFLARE_ACCESS_AUD"] = "test-aud"
+    app_module._cloudflare_access_jwks_cache["key_set"] = key_set
+    app_module._cloudflare_access_jwks_cache["fetched_at"] = app_module.time_module.monotonic()
+    try:
+        with app.app_context():
+            admin = User.query.filter_by(username="admin").one()
+            admin.locked_until = now() + timedelta(minutes=15)
+            db.session.commit()
+        locked_client = app.test_client()
+        response = locked_client.get(
+            "/login", headers={"Cf-Access-Jwt-Assertion": make_token("admin@example.local")},
+        )
+        assert response.status_code == 200
+        assert b"name=\"username\"" in response.data  # falls through, not logged in
+
+        with app.app_context():
+            admin = User.query.filter_by(username="admin").one()
+            admin.locked_until = None
+            admin.mfa_enabled = True
+            admin.mfa_secret_encrypted = settings_cipher().encrypt(b"JBSWY3DPEHPK3PXP").decode()
+            db.session.commit()
+        mfa_client = app.test_client()
+        response = mfa_client.get(
+            "/login", headers={"Cf-Access-Jwt-Assertion": make_token("admin@example.local")},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert b"code" in response.data.lower()  # rendered login_mfa.html, not the dashboard
+        assert mfa_client.get("/").status_code == 302  # still not actually logged in
+    finally:
+        app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = ""
+        app.config["CLOUDFLARE_ACCESS_AUD"] = ""
+        app_module._cloudflare_access_jwks_cache["key_set"] = None
+        app_module._cloudflare_access_jwks_cache["fetched_at"] = 0.0
+        with app.app_context():
+            admin = User.query.filter_by(username="admin").one()
+            admin.locked_until = None
+            admin.mfa_enabled = False
+            admin.mfa_secret_encrypted = None
+            db.session.commit()
+
+
 def test_tenant_context_fails_closed_when_authenticated_user_has_no_tenant(app):
     from flask_login import login_user
 

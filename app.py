@@ -5569,7 +5569,13 @@ def provision_external_user(
     if identity:
         user = identity.user
         user.name, user.email = name, email
-        user.active = True
+        # Deliberately does NOT force user.active = True here: an
+        # administrator deactivating a directory-linked account is an
+        # explicit access decision (the platform manual promises
+        # "re-enablement remains an explicit administrative decision"),
+        # and a successful directory bind must not silently override it.
+        # A brand-new account (below) still defaults active via the User
+        # model's own column default.
         apply_external_profile_attrs(user, profile_attrs)
         if provider == "ldap" and directory_profile is not None:
             apply_directory_profile(user, directory_profile, directory_group_names)
@@ -5604,7 +5610,9 @@ def provision_external_user(
     ).first():
         existing_user.name = name or existing_user.name
         existing_user.email = email or existing_user.email
-        existing_user.active = True
+        # Same reasoning as the returning-identity branch above: don't
+        # override an administrator's explicit deactivation just because
+        # this local account is being linked to a directory identity.
         apply_external_profile_attrs(existing_user, profile_attrs)
         if provider == "ldap" and directory_profile is not None:
             apply_directory_profile(existing_user, directory_profile, directory_group_names)
@@ -6684,9 +6692,14 @@ def create_app(test_config=None):
 
     @app.before_request
     def verify_session_version():
-        if (
-            current_user.is_authenticated
-            and session.get("_auth_version") != current_user.auth_version
+        if current_user.is_authenticated and (
+            session.get("_auth_version") != current_user.auth_version
+            # A deactivated account must lose access on its very next
+            # request, not merely at its next fresh login -- otherwise an
+            # administrator "deactivating" a user with a live session
+            # (e.g. emergency access removal) has no actual effect until
+            # that session happens to expire on its own.
+            or not current_user.active
         ):
             logout_user()
             session.clear()
@@ -8357,6 +8370,20 @@ def create_app(test_config=None):
                     func.lower(User.email) == access_claims["email"].strip().lower(),
                     User.active.is_(True),
                 ).first()
+                # A verified Access identity is a login *shortcut* into an
+                # existing account, not a bypass of that account's own
+                # standing controls (CLAUDE.md's Authentication section):
+                # a locked account must not be silently let in, and an
+                # MFA-enrolled account must still complete MFA, exactly as
+                # the local/password path below requires.
+                if sso_user and sso_user.locked_until and align_tz(sso_user.locked_until, now()) > now():
+                    audit("login_blocked", sso_user.username, "reason=locked; provider=cloudflare_access")
+                    db.session.commit()
+                    sso_user = None
+                if sso_user and sso_user.mfa_enabled:
+                    session["_mfa_pending_user_id"] = sso_user.id
+                    session["_mfa_pending_provider"] = "cloudflare_access"
+                    return redirect(url_for("login_mfa"))
                 if sso_user:
                     login_user(sso_user)
                     session.permanent = True
@@ -8405,7 +8432,7 @@ def create_app(test_config=None):
                 flash("Too many sign-in attempts. Please wait a moment and try again.", "error")
                 return response, 429
             lockout_record = User.query.filter_by(username=username).first()
-            if lockout_record and lockout_record.locked_until and lockout_record.locked_until > now():
+            if lockout_record and lockout_record.locked_until and align_tz(lockout_record.locked_until, now()) > now():
                 audit("login_blocked", username, "reason=locked")
                 db.session.commit()
                 flash("This account is temporarily locked due to repeated failed sign-ins. Try again later.", "error")
@@ -10919,7 +10946,18 @@ def create_app(test_config=None):
                     ManagedRoleGrant.query.filter_by(user_id=user.id, role=role).delete()
             db.session.flush()
             recompute_base_role(user)
+            was_active = user.active
             user.active = bool(request.form.get("active"))
+            if was_active and not user.active:
+                # Mirror the SCIM deactivation path (POST /scim/v2/Users):
+                # end every live session immediately rather than leaving a
+                # deactivated user's existing login usable until it expires
+                # on its own (see verify_session_version, which enforces
+                # both of these together on every subsequent request).
+                user.auth_version += 1
+                UserSession.query.filter_by(user_id=user.id, revoked_at=None).update(
+                    {"revoked_at": now(), "revoked_by_id": current_user.id}
+                )
             user.title = request.form.get("title", "").strip()[:120]
             user.department = request.form.get("department", "").strip()[:120]
             user.location = request.form.get("location", "").strip()[:120]
