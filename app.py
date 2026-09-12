@@ -9613,7 +9613,7 @@ def create_app(test_config=None):
             abort(403, description="You are not involved in this ticket or its assigned work.")
         if request.method == "POST":
             action = request.form.get("action")
-            if action not in ("comment", "reopen") and ticket_locked_for_edits(ticket):
+            if action not in ("comment", "reopen", "close") and ticket_locked_for_edits(ticket):
                 require_ticket_not_locked(ticket)
                 return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             if action == "comment":
@@ -9653,6 +9653,29 @@ def create_app(test_config=None):
                 audit("reopen", ticket.number, f"{before_state} -> In Progress")
                 db.session.commit()
                 flash(f"{ticket.number} reopened.", "success")
+                return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+            elif action == "close":
+                if not effective_role_has_action(current_user.effective_role, "resolve"):
+                    abort(403)
+                require_ticket_team_access(ticket)
+                if ticket.state != "Resolved":
+                    flash(f"{ticket.number} is not Resolved.", "error")
+                    return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+                before_state = ticket.state
+                try:
+                    transition_ticket(ticket, "Closed")
+                except HTTPException as error:
+                    db.session.rollback()
+                    flash(error.description or "That change could not be made.", "error")
+                    return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+                log_history(
+                    "ticket", ticket.id, "State changed", "state",
+                    before_state, ticket.state,
+                    details=f"Closed by {current_user.name}.",
+                )
+                audit("close", ticket.number, f"{before_state} -> Closed")
+                db.session.commit()
+                flash(f"{ticket.number} closed.", "success")
                 return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             elif action == "quick_resolve":
                 if not effective_role_has_action(current_user.effective_role, "resolve"):
@@ -9884,6 +9907,11 @@ def create_app(test_config=None):
             and user_can_manage_ticket(current_user, ticket)
             and effective_role_has_action(current_user.effective_role, "resolve")
         )
+        can_close = (
+            ticket.state == "Resolved"
+            and user_can_manage_ticket(current_user, ticket)
+            and effective_role_has_action(current_user.effective_role, "resolve")
+        )
         internal_view = effective_role_has_action(current_user.effective_role, "comment_internal")
         chains = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         slas = TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).all()
@@ -9902,6 +9930,7 @@ def create_app(test_config=None):
             state_track=build_state_track(ticket.kind, ticket.state),
             ticket_state_options=allowed_ticket_states(ticket), owning_group=owning_group,
             can_manage_ticket=can_manage_ticket, ticket_locked=ticket_locked, can_reopen=can_reopen,
+            can_close=can_close,
             related=related_records("ticket", ticket.id),
             relation_labels=RELATION_LABELS, work_tasks=work_tasks,
             work_task_states=OPERATIONAL_TASK_TRANSITIONS, history=history,
