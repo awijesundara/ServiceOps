@@ -13,6 +13,7 @@
     <div class="record-actions">
       <span class="record-updated">Updated {{ (ticket.updated_at|usertime('%b %d, %H:%M')) }}</span>
       {% if can_manage_ticket %}<button class="button" type="submit" form="task-record-form">Update</button>{% endif %}
+      {% if can_close %}<button class="button" type="submit" form="ticket-close-form">Close</button>{% endif %}
       {% if can_reopen %}<button class="button" type="submit" form="ticket-reopen-form">Reopen</button>{% endif %}
       {% if can_manage_ticket and ticket.kind == 'change' and not ticket.deleted_at and ticket.state in ('New', 'Awaiting Approval') %}
       <button class="button" type="submit" form="change-delete-form">Delete</button>
@@ -20,8 +21,9 @@
     </div>
   </header>
   {% if ticket.deleted_at %}<div class="record-readonly-notice">Deleted {{ (ticket.deleted_at|usertime('%b %d, %Y %H:%M')) }} by {{ ticket.deleted_by.name if ticket.deleted_by else 'an administrator' }}. Retained as Cancelled for the audit trail.</div>
-  {% elif ticket_locked %}<div class="record-readonly-notice">{{ ticket.number }} is {{ ticket.state }} and locked: only comments and notes can be added.{% if can_reopen %} Use Reopen to make other changes.{% endif %}</div>
+  {% elif ticket_locked %}<div class="record-readonly-notice">{{ ticket.number }} is {{ ticket.state }} and locked: only comments and notes can be added.{% if can_close %} Use Close to complete it, or Reopen to make other changes.{% elif can_reopen %} Use Reopen to make other changes.{% endif %}</div>
   {% endif %}
+  {% if can_close %}<form method="post" id="ticket-close-form" action="{{ url_for('ticket_detail', ticket_id=ticket.id) }}" hidden><input type="hidden" name="action" value="close"></form>{% endif %}
   {% if can_reopen %}<form method="post" id="ticket-reopen-form" action="{{ url_for('ticket_detail', ticket_id=ticket.id) }}" hidden><input type="hidden" name="action" value="reopen"></form>{% endif %}
   {% include "_csat_prompt.html" %}
   {% include "_state_track.html" %}
