@@ -4,13 +4,18 @@
 <header class="page-head"><div><p class="eyebrow">LEADERSHIP</p><h1>Manager portal</h1><p>Team workload, SLA exposure and performance across the IT fulfillment teams you manage.</p></div></header>
 {% set csv_url = url_for('manager_portal_export') %}
 {% include "_export_toolbar.html" %}
+{% if team_rows %}
+<div class="list-search" style="margin-bottom:16px">
+  <input type="search" id="manager-portal-filter" placeholder="Filter by name, title, or team" aria-label="Filter team members">
+</div>
+{% endif %}
 
 {% if not team_rows %}
 <section class="panel"><p class="empty">No IT fulfillment teams under your management.</p></section>
 {% endif %}
 
 {% for row in team_rows %}
-<section class="panel table-panel" style="margin-bottom:20px">
+<section class="panel table-panel mp-team-section" style="margin-bottom:20px" data-team-name="{{ row.group.name|lower }}">
   <header class="section-heading">
     <div>
       <h2>{{ row.group.name }}</h2>
@@ -30,7 +35,7 @@
     </tr></thead>
     <tbody>
       {% for member in member_rows_by_group.get(row.group.id, []) %}
-      <tr>
+      <tr class="mp-member-row" data-search-text="{{ (member.user.name ~ ' ' ~ (member.user.title or member.role_in_group))|lower }}">
         <td><a href="{{ url_for('user_edit', user_id=member.user.id) }}">{{ member.user.name }}</a><br><small class="muted">{{ member.user.title or member.role_in_group|capitalize }}</small></td>
         <td><span class="badge {% if member.status == 'Inactive' %}priority p4{% endif %}">{{ member.status }}</span></td>
         <td>{{ member.open_incidents }}</td>
@@ -47,4 +52,5 @@
   </table>
 </section>
 {% endfor %}
+<script src="{{ url_for('static', filename='manager-portal-filter.js', v=app_version) }}" defer></script>
 {% endblock %}

@@ -79,3 +79,9 @@ input[disabled],input[readonly]{overflow:hidden;text-overflow:ellipsis}
 .identity-cell strong{display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .identity-cell small{display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 @media(max-width:560px){td .truncate,.identity-cell strong,.identity-cell small{max-width:46vw}}
+/* .panel{display:flex} is an author-stylesheet rule, so it beats the UA
+   stylesheet's [hidden]{display:none} at equal specificity regardless of
+   selector order -- toggling .hidden on a .panel-classed element (e.g. the
+   manager portal's per-team sections) needs this explicit override or it
+   silently keeps rendering. */
+.panel[hidden]{display:none}

@@ -207,6 +207,34 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   if (detailClose) detailClose.addEventListener("click", () => { detailPanel.hidden = true; });
 
+  // "Jump to a configuration item" search (see cmdb_topology.html): selecting
+  // a CI reveals it plus its direct neighbors (and, if that neighbor is a
+  // switch/router, its other connected devices too) without requiring the
+  // user to manually drill down through collapsed backbone nodes first.
+  const jumpToHidden = document.querySelector("#cmdb-topology-jump-to input[type=\"hidden\"]");
+  function focusNodeById(rawId) {
+    const id = Number(rawId);
+    const node = nodeById.get(id);
+    if (!node) return;
+    node.expanded = true;
+    allEdges.forEach((edge) => {
+      const neighbor = edge.source.id === node.id ? edge.target : (edge.target.id === node.id ? edge.source : null);
+      if (!neighbor) return;
+      neighbor.expanded = true;
+      if (["switch", "router"].includes((neighbor.ci_class || "").toLowerCase())) neighbor.expandedChildren = true;
+    });
+    rebuild();
+    showDetail(node);
+    panX = node.x - (width / zoom) / 2;
+    panY = node.y - (height / zoom) / 2;
+    applyViewBox();
+  }
+  if (jumpToHidden) {
+    jumpToHidden.addEventListener("lookup:change", (event) => {
+      if (event.detail && event.detail.value != null) focusNodeById(event.detail.value);
+    });
+  }
+
   const nodeGroups = nodes.map((node) => {
     const group = document.createElementNS(svgNS, "g");
     group.style.cursor = "pointer";
