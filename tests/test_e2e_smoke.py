@@ -115,6 +115,54 @@ CORE_WORKFLOWS = (
     ("client-management", "/client-management"),
 )
 
+# Every page carrying a .task-list-scroll wide table, for the dedicated
+# laptop-width (1024-1440px) no-horizontal-scroll check below. audit-evidence
+# is deliberately excluded (see the comment in the test that checks it at
+# 1440px) since every one of its columns carries distinct forensic detail
+# that column-hiding would remove rather than just declutter.
+WIDE_TABLE_PAGES = (
+    ("tickets-incident", "/tickets/incident"),
+    ("tickets-change", "/tickets/change"),
+    ("requests", "/requests"),
+    ("assets", "/assets"),
+    ("known-errors", "/known-errors"),
+    ("improvements", "/improvements"),
+    ("cmdb", "/cmdb"),
+    ("system-health", "/admin/system-health"),
+    ("system-health-logs", "/admin/system-health/logs"),
+    ("module-records-problem", "/module/problem"),
+)
+
+
+@pytest.fixture(params=[
+    pytest.param({"name": "laptop-narrow", "width": 1024, "height": 768}, id="laptop-narrow"),
+    pytest.param({"name": "laptop-wide", "width": 1440, "height": 900}, id="laptop-wide"),
+])
+def laptop_width_page(browser, authenticated_storage, request):
+    viewport = request.param
+    context = browser.new_context(
+        viewport={"width": viewport["width"], "height": viewport["height"]},
+        storage_state=authenticated_storage,
+    )
+    page = context.new_page()
+    try:
+        yield page, viewport["name"]
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("journey,path", WIDE_TABLE_PAGES, ids=[item[0] for item in WIDE_TABLE_PAGES])
+def test_wide_table_fits_without_horizontal_scroll_at_laptop_widths(laptop_width_page, journey, path):
+    page, viewport_name = laptop_width_page
+    response = page.goto(f"{BASE_URL}{path}", wait_until="networkidle")
+    assert response and response.ok, f"{journey} returned HTTP {response.status if response else 'no response'}"
+    overflow = page.evaluate(
+        """() => Array.from(document.querySelectorAll('.task-list-scroll'))
+            .filter(el => el.scrollWidth > el.clientWidth + 1)
+            .map(el => ({scrollWidth: el.scrollWidth, clientWidth: el.clientWidth}))"""
+    )
+    assert not overflow, f"{journey} has a horizontally-scrolling .task-list at {viewport_name}: {overflow}"
+
 
 @pytest.mark.parametrize("journey,path", CORE_WORKFLOWS, ids=[item[0] for item in CORE_WORKFLOWS])
 def test_critical_journey_is_responsive_error_free_and_accessible(authenticated_page, journey, path):
@@ -148,3 +196,16 @@ def test_critical_journey_is_responsive_error_free_and_accessible(authenticated_
         + "; ".join(f"{item['id']} ({len(item['nodes'])} nodes)" for item in blocking)
     )
     assert console_errors == [], f"{journey} console errors at {viewport_name}: {console_errors}"
+    # Wide ticket/task tables (.task-list) were redesigned to fit laptop
+    # widths (1024-1440px) via progressive column-hiding instead of relying
+    # on the horizontal scroll-shadow; at this fixture's 1440px "desktop"
+    # width every such table should now fit with no overflow. The audit
+    # trail is a deliberate, documented exception (every column carries
+    # distinct forensic detail) and keeps the scroll-shadow treatment.
+    if viewport_name == "desktop" and journey != "audit-evidence":
+        overflow = page.evaluate(
+            """() => Array.from(document.querySelectorAll('.task-list-scroll'))
+                .filter(el => el.scrollWidth > el.clientWidth + 1)
+                .map(el => ({scrollWidth: el.scrollWidth, clientWidth: el.clientWidth}))"""
+        )
+        assert not overflow, f"{journey} still has a horizontally-scrolling .task-list at 1440px: {overflow}"
