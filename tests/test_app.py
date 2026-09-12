@@ -1820,6 +1820,39 @@ def test_login_and_dashboard(client):
     assert b'aria-modal="true" aria-labelledby="ci-browser-title"' in response.data
 
 
+def test_notification_bell_previews_recent_items_without_sidebar_link(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        create_notification(
+            admin.id, "Change approval required", "Review CHG0010557 before its window.",
+            tenant_id=admin.tenant_id,
+        )
+        db.session.commit()
+
+    response = login(client)
+
+    assert response.status_code == 200
+    assert b'data-nav-menu="notifications"' in response.data
+    assert b"Change approval required" in response.data
+    assert b"Review CHG0010557 before its window." in response.data
+    assert b"View all notifications" in response.data
+    assert b'href="/notifications"' in response.data
+    assert b">Notifications</a>" not in response.data
+
+
+def test_client_ticket_filter_control_uses_toolbar_button_dimensions(client):
+    login(client)
+
+    page = client.get("/client-management/tickets")
+    stylesheet = client.get("/static/client-management.css")
+
+    assert page.status_code == 200
+    assert b'class="list-filter-toggle"' in page.data
+    assert b'class="button">Save as view</summary>' in page.data
+    assert b".client-toolbar .list-filter{align-self:stretch;margin:0}" in stylesheet.data
+    assert b".client-toolbar .list-filter .list-filter-toggle{height:100%;min-height:40px" in stylesheet.data
+
+
 def test_declarative_action_policy_and_requester_field_projection(client, app):
     assert validate_policy()
     assert role_has_action("requester", "comment_public")
