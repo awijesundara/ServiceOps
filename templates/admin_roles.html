@@ -8,7 +8,7 @@
   <form method="post">
     <input type="hidden" name="action" value="save">
     <div class="task-list-scroll">
-      <table>
+      <table class="role-matrix">
         <thead><tr>
           <th>Action</th>
           {% for role in role_actions.keys() %}<th>{{ role|capitalize }}{% if role not in editable_roles %} <small class="muted">(fixed)</small>{% endif %}</th>{% endfor %}

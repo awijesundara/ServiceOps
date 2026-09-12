@@ -651,6 +651,55 @@ def test_audit_log_page_paginates_and_defers_integrity_check(client, app):
     assert filtered.status_code == 200
 
 
+def test_audit_log_supports_structured_filtering_by_user_and_action(client, app):
+    """Regression test for a real reported gap: /admin/audit only had a
+    single free-text box searching action/target, with no way to narrow by
+    who performed an action, when, or from where. Extends the same
+    ServiceNow-style filter framework tickets/cmdb already use
+    (parse_list_filter_param/apply_filter_conditions) rather than a
+    bespoke mechanism."""
+    with app.app_context():
+        manager = User.query.filter_by(username="database.manager").one()
+        admin = User.query.filter_by(username="admin").one()
+        manager_id, admin_id = manager.id, admin.id
+        audit("filter test marker", "FilterTargetA", user_id=manager_id)
+        audit("filter test marker", "FilterTargetB", user_id=admin_id)
+        db.session.commit()
+    login(client)
+
+    by_user = client.get("/admin/audit?filter=" + quote(json.dumps(
+        [{"field": "user_id", "op": "eq", "value": str(manager_id)}]
+    )))
+    assert b"FilterTargetA" in by_user.data
+    assert b"FilterTargetB" not in by_user.data
+    assert b"User is Database Manager" in by_user.data
+
+    by_action_and_target = client.get("/admin/audit?filter=" + quote(json.dumps(
+        [{"field": "action", "op": "eq", "value": "filter test marker"},
+         {"field": "target", "op": "eq", "value": "FilterTargetB"}]
+    )))
+    assert b"FilterTargetB" in by_action_and_target.data
+    assert b"FilterTargetA" not in by_action_and_target.data
+
+
+def test_audit_log_shows_user_display_name_and_extra_security_context(client, app):
+    """Regression test for a real reported gap: the User column showed only
+    the bare username, and several already-captured security_context_json
+    fields (request host, content type, API client id) were never
+    surfaced, even though audit_security_context() has always recorded
+    them. No new capture, no schema change -- just showing what's already
+    collected."""
+    login(client)
+    page = client.get("/admin/audit")
+    assert b"System Administrator" in page.data  # display name, not just "admin"
+    with app.app_context():
+        row = Audit.query.filter_by(action="login").order_by(Audit.id.desc()).first()
+        assert row is not None
+        security = json.loads(row.security_context_json)
+        assert security.get("request_host")
+    assert b"Host:" in page.data
+
+
 def test_audit_verify_degrades_gracefully_when_a_signing_key_is_undecryptable(client, app):
     """Found via a real recovery-rehearsal run against a long-lived dev
     database (B-009/B-004): an audit event signed under a key whose
@@ -1302,6 +1351,92 @@ def test_audit_outbox_never_routes_to_smtp(monkeypatch, app):
         event = OutboxEvent.query.one()
         assert event.state == "Completed"
         assert event.last_error == "No delivery channels enabled."
+
+
+def test_process_outbox_reclaims_a_stale_processing_event(app):
+    """Regression test for process_outbox()'s claim/persist split: it no
+    longer commits once at the end of a whole batch (holding a row lock
+    across every event's network I/O the entire time -- the same class of
+    bug fixed via load testing in the FlowOps webhook dispatcher). Instead
+    it claims each event into a short-lived "Processing" lease and commits
+    immediately, then persists each event's own outcome as soon as that
+    event finishes. A worker that crashes between those two points leaves
+    an event stuck in "Processing" -- this proves such an event is treated
+    as claimable again once its lease (available_at) has expired, so it
+    self-heals on the very next call instead of being lost or stuck
+    forever."""
+    with app.app_context():
+        db.session.add(PlatformSetting(key="SMTP_ENABLED", value="false", encrypted=False))
+        db.session.add(OutboxEvent(
+            event_type="audit.created", payload_json=json.dumps({"action": "stale claim"}),
+            state="Processing", available_at=now() - timedelta(minutes=1),
+        ))
+        db.session.commit()
+        assert process_outbox() == 1
+        event = OutboxEvent.query.one()
+        assert event.state == "Completed"
+
+
+def test_process_outbox_does_not_reclaim_a_still_leased_processing_event(app):
+    """The other half of the same guarantee: an event another (still-live)
+    worker claimed a moment ago -- "Processing" with a lease that hasn't
+    expired yet -- must not be picked up again. Without this, two workers
+    could both deliver the same webhook/notification concurrently."""
+    with app.app_context():
+        db.session.add(OutboxEvent(
+            event_type="audit.created", payload_json=json.dumps({"action": "in flight"}),
+            state="Processing", available_at=now() + timedelta(minutes=30),
+        ))
+        db.session.commit()
+        assert process_outbox() == 0
+        event = OutboxEvent.query.one()
+        assert event.state == "Processing"
+
+
+def test_process_outbox_commits_each_event_independently(monkeypatch, app):
+    """The actual fix, proven directly: with the old single-commit-at-the-
+    end design, a failure while processing the *second* of two claimed
+    events would leave the first event's already-successful delivery
+    uncommitted too (a real redelivery/duplicate-side-effect risk on
+    process crash). Committing per event means the first event's outcome
+    is durable before the second event is even attempted."""
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        create_notification(admin.id, "First", "First body")
+        create_notification(admin.id, "Second", "Second body")
+        db.session.commit()
+        first_id, second_id = [row.id for row in OutboxEvent.query.order_by(OutboxEvent.id).all()]
+
+        original_commit = db.session.commit
+        commit_count = {"n": 0}
+
+        def failing_second_commit():
+            commit_count["n"] += 1
+            # Commit #1 is the claim phase (both events -> "Processing");
+            # commit #2 is the first event's own persist. Fail on #3, the
+            # second event's persist, so the first event's commit has
+            # already genuinely succeeded by the time the "crash" hits.
+            if commit_count["n"] == 3:
+                raise RuntimeError("simulated crash while processing the second event")
+            return original_commit()
+
+        monkeypatch.setattr(db.session, "commit", failing_second_commit)
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            process_outbox()
+        # The session's failed commit leaves it unusable until rolled back --
+        # exactly what a fresh process (the real-world equivalent of "crash
+        # and restart") would do naturally.
+        db.session.rollback()
+        first_event = db.session.get(OutboxEvent, first_id)
+        second_event = db.session.get(OutboxEvent, second_id)
+        assert first_event.state == "Completed", (
+            "the first event's outcome must be durable even though a later "
+            "event in the same batch crashed before its own commit"
+        )
+        assert second_event.state == "Processing", (
+            "the crashed event is left claimed, not lost -- it self-heals "
+            "once its lease expires (see the reclaim test above)"
+        )
 
 
 def test_google_workspace_oauth2_smtp_refresh_and_xoauth2(monkeypatch, app):
