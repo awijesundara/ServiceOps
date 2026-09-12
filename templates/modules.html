@@ -2,14 +2,13 @@
 {% block title %}All workspaces · {{ instance_name }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">ENTERPRISE WORKFLOWS</p><h1>All workspaces</h1><p>Connected operations across technology, employees, customers, security, and the business.</p></div></header>
-<section class="module-grid">
+<section class="responsive-card-grid module-grid">
 {% for key, module in modules.items() %}
   {% if current_user.effective_role != 'requester' or key in ['customer','hr'] %}
   <a class="panel module-card" href="{{ url_for('module_records', domain=key) }}">
-    <span class="module-icon">{{ module.prefix }}</span><div class="module-card-body"><div class="module-card-head"><h2>{{ module.name }}</h2><span class="module-card-arrow" aria-hidden="true">→</span></div><p>{{ module.types|join(' · ') }}</p><span class="module-card-count">{{ counts[key] }} record{{ '' if counts[key] == 1 else 's' }}</span></div>
+    <span class="module-icon">{{ module.prefix }}</span><div class="module-card-body"><div class="module-card-head"><h2>{{ module.name }}</h2><span class="module-card-arrow" aria-hidden="true">→</span></div><p>{{ module.types|join(' · ') }}</p><span class="module-card-count card-footer">{{ counts[key] }} record{{ '' if counts[key] == 1 else 's' }}</span></div>
   </a>
   {% endif %}
 {% endfor %}
 </section>
 {% endblock %}
-
