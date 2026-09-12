@@ -15205,17 +15205,47 @@ def create_app(test_config=None):
                 if needle in chain.name.lower()
                 or needle in f"{chain.target_type} #{chain.target_id}".lower()
             ]
+        # A material change to an approved change ticket doesn't edit the old
+        # ApprovalChain -- it creates a whole new one against the same
+        # (target_type, target_id) (see create_approval_chain() call sites;
+        # the change-reapproval path names each one "... vN" from
+        # ChangeRevision.revision). Left flat, a single real approval
+        # process shows up as several unrelated-looking rows (v3/v2/v1).
+        # Group by target so the latest chain is the visible row and older
+        # ones collapse into its history -- chains is already created_at
+        # desc, so the first chain seen per target is the latest.
+        groups_by_target = {}
+        group_order = []
+        for chain in chains:
+            key = (chain.target_type, chain.target_id)
+            if key not in groups_by_target:
+                groups_by_target[key] = {
+                    "target_type": chain.target_type, "target_id": chain.target_id,
+                    "latest": chain, "history": [],
+                }
+                group_order.append(key)
+            else:
+                groups_by_target[key]["history"].append(chain)
+        groups = [groups_by_target[key] for key in group_order]
+        for group in groups:
+            # Only strip the "... vN" reapproval-revision suffix (see the
+            # change-authorization naming above) when there's real history
+            # to justify it -- a lone chain keeps its exact stored name.
+            if group["history"]:
+                group["display_name"] = re.sub(r"\s+v\d+$", "", group["latest"].name)
+            else:
+                group["display_name"] = group["latest"].name
         try:
             page = max(1, int(request.args.get("page", "1")))
         except ValueError:
             page = 1
         per_page = 50
-        total = len(chains)
+        total = len(groups)
         pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, pages)
-        page_chains = chains[(page - 1) * per_page: page * per_page]
+        page_groups = groups[(page - 1) * per_page: page * per_page]
         return render_template(
-            "approval_chains.html", chains=page_chains, pending=pending,
+            "approval_chains.html", groups=page_groups, pending=pending,
             delegated_pending=delegated_pending, q=q, page=page, pages=pages, total=total,
         )
 

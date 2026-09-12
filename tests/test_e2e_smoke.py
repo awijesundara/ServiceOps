@@ -204,6 +204,30 @@ def test_card_rows_are_content_driven_equal_height_and_aligned(authenticated_pag
                 assert max(item["footerBottom"] for item in footers) - min(item["footerBottom"] for item in footers) <= 1
 
 
+def test_client_management_toolbar_buttons_share_a_consistent_height(authenticated_page):
+    """The generic .list-workspace pages (tickets, CMDB, users, audit) get
+    their Search/Filter/pagination controls normalized to a shared height
+    via a `.list-workspace .list-filter-toggle` rule in admin-workspace.css.
+    Client Management's ticket list uses its own .client-toolbar wrapper
+    instead of .list-workspace, so that rule never matched and the Filter
+    button rendered visibly shorter than its Search/Save as view siblings."""
+    page, viewport_name, _ = authenticated_page
+    response = page.goto(f"{BASE_URL}/client-management/tickets", wait_until="networkidle")
+    assert response and response.ok
+    if viewport_name == "mobile":
+        return
+    heights = page.evaluate(
+        """() => {
+            const search = document.querySelector('.client-toolbar .list-search > button');
+            const filterToggle = document.querySelector('.client-toolbar .list-filter-toggle');
+            const saveAsView = document.querySelector('.client-toolbar .save-view > summary');
+            return [search, filterToggle, saveAsView].map(el => el ? Math.round(el.getBoundingClientRect().height) : null);
+        }"""
+    )
+    assert None not in heights, f"expected Search, Filter, and Save as view all present: {heights}"
+    assert max(heights) - min(heights) <= 1, f"toolbar buttons have mismatched heights: {heights}"
+
+
 @pytest.mark.parametrize("journey,path", CORE_WORKFLOWS, ids=[item[0] for item in CORE_WORKFLOWS])
 def test_critical_journey_is_responsive_error_free_and_accessible(authenticated_page, journey, path):
     page, viewport_name, console_errors = authenticated_page
