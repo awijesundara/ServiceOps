@@ -20,7 +20,7 @@
     <div class="record-grid">
       <label><span>Number</span><input value="Assigned on creation" disabled></label>
       <label><span>Contact type</span><select name="contact_type">{% for opt in ['Self-service','Phone','Email','Chat','Monitoring'] %}<option {% if (f and f.get('contact_type')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
-      <label class="required-field"><span>Caller</span><input value="{{ current_user.name }} · {{ current_user.email }}" disabled></label>
+      <label class="required-field"><span>Caller</span><input value="{{ current_user.name }} · {{ current_user.email }}" title="{{ current_user.name }} · {{ current_user.email }}" disabled></label>
       <label><span>State</span><input value="New" disabled></label>
       <label><span>Category</span><select name="category">{% for opt in ['General','Access','Hardware','Software','Network','Security'] %}<option {% if (f and f.get('category')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
       <label class="required-field"><span>Impact</span><select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('impact')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
