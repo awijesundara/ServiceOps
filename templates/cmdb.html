@@ -76,20 +76,20 @@
     {% if current_user.effective_role in ['admin','superadmin'] %}<th></th>{% endif %}
   </tr></thead><tbody>
     {% for ci in visible_cis %}<tr>
-      <td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}"><strong>{{ ci.name }}</strong></a>{% if ci.serial_number %}<br><small class="muted">S/N {{ ci.serial_number }}</small>{% endif %}</td>
+      <td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}"><strong class="truncate" title="{{ ci.name }}">{{ ci.name }}</strong></a>{% if ci.serial_number %}<br><small class="muted">S/N {{ ci.serial_number }}</small>{% endif %}</td>
       <td data-col="ci_class">{{ ci.ci_class }}</td>
       <td data-col="environment">{{ ci.environment }}</td>
       <td data-col="operational_status"><span class="badge">{{ ci.operational_status }}</span></td>
       <td data-col="lifecycle_state">{{ ci.lifecycle_state }}</td>
       <td data-col="business_criticality">{{ ci.business_criticality }}</td>
-      <td data-col="location">{{ ci.location or '—' }}</td>
-      <td data-col="support_group">{{ ci.support_group.name if ci.support_group else 'Unassigned' }}</td>
+      <td data-col="location"><span class="truncate" title="{{ ci.location or '' }}">{{ ci.location or '—' }}</span></td>
+      <td data-col="support_group"><span class="truncate" title="{{ ci.support_group.name if ci.support_group else 'Unassigned' }}">{{ ci.support_group.name if ci.support_group else 'Unassigned' }}</span></td>
       <td data-col="ip_address">{{ ci.ip_address or '—' }}</td>
-      <td data-col="vendor">{{ ci.vendor or '—' }}</td>
-      <td data-col="model">{{ ci.model or '—' }}</td>
+      <td data-col="vendor"><span class="truncate" title="{{ ci.vendor or '' }}">{{ ci.vendor or '—' }}</span></td>
+      <td data-col="model"><span class="truncate" title="{{ ci.model or '' }}">{{ ci.model or '—' }}</span></td>
       <td data-col="cost_center">{{ ci.cost_center or '—' }}</td>
       <td data-col="discovery_source">{{ ci.discovery_source }}</td>
-      <td data-col="owner">{{ ci.owner.name if ci.owner else '—' }}</td>
+      <td data-col="owner"><span class="truncate" title="{{ ci.owner.name if ci.owner else '' }}">{{ ci.owner.name if ci.owner else '—' }}</span></td>
       <td data-col="install_date">{{ ci.install_date.strftime('%Y-%m-%d') if ci.install_date else '—' }}</td>
       <td data-col="warranty_expiry_date">{{ ci.warranty_expiry_date.strftime('%Y-%m-%d') if ci.warranty_expiry_date else '—' }}</td>
       {% for key in extra_attribute_keys %}<td data-col="attr:{{ key }}">{{ (ci.attributes or {}).get(key) or '—' }}</td>{% endfor %}
