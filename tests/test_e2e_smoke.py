@@ -99,6 +99,9 @@ def authenticated_page(browser, authenticated_storage, request):
 
 CORE_WORKFLOWS = (
     ("dashboard", "/"),
+    ("all-workspaces", "/modules"),
+    ("service-catalog", "/catalog"),
+    ("serviceops-mobile", "/mobile-app"),
     ("administration", "/admin"),
     ("administration-connections", "/admin/section/connections-channels"),
     ("administration-platform", "/admin/section/platform-security"),
@@ -113,6 +116,12 @@ CORE_WORKFLOWS = (
     ("cmdb", "/cmdb"),
     ("cmdb-import", "/cmdb/import"),
     ("client-management", "/client-management"),
+)
+
+CARD_LAYOUT_PAGES = (
+    ("all-workspaces", "/modules", ".module-card"),
+    ("service-catalog", "/catalog", ".catalog-item"),
+    ("serviceops-mobile", "/mobile-app", ".mobile-card"),
 )
 
 # Every page carrying a .task-list-scroll wide table, for the dedicated
@@ -162,6 +171,37 @@ def test_wide_table_fits_without_horizontal_scroll_at_laptop_widths(laptop_width
             .map(el => ({scrollWidth: el.scrollWidth, clientWidth: el.clientWidth}))"""
     )
     assert not overflow, f"{journey} has a horizontally-scrolling .task-list at {viewport_name}: {overflow}"
+
+
+@pytest.mark.parametrize("journey,path,selector", CARD_LAYOUT_PAGES, ids=[item[0] for item in CARD_LAYOUT_PAGES])
+def test_card_rows_are_content_driven_equal_height_and_aligned(authenticated_page, journey, path, selector):
+    page, viewport_name, _ = authenticated_page
+    response = page.goto(f"{BASE_URL}{path}", wait_until="networkidle")
+    assert response and response.ok
+    cards = page.locator(selector)
+    assert cards.count() > 0
+    measurements = cards.evaluate_all(
+        """cards => cards.map(card => {
+            const box = card.getBoundingClientRect();
+            const footer = card.querySelector('.card-footer');
+            return {
+                top: Math.round(box.top),
+                height: Math.round(box.height),
+                width: Math.round(box.width),
+                footerBottom: footer ? Math.round(footer.getBoundingClientRect().bottom) : null
+            };
+        })"""
+    )
+    assert all(item["width"] > 0 and item["height"] > 0 for item in measurements)
+    if viewport_name != "mobile":
+        rows = {}
+        for item in measurements:
+            rows.setdefault(item["top"], []).append(item)
+        for row in rows.values():
+            assert max(item["height"] for item in row) - min(item["height"] for item in row) <= 1
+            footers = [item for item in row if item["footerBottom"] is not None]
+            if len(footers) > 1:
+                assert max(item["footerBottom"] for item in footers) - min(item["footerBottom"] for item in footers) <= 1
 
 
 @pytest.mark.parametrize("journey,path", CORE_WORKFLOWS, ids=[item[0] for item in CORE_WORKFLOWS])

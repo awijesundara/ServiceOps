@@ -2386,6 +2386,8 @@ def test_catalog_request_and_cmdb(client, app):
     login(client, "employee", "Employee123!")
     catalog = client.get("/catalog")
     assert b"Laptop computer" in catalog.data
+    assert b'responsive-card-grid catalog-grid' in catalog.data
+    assert b'form class="card-footer"' in catalog.data
     ordered = client.post("/catalog/1/order", data={"details": "Laptop for remote work"}, follow_redirects=True)
     assert b"REQ0000001" in ordered.data
     assert b"RITM0000001" in ordered.data
@@ -4024,6 +4026,8 @@ def test_mobile_app_page_is_authenticated_searchable_and_actionable(client):
     assert b"ServiceOps_iOS" in response.data
     assert b"iOS 1.3.2 (8)" in response.data
     assert b"wijesundara.com.ServiceOps" in response.data
+    assert b'responsive-card-grid mobile-card-grid' in response.data
+    assert response.data.count(b'panel mobile-card') == 4
 
 
 def test_profile_and_user_administration_are_tenant_and_role_governed(client, app):
