@@ -4,7 +4,7 @@
 {% set parent_title = 'Connections & channels' if admin_section_key == 'connections-channels' else 'Platform & security' %}
 {% set admin_page_title = title %}{% set admin_parent_title = parent_title %}{% set admin_parent_url = url_for('admin_section', section=admin_section_key) %}{% include '_admin_context.html' %}
 <div class="settings-console admin-console admin-console-single">
-<section class="settings-console-main settings-reveal">
+<section class="settings-console-main">
 <header class="settings-page-head"><div><p class="eyebrow">{{ parent_title|upper }}</p><h1>{{ title }}</h1><p>{{ description }}</p></div><span class="settings-page-symbol" aria-hidden="true">⚙</span></header>
 {% if category == 'infrastructure' %}
 <section class="panel settings-section">
