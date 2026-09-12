@@ -853,6 +853,19 @@ def authenticate_api_request():
     token_hash = api_token_hash(token)
     client = APIClient.query.filter_by(token_hash=token_hash, active=True).first()
     if not client or not hmac.compare_digest(client.token_hash, token_hash):
+        # Unlike the web login form, an invalid bearer token previously hit
+        # this 401 with no rate limiting at all -- enforce_api_rate_limit()
+        # below only runs once a *valid* client has already been resolved,
+        # so brute-forcing random tokens against /api/v1 or /scim/v2 was
+        # entirely unthrottled. Reuses the same per-IP windowed counter the
+        # login/MFA routes already use.
+        ip = request.remote_addr or "unknown"
+        allowed = route_rate_limit(
+            "api_invalid_token", f"ip:{ip}", setting_int("API_INVALID_TOKEN_RATE_LIMIT_PER_IP_PER_MINUTE", 30),
+        )
+        db.session.commit()
+        if not allowed:
+            abort(429, description="Too many invalid API token attempts. Try again later.")
         abort(401, description="The API token is invalid or revoked.")
     if client.access_expires_at and align_tz(client.access_expires_at, now()) <= now():
         abort(401, description="The mobile session has expired.")
@@ -961,6 +974,7 @@ def record_request_metric(method, status_code, duration_ms):
 
 
 _ipfs_rate_limit_windows = {}
+_ipfs_rate_limit_lock = threading.Lock()
 
 
 def _ipfs_route_rate_limit(scope, key, limit, window_seconds):
@@ -969,19 +983,25 @@ def _ipfs_route_rate_limit(scope, key, limit, window_seconds):
     live only in this process's memory, so they reset on every restart
     and aren't shared across multiple app instances -- acceptable for now
     since IPFS mode is already constrained to a single app process (see
-    the storage-mode plan's "Deployment/process shape" section)."""
+    the storage-mode plan's "Deployment/process shape" section). That
+    single-process constraint only rules out cross-process races, not
+    cross-thread ones -- gunicorn's gthread worker class runs several
+    request-handling threads inside that one process, so the
+    read-increment-write below is guarded by a lock rather than relying
+    on the GIL to make it atomic across the two dict operations."""
     composite_key = f"{scope}:{key}"[:160]
     current = now()
     epoch_start = (int(current.timestamp()) // window_seconds) * window_seconds
     window_start = datetime.fromtimestamp(epoch_start, tz=timezone.utc)
-    # Opportunistic cleanup of stale windows so this dict doesn't grow
-    # unboundedly for the lifetime of a long-running process.
-    stale_cutoff = window_start - timedelta(hours=1)
-    for existing_key, existing_window in list(_ipfs_rate_limit_windows):
-        if existing_window < stale_cutoff:
-            del _ipfs_rate_limit_windows[(existing_key, existing_window)]
-    count = _ipfs_rate_limit_windows.get((composite_key, window_start), 0) + 1
-    _ipfs_rate_limit_windows[(composite_key, window_start)] = count
+    with _ipfs_rate_limit_lock:
+        # Opportunistic cleanup of stale windows so this dict doesn't grow
+        # unboundedly for the lifetime of a long-running process.
+        stale_cutoff = window_start - timedelta(hours=1)
+        for existing_key, existing_window in list(_ipfs_rate_limit_windows):
+            if existing_window < stale_cutoff:
+                del _ipfs_rate_limit_windows[(existing_key, existing_window)]
+        count = _ipfs_rate_limit_windows.get((composite_key, window_start), 0) + 1
+        _ipfs_rate_limit_windows[(composite_key, window_start)] = count
     if count > limit:
         g.rate_limit_retry_after = max(1, window_seconds - int((current - window_start).total_seconds()))
         return False
@@ -1093,9 +1113,25 @@ def api_ctask_document(task):
     }
 
 
-def api_idempotency_context():
+def api_idempotency_context(required=True):
+    """`required=False` is for endpoints that predate this mechanism and
+    whose OpenAPI contract has never documented Idempotency-Key as
+    required -- an already-shipped client (the native mobile app) can't
+    be assumed to send it, so making it mandatory now would break that
+    client outright rather than add safety. Those callers still get
+    real dedupe/replay protection when a client *does* send the header
+    (new clients, or the app once it's updated to), just without forcing
+    every existing caller to start sending one immediately. Returns
+    (None, None, None) when optional and no key was sent, so callers
+    should skip store_api_idempotency() in that case."""
     key = request.headers.get("Idempotency-Key", "").strip()
-    if not key or len(key) > 128 or not re.fullmatch(r"[A-Za-z0-9._:-]+", key):
+    if not key:
+        if not required:
+            return None, None, None
+        abort(400, description=(
+            "Idempotency-Key is required and must contain 1-128 safe characters."
+        ))
+    if len(key) > 128 or not re.fullmatch(r"[A-Za-z0-9._:-]+", key):
         abort(400, description=(
             "Idempotency-Key is required and must contain 1-128 safe characters."
         ))
@@ -1123,6 +1159,8 @@ def api_idempotency_context():
 
 
 def store_api_idempotency(key, request_hash, response_body, status):
+    if key is None:  # optional idempotency (see api_idempotency_context) and none was sent
+        return
     db.session.add(APIIdempotencyRecord(
         api_client_id=g.api_client.id,
         idempotency_key=key,
@@ -1234,6 +1272,18 @@ def setting_value(key, default=None):
     try:
         row = db.session.get(PlatformSetting, key)
     except Exception:
+        # Deliberately still falls back rather than raising -- this is called
+        # pervasively for feature flags/thresholds throughout request
+        # handling, and a transient DB hiccup shouldn't take down every
+        # feature gated by a setting lookup. But it was previously silent,
+        # so a real, ongoing DB problem degraded every setting app-wide with
+        # no trace in the logs. Log it instead -- via the stdlib logger by
+        # name (matching Flask's own app.logger, which is just
+        # logging.getLogger(app.import_name)) rather than current_app,
+        # since setting_value() is called from places with no active app
+        # context (e.g. serviceops_core helpers exercised directly in
+        # tests), and current_app itself would raise in that situation.
+        logging.getLogger("app").exception("Unable to read platform setting %s", key)
         return fallback
     if not row:
         return fallback
@@ -1605,11 +1655,51 @@ def deliver_webhook(event, connection):
     raise RuntimeError("Webhook delivery exceeded the maximum redirect hops.")
 
 
+# Worst realistic case for the claim lease below: `limit` events each
+# attempting up to 3 channels (apns/smtp/webhook-or-connection) at the
+# per-request timeout used throughout this module (10s) -- rounded up
+# generously so a merely-slow (not stuck) batch never has an event's
+# lease expire out from under it mid-processing.
+OUTBOX_CLAIM_LEASE_SECONDS = 1800
+
+
 def process_outbox(limit=50):
+    """Claims due events, delivers them, and records each outcome.
+
+    Claiming and persisting are separate, short transactions so no
+    database transaction -- and therefore no row lock -- is held across
+    the actual outbound network calls, which can take up to ~10s each and
+    are attempted for as many as `limit` events in one pass. The
+    previous version claimed the whole batch with one
+    `SELECT ... FOR UPDATE` and committed once at the very end, holding
+    that lock (and a pooled connection) for the full batch's worst-case
+    delivery time: a single slow or unreachable channel held up every
+    other event in the batch, and a crash mid-batch rolled back
+    already-recorded deliveries for events that had, in fact, already
+    gone out -- the same class of bug found and fixed via load testing
+    in the FlowOps webhook dispatcher (see that project's server.py).
+
+    Claiming moves each event straight to "Processing" and commits
+    immediately, which both releases the row lock right away and stops
+    any other worker (multiple gunicorn workers/replicas all run this
+    loop) from picking up the same event. A "Processing" event whose
+    lease (`available_at`) has expired is treated as claimable again, so
+    a crash between claim and persist just delays that one event by up
+    to OUTBOX_CLAIM_LEASE_SECONDS rather than losing or double-delivering
+    it -- self-healing on the very next call, with no separate sweep.
+    """
+    claim_deadline = now() + timedelta(seconds=OUTBOX_CLAIM_LEASE_SECONDS)
     events = OutboxEvent.query.filter(
-        OutboxEvent.state.in_(["Pending", "Retry"]),
-        OutboxEvent.available_at <= now(),
+        db.or_(
+            db.and_(OutboxEvent.state.in_(["Pending", "Retry"]), OutboxEvent.available_at <= now()),
+            db.and_(OutboxEvent.state == "Processing", OutboxEvent.available_at <= now()),
+        )
     ).order_by(OutboxEvent.id).with_for_update(skip_locked=True).limit(limit).all()
+    for event in events:
+        event.state = "Processing"
+        event.available_at = claim_deadline
+    db.session.commit()
+
     processed = 0
     for event in events:
         failures = []
@@ -1693,8 +1783,14 @@ def process_outbox(limit=50):
             event.state = "Completed"
             event.completed_at = now()
             event.last_error = None if attempted else "No delivery channels enabled."
+        # Committed per event, not once for the whole batch: this is the
+        # actual fix -- see the docstring above. Each event's outcome (and
+        # any device/delivery-record side effects from the channels just
+        # attempted) is durable before moving on, so a slow or crashing
+        # later event in the batch can never roll back an earlier one that
+        # already succeeded.
+        db.session.commit()
         processed += 1
-    db.session.commit()
     return processed
 
 
@@ -5691,20 +5787,28 @@ def ldap_username_placeholder():
 
 
 _cloudflare_access_jwks_cache = {"fetched_at": 0.0, "key_set": None}
+_cloudflare_access_jwks_lock = threading.Lock()
 
 
 def _cloudflare_access_key_set():
     """Fetches (and caches for 1 hour, per worker process) Cloudflare
-    Access's RS256 public keys for this team as a joserfc KeySet."""
-    if time_module.monotonic() - _cloudflare_access_jwks_cache["fetched_at"] < 3600 and _cloudflare_access_jwks_cache["key_set"] is not None:
-        return _cloudflare_access_jwks_cache["key_set"]
-    team_domain = current_app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]
-    response = requests.get(f"https://{team_domain}/cdn-cgi/access/certs", timeout=5)
-    response.raise_for_status()
-    key_set = KeySet.import_key_set(response.json())
-    _cloudflare_access_jwks_cache["key_set"] = key_set
-    _cloudflare_access_jwks_cache["fetched_at"] = time_module.monotonic()
-    return key_set
+    Access's RS256 public keys for this team as a joserfc KeySet.
+
+    Guarded by a lock so that several request-handling threads (gunicorn's
+    gthread worker class) racing in at the moment the cache expires don't
+    each independently fire a redundant fetch against Cloudflare -- the
+    lock is held only around the check-refresh, never across a verified
+    JWT's own signature check."""
+    with _cloudflare_access_jwks_lock:
+        if time_module.monotonic() - _cloudflare_access_jwks_cache["fetched_at"] < 3600 and _cloudflare_access_jwks_cache["key_set"] is not None:
+            return _cloudflare_access_jwks_cache["key_set"]
+        team_domain = current_app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]
+        response = requests.get(f"https://{team_domain}/cdn-cgi/access/certs", timeout=5)
+        response.raise_for_status()
+        key_set = KeySet.import_key_set(response.json())
+        _cloudflare_access_jwks_cache["key_set"] = key_set
+        _cloudflare_access_jwks_cache["fetched_at"] = time_module.monotonic()
+        return key_set
 
 
 def verify_cloudflare_access_jwt(token):
@@ -8000,6 +8104,18 @@ def create_app(test_config=None):
     @app.post("/api/v1/mobile/approvals/<int:vote_id>/decide")
     def api_mobile_approval_decide(vote_id):
         mobile_only()
+        # A retried decide (client timeout/network retry after the first
+        # attempt actually landed) must not re-run decide_vote() a second
+        # time -- that could double-fire the gate-completion/notification
+        # side effects, or fail outright against a vote already resolved.
+        # Idempotency-Key replay is honored when sent, exactly like the
+        # other mutating mobile/v1 endpoints in this file, but not required
+        # -- unlike those, this endpoint's OpenAPI contract has never
+        # documented it as required, so the shipped mobile app can't be
+        # assumed to send one yet (see api_idempotency_context's docstring).
+        key, request_hash, replay = api_idempotency_context(required=False)
+        if replay:
+            return replay
         body = request.get_json(silent=True) or {}
         decision = body.get("decision")
         if decision not in ("Approved", "Rejected"):
@@ -8017,13 +8133,15 @@ def create_app(test_config=None):
             vote.approver_id = g.api_user.id
             vote.delegated_from_id = original_approver_id
         decide_vote(vote, decision, str(body.get("comments", "")).strip()[:2000])
+        document = {"data": {
+            "id": vote.id, "state": vote.state,
+            "delegated_for": vote.delegated_from.name if vote.delegated_from else None,
+        }}
+        store_api_idempotency(key, request_hash, document, 200)
         audit("mobile approval " + decision.lower(), vote.gate.chain.name,
               mobile_client_details(g.api_client), user_id=g.api_user.id, tenant_id=g.api_user.tenant_id)
         db.session.commit()
-        return jsonify({"data": {
-            "id": vote.id, "state": vote.state,
-            "delegated_for": vote.delegated_from.name if vote.delegated_from else None,
-        }})
+        return jsonify(document)
 
     @app.get("/api/v1/mobile/knowledge")
     def api_mobile_knowledge():
@@ -8069,17 +8187,27 @@ def create_app(test_config=None):
         ticket = visible_ticket_query(g.api_user).filter(func.upper(Ticket.number) == number.upper()).first_or_404()
         if not user_can_manage_ticket(g.api_user, ticket):
             abort(403, description="The acting user cannot comment on this ticket.")
+        # Optional, not required: unlike the mutating endpoints below whose
+        # OpenAPI contract already documents Idempotency-Key as required,
+        # this endpoint's contract never has, so an already-shipped client
+        # can't be assumed to send one (see api_idempotency_context).
+        key, request_hash, replay = api_idempotency_context(required=False)
+        if replay:
+            return replay
         body = str((request.get_json(silent=True) or {}).get("body", "")).strip()
         if not body or len(body) > 10000:
             abort(400, description="A comment between 1 and 10000 characters is required.")
         row = Comment(ticket_id=ticket.id, user_id=g.api_user.id, body=body, tenant_id=ticket.tenant_id)
         db.session.add(row)
+        db.session.flush()  # populates row.id/row.created_at before the document below is built
         log_history("ticket", ticket.id, "Comment added", details=f"Mobile app · {g.api_user.name}")
+        document = {"data": {"id": row.id, "body": row.body, "author": g.api_user.name,
+                              "created_at": row.created_at.isoformat()}}
+        store_api_idempotency(key, request_hash, document, 201)
         audit("mobile comment", ticket.number, mobile_client_details(g.api_client),
               user_id=g.api_user.id, tenant_id=g.api_user.tenant_id)
         db.session.commit()
-        return jsonify({"data": {"id": row.id, "body": row.body, "author": g.api_user.name,
-                                  "created_at": row.created_at.isoformat()}}), 201
+        return jsonify(document), 201
 
     def scim_user_document(user):
         return {
@@ -12964,6 +13092,25 @@ def create_app(test_config=None):
             **ad_context,
         )
 
+    def audit_filter_field_spec():
+        # "action"/"target" stay free-text (contains/starts_with/eq) rather
+        # than a "choice" list of every distinct action string ever
+        # written -- those are ad-hoc per call site throughout this file,
+        # not a fixed enum, and a hardcoded option list would silently go
+        # stale exactly like the hardcoded-action-list problem this
+        # codebase has already had to fix elsewhere. "user_id" and
+        # "authentication_provider" are genuinely bounded sets, so those
+        # are real choice fields.
+        users = User.query.filter_by(tenant_id=tenant_context_id()).order_by(User.name).all()
+        return {
+            "action": {"label": "Action", "type": "text", "column": Audit.action},
+            "target": {"label": "Target", "type": "text", "column": Audit.target},
+            "user_id": {"label": "User", "type": "choice", "column": Audit.user_id,
+                        "options": [(str(u.id), f"{u.name} ({u.username})") for u in users]},
+            "source_ip": {"label": "Source IP", "type": "text", "column": Audit.source_ip},
+            "created_at": {"label": "Time", "type": "date", "column": Audit.created_at},
+        }
+
     @app.get("/admin/audit")
     @roles("admin")
     @require_action("report")
@@ -12978,6 +13125,10 @@ def create_app(test_config=None):
             query = query.filter(db.or_(
                 Audit.action.ilike(f"%{q}%"), Audit.target.ilike(f"%{q}%"),
             ))
+        raw_filter = request.args.get("filter", "")
+        conditions = parse_list_filter_param(raw_filter)
+        field_spec = audit_filter_field_spec()
+        query = apply_filter_conditions(query, conditions, field_spec)
         try:
             page = max(1, int(request.args.get("page", "1")))
         except ValueError:
@@ -12986,12 +13137,19 @@ def create_app(test_config=None):
         total = query.count()
         pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, pages)
-        rows = query.order_by(Audit.created_at.desc()).offset(
+        rows = query.options(db.joinedload(Audit.user)).order_by(Audit.created_at.desc()).offset(
             (page - 1) * per_page
         ).limit(per_page).all()
+        value_labels = {("user_id", key): label for key, label in field_spec["user_id"]["options"]}
+        client_fields = {
+            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            for key, spec in field_spec.items()
+        }
         return render_template(
             "audit.html",
             rows=rows, q=q, page=page, pages=pages, total=total,
+            raw_filter=raw_filter, filter_fields=client_fields,
+            breadcrumb_parts=filter_conditions_breadcrumb(conditions, field_spec, value_labels),
             integrity=integrity,
             keys=AuditIntegrityKey.query.filter_by(
                 tenant_id=current_user.tenant_id
@@ -13890,7 +14048,10 @@ def create_app(test_config=None):
         total = query.count()
         pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, pages)
-        visible_cis = query.order_by(
+        visible_cis = query.options(
+            db.joinedload(ConfigurationItem.support_group),
+            db.joinedload(ConfigurationItem.owner),
+        ).order_by(
             ConfigurationItem.ci_class, ConfigurationItem.name
         ).offset((page - 1) * per_page).limit(per_page).all()
         readable_ci_ids = restrict_ci_query_to_readable_classes(
@@ -13901,7 +14062,9 @@ def create_app(test_config=None):
             ConfigurationItem.operational_status == "Operational"
         ).count()
         relationships = [
-            rel for rel in tenant_query(CIRelationship).all()
+            rel for rel in tenant_query(CIRelationship).options(
+                db.joinedload(CIRelationship.parent), db.joinedload(CIRelationship.child),
+            ).all()
             if ci_class_read_allowed(current_user.tenant_id, rel.parent.ci_class, current_user.effective_role)
             and ci_class_read_allowed(current_user.tenant_id, rel.child.ci_class, current_user.effective_role)
         ]
@@ -15002,7 +15165,10 @@ def create_app(test_config=None):
         total = query.count()
         pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, pages)
-        rows = query.order_by(CatalogRequest.opened_at.desc()).offset(
+        rows = query.options(
+            db.joinedload(CatalogRequest.requested_for),
+            selectinload(CatalogRequest.items).joinedload(RequestedItem.item),
+        ).order_by(CatalogRequest.opened_at.desc()).offset(
             (page - 1) * per_page
         ).limit(per_page).all()
         return render_template(

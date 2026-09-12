@@ -14,6 +14,7 @@ exec gunicorn \
   ${PRELOAD_FLAG} \
   --bind "0.0.0.0:8080" \
   --workers "${GUNICORN_WORKERS:-2}" \
+  --worker-class gthread \
   --threads "${GUNICORN_THREADS:-4}" \
   --timeout "${GUNICORN_TIMEOUT:-60}" \
   --graceful-timeout "${GUNICORN_GRACEFUL_TIMEOUT:-30}" \
