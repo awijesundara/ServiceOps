@@ -10,7 +10,7 @@
 .gov-tab-condition{display:flex;align-items:center;gap:8px;padding:11px 16px;margin:-24px -24px 16px;background:#f7f9fa;border-bottom:1px solid var(--line);color:#496168;font-size:12.5px}.gov-tab-condition b{color:var(--brand-teal);font-weight:700}
 .gov-tab-panel table{min-width:0}.gov-tab-panel .task-list-scroll{overflow-x:auto}.gov-tab-panel table th{position:sticky;top:0;background:#eef3f4;border-bottom:1px solid #aebfc3;color:#3f5157}.gov-tab-panel table tbody tr:hover{background:#f4f9f8}
 .gov-tab-new{margin-top:14px}.gov-tab-new>summary{display:inline-block;list-style:none;cursor:pointer;padding:9px 16px;border-radius:6px;background:var(--green);color:#fff;font-weight:650;font-size:13px}.gov-tab-new>summary::-webkit-details-marker{display:none}.gov-tab-new>summary:hover{background:var(--green-dark)}.gov-tab-new[open]>summary{margin-bottom:12px;background:var(--green-dark)}
-.list-workspace{margin:-12px -18px 24px;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow);overflow:hidden}.list-toolbar{display:flex;align-items:center;gap:12px;min-height:64px;padding:9px 14px;background:#f7f9fa;border-bottom:1px solid #cbd7da}.list-title{display:flex;align-items:center;gap:10px;min-width:180px}.list-title>div{display:grid}.list-title strong{font-size:16px;color:var(--brand-teal)}.list-title small{color:var(--muted);font-size:11px}.list-menu{display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);border-radius:3px;background:#fff}.list-search{display:flex;align-items:end;gap:8px;flex:1;margin-left:8px}.list-search label{display:grid;grid-template-columns:auto minmax(120px,190px);align-items:center;gap:8px;margin:0}.list-search label span{font-size:12px;color:var(--muted)}.list-search input{min-width:220px;max-width:420px}.list-search button{white-space:nowrap}.list-pagination{display:flex;align-items:center;gap:8px;margin-left:auto;white-space:nowrap}.list-pagination a{display:grid;place-items:center;width:30px;height:30px;border:1px solid var(--line);border-radius:3px;text-decoration:none;font-size:21px}.list-pagination a.disabled{pointer-events:none;opacity:.35}.list-pagination span{font-size:12px;color:var(--muted)}.list-breadcrumb{padding:10px 16px;border-bottom:1px solid var(--line);background:#fbfdfd;color:#496168;font-size:13px}.list-breadcrumb span{color:var(--brand-teal);font-weight:800}.task-list-scroll{overflow:auto;background:linear-gradient(to right,#fff 30%,rgba(255,255,255,0)) 0 0,linear-gradient(to right,rgba(255,255,255,0),#fff 70%) 100% 0,radial-gradient(farthest-side at 0 50%,rgba(20,35,45,.18),rgba(20,35,45,0)) 0 0,radial-gradient(farthest-side at 100% 50%,rgba(20,35,45,.18),rgba(20,35,45,0)) 100% 0;background-repeat:no-repeat;background-color:#fff;background-size:24px 100%,24px 100%,10px 100%,10px 100%;background-attachment:local,local,scroll,scroll}.task-list{min-width:1180px;margin:0}.task-list th{position:sticky;top:0;z-index:2;padding:11px 12px;background:#eef3f4;border-bottom:1px solid #aebfc3;color:#3f5157;white-space:nowrap}.task-list th::before{content:"≡";margin-right:5px;color:#6f848a}.task-list td{padding:11px 12px;border-bottom:1px solid #dce4e6;vertical-align:middle}.task-list tbody tr:hover{background:#f1f8f7}.record-number{font-weight:750;text-decoration:underline;text-underline-offset:2px}.priority-dot{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:#88a0a6}.priority-dot.p1{background:#dc3c30}.priority-dot.p2{background:#f0a122}.priority-dot.p3{background:#6c9fad}.priority-dot.p4{background:#96aaae}
+.list-workspace{margin:-12px -18px 24px;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow);overflow:hidden}.list-toolbar{display:flex;align-items:center;gap:12px;min-height:64px;padding:9px 14px;background:#f7f9fa;border-bottom:1px solid #cbd7da}.list-title{display:flex;align-items:center;gap:10px;min-width:180px}.list-title>div{display:grid}.list-title strong{font-size:16px;color:var(--brand-teal)}.list-title small{color:var(--muted);font-size:11px}.list-menu{display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);border-radius:3px;background:#fff}.list-search{display:flex;align-items:end;gap:8px;flex:1;margin-left:8px}.list-search label{display:grid;grid-template-columns:auto minmax(120px,190px);align-items:center;gap:8px;margin:0}.list-search label span{font-size:12px;color:var(--muted)}.list-search input{min-width:220px;max-width:420px}.list-search button{white-space:nowrap}.list-pagination{display:flex;align-items:center;gap:8px;margin-left:auto;white-space:nowrap}.list-pagination a{display:grid;place-items:center;width:30px;height:30px;border:1px solid var(--line);border-radius:3px;text-decoration:none;font-size:21px}.list-pagination a.disabled{pointer-events:none;opacity:.35}.list-pagination span{font-size:12px;color:var(--muted)}.list-breadcrumb{padding:10px 16px;border-bottom:1px solid var(--line);background:#fbfdfd;color:#496168;font-size:13px}.list-breadcrumb span{color:var(--brand-teal);font-weight:800}.task-list-scroll{overflow:auto;background:linear-gradient(to right,#fff 30%,rgba(255,255,255,0)) 0 0,linear-gradient(to right,rgba(255,255,255,0),#fff 70%) 100% 0,radial-gradient(farthest-side at 0 50%,rgba(20,35,45,.18),rgba(20,35,45,0)) 0 0,radial-gradient(farthest-side at 100% 50%,rgba(20,35,45,.18),rgba(20,35,45,0)) 100% 0;background-repeat:no-repeat;background-color:#fff;background-size:24px 100%,24px 100%,10px 100%,10px 100%;background-attachment:local,local,scroll,scroll}.task-list{min-width:0;width:100%;margin:0}.task-list th{position:sticky;top:0;z-index:2;padding:11px 12px;background:#eef3f4;border-bottom:1px solid #aebfc3;color:#3f5157;white-space:nowrap}.task-list th::before{content:"≡";margin-right:5px;color:#6f848a}.task-list td{padding:11px 12px;border-bottom:1px solid #dce4e6;vertical-align:middle}.task-list tbody tr:hover{background:#f1f8f7}.record-number{font-weight:750;text-decoration:underline;text-underline-offset:2px}.priority-dot{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:#88a0a6}.priority-dot.p1{background:#dc3c30}.priority-dot.p2{background:#f0a122}.priority-dot.p3{background:#6c9fad}.priority-dot.p4{background:#96aaae}
 @media(max-width:900px){.list-toolbar{align-items:stretch;flex-wrap:wrap}.list-search{order:3;flex-basis:100%;margin-left:0}.list-pagination{margin-left:auto}.list-workspace{margin:0 0 20px}}@media(max-width:600px){.list-search{display:grid;grid-template-columns:1fr auto}.list-search label{grid-column:1/-1}.list-search input{min-width:0;width:100%}.list-title{min-width:0}.list-title small{display:none}}
 
 /* Org chart v2: vertical indented tree. Avoids the old flex/connector-line
@@ -37,3 +37,51 @@ ul.org2-tree,.org2-children{list-style:none;margin:0;padding:0}
 .org2-tree.org2-collapsed .org2-children{display:none}
 .org2-toggle[data-org2-toggle]{cursor:pointer}
 @media(max-width:650px){.org2-panel{margin:0 0 20px;padding:16px}.org2-children{margin-left:14px;padding-left:12px}.org2-card{flex-wrap:wrap}.org2-count{flex-basis:100%;margin-left:50px}}
+
+/* Wide ticket/task table redesign (laptop widths, 1024-1440px): progressively
+   hide lower-priority columns instead of relying on horizontal scroll, which
+   the fixed 1180px min-width above forced at every width in this range (the
+   fixed sidebar leaves ~695-1111px of content width across 1024-1440px
+   viewports, both under 1180px). Two tiers, keyed to each page's own
+   `data-tour-route` (already present on <body>) since every one of these
+   tables shares the .task-list class but has a different, page-specific
+   column set -- nth-child position is stable per page because these rows
+   have no colspan/rowspan variance. Columns are chosen to hide first based
+   on being either derivable from the record's detail page or a secondary
+   timestamp/attribute, never the record number, primary description, or
+   state -- an operator scanning the list at a laptop width should still be
+   able to triage from what remains visible. The audit trail
+   (`/admin/audit`) is deliberately excluded: every one of its columns
+   carries distinct forensic/security detail (including a nested "Client
+   details" disclosure inside the security-evidence column), and hiding any
+   of them would remove access to that evidence rather than just decluttering
+   -- it keeps the existing scroll-shadow treatment instead. */
+@media(max-width:1440px){
+  body[data-tour-route="tickets"] .task-list :is(th,td):is(:nth-child(2),:nth-child(7),:nth-child(10)),
+  body[data-tour-route="module_records"] .task-list :is(th,td):is(:nth-child(2),:nth-child(8),:nth-child(11)),
+  body[data-tour-route="known_errors"] .task-list :is(th,td):is(:nth-child(4),:nth-child(5)),
+  body[data-tour-route="improvements"] .task-list :is(th,td):nth-child(6),
+  body[data-tour-route="system_health"] .task-list :is(th,td):nth-child(3),
+  body[data-tour-route="system_health_log_file"] .task-list :is(th,td):is(:nth-child(6),:nth-child(7)),
+  body[data-tour-route="rt_import"] details .task-list :is(th,td):is(:nth-child(5),:nth-child(8)),
+  #cmdb-table [data-col="environment"],#cmdb-table [data-col="lifecycle_state"]
+  {display:none!important}
+}
+@media(max-width:1200px){
+  body[data-tour-route="tickets"] .task-list :is(th,td):is(:nth-child(4),:nth-child(8)),
+  body[data-tour-route="module_records"] .task-list :is(th,td):is(:nth-child(3),:nth-child(5),:nth-child(9)),
+  body[data-tour-route="known_errors"] .task-list :is(th,td):nth-child(3),
+  body[data-tour-route="improvements"] .task-list :is(th,td):nth-child(3),
+  body[data-tour-route="system_health"] .task-list :is(th,td):nth-child(4),
+  body[data-tour-route="system_health_log_file"] .task-list :is(th,td):is(:nth-child(3),:nth-child(5)),
+  body[data-tour-route="rt_import"] details .task-list :is(th,td):is(:nth-child(2),:nth-child(7)),
+  #cmdb-table [data-col="location"],#cmdb-table [data-col="ci_class"]
+  {display:none!important}
+  /* Reclaims a few px of the decorative header icon/padding at the tightest
+     end of the laptop range -- measured via test_wide_table_fits_without_
+     horizontal_scroll_at_laptop_widths to close a real 3px overflow on the
+     system-health-logs table at 1024px that column-hiding alone left. */
+  .task-list th{padding:9px 8px}
+  .task-list td{padding:9px 8px}
+  .task-list th::before{margin-right:3px}
+}
