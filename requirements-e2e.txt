@@ -2,4 +2,4 @@
 # kept separate from production and unit-test images because Chromium has no
 # place in the runtime container. CI installs this file in its isolated
 # browser-quality job; see the test module for local execution.
-playwright==1.55.0
+playwright==1.62.0
