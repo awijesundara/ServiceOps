@@ -66,3 +66,16 @@ body.lightbox-open{overflow:hidden}
 .plain-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}.plain-list li{padding:8px 0;border-bottom:1px solid var(--line)}.plain-list li:last-child{border-bottom:0}.plain-list li.unread{font-weight:650}.plain-list .empty{color:var(--muted);border-bottom:0;padding:4px 0}
 @media(max-width:560px){.form-grid label,.stack label{grid-template-columns:1fr;gap:5px}.form-grid label small,.stack label small{grid-column:1}}
 .profile-intelligence{margin-top:20px}.profile-intelligence details{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}.profile-intelligence summary{cursor:pointer;color:var(--green-dark)}.profile-intelligence .detail-grid{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:14px}.profile-intelligence .detail-grid>div{display:flex;flex-direction:column;gap:4px;padding:13px;border:1px solid var(--line);border-radius:7px;background:#f8fafb;min-width:0}.profile-intelligence .detail-grid small{color:var(--muted)}.profile-intelligence .detail-grid strong,.profile-intelligence .detail-grid span{overflow-wrap:anywhere}.chip-list{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.compact-form{min-width:280px;padding:10px 0}.compact-form label{grid-template-columns:70px minmax(140px,1fr)}
+/* Long unbroken values (emails especially) previously had no width limit
+   in a table cell or disabled/readonly text input, so a single long
+   value could stretch a column, squeeze its neighbors, or silently clip
+   past the visible edge of an input with no way to see the rest. Both
+   get a bounded width, an ellipsis, and the full value in a native
+   title tooltip -- the same "hover for the rest" affordance this file
+   already used for user_avatar()'s initials. */
+.truncate{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+td .truncate{max-width:240px}
+input[disabled],input[readonly]{overflow:hidden;text-overflow:ellipsis}
+.identity-cell strong{display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.identity-cell small{display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+@media(max-width:560px){td .truncate,.identity-cell strong,.identity-cell small{max-width:46vw}}

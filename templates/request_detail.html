@@ -7,8 +7,8 @@
     <div class="record-grid">
       <label><span>Number</span><input value="{{ req.number }}" disabled></label>
       <label><span>State</span><input value="{{ req.state }}" disabled></label>
-      <label class="required-field"><span>Requested by</span><input value="{{ req.requested_by.name }} · {{ req.requested_by.email }}" disabled></label>
-      <label class="required-field"><span>Requested for</span><input value="{{ req.requested_for.name }} · {{ req.requested_for.email }}" disabled></label>
+      <label class="required-field"><span>Requested by</span><input value="{{ req.requested_by.name }} · {{ req.requested_by.email }}" title="{{ req.requested_by.name }} · {{ req.requested_by.email }}" disabled></label>
+      <label class="required-field"><span>Requested for</span><input value="{{ req.requested_for.name }} · {{ req.requested_for.email }}" title="{{ req.requested_for.name }} · {{ req.requested_for.email }}" disabled></label>
       <label><span>Opened</span><input value="{{ (req.opened_at|usertime('%b %d, %Y · %H:%M')) }}" disabled></label>
       <label><span>Requested items</span><input value="{{ req.items|length }}" disabled></label>
     </div>
