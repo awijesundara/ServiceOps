@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from '_status_badge.html' import status_badge %}
 {% block title %}{{ kind|title }}s · {{ instance_name }}{% endblock %}
 {% block content %}
 <section class="list-workspace">
@@ -39,7 +40,7 @@
         <td><span class="truncate" title="{{ t.title }}">{{ t.title }}</span></td>
         <td><span class="truncate" title="{{ t.requester.name }}">{{ t.requester.name }}</span></td>
         <td><span class="priority-dot {{ t.priority|lower }}"></span><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td>
-        <td><span class="badge">{{ t.state }}</span></td>
+        <td>{{ status_badge(t.state) }}</td>
         <td>{{ t.category }}</td>
         <td><span class="truncate" title="{{ owning_groups[t.id].name if owning_groups.get(t.id) else 'Unassigned' }}">{{ owning_groups[t.id].name if owning_groups.get(t.id) else 'Unassigned' }}</span></td>
         <td><span class="truncate" title="{{ t.assignee.name if t.assignee else 'Unassigned' }}">{{ t.assignee.name if t.assignee else 'Unassigned' }}</span></td>

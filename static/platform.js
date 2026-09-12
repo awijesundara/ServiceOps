@@ -466,4 +466,18 @@ document.addEventListener("DOMContentLoaded", () => {
   if (requestedPreferenceTab && document.querySelector(`[data-pref-tab="${CSS.escape(requestedPreferenceTab)}"]`)) {
     activatePreferenceTab(requestedPreferenceTab);
   }
+
+  // Approval chains: expand/collapse a grouped chain's earlier (superseded)
+  // versions -- see templates/approval_chains.html. A <tr> can't sit inside
+  // a <details>, so this is a plain hidden-row toggle instead.
+  document.querySelectorAll("[data-approval-history-toggle]").forEach(button => {
+    button.addEventListener("click", () => {
+      const row = document.querySelector(`[data-approval-history="${CSS.escape(button.dataset.approvalHistoryToggle)}"]`);
+      if (!row) return;
+      const expanded = button.getAttribute("aria-expanded") === "true";
+      row.hidden = expanded;
+      button.setAttribute("aria-expanded", String(!expanded));
+      button.textContent = expanded ? "▸" : "▾";
+    });
+  });
 });

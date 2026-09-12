@@ -3687,6 +3687,20 @@ def test_material_change_edit_supersedes_approvals_and_notifies_approvers(client
                 Notification.id > notification_id_marker,
                 Notification.user_id == approver_id,
             ).count() == 0
+        ticket_number = ticket.number
+
+    # The two chains created above (v1, superseded, and v2, running) target
+    # the same ticket -- /approval-chains must show them as one grouped row
+    # (latest visible, v1 collapsed into its expandable history) rather than
+    # two unrelated-looking rows, and the visible label must drop the " v2"
+    # revision suffix since there's now real history to justify grouping.
+    client.post("/logout")
+    login(client)
+    chains_page = client.get("/approval-chains").data.decode()
+    assert f"{ticket_number} change authorization</strong>" in chains_page
+    assert f"{ticket_number} change authorization v2</strong>" not in chains_page
+    assert f"{ticket_number} change authorization v1" in chains_page
+    assert 'data-approval-history-toggle="' in chains_page
 
 
 def test_required_change_tasks_block_parent_completion(client, app):
