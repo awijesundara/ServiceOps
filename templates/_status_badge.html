@@ -1,0 +1,11 @@
+{# Semantic workflow-status pill -- see static/itil.css's .status-badge rules
+   for the color mapping. Mirrors the per-value modifier-class pattern
+   client-management.css already established for client-facing tickets
+   (.client-status new/open/pending/on-hold/closed), generalized to the
+   ticket/change/enterprise-record/approval state vocabulary used elsewhere
+   in the app. Use for genuine workflow states only -- not for counts, role
+   labels, or other non-status badges, which should keep the plain
+   .badge/.tag styling. #}
+{% macro status_badge(value) -%}
+<span class="status-badge {{ (value or '')|lower|replace(' ', '-') }}">{{ value }}</span>
+{%- endmacro %}
