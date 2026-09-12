@@ -4248,6 +4248,42 @@ def test_resolved_ticket_locks_edits_but_allows_comments_and_reopen(client, app)
         assert Ticket.query.get(ticket_id).priority == "P1"
 
 
+def test_resolved_ticket_can_be_closed_via_close_action(client, app):
+    """TICKET_TRANSITIONS already declares Resolved -> Closed as a legal
+    move, and transition_ticket() honors it, but the only action ever
+    exempted from the Resolved/Closed/Cancelled edit-lock used to be
+    "reopen" -- there was no way, in the UI or the POST handler, to ever
+    reach Closed. This proves the dedicated "close" action now reaches it."""
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Close after resolve test", "description": "Should be closable once resolved",
+        "category": "Software", "priority": "P3",
+        "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Close after resolve test").one().id
+
+    assert client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "Resolved", "priority": "P3", "assignee_id": "",
+    }).status_code == 302
+    with app.app_context():
+        assert Ticket.query.get(ticket_id).state == "Resolved"
+
+    closed = client.post(f"/ticket/{ticket_id}", data={"action": "close"}, follow_redirects=True)
+    assert closed.status_code == 200
+    assert b"closed" in closed.data.lower()
+    with app.app_context():
+        ticket = Ticket.query.get(ticket_id)
+        assert ticket.state == "Closed"
+        assert TaskHistory.query.filter_by(
+            target_type="ticket", target_id=ticket_id, field_name="state", new_value="Closed",
+        ).first() is not None
+
+    blocked = client.post(f"/ticket/{ticket_id}", data={"action": "close"}, follow_redirects=True)
+    assert blocked.status_code == 200
+    assert b"is not Resolved" in blocked.data
+
+
 def test_org_chart_reflects_manager_assignment_and_blocks_cycles(client, app):
     login(client)
     with app.app_context():
