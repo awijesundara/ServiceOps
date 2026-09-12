@@ -1260,6 +1260,23 @@ DOMAIN_CONFIG = {
     "release": {"name": "Releases", "prefix": "REL", "types": ["Release", "Deployment", "Readiness review"]},
 }
 
+# One glyph per workspace on /modules, matching this app's existing
+# hand-authored feather-style icon set (viewBox 0 0 24 24, stroke-based --
+# see the topbar/nav icons in base.html). Hardcoded, developer-authored
+# markup only (never derived from user/DB input), so rendering it with
+# |safe in modules.html carries no injection risk.
+DOMAIN_ICONS = {
+    "problem": '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    "customer": '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>',
+    "hr": '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    "security": '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+    "risk": '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><polyline points="9 14 11 16 15 12"/>',
+    "portfolio": '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+    "field_service": '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+    "event": '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+    "release": '<path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" y1="22" x2="12" y2="12"/>',
+}
+
 
 
 
@@ -8315,7 +8332,7 @@ def create_app(test_config=None):
             "default-src 'self'; "
             "script-src 'self'; "
             "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; "
+            "img-src 'self' data: blob:; "
             "font-src 'self'; "
             "connect-src 'self'; "
             "frame-ancestors 'self'; "
@@ -13584,7 +13601,7 @@ def create_app(test_config=None):
     def modules():
         query = visible_enterprise_record_query(current_user)
         counts = {key: query.filter_by(domain=key).count() for key in DOMAIN_CONFIG}
-        return render_template("modules.html", modules=DOMAIN_CONFIG, counts=counts)
+        return render_template("modules.html", modules=DOMAIN_CONFIG, counts=counts, domain_icons=DOMAIN_ICONS)
 
     @app.get("/module/<domain>")
     @login_required
@@ -15174,9 +15191,32 @@ def create_app(test_config=None):
             if vote.gate.chain.id not in visible_chain_ids:
                 chains.append(vote.gate.chain)
                 visible_chain_ids.add(vote.gate.chain.id)
+        # Visibility above is computed per-chain in Python (it depends on
+        # vote membership and, for ticket/ritm targets, a separate
+        # permission check against another table) rather than a single SQL
+        # query, so search/pagination are applied to the already-materialized
+        # list instead of pushed into the query -- consistent with keeping
+        # that visibility logic exactly as it already is.
+        q = request.args.get("q", "").strip()
+        if q:
+            needle = q.lower()
+            chains = [
+                chain for chain in chains
+                if needle in chain.name.lower()
+                or needle in f"{chain.target_type} #{chain.target_id}".lower()
+            ]
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            page = 1
+        per_page = 50
+        total = len(chains)
+        pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, pages)
+        page_chains = chains[(page - 1) * per_page: page * per_page]
         return render_template(
-            "approval_chains.html", chains=chains, pending=pending,
-            delegated_pending=delegated_pending,
+            "approval_chains.html", chains=page_chains, pending=pending,
+            delegated_pending=delegated_pending, q=q, page=page, pages=pages, total=total,
         )
 
     @app.get("/requests")

@@ -13,17 +13,29 @@
   </header>
   {% if self_service %}
   <div class="profile-avatar-row">
-    <img class="profile-avatar-preview" src="{{ url_for('profile_avatar', user_id=user.id) if user.avatar_path else '' }}" alt="Profile picture"{% if not user.avatar_path %} style="display:none"{% endif %}>
-    {% if not user.avatar_path %}<div class="profile-avatar-preview profile-avatar-placeholder">{{ user.name[0] }}</div>{% endif %}
+    <img class="profile-avatar-preview" id="profile-avatar-preview-img" src="{{ url_for('profile_avatar', user_id=user.id) if user.avatar_path else '' }}" alt="Profile picture"{% if not user.avatar_path %} style="display:none"{% endif %}>
+    <div class="profile-avatar-preview profile-avatar-placeholder" id="profile-avatar-preview-placeholder"{% if user.avatar_path %} style="display:none"{% endif %}>{{ user.name[0] }}</div>
     <div class="profile-avatar-meta"><strong>{{ user.name }}</strong><small>{{ user.title or (user.role|capitalize) }}</small></div>
   </div>
+  <dialog id="avatar-crop-modal" class="avatar-crop-modal" aria-modal="true" aria-labelledby="avatar-crop-title">
+    <h3 id="avatar-crop-title">Adjust your profile picture</h3>
+    <p class="muted" style="font-size:12px;margin-top:-6px">Drag the image to reposition it, then use the slider to zoom. Only the circle is kept.</p>
+    <div class="avatar-crop-viewport" id="avatar-crop-viewport">
+      <img id="avatar-crop-image" alt="">
+    </div>
+    <label class="avatar-crop-zoom"><span>Zoom</span><input type="range" id="avatar-crop-zoom" min="1" max="4" step="0.01" value="1"></label>
+    <div class="avatar-crop-actions">
+      <button type="button" class="button" id="avatar-crop-cancel">Cancel</button>
+      <button type="button" class="primary" id="avatar-crop-save">Save picture</button>
+    </div>
+  </dialog>
   {% endif %}
   <form method="post" id="user-record-form" class="record-form"{% if self_service %} enctype="multipart/form-data"{% endif %}>
     <div class="record-grid">
       {% if editing %}<label><span>User ID</span><input value="{{ user.username }}" disabled></label>{% else %}<label class="required-field"><span>User ID</span><input name="username" required maxlength="80"></label>{% endif %}
       {% if self_service and email_managed_externally %}<label><span>Email</span><input type="email" value="{{ user.email }}" disabled title="Managed by your Active Directory account"><small>Synced from Active Directory</small></label>{% else %}<label class="required-field"><span>Email</span><input type="email" name="email" value="{{ user.email if editing else '' }}" required></label>{% endif %}
       <label class="required-field"><span>Full name</span><input name="name" value="{{ user.name if editing else '' }}" required maxlength="120" {% if self_service and directory_managed %}disabled title="Managed by Active Directory"{% endif %}>{% if self_service and directory_managed %}<small>Synced from Active Directory</small>{% endif %}</label>
-      {% if self_service %}<label><span>Profile picture</span><input type="file" name="avatar" accept="image/png,image/jpeg"></label>{% endif %}
+      {% if self_service %}<label><span>Profile picture</span><input type="file" id="avatar-input" name="avatar" accept="image/png,image/jpeg"><small class="muted">Drag to reposition and zoom to crop before saving.</small></label>{% endif %}
       <label><span>Time zone</span><select name="timezone">{% for zone in ['Asia/Tokyo','UTC','Australia/Sydney','Europe/London','America/New_York','America/Los_Angeles'] %}<option {% if (editing and user.timezone==zone) or (not editing and zone=='Asia/Tokyo') %}selected{% endif %}>{{ zone }}</option>{% endfor %}</select></label>
       <label><span>Title</span><input name="title" value="{{ user.title if editing else '' }}" maxlength="120" {% if self_service and directory_managed %}disabled{% endif %}></label>
       <label><span>Date format</span><select name="date_format"><option value="system">System (yyyy-MM-dd)</option><option value="day_first" {% if editing and user.date_format=='day_first' %}selected{% endif %}>dd/MM/yyyy</option><option value="month_first" {% if editing and user.date_format=='month_first' %}selected{% endif %}>MM/dd/yyyy</option></select></label>
@@ -114,4 +126,5 @@
   {% endif %}
 </section>
 {% endif %}
+{% if self_service %}<script src="{{ url_for('static', filename='avatar-crop.js', v=app_version) }}" defer></script>{% endif %}
 {% endblock %}

@@ -10,8 +10,8 @@
       {% for record in records %}
       <tr>
         <td><a href="{{ url_for('enterprise_detail', record_id=record.id) }}">{{ record.number }}</a></td>
-        <td>{{ record.title }}</td>
-        <td>{{ record.problem_profile.primary_ci.name if record.problem_profile.primary_ci else '—' }}</td>
+        <td><span class="truncate" title="{{ record.title }}">{{ record.title }}</span></td>
+        <td><span class="truncate" title="{{ record.problem_profile.primary_ci.name if record.problem_profile.primary_ci else '' }}">{{ record.problem_profile.primary_ci.name if record.problem_profile.primary_ci else '—' }}</span></td>
         <td>{{ record.problem_profile.root_cause or 'Not documented' }}</td>
         <td>{{ record.problem_profile.workaround or 'Not documented' }}</td>
         <td><span class="badge">{{ record.state }}</span></td>

@@ -20,6 +20,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  ClientView, ClientMacro, ClientTrigger, ClientMailbox, ClientTicket, ClientTicketMessage,
                  Comment,
                  ChecklistItem, CIRelationship, CiClassPermission, ConfigurationItem, DiscoveryCandidate, DiscoveryTarget,
+                 DOMAIN_CONFIG,
                  EnterpriseRecord, CatalogItem,
                  CatalogItemRouting, DirectoryGroupMapping, DirectoryProfile,
                  DirectoryManagedMembership, ExternalIdentity, Favorite, FileAttachment,
@@ -8167,6 +8168,117 @@ def test_cmdb_topology_excludes_virtual_machines(client, app):
     response = client.get("/cmdb/topology")
     assert response.status_code == 200
     assert b"topo-physical-host" in response.data
+
+
+def test_cmdb_topology_does_not_treat_every_server_as_backbone(client, app):
+    """Servers used to be listed in data-backbone-classes alongside Switch/
+    Router, so cmdb-topology.js's progressive-disclosure logic (only backbone
+    nodes start expanded) never actually collapsed anything in a CMDB where
+    most CIs are servers -- the graph rendered everything at once regardless
+    of how many nodes existed. Only true network infrastructure should stay
+    always-expanded by default; individual servers collapse behind their
+    switch until selected (see cmdb-topology.js's focusNodeById)."""
+    login(client)
+    response = client.get("/cmdb/topology")
+    assert response.status_code == 200
+    assert b'data-backbone-classes="Switch,Router"' in response.data
+    assert b"Switch,Router,Server" not in response.data
+
+
+def test_cmdb_topology_has_a_jump_to_ci_search(client, app):
+    login(client)
+    response = client.get("/cmdb/topology")
+    assert response.status_code == 200
+    assert b'id="cmdb-topology-jump-to"' in response.data
+    assert b'data-lookup-url="/internal/lookup/cis"' in response.data
+
+
+def test_ticket_list_truncates_long_free_text_columns_instead_of_wrapping(client, app):
+    """A long free-text value used to force its column to wrap onto a second
+    line in this auto-layout table, squeezing every other column in that row
+    into an ugly wrap too -- worse in practice on /tickets/change (longer
+    change descriptions) than /tickets/incident, even though both kinds
+    share this exact template and CSS. Title/requester/assignment-group/
+    assignee are now wrapped in the shared .truncate utility (single line,
+    ellipsis, full text on hover) instead of being left to wrap however the
+    browser lays out the row."""
+    login(client)
+    long_title = "A " + "very " * 40 + "long change title that would otherwise wrap onto two lines"
+    created = client.post("/tickets/new/change", data={
+        "title": long_title, "description": "Long title truncation regression",
+        "category": "Software", "priority": "P3", "change_type": "Normal",
+        "risk_score": "10", "impact": "Low", "group_id": group_id(app),
+        "implementation_plan": "Implement.", "test_plan": "Test.",
+        "backout_plan": "Back out.",
+        "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
+    })
+    assert created.status_code == 302
+    list_page = client.get("/tickets/change").data.decode()
+    assert f'<span class="truncate" title="{long_title}">{long_title}</span>' in list_page
+
+
+def test_manager_portal_has_a_client_side_member_filter(client, app):
+    """A manager overseeing several IT fulfillment teams had no way to jump
+    straight to one person or team without scanning every section by eye --
+    manager-portal-filter.js now filters rows by data-search-text (name/
+    title) and hides a whole team section via data-team-name when neither
+    matches, restored to visible (data-driven) once the query is cleared."""
+    login(client, "database.manager", "Manager123!")
+    response = client.get("/manager/portal")
+    assert response.status_code == 200
+    html = response.data.decode()
+    assert 'id="manager-portal-filter"' in html
+    assert "mp-team-section" in html
+    assert 'class="mp-member-row" data-search-text="' in html
+    assert 'manager-portal-filter.js' in html
+
+
+def test_profile_page_has_a_crop_dialog_wired_to_the_file_input(client, app):
+    """The avatar <input> used to upload whatever raw image the user picked
+    directly -- no way to reposition or crop it first. avatar-crop.js now
+    intercepts the file selection, opens #avatar-crop-modal, and only writes
+    a cropped PNG back into the input on save; assert the markup it depends
+    on (ids, the script include) is actually present on /profile."""
+    login(client)
+    response = client.get("/profile")
+    assert response.status_code == 200
+    html = response.data.decode()
+    assert 'id="avatar-input"' in html
+    assert 'id="avatar-crop-modal"' in html
+    assert 'id="avatar-crop-image"' in html
+    assert 'id="avatar-crop-zoom"' in html
+    assert 'id="profile-avatar-preview-img"' in html
+    assert 'id="profile-avatar-preview-placeholder"' in html
+    assert "avatar-crop.js" in html
+
+
+def test_csp_allows_blob_images_for_the_avatar_cropper(client, app):
+    """avatar-crop.js reads the selected file via URL.createObjectURL() and
+    assigns the resulting blob: URL as an <img> src (both for the crop
+    dialog's own preview and the live avatar preview after saving) -- the
+    default img-src 'self' data: CSP would silently block that image from
+    ever rendering, the same class of bug already hit once for topology's
+    inline script (see B-289). img-src must keep allowing blob:."""
+    login(client)
+    response = client.get("/profile")
+    csp = response.headers.get("Content-Security-Policy", "")
+    img_src = next((part.strip() for part in csp.split(";") if part.strip().startswith("img-src")), "")
+    assert "blob:" in img_src.split()
+
+
+def test_modules_page_renders_a_distinct_icon_per_workspace(client, app):
+    """Each of the 9 enterprise workspaces used to share the same generic
+    two-letter prefix badge (e.g. two different domains both showing "PR"
+    when their prefixes collided) -- DOMAIN_ICONS now gives every domain its
+    own hand-authored SVG glyph, one per module-card, distinct from all the
+    others."""
+    login(client)
+    response = client.get("/modules")
+    assert response.status_code == 200
+    html = response.data.decode()
+    icon_svgs = re.findall(r'<span class="module-icon"><svg[^>]*>(.*?)</svg></span>', html)
+    assert len(icon_svgs) == len(DOMAIN_CONFIG)
+    assert len(set(icon_svgs)) == len(icon_svgs)
 
 
 def test_rack_list_shows_space_used_when_a_ci_has_no_height_set(client, app):

@@ -19,10 +19,10 @@
       {% for item in items %}
       <tr>
         <td><a href="{{ url_for('improvement_detail', item_id=item.id) }}">{{ item.number }}</a></td>
-        <td>{{ item.title }}</td>
+        <td><span class="truncate" title="{{ item.title }}">{{ item.title }}</span></td>
         <td>{{ item.source_type|title if item.source_type else 'Manual' }}</td>
         <td><span class="badge">{{ item.status }}</span></td>
-        <td>{{ item.owner.name if item.owner else 'Unassigned' }}</td>
+        <td><span class="truncate" title="{{ item.owner.name if item.owner else 'Unassigned' }}">{{ item.owner.name if item.owner else 'Unassigned' }}</span></td>
         <td>{{ (item.created_at|usertime('%b %d, %Y')) }}</td>
       </tr>
       {% else %}<tr><td colspan="6" class="empty-table">No improvement items yet.</td></tr>{% endfor %}

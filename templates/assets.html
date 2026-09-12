@@ -29,7 +29,7 @@
   <div class="list-breadcrumb"><span>▽</span> All{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
   <div class="task-list-scroll">
   <table class="task-list"><thead><tr><th>Asset tag</th><th>Name</th><th>Type</th><th>Status</th><th>Owner</th><th>Serial</th></tr></thead><tbody>
-    {% for a in assets %}<tr><td><strong>{{ a.asset_tag }}</strong></td><td>{{ a.name }}</td><td>{{ a.asset_type }}</td><td><span class="badge">{{ a.status }}</span></td><td>{{ a.owner.name if a.owner else 'Unassigned' }}</td><td>{{ a.serial_number or '—' }}</td></tr>
+    {% for a in assets %}<tr><td><strong>{{ a.asset_tag }}</strong></td><td><span class="truncate" title="{{ a.name }}">{{ a.name }}</span></td><td>{{ a.asset_type }}</td><td><span class="badge">{{ a.status }}</span></td><td><span class="truncate" title="{{ a.owner.name if a.owner else 'Unassigned' }}">{{ a.owner.name if a.owner else 'Unassigned' }}</span></td><td>{{ a.serial_number or '—' }}</td></tr>
     {% else %}<tr><td colspan="6" class="empty">No matching assets.</td></tr>{% endfor %}
   </tbody></table>
   </div>
