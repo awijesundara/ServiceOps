@@ -6908,6 +6908,8 @@ def create_app(test_config=None):
             db.session.add(preference)
             db.session.commit()
         favorites = Favorite.query.filter_by(user_id=current_user.id).order_by(Favorite.folder, Favorite.label).all()
+        notification_query = tenant_query(Notification).filter_by(user_id=current_user.id)
+        recent_notifications = notification_query.order_by(Notification.created_at.desc()).limit(6).all()
         current_page_url = request.path + (f"?{request.query_string.decode()}" if request.query_string else "")
         return platform_context | {
             "ui_preference": preference,
@@ -6916,9 +6918,12 @@ def create_app(test_config=None):
             "ui_history": RecentView.query.filter_by(user_id=current_user.id).order_by(RecentView.viewed_at.desc()).limit(12).all(),
             "current_page_url": current_page_url,
             "current_page_is_favorite": any(favorite.url == current_page_url for favorite in favorites),
-            "unread_notifications": tenant_query(Notification).filter_by(
-                user_id=current_user.id, read=False
-            ).count(),
+            "ui_notifications": recent_notifications,
+            "ui_notification_urls": {
+                row.id: notification_target_url(row.target_type, row.target_id)
+                for row in recent_notifications
+            },
+            "unread_notifications": notification_query.filter_by(read=False).count(),
             "pending_approvals_count": ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
                 ApprovalVote.approver_id == current_user.id,
                 ApprovalVote.state == "Requested",

@@ -52,7 +52,7 @@
     </details>
     {% endif %}
 
-    <details class="nav-group" {% if request.endpoint in ['task_board','my_work_tasks','tickets','requests_list','approval_chains','notifications','org_chart'] %}open{% endif %}>
+    <details class="nav-group" {% if request.endpoint in ['task_board','my_work_tasks','tickets','requests_list','approval_chains','org_chart'] %}open{% endif %}>
       <summary><span class="nav-symbol" aria-hidden="true">◫</span><span>My work</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items">
         <a href="{{ url_for('task_board') }}" {% if nav_active('task_board') %}class="active" aria-current="page"{% endif %}>Visual task board</a>
@@ -61,7 +61,6 @@
         <a href="{{ url_for('requests_list') }}" {% if nav_active('requests_list') %}class="active" aria-current="page"{% endif %}>Service requests</a>
         {% if current_user.effective_role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}" {% if nav_active('tickets', kind='change') %}class="active" aria-current="page"{% endif %}>Changes</a>{% endif %}
         <a href="{{ url_for('approval_chains') }}" {% if nav_active('approval_chains') %}class="active" aria-current="page"{% endif %}>My approvals{% if pending_approvals_count %}<span class="nav-badge">{{ pending_approvals_count if pending_approvals_count < 100 else '99+' }}</span>{% endif %}</a>
-        <a href="{{ url_for('notifications') }}" {% if nav_active('notifications') %}class="active" aria-current="page"{% endif %}>Notifications</a>
         <a href="{{ url_for('org_chart') }}" {% if nav_active('org_chart') %}class="active" aria-current="page"{% endif %}>Organization chart</a>
       </div>
     </details>
@@ -179,7 +178,25 @@
         </div>
       </div>
     </details>
-    <a class="nav-icon" href="{{ url_for('notifications') }}" title="Notifications" aria-label="Notifications"><svg class="icon" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>{% if unread_notifications %}<b>{{ unread_notifications }}</b>{% endif %}</a>
+    <details data-nav-menu="notifications" class="notification-menu">
+      <summary title="Notifications" aria-label="Notifications"><svg class="icon" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>{% if unread_notifications %}<b>{{ unread_notifications if unread_notifications < 100 else '99+' }}</b>{% endif %}</summary>
+      <div class="nav-popover notification-popover">
+        <div class="notification-popover-head"><h3>Notifications</h3>{% if unread_notifications %}<span>{{ unread_notifications }} unread</span>{% endif %}</div>
+        <div class="notification-preview-list">
+          {% for notification in ui_notifications %}
+          {% set target_url = ui_notification_urls.get(notification.id) %}
+          {% if target_url %}
+          <form method="post" action="{{ url_for('notification_mark_read', notification_id=notification.id) }}">
+            <button type="submit" class="notification-preview{% if not notification.read %} unread{% endif %}"><span class="notification-preview-dot" aria-hidden="true"></span><span><strong>{{ notification.title }}</strong><small>{{ notification.body }}</small><time>{{ notification.created_at|usertime('%b %d, %H:%M') }}</time></span></button>
+          </form>
+          {% else %}
+          <a class="notification-preview{% if not notification.read %} unread{% endif %}" href="{{ url_for('notifications') }}"><span class="notification-preview-dot" aria-hidden="true"></span><span><strong>{{ notification.title }}</strong><small>{{ notification.body }}</small><time>{{ notification.created_at|usertime('%b %d, %H:%M') }}</time></span></a>
+          {% endif %}
+          {% else %}<p class="notification-preview-empty">You have no notifications.</p>{% endfor %}
+        </div>
+        <a class="notification-view-all" href="{{ url_for('notifications') }}">View all notifications <span aria-hidden="true">→</span></a>
+      </div>
+    </details>
     <a class="nav-icon" href="{{ url_for('help_center') }}" title="Help" aria-label="Help"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.9.4-1.5 1-1.5 2.2"/><line x1="12" y1="17.3" x2="12" y2="17.31"/></svg></a>
     <a class="nav-icon" href="{{ url_for('preferences') }}" title="Preferences" aria-label="Preferences"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1z"/></svg></a>
   </div>
