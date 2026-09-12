@@ -185,7 +185,7 @@
   </div>
 </header>
 {% endif %}
-<main id="main-content" tabindex="-1" class="{% if not current_user.is_authenticated %}auth-main{% endif %}">
+<main id="main-content" tabindex="-1" class="page-reveal{% if not current_user.is_authenticated %} auth-main{% endif %}">
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
   {% endwith %}

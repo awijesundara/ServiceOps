@@ -52,7 +52,7 @@
 {% for key,title,description,icon,cards in sections %}{% if active_section == key %}{% set active.title=title %}{% set active.description=description %}{% set active.icon=icon %}{% set active.cards=cards %}{% endif %}{% endfor %}
 {% set admin_page_title = active.title %}{% if active_section %}{% set admin_parent_title='Administration' %}{% set admin_parent_url=url_for('admin_home') %}{% include '_admin_context.html' %}{% else %}<nav class="admin-context" aria-label="Administration breadcrumb"><strong>Administration</strong></nav>{% endif %}
 <div class="settings-console admin-console admin-console-single">
-<section class="settings-console-main settings-reveal">
+<section class="settings-console-main">
   <header class="settings-page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>{{ active.title }}</h1><p>{{ active.description }}</p></div><span class="settings-page-symbol">{{ admin_icon(active.icon) }}</span></header>
   {% if not active_section %}
   <section class="settings-scope-banner"><span aria-hidden="true">ⓘ</span><div><strong>Administration control center</strong><p>Select a major area first. Every individual tool is available on the next level and protected by your administrator role.</p></div></section>

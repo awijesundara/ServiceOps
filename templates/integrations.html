@@ -18,7 +18,7 @@
 </fieldset>
 {%- endmacro %}
 <div class="settings-console admin-console admin-console-single">
-<section class="settings-console-main settings-reveal">
+<section class="settings-console-main">
 <header class="settings-page-head"><div><p class="eyebrow">CONNECTIONS &amp; CHANNELS</p><h1>Notifications</h1><p>Choose channels, select event categories, and review delivery health.</p></div><form method="post" action="{{ url_for('integrations_process') }}"><button>Retry pending deliveries</button></form></header>
 <nav class="integration-tabs" aria-label="Notification settings">
   <a href="{{ url_for('integrations_admin', view='overview') }}" class="{{ 'active' if active_view == 'overview' else '' }}">Overview</a>
