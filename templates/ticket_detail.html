@@ -31,7 +31,7 @@
     <div class="record-grid">
       <label><span>Number</span><input value="{{ ticket.number }}" disabled></label>
       <label><span>State</span><select name="state" {% if not can_manage_ticket %}disabled{% endif %}>{% for state in ticket_state_options %}<option {% if ticket.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
-      <label class="required-field"><span>Requested by</span><input value="{{ ticket.requester.name }} · {{ ticket.requester.email }}" disabled></label>
+      <label class="required-field"><span>Requested by</span><input value="{{ ticket.requester.name }} · {{ ticket.requester.email }}" title="{{ ticket.requester.name }} · {{ ticket.requester.email }}" disabled></label>
       <label><span>Impact</span><select name="impact" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label><span>Category</span><input value="{{ ticket.category }}" disabled></label>
       <label><span>Urgency</span><select name="urgency" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.urgency==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
