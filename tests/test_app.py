@@ -2502,6 +2502,23 @@ def test_catalog_request_and_cmdb(client, app):
     assert client.get("/cmdb").status_code == 200
 
 
+def test_help_and_knowledge_use_shared_responsive_article_cards(client):
+    """Help and Knowledge previously used a bare .article-grid with no
+    height/alignment rules, so cards in the same row rendered at visibly
+    different sizes -- unlike every other card grid in the app (All
+    workspaces, Service catalog, Mobile), which already got the shared
+    .responsive-card-grid treatment. Bring these two into line with it."""
+    login(client)
+    help_page = client.get("/help")
+    assert help_page.status_code == 200
+    assert b'responsive-card-grid article-grid help-card-grid' in help_page.data
+    assert help_page.data.count(b'panel article-card') == 5
+
+    knowledge_page = client.get("/knowledge")
+    assert knowledge_page.status_code == 200
+    assert b'responsive-card-grid article-grid knowledge-card-grid' in knowledge_page.data
+
+
 def test_catalog_routes_to_prelogin_ldap_line_manager_without_flapping(client, app):
     """Exercise the reported form flow with a manager placeholder that has
     never logged in, then prove LDAP DN casing and a later org-chart update do

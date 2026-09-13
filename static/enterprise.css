@@ -28,4 +28,9 @@
 .mobile-card{display:flex;flex-direction:column;gap:9px}
 .mobile-card>h2,.mobile-card>p{margin:0}
 .mobile-card>p{color:#44525d}
+.responsive-card-grid.article-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:18px}
+.responsive-card-grid .article-card{display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+.responsive-card-grid .article-card>h2,.responsive-card-grid .article-card>p{margin:0}
+.responsive-card-grid .article-card>.tag{flex:0 0 auto}
+.responsive-card-grid .article-card>.card-footer{display:block;color:var(--muted)}
 @media(max-width:560px){.responsive-card-grid,.responsive-card-grid.module-grid{grid-template-columns:1fr;gap:14px}.responsive-card-grid>.panel{padding:17px}}
