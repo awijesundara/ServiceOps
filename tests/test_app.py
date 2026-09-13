@@ -8515,6 +8515,8 @@ def test_rack_elevation_places_devices_and_respects_class_read_permission(client
         db.session.add(ConfigurationItem(
             name="rack-elevation-visible", ci_class="Server", rack_id=rack.id,
             rack_position=10, rack_u_height=2, rack_face="front",
+            vendor="Dell", model="PowerEdge R640", external_source="netbox",
+            external_id="dcim.device:41",
         ))
         db.session.add(ConfigurationItem(
             name="rack-elevation-hidden", ci_class="Consumable", rack_id=rack.id,
@@ -8522,12 +8524,129 @@ def test_rack_elevation_places_devices_and_respects_class_read_permission(client
         ))
         db.session.add(CiClassPermission(tenant_id=1, ci_class="Consumable", role="admin", can_read=False))
         db.session.commit()
-        rack_id = rack.id
+        rack_id, visible_ci_id = rack.id, ConfigurationItem.query.filter_by(name="rack-elevation-visible").one().id
     login(client)
     response = client.get(f"/cmdb/racks/{rack_id}")
     assert response.status_code == 200
     assert b"rack-elevation-visible" in response.data
     assert b"rack-elevation-hidden" not in response.data
+    assert b"Dell" in response.data
+    assert b"PowerEdge R640" in response.data
+    assert f"/cmdb/device-artwork/{visible_ci_id}/front".encode() in response.data
+
+
+def test_rack_device_artwork_rejects_manual_ci_without_contacting_netbox(client, app):
+    with app.app_context():
+        ci = ConfigurationItem(name="manual-rack-device", ci_class="Server", tenant_id=1)
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+    login(client)
+    assert client.get(f"/cmdb/device-artwork/{ci_id}/front").status_code == 404
+    assert client.get(f"/cmdb/device-artwork/{ci_id}/side").status_code == 404
+
+
+def test_rack_device_artwork_respects_class_read_permission(client, app):
+    """Real gap found live: ci_id is directly addressable by URL, bypassing
+    the CMDB list's own class filtering, the same way cmdb_network_info's
+    own docstring already explains for its sibling route -- but this new
+    route had no ci_class_read_allowed check at all, so a role denied read
+    access to a CI class could still confirm the CI exists (and whether it
+    has NetBox artwork) by hitting this endpoint directly."""
+    with app.app_context():
+        ci = ConfigurationItem(
+            name="restricted-rack-device", ci_class="Consumable", tenant_id=1,
+            external_source="netbox", external_id="dcim.device:99",
+        )
+        db.session.add(ci)
+        db.session.add(CiClassPermission(tenant_id=1, ci_class="Consumable", role="admin", can_read=False))
+        db.session.commit()
+        ci_id = ci.id
+    login(client)
+    assert client.get(f"/cmdb/device-artwork/{ci_id}/front").status_code == 403
+
+
+def test_rack_elevation_matches_local_sample_artwork_by_vendor_and_model(client, app):
+    with app.app_context():
+        rack = Rack(tenant_id=1, name="rack-local-artwork", u_height=42)
+        db.session.add(rack)
+        db.session.flush()
+        ci = ConfigurationItem(
+            name="sample-r640", ci_class="Server", tenant_id=1,
+            vendor="Dell", model="PowerEdge R640", rack_id=rack.id,
+            rack_position=8, rack_u_height=1, rack_face="rear",
+        )
+        db.session.add(ci)
+        db.session.commit()
+        rack_id = rack.id
+    login(client)
+    response = client.get(f"/cmdb/racks/{rack_id}")
+    assert response.status_code == 200
+    assert b"device-artwork/dell-poweredge-r640.rear.png" in response.data
+
+
+def test_rack_device_artwork_proxies_netbox_image_without_exposing_token(client, app, monkeypatch):
+    class ArtworkResponse:
+        is_redirect = False
+
+        def __init__(self, *, payload=None, body=b"", content_type="application/json"):
+            self._payload = payload
+            self.content = body
+            self.headers = {"Content-Type": content_type}
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class ArtworkSession:
+        verify = True
+
+        def __init__(self):
+            self.urls = []
+
+        def get(self, url, **kwargs):
+            self.urls.append(url)
+            if url.endswith("/api/dcim/devices/41/"):
+                return ArtworkResponse(payload={"device_type": {"id": 9}})
+            if url.endswith("/api/dcim/device-types/9/"):
+                return ArtworkResponse(payload={"front_image": "/media/devicetype-images/r640-front.png"})
+            if url.endswith("/media/devicetype-images/r640-front.png"):
+                return ArtworkResponse(body=b"\x89PNG\r\n\x1a\nfixture", content_type="image/png")
+            raise AssertionError(f"unexpected URL {url}")
+
+        def close(self):
+            return None
+
+    with app.app_context():
+        for key, value in (
+            ("NETBOX_ENABLED", "true"),
+            ("NETBOX_BASE_URL", "https://netbox.example.com"),
+            ("NETBOX_API_TOKEN", "server-only-token"),
+        ):
+            setting = db.session.get(PlatformSetting, key)
+            if setting:
+                setting.value = value
+            else:
+                db.session.add(PlatformSetting(key=key, value=value, encrypted=False))
+        ci = ConfigurationItem(
+            name="netbox-rack-device", ci_class="Server", tenant_id=1,
+            external_source="netbox", external_id="dcim.device:41",
+        )
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+    artwork_session = ArtworkSession()
+    monkeypatch.setattr("serviceops_core.netbox_sync._netbox_session", lambda base_url, token: artwork_session)
+    login(client)
+    response = client.get(f"/cmdb/device-artwork/{ci_id}/front")
+    assert response.status_code == 200
+    assert response.data.startswith(b"\x89PNG")
+    assert response.content_type == "image/png"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Cache-Control"] == "private, max-age=3600"
+    assert all("server-only-token" not in url for url in artwork_session.urls)
 
 
 def test_rack_elevation_highlight_param_and_embed_route(client, app):

@@ -94,13 +94,29 @@ document.addEventListener("DOMContentLoaded", () => {
         highlightedBlock = block;
       }
       const title = document.createElementNS(svgNS, "title");
-      title.textContent = `${device.name} · ${device.ci_class} · ${device.status}`;
+      title.textContent = [device.name, device.vendor, device.model, device.ci_class, device.status]
+        .filter(Boolean).join(" · ");
       block.appendChild(title);
+      group.appendChild(block);
+      if (device.artwork_url) {
+        const artwork = document.createElementNS(svgNS, "image");
+        artwork.setAttribute("href", device.artwork_url);
+        artwork.setAttribute("x", 33); artwork.setAttribute("y", y + 1);
+        artwork.setAttribute("width", 174); artwork.setAttribute("height", Math.max(height * rowHeight - 4, 1));
+        artwork.setAttribute("preserveAspectRatio", "none");
+        artwork.setAttribute("aria-hidden", "true");
+        // Keep the generated faceplate visible if NetBox has no image for
+        // this model, its media is temporarily unavailable, or the current
+        // role is not permitted to retrieve it.
+        artwork.addEventListener("error", () => artwork.remove());
+        group.appendChild(artwork);
+      }
       const text = document.createElementNS(svgNS, "text");
       text.textContent = device.name;
       text.setAttribute("x", 40); text.setAttribute("y", y + (height * rowHeight) / 2 + 3);
       text.setAttribute("font-size", "9.5"); text.setAttribute("fill", "#fff");
-      group.appendChild(block);
+      text.setAttribute("paint-order", "stroke"); text.setAttribute("stroke", "#102a32");
+      text.setAttribute("stroke-width", "2.5"); text.setAttribute("stroke-linejoin", "round");
       group.appendChild(text);
       svg.appendChild(group);
     });

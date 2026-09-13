@@ -14695,11 +14695,36 @@ def create_app(test_config=None):
         ).filter_by(rack_id=rack.id).all()
 
         def ci_dict(ci):
+            has_device_artwork = (
+                ci.external_source == "netbox"
+                and bool(ci.external_id and ci.external_id.startswith("dcim.device:"))
+            )
+            artwork_url = None
+            local_artwork = {
+                ("dell", "poweredge r640"): "dell-poweredge-r640",
+                ("dell", "r640"): "dell-poweredge-r640",
+                ("cisco", "catalyst 9300-48p"): "cisco-c9300-48p",
+                ("cisco", "c9300-48p"): "cisco-c9300-48p",
+                ("juniper", "ex4300-48p"): "juniper-ex4300-48p",
+            }.get(((ci.vendor or "").strip().casefold(), (ci.model or "").strip().casefold()))
+            if has_device_artwork:
+                artwork_url = url_for("rack_device_artwork", ci_id=ci.id, face=(ci.rack_face or "front"))
+            elif local_artwork:
+                artwork_url = url_for(
+                    "static", filename=f"device-artwork/{local_artwork}.{ci.rack_face or 'front'}.png",
+                    v=APP_VERSION,
+                )
             return {
                 "id": ci.id, "name": ci.name, "ci_class": ci.ci_class,
                 "status": ci.operational_status,
+                "vendor": ci.vendor, "model": ci.model,
                 "position": ci.rack_position if ci.rack_position is not None else 1,
                 "u_height": ci.rack_u_height if ci.rack_u_height else 1,
+                # The browser only talks to ServiceOps. This authenticated
+                # endpoint retrieves artwork with the server-side NetBox
+                # credential, so the API token and private NetBox URL are
+                # never disclosed in page JSON or browser network requests.
+                "artwork_url": artwork_url,
             }
 
         front = [ci_dict(ci) for ci in cis if ci.rack_face != "rear" and (ci.ci_class or "").lower() != "pdu"]
@@ -14744,6 +14769,87 @@ def create_app(test_config=None):
         rack = tenant_record_or_404(Rack, rack_id)
         payload = _rack_elevation_payload(rack, compact=True)
         return render_template("rack_elevation_embed.html", rack=rack, rack_json=json.dumps(payload))
+
+    @app.get("/cmdb/device-artwork/<int:ci_id>/<face>")
+    @roles("agent", "manager", "admin")
+    def rack_device_artwork(ci_id, face):
+        """Proxy a NetBox device-type elevation image without exposing its token.
+
+        NetBox's device serializer identifies the device type, whose detail
+        serializer owns the actual front/rear image URL. Both API reads and
+        the image fetch are constrained to the configured NetBox origin;
+        redirects, active content, and oversized files are rejected.
+        """
+        if face not in ("front", "rear"):
+            abort(404)
+        ci = tenant_record_or_404(ConfigurationItem, ci_id)
+        # ci_id is directly addressable by URL, bypassing the CMDB list's own
+        # class filtering -- the same read-permission check cmdb_network_info
+        # already applies for the same reason.
+        if not ci_class_read_allowed(current_user.tenant_id, ci.ci_class, current_user.effective_role):
+            abort(403)
+        if ci.external_source != "netbox" or not (ci.external_id or "").startswith("dcim.device:"):
+            abort(404)
+        if not setting_bool("NETBOX_ENABLED"):
+            abort(404)
+        base_url = setting_value("NETBOX_BASE_URL", "").strip()
+        token = setting_value("NETBOX_API_TOKEN", "").strip()
+        if not base_url or not token or not integration_endpoint_valid(base_url, allow_private_network=True):
+            abort(404)
+
+        from serviceops_core.netbox_sync import _netbox_session
+
+        netbox_device_id = ci.external_id.split(":", 1)[1]
+        client = _netbox_session(base_url, token)
+        try:
+            device_response = client.get(
+                f"{base_url.rstrip('/')}/api/dcim/devices/{netbox_device_id}/",
+                timeout=10, allow_redirects=False,
+            )
+            if getattr(device_response, "is_redirect", False):
+                abort(502)
+            device_response.raise_for_status()
+            device_type = (device_response.json() or {}).get("device_type") or {}
+            device_type_id = device_type.get("id")
+            if not device_type_id:
+                abort(404)
+            type_response = client.get(
+                f"{base_url.rstrip('/')}/api/dcim/device-types/{device_type_id}/",
+                timeout=10, allow_redirects=False,
+            )
+            if getattr(type_response, "is_redirect", False):
+                abort(502)
+            type_response.raise_for_status()
+            image_url = (type_response.json() or {}).get(f"{face}_image")
+            if not image_url:
+                abort(404)
+            image_url = urljoin(f"{base_url.rstrip('/')}/", str(image_url))
+            base = urlparse(base_url)
+            image = urlparse(image_url)
+            def effective_port(parsed):
+                return parsed.port or (443 if parsed.scheme == "https" else 80)
+            if (image.scheme, image.hostname, effective_port(image)) != (
+                base.scheme, base.hostname, effective_port(base),
+            ):
+                abort(502)
+            image_response = client.get(image_url, timeout=15, allow_redirects=False)
+            if getattr(image_response, "is_redirect", False):
+                abort(502)
+            image_response.raise_for_status()
+            body = image_response.content
+            content_type = str(image_response.headers.get("Content-Type", "")).split(";", 1)[0].lower()
+            allowed_types = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+            if content_type not in allowed_types or not body or len(body) > 5 * 1024 * 1024:
+                abort(415)
+            response = Response(body, mimetype=content_type)
+            response.headers["Cache-Control"] = "private, max-age=3600"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            return response
+        except requests.RequestException:
+            current_app.logger.warning("NetBox device artwork retrieval failed", exc_info=True)
+            abort(502)
+        finally:
+            client.close()
 
     @app.route("/tickets/import/rt", methods=["GET", "POST"])
     @roles("admin")
