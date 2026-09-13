@@ -6460,6 +6460,24 @@ def create_app(test_config=None):
             "poolclass": StaticPool,
             "connect_args": {"check_same_thread": False},
         }
+    elif app.config["SQLALCHEMY_DATABASE_URI"].startswith("postgres"):
+        # Without pool_pre_ping, a connection the database (or an
+        # in-between pooler/load balancer) has silently closed -- after an
+        # idle timeout, a failover, or a routine network blip -- surfaces to
+        # the *next* request as an unhandled OperationalError instead of
+        # being transparently replaced, which previously meant an
+        # otherwise-healthy pod could start 500ing until its pool happened
+        # to cycle. pool_recycle proactively retires connections before
+        # they're likely to hit such a server-side idle timeout. Pool sizing
+        # is set to comfortably cover this process's own concurrency (2
+        # gthread workers x 4 threads = 8 threads that can hold a
+        # connection at once; see tools/gunicorn-entrypoint.sh).
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+            "pool_pre_ping": True,
+            "pool_recycle": int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800")),
+            "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
+            "max_overflow": int(os.getenv("DB_POOL_MAX_OVERFLOW", "10")),
+        }
     if app.config["TESTING"]:
         if not test_config or "CSRF_ENABLED" not in test_config:
             app.config["CSRF_ENABLED"] = False
