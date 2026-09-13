@@ -1321,6 +1321,37 @@ def setting_int(key, default=0):
     return coerce_int(setting_value(key, str(default)), default)
 
 
+NOTIFICATION_SEVERITY_BY_EVENT = {
+    "sla.breached": "critical",
+    "client_ticket.escalated": "critical",
+    "approval.requested": "warning",
+    "enterprise.approval_requested": "warning",
+}
+
+
+def notification_severity_for_event(event_type):
+    """Maps a create_notification() event_type to "critical"/"warning"/"info"
+    for the bell icon's badge color and the notification list's accent bar.
+    Unclassified and absent event types are "info" -- the pre-existing,
+    unstyled appearance -- so this is purely additive for callers that
+    already pass a recognized event_type."""
+    return NOTIFICATION_SEVERITY_BY_EVENT.get(event_type, "info")
+
+
+def highest_notification_severity(unread_query):
+    """The single most severe value among a user's unread notifications, or
+    None when there are no unread notifications -- drives the bell icon's
+    badge color (a bell showing 5 unread where only one is critical should
+    still read as critical, not be diluted to the count's own color)."""
+    severities = {
+        row[0] for row in unread_query.filter_by(read=False).with_entities(Notification.severity).distinct()
+    }
+    for level in ("critical", "warning", "info"):
+        if level in severities:
+            return level
+    return None
+
+
 def create_notification(user_id, title, body, tenant_id=None, target_type=None, target_id=None,
                          event_type=None, template_vars=None):
     """`event_type`/`template_vars` are optional (B-130): when given, (1) a
@@ -1344,6 +1375,7 @@ def create_notification(user_id, title, body, tenant_id=None, target_type=None, 
     notification = Notification(
         user_id=user_id, title=title, body=body, tenant_id=tenant_id,
         target_type=target_type, target_id=target_id,
+        severity=notification_severity_for_event(event_type),
     )
     db.session.add(notification)
     db.session.flush()
@@ -6937,6 +6969,7 @@ def create_app(test_config=None):
                 for row in recent_notifications
             },
             "unread_notifications": notification_query.filter_by(read=False).count(),
+            "unread_notification_severity": highest_notification_severity(notification_query),
             "pending_approvals_count": ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
                 ApprovalVote.approver_id == current_user.id,
                 ApprovalVote.state == "Requested",
@@ -16397,6 +16430,39 @@ def create_app(test_config=None):
         run_change_conflict_detection(ticket, governance)
         db.session.commit()
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+
+    @app.get("/notifications/poll")
+    @login_required
+    def notifications_poll():
+        """Lightweight JSON the bell icon polls to detect newly-arrived
+        notifications and ring/recolor itself without a full page reload.
+        Deliberately returns the same shape the initial page-load bell
+        already renders from (recent rows + unread count/severity) so the
+        client can re-render with one code path instead of two."""
+        query = tenant_query(Notification).filter_by(user_id=current_user.id)
+        recent = query.order_by(Notification.created_at.desc()).limit(6).all()
+        return jsonify({
+            "unread_count": query.filter_by(read=False).count(),
+            "severity": highest_notification_severity(query),
+            "latest_id": recent[0].id if recent else None,
+            "notifications": [
+                {
+                    "id": row.id, "title": row.title, "body": row.body,
+                    "severity": row.severity, "read": row.read,
+                    "created_at": row.created_at.isoformat(),
+                    "created_at_display": usertime_filter(row.created_at, "%b %d, %H:%M"),
+                    # has_target distinguishes a real destination (mark-read
+                    # via POST, then redirect there -- see notification_mark_read)
+                    # from the no-target fallback (a plain link straight to
+                    # the notifications list, never marked read from here),
+                    # exactly matching base.html's server-rendered markup.
+                    "has_target": bool(notification_target_url(row.target_type, row.target_id)),
+                    "mark_read_url": url_for("notification_mark_read", notification_id=row.id),
+                    "list_url": url_for("notifications"),
+                }
+                for row in recent
+            ],
+        })
 
     @app.get("/notifications")
     @login_required

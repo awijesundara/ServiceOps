@@ -1713,6 +1713,13 @@ class Notification(db.Model):
     target_type = db.Column(db.String(30))
     target_id = db.Column(db.Integer)
     read = db.Column(db.Boolean, nullable=False, default=False)
+    # "critical" | "warning" | "info" -- drives the bell icon's badge color
+    # and the notification list's left-accent bar. Computed once at creation
+    # time from the triggering event_type (see notification_severity_for_event
+    # in app.py) rather than derived on read, so historical notifications
+    # keep the severity that was actually true when they were raised even if
+    # the classification rules change later.
+    severity = db.Column(db.String(10), nullable=False, default="info")
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     user = db.relationship("User")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
