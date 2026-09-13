@@ -28,6 +28,11 @@ def upgrade():
 
 
 def downgrade():
-    columns = {c["name"] for c in sa.inspect(op.get_bind()).get_columns("notification")}
-    if "severity" in columns:
-        op.drop_column("notification", "severity")
+    # Expand-phase migrations in this project never implement a real
+    # downgrade (see 20260911_0089's identical convention): a rolling
+    # deployment can have old and new application code running against the
+    # same database simultaneously, and yanking the column back out would
+    # break whichever code is still mid-request against it. The column is
+    # retained; a future contract-phase migration removes it once no
+    # supported application version still reads/writes it.
+    pass
