@@ -5,6 +5,13 @@ body{letter-spacing:.002em}.sidebar{background:linear-gradient(180deg,var(--bran
 .brand-product{font-size:17px;line-height:1.1}.brand-product small{display:block;margin-top:4px;color:#a9c3c9;font-size:8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
 .sidebar nav{gap:2px;overflow-y:auto;padding-right:3px}.sidebar nav small{color:#86aab2;margin-top:17px}.sidebar nav a{position:relative;border-left:3px solid transparent;padding:9px 11px}
 .sidebar nav a:hover,.sidebar nav a:focus-visible{background:rgba(255,255,255,.1);border-left-color:var(--brand-amber);color:#fff;outline:none}
+/* Real bug found live (WCAG 2.4.7 Focus Visible, e2e keyboard-nav test): the
+   current-page nav item's `.active` rule sets background/border-left/color
+   with `!important` (admin-workspace.css), which is visually identical to
+   this focus-visible treatment -- so tabbing onto the active nav item gave
+   no perceptible change at all. A box-shadow ring survives that !important
+   collision since nothing else sets box-shadow on this element. */
+.sidebar nav a:focus-visible{box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)}
 .unified-nav{height:62px;border-bottom:1px solid #d4dfe2;box-shadow:0 2px 8px rgba(0,62,76,.05)}.global-search input{background:#eef3f4;border:1px solid transparent;border-radius:6px}
 .global-search input:focus{background:#fff;border-color:var(--brand-teal);box-shadow:0 0 0 3px rgba(0,62,76,.12);outline:0}.nav-icon:hover,.nav-menus summary:hover{background:var(--brand-teal-soft);color:var(--brand-teal);border-radius:6px}
 main{width:auto;max-width:none}.page-head{padding-bottom:16px;border-bottom:1px solid var(--line)}.page-head h1{font-size:25px;font-weight:720;letter-spacing:-.025em}.eyebrow{color:var(--brand-teal)!important}
