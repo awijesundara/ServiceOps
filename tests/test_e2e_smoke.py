@@ -122,6 +122,7 @@ CARD_LAYOUT_PAGES = (
     ("all-workspaces", "/modules", ".module-card"),
     ("service-catalog", "/catalog", ".catalog-item"),
     ("serviceops-mobile", "/mobile-app", ".mobile-card"),
+    ("help-center", "/help", ".article-card"),
 )
 
 # Every page carrying a .task-list-scroll wide table, for the dedicated
