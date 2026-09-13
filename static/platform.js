@@ -480,4 +480,106 @@ document.addEventListener("DOMContentLoaded", () => {
       button.textContent = expanded ? "▸" : "▾";
     });
   });
+
+  // Notification bell: poll for newly-arrived notifications and ring/
+  // recolor the bell when the latest notification id changes. Polling
+  // (not SSE/websockets) matches this app's existing architecture -- there
+  // is no other real-time push channel on the page to piggyback on.
+  const notificationMenu = document.querySelector(".notification-menu[data-poll-url]");
+  if (notificationMenu) {
+    const pollUrl = notificationMenu.dataset.pollUrl;
+    let latestId = Number(notificationMenu.dataset.latestId || 0);
+    const SEVERITY_ICON = {critical: "⚠", warning: "⏰"};
+
+    function renderNotifications(data) {
+      const summary = notificationMenu.querySelector("summary");
+      const list = notificationMenu.querySelector(".notification-preview-list");
+      const headSpan = notificationMenu.querySelector(".notification-popover-head span");
+      let badge = summary.querySelector(".notification-count");
+      if (data.unread_count > 0) {
+        if (!badge) {
+          badge = document.createElement("b");
+          badge.className = "notification-count";
+          summary.appendChild(badge);
+        }
+        badge.textContent = data.unread_count < 100 ? String(data.unread_count) : "99+";
+        badge.className = `notification-count severity-${data.severity || "info"}`;
+      } else if (badge) {
+        badge.remove();
+      }
+      if (headSpan) {
+        headSpan.textContent = data.unread_count > 0 ? `${data.unread_count} unread` : "";
+        headSpan.hidden = data.unread_count === 0;
+      }
+      notificationMenu.dataset.severity = data.severity || "";
+      if (!list) return;
+      if (!data.notifications.length) {
+        list.innerHTML = '<p class="notification-preview-empty">You have no notifications.</p>';
+        return;
+      }
+      list.innerHTML = "";
+      data.notifications.forEach(n => {
+        const icon = SEVERITY_ICON[n.severity] || "ⓘ";
+        const cls = `notification-preview severity-${n.severity}${n.read ? "" : " unread"}`;
+        const inner = document.createElement("span");
+        inner.className = "notification-preview-glyph";
+        inner.setAttribute("aria-hidden", "true");
+        inner.textContent = icon;
+        const textWrap = document.createElement("span");
+        textWrap.innerHTML = "<strong></strong><small></small><time></time>";
+        textWrap.querySelector("strong").textContent = n.title;
+        textWrap.querySelector("small").textContent = n.body;
+        textWrap.querySelector("time").textContent = n.created_at_display;
+        // Exactly mirrors base.html's server-rendered markup: a real target
+        // marks the notification read via POST before redirecting there; no
+        // target is a plain link to the notifications list, never marked
+        // read from this popover.
+        let control;
+        if (n.has_target) {
+          const form = document.createElement("form");
+          form.method = "post";
+          form.action = n.mark_read_url;
+          control = document.createElement("button");
+          control.type = "submit";
+          form.appendChild(control);
+          list.appendChild(form);
+        } else {
+          control = document.createElement("a");
+          control.href = n.list_url;
+          list.appendChild(control);
+        }
+        control.className = cls;
+        control.appendChild(inner);
+        control.appendChild(textWrap);
+      });
+    }
+
+    async function pollNotifications() {
+      // Skip while a form submit inside the popover (mark-as-read) is
+      // navigating -- avoids clobbering that in-flight state change.
+      if (document.visibilityState !== "visible") return;
+      try {
+        const response = await fetch(pollUrl, {headers: {Accept: "application/json"}});
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data.latest_id && data.latest_id !== latestId) {
+          const isNewArrival = latestId !== 0 && data.latest_id > latestId;
+          latestId = data.latest_id;
+          if (isNewArrival) {
+            notificationMenu.classList.remove("ringing");
+            // Force reflow so re-adding the class restarts the animation
+            // even if a previous ring is still settling.
+            void notificationMenu.offsetWidth;
+            notificationMenu.classList.add("ringing");
+          }
+        }
+        renderNotifications(data);
+      } catch (error) {
+        // A transient network hiccup shouldn't spam the console on a
+        // background poll; the next tick tries again.
+      }
+    }
+    notificationMenu.addEventListener("animationend", () => notificationMenu.classList.remove("ringing"));
+    setInterval(pollNotifications, 25000);
+  }
 });

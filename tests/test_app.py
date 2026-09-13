@@ -1840,6 +1840,73 @@ def test_notification_bell_previews_recent_items_without_sidebar_link(client, ap
     assert b">Notifications</a>" not in response.data
 
 
+def test_notification_severity_is_computed_from_event_type_and_persisted(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        critical = create_notification(
+            admin.id, "SLA breached", "INC0000001 breached its response SLA.",
+            tenant_id=admin.tenant_id, event_type="sla.breached",
+        )
+        warning = create_notification(
+            admin.id, "Approval requested", "CHG0000001 needs your decision.",
+            tenant_id=admin.tenant_id, event_type="approval.requested",
+        )
+        unclassified = create_notification(
+            admin.id, "Comment added", "Someone commented.",
+            tenant_id=admin.tenant_id,
+        )
+        db.session.commit()
+        assert critical.severity == "critical"
+        assert warning.severity == "warning"
+        assert unclassified.severity == "info"
+
+
+def test_notification_bell_badge_reflects_highest_unread_severity(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        create_notification(
+            admin.id, "Comment added", "Someone commented.", tenant_id=admin.tenant_id,
+        )
+        create_notification(
+            admin.id, "SLA breached", "INC0000001 breached its response SLA.",
+            tenant_id=admin.tenant_id, event_type="sla.breached",
+        )
+        db.session.commit()
+    response = login(client)
+    assert b'data-severity="critical"' in response.data
+    assert b'class="notification-count severity-critical"' in response.data
+    assert b'severity-critical' in response.data
+
+
+def test_notifications_poll_endpoint_reports_unread_count_and_severity(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        note = create_notification(
+            admin.id, "Approval requested", "CHG0000001 needs your decision.",
+            tenant_id=admin.tenant_id, event_type="approval.requested",
+        )
+        db.session.commit()
+        note_id = note.id
+    login(client)
+    response = client.get("/notifications/poll")
+    assert response.status_code == 200
+    data = response.json
+    assert data["unread_count"] == 1
+    assert data["severity"] == "warning"
+    assert data["latest_id"] == note_id
+    row = data["notifications"][0]
+    assert row["severity"] == "warning"
+    assert row["title"] == "Approval requested"
+    assert "mark_read_url" in row and "list_url" in row
+
+    other_client_login = login(client, username="employee", password="Employee123!")
+    assert other_client_login.status_code == 200
+    empty = client.get("/notifications/poll").json
+    assert empty["unread_count"] == 0
+    assert empty["severity"] is None
+    assert empty["latest_id"] is None
+
+
 def test_client_ticket_filter_control_uses_toolbar_button_dimensions(client):
     login(client)
 
