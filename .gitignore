@@ -45,6 +45,7 @@ backups/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+test-results/
 .venv/
 instance/
 CLAUDE.md

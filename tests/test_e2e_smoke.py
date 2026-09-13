@@ -228,6 +228,49 @@ def test_client_management_toolbar_buttons_share_a_consistent_height(authenticat
     assert max(heights) - min(heights) <= 1, f"toolbar buttons have mismatched heights: {heights}"
 
 
+def test_select_enhance_checkmark_is_vertically_centered_on_the_selected_option(browser, authenticated_storage):
+    """Real bug reported live with a screenshot: the custom combobox widget
+    (static/select-enhance.js) that replaces every <select> marks the
+    current value with a `::after{content:"✓";float:right}` pseudo-element.
+    A float doesn't respect the row's vertical centering, so the checkmark
+    drifted down toward the row boundary instead of sitting next to the
+    option text. Fixed to `position:absolute` + flex centering, matching
+    the pattern already used for the widget's own dropdown chevron."""
+    context = browser.new_context(storage_state=authenticated_storage)
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE_URL}/tickets/new/incident", wait_until="networkidle")
+        page.fill('input[name="title"]', "select-enhance checkmark regression")
+        page.fill('textarea[name="description"]', "regression coverage")
+        page.select_option('select[name="impact"]', index=1)
+        page.select_option('select[name="urgency"]', index=1)
+        page.select_option('select[name="group_id"]', index=1)
+        page.click("button.primary")
+        page.wait_for_load_state("networkidle")
+        assert "/ticket/" in page.url, f"expected the new incident to be created, landed on {page.url}"
+        combobox = page.locator('.select-enhance:has(select[name="contact_type"]) .select-enhance-input')
+        combobox.click()
+        page.wait_for_selector(".select-enhance-option.current")
+        box = page.evaluate(
+            """() => {
+                const row = document.querySelector('.select-enhance-option.current');
+                const mark = getComputedStyle(row, '::after');
+                const rowBox = row.getBoundingClientRect();
+                return {content: mark.content, top: parseFloat(mark.top) || null, rowHeight: rowBox.height};
+            }"""
+        )
+        assert box["content"].strip('"') == "✓"
+        # A vertically centered absolutely-positioned checkmark reports its
+        # own computed top/bottom as 0px (stretched via top:0;bottom:0;
+        # display:flex;align-items:center) rather than an arbitrary offset
+        # a float would produce -- confirm the row itself has a sane,
+        # single-line height rather than being stretched by an overflowing
+        # floated element (the visible symptom of the original bug).
+        assert box["rowHeight"] < 44, f"option row height suggests the checkmark is still overflowing: {box}"
+    finally:
+        context.close()
+
+
 @pytest.mark.parametrize("journey,path", CORE_WORKFLOWS, ids=[item[0] for item in CORE_WORKFLOWS])
 def test_critical_journey_is_responsive_error_free_and_accessible(authenticated_page, journey, path):
     page, viewport_name, console_errors = authenticated_page
@@ -273,3 +316,139 @@ def test_critical_journey_is_responsive_error_free_and_accessible(authenticated_
                 .map(el => ({scrollWidth: el.scrollWidth, clientWidth: el.clientWidth}))"""
         )
         assert not overflow, f"{journey} still has a horizontally-scrolling .task-list at 1440px: {overflow}"
+
+
+# B-080 (WCAG 2.2 AA): axe-core catches static DOM issues (missing names,
+# contrast, ARIA misuse) but cannot exercise real keyboard operability,
+# focus order/visibility, reduced-motion behavior, or exact-320px reflow --
+# those need a real browser actually doing the interaction, which is what
+# the tests below add. This is still an automated, self-run proxy for the
+# independent human/AT audit the backlog row calls for, not a replacement
+# for one.
+
+@pytest.fixture()
+def keyboard_page(browser, authenticated_storage):
+    context = browser.new_context(storage_state=authenticated_storage)
+    page = context.new_page()
+    try:
+        yield page
+    finally:
+        context.close()
+
+
+def test_keyboard_only_navigation_reaches_skip_link_and_main_content(keyboard_page):
+    """WCAG 2.4.1 (Bypass Blocks) / 2.1.1 (Keyboard): a keyboard-only user's
+    very first Tab press must reveal a working skip link, and activating it
+    must move focus into the main content region -- not just scroll to it."""
+    page = keyboard_page
+    page.goto(f"{BASE_URL}/", wait_until="networkidle")
+    page.keyboard.press("Tab")
+    focused = page.evaluate(
+        "() => ({tag: document.activeElement.tagName, cls: document.activeElement.className, "
+        "href: document.activeElement.getAttribute('href')})"
+    )
+    assert focused["cls"] == "skip-link" and focused["href"] == "#main-content", (
+        f"first Tab press must focus the skip link, got {focused}"
+    )
+    page.keyboard.press("Enter")
+    active_id = page.evaluate("() => document.activeElement.id")
+    assert active_id == "main-content", f"activating the skip link must focus #main-content, got {active_id!r}"
+
+
+def test_focused_interactive_elements_have_a_visible_focus_indicator(keyboard_page):
+    """WCAG 2.4.7 (Focus Visible): tabbing through the first several
+    interactive elements on the dashboard must never land on one with focus
+    styling fully suppressed (a bare `outline: none` and no replacement).
+    Checks the focused element itself plus up to two ancestors, since a
+    `:focus-within` ring on a wrapping container (this app's own pattern for
+    the sidebar's "Find menu" search box) is just as valid an indicator as
+    the focused element's own outline -- comparing only `document
+    .activeElement`'s own computed style would false-flag that pattern."""
+    page = keyboard_page
+    page.goto(f"{BASE_URL}/", wait_until="networkidle")
+    page.evaluate(
+        """() => {
+            window.__paint = (node) => {
+                const s = getComputedStyle(node);
+                return [s.outlineStyle + s.outlineWidth, s.boxShadow, s.borderColor,
+                        s.borderLeftColor, s.backgroundColor].join('|');
+            };
+        }"""
+    )
+
+    invisible = []
+    for _ in range(12):
+        page.keyboard.press("Tab")
+        before = page.evaluate(
+            """() => {
+                const el = document.activeElement;
+                if (!el || el === document.body) return null;
+                window.__focusProbeEl = el;
+                return {
+                    tag: el.tagName, cls: el.className,
+                    paints: [el, el.parentElement, el.parentElement && el.parentElement.parentElement]
+                        .filter(Boolean).map(window.__paint),
+                };
+            }"""
+        )
+        if not before:
+            continue
+        page.evaluate("() => window.__focusProbeEl.blur()")
+        page.wait_for_timeout(200)  # let any CSS transition settle before reading the "rest" state
+        rest_paints = page.evaluate(
+            """() => {
+                const el = window.__focusProbeEl;
+                return [el, el.parentElement, el.parentElement && el.parentElement.parentElement]
+                    .filter(Boolean).map(window.__paint);
+            }"""
+        )
+        page.evaluate("() => window.__focusProbeEl.focus()")
+        changed = any(b != r for b, r in zip(before["paints"], rest_paints))
+        if not changed:
+            invisible.append({"tag": before["tag"], "cls": before["cls"]})
+    assert not invisible, f"focused elements with no visible focus indicator on themselves or a wrapping container: {invisible}"
+
+
+def test_reduced_motion_preference_disables_page_reveal_animation(browser, authenticated_storage):
+    """WCAG 2.3.3 (Animation from Interactions): a user who has told the OS
+    they want reduced motion must actually get it, not just have the media
+    query exist unexercised in the stylesheet."""
+    context = browser.new_context(storage_state=authenticated_storage, reduced_motion="reduce")
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE_URL}/", wait_until="networkidle")
+        animation = page.evaluate(
+            """() => {
+                const el = document.querySelector('.page-reveal');
+                if (!el) return null;
+                const s = getComputedStyle(el);
+                return {name: s.animationName, duration: s.animationDuration};
+            }"""
+        )
+        if animation is not None:
+            assert animation["name"] == "none" or animation["duration"] == "0s", (
+                f"prefers-reduced-motion did not disable .page-reveal's animation: {animation}"
+            )
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("journey,path", [
+    ("dashboard", "/"), ("tickets-incident", "/tickets/incident"), ("cmdb", "/cmdb"),
+], ids=["dashboard", "tickets-incident", "cmdb"])
+def test_reflow_at_320px_has_no_two_dimensional_scrolling(browser, authenticated_storage, journey, path):
+    """WCAG 1.4.10 (Reflow): content must be usable at a 320 CSS-pixel-wide
+    viewport (the standard equivalent of 400% zoom on a 1280px design) with
+    no horizontal scrolling of the page itself -- only isolated, intentional
+    scroll containers (a wide table) may still scroll internally."""
+    context = browser.new_context(viewport={"width": 320, "height": 640}, storage_state=authenticated_storage)
+    page = context.new_page()
+    try:
+        response = page.goto(f"{BASE_URL}{path}", wait_until="networkidle")
+        assert response and response.ok
+        overflow = page.evaluate(
+            "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
+        )
+        assert overflow <= 1, f"{journey} causes page-level horizontal scroll at 320px (overflow={overflow}px)"
+    finally:
+        context.close()
