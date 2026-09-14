@@ -1,520 +1,111 @@
 # ServiceOps
 
-**ServiceOps is an independently built, self-hosted enterprise service-management
-platform for incidents, requests, changes, problems, CMDB, service catalog,
-approvals, SLAs, automation, and analytics.** It is designed for controlled
-on-premises or private-cloud operation without vendor lock-in.
+Self-hosted ITSM platform — incidents, changes, problems, requests, CMDB,
+service catalog, SLAs, and approvals. No vendor lock-in, runs on your own
+infrastructure.
 
 [![Supply chain](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml/badge.svg)](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml)
 [![Version](https://img.shields.io/badge/version-1.87.21-003E4C)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](Dockerfile)
-[![Docker](https://img.shields.io/badge/docker-compose%20%7C%20kubernetes-2496ED?logo=docker&logoColor=white)](#deployment-options)
+[![Docker](https://img.shields.io/badge/docker-compose%20%7C%20kubernetes-2496ED?logo=docker&logoColor=white)](#deploy)
 [![PostgreSQL](https://img.shields.io/badge/database-postgresql-4169E1?logo=postgresql&logoColor=white)](#architecture)
-
-## Overview
-
-ServiceOps provides governed IT service-management workflows with a web
-application, background worker, PostgreSQL database, REST API, installable PWA,
-and native iOS client. A standard single-server installation includes the
-application, database, persistent uploads, automated health recovery, and daily
-verified backups.
-
-### Core capabilities
-
-- Incident, major-incident, request, change, and problem management
-- REQ, RITM, and SCTASK service-catalog fulfillment
-- Configuration management database, assets, service maps, and CI ownership
-- Line-manager, CI-owner, and CCB approval workflows with material-change reapproval
-- SLA tracking, escalations, workflow automation, and durable notifications
-- Knowledge, customer service, HR, security, risk, project, and field-service workspaces
-- Tamper-evident audit history, signed exports, analytics, and a versioned REST API
-- AD/LDAP and Keycloak integration, MFA, passkeys, and scoped authorization
-
-### Directory intelligence and approval continuity
-
-When AD/LDAP is enabled, interactive login and scheduled synchronization build
-a bounded, tenant-scoped user profile from administrator-mapped attributes.
-There is deliberately no **Sync all LDAP users** action. New accounts use
-just-in-time provisioning after successful LDAP authentication. A single
-background reconciliation per tenant refreshes known users and only provisions
-a missing manager needed for an approval chain. The search uses RFC 2696 paging,
-an administrator-defined scope filter, a 100-entry default page, a hard safety
-ceiling, a minimum 15-minute cadence, and four-times backoff after failures.
-ServiceOps can display names, title, department/division, employee identifiers
-and type, office, business/mobile phone, UPN, account state and expiry, selected
-directory timestamps, directory OU/domain and website, Unix/NIS identity,
-reporting chain, friendly group names grouped by directory purpose, conservative
-team-mapping suggestions, and the last synchronization time. Profile and admin
-views also connect the identity to assigned assets and owned configuration items.
-Certificate blobs, password material,
-SIDs, security descriptors, and raw authentication data are deliberately not
-copied from the directory.
-
-Reporting lines automatically grant the manager capability to users with active
-direct reports. Directory team names can optionally create tenant-scoped teams;
-group mappings remain explicit, and a newly created team's manager is inferred
-only when every active member resolves to the same active line manager. Teams,
-members, managers, aliases, and mappings can also be administered manually.
-
-For a recorded absence, a manager can delegate their existing approval queue
-upward to their own active line manager for a bounded period. The backup is not
-sent the initial notification, cannot bypass change-freeze policy, and every
-decision records both the acting approver and original accountable manager.
-The profile and session inventory also show server-observed IP, parsed device,
-browser language, and an optional forward-confirmed reverse-DNS hostname. A web
-browser cannot safely disclose the workstation hostname, so no client-supplied
-hostname is trusted for authorization or audit identity.
-
-## Screenshots
 
 <table>
 <tr>
-<td width="50%"><img src="docs/readme/dashboard.png" alt="ServiceOps dashboard"><br><sub>Dashboard — open work, SLA risk, and recent activity</sub></td>
-<td width="50%"><img src="docs/readme/incident_detail.png" alt="Incident details"><br><sub>Incident — lifecycle, history, ownership, and governed actions</sub></td>
+<td width="50%"><img src="docs/readme/dashboard.png" alt="Dashboard"><br><sub>Dashboard</sub></td>
+<td width="50%"><img src="docs/readme/incident_detail.png" alt="Incident detail"><br><sub>Incident detail</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/readme/task_board.png" alt="Visual task board"><br><sub>Task board — drag-and-drop backed by governed transitions</sub></td>
-<td width="50%"><img src="docs/readme/catalog.png" alt="Service catalog"><br><sub>Service catalog — self-service ordering and fulfillment routing</sub></td>
+<td width="50%"><img src="docs/readme/task_board.png" alt="Task board"><br><sub>Task board</sub></td>
+<td width="50%"><img src="docs/readme/catalog.png" alt="Service catalog"><br><sub>Service catalog</sub></td>
 </tr>
 </table>
 
-## Deployment options
+## Features
 
-| Environment | Recommended use | Installation method |
-|---|---|---|
-| RPM-managed single server | Standard production or evaluation deployment | [Fresh-server RPM installation](#fresh-server-rpm-installation) |
-| Air-gapped RPM server | Restricted production network with an approved transfer host | [Offline deployment bundle](tools/offline/README.md) followed by the RPM procedure |
-| Docker Compose checkout | Development or customized source deployment | [Docker Compose installation](#docker-compose-installation) |
-| Kubernetes 1.27+ | High availability and horizontally scaled production | [Kubernetes installation](#kubernetes-installation) |
+- Incidents, major incidents, changes, problems, and service requests
+- Service catalog with approval-routed fulfillment (REQ/RITM/SCTASK)
+- CMDB with asset and service-map ownership, NetBox sync
+- Manager / CI-owner / CCB approval chains with reapproval on material change
+- SLAs, escalations, workflow automation, in-app + email + chat notifications
+- Threaded ticket comments, @mentions, and follow/watch
+- Analytics dashboard (MTTR, SLA compliance, CSAT, backlog aging) with CSV export
+- Public status page for major incidents and service uptime
+- Tamper-evident audit log, versioned REST API, installable PWA, native iOS app
+- AD/LDAP + Keycloak login, MFA, passkeys
 
-The RPM release supports EL8, EL9, EL10, Fedora 43, and Fedora 44. This includes
-the corresponding supported RHEL, Rocky Linux, AlmaLinux, and Oracle Linux
-families. For a new standalone deployment, **Rocky Linux 9 minimal** is the
-recommended conservative baseline.
-
-For an air-gapped server, obtain the RPM and Docker Engine packages from an
-approved signed offline OS repository. Prepare the application and runtime-image
-bundle on a connected Linux transfer host using the
-[offline deployment procedure](tools/offline/README.md); it requires immutable
-image digests and verifies every transferred file before loading any image.
-
-## Fresh-server RPM installation
-
-The following procedure installs the current stable release, **v1.87.21**, on a
-fresh Rocky Linux 9, AlmaLinux 9, or Oracle Linux 9 server. Run it from a normal
-administrative account with `sudo` access.
-
-### 1. Prepare the operating system
-
-```bash
-sudo dnf upgrade --refresh -y
-sudo dnf install -y dnf-plugins-core curl
-sudo dnf config-manager --add-repo \
-  https://download.docker.com/linux/centos/docker-ce.repo
-```
-
-If the update installed a new kernel, reboot before continuing:
-
-```bash
-sudo reboot
-```
-
-RHEL hosts should use Docker's RHEL repository instead:
-
-```bash
-sudo dnf config-manager --add-repo \
-  https://download.docker.com/linux/rhel/docker-ce.repo
-```
-
-### 2. Download and verify the RPM
-
-```bash
-mkdir -p serviceops-install
-cd serviceops-install
-
-curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.87.21/serviceops-1.87.21-1.el9.noarch.rpm
-curl -fLO https://github.com/awijesundara/ServiceOps/releases/download/v1.87.21/serviceops-1.87.21-1.el9.noarch.rpm.sha256
-
-sha256sum -c serviceops-1.87.21-1.el9.noarch.rpm.sha256
-```
-
-Do not continue unless checksum verification reports `OK`. Packages for the
-other supported platforms are available on the
-[v1.87.21 release page](https://github.com/awijesundara/ServiceOps/releases/tag/v1.87.21).
-
-### 3. Install and initialize ServiceOps
-
-```bash
-sudo dnf install -y ./serviceops-1.87.21-1.el9.noarch.rpm
-sudo serviceops setup --mode bundled --yes
-```
-
-The RPM declares its required host packages, including Docker Engine, Docker
-Compose, systemd, Python, curl, OpenSSL, and archive utilities. The setup command
-then:
-
-- enables Docker and deploys digest-pinned ServiceOps and PostgreSQL containers;
-- generates application, administrator, and database secrets;
-- creates persistent database, upload, configuration, and backup storage;
-- enables the ServiceOps systemd service;
-- enables two-minute health monitoring with automatic recovery; and
-- enables daily verified database and upload backups.
-
-Record the generated administrator password in an approved password manager. It
-is shown once during setup.
-
-### 4. Verify the deployment
-
-```bash
-sudo systemctl status serviceops.service
-sudo systemctl status serviceops-health.timer
-sudo systemctl status serviceops-backup.timer
-
-sudo serviceops status
-sudo serviceops health
-sudo serviceops doctor
-```
-
-Health should report status `ok` and version `1.87.21`.
-
-### 5. Sign in securely
-
-The safe default listens only on `127.0.0.1:8080`. For initial administration,
-open an SSH tunnel from your workstation:
-
-```bash
-ssh -L 8080:127.0.0.1:8080 your-user@your-server-address
-```
-
-Open <http://127.0.0.1:8080> and sign in with:
-
-- **Username:** `admin`
-- **Password:** the password generated during setup
-
-Change the password immediately. For organizational rollout, configure SSO and
-retain a secured local account only for break-glass recovery.
-
-### 6. Configure production access
-
-Keep ServiceOps bound to loopback and publish it through an organizational HTTPS
-reverse proxy or managed load balancer. Configure DNS and a trusted TLS
-certificate before making the service available to users.
-
-- Expose only TCP 80 and 443 publicly.
-- Never expose PostgreSQL or application port 8080 to the internet.
-- Restrict SSH using the organization's access-control policy.
-- Do not disable the host firewall to make the application reachable.
-
-The RPM intentionally does not alter firewall rules, DNS, or TLS configuration;
-those controls depend on the hostname and network policy selected by the
-operator. Caddy and Nginx examples are available in the
-[deployment guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md#https-and-network-exposure).
-
-### 7. Verify backup and recovery
-
-```bash
-sudo serviceops backup
-sudo serviceops rehearse-recovery
-```
-
-The bundled installation stores persistent data in these locations:
-
-| Path | Purpose |
-|---|---|
-| `/etc/serviceops/serviceops.env` | Generated configuration and secrets, mode `0600` |
-| `/var/lib/serviceops/backups` | Verified PostgreSQL and upload recovery sets |
-| `/opt/serviceops` | Packaged control plane, Compose files, and operational tools |
-
-Daily local recovery sets are retained for 35 days while preserving at least
-seven complete sets. Production installations should additionally copy backups
-to encrypted, immutable, off-host storage. Local backups alone do not protect
-against host or storage loss.
-
-## Docker Compose installation
-
-For a source checkout, clone the repository and use either the guided installer
-or unattended server installer:
+## Quick start
 
 ```bash
 git clone https://github.com/awijesundara/ServiceOps.git
 cd ServiceOps
-chmod +x serviceops
-
 ./serviceops install web
-# Or:
-./serviceops install server --mode bundled --port 8080 --bind 127.0.0.1 --yes
 ```
 
-The guided Installation Center runs at <http://127.0.0.1:8090>. It validates
-Docker, ports, PostgreSQL, identity integrations, and production security policy
-before deployment.
+Opens a guided installer at <http://127.0.0.1:8090> that checks Docker,
+ports, and PostgreSQL, then deploys the app for you. This is a local/eval
+setup — for production, use one of the options below.
 
-## Kubernetes installation
+## Deploy
 
-Kubernetes production deployment requires an immutable image digest, at least
-two application replicas, external highly available PostgreSQL, and shared RWX
-upload storage. The chart rejects production configuration that omits these
-controls.
+| Target | Guide |
+|---|---|
+| Single server (RPM) | [Install guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md#rpm-packaging-linux-distribution) |
+| Kubernetes (HA) | [Install guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md#kubernetes-production-deployment) |
+| Air-gapped | [Offline bundle](tools/offline/README.md) |
+
+RPM builds are published for EL8/EL9/EL10 and Fedora 43/44 on every
+[release](https://github.com/awijesundara/ServiceOps/releases). One-command
+setup:
 
 ```bash
-cp deploy/kubernetes/values-production.example.yaml \
-  deploy/kubernetes/values-production.yaml
-# Configure image.repository, image.digest, ingress, storage class, and replicas.
-# The installer creates separate runtime and bootstrap Secrets on first install.
-# Back them up to the approved vault before continuing.
-./serviceops install kubernetes --preflight
-./serviceops install kubernetes
+sudo dnf install -y ./serviceops-*.rpm
+sudo serviceops setup --mode bundled --yes
 ```
 
-The chart accepts only operator-managed `existingSecret` and
-`existingBootstrapSecret` references; it never renders credentials into a Helm
-release. The installer creates both exactly once and preserves them on upgrade.
-If only one exists it stops for operator recovery, because silently rotating
-`SETTINGS_ENCRYPTION_KEY`, `AUDIT_INTEGRITY_KEY`, or `API_TOKEN_PEPPER` can make
-encrypted settings unreadable and invalidate audit or API-token continuity.
-
-For upgrades, never use `kubectl set image`: the chart deploys by immutable
-digest, so changing only a tag does not change the running artifact. Use the
-safe updater with both values:
-
-```bash
-export SERVICEOPS_BACKUP_REFERENCE="snapshot-YYYYMMDD-HHMM-before-serviceops-upgrade"
-SERVICEOPS_VALUES=deploy/kubernetes/values-production.yaml \
-  ./tools/safe_update_k8s.sh v1.87.21 sha256:<verified-64-character-digest>
-```
-
-The updater and protected deployment workflow refuse a production upgrade
-without a reference to a completed, restore-tested database backup. The chart
-records that reference on the migration Job and application pods. Configure
-the workflow variable `KUBERNETES_BACKUP_REFERENCE` with the same evidence.
-The chart runs one pre-install/pre-upgrade migration Job, waits for PostgreSQL
-before migrating, and holds web/worker pods in an init state until the exact
-Alembic head is present. The migration uses the supported application-context
-entrypoint, serializes PostgreSQL schema writers, and retains its completed Job
-until the next upgrade for troubleshooting. Never run raw `alembic` commands or
-edit `alembic_version` manually. `--atomic --wait` preserves the previous Kubernetes
-revision when a hook, image pull, rollout, or readiness check fails. Database
-migrations are not automatically reversed; take and verify a database backup
-and rehearse the migration before production upgrades.
-
-An opt-in protected GitHub Actions deployment is provided in
-### Kubernetes delivery architecture
-
-The web tier is stateless: browser state is held in signed cookies and
-revocation evidence is stored in PostgreSQL; attachments use shared RWX or
-S3-compatible storage. Root filesystems are read-only. Non-secret settings are
-a checksummed ConfigMap, credentials remain in operator-managed Secrets, and
-web/worker pods use the same immutable `repository@sha256:digest` image.
-
-Standard delivery uses configurable zero-unavailable rolling updates,
-database/schema-aware readiness, startup/liveness probes, preStop draining and
-an explicit termination grace period. Argo Rollouts canary delivery is opt-in
-through `progressiveDelivery.enabled`; optional Prometheus analysis aborts a
-canary when its 5xx ratio breaches policy. `featureFlags.netbox_sync=false` is
-a deployment kill switch for new NetBox jobs.
-
-`deploy/gitops/application.example.yaml` bootstraps Argo CD against a separate
-protected environment repository. Promotions update image tag, digest and a
-unique restore-tested backup reference in Git. Self-heal is enabled; automatic
-pruning is disabled to protect stateful resources.
-
-REST contracts are versioned under `/api/v1`. New Alembic revisions must
-declare an `expand` or `contract` phase. CI rejects destructive expand changes
-and requires contract revisions to declare the first application version that
-no longer needs the legacy schema. Expand, compatible-code/backfill and
-contract occur in separate releases.
-
-Prometheus scraping is available through the optional ServiceMonitor.
-OpenTelemetry Operator Python injection is also optional and requires a named,
-preinstalled Instrumentation resource. Structured logs carry request and W3C
-trace identifiers.
-
-An opt-in protected GitHub Actions deployment is provided in
-`.github/workflows/deploy-kubernetes.yml`. Set repository variable
-`KUBERNETES_DEPLOY_ENABLED=true`, optional namespace/release/image-repository
-variables, and protected production secrets `KUBE_CONFIG_B64` and
-`KUBERNETES_VALUES_B64`. After a governed release succeeds, it resolves the
-stable tag to its signed digest, verifies GitHub provenance, lints/renders the
-exact chart, performs an atomic Helm install/upgrade, waits for web and worker
-rollouts, and runs the packaged `/ready` test. Keep production environment
-approval rules enabled so a successful build is necessary but not sufficient
-to deploy.
-
-See the [deployment guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md)
-for external-database, ingress, backup, restore, rollback, and scaling guidance.
-
-## Operations
-
-### Common RPM commands
-
-```bash
-sudo serviceops status
-sudo serviceops health
-sudo serviceops doctor
-sudo serviceops logs
-sudo serviceops restart
-sudo serviceops backup
-sudo serviceops rehearse-recovery
-```
-
-### Updating safely
-
-Do not update a production instance without a verified backup and migration
-rehearsal:
-
-```bash
-sudo serviceops backup
-sudo serviceops rehearse-upgrade
-sudo serviceops doctor
-sudo serviceops update
-sudo serviceops health
-```
-
-`rehearse-upgrade` clones production data into a disposable database, runs the
-candidate migration there, and verifies rollback material without modifying the
-live database. Upgrade one released minor version at a time. See
-[Deployment guide: Upgrades](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md#upgrades)
-for the complete rollback and schema-compatibility procedure.
+Production installs get automated health checks, daily verified backups, and
+a `serviceops` CLI (`status`, `health`, `backup`, `update`, `logs`). Full
+walkthrough, including HTTPS and firewall setup, is in the
+[deployment guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md).
 
 ## Architecture
 
-ServiceOps uses a stateless Flask application, one worker process, PostgreSQL,
-and persistent upload storage. Search, cache, and object-storage integrations are
-optional adapters rather than mandatory runtime dependencies.
+Stateless Flask app + one worker process + PostgreSQL. No mandatory external
+dependencies — search, cache, and object storage are optional adapters.
 
 ```mermaid
 flowchart LR
-    U["Browser / installable PWA"] -- HTTPS --> A["ServiceOps app<br/>(Flask, stateless)"]
+    U["Browser / PWA / iOS"] -- HTTPS --> A["ServiceOps<br/>(Flask, stateless)"]
     A <--> D[("PostgreSQL")]
-    A --> S[["Uploads volume"]]
-    A -. events and schedules .-> W["Worker<br/>(outbox · SLA · workflows)"]
+    A --> S[["Uploads"]]
+    A -. events .-> W["Worker<br/>(SLA · workflows · notifications)"]
     W <--> D
-    A -. optional .-> ID["AD / LDAP · Keycloak"]
-    W -. optional .-> N["SMTP / Google Workspace · Webhooks · Chat / Teams"]
+    A -. optional .-> ID["AD/LDAP · Keycloak"]
+    W -. optional .-> N["Email · Slack/Teams · Webhooks"]
 ```
 
-### Email and event delivery
+## Docs
 
-Administrators configure outbound email under **Administration → Platform
-settings → Email delivery**. ServiceOps supports generic SMTP plus three Google
-Workspace patterns: the recommended IP-authorized `smtp-relay.gmail.com`
-relay, Gmail SMTP with an app password, and Gmail SMTP with OAuth 2.0 refresh
-credentials. STARTTLS is the default; implicit TLS is also supported. Sender
-name, From, Reply-To, timeout, authentication, and provider are independent
-settings, while passwords, OAuth client secrets, and refresh tokens are
-encrypted at rest. Google Workspace administrators must authorize the sender,
-relay source IP or OAuth client in Google Admin before enabling delivery.
-
-Under **Administration → Notifications and integrations**, administrators use
-guided forms for Google Chat, Telegram bots, Slack, Microsoft Teams, Discord,
-signed JSON webhooks, and immutable SIEM streams. Telegram accepts a bot token,
-chat ID, optional topic ID, and content-protection setting; operators do not
-have to construct its API URL. Each connection has pause/resume, a real test
-send, and comma-separated exact or glob subscriptions. Examples include
-`notification.created`, `notification.created:approval.*`, `audit.created`,
-and `audit.created:ticket *`. Ordinary webhooks and chat targets cannot receive
-the protected audit stream; only SIEM connections can. Generic and SIEM
-payloads are HMAC-SHA-256 signed, HTTPS-only, DNS-pinned against rebinding, and
-revalidated across bounded redirects. Full destination URLs are encrypted at
-rest and the UI shows a query-stripped form so provider tokens are not exposed.
-Telegram tokens and destination configuration are encrypted separately, and
-network exceptions are redacted before being persisted. Every channel is delivered from the
-transactional outbox with retry and per-attempt evidence.
-
-### Maintainer deployment target
-
-The maintained acceptance deployment is the local MicroK8s cluster in
-namespace `operations`, exposed through Cloudflare Tunnel as
-`serviceops.wijesundara.com`. Local Docker Compose is a disposable QA runtime,
-not deployment evidence. Every release is deployed by immutable verified
-digest through atomic Helm, preserving the PostgreSQL and uploads PVCs, and is
-then checked for rollout, migration, health, readiness, ingress, and log errors.
-
-### NetBox CMDB synchronization
-
-Configure NetBox under **Administration → Connections & channels → NetBox
-connection** with an HTTPS URL, a read-only API token, and—when needed—the
-private CA certificate. Then use **CMDB → Import** to preview the reconciliation
-before applying it. NetBox work is queued to the dedicated worker, read in
-configurable batches (100 records by default), and shown with live phase,
-record count, progress, and safe cancellation controls. Only one job per tenant
-can run at once, and cancellation is honored between bounded API pages. The
-import screen documents how ServiceOps keeps NetBox
-role, platform, cluster, tenant, status, lifecycle, location, and hardware
-fields semantically separate.
-The sync also retains assigned IP/DNS/VRF data, device and VM interfaces,
-VLAN/cable context, console/power/cooling components, modules and bays,
-inventory items, virtual disks, configuration context, timestamps, custom
-fields, and rich rack metadata. Permissions missing from the read-only NetBox
-token are surfaced as explicit warnings rather than silently ignored.
-
-### Audit security evidence
-
-Every governed audit event records the server-observed source IP and a bounded,
-signed security context: forward-confirmed hostname when enabled, browser/OS,
-user agent, language, authentication provider, HTTP method/path, request and
-trace correlation, sanitized referrer, and a one-way session reference. Query
-strings, cookies, authorization/CSRF headers, request bodies, passwords, and
-tokens are never copied into the audit trail. Administrators can review this
-context under **Administration → Audit and evidence** or in the verified export.
-
-The application can scale horizontally behind a load balancer. The worker is a
-single always-on process responsible for SLA breach detection, workflow
-automation, and durable notification and webhook delivery.
-
-## iPhone application
-
-The native [ServiceOps iOS application](https://github.com/awijesundara/ServiceOps_iOS)
-uses each user's authenticated ServiceOps session and never embeds a shared API
-key. It supports incidents, changes, work notes, approvals, knowledge and CMDB
-search, biometric locking, passkeys, MFA, and APNs notifications.
-
-## Production checklist
-
-- Put the application behind an HTTPS reverse proxy and keep its internal port private.
-- Store generated secrets in an approved vault and rotate the bootstrap administrator password.
-- Configure encrypted, immutable off-host backups and perform quarterly restore exercises.
-- Configure AD/LDAP or Keycloak before broad rollout.
-- Enable operating-system security updates, disk alerts, monitoring, and centralized logs.
-- Size Gunicorn workers and threads using load tests representative of actual concurrency.
-- Review login rate limits when many users share a NAT or VPN egress address.
-- Verify ticket creation, CI-owner approvals, email delivery, audit exports, and backups before go-live.
-
-## Documentation
-
-- [Deployment and operations guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md)
-- [Platform manual PDF](docs/ServiceOps_Complete_Platform_Manual.pdf)
-- [REST API reference](docs/API_REFERENCE.md), also served from `/api/v1/docs`
-- [Development and release documentation](https://github.com/awijesundara/serviceops-notes)
-- [Air-gapped deployment bundle](tools/offline/README.md)
-
-Every pull request and push to `main` enters the supply-chain quality gate.
-After a `main` run succeeds, the governed-release pipeline automatically creates
-the next patch version, re-runs the release gates against that immutable tag,
-publishes and verifies the signed image, SBOM, provenance, and install-tested RPM
-matrix, and publishes the stable GitHub release. Major and minor releases remain
-available through the manual governed-release dispatch. Failed or superseded
-validation runs cannot publish a release, and release commits do not recursively
-start another release.
-
-Application code, runtime documentation, tests, and the generated platform
-manual are maintained in this repository. Development notes, deployment
-runbooks, engineering references, and release-readiness evidence are maintained
-in the companion `serviceops-notes` repository.
+- [Deployment & operations guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md) — install, upgrade, backup/restore, scaling
+- [REST API reference](docs/API_REFERENCE.md) — also served at `/api/v1/docs`
+- [Platform manual (PDF)](docs/ServiceOps_Complete_Platform_Manual.pdf)
+- [Engineering notes](https://github.com/awijesundara/serviceops-notes) — architecture decisions, release process
 
 ## Development
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 pytest -q
 ```
 
-## Project independence
+Every push runs the full quality gate (tests, lint, CodeQL, migration safety);
+a green run on `main` auto-publishes the next patch release with signed
+images, SBOM, and provenance.
 
-ServiceOps is independently implemented. It is not ServiceNow, is not marketed
-as ServiceNow-compatible, and contains no third-party proprietary code, licensed
-connectors, commercial datasets, or hosted AI services. External discovery,
-SIEM, HRIS, identity, messaging, mapping, and AI capabilities require connecting
-the systems selected and governed by the deploying organization.
+## Independence
+
+ServiceOps is an independent implementation, not affiliated with or
+compatible-by-design with any commercial ITSM product. No third-party
+proprietary code, licensed connectors, or hosted AI services are included —
+integrations (AD, SIEM, chat, etc.) connect to systems you choose and control.
