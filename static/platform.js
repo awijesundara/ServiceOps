@@ -582,4 +582,100 @@ document.addEventListener("DOMContentLoaded", () => {
     notificationMenu.addEventListener("animationend", () => notificationMenu.classList.remove("ringing"));
     setInterval(pollNotifications, 25000);
   }
+
+  const commentForm = document.getElementById("comment-form");
+  if (commentForm) {
+    const bodyInput = document.getElementById("comment-body-input");
+    const parentIdInput = document.getElementById("comment-parent-id");
+    const replyBanner = document.getElementById("comment-reply-banner");
+    const replyAuthor = document.getElementById("comment-reply-author");
+    const replyCancel = document.getElementById("comment-reply-cancel");
+
+    document.querySelectorAll(".comment-reply-toggle").forEach((toggle) => {
+      toggle.addEventListener("click", () => {
+        parentIdInput.value = toggle.dataset.replyTo;
+        replyAuthor.textContent = toggle.dataset.replyAuthor;
+        replyBanner.hidden = false;
+        bodyInput.focus();
+        bodyInput.scrollIntoView({block: "center", behavior: "smooth"});
+      });
+    });
+    if (replyCancel) {
+      replyCancel.addEventListener("click", () => {
+        parentIdInput.value = "";
+        replyBanner.hidden = true;
+      });
+    }
+
+    // @mention autocomplete: fetches the small, ticket-scoped candidate
+    // list once (everyone already authorized to view this ticket -- see
+    // ticket_mentionable_users_api, which mirrors the same authorization
+    // check the server applies when actually sending mention
+    // notifications, so anything offered here will actually work) and
+    // filters it client-side as the user types after an "@".
+    const suggestionsList = document.getElementById("mention-suggestions");
+    let mentionCandidates = null;
+    let mentionCandidatesPromise = null;
+    let activeMatchStart = -1;
+
+    function loadMentionCandidates() {
+      if (mentionCandidatesPromise) return mentionCandidatesPromise;
+      const ticketId = commentForm.dataset.ticketId;
+      if (!ticketId) return Promise.resolve([]);
+      mentionCandidatesPromise = fetch(`/ticket/${ticketId}/mentionable-users`, {headers: {Accept: "application/json"}})
+        .then((response) => (response.ok ? response.json() : {users: []}))
+        .then((data) => { mentionCandidates = data.users || []; return mentionCandidates; })
+        .catch(() => { mentionCandidates = []; return mentionCandidates; });
+      return mentionCandidatesPromise;
+    }
+
+    function closeSuggestions() {
+      suggestionsList.hidden = true;
+      suggestionsList.innerHTML = "";
+      activeMatchStart = -1;
+    }
+
+    function renderSuggestions(users, matchStart) {
+      activeMatchStart = matchStart;
+      suggestionsList.innerHTML = users.map((user) =>
+        `<li role="option" data-username="${user.username}"><strong>${user.name}</strong><small>@${user.username}</small></li>`
+      ).join("");
+      suggestionsList.hidden = users.length === 0;
+    }
+
+    bodyInput.addEventListener("input", async () => {
+      const cursor = bodyInput.selectionStart;
+      const upToCursor = bodyInput.value.slice(0, cursor);
+      const match = upToCursor.match(/(?:^|\s)@([a-zA-Z0-9_.-]{0,80})$/);
+      if (!match) { closeSuggestions(); return; }
+      const partial = match[1].toLowerCase();
+      const matchStart = cursor - match[1].length - 1;
+      const candidates = await loadMentionCandidates();
+      const filtered = candidates.filter((user) =>
+        user.username.toLowerCase().startsWith(partial) || user.name.toLowerCase().includes(partial)
+      ).slice(0, 6);
+      if (bodyInput.selectionStart !== cursor) return; // stale response, user kept typing
+      renderSuggestions(filtered, matchStart);
+    });
+
+    suggestionsList.addEventListener("mousedown", (event) => {
+      const item = event.target.closest("[data-username]");
+      if (!item || activeMatchStart < 0) return;
+      event.preventDefault();
+      const cursor = bodyInput.selectionStart;
+      const before = bodyInput.value.slice(0, activeMatchStart);
+      const after = bodyInput.value.slice(cursor);
+      const inserted = `@${item.dataset.username} `;
+      bodyInput.value = before + inserted + after;
+      const newCursor = before.length + inserted.length;
+      bodyInput.setSelectionRange(newCursor, newCursor);
+      closeSuggestions();
+      bodyInput.focus();
+    });
+
+    bodyInput.addEventListener("blur", () => setTimeout(closeSuggestions, 150));
+    bodyInput.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !suggestionsList.hidden) closeSuggestions();
+    });
+  }
 });
