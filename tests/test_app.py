@@ -897,6 +897,13 @@ def test_rest_api_scopes_idempotency_projection_and_pagination(client, app):
     )
     assert updated.status_code == 200
     assert updated.json["data"]["state"] == "In Progress"
+    malformed_parent = client.post(
+        f"/api/v1/tickets/{number}/comments",
+        json={"body": "Invalid thread reference", "parent_id": "not-an-integer"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert malformed_parent.status_code == 400
+    assert b"parent_id must be an integer" in malformed_parent.data
     with app.app_context():
         assert Ticket.query.filter_by(title="API-created outage").count() == 1
         assert APIIdempotencyRecord.query.count() == 2
@@ -4498,12 +4505,56 @@ def test_task_board_drops_stale_resolved_and_closed_cards(client, app):
         old.state = recent.state = "Closed"
         db.session.commit()
         old.updated_at = now() - timedelta(days=45)
-        recent.updated_at = now() - timedelta(days=5)
+        recent.updated_at = now() - timedelta(days=1)
         db.session.commit()
 
     board = client.get("/task-board")
     assert b"Old closed ticket" not in board.data
     assert b"Recently closed ticket" in board.data
+
+
+def test_task_board_focus_hides_stale_low_priority_but_all_scope_retains_it(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Dormant low priority ticket", "description": "Still searchable",
+        "category": "Software", "priority": "P4", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Dormant low priority ticket").one()
+        ticket.updated_at = now() - timedelta(days=20)
+        ticket.assignee_id = None
+        for task_sla in TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id):
+            task_sla.stage = "Completed"
+        db.session.commit()
+
+    assert b"Dormant low priority ticket" not in client.get("/task-board").data
+    assert b"Dormant low priority ticket" in client.get("/task-board?scope=all").data
+
+
+def test_task_board_prioritizes_and_labels_breached_sla(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "SLA urgent board ticket", "description": "Must stand out",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="SLA urgent board ticket").one()
+        task_sla = TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).first()
+        assert task_sla is not None
+        task_sla.breach_at = now() - timedelta(minutes=10)
+        db.session.commit()
+
+    board = client.get("/task-board")
+    assert b"SLA urgent board ticket" in board.data
+    assert b"SLA exceeded" in board.data
+    assert b"overdue" in board.data
+    assert b"sla-breached" in board.data
+
+
+@pytest.mark.parametrize("query", ["scope=unknown", "priority=P0"])
+def test_task_board_rejects_invalid_filters(client, query):
+    login(client)
+    assert client.get(f"/task-board?{query}").status_code == 400
 
 
 def test_fresh_install_has_no_reserved_demo_personas(monkeypatch):
@@ -7843,6 +7894,51 @@ def test_reply_rejects_a_parent_id_from_a_different_ticket(client, app):
         "action": "comment", "body": "Trying to reply cross-ticket.", "parent_id": str(comment_a_id),
     })
     assert response.status_code == 400
+
+
+def test_reply_to_reply_is_normalized_to_top_level_thread(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Single-depth thread", "description": "Flat reply hierarchy",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Single-depth thread").one().id
+    client.post(f"/ticket/{ticket_id}", data={"action": "comment", "body": "Root"})
+    with app.app_context():
+        root_id = Comment.query.filter_by(ticket_id=ticket_id, body="Root").one().id
+    client.post(f"/ticket/{ticket_id}", data={
+        "action": "comment", "body": "First reply", "parent_id": str(root_id),
+    })
+    with app.app_context():
+        reply_id = Comment.query.filter_by(ticket_id=ticket_id, body="First reply").one().id
+    client.post(f"/ticket/{ticket_id}", data={
+        "action": "comment", "body": "Reply to reply", "parent_id": str(reply_id),
+    })
+    with app.app_context():
+        nested = Comment.query.filter_by(ticket_id=ticket_id, body="Reply to reply").one()
+        assert nested.parent_id == root_id
+
+
+def test_comment_does_not_notify_follower_who_lost_ticket_access(client, app):
+    former_follower_id = _add_agent_to_core_apps(app, "former.follower", "Former123!")
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Follower authorization test", "description": "Restricted updates",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Follower authorization test").one()
+        ticket_id = ticket.id
+        former = db.session.get(User, former_follower_id)
+        follow_ticket(ticket, former)
+        GroupMember.query.filter_by(user_id=former_follower_id).delete()
+        db.session.commit()
+    client.post(f"/ticket/{ticket_id}", data={"action": "comment", "body": "Private update"})
+    with app.app_context():
+        assert Notification.query.filter_by(
+            user_id=former_follower_id, target_type="ticket", target_id=ticket_id,
+        ).filter(Notification.title.contains("New comment")).count() == 0
 
 
 def test_commenting_auto_follows_and_notifies_other_followers(client, app):

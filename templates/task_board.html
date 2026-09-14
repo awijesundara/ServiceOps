@@ -1,2 +1,31 @@
-{% extends "base.html" %}{% block title %}Visual task board · {{ instance_name }}{% endblock %}
-{% block content %}<header class="page-head"><div><p class="eyebrow">VISUAL TASK BOARD</p><h1>Service work board</h1><p>Move work through its lifecycle. Only members of the owning team can move a record. Resolved and Closed cards older than 30 days roll off this board (still visible on the record itself and in search).</p></div></header><section class="task-board">{% for state,tickets in tickets_by_state.items() %}<div class="board-lane" data-state="{{ state }}"><header><h2>{{ state }}</h2><span>{{ tickets|length }}</span></header><div class="board-cards">{% for ticket in tickets %}<article class="board-card" draggable="{{ 'true' if ticket.id in manageable_ticket_ids else 'false' }}" data-ticket="{{ ticket.id }}"><span class="priority {{ ticket.priority|lower }}">{{ ticket.priority }}</span><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a><strong>{{ ticket.title }}</strong><small>{{ ticket.assignee.name if ticket.assignee else 'Unassigned' }}{% if ticket.id not in manageable_ticket_ids %} · Read only{% endif %}</small></article>{% endfor %}</div></div>{% endfor %}</section>{% endblock %}
+{% extends "base.html" %}
+{% block title %}Visual task board · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head task-board-head">
+  <div><p class="eyebrow">VISUAL TASK BOARD</p><h1>Service work board</h1><p>Prioritized operational work with SLA urgency. Completed records roll off automatically but remain available in ticket lists and search.</p></div>
+  <a class="button" href="{{ url_for('tickets', kind='incident') }}">Open ticket list</a>
+</header>
+<section class="board-toolbar panel" aria-label="Task board filters">
+  <form method="get" class="board-filters">
+    <label><span>Board scope</span><select name="scope"><option value="focus" {% if scope == 'focus' %}selected{% endif %}>Operational focus</option><option value="all" {% if scope == 'all' %}selected{% endif %}>All current work</option></select></label>
+    <label><span>Priority</span><select name="priority"><option value="">All priorities</option>{% for priority in ['P1', 'P2', 'P3', 'P4'] %}<option value="{{ priority }}" {% if priority_filter == priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
+    <button class="primary" type="submit">Apply</button>
+    {% if scope != 'focus' or priority_filter %}<a class="button" href="{{ url_for('task_board') }}">Reset</a>{% endif %}
+  </form>
+  <div class="board-legend" aria-label="SLA status legend"><span><i class="legend-dot sla-breached"></i>SLA exceeded</span><span><i class="legend-dot sla-at-risk"></i>SLA at risk</span><span><i class="legend-dot sla-healthy"></i>On track</span></div>
+</section>
+{% if scope == 'focus' %}<p class="board-scope-note"><strong>Operational focus</strong> includes P1/P2, SLA-exposed, assigned-to-you, and recently updated open work. Resolved cards remain for 7 days; closed cards for 2 days.</p>{% else %}<p class="board-scope-note"><strong>All current work</strong> includes every visible open record, capped at 100 cards per lane. Use the ticket list for the complete backlog.</p>{% endif %}
+<section class="task-board" aria-label="Ticket lifecycle board" tabindex="0">
+  {% for state, tickets in tickets_by_state.items() %}<div class="board-lane" data-state="{{ state }}">
+    <header><h2>{{ state }}</h2><span aria-label="{{ board_meta[state].total }} tickets">{{ board_meta[state].total }}</span></header>
+    <div class="board-cards">
+      {% for ticket in tickets %}{% set sla = ticket_sla[ticket.id] %}<article class="board-card sla-{{ sla.state }}" draggable="{{ 'true' if ticket.id in manageable_ticket_ids else 'false' }}" data-ticket="{{ ticket.id }}">
+        <div class="board-card-top"><span class="priority {{ ticket.priority|lower }}">{{ ticket.priority }}</span>{% if sla.state != 'none' %}<span class="board-sla-status">{{ sla.label }}</span>{% endif %}</div>
+        <a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a><strong>{{ ticket.title }}</strong>
+        <div class="board-card-meta">{% if sla.due %}<span class="board-sla-time">{{ sla.due }}</span>{% endif %}<small>{{ ticket.assignee.name if ticket.assignee else 'Unassigned' }}{% if ticket.id not in manageable_ticket_ids %} · Read only{% endif %}</small></div>
+      </article>{% else %}<p class="board-empty">No matching work</p>{% endfor %}
+    </div>
+    {% if board_meta[state].hidden %}<a class="board-hidden" href="{{ url_for('tickets', kind='incident') }}">{{ board_meta[state].hidden }} more in ticket lists</a>{% endif %}
+  </div>{% endfor %}
+</section>
+{% endblock %}

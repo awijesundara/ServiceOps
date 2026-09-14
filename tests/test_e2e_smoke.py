@@ -99,6 +99,7 @@ def authenticated_page(browser, authenticated_storage, request):
 
 CORE_WORKFLOWS = (
     ("dashboard", "/"),
+    ("task-board", "/task-board"),
     ("all-workspaces", "/modules"),
     ("service-catalog", "/catalog"),
     ("serviceops-mobile", "/mobile-app"),
@@ -318,7 +319,7 @@ def test_critical_journey_is_responsive_error_free_and_accessible(authenticated_
         if not page.locator(".netbox-mapping-details").evaluate("element => element.open"):
             page.locator(".netbox-mapping-details summary").click()
         page.screenshot(path=ARTIFACT_DIR / f"cmdb-import-{viewport_name}.png", full_page=True)
-    if journey in {"user-profile", "directory-sync", "audit-evidence", "administration", "administration-connections", "administration-platform", "settings-security", "settings-notifications", "personal-notifications"}:
+    if journey in {"task-board", "user-profile", "directory-sync", "audit-evidence", "administration", "administration-connections", "administration-platform", "settings-security", "settings-notifications", "personal-notifications"}:
         page.screenshot(path=ARTIFACT_DIR / f"{journey}-{viewport_name}.png", full_page=True)
 
     page.add_script_tag(path=AXE_CORE_PATH)

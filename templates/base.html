@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v=app_version) }}">
+  {% if request.endpoint == 'task_board' %}<link rel="stylesheet" href="{{ url_for('static', filename='task-board.css', v=app_version) }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v=app_version) }}">
   {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='notification-audiences.css', v=app_version) }}">{% endif %}

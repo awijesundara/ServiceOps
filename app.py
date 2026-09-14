@@ -2788,7 +2788,17 @@ def follow_ticket(ticket, user):
     exists."""
     if is_following_ticket(user, ticket):
         return
-    db.session.add(TicketFollower(ticket_id=ticket.id, user_id=user.id, tenant_id=ticket.tenant_id))
+    # The unique constraint is the final authority: two concurrent comment or
+    # assignment requests can both pass the lookup above. Keep that harmless
+    # race inside a savepoint so it cannot roll back the surrounding comment.
+    try:
+        with db.session.begin_nested():
+            db.session.add(TicketFollower(
+                ticket_id=ticket.id, user_id=user.id, tenant_id=ticket.tenant_id,
+            ))
+            db.session.flush()
+    except IntegrityError:
+        pass
 
 
 def unfollow_ticket(ticket, user):
@@ -2804,7 +2814,10 @@ def ticket_followers(ticket, exclude_user_ids=()):
     )
     if exclude_user_ids:
         query = query.filter(~User.id.in_(exclude_user_ids))
-    return query.all()
+    # Following is not an authorization grant. Assignment/team changes can
+    # remove access after a follower row was created, so re-check access before
+    # putting ticket titles or comment bodies into a notification.
+    return [user for user in query.all() if user_can_view_ticket(user, ticket)]
 
 
 MENTION_PATTERN = re.compile(r"(?<!\w)@([a-zA-Z0-9_.-]{2,80})")
@@ -2849,6 +2862,10 @@ def post_ticket_comment(ticket, author, body, parent_id=None):
         parent = db.session.get(Comment, parent_id)
         if not parent or parent.ticket_id != ticket.id:
             abort(400, description="That comment thread no longer exists.")
+        # The discussion UI intentionally has one reply level. A reply to a
+        # reply therefore joins the same top-level thread instead of creating
+        # a hidden/deceptive deeper hierarchy through the API.
+        parent_id = parent.parent_id or parent.id
     comment = Comment(ticket_id=ticket.id, user_id=author.id, body=body, tenant_id=ticket.tenant_id, parent_id=parent_id)
     db.session.add(comment)
     db.session.flush()
@@ -8404,7 +8421,11 @@ def create_app(test_config=None):
         if not body or len(body) > 10000:
             abort(400, description="A comment between 1 and 10000 characters is required.")
         parent_id = payload.get("parent_id")
-        row = post_ticket_comment(ticket, g.api_user, body, parent_id=int(parent_id) if parent_id else None)
+        try:
+            parent_id = int(parent_id) if parent_id not in (None, "") else None
+        except (TypeError, ValueError):
+            abort(400, description="parent_id must be an integer comment identifier.")
+        row = post_ticket_comment(ticket, g.api_user, body, parent_id=parent_id)
         log_history("ticket", ticket.id, "Comment added", details=f"Mobile app · {g.api_user.name}")
         document = {"data": {"id": row.id, "body": row.body, "author": g.api_user.name,
                               "created_at": row.created_at.isoformat()}}
@@ -17370,14 +17391,92 @@ def create_app(test_config=None):
     @app.get("/task-board")
     @login_required
     def task_board():
+        scope = request.args.get("scope", "focus")
+        if scope not in {"focus", "all"}:
+            abort(400)
+        priority_filter = request.args.get("priority", "")
+        if priority_filter and priority_filter not in {"P1", "P2", "P3", "P4"}:
+            abort(400)
+
         query = visible_tickets()
-        board_cutoff = now() - timedelta(days=30)
+        if priority_filter:
+            query = query.filter(Ticket.priority == priority_filter)
+
+        current = now()
+        focus_cutoff = current - timedelta(days=14)
+        resolved_cutoff = current - timedelta(days=7)
+        closed_cutoff = current - timedelta(days=2)
+        lane_limit = 60 if scope == "focus" else 100
+        at_risk_horizon = current + timedelta(hours=setting_int("SLA_AT_RISK_HOURS", 4))
+
+        visible_ids = [row[0] for row in query.with_entities(Ticket.id).all()]
+        active_slas = TaskSLA.query.filter(
+            TaskSLA.target_type == "ticket",
+            TaskSLA.target_id.in_(visible_ids or [-1]),
+            TaskSLA.stage == "In Progress",
+        ).order_by(TaskSLA.breach_at).all()
+        sla_by_ticket = defaultdict(list)
+        urgent_ticket_ids = set()
+        for task_sla in active_slas:
+            sla_by_ticket[task_sla.target_id].append(task_sla)
+            breach_at = align_tz(task_sla.breach_at, current)
+            if task_sla.breached or breach_at <= at_risk_horizon:
+                urgent_ticket_ids.add(task_sla.target_id)
+
+        priority_rank = {"P1": 0, "P2": 1, "P3": 2, "P4": 3}
+        sla_rank = {"breached": 0, "at-risk": 1, "healthy": 2, "none": 3}
+
+        def board_sla(ticket):
+            rows = sla_by_ticket.get(ticket.id, [])
+            if not rows:
+                return {"state": "none", "label": "No active SLA", "due": None}
+            due = min(align_tz(row.breach_at, current) for row in rows)
+            if any(row.breached or align_tz(row.breach_at, current) <= current for row in rows):
+                state, label = "breached", "SLA exceeded"
+            elif due <= at_risk_horizon:
+                state, label = "at-risk", "SLA at risk"
+            else:
+                state, label = "healthy", "SLA on track"
+            seconds = int((due - current).total_seconds())
+            magnitude = abs(seconds)
+            if magnitude < 3600:
+                amount = f"{max(1, magnitude // 60)}m"
+            elif magnitude < 86400:
+                amount = f"{max(1, magnitude // 3600)}h"
+            else:
+                amount = f"{max(1, magnitude // 86400)}d"
+            return {
+                "state": state, "label": label,
+                "due": f"{amount} overdue" if seconds < 0 else f"{amount} remaining",
+            }
+
         tickets_by_state = {}
+        board_meta = {}
+        ticket_sla = {}
         for state in ["New", "In Progress", "Pending", "Resolved", "Closed"]:
             state_query = query.filter_by(state=state)
-            if state in ("Resolved", "Closed"):
-                state_query = state_query.filter(Ticket.updated_at >= board_cutoff)
-            tickets_by_state[state] = state_query.order_by(Ticket.priority, Ticket.updated_at.desc()).all()
+            if state == "Resolved":
+                state_query = state_query.filter(Ticket.updated_at >= resolved_cutoff)
+            elif state == "Closed":
+                state_query = state_query.filter(Ticket.updated_at >= closed_cutoff)
+            elif scope == "focus":
+                state_query = state_query.filter(or_(
+                    Ticket.priority.in_(["P1", "P2"]),
+                    Ticket.id.in_(urgent_ticket_ids or [-1]),
+                    Ticket.assignee_id == current_user.id,
+                    Ticket.updated_at >= focus_cutoff,
+                ))
+            lane_tickets = state_query.all()
+            for ticket in lane_tickets:
+                ticket_sla[ticket.id] = board_sla(ticket)
+            lane_tickets.sort(key=lambda ticket: (
+                sla_rank[ticket_sla[ticket.id]["state"]],
+                priority_rank.get(ticket.priority, 9),
+                -align_tz(ticket.updated_at, current).timestamp(),
+            ))
+            total = len(lane_tickets)
+            tickets_by_state[state] = lane_tickets[:lane_limit]
+            board_meta[state] = {"total": total, "hidden": max(0, total - lane_limit)}
         manageable_ticket_ids = {
             ticket.id for tickets in tickets_by_state.values() for ticket in tickets
             if user_can_manage_ticket(current_user, ticket)
@@ -17385,6 +17484,8 @@ def create_app(test_config=None):
         return render_template(
             "task_board.html", tickets_by_state=tickets_by_state,
             manageable_ticket_ids=manageable_ticket_ids,
+            ticket_sla=ticket_sla, board_meta=board_meta,
+            scope=scope, priority_filter=priority_filter,
         )
 
     @app.post("/task-board/<int:ticket_id>/move")
