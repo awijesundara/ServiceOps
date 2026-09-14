@@ -55,6 +55,7 @@ __all__ = [
     "IntegrationSyncJob",
     "Ticket",
     "Comment",
+    "TicketFollower",
     "TaskNote",
     "Knowledge",
     "Asset",
@@ -533,12 +534,36 @@ class Comment(db.Model):
     ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     body = db.Column(db.Text, nullable=False)
+    # Null for a top-level comment; set for a threaded reply. Always a
+    # comment on the *same* ticket (enforced in post_ticket_comment, not at
+    # the schema level, since a cross-ticket FK check needs a query).
+    parent_id = db.Column(db.Integer, db.ForeignKey("comment.id"), nullable=True, index=True)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     author = db.relationship("User")
+    replies = db.relationship(
+        "Comment", backref=db.backref("parent", remote_side=[id]),
+        order_by="Comment.created_at",
+    )
     # Redundant with ticket.tenant_id but kept as its own enforced column --
     # same defense-in-depth rationale as ApprovalGate.tenant_id: a comment
     # lookup shouldn't depend on every future query site remembering to join
     # back through ticket.
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+
+
+class TicketFollower(db.Model):
+    """Explicit opt-in audience for a ticket's comment-activity notifications,
+    distinct from the requester/assignee who are always authorized to view
+    the ticket but may not want every comment. Rows are created both
+    automatically (requester on creation, assignee on assignment, anyone who
+    comments) and via an explicit Follow/Unfollow control."""
+    __table_args__ = (db.UniqueConstraint("ticket_id", "user_id", name="uq_ticket_follower_ticket_user"),)
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    ticket = db.relationship("Ticket")
+    user = db.relationship("User")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 

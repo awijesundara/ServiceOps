@@ -1243,9 +1243,16 @@ def create_ticket_with_unique_number(kind, **fields):
         ticket = Ticket(number=next_number(kind), kind=kind, **fields)
         db.session.add(ticket)
         return ticket
-    return create_with_retry_on_number_collision(
+    ticket = create_with_retry_on_number_collision(
         build, error_description="Could not allocate a unique ticket number; please try again."
     )
+    # Every ticket's requester automatically follows their own ticket -- the
+    # single choke point every ticket-creation call site (web forms, the
+    # mobile API, catalog fulfilment, monitoring-ingested events) already
+    # goes through, so this can't be missed by adding a new one.
+    if ticket.requester_id:
+        follow_ticket(ticket, ticket.requester)
+    return ticket
 
 
 DOMAIN_CONFIG = {
@@ -1326,6 +1333,7 @@ NOTIFICATION_SEVERITY_BY_EVENT = {
     "client_ticket.escalated": "critical",
     "approval.requested": "warning",
     "enterprise.approval_requested": "warning",
+    "ticket.mentioned": "warning",
 }
 
 
@@ -2768,6 +2776,100 @@ def visible_ticket_query(user):
 
 def user_can_view_ticket(user, ticket):
     return visible_ticket_query(user).filter(Ticket.id == ticket.id).first() is not None
+
+
+def is_following_ticket(user, ticket):
+    return TicketFollower.query.filter_by(ticket_id=ticket.id, user_id=user.id).first() is not None
+
+
+def follow_ticket(ticket, user):
+    """Idempotent: safe to call from every auto-follow trigger (creation,
+    assignment, commenting) without first checking whether a row already
+    exists."""
+    if is_following_ticket(user, ticket):
+        return
+    db.session.add(TicketFollower(ticket_id=ticket.id, user_id=user.id, tenant_id=ticket.tenant_id))
+
+
+def unfollow_ticket(ticket, user):
+    TicketFollower.query.filter_by(ticket_id=ticket.id, user_id=user.id).delete()
+
+
+def ticket_followers(ticket, exclude_user_ids=()):
+    """Active users following this ticket, excluding the given ids (always
+    pass the acting user's own id here -- nobody needs a notification about
+    their own comment)."""
+    query = User.query.join(TicketFollower, TicketFollower.user_id == User.id).filter(
+        TicketFollower.ticket_id == ticket.id, User.active.is_(True),
+    )
+    if exclude_user_ids:
+        query = query.filter(~User.id.in_(exclude_user_ids))
+    return query.all()
+
+
+MENTION_PATTERN = re.compile(r"(?<!\w)@([a-zA-Z0-9_.-]{2,80})")
+
+
+def mentioned_users_in_comment(body, ticket):
+    """Users named with "@username" in a comment, restricted to users who
+    can currently view this ticket -- mentioning (and therefore notifying,
+    with the ticket's title in the notification body) someone who isn't
+    authorized to see the ticket would itself be a disclosure, so an
+    @mention of an unauthorized or nonexistent username is silently just
+    text, not a working mention."""
+    usernames = {match.group(1).lower() for match in MENTION_PATTERN.finditer(body)}
+    if not usernames:
+        return []
+    candidates = User.query.filter(
+        User.tenant_id == ticket.tenant_id, User.active.is_(True),
+        func.lower(User.username).in_(usernames),
+    ).all()
+    return [candidate for candidate in candidates if user_can_view_ticket(candidate, ticket)]
+
+
+def ticket_mentionable_users(ticket):
+    """The candidate pool offered by the @mention autocomplete: everyone
+    already authorized to view the ticket (its requester/assignee plus the
+    owning team's agents/manager) rather than every user in the tenant --
+    matches mentioned_users_in_comment's own authorization check, so
+    anything the autocomplete offers will actually work."""
+    ids = {ticket.requester_id}
+    if ticket.assignee_id:
+        ids.add(ticket.assignee_id)
+    ids.update(agent.id for agent in ticket_team_agents(ticket))
+    ids.discard(None)
+    return User.query.filter(User.id.in_(ids), User.active.is_(True)).order_by(User.name).all()
+
+
+def post_ticket_comment(ticket, author, body, parent_id=None):
+    """Single source of truth for creating a ticket comment, shared by the
+    web UI and the mobile REST API, so threading/follow/mention behavior
+    can't drift between the two entry points."""
+    if parent_id is not None:
+        parent = db.session.get(Comment, parent_id)
+        if not parent or parent.ticket_id != ticket.id:
+            abort(400, description="That comment thread no longer exists.")
+    comment = Comment(ticket_id=ticket.id, user_id=author.id, body=body, tenant_id=ticket.tenant_id, parent_id=parent_id)
+    db.session.add(comment)
+    db.session.flush()
+    follow_ticket(ticket, author)
+    mentioned = mentioned_users_in_comment(body, ticket)
+    preview = body if len(body) <= 200 else body[:197] + "..."
+    for user in mentioned:
+        follow_ticket(ticket, user)
+        create_notification(
+            user.id, f"{author.name} mentioned you in {ticket.number}", preview,
+            tenant_id=ticket.tenant_id, target_type="ticket", target_id=ticket.id,
+            event_type="ticket.mentioned",
+        )
+    already_notified = {author.id, *(user.id for user in mentioned)}
+    for user in ticket_followers(ticket, exclude_user_ids=already_notified):
+        create_notification(
+            user.id, f"New comment on {ticket.number}", f"{author.name}: {preview}",
+            tenant_id=ticket.tenant_id, target_type="ticket", target_id=ticket.id,
+            event_type="ticket.comment_added",
+        )
+    return comment
 
 
 def require_ticket_team_access(ticket):
@@ -6936,6 +7038,22 @@ def create_app(test_config=None):
         initial = escape(user.name[0].upper()) if user.name else "?"
         return Markup(f'<div class="{escape(css_class)}" title="{escape(user.name)}">{initial}</div>')
 
+    def mentions_html(body):
+        """Escapes comment body text (user input) then wraps each
+        "@username" token in a highlight span -- built by manually escaping
+        each plain-text segment and only ever concatenating already-escaped
+        pieces, so this can't become an XSS vector through a comment body
+        containing HTML-looking text."""
+        pieces = []
+        last_end = 0
+        for match in MENTION_PATTERN.finditer(body):
+            pieces.append(escape(body[last_end:match.start()]))
+            pieces.append(Markup(f'<span class="mention">@{escape(match.group(1))}</span>'))
+            last_end = match.end()
+        pieces.append(escape(body[last_end:]))
+        return Markup("").join(pieces)
+
+    app.jinja_env.globals["mentions_html"] = mentions_html
     app.jinja_env.globals["user_avatar"] = user_avatar_html
     app.jinja_env.globals["PREVIEWABLE_ATTACHMENT_TYPES"] = PREVIEWABLE_ATTACHMENT_TYPES
     app.jinja_env.globals["IMAGE_ATTACHMENT_TYPES"] = IMAGE_ATTACHMENT_TYPES
@@ -8265,6 +8383,7 @@ def create_app(test_config=None):
         require_api_scope("tickets:read")
         ticket = visible_ticket_query(g.api_user).filter(func.upper(Ticket.number) == number.upper()).first_or_404()
         return jsonify({"data": [{"id": row.id, "body": row.body, "author": row.author.name,
+                                  "parent_id": row.parent_id,
                                   "created_at": row.created_at.isoformat()} for row in ticket.comments]})
 
     @app.post("/api/v1/tickets/<number>/comments")
@@ -8280,12 +8399,12 @@ def create_app(test_config=None):
         key, request_hash, replay = api_idempotency_context(required=False)
         if replay:
             return replay
-        body = str((request.get_json(silent=True) or {}).get("body", "")).strip()
+        payload = request.get_json(silent=True) or {}
+        body = str(payload.get("body", "")).strip()
         if not body or len(body) > 10000:
             abort(400, description="A comment between 1 and 10000 characters is required.")
-        row = Comment(ticket_id=ticket.id, user_id=g.api_user.id, body=body, tenant_id=ticket.tenant_id)
-        db.session.add(row)
-        db.session.flush()  # populates row.id/row.created_at before the document below is built
+        parent_id = payload.get("parent_id")
+        row = post_ticket_comment(ticket, g.api_user, body, parent_id=int(parent_id) if parent_id else None)
         log_history("ticket", ticket.id, "Comment added", details=f"Mobile app · {g.api_user.name}")
         document = {"data": {"id": row.id, "body": row.body, "author": g.api_user.name,
                               "created_at": row.created_at.isoformat()}}
@@ -9705,6 +9824,16 @@ def create_app(test_config=None):
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
         return render_form()
 
+    @app.get("/ticket/<int:ticket_id>/mentionable-users")
+    @login_required
+    def ticket_mentionable_users_api(ticket_id):
+        ticket = tenant_record_or_404(Ticket, ticket_id)
+        if not user_can_view_ticket(current_user, ticket):
+            abort(403)
+        return jsonify({"users": [
+            {"username": user.username, "name": user.name} for user in ticket_mentionable_users(ticket)
+        ]})
+
     @app.route("/ticket/<int:ticket_id>", methods=["GET", "POST"])
     @login_required
     def ticket_detail(ticket_id):
@@ -9713,7 +9842,7 @@ def create_app(test_config=None):
             abort(403, description="You are not involved in this ticket or its assigned work.")
         if request.method == "POST":
             action = request.form.get("action")
-            if action not in ("comment", "reopen", "close") and ticket_locked_for_edits(ticket):
+            if action not in ("comment", "reopen", "close", "follow", "unfollow") and ticket_locked_for_edits(ticket):
                 require_ticket_not_locked(ticket)
                 return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             if action == "comment":
@@ -9721,10 +9850,9 @@ def create_app(test_config=None):
                     abort(403)
                 body = request.form.get("body", "").strip()
                 upload = request.files.get("file")
+                parent_id = request.form.get("parent_id", type=int)
                 if body:
-                    comment = Comment(ticket_id=ticket.id, user_id=current_user.id, body=body, tenant_id=ticket.tenant_id)
-                    db.session.add(comment)
-                    db.session.flush()
+                    comment = post_ticket_comment(ticket, current_user, body, parent_id=parent_id)
                     log_history("ticket", ticket.id, "Comment added", details=body[:500])
                     audit("comment", ticket.number)
                     if upload and upload.filename:
@@ -9869,6 +9997,8 @@ def create_app(test_config=None):
                 ticket.urgency = urgency
                 ticket.priority = requested_priority
                 ticket.assignee_id = assignee_id
+                if assignee_id:
+                    follow_ticket(ticket, db.session.get(User, assignee_id))
                 if ticket.kind == "incident":
                     contact_type = request.form.get(
                         "contact_type", ticket.contact_type
@@ -9996,6 +10126,10 @@ def create_app(test_config=None):
                 db.session.commit()
                 flash(f"{ticket.number} reassigned to {new_group.name}.", "success")
                 return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+            elif action == "follow":
+                follow_ticket(ticket, current_user)
+            elif action == "unfollow":
+                unfollow_ticket(ticket, current_user)
             db.session.commit()
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
         agents = ticket_team_agents(ticket)
@@ -10048,6 +10182,7 @@ def create_app(test_config=None):
                 status="Operational"
             ).order_by(ServiceOffering.name).all(),
             pir_outcomes=CHANGE_PIR_OUTCOMES,
+            is_following=is_following_ticket(current_user, ticket),
             change_freeze_windows=(
                 tenant_query(ChangeFreezeWindow).filter(
                     ChangeFreezeWindow.ends_at >= now()
