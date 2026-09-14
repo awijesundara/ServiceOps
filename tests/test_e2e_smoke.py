@@ -272,6 +272,37 @@ def test_select_enhance_checkmark_is_vertically_centered_on_the_selected_option(
         context.close()
 
 
+def test_comment_reply_banner_stays_hidden_until_reply_is_clicked(browser, authenticated_storage):
+    """Real bug caught in manual visual verification: .comment-reply-banner's
+    own `display:flex` rule has higher specificity than the browser's
+    built-in `[hidden]{display:none}` default, so the banner rendered
+    visible on every page load regardless of the template's `hidden`
+    attribute, until an explicit `.comment-reply-banner[hidden]{display:none}`
+    override was added."""
+    context = browser.new_context(storage_state=authenticated_storage)
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE_URL}/tickets/new/incident", wait_until="networkidle")
+        page.fill('input[name="title"]', "reply banner regression")
+        page.fill('textarea[name="description"]', "regression coverage")
+        page.select_option('select[name="impact"]', index=1)
+        page.select_option('select[name="urgency"]', index=1)
+        page.select_option('select[name="group_id"]', index=1)
+        page.click("button.primary")
+        page.wait_for_load_state("networkidle")
+        assert not page.locator("#comment-reply-banner").is_visible()
+        page.fill("#comment-body-input", "Top-level comment for reply testing.")
+        page.click("#comment-form button.primary")
+        page.wait_for_load_state("networkidle")
+        assert not page.locator("#comment-reply-banner").is_visible()
+        page.click(".comment-reply-toggle")
+        assert page.locator("#comment-reply-banner").is_visible()
+        page.click("#comment-reply-cancel")
+        assert not page.locator("#comment-reply-banner").is_visible()
+    finally:
+        context.close()
+
+
 @pytest.mark.parametrize("journey,path", CORE_WORKFLOWS, ids=[item[0] for item in CORE_WORKFLOWS])
 def test_critical_journey_is_responsive_error_free_and_accessible(authenticated_page, journey, path):
     page, viewport_name, console_errors = authenticated_page

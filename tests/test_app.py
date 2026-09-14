@@ -18,7 +18,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  BusinessSchedule, CatalogRequest, CatalogTask, ChangeGovernance, ChangeOwnership, ChangeRevision,
                  ClientContact, ClientOrganization, ClientOrganizationAccess, ClientCustomFieldDefinition,
                  ClientView, ClientMacro, ClientTrigger, ClientMailbox, ClientTicket, ClientTicketMessage,
-                 Comment,
+                 Comment, TicketFollower,
                  ChecklistItem, CIRelationship, CiClassPermission, ConfigurationItem, DiscoveryCandidate, DiscoveryTarget,
                  DOMAIN_CONFIG,
                  EnterpriseRecord, CatalogItem,
@@ -38,6 +38,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  WorkflowSchedule,
                  audit, change_approval_stages, create_api_token, create_app, create_notification, db,
                  deliver_smtp, deliver_webhook,
+                 follow_ticket, is_following_ticket,
                  deploy_workflow_package, find_and_merge_duplicate_groups, ldap_authenticate,
                  mapped_roles, merge_support_group_into, normalize_environment, now, process_discovery_schedule,
                  process_client_escalation_policies,
@@ -7782,6 +7783,194 @@ def test_comment_without_file_does_not_touch_attachments(client, app):
     }, follow_redirects=True)
     with app.app_context():
         assert FileAttachment.query.filter_by(ticket_id=ticket_id).count() == 0
+
+
+def _add_agent_to_core_apps(app, username, password):
+    with app.app_context():
+        core_apps = SupportGroup.query.filter_by(name="CoreApps").one()
+        agent = User(
+            username=username, name=username.replace(".", " ").title(),
+            email=f"{username}@test.invalid",
+            password_hash=generate_password_hash(password), role="agent",
+        )
+        db.session.add(agent)
+        db.session.flush()
+        db.session.add(GroupMember(group_id=core_apps.id, user_id=agent.id, role="member"))
+        db.session.commit()
+        return agent.id
+
+
+def test_ticket_reply_nests_under_its_parent_comment(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Threaded discussion test", "description": "Need a real back-and-forth",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Threaded discussion test").one().id
+    client.post(f"/ticket/{ticket_id}", data={"action": "comment", "body": "Top-level question."})
+    with app.app_context():
+        parent_id = Comment.query.filter_by(ticket_id=ticket_id).one().id
+    reply = client.post(f"/ticket/{ticket_id}", data={
+        "action": "comment", "body": "Here is the answer.", "parent_id": str(parent_id),
+    }, follow_redirects=True)
+    assert reply.status_code == 200
+    assert b"comment-reply" in reply.data
+    with app.app_context():
+        child = Comment.query.filter_by(ticket_id=ticket_id, parent_id=parent_id).one()
+        assert child.body == "Here is the answer."
+        parent = db.session.get(Comment, parent_id)
+        assert parent.replies[0].id == child.id
+
+
+def test_reply_rejects_a_parent_id_from_a_different_ticket(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Ticket A", "description": "First ticket", "category": "Software",
+        "priority": "P3", "group_id": group_id(app),
+    })
+    client.post("/tickets/new/incident", data={
+        "title": "Ticket B", "description": "Second ticket", "category": "Software",
+        "priority": "P3", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_a_id = Ticket.query.filter_by(title="Ticket A").one().id
+        ticket_b_id = Ticket.query.filter_by(title="Ticket B").one().id
+    client.post(f"/ticket/{ticket_a_id}", data={"action": "comment", "body": "On ticket A."})
+    with app.app_context():
+        comment_a_id = Comment.query.filter_by(ticket_id=ticket_a_id).one().id
+    response = client.post(f"/ticket/{ticket_b_id}", data={
+        "action": "comment", "body": "Trying to reply cross-ticket.", "parent_id": str(comment_a_id),
+    })
+    assert response.status_code == 400
+
+
+def test_commenting_auto_follows_and_notifies_other_followers(client, app):
+    agent_id = _add_agent_to_core_apps(app, "watcher.agent", "Watcher123!")
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Follow notification test", "description": "Follow me",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Follow notification test").one()
+        ticket_id, requester_id = ticket.id, ticket.requester_id
+        # The requester auto-follows their own ticket on creation.
+        assert is_following_ticket(db.session.get(User, requester_id), ticket)
+        follow_ticket(ticket, db.session.get(User, agent_id))
+        db.session.commit()
+    client.post(f"/ticket/{ticket_id}", data={"action": "comment", "body": "Progress update."})
+    with app.app_context():
+        notification = Notification.query.filter_by(
+            user_id=agent_id, target_type="ticket", target_id=ticket_id,
+        ).filter(Notification.title.contains("New comment")).first()
+        assert notification is not None
+        assert notification.severity == "info"
+        # The commenter (admin) must not notify themselves.
+        assert not Notification.query.filter_by(user_id=requester_id, target_type="ticket", target_id=ticket_id).filter(
+            Notification.title.contains("New comment")
+        ).first()
+
+
+def test_mention_notifies_only_an_authorized_user_and_auto_follows_them(client, app):
+    authorized_id = _add_agent_to_core_apps(app, "mentionable.agent", "Mention123!")
+    with app.app_context():
+        outsider = User(
+            username="outsider.user", name="Outsider User", email="outsider@test.invalid",
+            password_hash=generate_password_hash("Outsider123!"), role="agent",
+        )
+        db.session.add(outsider)
+        db.session.commit()
+        outsider_id = outsider.id
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Mention test", "description": "Mentioning someone",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Mention test").one().id
+    client.post(f"/ticket/{ticket_id}", data={
+        "action": "comment",
+        "body": "@mentionable.agent @outsider.user please take a look.",
+    })
+    with app.app_context():
+        mentioned = Notification.query.filter_by(
+            user_id=authorized_id, target_type="ticket", target_id=ticket_id,
+        ).filter(Notification.title.contains("mentioned you")).first()
+        assert mentioned is not None
+        assert mentioned.severity == "warning"
+        ticket = db.session.get(Ticket, ticket_id)
+        assert is_following_ticket(db.session.get(User, authorized_id), ticket)
+        # outsider.user isn't authorized to view this ticket (not the
+        # requester/assignee/team member), so the @mention must not have
+        # created a notification for them, and they must not have been
+        # silently auto-followed either.
+        assert not Notification.query.filter_by(user_id=outsider_id, target_type="ticket", target_id=ticket_id).first()
+        assert not is_following_ticket(db.session.get(User, outsider_id), ticket)
+
+
+def test_follow_and_unfollow_actions_toggle_membership(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Follow toggle test", "description": "Toggle following",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Follow toggle test").one()
+        ticket_id = ticket.id
+        admin = User.query.filter_by(username="admin").one()
+        # The requester (admin, in this test) already auto-follows.
+        assert is_following_ticket(admin, ticket)
+    client.post(f"/ticket/{ticket_id}", data={"action": "unfollow"})
+    with app.app_context():
+        assert not is_following_ticket(User.query.filter_by(username="admin").one(), db.session.get(Ticket, ticket_id))
+    client.post(f"/ticket/{ticket_id}", data={"action": "follow"})
+    with app.app_context():
+        assert is_following_ticket(User.query.filter_by(username="admin").one(), db.session.get(Ticket, ticket_id))
+
+
+def test_mentionable_users_endpoint_is_scoped_to_ticket_viewers(client, app):
+    authorized_id = _add_agent_to_core_apps(app, "scoped.agent", "Scoped123!")
+    with app.app_context():
+        outsider = User(
+            username="unscoped.user", name="Unscoped User", email="unscoped@test.invalid",
+            password_hash=generate_password_hash("Unscoped123!"), role="agent",
+        )
+        db.session.add(outsider)
+        db.session.commit()
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Mentionable scope test", "description": "Who can be mentioned",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Mentionable scope test").one().id
+    response = client.get(f"/ticket/{ticket_id}/mentionable-users")
+    assert response.status_code == 200
+    usernames = {row["username"] for row in response.get_json()["users"]}
+    assert "scoped.agent" in usernames
+    assert "unscoped.user" not in usernames
+
+
+def test_mentioning_a_team_member_reaches_them_even_before_they_ever_followed(client, app):
+    """A team member who has never commented, followed, or been assigned
+    should still be reachable by @mention -- mentioning must not depend on
+    already being a follower."""
+    agent_id = _add_agent_to_core_apps(app, "assignee.agent", "Assignee123!")
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Assignee mention test", "description": "Mention before assignment",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Assignee mention test").one().id
+    client.post(f"/ticket/{ticket_id}", data={
+        "action": "comment", "body": "@assignee.agent can you take this?",
+    })
+    with app.app_context():
+        assert Notification.query.filter_by(user_id=agent_id, target_type="ticket", target_id=ticket_id).filter(
+            Notification.title.contains("mentioned you")
+        ).first() is not None
 
 
 def test_ticket_list_filters_by_priority_category_and_assignment_group(client, app):
