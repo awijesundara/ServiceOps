@@ -2,7 +2,7 @@
 {% block title %}Analytics · {{ instance_name }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">PLATFORM ANALYTICS</p><h1>Operational performance</h1><p>SLA compliance, resolution speed, backlog health, and workload distribution across the service desk.</p></div></header>
-{% set csv_url = None %}
+{% set csv_url = url_for('analytics_export_csv') %}
 {% include "_export_toolbar.html" %}
 
 <section class="stats">

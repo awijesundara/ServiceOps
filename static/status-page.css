@@ -1,0 +1,27 @@
+.status-page{max-width:760px;margin:0 auto;padding:40px 20px 80px}
+.status-page-head{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.status-page-head .company-logo{height:36px;width:auto}
+.status-page-head h1{font-size:22px;margin:0}
+.status-banner{border-radius:10px;padding:16px 20px;margin-bottom:28px;font-size:15px}
+.status-banner.status-operational{background:#e6f5ef;color:#146c5a}
+.status-banner.status-incident{background:#fff3da;color:#8a5a00}
+.status-banner.status-degraded{background:#fff3da;color:#8a5a00}
+.status-banner.status-outage{background:#fde5e2;color:#9f2017}
+.status-page h2{font-size:15px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 12px}
+.status-incidents,.status-services,.status-history{margin-bottom:32px}
+.status-incident{border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:14px;background:#fff}
+.status-incident header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.status-incident h3{font-size:15px;margin:0}
+.status-incident-resolved .status-pill{background:#e6f5ef;color:#146c5a}
+.status-service-list{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+.status-service-row{display:flex;align-items:center;gap:14px;padding:13px 18px;border-bottom:1px solid var(--line)}
+.status-service-row:last-child{border-bottom:0}
+.status-service-name{flex:1;font-weight:650;font-size:13.5px}
+.status-service-uptime{color:var(--muted);font-size:12px}
+.status-service-state{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700}
+.status-service-state i{width:8px;height:8px;border-radius:50%;background:#8da0a7}
+.status-service-state.status-operational i{background:#16856b}
+.status-service-state.status-degraded i{background:#d97706}
+.status-service-state.status-outage i{background:#b42318}
+.status-empty{text-align:center;padding:60px 0}
+@media(max-width:560px){.status-page{padding:24px 16px 60px}.status-service-row{flex-wrap:wrap}.status-service-uptime{width:100%;order:3}}

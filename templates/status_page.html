@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{{ company_name }} status{% endblock %}
+{% block content %}
+<section class="status-page">
+  <header class="status-page-head">
+    {% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo">{% endif %}
+    <h1>{{ company_name }} system status</h1>
+  </header>
+  <div class="status-banner status-{{ overall_state }}">
+    {% if overall_state == 'operational' %}<strong>All systems operational</strong>
+    {% elif overall_state == 'incident' %}<strong>We are investigating an issue</strong>
+    {% elif overall_state == 'degraded' %}<strong>Some services are degraded</strong>
+    {% else %}<strong>A service outage is in progress</strong>{% endif %}
+  </div>
+
+  {% if active_incidents %}
+  <section class="status-incidents" aria-label="Active incidents">
+    <h2>Active incidents</h2>
+    {% for incident in active_incidents %}
+    <article class="status-incident status-incident-{{ incident.status|lower|replace(' ', '-') }}">
+      <header><h3>{{ incident.ticket.title }}</h3><span class="status-pill">{{ incident.status }}</span></header>
+      <ol class="status-timeline">
+        {% for update in incident.updates %}
+        <li><span class="status-timeline-badge status-{{ update.status|lower|replace(' ', '-') }}">{{ update.status }}</span><div><p>{{ update.message }}</p><time>{{ (update.created_at|usertime('%b %d, %H:%M')) }}</time></div></li>
+        {% else %}<li class="muted">No public updates posted yet.</li>{% endfor %}
+      </ol>
+    </article>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if services %}
+  <section class="status-services" aria-label="Service status">
+    <h2>Services</h2>
+    <div class="status-service-list">
+      {% for service in services %}{% set state = service_states[service.id] %}
+      <div class="status-service-row">
+        <span class="status-service-name">{{ service.name }}</span>
+        <span class="status-service-state status-{{ state.state }}"><i></i>{{ 'Operational' if state.state == 'operational' else 'Degraded' if state.state == 'degraded' else 'Outage' }}</span>
+        {% if state.uptime_pct is not none %}<span class="status-service-uptime">{{ state.uptime_pct }}% uptime (30d)</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if resolved_incidents %}
+  <section class="status-history" aria-label="Incident history">
+    <h2>Past 14 days</h2>
+    {% for incident in resolved_incidents %}
+    <article class="status-incident status-incident-resolved">
+      <header><h3>{{ incident.ticket.title }}</h3><span class="status-pill">Resolved</span></header>
+      <ol class="status-timeline">
+        {% for update in incident.updates %}
+        <li><span class="status-timeline-badge status-{{ update.status|lower|replace(' ', '-') }}">{{ update.status }}</span><div><p>{{ update.message }}</p><time>{{ (update.created_at|usertime('%b %d, %H:%M')) }}</time></div></li>
+        {% endfor %}
+      </ol>
+    </article>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if not services and not active_incidents and not resolved_incidents %}
+  <p class="status-empty muted">No public services or incidents have been published yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

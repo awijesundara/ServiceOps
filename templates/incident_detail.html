@@ -68,6 +68,7 @@
     <dt>Coordinator</dt><dd>{{ major.coordinator.name if major.coordinator else 'Not assigned' }}</dd>
     <dt>Business impact</dt><dd>{{ major.business_impact or 'Not documented' }}</dd>
     <dt>Communications</dt><dd>{{ major.communications or 'Not documented' }}</dd>
+    <dt>Public status page</dt><dd>{% if major.public %}<span class="status-pill">Published</span> — <a href="{{ url_for('status_page', slug=current_tenant_slug) }}" target="_blank" rel="noopener">view page</a>{% else %}Not published{% endif %}</dd>
   </dl>
   {% else %}<p class="muted">This remains a standard INC. Major incident status has not been proposed.</p>{% endif %}
   {% if can_manage_ticket %}
@@ -79,6 +80,22 @@
       <div class="wide actions"><button>Save major incident status</button></div>
     </form>
   </details>
+  {% if major %}
+  <details {% if major.public %}open{% endif %}><summary>Public status page updates</summary>
+    <p class="muted" style="margin-top:0">Posted updates appear on the public status page only while "Publish to status page" is checked below. Business impact/communications above never appear publicly.</p>
+    {% if major.updates %}
+    <ol class="status-timeline">
+      {% for update in major.updates %}<li><span class="status-timeline-badge status-{{ update.status|lower|replace(' ', '-') }}">{{ update.status }}</span><div><p>{{ update.message }}</p><time>{{ update.posted_by.name }} · {{ (update.created_at|usertime('%b %d, %H:%M')) }}</time></div></li>{% endfor %}
+    </ol>
+    {% endif %}
+    <form method="post" action="{{ url_for('major_incident_status_update', ticket_id=ticket.id) }}" class="form-grid">
+      <label>Update status<select name="status">{% for value in ['Investigating','Identified','Monitoring','Resolved'] %}<option>{{ value }}</option>{% endfor %}</select></label>
+      <label class="wide">Message<textarea name="message" rows="2" placeholder="What customers should know right now" required></textarea></label>
+      <label class="check"><input type="checkbox" name="publish" {% if major.public %}checked{% endif %}> Publish to status page ({{ url_for('status_page', slug=current_tenant_slug, _external=True) }})</label>
+      <div class="wide actions"><button class="primary">Post status update</button></div>
+    </form>
+  </details>
+  {% endif %}
   {% endif %}
 
   {% if major or ticket.priority == 'P1' %}

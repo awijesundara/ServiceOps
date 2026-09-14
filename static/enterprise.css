@@ -48,3 +48,12 @@
 .mention-suggestions li small{color:var(--muted)}
 .follow-ticket-form{display:inline-flex}
 .follow-toggle.following{background:#e6f2ef;border-color:#c9e4dd;color:var(--green-dark,#0c7c68)}
+.status-pill{display:inline-block;padding:3px 10px;border-radius:99px;background:#edf3f2;color:#45625c;font-size:11px;font-weight:700}
+.status-timeline{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:12px}
+.status-timeline li{display:flex;gap:12px;align-items:flex-start}
+.status-timeline p{margin:0;font-size:13.5px}
+.status-timeline time{display:block;margin-top:2px;color:var(--muted);font-size:11.5px}
+.status-timeline-badge{flex:0 0 auto;padding:3px 9px;border-radius:99px;font-size:10.5px;font-weight:700;white-space:nowrap;background:#edf3f2;color:#45625c}
+.status-timeline-badge.status-resolved{background:#e6f5ef;color:#146c5a}
+.status-timeline-badge.status-identified,.status-timeline-badge.status-monitoring{background:#fff3da;color:#8a5a00}
+.status-timeline-badge.status-investigating{background:#fde5e2;color:#9f2017}

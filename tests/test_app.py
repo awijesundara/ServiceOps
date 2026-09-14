@@ -27,7 +27,8 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  GroupMember, IntegrationConnection, IntegrationDelivery, IntegrationSyncJob, Knowledge,
                  MonitoringEvent, MonitoringSource, Notification, MobilePushDevice, OperationalTask,
                  OutboxEvent, ProblemProfile, Rack, RecordLink, RolePolicyOverride, ScheduleHoliday, SLADefinition,
-                 RequestedItem, PlatformSetting, ServiceOffering, ServiceOfferingCI, SupportGroup, SupportGroupAlias,
+                 RequestedItem, PlatformSetting, ServiceOffering, ServiceOfferingCI, ServiceOutage,
+                 MajorIncidentProfile, MajorIncidentUpdate, SupportGroup, SupportGroupAlias,
                  TaskCI, TaskHistory, TaskNote, TaskSLA,
                  Tenant, Ticket, TicketAssignmentGroup, User, UserPreference, UserRoleGrant, ManagedRoleGrant, UserSession,
                  ApplicationLog,
@@ -9880,3 +9881,204 @@ def test_change_state_transition_emits_change_state_changed_webhook_event(app):
         transition_ticket(incident, "In Progress")
         db.session.commit()
         assert OutboxEvent.query.filter_by(event_type="change.state_changed").count() == 1
+
+
+def test_analytics_export_csv_returns_kpi_summary(client):
+    login(client)
+    response = client.get("/analytics/export.csv")
+    assert response.status_code == 200
+    assert response.mimetype == "text/csv"
+    body = response.data.decode("utf-8-sig")
+    assert "Metric,Value" in body
+    assert "SLA compliance % (30d resolved)" in body
+    assert "MTTR P1 (hours)" in body
+
+
+def test_analytics_export_csv_requires_agent_role(client):
+    login(client, "employee", "Employee123!")
+    assert client.get("/analytics/export.csv").status_code == 403
+
+
+def test_service_offering_status_page_visibility_toggle(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        offering = ServiceOffering(name="Payroll Service", owner_id=admin.id)
+        db.session.add(offering)
+        db.session.commit()
+        offering_id = offering.id
+    login(client)
+    post_url = "/service-operations/settings"
+    resp = client.post(post_url, data={
+        "action": "toggle_service_status_page_visibility", "service_offering_id": str(offering_id),
+    }, follow_redirects=True)
+    assert resp.status_code == 200
+    with app.app_context():
+        assert db.session.get(ServiceOffering, offering_id).status_page_visible is True
+    client.post(post_url, data={
+        "action": "toggle_service_status_page_visibility", "service_offering_id": str(offering_id),
+    })
+    with app.app_context():
+        assert db.session.get(ServiceOffering, offering_id).status_page_visible is False
+
+
+def test_status_page_requires_no_login_and_shows_only_published_content(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        visible_service = ServiceOffering(
+            name="Public API", owner_id=admin.id, status_page_visible=True,
+        )
+        hidden_service = ServiceOffering(
+            name="Internal Billing Backend", owner_id=admin.id, status_page_visible=False,
+        )
+        db.session.add_all([visible_service, hidden_service])
+        db.session.commit()
+
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Status page major incident", "description": "Customer-visible outage",
+        "category": "Software", "priority": "P1", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Status page major incident").one()
+        ticket_id = ticket.id
+    client.post(f"/incident/{ticket_id}/major-incident", data={
+        "status": "Accepted", "business_impact": "Internal-only impact notes",
+        "communications": "Internal-only coordination log",
+    })
+    with app.app_context():
+        profile = MajorIncidentProfile.query.filter_by(ticket_id=ticket_id).one()
+        profile_id = profile.id
+    client.post(f"/incident/{ticket_id}/major-incident/status-update", data={
+        "status": "Investigating", "message": "We are aware of the issue and investigating.",
+        "publish": "on",
+    })
+    client.post("/logout")
+
+    page = client.get("/status/default")
+    assert page.status_code == 200
+    assert b"Public API" in page.data
+    assert b"Internal Billing Backend" not in page.data
+    assert b"We are aware of the issue and investigating." in page.data
+    assert b"Internal-only impact notes" not in page.data
+    assert b"Internal-only coordination log" not in page.data
+    with app.app_context():
+        assert db.session.get(MajorIncidentProfile, profile_id).public is True
+
+
+def test_status_page_hides_unpublished_major_incident(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Unpublished major incident", "description": "Not for customers",
+        "category": "Software", "priority": "P1", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Unpublished major incident").one().id
+    client.post(f"/incident/{ticket_id}/major-incident", data={
+        "status": "Accepted", "business_impact": "x", "communications": "x",
+    })
+    client.post("/logout")
+    page = client.get("/status/default")
+    assert b"Unpublished major incident" not in page.data
+
+
+def test_status_page_rejects_unknown_slug(client):
+    assert client.get("/status/does-not-exist").status_code == 404
+
+
+def test_status_page_default_redirects_when_single_tenant(client):
+    response = client.get("/status", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/status/default")
+
+
+def test_status_page_cross_tenant_isolation(client, app):
+    with app.app_context():
+        other_tenant = Tenant(slug="other-status-org", name="Other Org")
+        db.session.add(other_tenant)
+        db.session.flush()
+        other_admin = User(
+            username="other.status.admin", name="Other Status Admin",
+            email="other.status.admin@test.invalid",
+            password_hash=generate_password_hash("Other123!"),
+            role="admin", tenant_id=other_tenant.id,
+        )
+        db.session.add(other_admin)
+        db.session.flush()
+        other_service = ServiceOffering(
+            name="Other Org Secret Service", owner_id=other_admin.id,
+            status_page_visible=True, tenant_id=other_tenant.id,
+        )
+        db.session.add(other_service)
+        db.session.commit()
+
+    default_page = client.get("/status/default")
+    assert b"Other Org Secret Service" not in default_page.data
+    other_page = client.get("/status/other-status-org")
+    assert other_page.status_code == 200
+    assert b"Other Org Secret Service" in other_page.data
+
+
+def test_major_incident_status_update_requires_existing_profile(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "No major incident declared yet", "description": "x",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="No major incident declared yet").one().id
+    response = client.post(f"/incident/{ticket_id}/major-incident/status-update", data={
+        "status": "Investigating", "message": "Too early", "publish": "on",
+    })
+    assert response.status_code == 404
+
+
+def test_major_incident_status_update_requires_team_access(client, app):
+    with app.app_context():
+        outsider = User(
+            username="status.outsider", name="Status Outsider",
+            email="status.outsider@test.invalid",
+            password_hash=generate_password_hash("Outsider123!"), role="agent",
+        )
+        db.session.add(outsider)
+        db.session.commit()
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Team-gated status update test", "description": "x",
+        "category": "Software", "priority": "P3", "group_id": group_id(app, "Unix"),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Team-gated status update test").one().id
+    client.post(f"/incident/{ticket_id}/major-incident", data={
+        "status": "Accepted", "business_impact": "x", "communications": "x",
+    })
+    client.post("/logout")
+    login(client, "status.outsider", "Outsider123!")
+    response = client.post(f"/incident/{ticket_id}/major-incident/status-update", data={
+        "status": "Investigating", "message": "Should be blocked", "publish": "on",
+    })
+    assert response.status_code == 403
+
+
+def test_major_incident_status_update_publish_toggle_unpublishes(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Publish toggle test", "description": "x",
+        "category": "Software", "priority": "P3", "group_id": group_id(app),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Publish toggle test").one().id
+    client.post(f"/incident/{ticket_id}/major-incident", data={
+        "status": "Accepted", "business_impact": "x", "communications": "x",
+    })
+    client.post(f"/incident/{ticket_id}/major-incident/status-update", data={
+        "status": "Investigating", "message": "Published now", "publish": "on",
+    })
+    with app.app_context():
+        assert MajorIncidentProfile.query.filter_by(ticket_id=ticket_id).one().public is True
+    client.post(f"/incident/{ticket_id}/major-incident/status-update", data={
+        "status": "Monitoring", "message": "Retracted from public view",
+    })
+    with app.app_context():
+        profile = MajorIncidentProfile.query.filter_by(ticket_id=ticket_id).one()
+        assert profile.public is False
+        assert len(profile.updates) == 2

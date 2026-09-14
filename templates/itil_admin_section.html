@@ -319,10 +319,16 @@
 
 {% if section == 'service-offerings' %}
 <section class="panel admin-section">
-    <p class="muted">Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk.</p>
+    <p class="muted">Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk. Toggle a service to publish or hide it on the <a href="{{ url_for('status_page', slug=current_tenant_slug) }}" target="_blank" rel="noopener">public status page</a>.</p>
     {% for service in services %}
     <article class="config-row" style="flex-direction:column;align-items:stretch;gap:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center"><div><strong>{{ service.name }}</strong><small>{{ service.criticality }} criticality · {{ service.status }}</small></div><span>{{ service.owner.name }}</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><strong>{{ service.name }}</strong><small>{{ service.criticality }} criticality · {{ service.status }}</small></div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span>{{ service.owner.name }}</span>
+          <form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="toggle_service_status_page_visibility"><input type="hidden" name="service_offering_id" value="{{ service.id }}"><button class="badge" style="cursor:pointer;border:0" title="{{ 'Hide from the public status page' if service.status_page_visible else 'Publish on the public status page' }}">{{ '● On status page' if service.status_page_visible else '○ Not on status page' }}</button></form>
+        </div>
+      </div>
       {% for link in service.ci_links %}
       <div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div>
         <span class="badge">{{ link.relationship_role }}</span>
