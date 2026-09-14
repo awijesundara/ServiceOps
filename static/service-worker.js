@@ -2,6 +2,7 @@ const CACHE_NAME = "serviceops-shell-v1.87.20";
 const SHELL_ASSETS = [
   "/static/platform.css?v=1.87.20",
   "/static/task-board.css?v=1.87.20",
+  "/static/status-page.css?v=1.87.20",
   "/static/app.css?v=1.87.20",
   "/static/enterprise.css?v=1.87.20",
   "/static/brand.css?v=1.87.20",
