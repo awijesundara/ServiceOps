@@ -7109,7 +7109,9 @@ def create_app(test_config=None):
         notification_query = tenant_query(Notification).filter_by(user_id=current_user.id)
         recent_notifications = notification_query.order_by(Notification.created_at.desc()).limit(6).all()
         current_page_url = request.path + (f"?{request.query_string.decode()}" if request.query_string else "")
+        current_tenant = db.session.get(Tenant, current_user.tenant_id)
         return platform_context | {
+            "current_tenant_slug": current_tenant.slug if current_tenant else None,
             "ui_preference": preference,
             "ui_favorites": favorites,
             "current_user_is_local": user_is_local(current_user),
@@ -7146,6 +7148,68 @@ def create_app(test_config=None):
                 if user_can_access_client_management(current_user) else 0
             ),
         }
+
+    @app.get("/status")
+    def status_page_default():
+        """Convenience entry point for the common self-hosted case: exactly
+        one active tenant. With more than one, there's no safe anonymous
+        default to pick (that would itself be a cross-tenant existence
+        leak), so this asks for the specific organization's page instead."""
+        active_tenants = Tenant.query.filter_by(active=True).limit(2).all()
+        if len(active_tenants) == 1:
+            return redirect(url_for("status_page", slug=active_tenants[0].slug))
+        abort(404, description="Specify an organization: /status/<organization-slug>.")
+
+    @app.get("/status/<slug>")
+    def status_page(slug):
+        """Anonymous, unauthenticated public status page. Every query here is
+        explicitly scoped by the tenant resolved from the URL slug (never
+        tenant_context_id(), which requires an authenticated session and
+        would raise for every visitor here) and every record shown is
+        opt-in-published (ServiceOffering.status_page_visible,
+        MajorIncidentProfile.public) -- nothing internal-only is
+        reachable from this route regardless of what exists in the tenant."""
+        tenant = Tenant.query.filter_by(slug=slug, active=True).first()
+        if not tenant:
+            abort(404)
+        services = ServiceOffering.query.filter_by(
+            tenant_id=tenant.id, status_page_visible=True,
+        ).order_by(ServiceOffering.name).all()
+        service_states = {}
+        for service in services:
+            open_outage = ServiceOutage.query.filter_by(
+                service_offering_id=service.id, ended_at=None,
+            ).first()
+            if open_outage:
+                state = "outage"
+            elif service.status != "Operational":
+                state = "degraded"
+            else:
+                state = "operational"
+            service_states[service.id] = {
+                "state": state, "uptime_pct": service_availability_pct(service.id),
+            }
+        overall_state = (
+            "outage" if any(row["state"] == "outage" for row in service_states.values())
+            else "degraded" if any(row["state"] == "degraded" for row in service_states.values())
+            else "operational"
+        )
+        active_incidents = MajorIncidentProfile.query.join(Ticket, MajorIncidentProfile.ticket_id == Ticket.id).filter(
+            Ticket.tenant_id == tenant.id, MajorIncidentProfile.public.is_(True),
+            MajorIncidentProfile.status != "Resolved",
+        ).order_by(MajorIncidentProfile.declared_at.desc()).all()
+        history_cutoff = now() - timedelta(days=14)
+        resolved_incidents = MajorIncidentProfile.query.join(Ticket, MajorIncidentProfile.ticket_id == Ticket.id).filter(
+            Ticket.tenant_id == tenant.id, MajorIncidentProfile.public.is_(True),
+            MajorIncidentProfile.status == "Resolved", MajorIncidentProfile.declared_at >= history_cutoff,
+        ).order_by(MajorIncidentProfile.declared_at.desc()).all()
+        if active_incidents and overall_state == "operational":
+            overall_state = "incident"
+        return render_template(
+            "status_page.html", tenant=tenant, services=services, service_states=service_states,
+            overall_state=overall_state, active_incidents=active_incidents,
+            resolved_incidents=resolved_incidents, company_name=setting_value("COMPANY_NAME", tenant.name),
+        )
 
     @app.get("/health")
     def health():
@@ -10466,6 +10530,38 @@ def create_app(test_config=None):
         }, event="Major incident coordination updated")
         audit("major incident", ticket.number, status)
         db.session.commit()
+        return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+
+    @app.post("/incident/<int:ticket_id>/major-incident/status-update")
+    @roles("agent", "manager", "admin")
+    def major_incident_status_update(ticket_id):
+        """Posts one discrete, timestamped entry to the public status-page
+        timeline -- separate from major_incident_update()'s internal
+        business_impact/communications fields, which never leave the
+        authenticated app. Also the only place MajorIncidentProfile.public
+        is set, so publishing is always accompanied by an actual update."""
+        ticket = tenant_record_or_404(Ticket, ticket_id)
+        if ticket.kind != "incident":
+            abort(404)
+        require_ticket_team_access(ticket)
+        profile = ticket.major_incident_profile
+        if not profile:
+            abort(404, description="Propose this as a major incident before posting a public status update.")
+        status = request.form.get("status", "")
+        if status not in ("Investigating", "Identified", "Monitoring", "Resolved"):
+            abort(400)
+        message = request.form.get("message", "").strip()
+        if not message:
+            abort(400, description="A status update message is required.")
+        db.session.add(MajorIncidentUpdate(
+            major_incident_profile_id=profile.id, status=status, message=message,
+            posted_by_id=current_user.id, tenant_id=ticket.tenant_id,
+        ))
+        publish = request.form.get("publish") == "on"
+        profile.public = publish
+        audit("major incident status update", ticket.number, f"{status}{' · published' if publish else ' · not published'}")
+        db.session.commit()
+        flash("Status update posted.", "success")
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
     @app.post("/incident/<int:ticket_id>/major-incident/review")
@@ -16477,6 +16573,15 @@ def create_app(test_config=None):
                       f"removed {link.ci.name}")
                 db.session.delete(link)
                 flash(f"{link.ci.name} unlinked from {link.service_offering.name}.", "success")
+            elif action == "toggle_service_status_page_visibility":
+                service = tenant_record_or_404(ServiceOffering, int(request.form["service_offering_id"]))
+                service.status_page_visible = not service.status_page_visible
+                audit("configure", f"{service.name} status page visibility",
+                      "visible" if service.status_page_visible else "hidden")
+                flash(
+                    f"{service.name} is now {'visible on' if service.status_page_visible else 'hidden from'} "
+                    "the public status page.", "success",
+                )
             else:
                 abort(400)
             db.session.commit()
@@ -16687,9 +16792,11 @@ def create_app(test_config=None):
         db.session.commit()
         return redirect(url_for("notifications"))
 
-    @app.get("/analytics")
-    @roles("agent", "manager", "admin")
-    def analytics():
+    def analytics_kpis():
+        """Every metric the Analytics dashboard shows, factored out so the
+        CSV export (analytics_export_csv) can share it instead of
+        recomputing the same aggregates a second way -- same pattern
+        already used by manager_portal_context()/manager_portal_export()."""
         ticket_query = visible_ticket_query(current_user)
         ticket_ids = [row.id for row in ticket_query.with_entities(Ticket.id).all()]
         record_ids = [row.id for row in visible_enterprise_record_query(current_user).with_entities(EnterpriseRecord.id).all()]
@@ -16935,8 +17042,8 @@ def create_app(test_config=None):
                 "last_outage": last_outage,
             })
 
-        return render_template(
-            "analytics.html", ticket_states=ticket_states, domain_counts=domain_counts,
+        return dict(
+            ticket_states=ticket_states, domain_counts=domain_counts,
             kpi_history_rows=kpi_history_rows, kpi_metric_labels=kpi_metric_labels, kpi_trends=kpi_trends,
             service_availability=service_availability,
             priority_counts=priority_counts, overdue_investigations=overdue_investigations,
@@ -16950,6 +17057,43 @@ def create_app(test_config=None):
             csat_avg=csat_avg, csat_count=csat_count,
             top_groups=top_groups, top_groups_max=top_groups_max,
         )
+
+    @app.get("/analytics")
+    @roles("agent", "manager", "admin")
+    def analytics():
+        return render_template("analytics.html", **analytics_kpis())
+
+    @app.get("/analytics/export.csv")
+    @roles("agent", "manager", "admin")
+    def analytics_export_csv():
+        kpis = analytics_kpis()
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(["Metric", "Value"])
+        writer.writerow(["Open records", kpis["open_count"]])
+        writer.writerow(["SLA breached (open)", kpis["sla_breached_open"]])
+        writer.writerow(["SLA at risk (open)", kpis["sla_at_risk_open"]])
+        writer.writerow(["SLA compliance % (30d resolved)", kpis["sla_compliance_pct"]])
+        for priority in ("P1", "P2", "P3", "P4"):
+            writer.writerow([f"MTTR {priority} (hours)", kpis["mttr_by_priority"].get(priority)])
+        writer.writerow(["Change success % (30d)", kpis["change_success_pct"]])
+        writer.writerow(["Change success % (PIR-reviewed, 30d)", kpis["pir_success_pct"]])
+        writer.writerow(["First contact resolution % (30d)", kpis["fcr_pct"]])
+        writer.writerow(["CSAT average (30d)", kpis["csat_avg"]])
+        writer.writerow(["CSAT responses (30d)", kpis["csat_count"]])
+        writer.writerow([])
+        writer.writerow(["Backlog age", "Open records"])
+        for bucket, count in kpis["aging_buckets"].items():
+            writer.writerow([bucket, count])
+        writer.writerow([])
+        writer.writerow(["Team", "Open records"])
+        for row in kpis["top_groups"]:
+            writer.writerow([row["group"].name, row["count"]])
+        writer.writerow([])
+        writer.writerow(["Service", "Uptime % (30d)"])
+        for row in kpis["service_availability"]:
+            writer.writerow([row["service"].name, row["uptime_pct"]])
+        return csv_response(buffer.getvalue(), "analytics-summary.csv")
 
     @app.get("/analytics/overdue")
     @roles("agent", "manager", "admin")

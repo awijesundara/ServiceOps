@@ -141,6 +141,7 @@ __all__ = [
     "ProblemProfile",
     "ChangeRevision",
     "MajorIncidentProfile",
+    "MajorIncidentUpdate",
     "ImprovementItem",
     "Favorite",
     "RecentView",
@@ -1967,6 +1968,10 @@ class ServiceOffering(db.Model):
     support_group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"))
     criticality = db.Column(db.String(20), nullable=False, default="Medium")
     status = db.Column(db.String(30), nullable=False, default="Operational")
+    # Opt-in: a service's name and uptime are only shown on the anonymous
+    # public status page once explicitly published, same stance as
+    # MajorIncidentProfile.public below.
+    status_page_visible = db.Column(db.Boolean, nullable=False, default=False)
     owner = db.relationship("User")
     support_group = db.relationship("SupportGroup")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
@@ -2433,6 +2438,11 @@ class MajorIncidentProfile(db.Model):
     communications = db.Column(db.Text, default="")
     coordinator_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     declared_at = db.Column(db.DateTime(timezone=True))
+    # Opt-in: this incident (and its MajorIncidentUpdate timeline) only
+    # appears on the anonymous public status page once a coordinator
+    # explicitly publishes it -- the internal business_impact/communications
+    # fields above stay internal-only regardless of this flag.
+    public = db.Column(db.Boolean, nullable=False, default=False)
     review_what_went_well = db.Column(db.Text, default="")
     review_what_went_poorly = db.Column(db.Text, default="")
     review_follow_up_actions = db.Column(db.Text, default="")
@@ -2443,6 +2453,31 @@ class MajorIncidentProfile(db.Model):
     )
     coordinator = db.relationship("User", foreign_keys=[coordinator_id])
     reviewed_by = db.relationship("User", foreign_keys=[reviewed_by_id])
+
+
+class MajorIncidentUpdate(db.Model):
+    """A discrete, timestamped entry in a major incident's public
+    communications timeline -- distinct from MajorIncidentProfile.
+    communications (a single freeform field coordinators edit in place for
+    internal coordination). A status page's visitors expect a chronological
+    log of what's known and when, not one continuously-edited paragraph."""
+    id = db.Column(db.Integer, primary_key=True)
+    major_incident_profile_id = db.Column(
+        db.Integer, db.ForeignKey("major_incident_profile.id"), nullable=False, index=True,
+    )
+    status = db.Column(db.String(20), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    posted_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    profile = db.relationship(
+        "MajorIncidentProfile",
+        backref=db.backref(
+            "updates", cascade="all, delete-orphan",
+            order_by="MajorIncidentUpdate.created_at.desc()",
+        ),
+    )
+    posted_by = db.relationship("User")
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
 IMPROVEMENT_STATES = ["Identified", "Assessed", "In Progress", "Done", "Rejected"]
