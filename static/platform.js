@@ -539,6 +539,11 @@ document.addEventListener("DOMContentLoaded", () => {
           const form = document.createElement("form");
           form.method = "post";
           form.action = n.mark_read_url;
+          const csrfInput = document.createElement("input");
+          csrfInput.type = "hidden";
+          csrfInput.name = "_csrf_token";
+          csrfInput.value = csrfToken;
+          form.appendChild(csrfInput);
           control = document.createElement("button");
           control.type = "submit";
           form.appendChild(control);
@@ -557,13 +562,18 @@ document.addEventListener("DOMContentLoaded", () => {
     async function pollNotifications() {
       // Skip while a form submit inside the popover (mark-as-read) is
       // navigating -- avoids clobbering that in-flight state change.
-      if (document.visibilityState !== "visible") return;
+      if (
+        document.visibilityState !== "visible" ||
+        notificationMenu.dataset.submitting === "true" ||
+        notificationMenu.open ||
+        notificationMenu.contains(document.activeElement)
+      ) return;
       try {
         const response = await fetch(pollUrl, {headers: {Accept: "application/json"}});
         if (!response.ok) return;
         const data = await response.json();
         if (data.latest_id && data.latest_id !== latestId) {
-          const isNewArrival = latestId !== 0 && data.latest_id > latestId;
+          const isNewArrival = data.latest_id > latestId;
           latestId = data.latest_id;
           if (isNewArrival) {
             notificationMenu.classList.remove("ringing");
@@ -580,6 +590,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
     notificationMenu.addEventListener("animationend", () => notificationMenu.classList.remove("ringing"));
+    notificationMenu.addEventListener("submit", () => { notificationMenu.dataset.submitting = "true"; });
     setInterval(pollNotifications, 25000);
   }
 
