@@ -44,13 +44,21 @@ def test_decode_pubsub_message_fails_safe_on_malformed_data():
     assert ack_id == "xyz"
 
 
-def test_extract_message_event_returns_text_thread_and_sender():
+def _mention_annotation(mention_text, bot=True):
+    return {
+        "type": "USER_MENTION", "startIndex": 0, "length": len(mention_text),
+        "userMention": {"user": {"name": "users/999", "type": "BOT" if bot else "HUMAN"}},
+    }
+
+
+def test_extract_message_event_returns_text_thread_and_sender_with_the_mention_stripped():
     event = {
         "type": "MESSAGE",
         "message": {
-            "text": "/escalate Database",
+            "text": "@ServiceOps /escalate Database",
             "thread": {"name": "spaces/AAAA/threads/BBBB"},
             "sender": {"email": "Agent@Example.com"},
+            "annotations": [_mention_annotation("@ServiceOps")],
         },
     }
     result = extract_message_event(event)
@@ -67,7 +75,31 @@ def test_extract_message_event_ignores_non_message_event_types():
 
 
 def test_extract_message_event_ignores_a_message_with_no_thread():
-    event = {"type": "MESSAGE", "message": {"text": "/ack", "sender": {"email": "a@b.com"}}}
+    event = {
+        "type": "MESSAGE",
+        "message": {
+            "text": "@ServiceOps /ack", "sender": {"email": "a@b.com"},
+            "annotations": [_mention_annotation("@ServiceOps")],
+        },
+    }
+    assert extract_message_event(event) is None
+
+
+def test_extract_message_event_ignores_a_message_that_does_not_mention_this_app():
+    """The defense-in-depth half of the /ack-vs-another-Chat-app collision
+    fix: a plain "/ack" with no bot @mention at all (e.g. Google delivered
+    it for some other reason, or a differently-addressed message) must be
+    ignored, not treated as a command aimed at ServiceOps."""
+    event = {
+        "type": "MESSAGE",
+        "message": {
+            "text": "/ack", "thread": {"name": "spaces/AAAA/threads/BBBB"},
+            "sender": {"email": "a@b.com"},
+        },
+    }
+    assert extract_message_event(event) is None
+    # A mention of a *human*, not this bot, must not count either.
+    event["message"]["annotations"] = [_mention_annotation("@Someone", bot=False)]
     assert extract_message_event(event) is None
 
 
