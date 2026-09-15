@@ -2,8 +2,17 @@ replicaCount: 2
 
 image:
   repository: serviceops
-  tag: "1.87.23"
+  tag: "1.88.0"
   digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  # "digest": pull by repo@digest (default). Requires the registry to serve
+  # manifests by digest reference -- true for GHCR, not for every registry
+  # proxy (e.g. some Nexus Repository configurations reject digest-only
+  # pulls for proxied/hosted Docker repos and only serve by tag). Set to
+  # "tag" to pull by repo:tag instead; `digest` is still required in both
+  # modes and is still what tools/safe_update_k8s.sh verifies against the
+  # source registry before every deploy -- switching to "tag" changes how
+  # the cluster pulls the image, not whether the image was verified.
+  pinning: digest
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
