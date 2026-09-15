@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -41,6 +42,9 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  deliver_smtp, deliver_webhook,
                  latest_update_info, process_update_check_schedule,
                  resolve_outbound_proxies, resolve_smtp_proxy_url,
+                 ChatThreadLink, deliver_google_chat_interactive, find_record_by_number,
+                 google_chat_handle_command, google_chat_post_message,
+                 process_google_chat_pubsub_schedule, ticket_owning_group,
                  follow_ticket, is_following_ticket,
                  deploy_workflow_package, find_and_merge_duplicate_groups, ldap_authenticate,
                  mapped_roles, merge_support_group_into, normalize_environment, now, process_discovery_schedule,
@@ -71,6 +75,23 @@ from serviceops_core.workflow import (
 )
 from tools.verify_supply_chain import verify_supply_chain
 from datetime import datetime, time, timedelta, timezone
+
+
+def _generate_test_rsa_private_key_pem():
+    """A throwaway RSA key generated fresh for the test process, used only
+    to exercise the real JWT-bearer signing path in
+    _google_service_account_access_token() -- never a real credential."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+
+
+RSA_TEST_PRIVATE_KEY_PEM = _generate_test_rsa_private_key_pem()
 
 
 @pytest.fixture()
@@ -1934,6 +1955,269 @@ def test_admin_home_shows_a_banner_only_when_a_newer_release_is_cached(client, a
     page = client.get("/admin")
     assert b"999.0.0 is available" in page.data
     assert b"https://github.com/awijesundara/ServiceOps/releases/tag/v999.0.0" in page.data
+
+
+def test_find_record_by_number_accepts_an_explicit_tenant_with_no_session(app):
+    """The Google Chat command handler has no Flask-Login session at all
+    (Google calls ServiceOps via Pub/Sub, not a logged-in browser) --
+    find_record_by_number() must resolve using an explicitly passed
+    tenant_id in that case, not silently return None."""
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        ticket = Ticket(
+            number="INC9999001", kind="incident", title="Chat ack test",
+            description="x", category="Software", priority="P3", state="New",
+            requester_id=admin.id, tenant_id=admin.tenant_id,
+        )
+        db.session.add(ticket)
+        db.session.commit()
+        found = find_record_by_number("INC9999001", tenant_id=admin.tenant_id)
+        assert found is not None and found.id == ticket.id
+        # A different tenant's id must never resolve this record.
+        assert find_record_by_number("INC9999001", tenant_id=admin.tenant_id + 999) is None
+
+
+def test_google_chat_ack_claims_the_ticket_and_moves_it_to_in_progress(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        employee = User.query.filter_by(username="employee").one()
+        ticket = Ticket(
+            number="INC9999002", kind="incident", title="Ack me", description="x",
+            category="Software", priority="P3", state="New",
+            requester_id=admin.id, tenant_id=admin.tenant_id,
+        )
+        db.session.add(ticket)
+        db.session.commit()
+        reply = google_chat_handle_command("ack", "", ticket, employee)
+        db.session.commit()
+        assert "acknowledged" in reply and "Test Employee" in reply
+        assert ticket.state == "In Progress"
+        assert ticket.assignee_id == employee.id
+
+
+def test_google_chat_ack_refuses_when_already_assigned_to_someone_else(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        employee = User.query.filter_by(username="employee").one()
+        manager = User.query.filter_by(username="database.manager").one()
+        ticket = Ticket(
+            number="INC9999003", kind="incident", title="Already taken", description="x",
+            category="Software", priority="P3", state="In Progress",
+            requester_id=admin.id, assignee_id=manager.id, tenant_id=admin.tenant_id,
+        )
+        db.session.add(ticket)
+        db.session.commit()
+        reply = google_chat_handle_command("ack", "", ticket, employee)
+        assert "already assigned to Database Manager" in reply
+        assert ticket.assignee_id == manager.id
+
+
+def test_google_chat_escalate_reassigns_to_the_named_team(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        employee = User.query.filter_by(username="employee").one()
+        # "Network" is one of this fixture's already-seeded default teams
+        # (see CLAUDE.md's established team list) -- reused here instead of
+        # creating a same-named one, which would collide on the existing
+        # (tenant_id, name) uniqueness constraint.
+        target_team = SupportGroup.query.filter_by(name="Network", tenant_id=admin.tenant_id).one()
+        ticket = Ticket(
+            number="INC9999004", kind="incident", title="Escalate me", description="x",
+            category="Software", priority="P3", state="New",
+            requester_id=admin.id, tenant_id=admin.tenant_id,
+        )
+        db.session.add(ticket)
+        db.session.commit()
+        reply = google_chat_handle_command("escalate", "Network", ticket, employee)
+        db.session.commit()
+        assert reply == "INC9999004 escalated to Network."
+        assert ticket_owning_group(ticket).id == target_team.id
+
+
+def test_google_chat_escalate_reports_an_unknown_team_and_missing_args(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        employee = User.query.filter_by(username="employee").one()
+        ticket = Ticket(
+            number="INC9999005", kind="incident", title="x", description="x",
+            category="Software", priority="P3", state="New",
+            requester_id=admin.id, tenant_id=admin.tenant_id,
+        )
+        db.session.add(ticket)
+        db.session.commit()
+        assert google_chat_handle_command("escalate", "", ticket, employee) == "Usage: /escalate <team name>"
+        assert "No active team" in google_chat_handle_command("escalate", "Nonexistent Team", ticket, employee)
+
+
+def test_google_chat_handle_command_reports_an_unknown_command(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        ticket = Ticket(
+            number="INC9999006", kind="incident", title="x", description="x",
+            category="Software", priority="P3", state="New",
+            requester_id=admin.id, tenant_id=admin.tenant_id,
+        )
+        db.session.add(ticket)
+        db.session.commit()
+        reply = google_chat_handle_command("frobnicate", "", ticket, admin)
+        assert "Unknown command" in reply and "/ack" in reply
+
+
+def test_deliver_google_chat_interactive_posts_via_the_chat_api_and_links_the_thread(monkeypatch, app):
+    calls = []
+
+    class FakeTokenResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"access_token": "fake-token", "expires_in": 3600}
+
+    class FakePostResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"thread": {"name": "spaces/AAAA/threads/BBBB"}}
+
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeTokenResponse() if "oauth2.googleapis.com" in url else FakePostResponse()
+
+    monkeypatch.setattr("app.requests.post", fake_post)
+    service_account = json.dumps({
+        "client_email": "bot@project.iam.gserviceaccount.com",
+        "private_key": RSA_TEST_PRIVATE_KEY_PEM,
+    })
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        connection = IntegrationConnection(
+            name="Interactive Google Chat", kind="google_chat", endpoint="spaces/AAAA",
+            secret_encrypted=settings_cipher().encrypt(service_account.encode()).decode(),
+            configuration_encrypted=settings_cipher().encrypt(json.dumps({"interactive": True}).encode()).decode(),
+            created_by_id=admin.id,
+        )
+        event = OutboxEvent(event_type="activity.created", payload_json=json.dumps({
+            "title": "ServiceOps activity: update", "body": "INC9999007 — priority changed",
+            "target": "INC9999007",
+        }))
+        db.session.add_all([connection, event])
+        db.session.commit()
+        assert deliver_google_chat_interactive(event, connection) == 200
+        link = ChatThreadLink.query.filter_by(thread_name="spaces/AAAA/threads/BBBB").one()
+        assert link.record_number == "INC9999007"
+        assert link.connection_id == connection.id
+        post_call = next(call for call in calls if "chat.googleapis.com" in call[0])
+        assert post_call[0] == "https://chat.googleapis.com/v1/spaces/AAAA/messages"
+        assert post_call[1]["headers"]["Authorization"] == "Bearer fake-token"
+
+
+def test_process_google_chat_pubsub_schedule_dispatches_ack_and_replies_in_thread(monkeypatch, app):
+    posted_replies = []
+
+    def fake_post_message(connection, text, thread_name=None):
+        posted_replies.append((text, thread_name))
+        return "spaces/AAAA/threads/BBBB"
+
+    def fake_pull(url, **kwargs):
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                if url.endswith(":pull"):
+                    event = {
+                        "type": "MESSAGE",
+                        "message": {
+                            "text": "/ack",
+                            "thread": {"name": "spaces/AAAA/threads/BBBB"},
+                            "sender": {"email": "employee@test.invalid"},
+                        },
+                    }
+                    encoded = base64.b64encode(json.dumps(event).encode()).decode()
+                    return {"receivedMessages": [{"ackId": "ack-1", "message": {"data": encoded}}]}
+                return {}
+        return FakeResponse()
+
+    monkeypatch.setattr("app.google_chat_post_message", fake_post_message)
+    monkeypatch.setattr("app._google_service_account_access_token", lambda *a, **k: "fake-token")
+    monkeypatch.setattr("app.requests.post", fake_pull)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        connection = IntegrationConnection(
+            name="Interactive Google Chat", kind="google_chat", endpoint="spaces/AAAA",
+            secret_encrypted=settings_cipher().encrypt(b"unused").decode(),
+            configuration_encrypted=settings_cipher().encrypt(json.dumps({"interactive": True}).encode()).decode(),
+            created_by_id=admin.id,
+        )
+        db.session.add(connection)
+        db.session.flush()
+        ticket = Ticket(
+            number="INC9999008", kind="incident", title="Pub/Sub ack", description="x",
+            category="Software", priority="P3", state="New",
+            requester_id=admin.id, tenant_id=admin.tenant_id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        db.session.add(ChatThreadLink(
+            connection_id=connection.id, thread_name="spaces/AAAA/threads/BBBB",
+            record_number="INC9999008", tenant_id=admin.tenant_id,
+        ))
+        db.session.add(PlatformSetting(key="GOOGLE_CHAT_APP_ENABLED", tenant_id=1, encrypted=False, value="true"))
+        db.session.add(PlatformSetting(key="GOOGLE_CHAT_PROJECT_ID", tenant_id=1, encrypted=False, value="test-project"))
+        db.session.add(PlatformSetting(key="GOOGLE_CHAT_PUBSUB_SUBSCRIPTION", tenant_id=1, encrypted=False, value="test-sub"))
+        db.session.add(PlatformSetting(key="GOOGLE_CHAT_SERVICE_ACCOUNT_JSON", tenant_id=1, encrypted=False, value="{}"))
+        db.session.commit()
+        assert process_google_chat_pubsub_schedule() == 1
+        ticket = db.session.get(Ticket, ticket.id)
+        assert ticket.state == "In Progress"
+        assert ticket.assignee.username == "employee"
+        assert len(posted_replies) == 1
+        assert "acknowledged" in posted_replies[0][0]
+        assert posted_replies[0][1] == "spaces/AAAA/threads/BBBB"
+
+
+def test_process_google_chat_pubsub_schedule_is_a_noop_when_disabled(monkeypatch, app):
+    def _unexpected_post(*args, **kwargs):
+        raise AssertionError("Pub/Sub must not be contacted when the Google Chat app is disabled.")
+
+    monkeypatch.setattr("app.requests.post", _unexpected_post)
+    with app.app_context():
+        assert process_google_chat_pubsub_schedule() == 0
+
+
+def test_create_interactive_google_chat_connection_validates_space_id_and_service_account(client, app):
+    login(client, "admin", "Admin123!")
+    service_account = json.dumps({
+        "client_email": "bot@project.iam.gserviceaccount.com",
+        "private_key": "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n",
+    })
+    good = client.post("/admin/integrations", data={
+        "action": "create_connection", "name": "Interactive Chat", "kind": "google_chat",
+        "delivery_mode": "interactive", "space_id": "spaces/AAAA1234",
+        "service_account_json": service_account,
+        "scope_type": "tenant", "event_types": ["activity.created:incidents"],
+    })
+    assert good.status_code in (200, 302)
+    with app.app_context():
+        connection = IntegrationConnection.query.filter_by(name="Interactive Chat").one()
+        assert connection.endpoint == "spaces/AAAA1234"
+        assert connection.configuration.get("interactive") is True
+        assert json.loads(connection.secret)["client_email"] == "bot@project.iam.gserviceaccount.com"
+    bad_space = client.post("/admin/integrations", data={
+        "action": "create_connection", "name": "Bad Space", "kind": "google_chat",
+        "delivery_mode": "interactive", "space_id": "not-a-space-id",
+        "service_account_json": service_account,
+        "scope_type": "tenant", "event_types": ["activity.created:incidents"],
+    })
+    assert bad_space.status_code == 400
+    bad_credentials = client.post("/admin/integrations", data={
+        "action": "create_connection", "name": "Bad Creds", "kind": "google_chat",
+        "delivery_mode": "interactive", "space_id": "spaces/BBBB5678",
+        "service_account_json": "not json at all",
+        "scope_type": "tenant", "event_types": ["activity.created:incidents"],
+    })
+    assert bad_credentials.status_code == 400
 
 
 def test_wrong_provider_webhook_host_is_rejected(client):
