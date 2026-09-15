@@ -11,6 +11,7 @@
    isn't the same as the others" bug on /modules and /mobile-app; the same
    root cause affects /self-service's catalog grid too). */
 .module-grid>.panel,.article-grid>.panel,.catalog-grid>.panel{margin-top:0}
+.dashboard-columns .panel+.panel{margin-top:0}
 /* Role/action permission matrix (/admin/roles): each per-role column mixes
    a checkbox, a bare checkmark, an em dash, or "n/a" text depending on the
    row, and plain left-aligned td content left those at inconsistent
