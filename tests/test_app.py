@@ -39,6 +39,8 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  WorkflowSchedule,
                  audit, change_approval_stages, create_api_token, create_app, create_notification, db,
                  deliver_smtp, deliver_webhook,
+                 latest_update_info, process_update_check_schedule,
+                 resolve_outbound_proxies, resolve_smtp_proxy_url,
                  follow_ticket, is_following_ticket,
                  deploy_workflow_package, find_and_merge_duplicate_groups, ldap_authenticate,
                  mapped_roles, merge_support_group_into, normalize_environment, now, process_discovery_schedule,
@@ -1483,10 +1485,11 @@ def test_google_workspace_oauth2_smtp_refresh_and_xoauth2(monkeypatch, app):
         def send_message(self, message):
             messages.append(message)
 
-    def token_post(url, data, timeout):
+    def token_post(url, data, proxies, timeout):
         assert url == "https://oauth2.googleapis.com/token"
         assert data["grant_type"] == "refresh_token"
         assert data["refresh_token"] == "refresh-secret"
+        assert proxies is None
         return FakeTokenResponse()
 
     monkeypatch.setattr("app.smtplib.SMTP", FakeSMTP)
@@ -1716,6 +1719,221 @@ def test_telegram_delivery_builds_api_call_without_leaking_token(monkeypatch, ap
             "chat_id": "-1001", "text": "Approval\nReview CHG001",
             "protect_content": True,
         }
+
+
+def test_resolve_outbound_proxies_precedence_default_none_custom(app):
+    """default -> inherits OUTBOUND_PROXY_URL; none -> explicit bypass even
+    with a default configured; custom -> this channel's own proxy_url,
+    ignoring the platform default entirely."""
+    with app.app_context():
+        row = PlatformSetting(key="OUTBOUND_PROXY_URL", tenant_id=1, encrypted=False, value="http://default-proxy:3128")
+        db.session.add(row)
+        db.session.commit()
+        assert resolve_outbound_proxies({}) == {"http": "http://default-proxy:3128", "https": "http://default-proxy:3128"}
+        assert resolve_outbound_proxies({"proxy_mode": "default"}) == {
+            "http": "http://default-proxy:3128", "https": "http://default-proxy:3128",
+        }
+        assert resolve_outbound_proxies({"proxy_mode": "none"}) is None
+        assert resolve_outbound_proxies({"proxy_mode": "custom", "proxy_url": "http://channel-proxy:8080"}) == {
+            "http": "http://channel-proxy:8080", "https": "http://channel-proxy:8080",
+        }
+
+
+def test_resolve_outbound_proxies_with_no_default_configured_is_direct():
+    assert resolve_outbound_proxies(None) is None
+    assert resolve_outbound_proxies({}) is None
+
+
+def test_resolve_outbound_proxies_treats_a_malformed_custom_url_as_no_proxy(app):
+    """A broken admin-entered value must fail open to a direct connection
+    (surfacing as a real, diagnosable delivery failure in the log) rather
+    than raising out of every single delivery attempt on this channel."""
+    with app.app_context():
+        assert resolve_outbound_proxies({"proxy_mode": "custom", "proxy_url": "not-a-url"}) is None
+        assert resolve_outbound_proxies({"proxy_mode": "custom", "proxy_url": "socks5://host:1080"}) is None
+
+
+def test_resolve_smtp_proxy_url_precedence(app):
+    with app.app_context():
+        db.session.add(PlatformSetting(key="OUTBOUND_PROXY_URL", tenant_id=1, encrypted=False, value="http://default-proxy:3128"))
+        db.session.commit()
+        assert resolve_smtp_proxy_url() == "http://default-proxy:3128"
+        db.session.add(PlatformSetting(key="SMTP_PROXY_MODE", tenant_id=1, encrypted=False, value="none"))
+        db.session.commit()
+        assert resolve_smtp_proxy_url() is None
+        db.session.get(PlatformSetting, "SMTP_PROXY_MODE").value = "custom"
+        db.session.add(PlatformSetting(key="SMTP_PROXY_URL", tenant_id=1, encrypted=False, value="http://mail-proxy:8080"))
+        db.session.commit()
+        assert resolve_smtp_proxy_url() == "http://mail-proxy:8080"
+
+
+def test_webhook_delivery_through_a_configured_proxy_skips_local_dns_pinning(monkeypatch, app):
+    """When a proxy is configured, deliver_webhook must not call the local
+    DNS-pin/private-address pre-check (resolution happens on the proxy's
+    side, not this host -- see deliver_webhook's own comment) and must pass
+    the proxy through to requests.post()."""
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        is_redirect = False
+
+    monkeypatch.setattr(
+        "app.requests.post",
+        lambda url, json, headers, timeout, allow_redirects=False, proxies=None: (
+            calls.append((url, proxies)) or FakeResponse()
+        ),
+    )
+
+    def _unexpected_getaddrinfo(*args, **kwargs):
+        raise AssertionError("Local DNS resolution must not happen when a proxy is configured.")
+
+    monkeypatch.setattr("app.socket.getaddrinfo", _unexpected_getaddrinfo)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        connection = IntegrationConnection(
+            name="Proxied Slack", kind="slack", endpoint="https://hooks.slack.com/services/x",
+            configuration_encrypted=settings_cipher().encrypt(json.dumps({
+                "proxy_mode": "custom", "proxy_url": "http://air-gapped-proxy:3128",
+            }).encode()).decode(),
+            created_by_id=admin.id,
+        )
+        event = OutboxEvent(event_type="notification.created", payload_json=json.dumps({
+            "title": "Approval", "body": "Review CHG001",
+        }))
+        db.session.add_all([connection, event])
+        db.session.commit()
+        assert deliver_webhook(event, connection) == 200
+        assert calls[0][0] == "https://hooks.slack.com/services/x"
+        assert calls[0][1] == {"http": "http://air-gapped-proxy:3128", "https": "http://air-gapped-proxy:3128"}
+
+
+def test_create_connection_stores_custom_proxy_and_rejects_a_malformed_one(client, app):
+    login(client, "admin", "Admin123!")
+    response = client.post("/admin/integrations", data={
+        "action": "create_connection", "name": "Proxied Google Chat",
+        "kind": "google_chat", "endpoint": "https://chat.googleapis.com/v1/spaces/x",
+        "scope_type": "tenant", "event_types": ["activity.created:incidents"],
+        "proxy_mode": "custom", "proxy_url": "http://proxy.example:3128",
+    })
+    assert response.status_code in (200, 302)
+    with app.app_context():
+        connection = IntegrationConnection.query.filter_by(name="Proxied Google Chat").one()
+        assert connection.configuration == {"proxy_mode": "custom", "proxy_url": "http://proxy.example:3128"}
+    bad = client.post("/admin/integrations", data={
+        "action": "create_connection", "name": "Bad Proxy Channel",
+        "kind": "google_chat", "endpoint": "https://chat.googleapis.com/v1/spaces/y",
+        "scope_type": "tenant", "event_types": ["activity.created:incidents"],
+        "proxy_mode": "custom", "proxy_url": "not-a-valid-proxy",
+    })
+    assert bad.status_code == 400
+
+
+def test_update_connection_proxy_preserves_other_provider_configuration(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        connection = IntegrationConnection(
+            name="Telegram edit test", kind="telegram", endpoint="https://api.telegram.org",
+            secret_encrypted=settings_cipher().encrypt(b"123:secret").decode(),
+            configuration_encrypted=settings_cipher().encrypt(json.dumps({
+                "chat_id": "-1001", "protect_content": True,
+            }).encode()).decode(),
+            created_by_id=admin.id,
+        )
+        db.session.add(connection)
+        db.session.commit()
+        connection_id = connection.id
+    login(client, "admin", "Admin123!")
+    response = client.post("/admin/integrations", data={
+        "action": "update_connection_proxy", "connection_id": connection_id,
+        "proxy_mode": "custom", "proxy_url": "http://telegram-proxy:8080",
+    })
+    assert response.status_code in (200, 302)
+    with app.app_context():
+        connection = db.session.get(IntegrationConnection, connection_id)
+        assert connection.configuration == {
+            "chat_id": "-1001", "protect_content": True,
+            "proxy_mode": "custom", "proxy_url": "http://telegram-proxy:8080",
+        }
+    # Switching back to "default" must clear the stored override entirely,
+    # not leave a stale proxy_mode/proxy_url behind.
+    client.post("/admin/integrations", data={
+        "action": "update_connection_proxy", "connection_id": connection_id,
+        "proxy_mode": "default",
+    })
+    with app.app_context():
+        connection = db.session.get(IntegrationConnection, connection_id)
+        assert connection.configuration == {"chat_id": "-1001", "protect_content": True}
+
+
+def test_outbound_network_settings_page_renders_and_saves(client, app):
+    login(client, "admin", "Admin123!")
+    page = client.get("/admin/settings/outbound_network")
+    assert page.status_code == 200
+    assert b"Default outbound proxy" in page.data
+    response = client.post("/admin/settings/outbound_network", data={
+        "OUTBOUND_PROXY_URL": "http://corp-proxy.internal:3128",
+        "UPDATE_CHECK_ENABLED": "on",
+        "SMTP_PROXY_MODE": "none",
+    })
+    assert response.status_code in (200, 302)
+    with app.app_context():
+        from app import setting_value
+        assert setting_value("OUTBOUND_PROXY_URL", "") == "http://corp-proxy.internal:3128"
+
+
+def test_process_update_check_schedule_caches_a_newer_release_and_gates_by_interval(monkeypatch, app):
+    calls = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"tag_name": "v999.0.0", "html_url": "https://github.com/awijesundara/ServiceOps/releases/tag/v999.0.0"}
+
+    monkeypatch.setattr(
+        "app.requests.get",
+        lambda url, headers, proxies, timeout: (calls.append((url, proxies)) or FakeResponse()),
+    )
+    with app.app_context():
+        from app import APP_VERSION
+        assert latest_update_info() is None
+        assert process_update_check_schedule() is True
+        assert len(calls) == 1
+        info = latest_update_info()
+        assert info == {"version": "999.0.0", "url": "https://github.com/awijesundara/ServiceOps/releases/tag/v999.0.0"}
+        assert info["version"] != APP_VERSION
+        # A second call within the same day must not hit GitHub again.
+        assert process_update_check_schedule() is False
+        assert len(calls) == 1
+
+
+def test_process_update_check_schedule_disabled_makes_no_network_call(monkeypatch, app):
+    def _unexpected_get(*args, **kwargs):
+        raise AssertionError("GitHub must not be contacted when the update check is disabled.")
+
+    monkeypatch.setattr("app.requests.get", _unexpected_get)
+    with app.app_context():
+        db.session.add(PlatformSetting(key="UPDATE_CHECK_ENABLED", tenant_id=1, encrypted=False, value="false"))
+        db.session.commit()
+        assert process_update_check_schedule() is False
+        assert latest_update_info() is None
+
+
+def test_admin_home_shows_a_banner_only_when_a_newer_release_is_cached(client, app):
+    login(client, "admin", "Admin123!")
+    page = client.get("/admin")
+    assert b"is available</strong>" not in page.data
+    with app.app_context():
+        db.session.add(PlatformSetting(
+            key="UPDATE_CHECK_LATEST_VERSION", tenant_id=1, encrypted=False,
+            value=json.dumps({"version": "999.0.0", "url": "https://github.com/awijesundara/ServiceOps/releases/tag/v999.0.0"}),
+        ))
+        db.session.commit()
+    page = client.get("/admin")
+    assert b"999.0.0 is available" in page.data
+    assert b"https://github.com/awijesundara/ServiceOps/releases/tag/v999.0.0" in page.data
 
 
 def test_wrong_provider_webhook_host_is_rejected(client):

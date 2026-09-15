@@ -10,7 +10,8 @@ from app import (
     process_integration_sync_jobs,
     process_ldap_sync_schedule, process_outbox,
     process_performance_sample_schedule, process_rt_import_jobs,
-    process_sla_breaches, process_workflow_jobs, process_workflow_schedules,
+    process_sla_breaches, process_update_check_schedule,
+    process_workflow_jobs, process_workflow_schedules,
 )
 
 running = True
@@ -67,6 +68,11 @@ with app.app_context():
             process_performance_sample_schedule()
         except Exception:
             app.logger.exception("Could not record performance sample")
+            db.session.rollback()
+        try:
+            process_update_check_schedule()
+        except Exception:
+            app.logger.exception("Could not complete the GitHub update check")
             db.session.rollback()
         if not processed:
             time.sleep(5)
