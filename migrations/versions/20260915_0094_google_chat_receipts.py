@@ -39,6 +39,4 @@ def upgrade():
 
 
 def downgrade():
-    inspector = sa.inspect(op.get_bind())
-    if "google_chat_command_receipt" in inspector.get_table_names():
-        op.drop_table("google_chat_command_receipt")
+    pass
