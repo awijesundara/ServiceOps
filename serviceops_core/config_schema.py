@@ -173,6 +173,26 @@ SETTING_DEFINITIONS = {
             "type": "text", "default": "", "live": True,
         },
     ],
+    "google_chat_app": [
+        {
+            "key": "GOOGLE_CHAT_APP_ENABLED", "label": "Enable the interactive Google Chat bot", "type": "bool",
+            "default": "false", "live": True,
+        },
+        {
+            "key": "GOOGLE_CHAT_PROJECT_ID", "label": "Google Cloud project ID", "type": "text",
+            "default": "", "live": True,
+        },
+        {
+            "key": "GOOGLE_CHAT_PUBSUB_SUBSCRIPTION",
+            "label": "Pub/Sub subscription ID (Chat API -> Configuration -> Connection settings -> Cloud Pub/Sub topic)",
+            "type": "text", "default": "", "live": True,
+        },
+        {
+            "key": "GOOGLE_CHAT_SERVICE_ACCOUNT_JSON",
+            "label": "Service account key (JSON) -- used to pull Pub/Sub events and post replies",
+            "type": "secret", "default": "", "live": True,
+        },
+    ],
     "request_tracker_connection": [
         {"key": "RT_ENABLED", "label": "Enable Request Tracker (RT) import", "type": "bool", "default": "false", "live": True},
         {"key": "RT_BASE_URL", "label": "RT base URL", "type": "url", "default": "", "live": True},
@@ -202,6 +222,11 @@ SETTING_GROUP_META = {
         "Default egress proxy for notification channels and email in networks without direct internet access, "
         "plus GitHub release update checking. Every notification channel and email delivery can also use its "
         "own proxy, or none, overriding this default.",
+    ),
+    "google_chat_app": (
+        "Google Chat bot",
+        "Interactive Google Chat app credentials: reads /commands typed in reply to an alert (via Cloud "
+        "Pub/Sub -- no internet-facing endpoint required) and posts threaded replies back.",
     ),
     "netbox_connection": ("NetBox connection", "Connection used to synchronize configuration items from NetBox."),
     "request_tracker_connection": ("Request Tracker connection", "Connection used to import records from Request Tracker."),

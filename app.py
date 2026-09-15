@@ -41,7 +41,7 @@ from flask_login import LoginManager, UserMixin, current_user, login_required, l
 from flask_sqlalchemy import SQLAlchemy
 from authlib.integrations.flask_client import OAuth
 from joserfc import jwt
-from joserfc.jwk import ECKey, KeySet
+from joserfc.jwk import ECKey, KeySet, RSAKey
 from joserfc.jwt import JWTClaimsRegistry
 from alembic import command
 from alembic.config import Config as AlembicConfig
@@ -82,6 +82,7 @@ from serviceops_core.ci_class_policy import (
 from serviceops_core.dns_lookup import resolve_hostname, resolve_ip
 from serviceops_core.dns_pin import pin_resolved_addresses
 from serviceops_core.proxy_tunnel import parse_proxy_url, tunnel_through_proxy
+from serviceops_core.google_chat import decode_pubsub_message, extract_message_event, parse_command
 from serviceops_core.analytics import overdue_enterprise_records, OVERDUE_RECORDS_LIMIT
 from serviceops_core.client_automation import (
     condition_matches, validate_trigger, ClientTriggerConfigurationError,
@@ -1709,7 +1710,114 @@ def deliver_smtp(event):
     return True
 
 
+_google_access_token_cache = {}
+_google_access_token_lock = threading.Lock()
+
+
+def _google_service_account_access_token(service_account_json, scopes):
+    """Exchanges a Google service-account key for a short-lived OAuth2
+    access token via the standard JWT-bearer grant (RFC 7523) -- the same
+    flow Google's own client libraries use under the hood, implemented
+    directly with joserfc (already a dependency here for Cloudflare Access
+    JWT verification) rather than adding a Google Cloud SDK dependency for
+    one token exchange. Cached per (service account, scope set), guarded
+    the same way as _cloudflare_access_key_set() so concurrent request/
+    worker threads racing in at expiry don't each independently
+    re-exchange."""
+    scope_string = " ".join(sorted(scopes))
+    cache_key = hashlib.sha256((service_account_json + "|" + scope_string).encode()).hexdigest()
+    with _google_access_token_lock:
+        cached = _google_access_token_cache.get(cache_key)
+        if cached and cached["expires_at"] > time_module.monotonic():
+            return cached["access_token"]
+    credentials = json.loads(service_account_json)
+    key = RSAKey.import_key(credentials["private_key"])
+    issued_at = int(time_module.time())
+    assertion = jwt.encode(
+        {"alg": "RS256"},
+        {
+            "iss": credentials["client_email"], "sub": credentials["client_email"],
+            "scope": scope_string, "aud": "https://oauth2.googleapis.com/token",
+            "iat": issued_at, "exp": issued_at + 3600,
+        },
+        key,
+    )
+    response = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": assertion},
+        proxies=resolve_outbound_proxies(None), timeout=10,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    access_token = payload["access_token"]
+    with _google_access_token_lock:
+        _google_access_token_cache[cache_key] = {
+            "access_token": access_token,
+            # A little under the real expiry so a caller never starts a
+            # request with a token that's about to expire mid-flight.
+            "expires_at": time_module.monotonic() + max(payload.get("expires_in", 3600) - 60, 60),
+        }
+    return access_token
+
+
+def google_chat_post_message(connection, text, thread_name=None):
+    """Posts a message to a Google Chat space via the real Chat REST API
+    (not a plain incoming webhook), using this interactive connection's own
+    service account (connection.secret holds the service-account JSON key;
+    see GOOGLE_CHAT_APP_ENABLED). `connection.delivery_endpoint` holds the
+    target space's resource name (e.g. "spaces/AAAAxxxxx") for this mode,
+    not a webhook URL. Passing `thread_name` continues that existing
+    thread instead of starting a new one. Returns the created message's
+    own thread name either way, so the very first call (no thread_name
+    yet) tells the caller what thread a later reply should be linked to.
+    """
+    access_token = _google_service_account_access_token(
+        connection.secret, {"https://www.googleapis.com/auth/chat.bot"},
+    )
+    body = {"text": text}
+    params = {}
+    if thread_name:
+        body["thread"] = {"name": thread_name}
+        params["messageReplyOption"] = "REPLY_MESSAGE_OR_NEW_THREAD"
+    response = requests.post(
+        f"https://chat.googleapis.com/v1/{connection.delivery_endpoint}/messages",
+        json=body, params=params,
+        headers={"Authorization": f"Bearer {access_token}"},
+        proxies=resolve_outbound_proxies(connection.configuration), timeout=10,
+    )
+    response.raise_for_status()
+    return response.json().get("thread", {}).get("name", "")
+
+
+def deliver_google_chat_interactive(event, connection):
+    """Delivers to a Google Chat connection configured as the interactive
+    app (GOOGLE_CHAT_APP_ENABLED, connection.configuration["interactive"])
+    -- posts via the real Chat REST API and records the resulting thread
+    against the alerted record (ChatThreadLink), so a later /ack or
+    /escalate reply typed in that thread (process_google_chat_pubsub_schedule())
+    can resolve which record to act on. Only meaningful for the
+    group/tenant-scoped activity.created events this kind of channel
+    actually receives (connection_accepts_event already excludes personal
+    notification.created bodies from non-personal channels) -- `target` is
+    the record's display number, set by every audit() call.
+
+    Google's own chat.googleapis.com host is not admin-supplied here, so
+    the DNS-pin/private-address pre-check the rest of deliver_webhook
+    applies to arbitrary destinations does not apply to this path."""
+    record_number = str(event.payload.get("target") or "").strip()
+    text = provider_payload("google_chat", event.payload, connection.configuration)["text"]
+    thread_name = google_chat_post_message(connection, text)
+    if record_number and thread_name:
+        db.session.add(ChatThreadLink(
+            connection_id=connection.id, thread_name=thread_name,
+            record_number=record_number, tenant_id=connection.tenant_id,
+        ))
+    return 200
+
+
 def deliver_webhook(event, connection):
+    if connection.kind == "google_chat" and connection.configuration.get("interactive"):
+        return deliver_google_chat_interactive(event, connection)
     payload = {
         "id": event.event_id,
         "type": event.event_type,
@@ -2347,13 +2455,19 @@ def notification_target_url(target_type, target_id):
     return record_url(record) if record else None
 
 
-def find_record_by_number(number):
+def find_record_by_number(number, tenant_id=None):
     """Looks up any ITIL record by its display number, strictly scoped to the
     caller's tenant. Every branch must filter by tenant before returning a
     record — this function is a cross-record-type lookup used for linking,
-    and an unscoped branch here is a cross-tenant existence oracle."""
+    and an unscoped branch here is a cross-tenant existence oracle.
+
+    `tenant_id` defaults to the logged-in current_user's tenant; pass it
+    explicitly for a caller with no Flask-Login session at all (e.g. the
+    Google Chat Pub/Sub handler, which resolves its own acting user by
+    email and must use *that* user's tenant, not a nonexistent session)."""
     normalized = (number or "").strip().upper()
-    tenant_id = current_user.tenant_id if current_user.is_authenticated else None
+    if tenant_id is None:
+        tenant_id = current_user.tenant_id if current_user.is_authenticated else None
     if tenant_id is None:
         return None
     if normalized.startswith(("INC", "CHG")):
@@ -4420,6 +4534,167 @@ def latest_update_info():
     if latest_tuple <= current_tuple:
         return None
     return {"version": latest, "url": cached.get("url", "")}
+
+
+def google_chat_handle_command(command, args, record, actor):
+    """Executes one slash command against `record` on behalf of `actor` (the
+    ServiceOps user matched by the Chat message sender's email) and
+    returns the reply text to post back into the thread. Reuses the exact
+    transition/reassignment rules the web UI's ticket and enterprise-record
+    detail pages already enforce (transition_ticket/transition_enterprise,
+    ticket_owning_group) rather than a parallel, possibly-inconsistent
+    implementation of the same business rules -- this dispatcher is just
+    another caller of that same authorized path. An invalid transition
+    raised by those functions (abort()/HTTPException) is caught here and
+    its description reused as the reply, the same way the web route
+    already surfaces it as a flash message."""
+    target_type = "ticket" if isinstance(record, Ticket) else "enterprise"
+    try:
+        if command == "ack":
+            if record.assignee_id and record.assignee_id != actor.id:
+                return f"{record.number} is already assigned to {record.assignee.name}."
+            before = {
+                "state": record.state,
+                "assigned to": record.assignee.name if record.assignee else "Unassigned",
+            }
+            record.assignee_id = actor.id
+            transitions = TICKET_TRANSITIONS if target_type == "ticket" else ENTERPRISE_TRANSITIONS
+            if "In Progress" in transitions.get(record.state, ()):
+                if target_type == "ticket":
+                    transition_ticket(record, "In Progress")
+                else:
+                    transition_enterprise(record, "In Progress")
+            log_field_changes(
+                target_type, record.id, before,
+                {"state": record.state, "assigned to": actor.name}, event="Acknowledged via Google Chat",
+            )
+            audit("update", record.number, f"Acknowledged by {actor.name} via Google Chat")
+            return f"{record.number} acknowledged and assigned to {actor.name}."
+        if command == "escalate":
+            if not args:
+                return "Usage: /escalate <team name>"
+            group = SupportGroup.query.filter(
+                func.lower(SupportGroup.name) == args.strip().lower(),
+                SupportGroup.tenant_id == record.tenant_id, SupportGroup.active.is_(True),
+            ).first()
+            if not group:
+                return f'No active team named "{args}" was found.'
+            if target_type == "ticket":
+                current_group = ticket_owning_group(record)
+                if current_group and current_group.id == group.id:
+                    return f"{record.number} is already owned by {group.name}."
+                if record.kind == "change" and (not group.manager or not group.manager.active):
+                    return f"{group.name} must have an active manager before it can own a change."
+                if record.kind == "change":
+                    record.change_ownership.group_id = group.id
+                else:
+                    assignment = TicketAssignmentGroup.query.filter_by(ticket_id=record.id).first()
+                    if assignment:
+                        assignment.group_id = group.id
+                    else:
+                        db.session.add(TicketAssignmentGroup(ticket_id=record.id, group_id=group.id))
+                record.assignee_id = None
+                log_history(
+                    "ticket", record.id, "Reassigned to another team via Google Chat", "owning team",
+                    current_group.name if current_group else "Unassigned", group.name, actor_id=actor.id,
+                )
+            else:
+                if record.support_group_id == group.id:
+                    return f"{record.number} is already owned by {group.name}."
+                before_group = record.support_group.name if record.support_group else "Unassigned"
+                record.support_group_id = group.id
+                record.assignee_id = None
+                log_history(
+                    "enterprise", record.id, "Reassigned to another team via Google Chat", "owning team",
+                    before_group, group.name, actor_id=actor.id,
+                )
+            audit("escalate", record.number, f"Escalated to {group.name} by {actor.name} via Google Chat")
+            return f"{record.number} escalated to {group.name}."
+    except HTTPException as error:
+        return error.description or f"{record.number} could not be updated."
+    return f'Unknown command "/{command}". Supported: /ack, /escalate <team name>.'
+
+
+def process_google_chat_pubsub_schedule(max_messages=20):
+    """Pulls pending Google Chat events from the configured Pub/Sub
+    subscription (Chat API -> Configuration -> Connection settings ->
+    Cloud Pub/Sub topic -- chosen specifically so nothing needs to be
+    reachable from the internet; ServiceOps only ever calls outward to
+    pubsub.googleapis.com, through the same OUTBOUND_PROXY_URL as every
+    other outbound integration), dispatches any /command found in a
+    threaded reply to the record its alert was sent about
+    (ChatThreadLink), and acknowledges every pulled message either way --
+    a message this deployment can't or won't act on (no matching thread,
+    unrecognized sender, a plain non-command chat message) is still
+    acknowledged, never left to redeliver forever."""
+    if not setting_bool("GOOGLE_CHAT_APP_ENABLED", False):
+        return 0
+    project_id = setting_value("GOOGLE_CHAT_PROJECT_ID", "")
+    subscription_id = setting_value("GOOGLE_CHAT_PUBSUB_SUBSCRIPTION", "")
+    service_account_json = setting_value("GOOGLE_CHAT_SERVICE_ACCOUNT_JSON", "")
+    if not (project_id and subscription_id and service_account_json):
+        return 0
+    subscription = f"projects/{project_id}/subscriptions/{subscription_id}"
+    try:
+        access_token = _google_service_account_access_token(
+            service_account_json, {"https://www.googleapis.com/auth/pubsub"},
+        )
+        response = requests.post(
+            f"https://pubsub.googleapis.com/v1/{subscription}:pull",
+            json={"maxMessages": max_messages},
+            headers={"Authorization": f"Bearer {access_token}"},
+            proxies=resolve_outbound_proxies(None), timeout=15,
+        )
+        response.raise_for_status()
+        received = response.json().get("receivedMessages", []) or []
+    except Exception:
+        current_app.logger.exception("Could not pull Google Chat events from Pub/Sub")
+        return 0
+    if not received:
+        return 0
+    ack_ids = []
+    for entry in received:
+        chat_event, ack_id = decode_pubsub_message(entry)
+        if ack_id:
+            ack_ids.append(ack_id)
+        try:
+            message_event = extract_message_event(chat_event)
+            if not message_event:
+                continue
+            parsed = parse_command(message_event["text"])
+            if not parsed:
+                continue
+            command, args = parsed
+            link = ChatThreadLink.query.filter_by(thread_name=message_event["thread_name"]).first()
+            if not link:
+                continue
+            record = find_record_by_number(link.record_number, tenant_id=link.tenant_id)
+            if not record:
+                continue
+            actor = User.query.filter(
+                func.lower(User.email) == message_event["sender_email"],
+                User.tenant_id == link.tenant_id, User.active.is_(True),
+            ).first()
+            reply = (
+                google_chat_handle_command(command, args, record, actor) if actor
+                else "Your Google account email doesn't match an active ServiceOps user, so this command was not run."
+            )
+            db.session.commit()
+            google_chat_post_message(link.connection, reply, thread_name=link.thread_name)
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Failed to process a Google Chat event")
+    if ack_ids:
+        try:
+            requests.post(
+                f"https://pubsub.googleapis.com/v1/{subscription}:acknowledge",
+                json={"ackIds": ack_ids},
+                headers={"Authorization": f"Bearer {access_token}"},
+                proxies=resolve_outbound_proxies(None), timeout=15,
+            )
+        except Exception:
+            current_app.logger.exception("Could not acknowledge pulled Google Chat events")
+    return len(received)
 
 
 def process_kpi_snapshot_schedule(limit=50):
@@ -13177,6 +13452,19 @@ def create_app(test_config=None):
                     }
                     if thread_id:
                         configuration["message_thread_id"] = int(thread_id)
+                interactive_google_chat = (
+                    kind == "google_chat" and request.form.get("delivery_mode") == "interactive"
+                )
+                if interactive_google_chat:
+                    # The interactive app posts via the real Chat REST API
+                    # (google_chat_post_message()), not a plain incoming
+                    # webhook -- endpoint is the target space's resource
+                    # name, not a URL, and secret is that app's own service
+                    # account key rather than a webhook signing secret.
+                    endpoint = request.form.get("space_id", "").strip()
+                    if not re.fullmatch(r"spaces/[\w-]+", endpoint):
+                        abort(400, description='Space ID must look like "spaces/AAAAxxxxx".')
+                    configuration["interactive"] = True
                 # Outbound proxy override, applicable to every provider kind
                 # (not just Telegram): lets an administrator choose per
                 # channel whether to inherit the OUTBOUND_PROXY_URL platform
@@ -13197,8 +13485,10 @@ def create_app(test_config=None):
                 if (
                     not name or len(name) > 160
                     or kind not in WEBHOOK_KINDS
-                    or not integration_endpoint_valid(endpoint)
-                    or not provider_endpoint_allowed(kind, urlparse(endpoint).hostname)
+                    or (not interactive_google_chat and (
+                        not integration_endpoint_valid(endpoint)
+                        or not provider_endpoint_allowed(kind, urlparse(endpoint).hostname)
+                    ))
                 ):
                     abort(400, description=(
                         "A name, supported kind and public HTTPS endpoint are required."
@@ -13206,6 +13496,17 @@ def create_app(test_config=None):
                 secret = request.form.get("secret", "").strip() if kind in {
                     "webhook", "siem", "telegram",
                 } else ""
+                if interactive_google_chat:
+                    secret = request.form.get("service_account_json", "").strip()
+                    try:
+                        credentials = json.loads(secret)
+                        if not credentials.get("private_key") or not credentials.get("client_email"):
+                            raise ValueError
+                    except (TypeError, ValueError):
+                        abort(400, description=(
+                            "A valid Google service-account JSON key (with private_key and "
+                            "client_email) is required for the interactive app."
+                        ))
                 if kind == "telegram" and not secret:
                     abort(400, description="A Telegram bot token is required.")
                 if kind in {"webhook", "siem"} and not secret:
@@ -13215,8 +13516,10 @@ def create_app(test_config=None):
                     settings_cipher().encrypt(secret.encode()).decode()
                     if secret else None
                 )
-                parsed_endpoint = urlparse(endpoint)
-                display_endpoint = parsed_endpoint._replace(query="", fragment="").geturl()
+                display_endpoint = endpoint
+                if not interactive_google_chat:
+                    parsed_endpoint = urlparse(endpoint)
+                    display_endpoint = parsed_endpoint._replace(query="", fragment="").geturl()
                 encrypted_endpoint = settings_cipher().encrypt(endpoint.encode()).decode()
                 encrypted_configuration = (
                     settings_cipher().encrypt(json.dumps(configuration).encode()).decode()
@@ -18098,7 +18401,7 @@ def create_app(test_config=None):
                                 + process_ldap_sync_schedule() + process_kpi_snapshot_schedule()
                                 + process_rt_import_jobs() + process_discovery_schedule()
                                 + process_client_escalation_policies() + process_client_email_inbox()
-                                + process_data_retention_purge()
+                                + process_data_retention_purge() + process_google_chat_pubsub_schedule()
                             )
                             process_performance_sample_schedule()
                             process_update_check_schedule()
