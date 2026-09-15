@@ -8,7 +8,6 @@ failure. The dedicated account should be an unprivileged requester.
 import json
 import os
 import re
-import sys
 import time
 
 import requests

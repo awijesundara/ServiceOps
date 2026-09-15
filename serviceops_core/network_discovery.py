@@ -404,7 +404,6 @@ def reconcile_facts_into_cmdb(tenant_id, target_name, facts_list):
     administrator's manual classification is never silently overwritten by a
     heuristic guess. A CI discovery itself created is fully refreshed each
     run."""
-    import app as core_app
     from app import CIRelationship, ConfigurationItem, db, now
     from sqlalchemy import func
 

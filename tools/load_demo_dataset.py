@@ -30,10 +30,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from werkzeug.security import generate_password_hash
 
 from app import (
-    Asset, CatalogItem, CatalogItemRouting, CatalogRequest, CatalogTask,
+    CatalogItem, CatalogRequest, CatalogTask,
     ChangeGovernance, ChangeOwnership, ConfigurationItem, CIRelationship,
     EnterpriseRecord, GroupMember, Knowledge, OperationalTask, RequestedItem,
-    ServiceOffering, SupportGroup, TaskCI, TaskHistory, Ticket,
+    SupportGroup, TaskCI, TaskHistory, Ticket,
     TicketAssignmentGroup, User, create_app, db, now, sequence_number,
 )
 

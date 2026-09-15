@@ -648,9 +648,6 @@ def _create_change_ticket(rt_id, tenant_id, title, description, detail, requeste
 
 
 def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache, summary, dry_run):
-    import app as core_app
-    from app import db
-
     if _already_imported(rt_id, tenant_id):
         summary["already_imported"] += 1
         return
