@@ -22,7 +22,7 @@ import hashlib
 import json
 import os
 import uuid
-from datetime import datetime, time as dt_time, timedelta, timezone
+from datetime import datetime, time as dt_time, timezone
 
 from cryptography.fernet import Fernet
 from flask import current_app, has_request_context, session

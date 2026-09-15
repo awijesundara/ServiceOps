@@ -1,5 +1,4 @@
 """Durable integration outbox worker."""
-import logging
 import signal
 import time
 
