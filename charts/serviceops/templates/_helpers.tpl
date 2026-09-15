@@ -28,5 +28,10 @@ app.kubernetes.io/component: web
 {{- required "existingSecret is required" .Values.existingSecret }}
 {{- end }}
 {{- define "serviceops.imageRef" -}}
-{{- printf "%s@%s" .Values.image.repository (required "image.digest is required" .Values.image.digest) -}}
+{{- $digest := required "image.digest is required" .Values.image.digest -}}
+{{- if eq (.Values.image.pinning | default "digest") "tag" -}}
+{{- printf "%s:%s" .Values.image.repository (required "image.tag is required" .Values.image.tag) -}}
+{{- else -}}
+{{- printf "%s@%s" .Values.image.repository $digest -}}
+{{- end -}}
 {{- end }}

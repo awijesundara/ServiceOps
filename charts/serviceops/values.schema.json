@@ -14,6 +14,7 @@
         "repository": {"type": "string", "minLength": 1},
         "tag": {"type": "string", "minLength": 1},
         "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "pinning": {"type": "string", "enum": ["digest", "tag"]},
         "pullPolicy": {"type": "string", "enum": ["Always", "IfNotPresent", "Never"]}
       }
     },
