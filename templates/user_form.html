@@ -77,7 +77,7 @@
     <div><small>ServiceOps teams</small><strong>{{ teams|length }}</strong><span>{{ teams|join(', ') if teams else 'Not assigned' }}{% if managed_teams %}<br>Manages: {{ managed_teams|map(attribute='name')|join(', ') }}{% endif %}</span></div>
     <div><small>Directory sync</small><strong>{{ 'Connected' if directory_profile else 'No directory snapshot' }}</strong><span>{% if directory_profile %}Last refreshed {{ directory_profile.synchronized_at|usertime('%Y-%m-%d %H:%M:%S') }}{% else %}Sign in with LDAP or run directory sync{% endif %}</span></div>
   </div>
-  {% if directory_profile %}{% set ldap = directory_profile.profile %}
+  {% if directory_profile and not self_service %}{% set ldap = directory_profile.profile %}
   <details open><summary><strong>LDAP profile details</strong></summary>
     <div class="detail-grid directory-detail-grid">
       {% for key, label in [
