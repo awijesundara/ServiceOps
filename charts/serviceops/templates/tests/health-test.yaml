@@ -19,7 +19,12 @@ spec:
     seccompProfile: {type: RuntimeDefault}
   containers:
     - name: health
-      image: {{ printf "%s@%s" .Values.healthTest.image.repository (required "healthTest.image.digest is required" .Values.healthTest.image.digest) | quote }}
+      {{- $htDigest := required "healthTest.image.digest is required" .Values.healthTest.image.digest }}
+      {{- if eq (.Values.image.pinning | default "digest") "tag" }}
+      image: {{ printf "%s:%s" .Values.healthTest.image.repository (required "healthTest.image.tag is required" .Values.healthTest.image.tag) | quote }}
+      {{- else }}
+      image: {{ printf "%s@%s" .Values.healthTest.image.repository $htDigest | quote }}
+      {{- end }}
       securityContext:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
