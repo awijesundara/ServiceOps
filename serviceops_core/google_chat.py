@@ -39,13 +39,44 @@ def decode_pubsub_message(received_message):
         return None, ack_id
 
 
+def _strip_bot_mention(message):
+    """Returns the message text with a leading bot @mention annotation
+    removed, or None if the message doesn't mention a bot at all.
+
+    Google Chat only delivers a *space's* (as opposed to a 1:1 direct
+    message's) MESSAGE event to an app when that app is explicitly
+    @-mentioned, unless the app opts into receiving every message in every
+    space it's a member of -- ServiceOps's Chat app configuration
+    deliberately does not request that broader permission (see
+    DEPLOYMENT.md's Google Chat bot section). That single choice is what
+    keeps ServiceOps from ever seeing (and this function's defense-in-depth
+    re-check from ever acting on) a plain "/ack" meant for a different Chat
+    app sharing the same space -- each app is only ever handed the
+    messages that explicitly named it, addressed as e.g. "@ServiceOps
+    /ack", which is also why the mention has to be stripped before the
+    remaining text can match COMMAND_PATTERN's leading "/word" shape."""
+    text = message.get("text") or ""
+    for annotation in message.get("annotations") or []:
+        if annotation.get("type") != "USER_MENTION":
+            continue
+        mention_user = (annotation.get("userMention") or {}).get("user") or {}
+        if mention_user.get("type") != "BOT":
+            continue
+        start = annotation.get("startIndex", 0)
+        length = annotation.get("length", 0)
+        return (text[:start] + text[start + length:]).strip()
+    return None
+
+
 def extract_message_event(chat_event):
     """Returns {"text", "thread_name", "sender_email"} for a MESSAGE-type
-    Chat event with a real thread, or None for anything else (a space's
-    ADDED_TO_SPACE/REMOVED_FROM_SPACE lifecycle event, a CARD_CLICKED
-    interaction, or a malformed payload) -- those are acknowledged and
-    otherwise ignored by the caller, since there is no command to act on
-    without a thread to reply into."""
+    Chat event that explicitly @-mentions this app and has a real thread,
+    or None for anything else -- a space lifecycle event
+    (ADDED_TO_SPACE/REMOVED_FROM_SPACE), a CARD_CLICKED interaction, a
+    malformed payload, a message with no thread to reply into, or (see
+    _strip_bot_mention's docstring) a message not actually addressed to
+    this app. All of those are acknowledged and otherwise ignored by the
+    caller."""
     if not isinstance(chat_event, dict) or chat_event.get("type") != "MESSAGE":
         return None
     message = chat_event.get("message")
@@ -54,8 +85,11 @@ def extract_message_event(chat_event):
     thread_name = ((message.get("thread") or {}).get("name") or "").strip()
     if not thread_name:
         return None
+    stripped_text = _strip_bot_mention(message)
+    if stripped_text is None:
+        return None
     return {
-        "text": message.get("text") or "",
+        "text": stripped_text,
         "thread_name": thread_name,
         "sender_email": ((message.get("sender") or {}).get("email") or "").strip().lower(),
     }
