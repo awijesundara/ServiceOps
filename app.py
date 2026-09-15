@@ -8618,6 +8618,22 @@ def create_app(test_config=None):
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
+        if request.method == "GET" and current_user.is_authenticated:
+            # Revisiting /login (bookmark, typed URL, back button) with a
+            # live session should land the user back in the app, not
+            # re-prompt for credentials -- this only ever applied to the
+            # Cloudflare Access SSO branch below, so a plain GET with an
+            # existing session fell through to rendering login.html
+            # regardless of auth state. Scoped to GET only: a POST here
+            # (submitting different credentials while already signed in)
+            # is left to the existing password-check logic below, which
+            # already supports switching accounts without an explicit
+            # logout first.
+            preference = UserPreference.query.filter_by(user_id=current_user.id).first()
+            start_page = preference.start_page if preference else None
+            if not is_safe_internal_path(start_page):
+                start_page = url_for("dashboard")
+            return redirect(start_page)
         if not current_user.is_authenticated and app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]:
             access_claims = verify_cloudflare_access_jwt(request.headers.get("Cf-Access-Jwt-Assertion", ""))
             if access_claims and access_claims.get("email"):
