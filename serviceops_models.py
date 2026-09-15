@@ -73,6 +73,7 @@ __all__ = [
     "PerformanceSample",
     "IntegrationConnection",
     "ChatThreadLink",
+    "GoogleChatCommandReceipt",
     "OutboxEvent",
     "IntegrationDelivery",
     "MonitoringSource",
@@ -1005,6 +1006,20 @@ class ChatThreadLink(db.Model):
     thread_name = db.Column(db.String(200), nullable=False, unique=True, index=True)
     record_number = db.Column(db.String(30), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    connection = db.relationship("IntegrationConnection")
+
+
+class GoogleChatCommandReceipt(db.Model):
+    """Durable idempotency and reply state for an inbound Chat command."""
+    __tablename__ = "google_chat_command_receipt"
+    id = db.Column(db.Integer, primary_key=True)
+    message_id = db.Column(db.String(200), nullable=False, unique=True, index=True)
+    connection_id = db.Column(db.Integer, db.ForeignKey("integration_connection.id"), nullable=False)
+    thread_name = db.Column(db.String(200), nullable=False)
+    reply_text = db.Column(db.Text, nullable=False)
+    processed_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    replied_at = db.Column(db.DateTime(timezone=True))
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
     connection = db.relationship("IntegrationConnection")
 
