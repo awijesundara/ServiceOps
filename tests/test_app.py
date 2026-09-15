@@ -1795,7 +1795,7 @@ def test_cloudflare_access_sso_verifies_signature_audience_and_expiry(app, clien
         assert response.status_code == 200
         assert b"Recently updated" in response.data
 
-        client.get("/logout")
+        client.post("/logout")
 
         # Wrong audience must be rejected even with a valid signature
         response = client.get("/login", headers={"Cf-Access-Jwt-Assertion": make_token(aud="some-other-app")})
@@ -1827,6 +1827,21 @@ def test_login_and_dashboard(client):
     assert b'<main id="main-content" tabindex="-1"' in response.data
     assert b'aria-expanded="true"' in response.data
     assert b'aria-modal="true" aria-labelledby="ci-browser-title"' in response.data
+
+
+def test_revisiting_login_url_with_an_active_session_redirects_instead_of_reprompting(client):
+    login(client)
+    response = client.get("/login", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/"
+    # Scoped to GET: submitting the login form itself (not just revisiting
+    # the URL) while already signed in must still be able to switch to a
+    # different account without requiring an explicit logout first --
+    # existing behavior other tests rely on.
+    response = login(client, username="employee", password="Employee123!")
+    assert response.status_code == 200
+    profile = client.get("/profile")
+    assert b"Test Employee" in profile.data
 
 
 def test_notification_bell_previews_recent_items_without_sidebar_link(client, app):
@@ -2752,20 +2767,28 @@ def test_profile_shows_safe_directory_intelligence_and_manager_flag(client, app)
     page = client.get("/profile")
     assert page.status_code == 200
     assert b"People manager" in page.data
-    assert b"LDAP profile details" in page.data
-    assert b"database.manager@example.com" in page.data
-    assert b"gg_database_users" in page.data
-    assert b"corp.example.com" in page.data
-    assert b"Possible team mappings" in page.data
     assert b"LAP-0042" in page.data
     assert b"Payroll service" in page.data
     assert b"Authentication secrets, certificates, SIDs" in page.data
-    client.get("/logout")
+    # LDAP directory details (raw AD attributes, group membership, and the
+    # "for administrator review" team-mapping suggestions) are administrator
+    # information about the account, not the account holder's own business
+    # data -- a self-service viewer must not see any of it on their own
+    # profile page, even though an admin sees the same data on this same
+    # template (self_service=False) further down.
+    assert b"LDAP profile details" not in page.data
+    assert b"database.manager@example.com" not in page.data
+    assert b"gg_database_users" not in page.data
+    assert b"corp.example.com" not in page.data
+    assert b"Possible team mappings" not in page.data
+    client.post("/logout")
     login(client)
     admin_view = client.get(f"/admin/users/{manager_id}")
     assert admin_view.status_code == 200
     assert b"LDAP profile details" in admin_view.data
     assert b"corp.example.com" in admin_view.data
+    assert b"gg_database_users" in admin_view.data
+    assert b"Possible team mappings" in admin_view.data
     assert b"LAP-0042" in admin_view.data
 
 
@@ -8170,7 +8193,7 @@ def test_change_password_is_local_users_only(client, app):
     assert blocked.status_code == 403
     own_profile = client.get("/profile")
     assert b"Change password" not in own_profile.data
-    client.get("/logout")
+    client.post("/logout")
 
     login(client)
     allowed = client.get("/profile/password")
