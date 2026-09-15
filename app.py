@@ -37,8 +37,7 @@ import pyotp
 import boto3
 from flask import Flask, Response, abort, current_app, flash, g, has_app_context, has_request_context, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from markupsafe import Markup, escape
-from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
-from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 from authlib.integrations.flask_client import OAuth
 from joserfc import jwt
 from joserfc.jwk import ECKey, KeySet, RSAKey
@@ -47,14 +46,25 @@ from alembic import command
 from alembic.config import Config as AlembicConfig
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import InvalidToken
 from ldap3 import ALL, BASE, SUBTREE, Connection, Server, Tls
 from ldap3.utils.conv import escape_filter_chars
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.pool import StaticPool
-from werkzeug.security import check_password_hash, generate_password_hash
+# Not called directly in this file (ServiceOps hashes local passwords with
+# Argon2id via serviceops_core.security -- see hash_password/verify_password
+# above). Kept because serviceops_core/rt_import.py's _resolve_or_create_user()
+# reaches it as core_app.generate_password_hash(...) via `import app as
+# core_app`, the lazy-import pattern this module and its siblings
+# (netbox_sync.py, network_discovery.py, ...) use to avoid a circular
+# import with app.py at module load time -- that makes every name app.py
+# imports at module scope part of its cross-module surface, not just what
+# this file's own body references. A static per-file unused-import check
+# (this repo's ruff config deliberately doesn't run one -- see CI) cannot
+# see that cross-module use and would flag this as dead.
+from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
@@ -65,7 +75,7 @@ def escape_like(value):
     return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 from serviceops_core.security import (
-    hash_password, load_policy, mask_secret, redact, RedactingFilter, role_has_action,
+    hash_password, load_policy, RedactingFilter, role_has_action,
     validate_policy, verify_and_upgrade_password, verify_password,
 )
 from serviceops_core.priority import calculate_priority, validate_priority_policy
@@ -99,7 +109,7 @@ from serviceops_core.identity import (
 )
 from serviceops_core.task_lifecycle import (
     TICKET_TRANSITIONS, ENTERPRISE_TRANSITIONS, CATALOG_TASK_TRANSITIONS,
-    OPERATIONAL_TASK_TRANSITIONS, STATE_TRACK_ORDER, build_state_track, allowed_states,
+    OPERATIONAL_TASK_TRANSITIONS, build_state_track,
 )
 from serviceops_core.config_schema import (
     SETTING_DEFINITIONS, SETTING_GROUP_META, find_setting_definition,
@@ -110,7 +120,7 @@ from serviceops_core.notification_templates import (
     NOTIFICATION_EVENT_TYPES, NON_MUTABLE_EVENT_TYPES, render_notification_template, is_event_muted,
 )
 from serviceops_core.delivery import (
-    EVENT_SUBSCRIPTIONS, EVENT_SUBSCRIPTION_PATTERNS, PROVIDER_LABELS,
+    EVENT_SUBSCRIPTIONS, PROVIDER_LABELS,
     PERSONAL_EVENT_SUBSCRIPTIONS, PERSONAL_EVENT_SUBSCRIPTION_PATTERNS,
     GROUP_EVENT_SUBSCRIPTIONS, GROUP_EVENT_SUBSCRIPTION_PATTERNS,
     SYSTEM_EVENT_SUBSCRIPTIONS, SYSTEM_EVENT_SUBSCRIPTION_PATTERNS,
@@ -8361,7 +8371,7 @@ def create_app(test_config=None):
             )
             db.session.add(task)
             return task
-        task = create_with_retry_on_number_collision(build_task)
+        create_with_retry_on_number_collision(build_task)
         source.last_seen_at = now()
         audit(
             "monitoring ingest", record.number,
@@ -11409,7 +11419,6 @@ def create_app(test_config=None):
         transition_operational_task(task, requested_state)
         task.assignee_id = assignee_id
         task.work_notes = request.form.get("work_notes", "").strip()
-        parent = record_reference(task.parent_type, task.parent_id)
         log_field_changes(task.parent_type, task.parent_id, before, {
             "state": task.state,
             "assigned to": assignee.name if assignee else "Unassigned",

@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from flask import current_app
 
-from app import FileAttachment, create_app, db, object_storage_client, object_storage_enabled
+from app import FileAttachment, create_app, object_storage_client, object_storage_enabled
 
 
 def migrate(dry_run=False):
