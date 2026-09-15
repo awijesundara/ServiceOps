@@ -26,6 +26,7 @@
     ('Monitoring sources','External monitoring sources that create operations events','integrations_admin','monitoring','⌁','monitoring alert ingestion'),
     ('Request Tracker (RT)','Connection settings and controlled ticket import','rt_import',None,'⇣','request tracker import'),
     ('Email delivery','Google Workspace, Gmail OAuth, app passwords, and SMTP','system_settings_category','email_delivery','✉','smtp gmail email'),
+    ('Outbound proxy & updates','Default egress proxy for channels/email without direct internet access, and GitHub release checking','system_settings_category','outbound_network','⇄','proxy egress airgap update github'),
     ('NetBox connection','Connection used for controlled CMDB synchronization','system_settings_category','netbox_connection','⇄','netbox cmdb sync'),
   ]),
   ('automation-content','Automation & content','Rules and guided content that run consistently without manual repetition','automation',[
@@ -55,6 +56,9 @@
 <section class="settings-console-main">
   <header class="settings-page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>{{ active.title }}</h1><p>{{ active.description }}</p></div><span class="settings-page-symbol">{{ admin_icon(active.icon) }}</span></header>
   {% if not active_section %}
+  {% if update_info %}
+  <section class="settings-scope-banner"><span aria-hidden="true">⇪</span><div><strong>ServiceOps {{ update_info.version }} is available</strong><p>This instance is running {{ app_version }}. <a href="{{ update_info.url }}" target="_blank" rel="noopener">View the release on GitHub</a>.</p></div></section>
+  {% endif %}
   <section class="settings-scope-banner"><span aria-hidden="true">ⓘ</span><div><strong>Administration control center</strong><p>Select a major area first. Every individual tool is available on the next level and protected by your administrator role.</p></div></section>
   <section class="settings-section-list" aria-label="Administration categories">
     <header><div><h2>Administration areas</h2><p>All controls are grouped by responsibility, with no mixed configuration pages.</p></div></header>

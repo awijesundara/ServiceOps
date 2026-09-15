@@ -81,6 +81,7 @@ from serviceops_core.ci_class_policy import (
 )
 from serviceops_core.dns_lookup import resolve_hostname, resolve_ip
 from serviceops_core.dns_pin import pin_resolved_addresses
+from serviceops_core.proxy_tunnel import parse_proxy_url, tunnel_through_proxy
 from serviceops_core.analytics import overdue_enterprise_records, OVERDUE_RECORDS_LIMIT
 from serviceops_core.client_automation import (
     condition_matches, validate_trigger, ClientTriggerConfigurationError,
@@ -1555,6 +1556,65 @@ def integration_endpoint_resolves_safely(endpoint, allow_private_network=False):
     return ok
 
 
+def resolve_outbound_proxies(configuration=None):
+    """Returns a requests-compatible {"http": url, "https": url} proxies
+    dict for one outbound notification delivery (webhook/chat channel or
+    the GitHub update check), or None for a direct connection -- for
+    deployments without direct internet access to Google Chat, Telegram,
+    Teams, Slack, Discord, or GitHub.
+
+    `configuration` is an IntegrationConnection's decrypted configuration
+    dict, which may hold a per-channel override:
+      proxy_mode "none"   -- explicit bypass, even if a default is set.
+      proxy_mode "custom" -- use this same dict's proxy_url.
+      anything else (including missing/"default") -- inherit the
+        OUTBOUND_PROXY_URL platform default (itself already env-var-seeded
+        and admin-overridable via setting_value()'s existing precedence).
+    Pass configuration=None for a call with no per-item override (the
+    update check has no connection to attach one to) -- it always uses the
+    platform default.
+
+    A malformed proxy URL is treated as "no proxy" rather than raising --
+    a broken admin-entered value must never silently block every
+    notification through this channel; the resulting direct-connection
+    attempt fails visibly in the delivery log instead, which is far easier
+    to diagnose than every delivery through this channel erroring inside
+    proxy parsing instead of at the actual network call.
+    """
+    configuration = configuration or {}
+    mode = configuration.get("proxy_mode", "default")
+    if mode == "none":
+        return None
+    proxy_url = configuration.get("proxy_url", "") if mode == "custom" else setting_value("OUTBOUND_PROXY_URL", "")
+    if not proxy_url:
+        return None
+    try:
+        parse_proxy_url(proxy_url)
+    except ValueError:
+        return None
+    return {"http": proxy_url, "https": proxy_url}
+
+
+def resolve_smtp_proxy_url():
+    """Same three-state precedence as resolve_outbound_proxies(), for the
+    single email relay configuration (SMTP_PROXY_MODE/SMTP_PROXY_URL) --
+    returns a plain URL string (not a requests proxies dict) since the
+    caller is serviceops_core.proxy_tunnel.tunnel_through_proxy(), not
+    requests. SMTP has no native HTTP-proxy support (it isn't HTTP), so
+    this tunnels through an HTTP(S) proxy's CONNECT method instead."""
+    mode = setting_value("SMTP_PROXY_MODE", "default")
+    if mode == "none":
+        return None
+    proxy_url = setting_value("SMTP_PROXY_URL", "") if mode == "custom" else setting_value("OUTBOUND_PROXY_URL", "")
+    if not proxy_url:
+        return None
+    try:
+        parse_proxy_url(proxy_url)
+    except ValueError:
+        return None
+    return proxy_url
+
+
 def deliver_smtp(event):
     """Returns True once actually sent, False if intentionally skipped
     because the recipient has disabled email notifications (B-130) --
@@ -1602,7 +1662,15 @@ def deliver_smtp(event):
     kwargs = {"timeout": timeout}
     if security == "tls":
         kwargs["context"] = ssl.create_default_context()
-    with smtp_class(host, port, **kwargs) as smtp:
+    smtp_proxy_url = resolve_smtp_proxy_url()
+    smtp_proxies = {"http": smtp_proxy_url, "https": smtp_proxy_url} if smtp_proxy_url else None
+    # tunnel_through_proxy(None) is a deliberate no-op (see its docstring),
+    # so this always wraps rather than branching on whether a proxy is
+    # configured -- smtplib has no native proxy support (SMTP isn't HTTP),
+    # so reaching an external mail relay in a deployment without direct
+    # internet access requires tunneling the raw TCP connection through an
+    # HTTP(S) proxy's CONNECT method.
+    with tunnel_through_proxy(smtp_proxy_url), smtp_class(host, port, **kwargs) as smtp:
         smtp.ehlo()
         if security == "starttls":
             smtp.starttls(context=ssl.create_default_context())
@@ -1623,7 +1691,7 @@ def deliver_smtp(event):
                     "client_id": client_id, "client_secret": client_secret,
                     "refresh_token": refresh_token, "grant_type": "refresh_token",
                 },
-                timeout=timeout,
+                proxies=smtp_proxies, timeout=timeout,
             )
             token_response.raise_for_status()
             access_token = token_response.json().get("access_token")
@@ -1672,21 +1740,53 @@ def deliver_webhook(event, connection):
         if not token:
             raise RuntimeError("Telegram bot token is not configured.")
         target = f"https://api.telegram.org/bot{token}/sendMessage"
+    # A configured proxy (per-channel override, or the OUTBOUND_PROXY_URL
+    # platform default) is a deliberate deployment-level trust boundary for
+    # deployments without direct internet access -- when it's in use, the
+    # local DNS-pin/private-address pre-check below is both inapplicable
+    # (the proxy resolves the destination on its side, not this host, so
+    # there is no local resolution here to pin against or validate) and
+    # potentially impossible to satisfy at all (a public hostname like
+    # chat.googleapis.com may not even resolve from inside an air-gapped
+    # network without going through the proxy). The administrator who
+    # configured the proxy is asserting that outbound path as the trust
+    # boundary, the same way NetworkPolicy egress rules already are in this
+    # deployment's Kubernetes chart -- ServiceOps is not the enforcement
+    # point for what a trusted, admin-configured egress proxy is allowed to
+    # reach.
+    proxies = resolve_outbound_proxies(connection.configuration)
     max_redirects = 3
     for _ in range(max_redirects + 1):
-        if not integration_endpoint_valid(target):
-            raise RuntimeError("Webhook destination resolves to a non-routable or private address.")
-        ok, hostname, infos = resolve_endpoint_addresses_safely(target)
-        if not ok:
-            raise RuntimeError("Webhook destination resolves to a non-routable or private address.")
-        # Pin the addresses just validated for exactly this connection attempt
-        # -- requests' own internal DNS lookup would otherwise re-resolve
-        # `hostname` independently, reopening the TOCTOU window between this
-        # check and the actual connect (see serviceops_core/dns_pin.py).
-        # `hostname` is None when `target` was already a literal IP, which
-        # has no resolver step to pin against.
-        if hostname and infos:
-            with pin_resolved_addresses(hostname, infos):
+        if proxies:
+            try:
+                response = requests.post(
+                    target, json=body, headers=headers, timeout=10,
+                    allow_redirects=False, proxies=proxies,
+                )
+            except requests.RequestException as error:
+                raise RuntimeError("Notification provider request failed.") from error
+        else:
+            if not integration_endpoint_valid(target):
+                raise RuntimeError("Webhook destination resolves to a non-routable or private address.")
+            ok, hostname, infos = resolve_endpoint_addresses_safely(target)
+            if not ok:
+                raise RuntimeError("Webhook destination resolves to a non-routable or private address.")
+            # Pin the addresses just validated for exactly this connection attempt
+            # -- requests' own internal DNS lookup would otherwise re-resolve
+            # `hostname` independently, reopening the TOCTOU window between this
+            # check and the actual connect (see serviceops_core/dns_pin.py).
+            # `hostname` is None when `target` was already a literal IP, which
+            # has no resolver step to pin against.
+            if hostname and infos:
+                with pin_resolved_addresses(hostname, infos):
+                    try:
+                        response = requests.post(
+                            target, json=body, headers=headers, timeout=10,
+                            allow_redirects=False,
+                        )
+                    except requests.RequestException as error:
+                        raise RuntimeError("Notification provider request failed.") from error
+            else:
                 try:
                     response = requests.post(
                         target, json=body, headers=headers, timeout=10,
@@ -1694,14 +1794,6 @@ def deliver_webhook(event, connection):
                     )
                 except requests.RequestException as error:
                     raise RuntimeError("Notification provider request failed.") from error
-        else:
-            try:
-                response = requests.post(
-                    target, json=body, headers=headers, timeout=10,
-                    allow_redirects=False,
-                )
-            except requests.RequestException as error:
-                raise RuntimeError("Notification provider request failed.") from error
         if response.is_redirect:
             location = response.headers.get("Location", "")
             target = urljoin(target, location)
@@ -4252,6 +4344,82 @@ def process_performance_sample_schedule(interval_seconds=60):
     PerformanceSample.query.filter(PerformanceSample.sampled_at < cutoff).delete()
     db.session.commit()
     return True
+
+
+UPDATE_CHECK_INTERVAL_SECONDS = 86400  # once a day
+
+
+def process_update_check_schedule():
+    """Checks GitHub for a ServiceOps release newer than the one currently
+    running, at most once a day (same PlatformSetting last-run-timestamp
+    gate as process_performance_sample_schedule), and caches the result for
+    latest_update_info() to read without making its own network call on
+    every admin page view. Routed through the same outbound proxy
+    configuration as notification channels (resolve_outbound_proxies()),
+    since github.com may not be directly reachable in this deployment
+    either. A failed check (network error, rate limit, proxy down) is
+    logged and simply leaves the previous cached result in place -- it
+    never raises into the worker loop over a routine, retriable GitHub
+    reachability problem."""
+    if not setting_bool("UPDATE_CHECK_ENABLED", True):
+        return False
+    state = db.session.get(PlatformSetting, "UPDATE_CHECK_LAST_RUN")
+    current = now()
+    if state and state.value:
+        try:
+            last_run = datetime.fromisoformat(state.value)
+            if (current - align_tz(last_run, current)).total_seconds() < UPDATE_CHECK_INTERVAL_SECONDS:
+                return False
+        except (TypeError, ValueError):
+            pass
+    if not state:
+        state = PlatformSetting(key="UPDATE_CHECK_LAST_RUN", tenant_id=1, encrypted=False)
+        db.session.add(state)
+    state.value = current.isoformat()
+    try:
+        response = requests.get(
+            "https://api.github.com/repos/awijesundara/ServiceOps/releases/latest",
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "ServiceOps-update-check"},
+            proxies=resolve_outbound_proxies(None), timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+        tag = str(data.get("tag_name", "")).strip().lstrip("v")
+        url = str(data.get("html_url", "")).strip()
+    except Exception as error:
+        current_app.logger.info("Update check against GitHub did not complete: %s", type(error).__name__)
+        tag, url = "", ""
+    if tag:
+        result = db.session.get(PlatformSetting, "UPDATE_CHECK_LATEST_VERSION")
+        if not result:
+            result = PlatformSetting(key="UPDATE_CHECK_LATEST_VERSION", tenant_id=1, encrypted=False)
+            db.session.add(result)
+        result.value = json.dumps({"version": tag, "url": url})
+    db.session.commit()
+    return True
+
+
+def latest_update_info():
+    """Returns {"version": "1.90.0", "url": "https://github.com/.../releases/tag/v1.90.0"}
+    if the cached GitHub check (process_update_check_schedule) found a
+    release newer than the version currently running, else None. A pure
+    cache read -- never makes a network call itself, so pages that call
+    this stay fast regardless of GitHub's reachability."""
+    if not setting_bool("UPDATE_CHECK_ENABLED", True):
+        return None
+    row = db.session.get(PlatformSetting, "UPDATE_CHECK_LATEST_VERSION")
+    if not row or not row.value:
+        return None
+    try:
+        cached = json.loads(row.value)
+        latest = str(cached.get("version", ""))
+        latest_tuple = tuple(int(part) for part in latest.split("."))
+        current_tuple = tuple(int(part) for part in APP_VERSION.split("."))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if latest_tuple <= current_tuple:
+        return None
+    return {"version": latest, "url": cached.get("url", "")}
 
 
 def process_kpi_snapshot_schedule(limit=50):
@@ -12672,7 +12840,7 @@ def create_app(test_config=None):
     @roles("admin")
     @require_action("security_administer")
     def admin_home():
-        return render_template("admin_home.html", active_section=None)
+        return render_template("admin_home.html", active_section=None, update_info=latest_update_info())
 
     @app.get("/admin/section/<section>")
     @roles("admin")
@@ -13009,6 +13177,23 @@ def create_app(test_config=None):
                     }
                     if thread_id:
                         configuration["message_thread_id"] = int(thread_id)
+                # Outbound proxy override, applicable to every provider kind
+                # (not just Telegram): lets an administrator choose per
+                # channel whether to inherit the OUTBOUND_PROXY_URL platform
+                # default, bypass it, or use a different proxy just for this
+                # one destination -- see resolve_outbound_proxies().
+                proxy_mode = request.form.get("proxy_mode", "default")
+                if proxy_mode not in ("default", "none", "custom"):
+                    abort(400, description="Invalid outbound proxy mode.")
+                if proxy_mode != "default":
+                    configuration["proxy_mode"] = proxy_mode
+                if proxy_mode == "custom":
+                    proxy_url = request.form.get("proxy_url", "").strip()
+                    try:
+                        parse_proxy_url(proxy_url)
+                    except ValueError:
+                        abort(400, description="Custom outbound proxy must be a valid http:// or https:// URL.")
+                    configuration["proxy_url"] = proxy_url
                 if (
                     not name or len(name) > 160
                     or kind not in WEBHOOK_KINDS
@@ -13114,6 +13299,36 @@ def create_app(test_config=None):
                     ", ".join(patterns) if patterns else "No events selected",
                 )
                 flash("Notification event subscriptions updated.", "success")
+            elif action == "update_connection_proxy":
+                connection = IntegrationConnection.query.filter_by(
+                    id=request.form.get("connection_id", type=int),
+                    tenant_id=current_user.tenant_id,
+                ).first_or_404()
+                proxy_mode = request.form.get("proxy_mode", "default")
+                if proxy_mode not in ("default", "none", "custom"):
+                    abort(400, description="Invalid outbound proxy mode.")
+                # Merge into the existing configuration rather than replacing
+                # it outright -- other provider-specific fields (Telegram's
+                # chat_id/message_thread_id/protect_content) live in this
+                # same encrypted JSON dict and must survive a proxy-only edit.
+                configuration = dict(connection.configuration)
+                configuration.pop("proxy_mode", None)
+                configuration.pop("proxy_url", None)
+                if proxy_mode != "default":
+                    configuration["proxy_mode"] = proxy_mode
+                if proxy_mode == "custom":
+                    proxy_url = request.form.get("proxy_url", "").strip()
+                    try:
+                        parse_proxy_url(proxy_url)
+                    except ValueError:
+                        abort(400, description="Custom outbound proxy must be a valid http:// or https:// URL.")
+                    configuration["proxy_url"] = proxy_url
+                connection.configuration_encrypted = (
+                    settings_cipher().encrypt(json.dumps(configuration).encode()).decode()
+                    if configuration else None
+                )
+                audit("integration proxy updated", connection.name, proxy_mode)
+                flash("Outbound proxy setting updated.", "success")
             elif action == "create_monitoring_source":
                 name = request.form.get("name", "").strip()
                 group = tenant_record_or_404(
@@ -17886,6 +18101,7 @@ def create_app(test_config=None):
                                 + process_data_retention_purge()
                             )
                             process_performance_sample_schedule()
+                            process_update_check_schedule()
                             heartbeat = db.session.get(PlatformSetting, "WORKER_LAST_HEARTBEAT")
                             if not heartbeat:
                                 heartbeat = PlatformSetting(

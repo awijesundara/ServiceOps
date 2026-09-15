@@ -155,6 +155,24 @@ SETTING_DEFINITIONS = {
             "label": "Skip NetBox TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
         },
     ],
+    "outbound_network": [
+        {
+            "key": "OUTBOUND_PROXY_URL", "label": "Default outbound proxy (HTTP/HTTPS)", "type": "url", "default": "",
+            "live": True,
+        },
+        {
+            "key": "UPDATE_CHECK_ENABLED", "label": "Check GitHub for newer ServiceOps releases", "type": "bool",
+            "default": "true", "live": True,
+        },
+        {
+            "key": "SMTP_PROXY_MODE", "label": "Email delivery proxy", "type": "choice",
+            "choices": ["default", "none", "custom"], "default": "default", "live": True,
+        },
+        {
+            "key": "SMTP_PROXY_URL", "label": "Custom email delivery proxy (used only when the mode above is Custom)",
+            "type": "text", "default": "", "live": True,
+        },
+    ],
     "request_tracker_connection": [
         {"key": "RT_ENABLED", "label": "Enable Request Tracker (RT) import", "type": "bool", "default": "false", "live": True},
         {"key": "RT_BASE_URL", "label": "RT base URL", "type": "url", "default": "", "live": True},
@@ -179,6 +197,12 @@ SETTING_GROUP_META = {
     "workspace_defaults": ("Workspace defaults", "Dashboard content and service-level warning thresholds."),
     "my_workspace_widgets": ("My Workspace widgets", "Which widgets are available for users to add to their personal My Workspace page."),
     "email_delivery": ("Email delivery", "SMTP connection and sender identity used for outgoing notifications."),
+    "outbound_network": (
+        "Outbound proxy & updates",
+        "Default egress proxy for notification channels and email in networks without direct internet access, "
+        "plus GitHub release update checking. Every notification channel and email delivery can also use its "
+        "own proxy, or none, overriding this default.",
+    ),
     "netbox_connection": ("NetBox connection", "Connection used to synchronize configuration items from NetBox."),
     "request_tracker_connection": ("Request Tracker connection", "Connection used to import records from Request Tracker."),
 }
