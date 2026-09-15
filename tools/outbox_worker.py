@@ -6,7 +6,8 @@ import time
 from app import (
     PlatformSetting, create_app, db, now, process_client_email_inbox,
     process_client_escalation_policies, process_data_retention_purge,
-    process_discovery_schedule, process_kpi_snapshot_schedule,
+    process_discovery_schedule, process_google_chat_pubsub_schedule,
+    process_kpi_snapshot_schedule,
     process_integration_sync_jobs,
     process_ldap_sync_schedule, process_outbox,
     process_performance_sample_schedule, process_rt_import_jobs,
@@ -48,7 +49,7 @@ with app.app_context():
                 + process_rt_import_jobs() + process_discovery_schedule()
                 + process_integration_sync_jobs()
                 + process_client_escalation_policies() + process_client_email_inbox()
-                + process_data_retention_purge()
+                + process_data_retention_purge() + process_google_chat_pubsub_schedule()
             )
         except Exception:
             # A single bad tenant/record must never kill the whole worker

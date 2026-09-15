@@ -72,6 +72,7 @@ __all__ = [
     "RequestMetricTotal",
     "PerformanceSample",
     "IntegrationConnection",
+    "ChatThreadLink",
     "OutboxEvent",
     "IntegrationDelivery",
     "MonitoringSource",
@@ -991,6 +992,21 @@ class IntegrationConnection(db.Model):
         except (TypeError, ValueError):
             return {}
         return value if isinstance(value, dict) else {}
+
+
+class ChatThreadLink(db.Model):
+    """Maps a Google Chat message thread back to the ITIL record an alert
+    was sent about, so a reply typed in that thread (/ack, /escalate, ...)
+    can resolve which record to act on. See serviceops_core.google_chat and
+    process_google_chat_pubsub_schedule() in app.py."""
+    __tablename__ = "chat_thread_link"
+    id = db.Column(db.Integer, primary_key=True)
+    connection_id = db.Column(db.Integer, db.ForeignKey("integration_connection.id"), nullable=False)
+    thread_name = db.Column(db.String(200), nullable=False, unique=True, index=True)
+    record_number = db.Column(db.String(30), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    connection = db.relationship("IntegrationConnection")
 
 
 class OutboxEvent(db.Model):
