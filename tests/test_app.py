@@ -2129,9 +2129,13 @@ def test_process_google_chat_pubsub_schedule_dispatches_ack_and_replies_in_threa
                     event = {
                         "type": "MESSAGE",
                         "message": {
-                            "text": "/ack",
+                            "text": "@ServiceOps /ack",
                             "thread": {"name": "spaces/AAAA/threads/BBBB"},
                             "sender": {"email": "employee@test.invalid"},
+                            "annotations": [{
+                                "type": "USER_MENTION", "startIndex": 0, "length": 11,
+                                "userMention": {"user": {"name": "users/999", "type": "BOT"}},
+                            }],
                         },
                     }
                     encoded = base64.b64encode(json.dumps(event).encode()).decode()
