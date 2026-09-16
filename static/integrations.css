@@ -9,7 +9,9 @@
 .provider-card summary:hover{background:#eef2f2}
 .provider-card[open] summary{border-bottom:1px solid var(--line)}
 .provider-card summary span{font-size:12px;color:var(--muted);font-weight:400}
-.provider-form{padding:16px;max-width:640px}
+.provider-form{display:block;max-width:640px;max-height:0;padding:0 16px;overflow:hidden;visibility:hidden;opacity:0;transition:max-height .3s ease,padding .3s ease,opacity .2s ease,visibility 0s linear .3s}
+.provider-card[open] .provider-form{max-height:1400px;padding:16px;opacity:1;visibility:visible;transition:max-height .3s ease,padding .3s ease,opacity .25s ease .05s,visibility 0s linear}
+@starting-style{.provider-card[open] .provider-form{max-height:0;padding:0 16px;opacity:0}}
 .provider-form label{grid-template-columns:120px minmax(0,1fr)}
 .inline-actions{display:flex;gap:8px;flex-wrap:wrap}
 .inline-actions form{margin:0}.inline-actions button{padding:7px 10px}

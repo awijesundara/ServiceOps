@@ -7238,7 +7238,10 @@ def test_knowledge_publish_updated_version_archives_previous(client, app):
         new_version_id = new_version.id
     listing = client.get("/knowledge")
     assert b"Updated steps with MFA re-enrollment." in listing.data
-    assert listing.data.count(b"Reset a locked account") == 1
+    # The archived original and its replacement share a title, and the
+    # archived one stays visible (labeled "Archived") rather than vanishing.
+    assert listing.data.count(b"Reset a locked account") == 2
+    assert b"Archived" in listing.data
     with app.app_context():
         assert Knowledge.query.filter_by(archived=True).count() == 1
     archived_detail = client.get(f"/knowledge/{article_id}")
@@ -7246,7 +7249,7 @@ def test_knowledge_publish_updated_version_archives_previous(client, app):
     assert client.get(f"/knowledge/{new_version_id}").status_code == 200
 
 
-def test_knowledge_archive_without_new_version_hides_from_search(client, app):
+def test_knowledge_archive_without_new_version_stays_visible_labeled_archived(client, app):
     login(client)
     assert client.post("/knowledge/new", data={
         "title": "Deprecated VPN setup", "category": "Network",
@@ -7255,7 +7258,9 @@ def test_knowledge_archive_without_new_version_hides_from_search(client, app):
     with app.app_context():
         article_id = Knowledge.query.filter_by(title="Deprecated VPN setup").one().id
     assert client.post(f"/knowledge/{article_id}/archive").status_code == 302
-    assert b"Deprecated VPN setup" not in client.get("/knowledge").data
+    hub = client.get("/knowledge").data
+    assert b"Deprecated VPN setup" in hub
+    assert b"Archived" in hub
     with app.app_context():
         article = db.session.get(Knowledge, article_id)
         assert article.archived is True
@@ -9482,6 +9487,25 @@ def test_rack_elevation_matches_local_sample_artwork_by_vendor_and_model(client,
     response = client.get(f"/cmdb/racks/{rack_id}")
     assert response.status_code == 200
     assert b"device-artwork/dell-poweredge-r640.rear.png" in response.data
+
+
+def test_rack_elevation_strips_redundant_vendor_prefix_from_model(client, app):
+    with app.app_context():
+        rack = Rack(tenant_id=1, name="rack-local-artwork-prefixed", u_height=42)
+        db.session.add(rack)
+        db.session.flush()
+        ci = ConfigurationItem(
+            name="sample-r640-prefixed", ci_class="Server", tenant_id=1,
+            vendor="Dell", model="Dell PowerEdge R640", rack_id=rack.id,
+            rack_position=9, rack_u_height=1, rack_face="front",
+        )
+        db.session.add(ci)
+        db.session.commit()
+        rack_id = rack.id
+    login(client)
+    response = client.get(f"/cmdb/racks/{rack_id}")
+    assert response.status_code == 200
+    assert b"device-artwork/dell-poweredge-r640.front.png" in response.data
 
 
 def test_rack_device_artwork_proxies_netbox_image_without_exposing_token(client, app, monkeypatch):
