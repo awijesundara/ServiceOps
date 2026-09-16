@@ -196,6 +196,28 @@ def parse_list_filter_param(raw):
     return conditions
 
 
+LOCAL_DEVICE_ARTWORK = {
+    "dell": {"poweredge r640": "dell-poweredge-r640", "r640": "dell-poweredge-r640"},
+    "cisco": {"catalyst 9300-48p": "cisco-c9300-48p", "c9300-48p": "cisco-c9300-48p"},
+    "juniper": {"ex4300-48p": "juniper-ex4300-48p"},
+}
+
+
+def local_device_artwork(vendor, model):
+    """Resolve a locally-bundled rack elevation image for a vendor/model pair.
+
+    Tolerates the vendor name being repeated inside the model field --
+    "Dell PowerEdge R640" and "PowerEdge R640" both resolve the same way
+    once vendor is "Dell", not just the exact strings hardcoded below."""
+    vendor_key = (vendor or "").strip().casefold()
+    model_key = (model or "").strip().casefold()
+    if not vendor_key or not model_key:
+        return None
+    if model_key.startswith(vendor_key + " "):
+        model_key = model_key[len(vendor_key):].strip()
+    return LOCAL_DEVICE_ARTWORK.get(vendor_key, {}).get(model_key)
+
+
 def apply_filter_conditions(query, conditions, field_spec, extra_handlers=None):
     """Applies a validated condition list to `query`. `field_spec` maps
     field key -> {"column": InstrumentedAttribute, "type": "text"|"choice"|"date"}.
@@ -11432,7 +11454,9 @@ def create_app(test_config=None):
     @login_required
     def knowledge():
         q = request.args.get("q", "").strip()
-        query = tenant_query(Knowledge).filter_by(published=True, archived=False)
+        # Archived articles stay visible (labeled "Archived" in the template)
+        # rather than disappearing -- only a never-published draft is excluded.
+        query = tenant_query(Knowledge).filter(db.or_(Knowledge.published.is_(True), Knowledge.archived.is_(True)))
         if q:
             query = query.filter(db.or_(Knowledge.title.ilike(f"%{q}%"), Knowledge.body.ilike(f"%{q}%")))
         return render_template("knowledge.html", articles=query.order_by(Knowledge.created_at.desc()).all(), q=q)
@@ -15546,13 +15570,7 @@ def create_app(test_config=None):
                 and bool(ci.external_id and ci.external_id.startswith("dcim.device:"))
             )
             artwork_url = None
-            local_artwork = {
-                ("dell", "poweredge r640"): "dell-poweredge-r640",
-                ("dell", "r640"): "dell-poweredge-r640",
-                ("cisco", "catalyst 9300-48p"): "cisco-c9300-48p",
-                ("cisco", "c9300-48p"): "cisco-c9300-48p",
-                ("juniper", "ex4300-48p"): "juniper-ex4300-48p",
-            }.get(((ci.vendor or "").strip().casefold(), (ci.model or "").strip().casefold()))
+            local_artwork = local_device_artwork(ci.vendor, ci.model)
             if has_device_artwork:
                 artwork_url = url_for("rack_device_artwork", ci_id=ci.id, face=(ci.rack_face or "front"))
             elif local_artwork:
