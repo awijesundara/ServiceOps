@@ -9,6 +9,7 @@ release-evidence
 __pycache__
 *.pyc
 .pytest_cache
+.chainlit
 instance
 CLAUDE.md
 .DS_Store

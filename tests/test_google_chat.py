@@ -44,10 +44,10 @@ def test_decode_pubsub_message_fails_safe_on_malformed_data():
     assert ack_id == "xyz"
 
 
-def _mention_annotation(mention_text, bot=True):
+def _mention_annotation(mention_text, bot=True, user_name="users/999"):
     return {
         "type": "USER_MENTION", "startIndex": 0, "length": len(mention_text),
-        "userMention": {"user": {"name": "users/999", "type": "BOT" if bot else "HUMAN"}},
+        "userMention": {"user": {"name": user_name, "type": "BOT" if bot else "HUMAN"}},
     }
 
 
@@ -61,7 +61,7 @@ def test_extract_message_event_returns_text_thread_and_sender_with_the_mention_s
             "annotations": [_mention_annotation("@ServiceOps")],
         },
     }
-    result = extract_message_event(event)
+    result = extract_message_event(event, "users/999")
     assert result == {
         "text": "/escalate Database",
         "thread_name": "spaces/AAAA/threads/BBBB",
@@ -70,8 +70,8 @@ def test_extract_message_event_returns_text_thread_and_sender_with_the_mention_s
 
 
 def test_extract_message_event_ignores_non_message_event_types():
-    assert extract_message_event({"type": "ADDED_TO_SPACE"}) is None
-    assert extract_message_event({"type": "CARD_CLICKED", "message": {"thread": {"name": "x"}}}) is None
+    assert extract_message_event({"type": "ADDED_TO_SPACE"}, "users/999") is None
+    assert extract_message_event({"type": "CARD_CLICKED", "message": {"thread": {"name": "x"}}}, "users/999") is None
 
 
 def test_extract_message_event_ignores_a_message_with_no_thread():
@@ -82,7 +82,7 @@ def test_extract_message_event_ignores_a_message_with_no_thread():
             "annotations": [_mention_annotation("@ServiceOps")],
         },
     }
-    assert extract_message_event(event) is None
+    assert extract_message_event(event, "users/999") is None
 
 
 def test_extract_message_event_ignores_a_message_that_does_not_mention_this_app():
@@ -97,14 +97,27 @@ def test_extract_message_event_ignores_a_message_that_does_not_mention_this_app(
             "sender": {"email": "a@b.com"},
         },
     }
-    assert extract_message_event(event) is None
+    assert extract_message_event(event, "users/999") is None
     # A mention of a *human*, not this bot, must not count either.
     event["message"]["annotations"] = [_mention_annotation("@Someone", bot=False)]
-    assert extract_message_event(event) is None
+    assert extract_message_event(event, "users/999") is None
+
+
+def test_extract_message_event_rejects_a_different_bot_mention():
+    event = {
+        "type": "MESSAGE",
+        "message": {
+            "text": "@OtherBot /ack", "thread": {"name": "spaces/AAAA/threads/BBBB"},
+            "sender": {"email": "a@b.com"},
+            "annotations": [_mention_annotation("@OtherBot", user_name="users/other-bot")],
+        },
+    }
+    assert extract_message_event(event, "users/serviceops-bot") is None
+    assert extract_message_event(event, "") is None
 
 
 def test_extract_message_event_handles_malformed_payloads_without_raising():
-    assert extract_message_event(None) is None
-    assert extract_message_event({}) is None
-    assert extract_message_event({"type": "MESSAGE"}) is None
-    assert extract_message_event({"type": "MESSAGE", "message": "not-a-dict"}) is None
+    assert extract_message_event(None, "users/999") is None
+    assert extract_message_event({}, "users/999") is None
+    assert extract_message_event({"type": "MESSAGE"}, "users/999") is None
+    assert extract_message_event({"type": "MESSAGE", "message": "not-a-dict"}, "users/999") is None
