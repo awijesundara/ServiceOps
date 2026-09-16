@@ -42,7 +42,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  deliver_smtp, deliver_webhook,
                  latest_update_info, process_update_check_schedule,
                  resolve_outbound_proxies, resolve_smtp_proxy_url,
-                 ChatThreadLink, deliver_google_chat_interactive, find_record_by_number,
+                 ChatThreadLink, GoogleChatCommandReceipt, deliver_google_chat_interactive, find_record_by_number,
                  google_chat_handle_command, google_chat_post_message,
                  process_google_chat_pubsub_schedule, ticket_owning_group,
                  follow_ticket, is_following_ticket,
@@ -57,6 +57,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  integration_endpoint_valid, integration_endpoint_resolves_safely,
                  is_safe_internal_path, process_outbox,
                  provision_external_user, secret_value, settings_cipher, user_is_local,
+                 setting_bool,
                  rotate_audit_integrity_key, tenant_context_id, TenantResolutionError,
                  transition_ticket,
                  user_can_manage_ticket, user_in_group, user_can_manage_ritm,
@@ -1980,19 +1981,22 @@ def test_find_record_by_number_accepts_an_explicit_tenant_with_no_session(app):
 def test_google_chat_ack_claims_the_ticket_and_moves_it_to_in_progress(app):
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
-        employee = User.query.filter_by(username="employee").one()
+        manager = User.query.filter_by(username="database.manager").one()
+        owning_group = SupportGroup.query.filter_by(name="Network").one()
         ticket = Ticket(
             number="INC9999002", kind="incident", title="Ack me", description="x",
             category="Software", priority="P3", state="New",
             requester_id=admin.id, tenant_id=admin.tenant_id,
         )
         db.session.add(ticket)
+        db.session.flush()
+        db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=owning_group.id))
         db.session.commit()
-        reply = google_chat_handle_command("ack", "", ticket, employee)
+        reply = google_chat_handle_command("ack", "", ticket, manager)
         db.session.commit()
-        assert "acknowledged" in reply and "Test Employee" in reply
+        assert "acknowledged" in reply and "Database Manager" in reply
         assert ticket.state == "In Progress"
-        assert ticket.assignee_id == employee.id
+        assert ticket.assignee_id == manager.id
 
 
 def test_google_chat_ack_refuses_when_already_assigned_to_someone_else(app):
@@ -2008,14 +2012,14 @@ def test_google_chat_ack_refuses_when_already_assigned_to_someone_else(app):
         db.session.add(ticket)
         db.session.commit()
         reply = google_chat_handle_command("ack", "", ticket, employee)
-        assert "already assigned to Database Manager" in reply
+        assert "do not have permission" in reply
         assert ticket.assignee_id == manager.id
 
 
 def test_google_chat_escalate_reassigns_to_the_named_team(app):
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
-        employee = User.query.filter_by(username="employee").one()
+        manager = User.query.filter_by(username="database.manager").one()
         # "Network" is one of this fixture's already-seeded default teams
         # (see CLAUDE.md's established team list) -- reused here instead of
         # creating a same-named one, which would collide on the existing
@@ -2027,26 +2031,53 @@ def test_google_chat_escalate_reassigns_to_the_named_team(app):
             requester_id=admin.id, tenant_id=admin.tenant_id,
         )
         db.session.add(ticket)
+        db.session.flush()
+        current_group = SupportGroup.query.filter_by(name="Windows").one()
+        db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=current_group.id))
         db.session.commit()
-        reply = google_chat_handle_command("escalate", "Network", ticket, employee)
+        reply = google_chat_handle_command("escalate", "Network", ticket, manager)
         db.session.commit()
         assert reply == "INC9999004 escalated to Network."
         assert ticket_owning_group(ticket).id == target_team.id
 
 
-def test_google_chat_escalate_reports_an_unknown_team_and_missing_args(app):
+def test_google_chat_commands_reject_an_active_but_unauthorized_user(app):
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
         employee = User.query.filter_by(username="employee").one()
+        ticket = Ticket(
+            number="INC9999014", kind="incident", title="Protected", description="x",
+            category="Software", priority="P3", state="New",
+            requester_id=admin.id, tenant_id=admin.tenant_id,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+        group = SupportGroup.query.filter_by(name="Network").one()
+        db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=group.id))
+        db.session.commit()
+        assert "do not have permission" in google_chat_handle_command("ack", "", ticket, employee)
+        assert "do not have permission" in google_chat_handle_command("escalate", "Windows", ticket, employee)
+        assert ticket.state == "New"
+        assert ticket.assignee_id is None
+        assert ticket_owning_group(ticket).id == group.id
+
+
+def test_google_chat_escalate_reports_an_unknown_team_and_missing_args(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        manager = User.query.filter_by(username="database.manager").one()
         ticket = Ticket(
             number="INC9999005", kind="incident", title="x", description="x",
             category="Software", priority="P3", state="New",
             requester_id=admin.id, tenant_id=admin.tenant_id,
         )
         db.session.add(ticket)
+        db.session.flush()
+        group = SupportGroup.query.filter_by(name="Network").one()
+        db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=group.id))
         db.session.commit()
-        assert google_chat_handle_command("escalate", "", ticket, employee) == "Usage: /escalate <team name>"
-        assert "No active team" in google_chat_handle_command("escalate", "Nonexistent Team", ticket, employee)
+        assert google_chat_handle_command("escalate", "", ticket, manager) == "Usage: /escalate <team name>"
+        assert "No active team" in google_chat_handle_command("escalate", "Nonexistent Team", ticket, manager)
 
 
 def test_google_chat_handle_command_reports_an_unknown_command(app):
@@ -2114,12 +2145,18 @@ def test_deliver_google_chat_interactive_posts_via_the_chat_api_and_links_the_th
 
 def test_process_google_chat_pubsub_schedule_dispatches_ack_and_replies_in_thread(monkeypatch, app):
     posted_replies = []
+    reply_attempts = []
+    pubsub_calls = []
 
-    def fake_post_message(connection, text, thread_name=None):
+    def fake_post_message(connection, text, thread_name=None, message_id=None):
+        reply_attempts.append(message_id)
+        if len(reply_attempts) == 1:
+            raise RuntimeError("temporary Chat API failure")
         posted_replies.append((text, thread_name))
         return "spaces/AAAA/threads/BBBB"
 
     def fake_pull(url, **kwargs):
+        pubsub_calls.append(url)
         class FakeResponse:
             def raise_for_status(self):
                 pass
@@ -2131,7 +2168,7 @@ def test_process_google_chat_pubsub_schedule_dispatches_ack_and_replies_in_threa
                         "message": {
                             "text": "@ServiceOps /ack",
                             "thread": {"name": "spaces/AAAA/threads/BBBB"},
-                            "sender": {"email": "employee@test.invalid"},
+                            "sender": {"email": "database.manager@test.invalid"},
                             "annotations": [{
                                 "type": "USER_MENTION", "startIndex": 0, "length": 11,
                                 "userMention": {"user": {"name": "users/999", "type": "BOT"}},
@@ -2139,7 +2176,9 @@ def test_process_google_chat_pubsub_schedule_dispatches_ack_and_replies_in_threa
                         },
                     }
                     encoded = base64.b64encode(json.dumps(event).encode()).decode()
-                    return {"receivedMessages": [{"ackId": "ack-1", "message": {"data": encoded}}]}
+                    return {"receivedMessages": [{
+                        "ackId": "ack-1", "message": {"data": encoded, "messageId": "chat-message-1"},
+                    }]}
                 return {}
         return FakeResponse()
 
@@ -2163,6 +2202,8 @@ def test_process_google_chat_pubsub_schedule_dispatches_ack_and_replies_in_threa
         )
         db.session.add(ticket)
         db.session.flush()
+        owning_group = SupportGroup.query.filter_by(name="Network").one()
+        db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=owning_group.id))
         db.session.add(ChatThreadLink(
             connection_id=connection.id, thread_name="spaces/AAAA/threads/BBBB",
             record_number="INC9999008", tenant_id=admin.tenant_id,
@@ -2170,15 +2211,35 @@ def test_process_google_chat_pubsub_schedule_dispatches_ack_and_replies_in_threa
         db.session.add(PlatformSetting(key="GOOGLE_CHAT_APP_ENABLED", tenant_id=1, encrypted=False, value="true"))
         db.session.add(PlatformSetting(key="GOOGLE_CHAT_PROJECT_ID", tenant_id=1, encrypted=False, value="test-project"))
         db.session.add(PlatformSetting(key="GOOGLE_CHAT_PUBSUB_SUBSCRIPTION", tenant_id=1, encrypted=False, value="test-sub"))
+        db.session.add(PlatformSetting(key="GOOGLE_CHAT_BOT_USER_NAME", tenant_id=1, encrypted=False, value="users/999"))
         db.session.add(PlatformSetting(key="GOOGLE_CHAT_SERVICE_ACCOUNT_JSON", tenant_id=1, encrypted=False, value="{}"))
         db.session.commit()
+        # The first delivery commits the mutation plus receipt, but a
+        # transient reply failure must leave the Pub/Sub message unacked.
         assert process_google_chat_pubsub_schedule() == 1
         ticket = db.session.get(Ticket, ticket.id)
         assert ticket.state == "In Progress"
-        assert ticket.assignee.username == "employee"
+        assert ticket.assignee.username == "database.manager"
+        assert not any(url.endswith(":acknowledge") for url in pubsub_calls)
+        receipt = GoogleChatCommandReceipt.query.filter_by(message_id="chat-message-1").one()
+        assert receipt.replied_at is None
+
+        # Redelivery resumes from the receipt, sends the deterministic reply,
+        # and acknowledges without applying the ticket command a second time.
+        assert process_google_chat_pubsub_schedule() == 1
         assert len(posted_replies) == 1
         assert "acknowledged" in posted_replies[0][0]
         assert posted_replies[0][1] == "spaces/AAAA/threads/BBBB"
+        assert reply_attempts[0] == reply_attempts[1]
+        assert any(url.endswith(":acknowledge") for url in pubsub_calls)
+        assert sum(url.endswith(":modifyAckDeadline") for url in pubsub_calls) == 2
+        assert receipt.replied_at is not None
+
+        # A further duplicate is acknowledged from durable state without
+        # posting another reply.
+        assert process_google_chat_pubsub_schedule() == 1
+        assert len(reply_attempts) == 2
+        assert GoogleChatCommandReceipt.query.filter_by(message_id="chat-message-1").count() == 1
 
 
 def test_process_google_chat_pubsub_schedule_is_a_noop_when_disabled(monkeypatch, app):
@@ -2188,6 +2249,21 @@ def test_process_google_chat_pubsub_schedule_is_a_noop_when_disabled(monkeypatch
     monkeypatch.setattr("app.requests.post", _unexpected_post)
     with app.app_context():
         assert process_google_chat_pubsub_schedule() == 0
+
+
+def test_google_chat_settings_refuse_enablement_without_a_specific_bot_identity(client, app):
+    login(client, "admin", "Admin123!")
+    response = client.post("/admin/settings/google_chat_app", data={
+        "GOOGLE_CHAT_APP_ENABLED": "on",
+        "GOOGLE_CHAT_PROJECT_ID": "valid-project-123",
+        "GOOGLE_CHAT_PUBSUB_SUBSCRIPTION": "serviceops-chat",
+        "GOOGLE_CHAT_BOT_USER_NAME": "",
+        "GOOGLE_CHAT_SERVICE_ACCOUNT_JSON": "{}",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"bot user resource name" in response.data
+    with app.app_context():
+        assert not setting_bool("GOOGLE_CHAT_APP_ENABLED", False)
 
 
 def test_create_interactive_google_chat_connection_validates_space_id_and_service_account(client, app):

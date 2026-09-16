@@ -188,6 +188,11 @@ SETTING_DEFINITIONS = {
             "type": "text", "default": "", "live": True,
         },
         {
+            "key": "GOOGLE_CHAT_BOT_USER_NAME",
+            "label": "Google Chat bot user resource name (for example users/123456789)",
+            "type": "text", "default": "", "live": True,
+        },
+        {
             "key": "GOOGLE_CHAT_SERVICE_ACCOUNT_JSON",
             "label": "Service account key (JSON) -- used to pull Pub/Sub events and post replies",
             "type": "secret", "default": "", "live": True,

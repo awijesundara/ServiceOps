@@ -1792,7 +1792,7 @@ def _google_service_account_access_token(service_account_json, scopes):
     return access_token
 
 
-def google_chat_post_message(connection, text, thread_name=None):
+def google_chat_post_message(connection, text, thread_name=None, message_id=None):
     """Posts a message to a Google Chat space via the real Chat REST API
     (not a plain incoming webhook), using this interactive connection's own
     service account (connection.secret holds the service-account JSON key;
@@ -1811,13 +1811,20 @@ def google_chat_post_message(connection, text, thread_name=None):
     if thread_name:
         body["thread"] = {"name": thread_name}
         params["messageReplyOption"] = "REPLY_MESSAGE_OR_NEW_THREAD"
+    if message_id:
+        params["messageId"] = message_id
     response = requests.post(
         f"https://chat.googleapis.com/v1/{connection.delivery_endpoint}/messages",
         json=body, params=params,
         headers={"Authorization": f"Bearer {access_token}"},
         proxies=resolve_outbound_proxies(connection.configuration), timeout=10,
     )
-    response.raise_for_status()
+    # A retried Pub/Sub command uses a deterministic client message ID.
+    # Google's 409 means that exact reply was already created, so treating it
+    # as delivered prevents a crash between POST and our local replied_at
+    # commit from producing duplicate replies.
+    if not (message_id and getattr(response, "status_code", None) == 409):
+        response.raise_for_status()
     return response.json().get("thread", {}).get("name", "")
 
 
@@ -4581,6 +4588,17 @@ def google_chat_handle_command(command, args, record, actor):
     its description reused as the reply, the same way the web route
     already surfaces it as a flash message."""
     target_type = "ticket" if isinstance(record, Ticket) else "enterprise"
+    can_manage = (
+        user_can_manage_ticket(actor, record)
+        if target_type == "ticket"
+        else user_can_manage_enterprise_record(actor, record)
+    )
+    required_actions = ("update", "assign", "transition")
+    if not can_manage or any(
+        not effective_role_has_action(actor.effective_role, action, tenant_id=record.tenant_id)
+        for action in required_actions
+    ):
+        return f"You do not have permission to update {record.number}."
     try:
         if command == "ack":
             if record.assignee_id and record.assignee_id != actor.id:
@@ -4664,8 +4682,12 @@ def process_google_chat_pubsub_schedule(max_messages=20):
     project_id = setting_value("GOOGLE_CHAT_PROJECT_ID", "")
     subscription_id = setting_value("GOOGLE_CHAT_PUBSUB_SUBSCRIPTION", "")
     service_account_json = setting_value("GOOGLE_CHAT_SERVICE_ACCOUNT_JSON", "")
+    expected_bot_name = setting_value("GOOGLE_CHAT_BOT_USER_NAME", "")
+    if not re.fullmatch(r"users/[\w-]+", expected_bot_name or ""):
+        return 0
     if not (project_id and subscription_id and service_account_json):
         return 0
+    max_messages = max(1, min(int(max_messages), 20))
     subscription = f"projects/{project_id}/subscriptions/{subscription_id}"
     try:
         access_token = _google_service_account_access_token(
@@ -4684,46 +4706,94 @@ def process_google_chat_pubsub_schedule(max_messages=20):
         return 0
     if not received:
         return 0
+    lease_ack_ids = [entry.get("ackId") for entry in received if entry.get("ackId")]
+    # One reply can consume the full outbound timeout. Extend the lease for
+    # the whole bounded batch before mutating anything so another worker does
+    # not receive the same command while this worker is still handling it.
+    try:
+        lease_response = requests.post(
+            f"https://pubsub.googleapis.com/v1/{subscription}:modifyAckDeadline",
+            json={"ackIds": lease_ack_ids, "ackDeadlineSeconds": 300},
+            headers={"Authorization": f"Bearer {access_token}"},
+            proxies=resolve_outbound_proxies(None), timeout=15,
+        )
+        lease_response.raise_for_status()
+    except Exception:
+        current_app.logger.exception("Could not extend the Google Chat Pub/Sub acknowledgement deadline")
+        return 0
+
     ack_ids = []
     for entry in received:
         chat_event, ack_id = decode_pubsub_message(entry)
-        if ack_id:
-            ack_ids.append(ack_id)
         try:
-            message_event = extract_message_event(chat_event)
+            message_event = extract_message_event(chat_event, expected_bot_name)
             if not message_event:
+                if ack_id:
+                    ack_ids.append(ack_id)
                 continue
             parsed = parse_command(message_event["text"])
             if not parsed:
+                if ack_id:
+                    ack_ids.append(ack_id)
+                continue
+            message_id = str((entry.get("message") or {}).get("messageId") or "").strip()
+            if not message_id:
+                current_app.logger.warning("Ignored Google Chat command without a Pub/Sub message ID")
+                if ack_id:
+                    ack_ids.append(ack_id)
                 continue
             command, args = parsed
             link = ChatThreadLink.query.filter_by(thread_name=message_event["thread_name"]).first()
             if not link:
+                if ack_id:
+                    ack_ids.append(ack_id)
                 continue
-            record = find_record_by_number(link.record_number, tenant_id=link.tenant_id)
-            if not record:
-                continue
-            actor = User.query.filter(
-                func.lower(User.email) == message_event["sender_email"],
-                User.tenant_id == link.tenant_id, User.active.is_(True),
-            ).first()
-            reply = (
-                google_chat_handle_command(command, args, record, actor) if actor
-                else "Your Google account email doesn't match an active ServiceOps user, so this command was not run."
-            )
-            db.session.commit()
-            google_chat_post_message(link.connection, reply, thread_name=link.thread_name)
+            receipt = GoogleChatCommandReceipt.query.filter_by(message_id=message_id).first()
+            if not receipt:
+                record = find_record_by_number(link.record_number, tenant_id=link.tenant_id)
+                if not record:
+                    if ack_id:
+                        ack_ids.append(ack_id)
+                    continue
+                actor = User.query.filter(
+                    func.lower(User.email) == message_event["sender_email"],
+                    User.tenant_id == link.tenant_id, User.active.is_(True),
+                ).first()
+                reply = (
+                    google_chat_handle_command(command, args, record, actor) if actor
+                    else "Your Google account email doesn't match an active ServiceOps user, so this command was not run."
+                )
+                receipt = GoogleChatCommandReceipt(
+                    message_id=message_id, connection_id=link.connection_id,
+                    thread_name=link.thread_name, reply_text=reply,
+                    tenant_id=link.tenant_id,
+                )
+                db.session.add(receipt)
+                # Commit the record mutation and its idempotency receipt in
+                # one transaction before making the external reply call.
+                db.session.commit()
+            if not receipt.replied_at:
+                reply_message_id = "client-serviceops-" + hashlib.sha256(message_id.encode()).hexdigest()[:32]
+                google_chat_post_message(
+                    receipt.connection, receipt.reply_text,
+                    thread_name=receipt.thread_name, message_id=reply_message_id,
+                )
+                receipt.replied_at = now()
+                db.session.commit()
+            if ack_id:
+                ack_ids.append(ack_id)
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Failed to process a Google Chat event")
     if ack_ids:
         try:
-            requests.post(
+            ack_response = requests.post(
                 f"https://pubsub.googleapis.com/v1/{subscription}:acknowledge",
                 json={"ackIds": ack_ids},
                 headers={"Authorization": f"Bearer {access_token}"},
                 proxies=resolve_outbound_proxies(None), timeout=15,
             )
+            ack_response.raise_for_status()
         except Exception:
             current_app.logger.exception("Could not acknowledge pulled Google Chat events")
     return len(received)
@@ -13999,6 +14069,20 @@ def create_app(test_config=None):
                 effective_keycloak = request.form.get("KEYCLOAK_ENABLED")
                 if not any((effective_local, effective_ldap, effective_keycloak)):
                     errors.append("At least one authentication method must remain enabled.")
+            if category == "google_chat_app" and request.form.get("GOOGLE_CHAT_APP_ENABLED"):
+                project_id = request.form.get("GOOGLE_CHAT_PROJECT_ID", "").strip()
+                subscription_id = request.form.get("GOOGLE_CHAT_PUBSUB_SUBSCRIPTION", "").strip()
+                bot_user_name = request.form.get("GOOGLE_CHAT_BOT_USER_NAME", "").strip()
+                existing_credentials = setting_value("GOOGLE_CHAT_SERVICE_ACCOUNT_JSON", "")
+                submitted_credentials = request.form.get("GOOGLE_CHAT_SERVICE_ACCOUNT_JSON", "").strip()
+                if not re.fullmatch(r"[a-z][a-z0-9-]{4,61}[a-z0-9]", project_id):
+                    errors.append("Google Cloud project ID is invalid.")
+                if not re.fullmatch(r"[A-Za-z][A-Za-z0-9._~-]{2,254}", subscription_id):
+                    errors.append("Google Chat Pub/Sub subscription ID is invalid.")
+                if not re.fullmatch(r"users/[\w-]+", bot_user_name):
+                    errors.append('Google Chat bot user resource name must look like "users/123456789".')
+                if not (submitted_credentials or existing_credentials):
+                    errors.append("Google Chat service-account credentials are required before enabling the bot.")
             if errors:
                 db.session.rollback()
                 for message in errors:

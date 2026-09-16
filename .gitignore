@@ -45,6 +45,7 @@ backups/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.chainlit/
 test-results/
 .venv/
 instance/

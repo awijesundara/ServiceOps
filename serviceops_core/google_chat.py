@@ -39,7 +39,7 @@ def decode_pubsub_message(received_message):
         return None, ack_id
 
 
-def _strip_bot_mention(message):
+def _strip_bot_mention(message, expected_bot_name):
     """Returns the message text with a leading bot @mention annotation
     removed, or None if the message doesn't mention a bot at all.
 
@@ -60,7 +60,10 @@ def _strip_bot_mention(message):
         if annotation.get("type") != "USER_MENTION":
             continue
         mention_user = (annotation.get("userMention") or {}).get("user") or {}
-        if mention_user.get("type") != "BOT":
+        if (
+            mention_user.get("type") != "BOT"
+            or mention_user.get("name") != expected_bot_name
+        ):
             continue
         start = annotation.get("startIndex", 0)
         length = annotation.get("length", 0)
@@ -68,7 +71,7 @@ def _strip_bot_mention(message):
     return None
 
 
-def extract_message_event(chat_event):
+def extract_message_event(chat_event, expected_bot_name):
     """Returns {"text", "thread_name", "sender_email"} for a MESSAGE-type
     Chat event that explicitly @-mentions this app and has a real thread,
     or None for anything else -- a space lifecycle event
@@ -85,7 +88,9 @@ def extract_message_event(chat_event):
     thread_name = ((message.get("thread") or {}).get("name") or "").strip()
     if not thread_name:
         return None
-    stripped_text = _strip_bot_mention(message)
+    if not expected_bot_name:
+        return None
+    stripped_text = _strip_bot_mention(message, expected_bot_name)
     if stripped_text is None:
         return None
     return {
