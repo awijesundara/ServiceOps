@@ -184,6 +184,9 @@ topologySpreadConstraints:
 ai:
   # Worker availability does not enable AI. Tenant administrators control AI usage.
   workerEnabled: true
+  # Servers an administrator may point ServiceOps at (llama.cpp, Ollama, vLLM, LM Studio). Comma-separated;
+  # each entry is a server ("http://192.168.68.68:8080"), every port of a host ("http://192.168.68.68:*")
+  # or one exact URL. Hosted services (OpenAI, Anthropic, OpenAI-compatible over HTTPS) need no entry here.
   selfHostedEndpoints: ""
   # Wall-clock limit for one model call, in seconds (10-270; default 60). Hosted
   # models answer in seconds. A self-hosted model on CPU can take minutes.

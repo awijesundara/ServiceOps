@@ -48,30 +48,111 @@ def provider_timeout():
     return max(MIN_TIMEOUT_SECONDS, min(value, MAX_TIMEOUT_SECONDS))
 
 
-def validate_configuration(config):
-    if config.provider not in {"self_hosted", "openai"}:
-        raise ProviderError("Choose a supported provider.")
-    if not config.model or not re.fullmatch(r"[A-Za-z0-9_./:@+-]{1,160}", config.model):
-        raise ProviderError("Enter a valid model identifier.")
+PROVIDERS = {"self_hosted", "openai_compatible", "openai", "anthropic"}
+ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_MODELS = "https://api.anthropic.com/v1/models"
+OPENAI_MODELS = "https://api.openai.com/v1/models"
+ANTHROPIC_VERSION = "2023-06-01"
+FIXED_PROVIDERS = {"openai", "anthropic"}
+
+
+def fixed_endpoint(provider):
+    return HOSTED_ENDPOINT if provider == "openai" else ANTHROPIC_ENDPOINT
+_CHAT_PATH = re.compile(r"(/[A-Za-z0-9._~-]+)*/chat/completions")
+_ALLOW_ENTRY = re.compile(r"(https?)://([^/:@\s]+)(?::(\d{1,5}|\*))?(/.*)?", re.I)
+
+
+def normalize_endpoint(raw):
+    """Accept a server address the way people write it (`http://host:8080`, `.../v1`, or the full
+    `.../v1/chat/completions`) and return the chat-completions URL ServiceOps calls."""
+    url = (raw or "").strip().rstrip("/")
+    if not url:
+        return ""
+    try:
+        parsed = urlsplit(url)
+        parsed.port  # noqa: B018 - raises ValueError for an invalid port
+    except ValueError:
+        raise ProviderError("Invalid endpoint address.") from None
+    path = parsed.path.rstrip("/")
+    if path.endswith("/chat/completions"):
+        pass
+    elif not path:
+        path = "/v1/chat/completions"
+    else:
+        path += "/chat/completions"
+    return parsed._replace(path=path).geturl()
+
+
+def models_url(config):
+    """Where a provider lists its models."""
     if config.provider == "openai":
+        return OPENAI_MODELS
+    if config.provider == "anthropic":
+        return ANTHROPIC_MODELS
+    url = normalize_endpoint(config.endpoint)
+    return url[: -len("/chat/completions")] + "/models"
+
+
+def _default_port(scheme):
+    return 443 if scheme == "https" else 80
+
+
+def endpoint_allowed(url):
+    """Operators allowlist a server (`http://192.168.68.68:8080`), every port of a host
+    (`http://192.168.68.68:*`), or one exact URL. A server entry covers every path on it."""
+    parsed = urlsplit(url)
+    port = parsed.port or _default_port(parsed.scheme)
+    for entry in os.getenv("AI_SELF_HOSTED_ENDPOINTS", "").split(","):
+        entry = entry.strip().rstrip("/")
+        if not entry:
+            continue
+        match = _ALLOW_ENTRY.fullmatch(entry)
+        if not match:
+            continue
+        scheme, host, entry_port, path = match.groups()
+        if path:
+            if entry == url:
+                return True
+            continue
+        if scheme.lower() == parsed.scheme and host.lower() == (parsed.hostname or "").lower() and (
+                entry_port == "*" or int(entry_port or _default_port(scheme.lower())) == port):
+            return True
+    return False
+
+
+def validate_configuration(config, *, need_model=True):
+    if config.provider not in PROVIDERS:
+        raise ProviderError("Choose a supported provider.")
+    if need_model and (not config.model or not re.fullmatch(r"[A-Za-z0-9_./:@+-]{1,160}", config.model)):
+        raise ProviderError("Enter a valid model identifier.")
+    if config.provider in FIXED_PROVIDERS:
         if not config.external_consent:
-            raise ProviderError("Authorize external processing before using the hosted provider.")
+            raise ProviderError("Authorize external processing before using a hosted provider.")
         if not config.key_encrypted:
             raise ProviderError("A hosted API key is required.")
-        return HOSTED_ENDPOINT
-    url = config.endpoint.rstrip("/")
+        return fixed_endpoint(config.provider)
+    url = normalize_endpoint(config.endpoint)
     try:
         parsed = urlsplit(url)
         port = parsed.port
     except ValueError:
-        raise ProviderError("Invalid self-hosted endpoint.") from None
+        raise ProviderError("Invalid endpoint address.") from None
     if (parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password
-            or parsed.query or parsed.fragment or parsed.path != "/v1/chat/completions"
+            or parsed.query or parsed.fragment or not _CHAT_PATH.fullmatch(parsed.path)
             or (port is not None and port < 1)):
-        raise ProviderError("Use an HTTP(S) endpoint ending in /v1/chat/completions, without credentials or query parameters.")
-    allowed = {item.strip().rstrip("/") for item in os.getenv("AI_SELF_HOSTED_ENDPOINTS", "").split(",") if item.strip()}
-    if url not in allowed:
-        raise ProviderError("This endpoint has not been allowlisted by the deployment operator.")
+        raise ProviderError("Enter the server address, for example http://192.168.68.68:8080, without credentials or query parameters.")
+    if config.provider == "openai_compatible":
+        if parsed.scheme != "https":
+            raise ProviderError("A hosted OpenAI-compatible service must use HTTPS.")
+        if not config.external_consent:
+            raise ProviderError("Authorize external processing before using a hosted provider.")
+        if not config.key_encrypted:
+            raise ProviderError("A hosted API key is required.")
+        return url
+    if not endpoint_allowed(url):
+        origin = f"{parsed.scheme}://{parsed.hostname}" + (f":{parsed.port}" if parsed.port else "")
+        raise ProviderError("This endpoint has not been allowlisted by the deployment operator. "
+                            f"The operator must add {origin} to AI_SELF_HOSTED_ENDPOINTS (Helm ai.selfHostedEndpoints).")
     return url
 
 
@@ -99,13 +180,70 @@ def resolve_destination(url, local):
     return parsed.hostname, infos
 
 
+def decrypt_key(config):
+    try:
+        return settings_cipher().decrypt(config.key_encrypted.encode()).decode() if config.key_encrypted else ""
+    except Exception:
+        raise ProviderError("Provider credential could not be decrypted.") from None
+
+
+def auth_headers(provider, key):
+    headers = {"Content-Type": "application/json"}
+    if provider == "anthropic":
+        headers["anthropic-version"] = ANTHROPIC_VERSION
+        if key:
+            headers["x-api-key"] = key
+    elif key:
+        headers["Authorization"] = "Bearer " + key
+    return headers
+
+
+def list_models(config, key=None, details=None):
+    """Ask the provider which models it serves (GET /models), under the same network guards as a
+    model call: allowlist, no redirects, address pinning, tight size and time limits. Nothing about
+    the response other than well-formed model identifiers is returned. If `details` is a dict it is
+    filled with each model's context window in tokens when the server reports it (llama.cpp does)."""
+    validate_configuration(config, need_model=False)
+    url = models_url(config)
+    hostname, infos = resolve_destination(url, config.provider == "self_hosted")
+    key = decrypt_key(config) if key is None else key
+    try:
+        with requests.Session() as client, pin_resolved_addresses(hostname, infos):
+            client.trust_env = False
+            with client.get(url, headers=auth_headers(config.provider, key), timeout=(5, 15), allow_redirects=False,
+                            stream=True) as response:
+                if response.status_code in {401, 403}:
+                    raise ProviderError("The server rejected the API key.")
+                if response.status_code != 200:
+                    raise ProviderError("The server did not list its models. Enter the model identifier manually.")
+                body = bytearray()
+                for chunk in response.iter_content(4096):
+                    body.extend(chunk)
+                    if len(body) > 1_000_000:
+                        raise ProviderError("The model list was too large.")
+                data = json.loads(body)
+    except ProviderError:
+        raise
+    except (requests.RequestException, ValueError, TypeError):
+        raise ProviderError("Could not reach the server. Check the address and that it is running.") from None
+    rows = (data.get("data") or data.get("models")) if isinstance(data, dict) else None
+    names = []
+    for row in rows or []:
+        name = row.get("id") or row.get("model") or row.get("name") if isinstance(row, dict) else None
+        if isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9_./:@+-]{1,160}", name) and name not in names:
+            names.append(name)
+            context = (row.get("meta") or {}).get("n_ctx") if isinstance(row.get("meta"), dict) else None
+            if details is not None and type(context) is int and 0 < context < 10_000_000:
+                details[name] = context
+    if not names:
+        raise ProviderError("The server answered but listed no models. Enter the model identifier manually.")
+    return names[:200]
+
+
 def generate(config, evidence, *, probe=False):
     url = validate_configuration(config)
     hostname, infos = resolve_destination(url, config.provider == "self_hosted")
-    try:
-        key = settings_cipher().decrypt(config.key_encrypted.encode()).decode() if config.key_encrypted else ""
-    except Exception:
-        raise ProviderError("Provider credential could not be decrypted.") from None
+    key = decrypt_key(config)
     prompt = "Reply with the word READY." if probe else json.dumps(evidence, ensure_ascii=True)
     if len(prompt) > 40000:
         raise ProviderError("Evidence exceeds the request limit.")
@@ -113,12 +251,13 @@ def generate(config, evidence, *, probe=False):
     if config.provider == "openai":
         payload = {"model": config.model, "instructions": INSTRUCTIONS, "input": prompt,
                    "max_output_tokens": cap, "store": False}
+    elif config.provider == "anthropic":
+        payload = {"model": config.model, "system": INSTRUCTIONS, "max_tokens": cap,
+                   "messages": [{"role": "user", "content": prompt}]}
     else:
         payload = {"model": config.model, "messages": [{"role": "system", "content": INSTRUCTIONS},
                    {"role": "user", "content": prompt}], "max_tokens": cap, "stream": False}
-    headers = {"Content-Type": "application/json"}
-    if key:
-        headers["Authorization"] = "Bearer " + key
+    headers = auth_headers(config.provider, key)
     started = time.monotonic()
     limit = provider_timeout()
     try:
@@ -141,6 +280,10 @@ def generate(config, evidence, *, probe=False):
                 raise ProviderError("Provider response was incomplete; review the output limit or model.")
             answer = "\n".join(part["text"] for item in data.get("output", []) if item.get("type") == "message"
                                for part in item.get("content", []) if part.get("type") == "output_text")
+        elif config.provider == "anthropic":
+            if data.get("stop_reason") not in {"end_turn", "stop_sequence", None}:
+                raise ProviderError("Provider response was incomplete; review the output limit or model.")
+            answer = "".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text")
         else:
             choice = data["choices"][0]
             if choice.get("finish_reason") not in {"stop", None}:
@@ -222,24 +365,24 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
     """
     url = validate_configuration(config)
     hostname, infos = resolve_destination(url, config.provider == "self_hosted")
-    try:
-        key = settings_cipher().decrypt(config.key_encrypted.encode()).decode() if config.key_encrypted else ""
-    except Exception:
-        raise ProviderError("Provider credential could not be decrypted.") from None
+    key = decrypt_key(config)
     cap = max_tokens or config.max_output_tokens
-    headers = {"Content-Type": "application/json"}
-    if key:
-        headers["Authorization"] = "Bearer " + key
+    headers = auth_headers(config.provider, key)
     limit = provider_timeout()
     started = time.monotonic()
     if config.provider == "openai":
         system = next((m["content"] for m in messages if m["role"] == "system"), "")
         rest = [m for m in messages if m["role"] != "system"]
         payload = {"model": config.model, "instructions": system, "input": rest, "max_output_tokens": cap, "store": False}
+    elif config.provider == "anthropic":
+        system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+        payload = {"model": config.model, "max_tokens": cap, "stream": True, "system": system,
+                   "messages": [m for m in messages if m["role"] != "system"]}
     else:
         payload = {"model": config.model, "messages": messages, "max_tokens": cap, "stream": True,
                    "stream_options": {"include_usage": True}}
-        if thinking is not None:
+        if thinking is not None and config.provider == "self_hosted":
+            # llama.cpp / vLLM chat templates; hosted services ignore or reject unknown fields.
             payload["chat_template_kwargs"] = {"enable_thinking": bool(thinking)}
     content, reasoning, usage = [], [], {}
     splitter = _ThinkSplitter()
@@ -264,6 +407,36 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
                                        for part in item.get("content", []) if part.get("type") == "output_text")
                     usage = _clean_usage(data.get("usage"))
                     deliver("content", answer)
+                elif config.provider == "anthropic":
+                    received, first_token = 0, None
+                    for raw in response.iter_lines(chunk_size=512):
+                        received += len(raw)
+                        if received > 2_000_000 or time.monotonic() - started > limit:
+                            raise ProviderError("Provider response exceeded its size or time limit.")
+                        if not raw.startswith(b"data:"):
+                            continue
+                        event = json.loads(raw[5:].strip())
+                        kind = event.get("type")
+                        if kind == "error":
+                            raise ProviderError("Provider reported an error while answering.")
+                        if kind == "message_start":
+                            usage["prompt_tokens"] = int(((event.get("message") or {}).get("usage") or {}).get("input_tokens") or 0)
+                        elif kind == "content_block_delta":
+                            delta = event.get("delta") or {}
+                            text = delta.get("text") if delta.get("type") == "text_delta" else (
+                                delta.get("thinking") if delta.get("type") == "thinking_delta" else None)
+                            if text:
+                                if first_token is None:
+                                    first_token = time.monotonic()
+                                deliver("content" if delta.get("type") == "text_delta" else "reasoning", text)
+                        elif kind == "message_delta":
+                            usage["completion_tokens"] = int((event.get("usage") or {}).get("output_tokens") or 0)
+                            if (event.get("delta") or {}).get("stop_reason") == "max_tokens":
+                                usage["truncated"] = True
+                        elif kind == "message_stop":
+                            break
+                    if first_token is not None:
+                        usage["first_token_ms"] = int((first_token - started) * 1000)
                 else:
                     received, first_token = 0, None
                     for raw in response.iter_lines(chunk_size=512):

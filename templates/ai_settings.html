@@ -14,14 +14,39 @@
 <label><span>Enable incident investigations</span><input type="checkbox" name="incident_enabled" {% if config and config.incident_enabled %}checked{% endif %}></label>
 <label><span>Enable the chat assistant</span><input type="checkbox" name="chat_enabled" {% if config and config.chat_enabled %}checked{% endif %}><small>Every signed-in user, limited to what their role can already read. Never people, audit or client data.</small></label>
 <label><span>Show model reasoning</span><input type="checkbox" name="show_reasoning" {% if config and config.show_reasoning %}checked{% endif %}><small>Displays a reasoning model's thinking to the person who asked. Off keeps only the activity steps.</small></label>
-<label>Provider<select name="provider" aria-label="Provider"><option value="self_hosted" {% if not config or config.provider == 'self_hosted' %}selected{% endif %}>Self-hosted compatible model</option><option value="openai" {% if config and config.provider == 'openai' %}selected{% endif %}>External: OpenAI</option></select></label>
-<label>Model identifier<input name="model" maxlength="160" value="{{ config.model if config else '' }}" autocomplete="off"></label>
-<label class="wide">Self-hosted endpoint<input name="endpoint" type="url" maxlength="500" placeholder="https://model.internal/v1/chat/completions" value="{{ config.endpoint if config else '' }}"></label>
-<p class="wide muted">The deployment operator must allowlist the self-hosted endpoint. External mode uses OpenAI's fixed HTTPS endpoint. Changing provider or endpoint clears the saved key unless you enter a replacement.</p>
-<label>API key<input type="password" name="api_key" autocomplete="new-password" maxlength="4096" value=""><small>{{ 'A key is stored. Leave blank to retain it.' if config and config.key_encrypted else 'No key stored.' }}</small></label>
+<label>Quick setup<select id="ai-preset" aria-label="Quick setup" data-ai-preset><option value="">Choose a common service…</option>
+<optgroup label="On your network">
+<option value="self_hosted|http://HOST:8080">llama.cpp server (port 8080)</option>
+<option value="self_hosted|http://HOST:11434/v1">Ollama (port 11434)</option>
+<option value="self_hosted|http://HOST:8000/v1">vLLM (port 8000)</option>
+<option value="self_hosted|http://HOST:1234/v1">LM Studio (port 1234)</option>
+</optgroup>
+<optgroup label="Hosted services">
+<option value="openai_compatible|https://openrouter.ai/api/v1">OpenRouter</option>
+<option value="openai_compatible|https://api.groq.com/openai/v1">Groq</option>
+<option value="openai_compatible|https://api.together.xyz/v1">Together AI</option>
+<option value="openai_compatible|https://api.mistral.ai/v1">Mistral</option>
+<option value="openai_compatible|https://generativelanguage.googleapis.com/v1beta/openai">Google Gemini</option>
+<option value="openai|">OpenAI</option>
+<option value="anthropic|">Anthropic (Claude)</option>
+</optgroup></select><small>Fills in the provider and address. Replace HOST with your server's name or IP.</small></label>
+<label>Provider<select name="provider" id="ai-provider" aria-label="Provider" data-ai-provider>
+<option value="self_hosted" {% if not config or config.provider == 'self_hosted' %}selected{% endif %}>Server on your network (llama.cpp, Ollama, vLLM, LM Studio)</option>
+<option value="openai_compatible" {% if config and config.provider == 'openai_compatible' %}selected{% endif %}>Hosted OpenAI-compatible service</option>
+<option value="openai" {% if config and config.provider == 'openai' %}selected{% endif %}>OpenAI</option>
+<option value="anthropic" {% if config and config.provider == 'anthropic' %}selected{% endif %}>Anthropic (Claude)</option></select></label>
+<label class="wide" data-ai-endpoint-row>Server address<input name="endpoint" id="ai-endpoint" type="text" inputmode="url" maxlength="500" placeholder="http://192.168.68.68:8080" value="{{ config.endpoint if config else '' }}" data-ai-endpoint><small>Just the address is enough; the /v1/chat/completions part is added for you.</small></label>
+<label>API key<input type="password" name="api_key" id="ai-key" autocomplete="new-password" maxlength="4096" value="" data-ai-key><small>{{ 'A key is stored. Leave blank to retain it.' if config and config.key_encrypted else 'No key stored. Leave blank if the server needs none.' }}</small></label>
+<div class="wide ai-detect" data-ai-detect-row>
+<button type="button" class="button" id="ai-detect" data-ai-detect>Connect and detect models</button>
+<span class="muted" id="ai-detect-status" role="status" aria-live="polite" data-ai-detect-status>Enter the address and key, then detect the models the server offers.</span>
+</div>
+<label>Model identifier<input name="model" id="ai-model" maxlength="160" list="ai-models" value="{{ config.model if config else '' }}" autocomplete="off" data-ai-model><small>Detected automatically; you can also type it.</small></label>
+<datalist id="ai-models" data-ai-models></datalist>
+<p class="wide muted">A server on your network must be allowlisted by the deployment operator (<code>AI_SELF_HOSTED_ENDPOINTS</code>; a whole server such as <code>http://192.168.68.68:*</code> is enough). Hosted services need HTTPS, a key and the external-processing authorization below. Changing provider or address clears the saved key unless you enter a replacement.</p>
 <label><span>Remove saved API key</span><input type="checkbox" name="clear_key"></label>
 <label class="wide"><span>Authorize external processing of selected incident, comment, knowledge and CI content</span><input type="checkbox" name="external_consent" {% if config and config.external_consent %}checked{% endif %}></label>
-<p class="wide muted">External processing is required only for the hosted provider. Common secret patterns are redacted, but free text may still contain sensitive information. No attachments are sent.</p>
+<p class="wide muted">External processing is required for every hosted provider (OpenAI, Anthropic and hosted OpenAI-compatible services). Common secret patterns are redacted, but free text may still contain sensitive information. No attachments are sent.</p>
 <label>Daily investigations (UTC)<input type="number" name="daily_limit" min="1" max="1000" value="{{ config.daily_limit if config else 100 }}" required></label>
 <label>Maximum output tokens<input type="number" name="max_output_tokens" min="128" max="4096" value="{{ config.max_output_tokens if config else 1500 }}" required></label>
 <label>Result retention (days)<input type="number" name="retention_days" min="1" max="30" value="{{ config.retention_days if config else 7 }}" required></label>
@@ -29,4 +54,5 @@
 </form>
 {% if config %}<form method="post"><input type="hidden" name="action" value="test"><p>Test the saved provider using a synthetic prompt. This may incur a small provider charge; no operational records are sent.</p><button class="button">Test saved connection</button></form>{% endif %}
 </section>
+<script src="{{ url_for('static', filename='ai-settings.js', v=app_version) }}" defer></script>
 {% endblock %}

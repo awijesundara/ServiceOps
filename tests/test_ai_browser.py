@@ -51,7 +51,8 @@ def test_ai_admin_to_incident_workflow(ai_browser_server, monkeypatch, width, he
     assert axe_path and os.path.isfile(axe_path), "AXE_CORE_PATH required"
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        context = browser.new_context(viewport={"width": width, "height": height}, bypass_csp=True)
+        # The site's page-entry animation shifts <main> by 9px while it plays; measure layout without it.
+        context = browser.new_context(viewport={"width": width, "height": height}, bypass_csp=True, reduced_motion="reduce")
         page = context.new_page()
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
@@ -66,7 +67,7 @@ def test_ai_admin_to_incident_workflow(ai_browser_server, monkeypatch, width, he
         page.get_by_label("Enable incident investigations", exact=True).check()
         page.get_by_label("Provider", exact=True).select_option("self_hosted")
         page.get_by_label("Model identifier").fill("local-test")
-        page.get_by_label("Self-hosted endpoint", exact=True).fill("http://127.0.0.1:18099/v1/chat/completions")
+        page.get_by_label("Server address").fill("http://127.0.0.1:18099/v1/chat/completions")
         page.get_by_role("button", name="Save AI configuration").click()
         page.wait_for_load_state("networkidle")
         assert "AI configuration saved" in page.inner_text("body")
@@ -385,3 +386,40 @@ def test_full_page_chat_and_stop(ai_browser_server, monkeypatch):
             browser.close()
     finally:
         stop_worker.set()
+
+
+def test_admin_detects_models_from_an_address_and_key_in_the_browser(ai_browser_server, monkeypatch):
+    """The whole point of the connection form: give an address and a key, get the models, save, done."""
+    from playwright.sync_api import sync_playwright
+    from tests.test_ai_providers import Server
+    app, base, _ = ai_browser_server
+    model_server = Server(get_body={"data": [{"id": "Qwen/Qwen3-8B-GGUF:Q4_K_M", "meta": {"n_ctx": 4096}}]})
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", f"{model_server.origin}")
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_context(viewport={"width": 1280, "height": 1000}).new_page()
+            problems = []
+            page.on("console", lambda m: problems.append(m.text) if "Content Security Policy" in m.text else None)
+            sign_in(page, base)
+            page.goto(base + "/admin/ai", wait_until="networkidle")
+            assert not axe_violations(page)
+            page.get_by_label("Quick setup").select_option(index=1)
+            assert page.get_by_label("Server address").input_value() == "http://HOST:8080"
+            page.get_by_label("Server address").fill(model_server.origin)
+            page.locator("#ai-key").fill("typed-key-123")
+            page.get_by_role("button", name="Connect and detect models").click()
+            wait_for(lambda: "Connected" in page.inner_text("[data-ai-detect-status]"))
+            assert page.get_by_label("Model identifier").input_value() == "Qwen/Qwen3-8B-GGUF:Q4_K_M"
+            assert "Context window: 4096" in page.inner_text("[data-ai-detect-status]") and "-c 8192" in page.inner_text("[data-ai-detect-status]")
+            assert model_server.seen[0][2]["Authorization"] == "Bearer typed-key-123"
+            # Hosted providers do not need an address.
+            page.get_by_label("Provider", exact=True).select_option("anthropic")
+            assert page.locator("[data-ai-endpoint-row]").is_hidden()
+            page.get_by_label("Provider", exact=True).select_option("self_hosted")
+            assert page.locator("[data-ai-endpoint-row]").is_visible()
+            assert not axe_violations(page)
+            assert not problems, problems
+            browser.close()
+    finally:
+        model_server.close()
