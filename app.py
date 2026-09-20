@@ -1354,12 +1354,23 @@ def setting_value(key, default=None):
     return row.value
 
 
+def _env_or_default(key, default):
+    # setting_value() only consults the environment when the call-site default
+    # is None, so a typed helper that always supplies a default silently ignored
+    # deployment configuration (ENABLE_HSTS=true never enabled HSTS). Precedence
+    # is: administrator database setting > environment > call-site default. A
+    # blank variable counts as unset: Compose passes unset variables through as
+    # empty strings, and that must never override a secure default.
+    value = os.getenv(key)
+    return value if value is not None and value.strip() else str(default)
+
+
 def setting_bool(key, default=False):
-    return coerce_bool(setting_value(key, str(default)))
+    return coerce_bool(setting_value(key, _env_or_default(key, default)))
 
 
 def setting_int(key, default=0):
-    return coerce_int(setting_value(key, str(default)), default)
+    return coerce_int(setting_value(key, _env_or_default(key, default)), default)
 
 
 NOTIFICATION_SEVERITY_BY_EVENT = {
