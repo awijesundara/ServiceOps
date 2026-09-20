@@ -78,8 +78,12 @@ class RedactingFilter(logging.Filter):
                 record.args = ()
             record.msg = redact(record.msg)
         except Exception:
-            # Never let redaction itself break logging.
-            pass
+            # Redaction must never break logging, but it must also fail closed:
+            # if the message cannot be inspected it cannot be proven free of
+            # secrets, so withhold it rather than emit it unredacted.
+            record.msg = "[log message withheld: it could not be redacted]"
+            record.args = ()
+            record.exc_info = None
         return True
 
 
