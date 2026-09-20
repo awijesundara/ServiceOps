@@ -133,3 +133,9 @@ a.ai-cite:hover,a.ai-cite:focus-visible{background:var(--ai-accent);color:#fff}
 .ai-chat-titles h2{order:1;flex:1;min-width:0}
 .ai-chat-tools{order:2}
 .ai-scope{order:3;flex-basis:100%;margin:0}
+
+/* Admin AI settings */
+.ai-detect{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:8px 0}
+.ai-detect [data-ai-detect-status]{font-size:13px}
+.ai-detect .is-error{color:#9d2a22;font-weight:650}
+[data-ai-endpoint-row][hidden]{display:none!important}
