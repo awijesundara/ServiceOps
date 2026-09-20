@@ -9,7 +9,8 @@ from flask_login import current_user, login_required
 
 from serviceops_models import AIConfiguration, AIConversation, AIMessage, AIRun, db, now, settings_cipher
 from serviceops_core.ai import access, service
-from serviceops_core.ai.provider import ProviderError, generate, validate_configuration
+from serviceops_core.ai.provider import (PROVIDERS, ProviderError, decrypt_key, generate, list_models, normalize_endpoint,
+                                         validate_configuration)
 from serviceops_core.storage import ipfs_enabled
 
 def register(app):
@@ -59,9 +60,10 @@ def register(app):
             old_destination = (config.provider, config.endpoint)
             try:
                 config.provider = request.form.get("provider", "self_hosted")
-                config.endpoint = request.form.get("endpoint", "").strip().rstrip("/")
+                config.endpoint = normalize_endpoint(request.form.get("endpoint", "")) if config.provider in {
+                    "self_hosted", "openai_compatible"} else ""
                 config.model = request.form.get("model", "").strip()
-                if len(config.endpoint) > 500 or len(config.model) > 160 or config.provider not in {"self_hosted", "openai"}:
+                if len(config.endpoint) > 500 or len(config.model) > 160 or config.provider not in PROVIDERS:
                     raise ProviderError("Invalid provider, endpoint or model.")
                 config.enabled = request.form.get("enabled") == "on"
                 config.incident_enabled = request.form.get("incident_enabled") == "on"
@@ -97,6 +99,45 @@ def register(app):
                 flash(str(error) if isinstance(error, ProviderError) else "Enter valid numeric limits.", "error")
             return redirect(url_for("ai.settings"))
         return render_template("ai_settings.html", config=config, ipfs=ipfs_enabled())
+
+    @blueprint.route("/admin/ai/models", methods=["POST"])
+    @roles("admin")
+    @require_action("administer")
+    def detect_models():
+        """List the models a server offers, so an administrator only has to give an address and a key.
+        The entered key is used for this one request and never stored or echoed."""
+        from app import route_rate_limit
+        service.actor(current_user)
+        data = request.get_json(silent=True) or {}
+        provider = str(data.get("provider", "self_hosted"))
+        if provider not in PROVIDERS:
+            return no_store({"error": "Choose a supported provider."}, 400)
+        if not route_rate_limit("ai_probe", f"tenant:{current_user.tenant_id}", 10):
+            db.session.commit()
+            return no_store({"error": "Too many attempts. Wait a minute."}, 429)
+        saved = AIConfiguration.query.filter_by(tenant_id=current_user.tenant_id).first()
+        endpoint = str(data.get("endpoint", ""))[:500]
+        typed_key = str(data.get("api_key", "")).strip()
+        if len(typed_key) > 4096 or any(char in typed_key for char in "\r\n"):
+            return no_store({"error": "Invalid API key."}, 400)
+        candidate = SimpleNamespace(provider=provider, endpoint=endpoint, model="", key_encrypted="",
+                                    external_consent=bool(data.get("external_consent")), max_output_tokens=64)
+        try:
+            candidate.endpoint = normalize_endpoint(endpoint) if provider in {"self_hosted", "openai_compatible"} else ""
+            if typed_key:
+                key = typed_key
+                candidate.key_encrypted = "typed"  # presence marker only; the key itself is passed directly
+            elif saved and saved.key_encrypted and (saved.provider, saved.endpoint) == (provider, candidate.endpoint):
+                key, candidate.key_encrypted = decrypt_key(saved), saved.key_encrypted
+            else:
+                key = ""
+            audit("ai model discovery", "AI configuration", f"provider={provider}")
+            db.session.commit()
+            context = {}
+            models = list_models(candidate, key, context)
+            return no_store({"models": models, "context": context})
+        except ProviderError as error:
+            return no_store({"error": str(error)}, 400)
 
     @blueprint.route("/incidents/<int:ticket_id>/ai", methods=["GET", "POST"])
     @login_required
