@@ -198,46 +198,68 @@ def auth_headers(provider, key):
     return headers
 
 
-def list_models(config, key=None, details=None):
-    """Ask the provider which models it serves (GET /models), under the same network guards as a
-    model call: allowlist, no redirects, address pinning, tight size and time limits. Nothing about
-    the response other than well-formed model identifiers is returned. If `details` is a dict it is
-    filled with each model's context window in tokens when the server reports it (llama.cpp does)."""
-    validate_configuration(config, need_model=False)
-    url = models_url(config)
+def read_metadata(config, url, key, *, optional=False):
+    """Bounded authenticated metadata reads, including slow-response and redirect protection."""
     hostname, infos = resolve_destination(url, config.provider == "self_hosted")
-    key = decrypt_key(config) if key is None else key
+    started = time.monotonic()
     try:
         with requests.Session() as client, pin_resolved_addresses(hostname, infos):
             client.trust_env = False
-            with client.get(url, headers=auth_headers(config.provider, key), timeout=(5, 15), allow_redirects=False,
+            with client.get(url, headers=auth_headers(config.provider, key), timeout=(5, 10), allow_redirects=False,
                             stream=True) as response:
+                if optional and response.status_code != 200:
+                    return {}
                 if response.status_code in {401, 403}:
                     raise ProviderError("The server rejected the API key.")
                 if response.status_code != 200:
                     raise ProviderError("The server did not list its models. Enter the model identifier manually.")
                 body = bytearray()
-                for chunk in response.iter_content(4096):
+                for chunk in response.iter_content(1):
                     body.extend(chunk)
-                    if len(body) > 1_000_000:
-                        raise ProviderError("The model list was too large.")
+                    if len(body) > 1_000_000 or time.monotonic() - started > 15:
+                        raise ProviderError("The metadata response exceeded its size or time limit.")
                 data = json.loads(body)
+                return data if isinstance(data, dict) else {}
     except ProviderError:
+        if optional:
+            return {}
         raise
     except (requests.RequestException, ValueError, TypeError):
+        if optional:
+            return {}
         raise ProviderError("Could not reach the server. Check the address and that it is running.") from None
-    rows = (data.get("data") or data.get("models")) if isinstance(data, dict) else None
+
+
+def list_models(config, key=None, details=None, profiles=None):
+    """Discover IDs and only explicitly reported limits; training size is not runtime capacity."""
+    from serviceops_core.ai.capabilities import profile_from_model, runtime_properties
+    validate_configuration(config, need_model=False)
+    key = decrypt_key(config) if key is None else key
+    data = read_metadata(config, models_url(config), key)
+    rows = data.get("data") or data.get("models") or []
     names = []
-    for row in rows or []:
+    for row in rows if isinstance(rows, list) else []:
         name = row.get("id") or row.get("model") or row.get("name") if isinstance(row, dict) else None
-        if isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9_./:@+-]{1,160}", name) and name not in names:
-            names.append(name)
-            context = (row.get("meta") or {}).get("n_ctx") if isinstance(row.get("meta"), dict) else None
-            if details is not None and type(context) is int and 0 < context < 10_000_000:
-                details[name] = context
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_./:@+-]{1,160}", name) or name in names:
+            continue
+        names.append(name)
+        profile = profile_from_model(row)
+        if details is not None and profile["context_tokens"]:
+            details[name] = profile["context_tokens"]
+        if profiles is not None:
+            profiles[name] = profile
+        if len(names) == 200:
+            break
     if not names:
         raise ProviderError("The server answered but listed no models. Enter the model identifier manually.")
-    return names[:200]
+    # Query runtime props only for the selected model, or an unambiguous single-model server.
+    selected = config.model if config.model in names else names[0] if len(names) == 1 else None
+    if profiles is not None and selected and config.provider == "self_hosted":
+        runtime = runtime_properties(config, key, selected)
+        profiles[selected].update(runtime)
+        if details is not None and profiles[selected]["context_tokens"]:
+            details[selected] = profiles[selected]["context_tokens"]
+    return names
 
 
 def generate(config, evidence, *, probe=False):
@@ -247,7 +269,11 @@ def generate(config, evidence, *, probe=False):
     prompt = "Reply with the word READY." if probe else json.dumps(evidence, ensure_ascii=True)
     if len(prompt) > 40000:
         raise ProviderError("Evidence exceeds the request limit.")
-    cap = 64 if probe else config.max_output_tokens
+    from serviceops_core.ai.capabilities import fit_messages
+    fitted, cap, budget_info = fit_messages(config, [{"role": "system", "content": INSTRUCTIONS},
+                                                   {"role": "user", "content": prompt}],
+                                           256 if probe else config.max_output_tokens)
+    prompt = fitted[-1]["content"]
     if config.provider == "openai":
         payload = {"model": config.model, "instructions": INSTRUCTIONS, "input": prompt,
                    "max_output_tokens": cap, "store": False}
@@ -295,6 +321,7 @@ def generate(config, evidence, *, probe=False):
                  if name in {"input_tokens", "output_tokens", "total_tokens", "prompt_tokens", "completion_tokens"}
                  and type(value) is int and value >= 0}
         usage["duration_ms"] = int((time.monotonic() - started) * 1000)
+        usage.update(budget_info)
         return redact(answer), usage
     except ProviderError:
         raise
@@ -366,7 +393,8 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
     url = validate_configuration(config)
     hostname, infos = resolve_destination(url, config.provider == "self_hosted")
     key = decrypt_key(config)
-    cap = max_tokens or config.max_output_tokens
+    from serviceops_core.ai.capabilities import fit_messages, selected_profile
+    messages, cap, budget_info = fit_messages(config, messages, max_tokens or config.max_output_tokens)
     headers = auth_headers(config.provider, key)
     limit = provider_timeout()
     started = time.monotonic()
@@ -379,9 +407,9 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
         payload = {"model": config.model, "max_tokens": cap, "stream": True, "system": system,
                    "messages": [m for m in messages if m["role"] != "system"]}
     else:
-        payload = {"model": config.model, "messages": messages, "max_tokens": cap, "stream": True,
-                   "stream_options": {"include_usage": True}}
-        if thinking is not None and config.provider == "self_hosted":
+        payload = {"model": config.model, "messages": messages, "max_tokens": cap, "stream": True}
+        if (thinking is not None and config.provider == "self_hosted"
+                and selected_profile(config).get("thinking_control") == "chat_template"):
             # llama.cpp / vLLM chat templates; hosted services ignore or reject unknown fields.
             payload["chat_template_kwargs"] = {"enable_thinking": bool(thinking)}
     content, reasoning, usage = [], [], {}
@@ -472,4 +500,5 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
     if not answer.strip() or len(answer) > 40000:
         raise ProviderError("Provider returned no usable text.")
     usage["duration_ms"] = int((time.monotonic() - started) * 1000)
+    usage.update(budget_info)
     return redact(answer), redact("".join(reasoning)), usage

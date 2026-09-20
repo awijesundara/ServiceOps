@@ -8,6 +8,8 @@
     detect = $("detect"), status = $("detect-status"), model = $("model"), list = $("models"), row = $("endpoint-row");
   if (!provider || !detect) return;
   const consent = document.querySelector('input[name="external_consent"]');
+  const token = $("discovery-token");
+  let generation = 0, controller = null, profiles = {};
   const FIXED = { openai: true, anthropic: true };
 
   function syncProvider() {
@@ -28,40 +30,58 @@
       list.appendChild(option);
     });
     if (!model.value || models.indexOf(model.value) === -1) {
-      if (models.length === 1 || !model.value) model.value = models[0];
+      model.value = models.length === 1 ? models[0] : "";
     }
   }
 
+  function invalidate() {
+    generation += 1;
+    if (controller) controller.abort();
+    if (token) token.value = "";
+    profiles = {};
+    detect.disabled = false;
+  }
+
   function run() {
+    clearTimeout(timer);
+    invalidate();
+    const requestGeneration = generation;
+    controller = new AbortController();
     setStatus("Connecting…");
     detect.disabled = true;
     fetch("/admin/ai/models", {
-      method: "POST", credentials: "same-origin", cache: "no-store",
+      method: "POST", signal: controller.signal, credentials: "same-origin", cache: "no-store",
       headers: { "X-CSRF-Token": csrf, "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
-        provider: provider.value, endpoint: endpoint.value, api_key: key.value,
+        provider: provider.value, endpoint: endpoint.value, api_key: key.value, model: model.value, clear_key: Boolean(clearKey && clearKey.checked),
         external_consent: Boolean(consent && consent.checked)
       })
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) { return { ok: response.ok, body: body }; });
     }).then(function (result) {
+      if (requestGeneration !== generation) return;
       if (!result.ok) { setStatus(result.body.error || "Could not detect models. Enter the model identifier manually.", true); return; }
       fill(result.body.models);
+      if (token) token.value = result.body.discovery_token || "";
+      profiles = result.body.profiles || {};
       const chosen = model.value;
-      const context = (result.body.context || {})[chosen];
-      let message = "Connected. " + result.body.models.length + (result.body.models.length === 1 ? " model" : " models") +
-        " found; " + chosen + " is selected. Save to apply.";
-      if (context) message += " Context window: " + context + " tokens.";
-      if (context && context < 8192) message += " That is small for incident investigations; start the server with a context of at least 8192 (llama.cpp: -c 8192).";
-      setStatus(message, Boolean(context && context < 8192));
-    }).catch(function () {
+      const profile = profiles[chosen] || {};
+      let message = "Model discovery succeeded. " + result.body.models.length + " model(s) found. " +
+        (chosen ? chosen + " is selected. " : "Choose a model from the list. ");
+      if (profile.context_tokens) message += "Context: " + profile.context_tokens + " tokens (" + profile.context_source + "). ";
+      else message += "Runtime context was not reported; a conservative budget will be used. ";
+      message += "Inference and optional capabilities are not yet verified. Save, then test the connection.";
+      setStatus(message, false);
+    }).catch(function (error) {
+      if (requestGeneration !== generation || error.name === "AbortError") return;
       setStatus("Could not reach ServiceOps. Try again.", true);
-    }).then(function () { detect.disabled = false; });
+    }).then(function () { if (requestGeneration === generation) detect.disabled = false; });
   }
 
   if (preset) {
     preset.addEventListener("change", function () {
       if (!preset.value) return;
+      invalidate();
       const parts = preset.value.split("|");
       provider.value = parts[0];
       endpoint.value = parts[1] || "";
@@ -70,16 +90,24 @@
       preset.value = "";
     });
   }
-  provider.addEventListener("change", syncProvider);
+  provider.addEventListener("change", function () { invalidate(); syncProvider(); });
   detect.addEventListener("click", run);
   // Detect as soon as there is enough to try, so the model does not have to be looked up by hand.
   let timer = null;
   function auto() {
     clearTimeout(timer);
+    invalidate();
     const ready = FIXED[provider.value] ? key.value.length > 8 : /^https?:\/\/[^\s/]+/i.test(endpoint.value) && !/HOST/.test(endpoint.value);
-    if (ready) timer = setTimeout(run, 1200);
+    if (ready && (provider.value === "self_hosted" || (consent && consent.checked))) timer = setTimeout(run, 1200);
   }
   endpoint.addEventListener("input", auto);
   key.addEventListener("input", auto);
+  if (consent) consent.addEventListener("change", auto);
+  const clearKey = document.querySelector('input[name="clear_key"]');
+  if (clearKey) clearKey.addEventListener("change", invalidate);
+  model.addEventListener("change", function () {
+    if (profiles[model.value]) run();
+    else invalidate();
+  });
   syncProvider();
 })();

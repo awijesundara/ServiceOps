@@ -225,10 +225,17 @@ def _publish_progress(run_id, **values):
 def _stream(run, config, prepared, steps):
     run_id, tenant_id, revision = run.id, run.tenant_id, run.config_revision
     snapshot = SimpleNamespace(**{name: getattr(config, name) for name in
-                                  ("provider", "model", "endpoint", "key_encrypted", "external_consent", "max_output_tokens")})
+                                  ("provider", "model", "endpoint", "key_encrypted", "external_consent", "max_output_tokens", "capabilities_json")})
     if prepared.thinking:
         # A reasoning model spends part of the token cap on thinking before it writes the answer.
         snapshot.max_output_tokens = min(snapshot.max_output_tokens + REASONING_ALLOWANCE, 6000)
+    from serviceops_core.ai.capabilities import fit_messages
+    prepared.messages, snapshot.max_output_tokens, budget = fit_messages(snapshot, prepared.messages, snapshot.max_output_tokens)
+    if budget["prompt_shortened"]:
+        retained = set(re.findall(r'"source"\s*:\s*"(S\d+)"', prepared.messages[-1]["content"]))
+        prepared.sources = [source for source in prepared.sources if source["id"] in retained]
+        prepared.allowed &= access.identifiers_in(json.dumps(prepared.messages))
+        steps.add("Adapted to model context", "Shortened evidence or older turns; kept your question and access rules")
     valid_ids = {source["id"] for source in prepared.sources}
     state = {"content": "", "reasoning": "", "last": 0.0, "began_reasoning": False, "began_answer": False}
 
