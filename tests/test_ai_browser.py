@@ -43,7 +43,9 @@ def test_ai_admin_to_incident_workflow(ai_browser_server, monkeypatch, width, he
     from playwright.sync_api import sync_playwright
     app, base, ticket_id = ai_browser_server
     monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", "http://127.0.0.1:18099/v1/chat/completions")
-    monkeypatch.setattr(service, "generate", lambda *_: ("VPN is unavailable [S1]. Check the connection. <script>bad()</script>", {}))
+    monkeypatch.setattr(service, "generate_stream", lambda config, messages, on_delta, thinking=None: (
+        on_delta("content", "VPN is unavailable [S1]. Check the connection. <script>bad()</script>"),
+        ("VPN is unavailable [S1]. Check the connection. <script>bad()</script>", "", {}))[1])
     axe_path = os.getenv("AXE_CORE_PATH")
     assert axe_path and os.path.isfile(axe_path), "AXE_CORE_PATH required"
     with sync_playwright() as p:

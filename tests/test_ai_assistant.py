@@ -31,6 +31,22 @@ def allow_test_endpoint(monkeypatch):
     monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", "http://127.0.0.1:18099/v1/chat/completions")
 
 
+def fake_stream(answer, usage=None, reasoning="", before=None, capture=None):
+    """A stand-in for provider.generate_stream that honors the real contract: deliver
+    deltas, and stop as soon as the worker says so."""
+    def stream(config, messages, on_delta, thinking=None):
+        if capture is not None:
+            capture.extend(messages)
+        if before:
+            before()
+        if reasoning and on_delta("reasoning", reasoning) is False:
+            raise provider.StreamCancelled()
+        if on_delta("content", answer) is False:
+            raise provider.StreamCancelled()
+        return answer, reasoning, usage or {}
+    return stream
+
+
 def submit(client, ticket_id, key=None):
     response = client.post(f"/incidents/{ticket_id}/ai", data={"request_key": key or str(uuid.uuid4())})
     assert response.status_code == 302, response.data
@@ -106,11 +122,8 @@ def test_worker_retrieves_only_tenant_published_evidence_and_never_mutates(app, 
         db.session.commit()
     captured = []
 
-    def generate(config, evidence):
-        captured.extend(evidence)
-        return "VPN investigation [S1]. Check published guidance [S2]. <script>alert(1)</script>", {"total_tokens": 12}
-
-    monkeypatch.setattr(service, "generate", generate)
+    monkeypatch.setattr(service, "generate_stream", fake_stream(
+        "VPN investigation [S1]. Check published guidance [S2]. <script>alert(1)</script>", {"total_tokens": 12}, capture=captured))
     run_id = submit(client, ticket_id)
     with app.app_context():
         assert service.process_one()
@@ -134,15 +147,14 @@ def test_disable_during_provider_call_discards_answer(app, client, monkeypatch):
     login(client)
     run_id = submit(client, ticket_id)
 
-    def generate(config, evidence):
+    def disable_now():
         saved = db.session.get(AIConfiguration, 1)
         saved.enabled = False
         saved.revision += 1
         service.cancel_active(1)
         db.session.commit()
-        return "Late answer [S1]", {}
 
-    monkeypatch.setattr(service, "generate", generate)
+    monkeypatch.setattr(service, "generate_stream", fake_stream("Late answer [S1]", before=disable_now))
     with app.app_context():
         service.process_one()
         run = db.session.get(AIRun, run_id)
@@ -157,7 +169,7 @@ def test_cancel_during_provider_call_and_role_revocation(app, client, monkeypatc
         user = User.query.filter_by(username="admin").one()
         user.active = False
         db.session.commit()
-    monkeypatch.setattr(service, "generate", lambda *_: pytest.fail("revoked actor reached provider"))
+    monkeypatch.setattr(service, "generate_stream", lambda *_, **__: pytest.fail("revoked actor reached provider"))
     with app.app_context():
         service.process_one()
         assert db.session.get(AIRun, run_id).status == "cancelled"
@@ -198,7 +210,7 @@ def test_expired_worker_not_retried_and_retention_purges(app, client, monkeypatc
         run.status = "running"
         run.started_at = now() - timedelta(minutes=10)
         db.session.commit()
-        monkeypatch.setattr(service, "generate", lambda *_: pytest.fail("expired job was retried"))
+        monkeypatch.setattr(service, "generate_stream", lambda *_, **__: pytest.fail("expired job was retried"))
         service.process_one()
         assert db.session.get(AIRun, run_id).status == "failed"
         run.created_at = now() - timedelta(days=2)
@@ -275,7 +287,7 @@ def test_invalid_citations_fail_closed(app, client, monkeypatch):
     ticket_id = configure(app)
     login(client)
     run_id = submit(client, ticket_id)
-    monkeypatch.setattr(service, "generate", lambda *_: ("Unsupported claim [S999]", {}))
+    monkeypatch.setattr(service, "generate_stream", fake_stream("Unsupported claim [S999]"))
     with app.app_context():
         service.process_one()
         run = db.session.get(AIRun, run_id)
@@ -287,12 +299,11 @@ def test_user_cancellation_discards_inflight_result(app, client, monkeypatch):
     login(client)
     run_id = submit(client, ticket_id)
 
-    def generate(*_):
+    def cancel_now():
         AIRun.query.filter_by(id=run_id).update({"status": "cancelled"})
         db.session.commit()
-        return "Late response [S1]", {}
 
-    monkeypatch.setattr(service, "generate", generate)
+    monkeypatch.setattr(service, "generate_stream", fake_stream("Late response [S1]", before=cancel_now))
     with app.app_context():
         service.process_one()
         assert db.session.get(AIRun, run_id).status == "cancelled"

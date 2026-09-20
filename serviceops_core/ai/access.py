@@ -142,6 +142,11 @@ def keywords(text, limit=6):
     return list(dict.fromkeys(words))[:limit]
 
 
+def identifiers_in(text):
+    """Record identifiers that literally appear in supplied text (and so are grounded)."""
+    return set(_RECORD_ID.findall(text or ""))
+
+
 def knowledge_number(row_id):
     return f"KB{row_id:07d}"
 

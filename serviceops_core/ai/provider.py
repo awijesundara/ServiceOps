@@ -157,3 +157,146 @@ def generate(config, evidence, *, probe=False):
         raise
     except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, AttributeError):
         raise ProviderError("Provider connection failed or returned an invalid response.") from None
+
+
+class StreamCancelled(Exception):
+    """The caller asked to stop (user pressed Stop, AI was disabled, configuration changed)."""
+
+
+class _ThinkSplitter:
+    """Separates reasoning from answer text.
+
+    llama.cpp/DeepSeek-style servers send reasoning as `delta.reasoning_content`, which
+    needs no parsing. Some models/servers instead inline `<think>...</think>` in the
+    content; this handles that too, including a tag split across two chunks."""
+    OPEN, CLOSE = "<think>", "</think>"
+
+    def __init__(self):
+        self.inside = False
+        self.buffer = ""
+
+    def feed(self, reasoning, content):
+        out = [("reasoning", reasoning)] if reasoning else []
+        self.buffer += content or ""
+        while self.buffer:
+            tag = self.CLOSE if self.inside else self.OPEN
+            kind = "reasoning" if self.inside else "content"
+            index = self.buffer.find(tag)
+            if index >= 0:
+                if index:
+                    out.append((kind, self.buffer[:index]))
+                self.buffer = self.buffer[index + len(tag):]
+                self.inside = not self.inside
+                continue
+            # Hold back a possible partial tag at the end of the buffer.
+            hold = 0
+            for size in range(min(len(tag) - 1, len(self.buffer)), 0, -1):
+                if tag.startswith(self.buffer[-size:]):
+                    hold = size
+                    break
+            emit, self.buffer = self.buffer[:len(self.buffer) - hold], self.buffer[len(self.buffer) - hold:]
+            if emit:
+                out.append((kind, emit))
+            break
+        return out
+
+    def flush(self):
+        rest, self.buffer = self.buffer, ""
+        return [("reasoning" if self.inside else "content", rest)] if rest else []
+
+
+def _clean_usage(usage):
+    return {name: value for name, value in (usage or {}).items()
+            if name in {"input_tokens", "output_tokens", "total_tokens", "prompt_tokens", "completion_tokens"}
+            and type(value) is int and value >= 0}
+
+
+def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=None):
+    """Stream a chat completion.
+
+    `on_delta(kind, text)` receives ('reasoning', ...) and ('content', ...) as they
+    arrive; returning False stops the call. Returns (content, reasoning, usage).
+    `thinking` toggles a reasoning model's thinking mode for this request (ignored
+    by models without one). The hosted provider is not streamed: its whole answer is
+    delivered as a single content delta.
+    """
+    url = validate_configuration(config)
+    hostname, infos = resolve_destination(url, config.provider == "self_hosted")
+    try:
+        key = settings_cipher().decrypt(config.key_encrypted.encode()).decode() if config.key_encrypted else ""
+    except Exception:
+        raise ProviderError("Provider credential could not be decrypted.") from None
+    cap = max_tokens or config.max_output_tokens
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = "Bearer " + key
+    limit = provider_timeout()
+    started = time.monotonic()
+    if config.provider == "openai":
+        system = next((m["content"] for m in messages if m["role"] == "system"), "")
+        rest = [m for m in messages if m["role"] != "system"]
+        payload = {"model": config.model, "instructions": system, "input": rest, "max_output_tokens": cap, "store": False}
+    else:
+        payload = {"model": config.model, "messages": messages, "max_tokens": cap, "stream": True,
+                   "stream_options": {"include_usage": True}}
+        if thinking is not None:
+            payload["chat_template_kwargs"] = {"enable_thinking": bool(thinking)}
+    content, reasoning, usage = [], [], {}
+    splitter = _ThinkSplitter()
+
+    def deliver(kind, text):
+        (reasoning if kind == "reasoning" else content).append(text)
+        if on_delta(kind, text) is False:
+            raise StreamCancelled()
+
+    try:
+        with requests.Session() as client, pin_resolved_addresses(hostname, infos):
+            client.trust_env = False
+            with client.post(url, json=payload, headers=headers, timeout=(5, limit), allow_redirects=False,
+                             stream=config.provider != "openai") as response:
+                if response.status_code != 200:
+                    raise ProviderError("Provider rejected the request; check credentials, model and service availability.")
+                if config.provider == "openai":
+                    data = response.json()
+                    if data.get("status") != "completed":
+                        raise ProviderError("Provider response was incomplete; review the output limit or model.")
+                    answer = "\n".join(part["text"] for item in data.get("output", []) if item.get("type") == "message"
+                                       for part in item.get("content", []) if part.get("type") == "output_text")
+                    usage = _clean_usage(data.get("usage"))
+                    deliver("content", answer)
+                else:
+                    received, first_token = 0, None
+                    for raw in response.iter_lines(chunk_size=512):
+                        received += len(raw)
+                        if received > 2_000_000 or time.monotonic() - started > limit:
+                            raise ProviderError("Provider response exceeded its size or time limit.")
+                        if not raw.startswith(b"data:"):
+                            continue
+                        body = raw[5:].strip()
+                        if body == b"[DONE]":
+                            break
+                        event = json.loads(body)
+                        if event.get("usage"):
+                            usage = _clean_usage(event["usage"])
+                        for choice in event.get("choices") or []:
+                            delta = choice.get("delta") or {}
+                            if first_token is None and (delta.get("content") or delta.get("reasoning_content")):
+                                first_token = time.monotonic()
+                            for kind, text in splitter.feed(delta.get("reasoning_content") or delta.get("reasoning") or "",
+                                                            delta.get("content") or ""):
+                                deliver(kind, text)
+                            if choice.get("finish_reason") == "length":
+                                usage["truncated"] = True
+                    for kind, text in splitter.flush():
+                        deliver(kind, text)
+                    if first_token is not None:
+                        usage["first_token_ms"] = int((first_token - started) * 1000)
+    except (ProviderError, StreamCancelled):
+        raise
+    except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, AttributeError):
+        raise ProviderError("Provider connection failed or returned an invalid response.") from None
+    answer = "".join(content)
+    if not answer.strip() or len(answer) > 40000:
+        raise ProviderError("Provider returned no usable text.")
+    usage["duration_ms"] = int((time.monotonic() - started) * 1000)
+    return redact(answer), redact("".join(reasoning)), usage

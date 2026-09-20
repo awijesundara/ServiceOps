@@ -2726,6 +2726,10 @@ class AIConfiguration(db.Model):
     daily_limit = db.Column(db.Integer, nullable=False, default=100)
     max_output_tokens = db.Column(db.Integer, nullable=False, default=1500)
     retention_days = db.Column(db.Integer, nullable=False, default=7)
+    # The chatbot is enabled separately from incident investigation; both need the master switch.
+    chat_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    # Whether the model's own reasoning (when it exposes any) is shown to the user.
+    show_reasoning = db.Column(db.Boolean, nullable=False, default=True)
     updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
 
@@ -2735,7 +2739,7 @@ class AIRun(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=True)  # null for chat turns
     actor_role = db.Column(db.String(30), nullable=False)
     config_revision = db.Column(db.Integer, nullable=False)
     request_key = db.Column(db.String(36), nullable=False)
@@ -2750,7 +2754,50 @@ class AIRun(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
     started_at = db.Column(db.DateTime(timezone=True))
     completed_at = db.Column(db.DateTime(timezone=True))
+    # 'investigation' (a ticket) or 'chat' (one conversation turn).
+    kind = db.Column(db.String(20), nullable=False, default="investigation")
+    conversation_id = db.Column(db.String(36), index=True)
+    message_id = db.Column(db.String(36))  # the assistant AIMessage this run fills in
+    question = db.Column(db.Text, nullable=False, default="")  # chat only; cleared once answered
+    # Progressive output. The worker rewrites these a few times a second; `seq` lets a
+    # polling browser skip the round-trip payload when nothing has changed.
+    partial_text = db.Column(db.Text, nullable=False, default="")
+    reasoning_text = db.Column(db.Text, nullable=False, default="")
+    steps_json = db.Column(db.Text, nullable=False, default="[]")
+    seq = db.Column(db.Integer, nullable=False, default=0)
+    heartbeat_at = db.Column(db.DateTime(timezone=True))
     __table_args__ = (db.UniqueConstraint("tenant_id", "user_id", "request_key", name="uq_ai_run_request"),)
 
 
-__all__ += ["AIConfiguration", "AIRun"]
+class AIConversation(db.Model):
+    """One private chat thread. Owned by exactly one user, in one tenant, under the
+    role that started it; never readable by anyone else, administrators included."""
+    __tablename__ = "ai_conversation"
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    actor_role = db.Column(db.String(30), nullable=False)
+    title = db.Column(db.String(120), nullable=False, default="New chat")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
+
+
+class AIMessage(db.Model):
+    __tablename__ = "ai_message"
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    conversation_id = db.Column(db.String(36), db.ForeignKey("ai_conversation.id", ondelete="CASCADE"),
+                                nullable=False, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    role = db.Column(db.String(12), nullable=False)  # 'user' or 'assistant'
+    content = db.Column(db.Text, nullable=False, default="")
+    reasoning = db.Column(db.Text, nullable=False, default="")
+    # Every source supplied to the model for this answer, so access can be re-checked on replay.
+    sources_json = db.Column(db.Text, nullable=False, default="[]")
+    steps_json = db.Column(db.Text, nullable=False, default="[]")
+    status = db.Column(db.String(20), nullable=False, default="completed")
+    run_id = db.Column(db.String(36))
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+
+
+__all__ += ["AIConfiguration", "AIRun", "AIConversation", "AIMessage"]
