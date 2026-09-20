@@ -28,6 +28,7 @@ infrastructure.
 - CMDB with asset and service-map ownership, NetBox sync
 - Manager / CI-owner / CCB approval chains with reapproval on material change
 - SLAs, escalations, workflow automation, in-app + email + chat notifications
+- Optional AI incident investigations with administrator enable/disable, self-hosted or OpenAI inference, and cited read-only drafts ([setup](https://github.com/awijesundara/serviceops-notes/blob/main/docs/AI_OPERATIONS.md))
 - Threaded ticket comments, @mentions, and follow/watch
 - Analytics dashboard (MTTR, SLA compliance, CSAT, backlog aging) with CSV export
 - Public status page for major incidents and service uptime
@@ -107,5 +108,5 @@ images, SBOM, and provenance.
 
 ServiceOps is an independent implementation, not affiliated with or
 compatible-by-design with any commercial ITSM product. No third-party
-proprietary code, licensed connectors, or hosted AI services are included —
+proprietary code, licensed connectors, or bundled hosted AI services are included —
 integrations (AD, SIEM, chat, etc.) connect to systems you choose and control.

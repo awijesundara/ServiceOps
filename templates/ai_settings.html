@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}AI assistance · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = 'AI assistance' %}{% set admin_parent_title = 'Platform & security' %}{% set admin_parent_url = url_for('admin_section', section='platform-security') %}{% include '_admin_context.html' %}
+<section class="panel">
+<h1>AI assistance</h1>
+<p>Control AI for your organization. Incident assistance gathers evidence and drafts advice; it cannot change tickets or approve work.</p>
+<p><strong>Status: {{ 'Enabled' if config and config.enabled else 'Disabled' }}</strong>. Disabling cancels queued work and discards in-flight results. Data already sent to a provider cannot be recalled.</p>
+{% if ipfs %}<p>AI jobs require PostgreSQL storage. This deployment uses IPFS.</p>{% endif %}
+<form method="post"><input type="hidden" name="action" value="disable"><button class="button">Disable all AI now</button></form>
+<form method="post" class="form-grid">
+<input type="hidden" name="action" value="save">
+<label><span>Enable AI for this organization</span><input type="checkbox" name="enabled" {% if config and config.enabled %}checked{% endif %}></label>
+<label><span>Enable incident investigations</span><input type="checkbox" name="incident_enabled" {% if config and config.incident_enabled %}checked{% endif %}></label>
+<label>Provider<select name="provider" aria-label="Provider"><option value="self_hosted" {% if not config or config.provider == 'self_hosted' %}selected{% endif %}>Self-hosted compatible model</option><option value="openai" {% if config and config.provider == 'openai' %}selected{% endif %}>External: OpenAI</option></select></label>
+<label>Model identifier<input name="model" maxlength="160" value="{{ config.model if config else '' }}" autocomplete="off"></label>
+<label class="wide">Self-hosted endpoint<input name="endpoint" type="url" maxlength="500" placeholder="https://model.internal/v1/chat/completions" value="{{ config.endpoint if config else '' }}"></label>
+<p class="wide muted">The deployment operator must allowlist the self-hosted endpoint. External mode uses OpenAI's fixed HTTPS endpoint. Changing provider or endpoint clears the saved key unless you enter a replacement.</p>
+<label>API key<input type="password" name="api_key" autocomplete="new-password" maxlength="4096" value=""><small>{{ 'A key is stored. Leave blank to retain it.' if config and config.key_encrypted else 'No key stored.' }}</small></label>
+<label><span>Remove saved API key</span><input type="checkbox" name="clear_key"></label>
+<label class="wide"><span>Authorize external processing of selected incident, comment, knowledge and CI content</span><input type="checkbox" name="external_consent" {% if config and config.external_consent %}checked{% endif %}></label>
+<p class="wide muted">External processing is required only for the hosted provider. Common secret patterns are redacted, but free text may still contain sensitive information. No attachments are sent.</p>
+<label>Daily investigations (UTC)<input type="number" name="daily_limit" min="1" max="1000" value="{{ config.daily_limit if config else 100 }}" required></label>
+<label>Maximum output tokens<input type="number" name="max_output_tokens" min="128" max="4096" value="{{ config.max_output_tokens if config else 1500 }}" required></label>
+<label>Result retention (days)<input type="number" name="retention_days" min="1" max="30" value="{{ config.retention_days if config else 7 }}" required></label>
+<div class="wide actions"><button class="primary">Save AI configuration</button></div>
+</form>
+{% if config %}<form method="post"><input type="hidden" name="action" value="test"><p>Test the saved provider using a synthetic prompt. This may incur a small provider charge; no operational records are sent.</p><button class="button">Test saved connection</button></form>{% endif %}
+</section>
+{% endblock %}

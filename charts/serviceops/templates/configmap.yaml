@@ -4,6 +4,7 @@ metadata:
   name: {{ include "serviceops.fullname" . }}-config
   labels: {{- include "serviceops.labels" . | nindent 4 }}
 data:
+  AI_SELF_HOSTED_ENDPOINTS: {{ .Values.ai.selfHostedEndpoints | quote }}
   FEATURE_FLAGS: {{ .Values.featureFlags | toJson | quote }}
   METRICS_ENABLED: "true"
   OTEL_SERVICE_NAME: "serviceops"
