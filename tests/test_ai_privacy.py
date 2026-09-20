@@ -281,3 +281,14 @@ def test_answer_guard_removes_unbacked_identifiers_and_citations():
 
 def test_answer_guard_redacts_secret_shaped_output():
     assert "hunter2" not in access.sanitize_answer("password=hunter2", set(), set())
+
+
+def test_my_tickets_question_lists_only_the_askers_own_tickets(app, world):
+    with app.app_context():
+        mine, _ = payload(world.employee, "Summarise my open tickets")
+        assert "INC0100001" in mine and "CANARY-OTHER-EMPLOYEE-TICKET" not in mine and "INC0100002" not in mine
+        theirs, _ = payload(world.other, "what are my open tickets?")
+        assert "INC0100002" in theirs and "INC0100001" not in theirs
+        # An agent outside every fulfilment group still only gets their own.
+        agent, _ = payload(world.outsider, "show my tickets")
+        assert "INC0100001" not in agent and "INC0100002" not in agent
