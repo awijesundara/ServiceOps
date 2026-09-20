@@ -365,3 +365,18 @@ def process_one():
                                                             synchronize_session=False)
         db.session.commit()
     return True
+
+
+def delete_conversation(conversation):
+    """Remove a conversation and everything derived from it: messages, and any run text still held."""
+    AIRun.query.filter_by(conversation_id=conversation.id).update(
+        {"status": "cancelled", "question": "", "partial_text": "", "reasoning_text": "", "result_text": "",
+         "sources_json": "[]"}, synchronize_session=False)
+    AIMessage.query.filter_by(conversation_id=conversation.id).delete(synchronize_session=False)
+    db.session.delete(conversation)
+
+
+def purge_user_conversations(user_id):
+    """Used when a person is erased: their chat history goes with their personal data."""
+    for conversation in AIConversation.query.filter_by(user_id=user_id).all():
+        delete_conversation(conversation)

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Ask AI · {{ instance_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">AI ASSISTANT</p>
+    <h1>Ask ServiceOps</h1>
+    <p>A private assistant that answers from tickets, knowledge and infrastructure records you already have access to.</p>
+  </div>
+</div>
+{% include '_ai_chat_panel.html' %}
+<noscript><div class="panel"><p>JavaScript is required for the chat assistant.</p></div></noscript>
+{% endblock %}

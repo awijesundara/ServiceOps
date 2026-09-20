@@ -11957,6 +11957,8 @@ def create_app(test_config=None):
         user.auth_version += 1
         user.erased_at = now()
         ExternalIdentity.query.filter_by(user_id=user.id).delete()
+        from serviceops_core.ai import service as ai_service
+        ai_service.purge_user_conversations(user.id)
         audit("erase", placeholder, "Personal data erased (GDPR Art. 17)")
         db.session.commit()
         flash(f"{placeholder}'s personal data has been erased.", "success")

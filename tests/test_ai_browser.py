@@ -115,6 +115,15 @@ def enable_ai(app, **overrides):
         db.session.commit()
 
 
+def clear_chats(app):
+    from app import AIConversation, AIMessage, AIRun
+    with app.app_context():
+        AIRun.query.filter_by(kind="chat").delete()
+        AIMessage.query.delete()
+        AIConversation.query.delete()
+        db.session.commit()
+
+
 def sign_in(page, base):
     page.goto(base + "/login")
     page.locator('input[name="username"]').fill("admin")
@@ -241,3 +250,138 @@ def test_stop_button_ends_a_running_investigation_and_keeps_nothing(ai_browser_s
         assert "Stopped" in page.inner_text("[data-ai-notice]")
         assert page.locator("[data-ai-stop]").is_hidden()
         browser.close()
+
+
+def axe_violations(page):
+    # The production CSP forbids inline script, so serve axe as a same-origin file via request interception.
+    if not getattr(page, "_axe_routed", False):
+        source = open(os.getenv("AXE_CORE_PATH"), encoding="utf-8").read()
+        page.route("**/__axe.js", lambda route: route.fulfill(body=source, content_type="application/javascript"))
+        page._axe_routed = True
+    if not page.evaluate("typeof window.axe !== 'undefined'"):
+        page.add_script_tag(url="/__axe.js")
+    return [(v["id"], v["help"]) for v in page.evaluate(
+        "async () => (await axe.run(document, {runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa']}})).violations")]
+
+
+@pytest.mark.parametrize("width,height", [(1440, 1000), (768, 1024), (390, 844)])
+def test_chat_widget_streams_and_deletes_under_the_real_csp(ai_browser_server, monkeypatch, width, height):
+    from playwright.sync_api import sync_playwright
+    app, base, _ = ai_browser_server
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", ENDPOINT)
+    enable_ai(app)
+    clear_chats(app)
+    seen = []
+    pieces = [("reasoning", "The user asks about the VPN. "), ("content", "The VPN drops after roaming [S1]. "),
+              ("content", "Renew the **certificate**. <img src=x onerror=window.__xss=1>")]
+
+    def slow_stream(config, messages, on_delta, thinking=None):
+        seen.append(thinking)
+        for kind, text in pieces:
+            time.sleep(0.6)
+            if on_delta(kind, text) is False:
+                raise provider.StreamCancelled()
+        return ("".join(t for k, t in pieces if k == "content"), "".join(t for k, t in pieces if k == "reasoning"), {"completion_tokens": 9})
+
+    monkeypatch.setattr(service, "generate_stream", slow_stream)
+    shots = os.getenv("AI_SCREENSHOT_DIR")
+    stop_worker = threading.Event()
+
+    def keep_working():
+        with app.app_context():
+            while not stop_worker.is_set():
+                if not service.process_one():
+                    time.sleep(0.2)
+    threading.Thread(target=keep_working, daemon=True).start()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_context(viewport={"width": width, "height": height}).new_page()
+            problems = []
+            page.on("pageerror", lambda error: problems.append(str(error)))
+            page.on("console", lambda m: problems.append(m.text) if "Content Security Policy" in m.text else None)
+            sign_in(page, base)
+            page.goto(base + "/", wait_until="networkidle")
+            launcher = page.locator("[data-chat-launch]")
+            assert launcher.is_visible()
+            launcher.focus()
+            page.keyboard.press("Enter")
+            panel = page.locator("[data-chat]")
+            wait_for(lambda: panel.is_visible())
+            wait_for(lambda: "Admin" in page.inner_text("[data-chat-scope]"))
+            assert page.evaluate("document.activeElement.id") == "ai-chat-input"
+            assert not axe_violations(page)
+            page.locator("[data-chat-think-wrap]").click()
+            page.locator("#ai-chat-input").fill("Why does my VPN keep dropping?")
+            page.keyboard.press("Enter")
+            wait_for(lambda: page.locator(".ai-turn-user").count() == 1)
+            wait_for(lambda: page.locator("[data-ai-status]").last.inner_text().strip() in ("Working", "Complete"))
+            wait_for(lambda: "The user asks" in (page.locator("[data-ai-reasoning-text]").last.text_content() or ""))
+            if shots and width == 1440:
+                page.screenshot(path=os.path.join(shots, "chat-streaming.png"))
+            wait_for(lambda: page.locator("[data-ai-status]").last.inner_text().strip() == "Complete")
+            answer = page.locator("[data-ai-answer]").last
+            assert "Renew the certificate" in answer.inner_text() and answer.locator("strong").count() == 1
+            assert answer.locator("img, script").count() == 0 and page.evaluate("typeof window.__xss") == "undefined"
+            assert answer.locator("a.ai-cite").count() == 1
+            assert seen == [True]
+            if shots:
+                page.screenshot(path=os.path.join(shots, f"chat-complete-{width}.png"))
+            assert not axe_violations(page)
+            assert page.evaluate("document.documentElement.scrollWidth") <= width + 1
+            # History lists the conversation; deleting it needs a confirming second press.
+            page.locator("[data-chat-history-toggle]").click()
+            wait_for(lambda: page.locator(".ai-history-open").count() == 1)
+            page.get_by_role("button", name="Delete conversation", exact=False).click()
+            page.get_by_role("button", name="Confirm deleting conversation", exact=False).click()
+            wait_for(lambda: page.locator(".ai-history-open").count() == 0)
+            page.locator("[data-chat-new]").click()
+            assert page.locator(".ai-turn").count() == 0
+            page.keyboard.press("Escape")
+            wait_for(lambda: launcher.is_visible())
+            assert page.evaluate("document.activeElement.hasAttribute('data-chat-launch')")
+            assert not problems, problems
+            browser.close()
+    finally:
+        stop_worker.set()
+
+
+def test_full_page_chat_and_stop(ai_browser_server, monkeypatch):
+    from playwright.sync_api import sync_playwright
+    app, base, _ = ai_browser_server
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", ENDPOINT)
+    enable_ai(app)
+    clear_chats(app)
+
+    def slow_stream(config, messages, on_delta, thinking=None):
+        for _ in range(40):
+            time.sleep(0.4)
+            if on_delta("content", "Working on it. ") is False:
+                raise provider.StreamCancelled()
+        return "done", "", {}
+
+    monkeypatch.setattr(service, "generate_stream", slow_stream)
+    stop_worker = threading.Event()
+
+    def keep_working():
+        with app.app_context():
+            while not stop_worker.is_set():
+                if not service.process_one():
+                    time.sleep(0.2)
+    threading.Thread(target=keep_working, daemon=True).start()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+            sign_in(page, base)
+            page.goto(base + "/ai/chat", wait_until="networkidle")
+            assert page.locator("[data-chat-launch]").count() == 0
+            assert not axe_violations(page)
+            page.get_by_role("button", name="How do I reset my VPN access?").click()
+            wait_for(lambda: "Working on it" in page.inner_text("[data-chat-log]"))
+            page.locator("[data-chat-stop]").click()
+            wait_for(lambda: page.locator("[data-chat-send]").is_enabled(), timeout=20)
+            assert "Stopped" in page.inner_text("[data-chat-log]")
+            browser.close()
+    finally:
+        stop_worker.set()

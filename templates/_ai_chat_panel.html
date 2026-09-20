@@ -1,0 +1,77 @@
+{# Chat surface shared by the floating widget (every page) and the full page (/ai/chat). Filled in by ai-chat-panel.js. #}
+{% set full_page = request.endpoint == 'ai.chat_page' %}
+{% if not full_page %}
+<button type="button" class="ai-launcher" data-chat-launch aria-haspopup="dialog" aria-expanded="false" aria-controls="ai-chat-panel">
+  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-8l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+  <span>Ask AI</span>
+</button>
+{% endif %}
+<section class="ai-chat{% if full_page %} is-page{% else %} is-widget{% endif %}" id="ai-chat-panel" data-chat{% if not full_page %} role="dialog" aria-modal="false" aria-labelledby="ai-chat-title" hidden{% endif %}>
+  <header class="ai-chat-head">
+    <div class="ai-chat-titles">
+      <h2 id="ai-chat-title">Ask ServiceOps</h2>
+      <p class="ai-scope" data-chat-scope>Checking your access…</p>
+    </div>
+    <div class="ai-chat-tools">
+      <button type="button" class="ai-tool" data-chat-history-toggle aria-expanded="false" aria-controls="ai-chat-history">History</button>
+      <button type="button" class="ai-tool" data-chat-new>New chat</button>
+      {% if not full_page %}<a class="ai-tool" href="{{ url_for('ai.chat_page') }}">Full page</a><button type="button" class="ai-tool" data-chat-close aria-label="Close chat">✕</button>{% endif %}
+    </div>
+  </header>
+  <div class="ai-chat-body">
+    <nav class="ai-chat-history" id="ai-chat-history" aria-label="Your conversations" data-chat-history{% if not full_page %} hidden{% endif %}>
+      <ul data-chat-history-list></ul>
+      <p class="muted" data-chat-history-empty>No saved conversations yet.</p>
+    </nav>
+    <div class="ai-chat-main">
+      <div class="ai-chat-log" data-chat-log role="log" aria-live="polite" aria-label="Conversation" tabindex="0">
+        <div class="ai-chat-welcome" data-chat-welcome>
+          <h3>What can I help you find?</h3>
+          <p class="muted">Ask about your tickets, published knowledge articles{% if full_page %}, or infrastructure records your role may read{% endif %}. I only see what your account can already open, and I never change anything.</p>
+          <ul class="ai-suggestions">
+            <li><button type="button" data-chat-suggest="How do I reset my VPN access?">How do I reset my VPN access?</button></li>
+            <li><button type="button" data-chat-suggest="What is the status of my open tickets?">What is the status of my open tickets?</button></li>
+            <li><button type="button" data-chat-suggest="Summarise the knowledge articles about email problems">Summarise the knowledge articles about email problems</button></li>
+          </ul>
+        </div>
+      </div>
+      <p class="ai-banner" data-chat-error role="alert" hidden></p>
+      <form class="ai-composer" data-chat-form autocomplete="off">
+        <label class="ai-sr" for="ai-chat-input">Your question</label>
+        <textarea id="ai-chat-input" name="text" rows="2" maxlength="2000" placeholder="Ask a question…" data-chat-input required></textarea>
+        <div class="ai-composer-row">
+          <label class="ai-think" data-chat-think-wrap hidden><input type="checkbox" id="ai-chat-think" data-chat-think> Think step by step <small>(slower)</small></label>
+          <span class="ai-count muted" data-chat-count>0 / 2000</span>
+          <button type="button" class="button" data-chat-stop hidden>Stop</button>
+          <button type="submit" class="primary" data-chat-send>Send</button>
+        </div>
+      </form>
+      <p class="ai-privacy">AI can make mistakes. Answers use only records your account may read, checked again before each reply. Your chats are private to you and stay until you delete them.</p>
+    </div>
+  </div>
+  <template data-chat-user-turn>
+    <div class="ai-turn ai-turn-user"><p class="ai-bubble" data-chat-text></p></div>
+  </template>
+  <template data-chat-ai-turn>
+    <div class="ai-turn ai-turn-ai">
+      <div class="ai-run ai-mini" data-ai-run-slot>
+        <details class="ai-thinking" data-ai-thinking open>
+          <summary>Thinking <span data-ai-elapsed></span></summary>
+          <ol class="ai-steps" data-ai-steps></ol>
+          <div class="ai-reasoning" data-ai-reasoning hidden>
+            <h3>Model reasoning</h3>
+            <pre data-ai-reasoning-text></pre>
+          </div>
+        </details>
+        <article class="ai-answer" data-ai-answer aria-busy="true"></article>
+        <p class="ai-banner" data-ai-notice hidden></p>
+        <ul class="ai-sources ai-sources-inline" data-ai-sources></ul>
+        <div class="ai-actions">
+          <span class="ai-pill" data-ai-status data-state="queued">Waiting for the assistant</span>
+          <button type="button" class="ai-tool" data-ai-copy hidden>Copy</button>
+          <span class="muted" data-ai-stats></span>
+        </div>
+      </div>
+    </div>
+  </template>
+</section>

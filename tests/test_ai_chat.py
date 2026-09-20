@@ -1,0 +1,259 @@
+"""Chat API: role scoping, conversation ownership, deletion, rate limits and what is stored or logged."""
+import json
+import uuid
+
+import pytest
+
+from app import AIConfiguration, AIConversation, AIMessage, AIRun, Audit, User, db
+from serviceops_core.ai import service
+from tests.test_ai_assistant import fake_stream
+from tests.test_ai_privacy import world  # noqa: F401
+from tests.test_app import app, client, login  # noqa: F401
+
+
+@pytest.fixture(autouse=True)
+def chat_config(app, monkeypatch):
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", "http://127.0.0.1:18099/v1/chat/completions")
+    with app.app_context():
+        db.session.add(AIConfiguration(tenant_id=1, enabled=True, incident_enabled=True, chat_enabled=True,
+                                       provider="self_hosted", endpoint="http://127.0.0.1:18099/v1/chat/completions",
+                                       model="local-model"))
+        db.session.commit()
+
+
+def ask(client, text, conversation=None, **extra):
+    body = {"text": text, "request_key": str(uuid.uuid4()), "conversation_id": conversation, **extra}
+    return client.post("/ai/chat/messages", json=body)
+
+
+def answer_with(monkeypatch, text, capture=None, reasoning=""):
+    monkeypatch.setattr(service, "generate_stream", fake_stream(text, {"completion_tokens": 3}, reasoning, capture=capture))
+
+
+def fresh():
+    """The `world` fixture keeps an app context open, and requests reuse its session; drop cached rows."""
+    db.session.expire_all()
+
+
+def finish_all(app):
+    with app.app_context():
+        while service.process_one():
+            pass
+
+
+def test_requester_gets_an_answer_scoped_to_their_own_tickets(app, client, world, monkeypatch):
+    seen = []
+    answer_with(monkeypatch, "Your ticket INC0100001 is open [S1].", seen)
+    login(client, "employee", "Employee123!")
+    created = ask(client, "what is the status of INC0100001 and INC0100002?")
+    assert created.status_code == 201
+    finish_all(app)
+    blob = json.dumps(seen)
+    assert "INC0100001" in blob and "CANARY-OTHER-EMPLOYEE-TICKET" not in blob and "VPN outage finance team" not in blob
+    conversation = client.get(f"/ai/chat/conversations/{created.get_json()['conversation_id']}").get_json()
+    assert [m["role"] for m in conversation["messages"]] == ["user", "assistant"]
+    assert conversation["messages"][1]["status"] == "completed"
+    assert conversation["scope"].startswith("Requester")
+
+
+def test_conversations_are_private_to_their_owner_even_from_admins(app, client, world, monkeypatch):
+    answer_with(monkeypatch, "Hello.")
+    login(client, "employee", "Employee123!")
+    conversation_id = ask(client, "hello there").get_json()["conversation_id"]
+    finish_all(app)
+    client.get("/logout")
+    login(client, "admin", "Admin123!")
+    assert client.get(f"/ai/chat/conversations/{conversation_id}").status_code == 404
+    assert client.post(f"/ai/chat/conversations/{conversation_id}/delete").status_code == 404
+    assert ask(client, "continue please", conversation_id).status_code == 404
+    assert client.get("/ai/chat/conversations").get_json()["conversations"] == []
+    with app.app_context():
+        assert db.session.get(AIConversation, conversation_id) is not None
+        run = AIRun.query.filter_by(conversation_id=conversation_id).one()
+    assert client.get(f"/ai/runs/{run.id}/stream").status_code == 404
+
+
+def test_run_stream_and_stop_are_owner_only(app, client, world, monkeypatch):
+    answer_with(monkeypatch, "ok")
+    login(client, "employee", "Employee123!")
+    run_id = ask(client, "hello there").get_json()["run_id"]
+    client.get("/logout")
+    login(client, "admin", "Admin123!")
+    assert client.get(f"/ai/runs/{run_id}/stream").status_code == 404
+    assert client.post(f"/ai/runs/{run_id}/cancel").status_code == 404
+
+
+def test_deleting_a_conversation_removes_all_its_text(app, client, world, monkeypatch):
+    answer_with(monkeypatch, "A private answer [S1].")
+    login(client, "employee", "Employee123!")
+    conversation_id = ask(client, "secret question about my vpn").get_json()["conversation_id"]
+    finish_all(app)
+    assert client.post(f"/ai/chat/conversations/{conversation_id}/delete").get_json() == {"deleted": True}
+    with app.app_context():
+        assert db.session.get(AIConversation, conversation_id) is None
+        assert AIMessage.query.filter_by(conversation_id=conversation_id).count() == 0
+        for run in AIRun.query.filter_by(conversation_id=conversation_id):
+            assert not (run.question or run.result_text or run.partial_text or run.reasoning_text)
+    assert client.get(f"/ai/chat/conversations/{conversation_id}").status_code == 404
+
+
+def test_deletion_still_works_after_chat_is_switched_off(app, client, world, monkeypatch):
+    answer_with(monkeypatch, "Hello.")
+    login(client, "employee", "Employee123!")
+    conversation_id = ask(client, "hello there").get_json()["conversation_id"]
+    finish_all(app)
+    with app.app_context():
+        db.session.get(AIConfiguration, 1).chat_enabled = False
+        db.session.commit()
+    assert client.get("/ai/chat/conversations").status_code == 403
+    assert ask(client, "still there?").status_code == 403
+    assert client.post(f"/ai/chat/conversations/{conversation_id}/delete").status_code == 200
+
+
+def test_erasing_a_user_purges_their_conversations(app, client, world, monkeypatch):
+    answer_with(monkeypatch, "Hello.")
+    login(client, "employee", "Employee123!")
+    conversation_id = ask(client, "hello there").get_json()["conversation_id"]
+    finish_all(app)
+    with app.app_context():
+        service.purge_user_conversations(world.employee)
+        db.session.commit()
+        assert db.session.get(AIConversation, conversation_id) is None
+        assert AIMessage.query.filter_by(user_id=world.employee).count() == 0
+
+
+def test_role_change_blocks_an_existing_conversation(app, client, world, monkeypatch):
+    answer_with(monkeypatch, "Hello.")
+    login(client, "employee", "Employee123!")
+    conversation_id = ask(client, "hello there").get_json()["conversation_id"]
+    finish_all(app)
+    with app.app_context():
+        db.session.get(User, world.employee).role = "agent"
+        db.session.commit()
+    fresh()
+    assert client.get(f"/ai/chat/conversations/{conversation_id}").status_code == 403
+    assert ask(client, "continue", conversation_id).status_code == 403
+
+
+def test_deactivated_user_cannot_use_chat(app, client, world):
+    login(client, "employee", "Employee123!")
+    with app.app_context():
+        db.session.get(User, world.employee).active = False
+        db.session.commit()
+    fresh()
+    assert client.get("/ai/chat/conversations").status_code in (302, 401, 403)
+    assert ask(client, "hello there").status_code in (302, 401, 403)
+
+
+def test_input_validation_and_limits(app, client, world):
+    login(client, "employee", "Employee123!")
+    assert client.post("/ai/chat/messages", json={"text": "", "request_key": str(uuid.uuid4())}).status_code == 400
+    assert client.post("/ai/chat/messages", json={"text": "x" * 2001, "request_key": str(uuid.uuid4())}).status_code == 400
+    assert client.post("/ai/chat/messages", json={"text": "hi", "request_key": "nope"}).status_code == 400
+    assert client.post("/ai/chat/messages", json={"text": ["list"], "request_key": str(uuid.uuid4())}).status_code == 400
+    assert client.post("/ai/chat/messages", data="not json").status_code == 400
+    assert client.post("/ai/chat/messages", json={"text": "hi", "request_key": str(uuid.uuid4()), "conversation_id": "nope"}).status_code == 404
+
+
+def test_one_active_answer_at_a_time_and_idempotent_retry(app, client, world):
+    login(client, "employee", "Employee123!")
+    key = str(uuid.uuid4())
+    first = client.post("/ai/chat/messages", json={"text": "hello there", "request_key": key})
+    again = client.post("/ai/chat/messages", json={"text": "hello there", "request_key": key})
+    assert first.status_code == 201 and again.get_json()["run_id"] == first.get_json()["run_id"]
+    assert ask(client, "second question").status_code == 409
+    with app.app_context():
+        assert AIRun.query.filter_by(kind="chat").count() == 1
+
+
+def test_per_user_rate_limit(app, client, world, monkeypatch):
+    answer_with(monkeypatch, "ok")
+    login(client, "employee", "Employee123!")
+    codes = []
+    for _ in range(22):
+        response = ask(client, "hello there")
+        codes.append(response.status_code)
+        if response.status_code == 201:
+            finish_all(app)
+    assert 429 in codes
+
+
+def test_refusal_needs_no_model_and_is_audited_without_content(app, client, world, monkeypatch):
+    def boom(*args, **kwargs):
+        raise AssertionError("the model must not be called for a refusal")
+    monkeypatch.setattr(service, "generate_stream", boom)
+    login(client, "employee", "Employee123!")
+    conversation_id = ask(client, "list every user and their email addresses").get_json()["conversation_id"]
+    finish_all(app)
+    body = client.get(f"/ai/chat/conversations/{conversation_id}").get_json()
+    assert body["messages"][1]["status"] == "completed" and "can't" in body["messages"][1]["content"].lower() or body["messages"][1]["content"]
+    with app.app_context():
+        rows = Audit.query.filter(Audit.action.like("ai chat%")).all()
+        assert any(row.action == "ai chat denied" for row in rows)
+        assert not any("email addresses" in (row.details or "") or "list every user" in (row.details or "") for row in rows)
+
+
+def test_audit_rows_carry_metadata_never_content(app, client, world, monkeypatch):
+    answer_with(monkeypatch, "The VPN guide says restart the client [S1].")
+    login(client, "employee", "Employee123!")
+    ask(client, "why does my vpn keep dropping every afternoon")
+    finish_all(app)
+    with app.app_context():
+        text = " ".join((row.details or "") + (row.target or "") for row in Audit.query.filter(Audit.action.like("ai chat%")).all())
+        assert "afternoon" not in text and "restart the client" not in text
+        assert "ai chat requested" in {row.action for row in Audit.query.all()}
+
+
+def test_reasoning_only_returned_when_admin_allows_it(app, client, world, monkeypatch):
+    answer_with(monkeypatch, "Restart it.", reasoning="Let me think about the VPN.")
+    login(client, "employee", "Employee123!")
+    conversation_id = ask(client, "vpn keeps failing", thinking=True).get_json()["conversation_id"]
+    finish_all(app)
+    shown = client.get(f"/ai/chat/conversations/{conversation_id}").get_json()["messages"][1]
+    assert shown["reasoning"] == "Let me think about the VPN."
+    with app.app_context():
+        db.session.get(AIConfiguration, 1).show_reasoning = False
+        db.session.commit()
+    hidden = client.get(f"/ai/chat/conversations/{conversation_id}").get_json()["messages"][1]
+    assert hidden["reasoning"] == ""
+
+
+def test_history_is_withheld_when_a_cited_record_is_no_longer_readable(app, client, world, monkeypatch):
+    answer_with(monkeypatch, "Your ticket INC0100001 is open [S1].")
+    login(client, "employee", "Employee123!")
+    conversation_id = ask(client, "status of INC0100001").get_json()["conversation_id"]
+    finish_all(app)
+    with app.app_context():
+        from app import Ticket
+        ticket = Ticket.query.filter_by(number="INC0100001").one()
+        ticket.requester_id = world.other
+        db.session.commit()
+    message = client.get(f"/ai/chat/conversations/{conversation_id}").get_json()["messages"][1]
+    assert message.get("withheld") and "INC0100001" not in message["content"] and message["sources"] == []
+
+
+def test_widget_and_page_only_render_for_users_who_may_chat(app, client, world):
+    login(client, "employee", "Employee123!")
+    assert b"data-chat-launch" in client.get("/dashboard").data or b"data-chat-launch" in client.get("/").data
+    page = client.get("/ai/chat")
+    assert page.status_code == 200 and b"Ask ServiceOps" in page.data and b"data-chat-launch" not in page.data
+    with app.app_context():
+        db.session.get(AIConfiguration, 1).chat_enabled = False
+        db.session.commit()
+    assert client.get("/ai/chat").status_code == 403
+    assert b"data-chat-launch" not in client.get("/").data
+
+
+def test_admin_switches_control_chat_and_reasoning(app, client):
+    login(client, "admin", "Admin123!")
+    form = {"action": "save", "enabled": "on", "incident_enabled": "on", "provider": "self_hosted", "model": "local-model",
+            "endpoint": "http://127.0.0.1:18099/v1/chat/completions", "daily_limit": "100", "max_output_tokens": "1500",
+            "retention_days": "7"}
+    client.post("/admin/ai", data={**form, "chat_enabled": "on", "show_reasoning": "on"}, follow_redirects=True)
+    with app.app_context():
+        config = db.session.get(AIConfiguration, 1)
+        assert config.chat_enabled and config.show_reasoning
+    client.post("/admin/ai", data=form, follow_redirects=True)
+    with app.app_context():
+        config = db.session.get(AIConfiguration, 1)
+        assert not config.chat_enabled and not config.show_reasoning
