@@ -12,6 +12,8 @@
 <input type="hidden" name="action" value="save">
 <label><span>Enable AI for this organization</span><input type="checkbox" name="enabled" {% if config and config.enabled %}checked{% endif %}></label>
 <label><span>Enable incident investigations</span><input type="checkbox" name="incident_enabled" {% if config and config.incident_enabled %}checked{% endif %}></label>
+<label><span>Enable the chat assistant</span><input type="checkbox" name="chat_enabled" {% if config and config.chat_enabled %}checked{% endif %}><small>Every signed-in user, limited to what their role can already read. Never people, audit or client data.</small></label>
+<label><span>Show model reasoning</span><input type="checkbox" name="show_reasoning" {% if config and config.show_reasoning %}checked{% endif %}><small>Displays a reasoning model's thinking to the person who asked. Off keeps only the activity steps.</small></label>
 <label>Provider<select name="provider" aria-label="Provider"><option value="self_hosted" {% if not config or config.provider == 'self_hosted' %}selected{% endif %}>Self-hosted compatible model</option><option value="openai" {% if config and config.provider == 'openai' %}selected{% endif %}>External: OpenAI</option></select></label>
 <label>Model identifier<input name="model" maxlength="160" value="{{ config.model if config else '' }}" autocomplete="off"></label>
 <label class="wide">Self-hosted endpoint<input name="endpoint" type="url" maxlength="500" placeholder="https://model.internal/v1/chat/completions" value="{{ config.endpoint if config else '' }}"></label>

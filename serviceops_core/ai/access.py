@@ -92,7 +92,7 @@ _DENY_PATTERNS = (
     ("people", re.compile(
         # A person's name is capitalized ("email of Tanaka"); "phone number for the service desk" is fine.
         r"\b(email|e-mail|phone|mobile|home address|salary|contact (details|info(rmation)?))\b.{0,30}\b(of|for)\s+(?-i:[A-Z][a-z]+)"
-        r"|\b(list|show|give me|dump|export)\b.{0,20}\b(all\s+)?(users|employees|staff|people|accounts)\b", re.I | re.S)),
+        r"|\b(list|show|give me|dump|export)\b.{0,20}\b((all|every|each)\s+(users?|employees?|staff|people|accounts?)|users|employees|people|accounts)\b", re.I | re.S)),
     ("audit", re.compile(r"\baudit (log|trail)s?\b|\blogin history\b|\bwho (logged|signed) in\b|\bfailed log-?ins?\b", re.I)),
     ("secrets", re.compile(
         r"\b(what('s| is)|tell me|reveal|share|give me|show me)\s+(the\s+|our\s+|their\s+|his\s+|her\s+|\w+'s\s+)?"
