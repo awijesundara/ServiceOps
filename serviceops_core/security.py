@@ -65,6 +65,29 @@ def redact(text):
     return text
 
 
+EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+# Deliberately narrow so dates (2026-09-20), ticket numbers (INC0000123), versions
+# and IP addresses are left alone: an international number with a leading "+", or a
+# domestic number that starts with 0 and is grouped by spaces or hyphens
+# (03-1234-5678, 090 1234 5678).
+PHONE_PATTERNS = (
+    re.compile(r"(?<![\w+])\+\d[\d\s().-]{7,}\d(?!\w)"),
+    re.compile(r"(?<![\w.-])0\d{1,3}[\s-]\d{3,4}[\s-]\d{3,4}(?![\w-])"),
+)
+
+
+def mask_pii(text):
+    """Mask e-mail addresses and phone numbers in free text. Used on ticket and
+    comment text before it is shown to a model: other people's contact details
+    are never needed to answer a question about a record. Safe on any string."""
+    if text is None:
+        return text
+    text = EMAIL_PATTERN.sub("[email removed]", str(text))
+    for pattern in PHONE_PATTERNS:
+        text = pattern.sub("[phone removed]", text)
+    return text
+
+
 class RedactingFilter(logging.Filter):
     """A `logging.Filter` that redacts secret-shaped values out of the
     formatted log record (message plus any %-args), so any logger this is
