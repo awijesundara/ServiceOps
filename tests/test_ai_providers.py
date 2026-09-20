@@ -195,7 +195,10 @@ def test_detect_route_is_admin_only_and_never_echoes_the_key(app, client, server
     client.get("/logout")
     login(client)
     response = client.post("/admin/ai/models", json=body)
-    assert response.status_code == 200 and response.get_json() == {"models": ["qwen3-8b"], "context": {}}
+    assert response.status_code == 200
+    assert response.json["models"] == ["qwen3-8b"] and response.json["context"] == {}
+    assert response.json["profiles"]["qwen3-8b"]["context_source"] == "unknown"
+    assert response.json["discovery_token"]
     assert "typed-secret" not in response.get_data(as_text=True)
     assert item.seen[0][2]["Authorization"] == "Bearer typed-secret"
     assert client.post("/admin/ai/models", json={**body, "provider": "nope"}).status_code == 400

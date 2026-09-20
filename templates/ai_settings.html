@@ -10,6 +10,7 @@
 <form method="post"><input type="hidden" name="action" value="disable"><button class="button">Disable all AI now</button></form>
 <form method="post" class="form-grid">
 <input type="hidden" name="action" value="save">
+<input type="hidden" name="discovery_token" value="" data-ai-discovery-token>
 <label><span>Enable AI for this organization</span><input type="checkbox" name="enabled" {% if config and config.enabled %}checked{% endif %}></label>
 <label><span>Enable incident investigations</span><input type="checkbox" name="incident_enabled" {% if config and config.incident_enabled %}checked{% endif %}></label>
 <label><span>Enable the chat assistant</span><input type="checkbox" name="chat_enabled" {% if config and config.chat_enabled %}checked{% endif %}><small>Every signed-in user, limited to what their role can already read. Never people, audit or client data.</small></label>
@@ -41,12 +42,13 @@
 <button type="button" class="button" id="ai-detect" data-ai-detect>Connect and detect models</button>
 <span class="muted" id="ai-detect-status" role="status" aria-live="polite" data-ai-detect-status>Enter the address and key, then detect the models the server offers.</span>
 </div>
-<label>Model identifier<input name="model" id="ai-model" maxlength="160" list="ai-models" value="{{ config.model if config else '' }}" autocomplete="off" data-ai-model><small>Detected automatically; you can also type it.</small></label>
+<label>Model identifier<input name="model" id="ai-model" maxlength="160" list="ai-models" value="{{ config.model if config else '' }}" autocomplete="off" data-ai-model><small>A single model is selected automatically. If several are listed, choose one. You can also type an identifier.</small></label>
 <datalist id="ai-models" data-ai-models></datalist>
 <p class="wide muted">A server on your network must be allowlisted by the deployment operator (<code>AI_SELF_HOSTED_ENDPOINTS</code>; a whole server such as <code>http://192.168.68.68:*</code> is enough). Hosted services need HTTPS, a key and the external-processing authorization below. Changing provider or address clears the saved key unless you enter a replacement.</p>
 <label><span>Remove saved API key</span><input type="checkbox" name="clear_key"></label>
 <label class="wide"><span>Authorize external processing of selected incident, comment, knowledge and CI content</span><input type="checkbox" name="external_consent" {% if config and config.external_consent %}checked{% endif %}></label>
 <p class="wide muted">External processing is required for every hosted provider (OpenAI, Anthropic and hosted OpenAI-compatible services). Common secret patterns are redacted, but free text may still contain sensitive information. No attachments are sent.</p>
+<p class="wide muted">Reported limits are used to shorten evidence and older chat turns before generation. Unreported limits use a conservative budget. Model-list access does not verify inference, streaming, tools, GPU capacity or pricing; use Test saved connection for a synthetic inference check.</p>
 <label>Daily investigations (UTC)<input type="number" name="daily_limit" min="1" max="1000" value="{{ config.daily_limit if config else 100 }}" required></label>
 <label>Maximum output tokens<input type="number" name="max_output_tokens" min="128" max="4096" value="{{ config.max_output_tokens if config else 1500 }}" required></label>
 <label>Result retention (days)<input type="number" name="retention_days" min="1" max="30" value="{{ config.retention_days if config else 7 }}" required></label>
