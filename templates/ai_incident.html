@@ -1,14 +1,45 @@
 {% extends "base.html" %}
 {% block title %}Investigate {{ ticket.number }} · {{ instance_name }}{% endblock %}
 {% block content %}
-<section class="panel">
-<a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">Back to {{ ticket.number }}</a>
-<h1>Investigate {{ ticket.number }} with AI</h1>
-<p>{{ ticket.title }}</p>
-<p>The assistant uses this incident, recent comments, matching published knowledge, related resolved incidents and permitted configuration items. It drafts advice for your review and makes no operational changes.</p>
-<p>Processing: <strong>{{ 'External — OpenAI' if config.provider == 'openai' else 'Self-hosted' }}</strong>. Model: {{ config.model }}.</p>
-<form method="post"><input type="hidden" name="request_key" value="{{ request_key }}"><button class="primary">Start investigation</button></form>
-<h2>Your recent investigations</h2>
-<ul>{% for run in runs %}<li><a href="{{ url_for('ai.result', run_id=run.id) }}">{{ run.created_at|usertime }} — {{ run.status }}</a></li>{% else %}<li>No investigations yet.</li>{% endfor %}</ul>
+<section class="ai-run">
+  <div class="ai-run-head">
+    <div>
+      <p class="eyebrow">AI INVESTIGATION</p>
+      <h1>Investigate {{ ticket.number }} with AI</h1>
+      <p class="muted"><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">Back to {{ ticket.number }}</a> · {{ ticket.title }}</p>
+    </div>
+    <span class="ai-pill" data-state="completed">{{ 'External (OpenAI)' if config.provider == 'openai' else 'Self-hosted' }} · {{ config.model }}</span>
+  </div>
+  <div class="ai-layout">
+    <div class="ai-main">
+      <div class="panel">
+        <h2>What the assistant will do</h2>
+        <ul class="ai-list">
+          <li>Read this incident and its recent comments.</li>
+          <li>Find matching published knowledge and related resolved incidents.</li>
+          <li>Look at related configuration items your role may read.</li>
+          <li>Write a summary, likely causes, missing information and safe next steps, citing each source.</li>
+        </ul>
+        <p class="muted">You will see each step as it happens{% if config.show_reasoning %}, along with the model's own reasoning when it provides one{% endif %}. It drafts advice for your review and makes no operational changes.</p>
+        <form method="post" class="ai-actions"><input type="hidden" name="request_key" value="{{ request_key }}"><button class="primary">Start investigation</button></form>
+      </div>
+      <div class="panel">
+        <h2>Your recent investigations</h2>
+        <table>
+          <thead><tr><th>Started</th><th>Model</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+          {% for run in runs %}<tr><td>{{ run.created_at|usertime }}</td><td>{{ run.model }}</td><td><span class="ai-pill" data-state="{{ run.status }}">{{ run.status|capitalize }}</span></td><td><a href="{{ url_for('ai.result', run_id=run.id) }}">Open</a></td></tr>
+          {% else %}<tr><td colspan="4" class="empty">No investigations yet.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <aside class="ai-side">
+      <div class="panel">
+        <h2>Privacy</h2>
+        <p class="ai-privacy">The assistant only receives records <strong>you</strong> are allowed to see. It has no access to user accounts, audit logs or attachments, and it cannot change anything.</p>
+      </div>
+    </aside>
+  </div>
 </section>
 {% endblock %}
