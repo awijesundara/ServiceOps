@@ -8,7 +8,7 @@ from flask import Blueprint, abort, flash, jsonify, redirect, render_template, r
 from flask_login import current_user, login_required
 
 from serviceops_models import AIConfiguration, AIConversation, AIMessage, AIRun, db, now, settings_cipher
-from serviceops_core.ai import access, service
+from serviceops_core.ai import access, service, discovery_tokens
 from serviceops_core.ai.provider import (PROVIDERS, ProviderError, decrypt_key, generate, list_models, normalize_endpoint,
                                          validate_configuration)
 from serviceops_core.storage import ipfs_enabled
@@ -43,7 +43,7 @@ def register(app):
                     db.session.commit()
                     abort(429)
                 snapshot = SimpleNamespace(**{name: getattr(config, name) for name in
-                    ("provider", "model", "endpoint", "key_encrypted", "external_consent", "max_output_tokens")})
+                    ("provider", "model", "endpoint", "key_encrypted", "external_consent", "max_output_tokens", "capabilities_json")})
                 audit("ai connection test", "AI configuration", "Synthetic prompt only; no operational records")
                 db.session.commit()
                 try:
@@ -58,6 +58,7 @@ def register(app):
                 config = AIConfiguration(tenant_id=current_user.tenant_id, revision=0, key_encrypted="")
                 db.session.add(config)
             old_destination = (config.provider, config.endpoint)
+            old_model, old_key = config.model, config.key_encrypted
             try:
                 config.provider = request.form.get("provider", "self_hosted")
                 config.endpoint = normalize_endpoint(request.form.get("endpoint", "")) if config.provider in {
@@ -83,6 +84,12 @@ def register(app):
                     raise ProviderError("Invalid API key.")
                 if key:
                     config.key_encrypted = settings_cipher().encrypt(key.encode()).decode()
+                token = request.form.get("discovery_token", "")
+                if token:
+                    profile = discovery_tokens.verify(token, config, decrypt_key(config), current_user.tenant_id, current_user.id)
+                    config.capabilities_json = json.dumps(profile)
+                elif old_destination != (config.provider, config.endpoint) or old_model != config.model or old_key != config.key_encrypted:
+                    config.capabilities_json = "{}"
                 if config.enabled:
                     if ipfs_enabled():
                         raise ProviderError("AI jobs require PostgreSQL storage; IPFS mode is not supported.")
@@ -109,6 +116,8 @@ def register(app):
         from app import route_rate_limit
         service.actor(current_user)
         data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return no_store({"error": "Expected a JSON object."}, 400)
         provider = str(data.get("provider", "self_hosted"))
         if provider not in PROVIDERS:
             return no_store({"error": "Choose a supported provider."}, 400)
@@ -120,22 +129,23 @@ def register(app):
         typed_key = str(data.get("api_key", "")).strip()
         if len(typed_key) > 4096 or any(char in typed_key for char in "\r\n"):
             return no_store({"error": "Invalid API key."}, 400)
-        candidate = SimpleNamespace(provider=provider, endpoint=endpoint, model="", key_encrypted="",
-                                    external_consent=bool(data.get("external_consent")), max_output_tokens=64)
+        candidate = SimpleNamespace(provider=provider, endpoint=endpoint, model=str(data.get("model", ""))[:160], key_encrypted="",
+                                    external_consent=data.get("external_consent") is True, max_output_tokens=64)
         try:
             candidate.endpoint = normalize_endpoint(endpoint) if provider in {"self_hosted", "openai_compatible"} else ""
             if typed_key:
                 key = typed_key
                 candidate.key_encrypted = "typed"  # presence marker only; the key itself is passed directly
-            elif saved and saved.key_encrypted and (saved.provider, saved.endpoint) == (provider, candidate.endpoint):
+            elif not data.get("clear_key") and saved and saved.key_encrypted and (saved.provider, saved.endpoint) == (provider, candidate.endpoint):
                 key, candidate.key_encrypted = decrypt_key(saved), saved.key_encrypted
             else:
                 key = ""
             audit("ai model discovery", "AI configuration", f"provider={provider}")
             db.session.commit()
-            context = {}
-            models = list_models(candidate, key, context)
-            return no_store({"models": models, "context": context})
+            context, profiles = {}, {}
+            models = list_models(candidate, key, context, profiles)
+            token = discovery_tokens.issue(candidate, key, profiles, current_user.tenant_id, current_user.id)
+            return no_store({"models": models, "context": context, "profiles": profiles, "discovery_token": token})
         except ProviderError as error:
             return no_store({"error": str(error)}, 400)
 

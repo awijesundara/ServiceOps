@@ -129,6 +129,7 @@ def test_thinking_mode_is_requested_only_when_asked(app, sse, monkeypatch):
     server, config = sse([chunk(content="ok [S1]"), chunk(finish="stop")])
     with app.app_context():
         provider.generate_stream(config, MESSAGES, lambda *_: True)
+        config.capabilities_json = json.dumps({"model": config.model, "thinking_control": "chat_template"})
         provider.generate_stream(config, MESSAGES, lambda *_: True, thinking=False)
         provider.generate_stream(config, MESSAGES, lambda *_: True, thinking=True)
     assert "chat_template_kwargs" not in seen[0]
@@ -334,4 +335,4 @@ def test_thinking_gets_extra_token_budget_and_plain_requests_do_not(app, client,
     submit(client, ticket_id)
     with app.app_context():
         service.process_one()
-    assert seen == [(True, 2500), (False, 1000)]
+    assert seen == [(True, 1024), (False, 1000)]  # Unknown context uses the conservative 4096 ceiling.

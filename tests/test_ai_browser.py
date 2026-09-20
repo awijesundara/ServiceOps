@@ -409,9 +409,10 @@ def test_admin_detects_models_from_an_address_and_key_in_the_browser(ai_browser_
             page.get_by_label("Server address").fill(model_server.origin)
             page.locator("#ai-key").fill("typed-key-123")
             page.get_by_role("button", name="Connect and detect models").click()
-            wait_for(lambda: "Connected" in page.inner_text("[data-ai-detect-status]"))
+            wait_for(lambda: "Model discovery succeeded" in page.inner_text("[data-ai-detect-status]"))
             assert page.get_by_label("Model identifier").input_value() == "Qwen/Qwen3-8B-GGUF:Q4_K_M"
-            assert "Context window: 4096" in page.inner_text("[data-ai-detect-status]") and "-c 8192" in page.inner_text("[data-ai-detect-status]")
+            assert "Context: 4096" in page.inner_text("[data-ai-detect-status]")
+            assert "not yet verified" in page.inner_text("[data-ai-detect-status]")
             assert model_server.seen[0][2]["Authorization"] == "Bearer typed-key-123"
             # Hosted providers do not need an address.
             page.get_by_label("Provider", exact=True).select_option("anthropic")

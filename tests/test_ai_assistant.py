@@ -269,7 +269,8 @@ def test_real_http_provider_contract(app, monkeypatch, mode):
         with app.app_context():
             from serviceops_models import settings_cipher
             config = SimpleNamespace(provider=mode, endpoint=url, model="contract-test", external_consent=True,
-                                     key_encrypted=settings_cipher().encrypt(b"ephemeral-test-key").decode(), max_output_tokens=1500)
+                                     key_encrypted=settings_cipher().encrypt(b"ephemeral-test-key").decode(), max_output_tokens=1500,
+                                     capabilities_json=json.dumps({"model": "contract-test", "context_tokens": 8192}))
             answer, usage = provider.generate(config, [{"source": "S1", "text": "VPN failure"}])
         assert answer == "Check VPN [S1]" and usage["total_tokens"] == 9
         if mode == "openai":

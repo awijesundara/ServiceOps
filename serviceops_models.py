@@ -2726,6 +2726,7 @@ class AIConfiguration(db.Model):
     daily_limit = db.Column(db.Integer, nullable=False, default=100)
     max_output_tokens = db.Column(db.Integer, nullable=False, default=1500)
     retention_days = db.Column(db.Integer, nullable=False, default=7)
+    capabilities_json = db.Column(db.Text, nullable=False, default="{}")
     # The chatbot is enabled separately from incident investigation; both need the master switch.
     chat_enabled = db.Column(db.Boolean, nullable=False, default=False)
     # Whether the model's own reasoning (when it exposes any) is shown to the user.
