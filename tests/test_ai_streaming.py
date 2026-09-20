@@ -199,7 +199,7 @@ def test_worker_publishes_steps_reasoning_and_partial_text_while_running(app, cl
     assert done["reasoning"] == "Checking the VPN evidence. "
     assert [s["state"] for s in done["steps"]] == ["done"] * len(done["steps"])
     assert done["steps"][-1]["label"] == "Checked your access again"
-    assert done["sources"][0]["url"].startswith("/tickets/") and done["usage"]["total_tokens"] == 7
+    assert done["sources"][0]["url"].startswith("/ticket/") and done["usage"]["total_tokens"] == 7
     with app.app_context():
         run = db.session.get(AIRun, run_id)
         assert run.partial_text == "" and run.question == ""
