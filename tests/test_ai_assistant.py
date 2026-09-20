@@ -297,3 +297,59 @@ def test_user_cancellation_discards_inflight_result(app, client, monkeypatch):
         service.process_one()
         assert db.session.get(AIRun, run_id).status == "cancelled"
         assert not db.session.get(AIRun, run_id).result_text
+
+
+@pytest.mark.parametrize("raw,expected", [
+    (None, 60), ("", 60), ("240", 240), ("5", 10), ("0", 10), ("-3", 10), ("9999", 270), ("abc", 60), (" 120 ", 120),
+])
+def test_provider_timeout_is_configurable_and_clamped(monkeypatch, raw, expected):
+    if raw is None:
+        monkeypatch.delenv("AI_PROVIDER_TIMEOUT_SECONDS", raising=False)
+    else:
+        monkeypatch.setenv("AI_PROVIDER_TIMEOUT_SECONDS", raw)
+    assert provider.provider_timeout() == expected
+
+
+def test_slow_self_hosted_model_needs_a_long_enough_timeout(app, monkeypatch):
+    """A CPU-hosted model can take minutes; a too-short limit must fail closed and a longer one must succeed."""
+    import threading
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class SlowHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            time.sleep(3)
+            body = json.dumps({"choices": [{"finish_reason": "stop", "message": {"content": "Slow but grounded [S1]"}}],
+                               "usage": {"total_tokens": 5}}).encode()
+            try:
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except OSError:
+                pass  # the client gave up first, which is exactly the failure case under test
+
+        def log_message(self, *_):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), SlowHandler)
+    url = f"http://127.0.0.1:{server.server_port}/v1/chat/completions"
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", url)
+    monkeypatch.setattr(provider, "MIN_TIMEOUT_SECONDS", 1)
+    config = SimpleNamespace(provider="self_hosted", endpoint=url, model="slow-test", external_consent=False,
+                             key_encrypted="", max_output_tokens=256)
+    try:
+        with app.app_context():
+            monkeypatch.setenv("AI_PROVIDER_TIMEOUT_SECONDS", "1")
+            with pytest.raises(provider.ProviderError):
+                provider.generate(config, [{"source": "S1", "text": "VPN failure"}])
+            monkeypatch.setenv("AI_PROVIDER_TIMEOUT_SECONDS", "15")
+            answer, usage = provider.generate(config, [{"source": "S1", "text": "VPN failure"}])
+        assert answer == "Slow but grounded [S1]" and usage["duration_ms"] >= 2500
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
