@@ -18536,6 +18536,8 @@ def create_app(test_config=None):
             daemon=True,
         ).start()
 
+    from serviceops_core.ai.routes import register as register_ai
+    register_ai(app)
     return app
 
 

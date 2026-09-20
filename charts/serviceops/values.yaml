@@ -2,7 +2,7 @@ replicaCount: 2
 
 image:
   repository: serviceops
-  tag: "1.91.1"
+  tag: "1.92.0"
   digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
   # "digest": pull by repo@digest (default). Requires the registry to serve
   # manifests by digest reference -- true for GHCR, not for every registry
@@ -180,3 +180,10 @@ topologySpreadConstraints:
     labelSelector:
       matchLabels:
         app.kubernetes.io/name: serviceops
+
+ai:
+  # Worker availability does not enable AI. Tenant administrators control AI usage.
+  workerEnabled: true
+  selfHostedEndpoints: ""
+  # Narrow destination/port rules for private model endpoints (web probes + AI worker).
+  extraEgress: []

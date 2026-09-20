@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}AI investigation · {{ ticket.number }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<section class="panel">
+<a href="{{ url_for('ai.incident', ticket_id=ticket.id) }}">Back to investigations</a>
+<h1>AI investigation · {{ ticket.number }}</h1>
+<p role="status">Status: <strong>{{ run.status }}</strong></p>
+{% if run.status in ['queued', 'running'] %}
+<p>This investigation runs in the background. Refresh to check its progress.</p>
+<a class="button" href="{{ url_for('ai.result', run_id=run.id) }}">Refresh status</a>
+<form method="post"><button class="button">Cancel investigation</button></form>
+{% elif run.status == 'completed' %}
+<p><strong>AI-generated draft.</strong> Verify the cited evidence before acting. Possible causes are hypotheses; no ticket changes have been made.</p>
+<div class="ai-result-text">{{ run.result_text }}</div>
+<h2>Evidence supplied to the assistant</h2>
+<ul>{% for source in sources %}<li>[{{ source.id }}] <a href="{{ source.url }}">{{ source.title }}</a></li>{% endfor %}</ul>
+{% elif run.status == 'failed' %}<p>The investigation could not be completed. Ask an administrator to test the provider connection, or start a new investigation. Reference: {{ run.error_code }}.</p>
+{% else %}<p>The investigation was cancelled. No result was published.</p>{% endif %}
+</section>
+{% endblock %}
