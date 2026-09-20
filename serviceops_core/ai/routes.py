@@ -4,11 +4,11 @@ import uuid
 from datetime import timedelta
 from types import SimpleNamespace
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from serviceops_models import AIConfiguration, AIRun, db, now, settings_cipher
-from serviceops_core.ai import service
+from serviceops_models import AIConfiguration, AIMessage, AIRun, db, now, settings_cipher
+from serviceops_core.ai import access, service
 from serviceops_core.ai.provider import ProviderError, generate, validate_configuration
 from serviceops_core.storage import ipfs_enabled
 
@@ -160,6 +160,78 @@ def register(app):
                              url_for("knowledge_detail", article_id=source["record_id"]) if source["kind"] == "knowledge" else
                              url_for("ci_edit", ci_id=source["record_id"]))
         return render_template("ai_result.html", run=run, ticket=ticket, sources=sources)
+
+    def authorized_run(run_id):
+        """Load a run only for the person who started it, under the role they started it with."""
+        run = AIRun.query.filter_by(id=run_id, tenant_id=current_user.tenant_id, user_id=current_user.id).first_or_404()
+        if run.kind == "chat":
+            try:
+                scope = access.build_scope(current_user)
+            except access.ScopeError:
+                abort(403)
+            config = service.enabled_config(scope.tenant_id, feature="chat")
+            if scope.role != run.actor_role:
+                abort(403, description="Switch to the role used for this conversation.")
+            return run, config, scope
+        identity = service.actor(current_user)
+        config = service.enabled_config(identity.tenant_id)
+        service.visible_incident(identity, run.ticket_id)
+        if identity.role != run.actor_role:
+            abort(403, description="Switch to the role used to request this investigation.")
+        return run, config, identity
+
+    def source_links(sources):
+        for source in sources:
+            source["url"] = (url_for("ticket_detail", ticket_id=source["record_id"]) if source["kind"] == "ticket" else
+                             url_for("knowledge_detail", article_id=source["record_id"]) if source["kind"] == "knowledge" else
+                             url_for("ci_edit", ci_id=source["record_id"]))
+        return sources
+
+    def no_store(payload, status=200):
+        response = jsonify(payload)
+        response.status_code = status
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @blueprint.route("/ai/runs/<run_id>/stream")
+    @login_required
+    def stream(run_id):
+        """Progressive output for a run. Short polling, not SSE: it works unchanged through the
+        Cloudflare tunnel and never holds a web worker."""
+        run, config, who = authorized_run(run_id)
+        after = request.args.get("after", type=int, default=-1)
+        body = {"id": run.id, "status": run.status, "seq": run.seq}
+        if after == run.seq and run.status in service.ACTIVE:
+            return no_store({**body, "changed": False})
+        finished = run.status == "completed"
+        sources = []
+        if finished:
+            sources = json.loads(run.sources_json)
+            ok = (access.sources_still_accessible(who, sources) if run.kind == "chat"
+                  else service.sources_accessible(who, sources))
+            if not ok:
+                abort(403, description="You no longer have access to all evidence used by this answer.")
+            sources = source_links(sources)
+        problem = {"failed": "The assistant could not complete this request.",
+                   "cancelled": "Stopped. No answer was kept."}.get(run.status, "")
+        return no_store({**body, "changed": True, "text": run.result_text if finished else run.partial_text,
+                         "reasoning": run.reasoning_text if config.show_reasoning else "",
+                         "steps": json.loads(run.steps_json or "[]"), "sources": sources, "error": problem,
+                         "usage": json.loads(run.usage_json or "{}") if finished else {}})
+
+    @blueprint.route("/ai/runs/<run_id>/cancel", methods=["POST"])
+    @login_required
+    def cancel(run_id):
+        run, _, _ = authorized_run(run_id)
+        AIRun.query.filter(AIRun.id == run.id, AIRun.status.in_(service.ACTIVE)).update(
+            {"status": "cancelled", "completed_at": now(), "partial_text": "", "reasoning_text": "", "question": "",
+             "seq": AIRun.seq + 1}, synchronize_session=False)
+        if run.message_id:
+            AIMessage.query.filter(AIMessage.id == run.message_id, AIMessage.status == "pending").update(
+                {"status": "cancelled", "content": "", "reasoning": ""}, synchronize_session=False)
+        audit("ai cancelled", run.id, "Requested by user")
+        db.session.commit()
+        return no_store({"id": run.id, "status": "cancelled"})
 
     app.register_blueprint(blueprint)
     app.jinja_env.globals["ai_available"] = service.available
