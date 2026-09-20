@@ -313,3 +313,25 @@ def test_only_the_owner_can_poll_or_stop_a_run(app, client, monkeypatch):
     assert other.post(f"/ai/runs/{run_id}/cancel").status_code in (403, 404)
     with app.app_context():
         assert db.session.get(AIRun, run_id).status == "queued"
+
+
+def test_thinking_gets_extra_token_budget_and_plain_requests_do_not(app, client, monkeypatch):
+    seen = []
+
+    def spy(config, messages, on_delta, thinking=None):
+        seen.append((thinking, config.max_output_tokens))
+        on_delta("content", "Restart the client [S1].")
+        return "Restart the client [S1].", "", {}
+
+    ticket_id = configure(app, max_output_tokens=1000, show_reasoning=True)
+    monkeypatch.setattr(service, "generate_stream", spy)
+    login(client)
+    submit(client, ticket_id)
+    with app.app_context():
+        service.process_one()
+        db.session.get(AIConfiguration, 1).show_reasoning = False
+        db.session.commit()
+    submit(client, ticket_id)
+    with app.app_context():
+        service.process_one()
+    assert seen == [(True, 2500), (False, 1000)]
