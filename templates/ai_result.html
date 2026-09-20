@@ -1,20 +1,54 @@
 {% extends "base.html" %}
 {% block title %}AI investigation · {{ ticket.number }} · {{ instance_name }}{% endblock %}
 {% block content %}
-<section class="panel">
-<a href="{{ url_for('ai.incident', ticket_id=ticket.id) }}">Back to investigations</a>
-<h1>AI investigation · {{ ticket.number }}</h1>
-<p role="status">Status: <strong>{{ run.status }}</strong></p>
-{% if run.status in ['queued', 'running'] %}
-<p>This investigation runs in the background. Refresh to check its progress.</p>
-<a class="button" href="{{ url_for('ai.result', run_id=run.id) }}">Refresh status</a>
-<form method="post"><button class="button">Cancel investigation</button></form>
-{% elif run.status == 'completed' %}
-<p><strong>AI-generated draft.</strong> Verify the cited evidence before acting. Possible causes are hypotheses; no ticket changes have been made.</p>
-<div class="ai-result-text">{{ run.result_text }}</div>
-<h2>Evidence supplied to the assistant</h2>
-<ul>{% for source in sources %}<li>[{{ source.id }}] <a href="{{ source.url }}">{{ source.title }}</a></li>{% endfor %}</ul>
-{% elif run.status == 'failed' %}<p>The investigation could not be completed. Ask an administrator to test the provider connection, or start a new investigation. Reference: {{ run.error_code }}.</p>
-{% else %}<p>The investigation was cancelled. No result was published.</p>{% endif %}
+<section class="ai-run" data-ai-run="{{ run.id }}">
+  <div class="ai-run-head">
+    <div>
+      <p class="eyebrow">AI INVESTIGATION</p>
+      <h1>{{ ticket.number }} · {{ ticket.title }}</h1>
+      <p class="muted"><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">Back to {{ ticket.number }}</a> · Model {{ run.model }} · {{ 'External (OpenAI)' if run.provider == 'openai' else 'Self-hosted' }}</p>
+    </div>
+    <span class="ai-pill" role="status" data-ai-status data-state="{{ run.status }}">{{ run.status|capitalize }}</span>
+  </div>
+  <div class="ai-layout">
+    <div class="ai-main">
+      <details class="ai-thinking" data-ai-thinking open>
+        <summary>Thinking <span data-ai-elapsed></span></summary>
+        <ol class="ai-steps" data-ai-steps></ol>
+        <div class="ai-reasoning" data-ai-reasoning hidden>
+          <h3>Model reasoning</h3>
+          <p class="muted">Written by the model as it works. It can be incomplete or wrong, so check the cited records.</p>
+          <pre data-ai-reasoning-text></pre>
+        </div>
+      </details>
+      <article class="ai-answer" data-ai-answer aria-busy="true"></article>
+      <p class="ai-banner" data-ai-notice hidden></p>
+      <div class="ai-actions">
+        <button type="button" class="button" data-ai-stop{% if run.status not in ['queued', 'running'] %} hidden{% endif %}>Stop</button>
+        <button type="button" class="button" data-ai-copy hidden>Copy answer</button>
+        <a class="button" href="{{ url_for('ai.incident', ticket_id=ticket.id) }}">All investigations for this incident</a>
+        <span class="muted" data-ai-stats></span>
+      </div>
+      <p class="muted"><strong>AI-generated draft.</strong> Verify the cited evidence before acting. Possible causes are hypotheses; no ticket changes have been made.</p>
+      <noscript>
+        <div class="panel">
+          <p>JavaScript is needed to watch the answer being written. Current status: <strong>{{ run.status }}</strong>.</p>
+          <pre class="pre">{{ run.result_text }}</pre>
+          {% if run.status in ['queued', 'running'] %}<form method="post"><button class="button">Cancel investigation</button></form>{% endif %}
+        </div>
+      </noscript>
+    </div>
+    <aside class="ai-side">
+      <div class="panel">
+        <h2>Evidence used</h2>
+        <ul class="ai-sources" data-ai-sources></ul>
+        <p class="muted">The records the assistant relied on appear here when the answer is complete.</p>
+      </div>
+      <div class="panel">
+        <h2>Privacy</h2>
+        <p class="ai-privacy">Only records <strong>you</strong> can access were sent to the model, and your access was checked again before this answer was kept. Nothing was changed in ServiceOps.</p>
+      </div>
+    </aside>
+  </div>
 </section>
 {% endblock %}
