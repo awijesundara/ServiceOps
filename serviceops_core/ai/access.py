@@ -184,6 +184,9 @@ def _ticket_text(ticket):
     return "\n".join(parts)
 
 
+OWN_TICKETS = re.compile(r"\b(my|mine|i have|i opened|i raised|i submitted)\b.{0,30}\b(tickets?|incidents?|requests?|changes?|issues?|cases?)\b", re.I | re.S)
+
+
 def collect_chat_evidence(scope, question):
     """Everything the assistant may know for this question, under this identity."""
     from app import visible_ticket_query
@@ -204,6 +207,13 @@ def collect_chat_evidence(scope, question):
             add_ticket(ticket)
         # Never say whether a number exists: an unreadable record and a missing one look identical.
         evidence.unavailable = [n for n in numbers if n not in {t.number for t in found}]
+
+    if OWN_TICKETS.search(question):
+        mine = Ticket.requester_id == scope.user_id
+        if scope.is_staff:
+            mine = or_(mine, Ticket.assignee_id == scope.user_id)
+        for ticket in base.filter(mine).order_by(Ticket.updated_at.desc()).limit(5):
+            add_ticket(ticket)
 
     words = keywords(question)
     if words:

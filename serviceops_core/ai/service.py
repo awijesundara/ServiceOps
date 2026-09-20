@@ -126,6 +126,7 @@ def cancel_active(tenant_id):
 
 
 FLUSH_INTERVAL = 0.4
+REASONING_ALLOWANCE = 1500  # extra output tokens granted when the model is asked to think
 
 
 class Steps:
@@ -225,6 +226,9 @@ def _stream(run, config, prepared, steps):
     run_id, tenant_id, revision = run.id, run.tenant_id, run.config_revision
     snapshot = SimpleNamespace(**{name: getattr(config, name) for name in
                                   ("provider", "model", "endpoint", "key_encrypted", "external_consent", "max_output_tokens")})
+    if prepared.thinking:
+        # A reasoning model spends part of the token cap on thinking before it writes the answer.
+        snapshot.max_output_tokens = min(snapshot.max_output_tokens + REASONING_ALLOWANCE, 6000)
     valid_ids = {source["id"] for source in prepared.sources}
     state = {"content": "", "reasoning": "", "last": 0.0, "began_reasoning": False, "began_answer": False}
 
