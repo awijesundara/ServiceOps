@@ -132,6 +132,9 @@ MSG
 %config(noreplace) %{_sysconfdir}/logrotate.d/serviceops
 
 %changelog
+* Sun Sep 20 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.92.0-1
+- Add the administrator-controlled, read-only AI incident assistant (disabled by default).
+
 * Wed Sep 16 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.91.1-1
 - Publish governed release artifacts with synchronized installation documentation.
 

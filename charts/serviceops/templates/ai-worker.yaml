@@ -1,0 +1,104 @@
+{{- if .Values.ai.workerEnabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "serviceops.fullname" . }}-ai-worker
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: ai-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: ai-worker
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.observability.openTelemetry.enabled }}
+        instrumentation.opentelemetry.io/inject-python: {{ required "observability.openTelemetry.instrumentation is required when OpenTelemetry injection is enabled" .Values.observability.openTelemetry.instrumentation | quote }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "serviceops.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: database-and-schema-ready
+          image: {{ include "serviceops.imageRef" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "tools.wait_for_database", "--migrations-current", "--timeout", {{ .Values.database.readinessTimeoutSeconds | quote }}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          envFrom:
+            - configMapRef: {name: {{ include "serviceops.fullname" . }}-config}
+            - secretRef: {name: {{ include "serviceops.secretName" . }}}
+      containers:
+        - name: ai
+          image: {{ include "serviceops.imageRef" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "tools.ai_worker"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          env:
+            - {name: DEPLOYMENT_PROFILE, value: "production"}
+            - {name: DEPLOYMENT_MODE, value: "kubernetes"}
+            - {name: AUTO_MIGRATE, value: "false"}
+            - {name: UPLOAD_FOLDER, value: /tmp/uploads}
+            - {name: LOG_DIR, value: /tmp/logs}
+          envFrom:
+            - configMapRef: {name: {{ include "serviceops.fullname" . }}-config}
+            - secretRef: {name: {{ include "serviceops.secretName" . }}}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import os,time; assert time.time()-os.path.getmtime('/tmp/serviceops-ai-heartbeat') < 150"]
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import os,time; assert time.time()-os.path.getmtime('/tmp/serviceops-ai-heartbeat') < 240"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+      imagePullSecrets: {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+{{- end }}
+{{- if and .Values.ai.workerEnabled .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "serviceops.fullname" . }}-ai-worker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: ai-worker
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    - ports:
+        - {port: 5432, protocol: TCP}
+        - {port: 443, protocol: TCP}
+    {{- with .Values.ai.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

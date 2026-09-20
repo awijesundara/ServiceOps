@@ -25,3 +25,10 @@ def test_expand_and_declared_contract_migrations_pass(tmp_path):
     contract = Path(tmp_path) / "contract.py"
     contract.write_text("serviceops_migration_phase = 'contract'\nserviceops_contract_after_version = '1.81.0'\ndef upgrade():\n    op.drop_column('users', 'legacy')\n")
     assert verify(contract) == []
+
+
+def test_expand_policy_allows_downgrade_but_checks_helpers(tmp_path):
+    path = write_migration(tmp_path, "serviceops_migration_phase = 'expand'\ndef upgrade():\n    pass\ndef downgrade():\n    op.drop_table('empty_new_table')\n")
+    assert verify(path) == []
+    path.write_text(path.read_text() + "def hidden_upgrade():\n    op.drop_column('users', 'name')\n")
+    assert "forbidden op.drop_column" in verify(path)[0]

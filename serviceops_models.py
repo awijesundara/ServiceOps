@@ -2710,3 +2710,47 @@ class FileAttachment(db.Model):
     # set -- an own tenant_id makes every attachment query uniform instead
     # of branching per parent type.
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+
+
+class AIConfiguration(db.Model):
+    __tablename__ = "ai_configuration"
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), primary_key=True)
+    enabled = db.Column(db.Boolean, nullable=False, default=False)
+    incident_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    external_consent = db.Column(db.Boolean, nullable=False, default=False)
+    provider = db.Column(db.String(30), nullable=False, default="self_hosted")
+    endpoint = db.Column(db.String(500), nullable=False, default="")
+    model = db.Column(db.String(160), nullable=False, default="")
+    key_encrypted = db.Column(db.Text, nullable=False, default="")
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    daily_limit = db.Column(db.Integer, nullable=False, default=100)
+    max_output_tokens = db.Column(db.Integer, nullable=False, default=1500)
+    retention_days = db.Column(db.Integer, nullable=False, default=7)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
+
+
+class AIRun(db.Model):
+    __tablename__ = "ai_run"
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False)
+    actor_role = db.Column(db.String(30), nullable=False)
+    config_revision = db.Column(db.Integer, nullable=False)
+    request_key = db.Column(db.String(36), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="queued", index=True)
+    provider = db.Column(db.String(30), nullable=False)
+    model = db.Column(db.String(160), nullable=False)
+    prompt_version = db.Column(db.String(30), nullable=False, default="incident-v1")
+    result_text = db.Column(db.Text, nullable=False, default="")
+    sources_json = db.Column(db.Text, nullable=False, default="[]")
+    usage_json = db.Column(db.Text, nullable=False, default="{}")
+    error_code = db.Column(db.String(80), nullable=False, default="")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    started_at = db.Column(db.DateTime(timezone=True))
+    completed_at = db.Column(db.DateTime(timezone=True))
+    __table_args__ = (db.UniqueConstraint("tenant_id", "user_id", "request_key", name="uq_ai_run_request"),)
+
+
+__all__ += ["AIConfiguration", "AIRun"]

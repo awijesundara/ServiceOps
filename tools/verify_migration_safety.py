@@ -36,6 +36,14 @@ def verify(path: Path) -> list[str]:
     if phase not in POLICY["allowed_phases"]:
         return [f"{path.name}: serviceops_migration_phase must be 'expand' or 'contract'"]
     source = path.read_text()
+    # Expand/contract governs forward deployment. A guarded downgrade can
+    # remove empty tables introduced by an additive migration. Keep scanning
+    # helpers and module-level code so upgrade cannot hide destructive work.
+    lines = source.splitlines(keepends=True)
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "downgrade":
+            lines[node.lineno - 1:node.end_lineno] = ["\n"] * (node.end_lineno - node.lineno + 1)
+    source = "".join(lines)
     if phase == "expand":
         for operation in POLICY["expand_forbidden_operations"]:
             if f"op.{operation}(" in source:

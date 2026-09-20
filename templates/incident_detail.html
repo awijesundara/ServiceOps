@@ -10,6 +10,7 @@
       <div><strong>Incident</strong><small>{{ ticket.number }}</small></div>
     </div>
     <div class="record-actions">
+      {% if ai_available(current_user) %}<a class="button" href="{{ url_for('ai.incident', ticket_id=ticket.id) }}">Investigate with AI</a>{% endif %}
       <span class="record-updated">Updated {{ (ticket.updated_at|usertime('%b %d, %H:%M')) }}</span>
       <form method="post" class="follow-ticket-form"><input type="hidden" name="action" value="{{ 'unfollow' if is_following else 'follow' }}"><button type="submit" class="button follow-toggle{% if is_following %} following{% endif %}" title="{{ 'Stop getting notified about new comments on this ticket' if is_following else 'Get notified when there is a new comment on this ticket' }}">{{ '✓ Following' if is_following else '☆ Follow' }}</button></form>
       {% if can_manage_ticket %}

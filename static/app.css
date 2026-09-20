@@ -86,3 +86,6 @@ input[disabled],input[readonly]{overflow:hidden;text-overflow:ellipsis}
    manager portal's per-team sections) needs this explicit override or it
    silently keeps rendering. */
 .panel[hidden]{display:none}
+
+/* AI output remains escaped plain text, including long diagnostic strings. */
+.ai-result-text { white-space: pre-wrap; overflow-wrap: anywhere; }
