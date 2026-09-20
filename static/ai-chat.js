@@ -182,7 +182,7 @@
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done);
   };
 
-  window.AIChat = { RunView: RunView, get: get, post: post, element: element };
+  window.AIChat = { RunView: RunView, get: get, post: post, element: element, renderSteps: renderSteps, renderSources: renderSources, sourceMap: sourceMap, summarize: summarize };
 
   document.querySelectorAll("[data-ai-run]").forEach(function (root) { new RunView(root).start(); });
 })();

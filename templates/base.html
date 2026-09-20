@@ -31,6 +31,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='ai-chat.css', v=app_version) }}">
   <script src="{{ url_for('static', filename='ai-render.js', v=app_version) }}" defer></script>
   <script src="{{ url_for('static', filename='ai-chat.js', v=app_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='ai-chat-panel.js', v=app_version) }}" defer></script>
   {% endif %}
 </head>
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}" {% if current_user.is_authenticated %}data-tour-route="{{ request.endpoint }}"{% endif %}>
@@ -241,6 +242,7 @@
     </table>
   </div>
 </dialog>
+{% if ai_chat_available(current_user) and request.endpoint != 'ai.chat_page' %}{% include '_ai_chat_panel.html' %}{% endif %}
 {% endif %}
 <div id="lightbox-overlay" class="lightbox-overlay" hidden>
   <div class="lightbox-frame">
