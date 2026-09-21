@@ -164,6 +164,8 @@ def cancel_active(tenant_id):
 
 
 FLUSH_INTERVAL = 0.4
+PURGE_INTERVAL = 300
+_last_purge = 0.0
 REASONING_ALLOWANCE = 1500  # extra output tokens granted when the model is asked to think
 
 
@@ -418,9 +420,12 @@ def process_one():
     cutoff = now() - timedelta(seconds=provider_timeout() + 60)
     AIRun.query.filter(AIRun.status == "running", db.func.coalesce(AIRun.heartbeat_at, AIRun.started_at) < cutoff).update(
         {"status": "failed", "error_code": "worker_interrupted", "completed_at": now()}, synchronize_session=False)
-    for config in AIConfiguration.query.all():
-        AIRun.query.filter(AIRun.tenant_id == config.tenant_id, AIRun.created_at < now() - timedelta(days=config.retention_days),
-                           ~AIRun.status.in_(ACTIVE)).delete(synchronize_session=False)
+    global _last_purge
+    if time.monotonic() - _last_purge > PURGE_INTERVAL:  # retention is in days; no need to sweep on every poll
+        _last_purge = time.monotonic()
+        for config in AIConfiguration.query.all():
+            AIRun.query.filter(AIRun.tenant_id == config.tenant_id, AIRun.created_at < now() - timedelta(days=config.retention_days),
+                               ~AIRun.status.in_(ACTIVE)).delete(synchronize_session=False)
     db.session.commit()
     run = AIRun.query.filter_by(status="queued").order_by(AIRun.created_at).with_for_update(skip_locked=True).first()
     if not run:
