@@ -444,8 +444,11 @@ def test_full_page_chat_and_stop(ai_browser_server, monkeypatch):
             sign_in(page, base)
             page.goto(base + "/ai/chat", wait_until="networkidle")
             assert page.locator("[data-chat-launch]").count() == 0
+            assert page.get_by_role("heading", name="How can I help you today?").is_visible()
+            assert page.locator("[data-chat-suggest]").count() == 0
             assert not axe_violations(page)
-            page.get_by_role("button", name="Report a problem").click()
+            page.get_by_label("Your question").fill("I want to report a problem")
+            page.get_by_role("button", name="Send").click()
             wait_for(lambda: "Working on it" in page.inner_text("[data-chat-log]"))
             page.locator("[data-chat-stop]").click()
             wait_for(lambda: page.locator("[data-chat-send]").is_enabled(), timeout=20)

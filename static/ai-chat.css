@@ -89,9 +89,6 @@ a.ai-cite:hover,a.ai-cite:focus-visible{background:var(--ai-accent);color:#fff}
 .ai-chat-log{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px;background:#f7f9f9}
 .ai-chat-welcome h3{margin:8px 0 4px;font-size:18px}
 .ai-chat-welcome[hidden]{display:none}
-.ai-suggestions{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:8px}
-.ai-suggestions button{width:100%;text-align:left;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#fff;font-weight:600;color:var(--ai-accent)}
-.ai-suggestions button:hover{border-color:var(--ai-accent)}
 .ai-turn{display:flex}
 .ai-turn-user{justify-content:flex-end}
 .ai-bubble{margin:0;max-width:85%;padding:10px 14px;border-radius:14px 14px 4px 14px;background:var(--ai-accent);color:#fff;white-space:pre-wrap;overflow-wrap:anywhere}
