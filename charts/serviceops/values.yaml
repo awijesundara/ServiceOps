@@ -2,7 +2,7 @@ replicaCount: 2
 
 image:
   repository: serviceops
-  tag: "1.97.3"
+  tag: "1.97.4"
   digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
   # "digest": pull by repo@digest (default). Requires the registry to serve
   # manifests by digest reference -- true for GHCR, not for every registry
