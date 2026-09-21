@@ -5,7 +5,7 @@ import uuid
 import pytest
 
 from app import AIConfiguration, AIConversation, AIMessage, AIRun, Audit, User, db
-from serviceops_core.ai import service
+from serviceops_core.ai import provider, service
 from tests.test_ai_assistant import fake_stream
 from tests.test_ai_privacy import world  # noqa: F401
 from tests.test_app import app, client, login  # noqa: F401
@@ -54,6 +54,38 @@ def test_requester_gets_an_answer_scoped_to_their_own_tickets(app, client, world
     assert [m["role"] for m in conversation["messages"]] == ["user", "assistant"]
     assert conversation["messages"][1]["status"] == "completed"
     assert conversation["scope"].startswith("Requester")
+
+
+def test_followup_uses_the_last_grounded_record_without_widening_access(app, client, world, monkeypatch):
+    answer_with(monkeypatch, "INC0100001 is open [S1].")
+    login(client, "employee", "Employee123!")
+    created = ask(client, "tell me about INC0100001")
+    finish_all(app)
+
+    captured = []
+    answer_with(monkeypatch, "Its impact is shown in the ticket [S1].", captured)
+    followup = ask(client, "what is its impact and related information?", created.get_json()["conversation_id"])
+    assert followup.status_code == 201
+    finish_all(app)
+
+    payload = json.dumps(captured)
+    assert "INC0100001" in payload
+    assert "CANARY-OTHER-EMPLOYEE-TICKET" not in payload
+    assert "CANARY-TENANT-TWO-TICKET" not in payload
+
+
+def test_provider_failure_has_safe_actionable_copy(app, client, world, monkeypatch):
+    def fail(*args, **kwargs):
+        raise provider.ProviderError("private provider detail must not reach the browser")
+
+    monkeypatch.setattr(service, "generate_stream", fail)
+    login(client, "employee", "Employee123!")
+    created = ask(client, "hello")
+    finish_all(app)
+    body = client.get(f"/ai/runs/{created.get_json()['run_id']}/stream").get_json()
+    assert body["status"] == "failed"
+    assert "selected AI services did not answer successfully" in body["error"]
+    assert "private provider detail" not in json.dumps(body)
 
 
 def test_conversations_are_private_to_their_owner_even_from_admins(app, client, world, monkeypatch):

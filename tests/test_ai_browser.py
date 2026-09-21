@@ -10,7 +10,7 @@ import time
 import pytest
 from werkzeug.serving import make_server
 
-from app import AIConfiguration, Ticket, User, create_app, db
+from app import AIConfiguration, Comment, Ticket, User, create_app, db
 from serviceops_core.ai import provider, service
 
 
@@ -252,6 +252,41 @@ def test_stop_button_ends_a_running_investigation_and_keeps_nothing(ai_browser_s
         assert page.inner_text("[data-ai-answer]").strip() == ""
         assert "Stopped" in page.inner_text("[data-ai-notice]")
         assert page.locator("[data-ai-stop]").is_hidden()
+        browser.close()
+
+
+def test_approved_ticket_comment_action_requires_exact_browser_review(ai_browser_server, monkeypatch):
+    from playwright.sync_api import sync_playwright
+    app, base, ticket_id = ai_browser_server
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", ENDPOINT)
+    enable_ai(app, actions_enabled=True)
+    answer = "Check the VPN gateway and client logs [S1]."
+    monkeypatch.setattr(service, "generate_stream", lambda config, messages, on_delta, thinking=None: (
+        on_delta("content", answer), (answer, "", {"completion_tokens": 8}))[1])
+
+    with app.app_context():
+        before = Comment.query.filter_by(ticket_id=ticket_id).count()
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        sign_in(page, base)
+        page.goto(base + f"/incidents/{ticket_id}/ai", wait_until="networkidle")
+        page.get_by_role("button", name="Start investigation").click()
+        page.wait_for_selector("[data-ai-status]")
+        start_worker(app).join(timeout=10)
+        wait_for(lambda: page.locator("[data-ai-status]").inner_text().strip() == "Complete")
+        page.get_by_role("button", name="Prepare as ticket comment").click()
+        page.wait_for_load_state("networkidle")
+        assert page.get_by_role("heading", name="Exact proposed change").is_visible()
+        assert page.locator("pre").inner_text() == answer
+        assert not axe_violations(page)
+        page.get_by_role("button", name="Approve and add comment").click()
+        page.wait_for_load_state("networkidle")
+        assert "Approved and added to the ticket" in page.inner_text("body")
+        with app.app_context():
+            comments = Comment.query.filter_by(ticket_id=ticket_id).order_by(Comment.id).all()
+            assert len(comments) == before + 1
+            assert comments[-1].body == answer
         browser.close()
 
 
