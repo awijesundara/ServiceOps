@@ -120,7 +120,8 @@
     this.ui = {
       status: find("status"), steps: find("steps"), thinking: find("thinking"), thinkingLabel: find("thinking-label"), elapsed: find("elapsed"),
       reasoning: find("reasoning"), reasoningText: find("reasoning-text"), answer: find("answer"),
-      notice: find("notice"), route: find("route"), sources: find("sources"), stop: find("stop"), copy: find("copy"), stats: find("stats")
+      notice: find("notice"), route: find("route"), sources: find("sources"), stop: find("stop"), copy: find("copy"),
+      action: find("action"), stats: find("stats")
     };
     const self = this;
     if (this.ui.stop) this.ui.stop.addEventListener("click", function () { self.stop(); });
@@ -178,6 +179,7 @@
     if (ui.answer) ui.answer.hidden = !this.text;
     if (ui.stop) ui.stop.hidden = true;
     if (ui.copy) ui.copy.hidden = !this.text;
+    if (ui.action) ui.action.hidden = data.status !== "completed" || !this.text;
     if (ui.sources) renderSources(ui.sources, data.sources);
     renderRoute(ui.route, data.route);
     if (ui.elapsed && data.usage && data.usage.duration_ms) ui.elapsed.textContent = (data.usage.duration_ms / 1000).toFixed(1) + "s";

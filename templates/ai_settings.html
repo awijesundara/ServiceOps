@@ -79,6 +79,7 @@
           <label class="aiadm-switch"><input type="checkbox" name="enabled" {% if on %}checked{% endif %}><span><strong>Turn AI on for this organization</strong><small>The master switch. Off means nobody can use AI.</small></span></label>
           <label class="aiadm-switch"><input type="checkbox" name="incident_enabled" {% if config and config.incident_enabled %}checked{% endif %}><span><strong>Investigate with AI on incidents</strong><small>For agents, managers and administrators.</small></span></label>
           <label class="aiadm-switch"><input type="checkbox" name="chat_enabled" {% if config and config.chat_enabled %}checked{% endif %}><span><strong>Chat assistant for everyone</strong><small>Each person only sees what they can already open.</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="actions_enabled" {% if config and config.actions_enabled %}checked{% endif %}><span><strong>Allow approved ticket actions</strong><small>Agents may prepare an AI answer as a ticket comment. A person must review and approve the exact text before it is added.</small></span></label>
           <label class="aiadm-switch"><input type="checkbox" name="show_reasoning" {% if config and config.show_reasoning %}checked{% endif %}><span><strong>Let investigations think longer</strong><small>Slower, sometimes better. The thinking itself is never shown or kept.</small></span></label>
         </div>
         <div class="aiadm-limits">

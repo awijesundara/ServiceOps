@@ -12,8 +12,8 @@ from types import SimpleNamespace
 import pytest
 from werkzeug.security import generate_password_hash
 
-from app import (CiClassPermission, ConfigurationItem, GroupMember, Knowledge, SupportGroup, Tenant, Ticket, User,
-                 UserRoleGrant, db)
+from app import (CiClassPermission, ConfigurationItem, GroupMember, Knowledge, RecordLink, SupportGroup, Tenant, Ticket,
+                 User, UserRoleGrant, db)
 from serviceops_core.ai import access
 from tests.test_app import app, client  # noqa: F401  (pytest fixtures)
 
@@ -148,6 +148,73 @@ def test_latest_incident_uses_newest_visible_record_without_widening_access(app,
         outsider_text, outsider_evidence = payload(world.outsider, "what is the latest incident?")
         assert not [source for source in outsider_evidence.sources if source["kind"] == "ticket"]
         assert "CANARY-OTHER-EMPLOYEE-TICKET" not in outsider_text
+
+
+def test_visible_incident_count_is_exact_for_each_existing_access_scope(app, world):
+    with app.app_context():
+        requester_text, requester_evidence = payload(world.employee, "how many incident tickets can you see?")
+        assert "currently access 1 incident tickets" in requester_text
+        assert requester_evidence.kinds == {"ticket"}
+        assert "CANARY-OTHER-EMPLOYEE-TICKET" not in requester_text
+
+        staff_text, _ = payload(world.insider, "how many incidents can you see?")
+        assert "currently access 2 incident tickets" in staff_text
+        assert "CANARY-TENANT-TWO-TICKET" not in staff_text
+
+        outsider_text, _ = payload(world.outsider, "number of incidents available")
+        assert "currently access 0 incident tickets" in outsider_text
+
+
+def test_email_problem_wording_finds_only_published_tenant_knowledge(app, world):
+    with app.app_context():
+        admin = db.session.get(User, world.admin)
+        db.session.add_all([
+            Knowledge(title="Microsoft Outlook sending failure", body="Rebuild the Outlook profile and retry mail delivery.",
+                      author_id=admin.id, tenant_id=1),
+            Knowledge(title="SMTP private repair", body="CANARY-EMAIL-DRAFT", author_id=admin.id, tenant_id=1,
+                      published=False),
+        ])
+        db.session.commit()
+        text, evidence = payload(world.employee, "Summarise the knowledge articles about email problems")
+        assert "Microsoft Outlook sending failure" in text and "Rebuild the Outlook profile" in text
+        assert "CANARY-EMAIL-DRAFT" not in text and "CANARY-KB-TENANT-TWO" not in text
+        assert all(source["kind"] == "knowledge" for source in evidence.sources)
+
+
+def test_followup_resolves_prior_record_and_adds_only_visible_related_records(app, world):
+    with app.app_context():
+        employee = db.session.get(User, world.employee)
+        other = db.session.get(User, world.other)
+        change = Ticket(number="CHG0100003", kind="change", title="Mail gateway upgrade", description="Upgrade SMTP gateway",
+                        requester_id=employee.id, tenant_id=1, impact="High")
+        related = Ticket(number="INC0100003", kind="incident", title="Mail delivery delay", description="Messages queue for ten minutes",
+                         requester_id=employee.id, tenant_id=1, impact="Medium")
+        hidden = Ticket(number="INC0100004", kind="incident", title="Executive mailbox", description="CANARY-HIDDEN-RELATED",
+                        requester_id=other.id, tenant_id=1, impact="High")
+        cross_tenant = Ticket(number="INC0900002", kind="incident", title="Other tenant mail", description="CANARY-CROSS-TENANT-RELATED",
+                              requester_id=db.session.get(User, world.admin).id, tenant_id=world.tenant2)
+        db.session.add_all([change, related, hidden, cross_tenant])
+        db.session.flush()
+        db.session.add_all([
+            RecordLink(source_type="ticket", source_id=change.id, target_type="ticket", target_id=related.id,
+                       link_type="related_incident"),
+            RecordLink(source_type="ticket", source_id=change.id, target_type="ticket", target_id=hidden.id,
+                       link_type="related_incident"),
+            RecordLink(source_type="ticket", source_id=change.id, target_type="ticket", target_id=cross_tenant.id,
+                       link_type="related_incident"),
+        ])
+        db.session.commit()
+        history = [
+            {"role": "user", "content": "tell me about CHG0100003"},
+            {"role": "assistant", "content": "CHG0100003 is a mail gateway change [S1]."},
+        ]
+        text, evidence = payload(
+            world.employee, "what is the impact and are there related incidents or other information?", history=history)
+        numbers = {source["number"] for source in evidence.sources if source["kind"] == "ticket"}
+        assert {"CHG0100003", "INC0100003"}.issubset(numbers)
+        assert "Impact: High" in text and "Messages queue for ten minutes" in text
+        assert "INC0100004" not in numbers and "CANARY-HIDDEN-RELATED" not in text
+        assert "INC0900002" not in numbers and "CANARY-CROSS-TENANT-RELATED" not in text
 
 
 # --- vertical isolation (paygrade) ----------------------------------------------------------

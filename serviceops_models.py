@@ -2729,6 +2729,8 @@ class AIConfiguration(db.Model):
     capabilities_json = db.Column(db.Text, nullable=False, default="{}")
     # The chatbot is enabled separately from incident investigation; both need the master switch.
     chat_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    # Ticket mutations remain a separate, opt-in capability even when AI itself is enabled.
+    actions_enabled = db.Column(db.Boolean, nullable=False, default=False)
     # Whether users may request a deeper reasoning pass. Private reasoning text is never shown or retained.
     show_reasoning = db.Column(db.Boolean, nullable=False, default=True)
     # How a request picks between the configured AI services, and what may leave the organization.
@@ -2841,4 +2843,25 @@ class AIMessage(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
 
 
-__all__ += ["AIConfiguration", "AIConnection", "AIRun", "AIConversation", "AIMessage"]
+class AIAction(db.Model):
+    """A human-reviewed mutation proposed from a completed AI investigation."""
+    __tablename__ = "ai_action"
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    run_id = db.Column(db.String(36), db.ForeignKey("ai_run.id", ondelete="CASCADE"), nullable=False, index=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False, index=True)
+    proposed_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    approved_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    actor_role = db.Column(db.String(30), nullable=False)
+    action_type = db.Column(db.String(40), nullable=False)
+    payload_json = db.Column(db.Text, nullable=False)
+    target_updated_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="pending", index=True)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    decided_at = db.Column(db.DateTime(timezone=True))
+    executed_at = db.Column(db.DateTime(timezone=True))
+    __table_args__ = (db.UniqueConstraint("run_id", "action_type", name="uq_ai_action_run_type"),)
+
+
+__all__ += ["AIConfiguration", "AIConnection", "AIRun", "AIConversation", "AIMessage", "AIAction"]

@@ -191,6 +191,14 @@ BLOCKED_TEXT = {
     "no_service": "No AI service is available right now. Please ask your administrator.",
 }
 
+RUN_ERROR_TEXT = {
+    "provider_failed": (
+        "The selected AI services did not answer successfully. Try again shortly. "
+        "If this continues, ask an administrator to check AI service health."
+    ),
+    "worker_interrupted": "The AI worker was interrupted before it finished. Please try again.",
+}
+
 
 def record_success(connection):
     connection.consecutive_failures = 0
