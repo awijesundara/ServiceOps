@@ -387,3 +387,11 @@ def test_context_module_keeps_to_the_asker_and_never_imports_directory_or_audit_
                  "APIClient", "UserSession", "EnterpriseRecord"):
         assert not re.search(rf"\b{name}\b", imported), name
     assert "User.query" not in source and "User.username" not in source  # only the asker's own row, by id
+
+
+def test_modules_layer_never_imports_directory_audit_or_customer_content():
+    source = Path("serviceops_core/ai/modules.py").read_text()
+    imported = " ".join(re.findall(r"from serviceops_models import \((.*?)\)", source, re.S))
+    for name in ("Audit", "ClientContact", "ClientOrganization", "FileAttachment", "PlatformSetting", "APIClient", "UserSession"):
+        assert not re.search(rf"\b{name}\b", imported), name
+    assert "User.query" not in source and "User.username" not in source and "User.email" not in source

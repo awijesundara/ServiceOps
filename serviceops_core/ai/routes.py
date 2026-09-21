@@ -570,6 +570,14 @@ def register(app):
 
     def with_draft_link(route):
         """Turn a validated ticket draft into a link that opens the normal ticket form pre-filled."""
+        pages = []
+        for page in (route or {}).get("pages", []):
+            try:
+                pages.append({"label": page["label"], "url": url_for(page["endpoint"], **page.get("params", {}))})
+            except Exception:  # noqa: BLE001 - a page that was renamed since must never break an answer
+                continue
+        if route and "pages" in route:
+            route = {**route, "pages": pages}
         draft = (route or {}).get("draft")
         if draft:
             route = {**route, "draft": {**draft, "url": url_for(

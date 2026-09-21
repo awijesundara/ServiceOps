@@ -202,3 +202,5 @@ def add_organization_context(scope, question, evidence, base):
         item = build()
         if item:
             evidence.add_context("info", item[0], item[1])
+    from serviceops_core.ai import modules
+    modules.add_module_context(scope, question, evidence, base)

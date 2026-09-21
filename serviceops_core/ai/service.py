@@ -364,7 +364,12 @@ def _finish(run_id, prepared, steps, content, reasoning, usage, sanitize, featur
     extras = {}
     if run.kind == "chat":
         from serviceops_core.ai import context
-        extras = access.extract_extras(content, context.may_raise_change(access.build_scope(user, run.actor_role)))
+        scope_now = access.build_scope(user, run.actor_role)
+        extras = access.extract_extras(content, context.may_raise_change(scope_now))
+        from serviceops_core.ai import modules
+        pages = modules.suggested_pages(scope_now, run.question or "", 2) if run.question else []
+        if pages:
+            extras["pages"] = pages
         route = {**route, **extras}
     if prepared.cite_required and not re.search(r"\[S\d+\]", final):
         raise ProviderError("Provider returned an answer without evidence citations.")
