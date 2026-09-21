@@ -20,7 +20,7 @@ def register(app):
     blueprint = Blueprint("ai", __name__)
     from app import audit, require_action, roles
 
-    def service_payload(row, counts):
+    def service_payload(row, counts, usage=None):
         try:
             caps = json.loads(row.capabilities_json or "{}")
         except ValueError:
@@ -37,6 +37,7 @@ def register(app):
                 "external": row.external, "enabled": bool(row.enabled), "priority": row.priority, "weight": row.weight,
                 "max_concurrency": row.max_concurrency, "has_key": bool(row.key_encrypted), "status": status,
                 "load": counts.get(row.id, 0), "context": caps.get("context_tokens"),
+                "today": (usage or {}).get(row.id, {"requests": 0, "tokens": 0}),
                 "tested_at": row.last_test_at.isoformat() if row.last_test_at else None}
 
     def clamp(value, low, high, default):
@@ -180,8 +181,10 @@ def register(app):
             return redirect(url_for("ai.settings"))
         rows = service.connections_for(config) if config else []
         counts = routing.running_counts(current_user.tenant_id)
-        return render_template("ai_settings.html", config=config, ipfs=ipfs_enabled(),
-                               services=[service_payload(r, counts) for r in rows], modes=routing.ROUTING_MODES)
+        per_service, today = routing.usage_today(current_user.tenant_id)
+        return render_template("ai_settings.html", config=config, ipfs=ipfs_enabled(), modes=routing.ROUTING_MODES,
+                               services=[service_payload(r, counts, per_service) for r in rows],
+                               today=today, daily_limit=config.daily_limit if config else 100)
 
     @blueprint.route("/admin/ai/services", methods=["POST"])
     @roles("admin")
@@ -199,7 +202,7 @@ def register(app):
         except ProviderError as error:
             db.session.rollback()
             return no_store({"error": str(error)}, 400)
-        return no_store({"service": service_payload(row, routing.running_counts(current_user.tenant_id))})
+        return no_store({"service": service_payload(row, routing.running_counts(current_user.tenant_id), routing.usage_today(current_user.tenant_id)[0])})
 
     @blueprint.route("/admin/ai/services/<service_id>/delete", methods=["POST"])
     @roles("admin")
@@ -244,7 +247,7 @@ def register(app):
             routing.record_success(row)
         db.session.commit()
         return no_store({"ok": ok, "message": message, "ms": int((time.monotonic() - started) * 1000),
-                         "service": service_payload(row, routing.running_counts(current_user.tenant_id))})
+                         "service": service_payload(row, routing.running_counts(current_user.tenant_id), routing.usage_today(current_user.tenant_id)[0])})
 
     @blueprint.route("/admin/ai/preview", methods=["POST"])
     @roles("admin")

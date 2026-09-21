@@ -207,6 +207,7 @@ def test_investigation_streams_steps_reasoning_and_text_under_the_real_csp(ai_br
             time.sleep(0.3)
         assert len({n for n in lengths if n}) >= 3, lengths
         wait_for(lambda: page.inner_text("[data-ai-status]").strip() == "Complete")
+        wait_for(lambda: page.locator("[data-ai-answer] a.ai-cite").count() >= 1)  # typing finished, citations linked
         if shots:
             page.screenshot(path=os.path.join(shots, "ai-complete.png"), full_page=True)
         answer = page.locator("[data-ai-answer]")
@@ -361,6 +362,8 @@ def test_chat_widget_streams_and_deletes_under_the_real_csp(ai_browser_server, m
             if shots and width == 1440:
                 page.screenshot(path=os.path.join(shots, "chat-streaming.png"))
             wait_for(lambda: page.locator("[data-ai-status]").last.inner_text().strip() == "Complete")
+            wait_for(lambda: page.locator("[data-ai-answer]").last.locator("a.ai-cite").count() >= 1)
+            assert "Private · " in page.locator("[data-ai-route]").last.inner_text() or "External · " in page.locator("[data-ai-route]").last.inner_text()
             assert page.locator("[data-ai-thinking]").last.is_hidden()
             answer = page.locator("[data-ai-answer]").last
             assert answer.is_visible() and page.locator("[data-ai-status]").last.is_hidden()
@@ -447,7 +450,7 @@ def test_admin_adds_a_service_tests_the_privacy_rules_and_removes_it_in_the_brow
         from app import AIConnection
         AIConnection.query.delete()
         db.session.commit()
-    model_server = Server(get_body={"data": [{"id": "Qwen/Qwen3-8B-GGUF:Q4_K_M", "meta": {"n_ctx": 4096}}]})
+    model_server = Server(get_body={"data": [{"id": "models/text-embedding-004"}, {"id": "Qwen/Qwen3-8B-GGUF:Q4_K_M", "meta": {"n_ctx": 4096}}, {"id": "qwen3-4b"}, {"id": "qwen3-latest"}]})
     monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", model_server.origin)
     try:
         with sync_playwright() as p:
@@ -467,8 +470,19 @@ def test_admin_adds_a_service_tests_the_privacy_rules_and_removes_it_in_the_brow
                 page.locator('[data-ai-f="api_key"]').fill("typed-key-123")
                 page.get_by_role("button", name="Connect and find models").click()
                 wait_for(lambda: "Connected" in page.inner_text("[data-ai-detect-status]"))
+                assert page.locator('[data-ai-f="model"]').input_value() == "qwen3-latest"
+                # Every model is listed and searchable, not only the ones matching what is already typed.
+                page.locator('[data-ai-f="model"]').click()
+                assert page.locator(".aiadm-model-item").count() == 4
+                page.locator('[data-ai-f="model"]').select_text()
+                page.keyboard.type("4b")
+                assert page.locator(".aiadm-model-item").count() == 1
+                page.keyboard.press("ArrowDown")
+                page.keyboard.press("Enter")
+                assert page.locator('[data-ai-f="model"]').input_value() == "qwen3-4b"
+                page.locator('[data-ai-f="model"]').click()
+                page.locator(".aiadm-model-item", has_text="Qwen3-8B").click()
                 assert page.locator('[data-ai-f="model"]').input_value() == "Qwen/Qwen3-8B-GGUF:Q4_K_M"
-                assert "4,096" in page.inner_text("[data-ai-detect-status]")
                 assert not axe_violations(page)
                 page.get_by_role("button", name="Save service").click()
                 wait_for(lambda: page.locator(".aiadm-card").count() == 1)

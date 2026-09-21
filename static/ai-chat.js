@@ -91,8 +91,10 @@
     holder.textContent = "";
     holder.hidden = !(route && (route.location === "private" || route.location === "external"));
     if (holder.hidden) return;
-    const chip = element("span", "ai-route-chip is-" + route.location, route.location === "private" ? "Private AI" : "External AI");
-    chip.title = route.reason || "";
+    // The exact model that wrote the answer, so nobody has to guess which AI they are reading.
+    const label = (route.location === "private" ? "Private" : "External") + (route.model ? " · " + route.model : " AI");
+    const chip = element("span", "ai-route-chip is-" + route.location, label);
+    chip.title = (route.name ? route.name + ": " : "") + (route.reason || "");
     holder.appendChild(chip);
     if (route.sensitive && route.reason) holder.appendChild(element("span", "ai-route-note", route.reason));
   }
@@ -112,6 +114,8 @@
     this.root = root;
     this.id = options.id || root.dataset.aiRun;
     this.seq = -1;
+    this.shown = 0;
+    this.target = "";
     this.delay = 600;
     this.began = Date.now();
     this.finished = false;
@@ -162,13 +166,48 @@
       if (ui.thinkingLabel) ui.thinkingLabel.textContent = thinkingLabel(data);
     }
     if (ui.answer) {
-      ui.answer.hidden = !data.text;
-      ui.answer.textContent = "";
-      ui.answer.appendChild(window.AIRender.render(data.text || "", sourceMap(data.sources)));
+      // Words arrive in bursts a few times a second. Reveal them steadily, like a person typing, so the
+      // answer flows instead of jumping. The complete text is always what is finally shown.
+      this.target = data.text || "";
+      this.sources = sourceMap(data.sources);
       ui.answer.setAttribute("aria-busy", TERMINAL.indexOf(data.status) === -1 ? "true" : "false");
-      ui.answer.classList.toggle("is-streaming", data.status === "running" && Boolean(data.text));
+      if (this.target.length < this.shown) this.shown = 0;
+      this.type();
     }
     if (TERMINAL.indexOf(data.status) !== -1) this.complete(data);
+  };
+
+  RunView.prototype.paint = function (final) {
+    const ui = this.ui;
+    const text = final ? this.target : this.target.slice(0, this.shown);
+    ui.answer.hidden = !text;
+    ui.answer.textContent = "";
+    ui.answer.appendChild(window.AIRender.render(text, final ? this.sources : {}));
+    ui.answer.classList.toggle("is-streaming", !final && Boolean(text));
+  };
+
+  RunView.prototype.type = function () {
+    if (this.typing || !this.ui.answer) return;
+    const self = this;
+    const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) { this.shown = this.target.length; this.paint(false); return; }
+    this.typing = true;
+    const step = function () {
+      const backlog = self.target.length - self.shown;
+      if (backlog <= 0) { self.typing = false; if (self.done) self.finalize(); return; }
+      // Catch up faster when far behind, slower when close, so the pace looks even.
+      self.shown += Math.max(1, Math.ceil(backlog / (self.done ? 6 : 18)));
+      self.paint(false);
+      setTimeout(step, 28);
+    };
+    step();
+  };
+
+  RunView.prototype.finalize = function () {
+    if (!this.ui.answer) return;
+    this.shown = this.target.length;
+    this.paint(true);
+    this.ui.answer.classList.remove("is-streaming");
   };
 
   RunView.prototype.complete = function (data) {
@@ -176,7 +215,10 @@
     clearInterval(this.clock);
     const ui = this.ui;
     this.text = data.text || "";
-    if (ui.answer) ui.answer.hidden = !this.text;
+    this.target = this.text;
+    this.sources = sourceMap(data.sources);
+    this.done = true;
+    if (ui.answer) { if (this.typing) { /* finishes typing, then shows citations */ } else this.finalize(); }
     if (ui.stop) ui.stop.hidden = true;
     if (ui.copy) ui.copy.hidden = !this.text;
     if (ui.action) ui.action.hidden = data.status !== "completed" || !this.text;
