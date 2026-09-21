@@ -285,3 +285,63 @@ a.ai-cite:hover,a.ai-cite:focus-visible{background:var(--ai-accent);color:#fff}
 .aiadm-bulk legend{font-weight:700;font-size:13px;padding:0 6px}
 .aiadm-bulk ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:2px}
 .aiadm-bulk[hidden]{display:none}
+
+/* ===== Chat: calmer header, icon buttons, smoother motion (overrides earlier rules) ===== */
+.ai-chat-head{flex-wrap:nowrap;align-items:center;gap:8px;padding:10px 12px 10px 16px}
+.ai-chat-titles{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.ai-chat-titles h2{order:0;flex:none;font-size:15px;margin:0}
+.ai-scope{order:0;flex:0 1 auto;flex-basis:auto;margin:0;padding:2px 9px;border-radius:99px;background:rgba(255,255,255,.16);color:#e4f0f2;font-size:11px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ai-chat-tools{order:0;gap:2px;align-items:center}
+.ai-icon{display:inline-grid;place-items:center;width:32px;height:32px;padding:0;border-radius:8px;border:0;background:transparent;color:#fff;cursor:pointer;text-decoration:none}
+.ai-icon:hover{background:rgba(255,255,255,.18)}
+.ai-icon[aria-expanded="true"]{background:rgba(255,255,255,.26)}
+.ai-icon:focus-visible{outline:3px solid var(--ai-amber,#f9aa3c);outline-offset:1px}
+.ai-icon[hidden]{display:none}
+.ai-chat-body{position:relative}
+.ai-chat.is-widget .ai-chat-history,.ai-chat-memory,.ai-chat.is-page .ai-chat-memory{inset:0}
+.ai-chat.is-widget .ai-chat-history{inset:0}
+@media(max-width:700px){.ai-chat.is-page .ai-chat-history{inset:0}}
+.ai-chat-history,.ai-chat-memory{animation:ai-fade .15s ease-out}
+.ai-chat-welcome{padding:6px 2px}
+.ai-chat-welcome h3{font-size:17px;margin:4px 0 2px}
+.ai-chat-welcome .muted{margin:0 0 4px;font-size:13px}
+.ai-composer{padding:10px 12px 2px}
+.ai-composer textarea{min-height:44px;transition:height .12s ease}
+.ai-composer-row{margin-top:6px;justify-content:flex-end}
+.ai-count{font-size:11px;color:var(--muted);margin-right:auto}
+.ai-count[hidden]{display:none}
+.ai-chat .ai-privacy{padding:2px 14px 8px;font-size:11px;text-align:center}
+.ai-chat-log{scroll-behavior:smooth;gap:12px}
+.ai-mini [data-ai-stats]{display:none}
+.ai-mini .ai-actions{justify-content:flex-start}
+.ai-src{font-size:12px}
+.ai-src>summary{cursor:pointer;color:var(--muted);font-weight:650;list-style:none;display:inline-flex;align-items:center;gap:6px;padding:2px 0}
+.ai-src>summary::-webkit-details-marker{display:none}
+.ai-src>summary::before{content:"\25B8";transition:transform .15s}
+.ai-src[open]>summary::before{transform:rotate(90deg)}
+.ai-src[hidden]{display:none}
+.ai-src ul{margin-top:6px}
+.ai-chat.is-widget:not([hidden]){animation:ai-pop .18s ease-out}
+.ai-turn{animation:ai-in .22s ease-out}
+@keyframes ai-pop{from{opacity:0;transform:translateY(10px) scale(.98)}}
+@keyframes ai-in{from{opacity:0;transform:translateY(6px)}}
+@keyframes ai-fade{from{opacity:0}}
+@media(prefers-reduced-motion:reduce){.ai-chat.is-widget:not([hidden]),.ai-turn,.ai-chat-history,.ai-chat-memory{animation:none}.ai-chat-log{scroll-behavior:auto}}
+
+/* ===== Admin: fixes for controls that global form rules were overriding ===== */
+.aiadm-step label.aiadm-switch,.aiadm-bulk label.aiadm-switch{display:flex;grid-template-columns:none;align-items:flex-start;gap:12px;margin:10px 0;font-weight:400}
+.aiadm-step label.aiadm-switch input{width:auto;margin-top:3px}
+.aiadm-step label.aiadm-switch strong{font-size:14px}
+.aiadm{padding-bottom:84px}
+.aiadm-savebar{padding-right:20px;transition:transform .18s ease,opacity .18s ease}
+.aiadm-savebar[hidden]{display:none}
+.aiadm-savebar.is-shown{animation:ai-in .2s ease-out}
+.ai-launcher{transition:transform .15s ease,box-shadow .15s ease}
+.ai-launcher:hover{transform:translateY(-1px)}
+.ai-composer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+.ai-composer .ai-composer-row{margin:0;display:flex;gap:8px;align-items:center}
+.ai-composer .ai-count{position:absolute;right:92px;bottom:-2px}
+.ai-composer{position:relative}
+.ai-composer .primary{padding:9px 16px}
+a.ai-page-chip{text-decoration:none;display:inline-block}
+.ai-run a.ai-page-chip{color:var(--ai-accent,#003e4c);font-weight:650}
