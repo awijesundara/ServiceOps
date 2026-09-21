@@ -286,9 +286,6 @@
   ui.stop.addEventListener("click", function () { if (state.active) state.active.stop(); });
   ui.fresh.addEventListener("click", function () { render(null); ui.welcome.hidden = false; refreshHistory(); ui.input.focus(); if (widget) toggleHistory(false); });
   ui.toggle.addEventListener("click", function () { toggleHistory(); });
-  root.querySelectorAll("[data-chat-suggest]").forEach(function (button) {
-    button.addEventListener("click", function () { submit(button.dataset.chatSuggest); });
-  });
 
   function start() {
     if (state.loaded) return;
