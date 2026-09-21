@@ -89,9 +89,15 @@ class Plan:
     reasons: list = field(default_factory=list)
     blocked: str = ""
     note: str = ""
+    retry_after: int = 0  # seconds until a service with an allowance can be used again
 
 
 def usable(connection):
+    cooling = getattr(connection, "cooldown_until", None)
+    if cooling is not None:
+        cooling = cooling if cooling.tzinfo else cooling.replace(tzinfo=now().tzinfo)
+        if cooling > now():
+            return False  # the provider just refused us for going too fast; give it a moment
     return bool(connection.enabled and connection.model)
 
 
@@ -111,9 +117,28 @@ def running_counts(tenant_id):
     return {connection_id: total for connection_id, total in rows}
 
 
-def _weighted(items, rng):
-    """Random order where a heavier service tends to come first (Efraimidis-Spirakis)."""
-    return sorted(items, key=lambda c: rng.random() ** (1.0 / max(1, c.weight)), reverse=True)
+def _share(connection, head):
+    found = (head or {}).get(connection.id)
+    return max(0.05, found.score) if found else 1.0
+
+
+def _weighted(items, rng, head=None):
+    """Random order where a heavier service, and one with more of its allowance left, tends to come first
+    (Efraimidis-Spirakis). Spreading in proportion to what is left uses every allowance and spares none."""
+    return sorted(items, key=lambda c: rng.random() ** (1.0 / (max(1, c.weight) * _share(c, head))), reverse=True)
+
+
+def _ranked(items, rng, head, prefer):
+    """Economy work (chat) goes to the lighter, more plentiful models first; quality work (investigations) to the
+    more capable ones first. A model nearly out of allowance steps aside so the scarce ones last the day."""
+    from serviceops_core.ai import quota
+
+    def order(c):
+        base = quota.TIER_RANK[quota.tier_of(c.model)]
+        base = -base if prefer == "quality" else base
+        return base + (1.5 if _share(c, head) <= 0.1 else 0)
+    weighted = _weighted(items, rng, head)
+    return sorted(weighted, key=order)  # stable: the random weighted order breaks ties
 
 
 def external_allowed(config, sensitive, kinds):
@@ -124,7 +149,7 @@ def external_allowed(config, sensitive, kinds):
     return True
 
 
-def plan(config, connections, reasons=(), kinds=(), counts=None, rng=None, at=None):
+def plan(config, connections, reasons=(), kinds=(), counts=None, rng=None, at=None, headroom=None, prefer="economy"):
     """Order the services that may answer this request; `blocked` explains an empty list."""
     rng = rng or random
     counts = counts or {}
@@ -144,13 +169,19 @@ def plan(config, connections, reasons=(), kinds=(), counts=None, rng=None, at=No
     def has_room(c):
         return counts.get(c.id, 0) < max(1, c.max_concurrency)
 
-    healthy = [c for c in eligible if not circuit_open(c, at)]
-    pool_order = healthy or eligible  # if everything is failing, still try rather than give up silently
+    head = headroom or {}
+    open_now = [c for c in eligible if head.get(c.id) is None or head[c.id].ok]
+    if not open_now:
+        result.blocked = "quota"
+        result.retry_after = min((head[c.id].wait for c in eligible if head.get(c.id)), default=60)
+        return result
+    healthy = [c for c in open_now if not circuit_open(c, at)]
+    pool_order = healthy or open_now  # if everything is failing, still try rather than give up silently
     mode = config.routing_mode if config.routing_mode in ROUTING_MODES else "smart"
     if mode == "priority":
         ordered = sorted(pool_order, key=lambda c: (c.priority, c.name))
     elif mode == "balanced":
-        room = _weighted([c for c in pool_order if has_room(c)], rng)
+        room = _weighted([c for c in pool_order if has_room(c)], rng, head)
         busy = sorted([c for c in pool_order if not has_room(c)], key=lambda c: counts.get(c.id, 0) / max(1, c.max_concurrency))
         ordered = room + busy
     else:  # smart and internal_first: your own AI first, external only as overflow or failover
@@ -162,7 +193,7 @@ def plan(config, connections, reasons=(), kinds=(), counts=None, rng=None, at=No
         ordered = []
         keys = sorted(groups, key=lambda k: (k[1], k[0]) if mode == "smart" else (k[0], k[1]))
         for key in keys:
-            ordered.extend(_weighted(groups[key], rng) if key[1] == 0 else sorted(
+            ordered.extend(_ranked(groups[key], rng, head, prefer) if key[1] == 0 else sorted(
                 groups[key], key=lambda c: counts.get(c.id, 0) / max(1, c.max_concurrency)))
         # Smart mode: a private service with room beats an external one with room; an external one with
         # room beats a busy private one. internal_first keeps private services ahead even when busy.
@@ -184,6 +215,13 @@ def describe(connection, plan_result, attempt=0):
         reason += " The first choice was unavailable."
     return {"name": connection.name, "model": connection.model, "location": where, "reason": reason,
             "sensitive": plan_result.sensitive}
+
+
+def blocked_message(code, retry_after=0):
+    if code == "quota":
+        return ("The AI allowance is used up for now. It should be available again in "
+                f"{__import__('serviceops_core.ai.quota', fromlist=['wait_text']).wait_text(retry_after)}. Please try again then.")
+    return BLOCKED_TEXT.get(code, BLOCKED_TEXT["no_service"])
 
 
 BLOCKED_TEXT = {
@@ -228,9 +266,13 @@ def usage_today(tenant_id):
 
 def record_success(connection):
     connection.consecutive_failures = 0
+    connection.cooldown_until = None
     connection.last_success_at = now()
 
 
-def record_failure(connection):
+def record_failure(connection, rate_limited=False):
+    if rate_limited:  # being told to slow down is not a fault: pause the service briefly, keep its health record clean
+        connection.cooldown_until = now() + timedelta(seconds=65)
+        return
     connection.consecutive_failures = (connection.consecutive_failures or 0) + 1
     connection.last_failure_at = now()

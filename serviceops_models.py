@@ -2762,6 +2762,12 @@ class AIConnection(db.Model):
     priority = db.Column(db.Integer, nullable=False, default=100)
     weight = db.Column(db.Integer, nullable=False, default=1)
     max_concurrency = db.Column(db.Integer, nullable=False, default=1)
+    # Provider allowances (a free tier, for example). None means "no limit that ServiceOps needs to respect".
+    rpm_limit = db.Column(db.Integer)
+    tpm_limit = db.Column(db.Integer)
+    rpd_limit = db.Column(db.Integer)
+    quota_tz = db.Column(db.String(40), nullable=False, default="UTC")  # where the daily allowance resets
+    cooldown_until = db.Column(db.DateTime(timezone=True))
     consecutive_failures = db.Column(db.Integer, nullable=False, default=0)
     last_failure_at = db.Column(db.DateTime(timezone=True))
     last_success_at = db.Column(db.DateTime(timezone=True))
@@ -2774,6 +2780,18 @@ class AIConnection(db.Model):
     def external(self):
         """A hosted provider sends data outside the organization; a server on its network does not."""
         return self.provider != "self_hosted"
+
+
+class AICall(db.Model):
+    """One attempt to use an AI service, kept briefly so allowances (per minute, tokens, per day) can be respected."""
+    __tablename__ = "ai_call"
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    connection_id = db.Column(db.String(36), nullable=False, index=True)
+    started_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, index=True)
+    prompt_tokens = db.Column(db.Integer, nullable=False, default=0)
+    completion_tokens = db.Column(db.Integer, nullable=False, default=0)
+    status = db.Column(db.String(12), nullable=False, default="started")  # started | ok | failed | limited
 
 
 class AIMemory(db.Model):
@@ -2880,4 +2898,4 @@ class AIAction(db.Model):
     __table_args__ = (db.UniqueConstraint("run_id", "action_type", name="uq_ai_action_run_type"),)
 
 
-__all__ += ["AIConfiguration", "AIConnection", "AIMemory", "AIRun", "AIConversation", "AIMessage", "AIAction"]
+__all__ += ["AIConfiguration", "AIConnection", "AICall", "AIMemory", "AIRun", "AIConversation", "AIMessage", "AIAction"]

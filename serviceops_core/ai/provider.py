@@ -200,6 +200,7 @@ def rejection(status):
     else:
         error, code = ProviderError("Provider rejected the request; check credentials, model and service availability."), "provider_failed"
     error.code = code
+    error.status = status
     return error
 
 

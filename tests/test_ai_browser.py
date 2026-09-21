@@ -109,6 +109,8 @@ ENDPOINT = "http://127.0.0.1:18099/v1/chat/completions"
 
 def enable_ai(app, **overrides):
     with app.app_context():
+        from app import AIConnection
+        AIConnection.query.delete()  # the legacy single-service settings below are used unless a test adds services
         config = db.session.get(AIConfiguration, 1) or AIConfiguration(tenant_id=1)
         config.enabled = config.incident_enabled = config.chat_enabled = True
         config.provider, config.endpoint, config.model = "self_hosted", ENDPOINT, "local-test"
@@ -489,9 +491,14 @@ def test_admin_adds_a_service_tests_the_privacy_rules_and_removes_it_in_the_brow
                 page.locator(".aiadm-model-item", has_text="Qwen3-8B").click()
                 assert page.locator('[data-ai-f="model"]').input_value() == "Qwen/Qwen3-8B-GGUF:Q4_K_M"
                 assert not axe_violations(page)
+                page.get_by_text("Provider allowance (optional)").click()
+                page.locator('[data-ai-f="rpd"]').fill("10")
+                page.locator('[data-ai-f="rpm"]').fill("2")
+                assert page.locator("[data-ai-use-preset]").is_hidden()  # no published free tier for a server on your network
                 page.get_by_role("button", name="Save service").click()
-                wait_for(lambda: page.locator(".aiadm-card").count() == 1)
+                wait_for(lambda: page.locator(".aiadm-card").count() == 1 and "llama.cpp" in page.locator(".aiadm-card").inner_text())
                 assert "Private" in page.locator(".aiadm-card").inner_text()
+                assert "Today: 0 of 10" in page.locator(".aiadm-card").inner_text() and "This minute: 0 of 2" in page.locator(".aiadm-card").inner_text()
                 # The privacy tester uses the real rules.
                 page.locator("[data-ai-try]").click()
                 page.keyboard.type("Please email anna@corp.example about her VPN")
