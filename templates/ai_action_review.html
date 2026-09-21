@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Review AI action · {{ ticket.number }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<section class="ai-run">
+  <div class="ai-run-head"><div><p class="eyebrow">HUMAN APPROVAL REQUIRED</p><h1>Review ticket comment for {{ ticket.number }}</h1><p class="muted"><a href="{{ url_for('ai.result', run_id=action.run_id) }}">Back to the investigation</a> · Expires {{ action.expires_at|usertime }}</p></div><span class="ai-pill" data-state="{{ 'completed' if action.status == 'executed' else 'cancelled' if action.status != 'pending' else 'queued' }}">{{ action.status|capitalize }}</span></div>
+  <div class="panel">
+    <h2>Exact proposed change</h2>
+    <p>Add the following comment to <a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a>:</p>
+    <pre class="pre">{{ payload.body }}</pre>
+    {% if action.status == 'pending' and not expired %}
+    <p class="muted">Approving rechecks your access and the ticket version. If the ticket changed, ServiceOps will reject this proposal.</p>
+    <form method="post" class="ai-actions"><button name="decision" value="reject" class="button">Reject</button><button name="decision" value="approve" class="primary">Approve and add comment</button></form>
+    {% elif expired and action.status == 'pending' %}<p class="ai-banner">This proposal expired. Prepare a new one from a current investigation.</p>
+    {% elif action.status == 'executed' %}<p class="ai-banner">Approved and added to the ticket.</p>
+    {% else %}<p class="ai-banner">This proposal cannot be executed.</p>{% endif %}
+  </div>
+</section>
+{% endblock %}

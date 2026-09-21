@@ -237,13 +237,15 @@ def _prepare_chat(run, user, config, steps):
         steps.add("Declined", "This asks for something the assistant never has access to")
         return Prepared(refusal=code)
     reasons = set(routing.scan(question, config))
-    evidence = access.collect_chat_evidence(scope, question, lambda text, kind: reasons.update(routing.scan(text, config, kind)))
+    earlier = AIMessage.query.filter_by(conversation_id=run.conversation_id).order_by(AIMessage.created_at).all()
+    history = access.history_for_model(scope, [m for m in earlier if m.status == "completed" and m.id != run.message_id])
+    context_numbers = access.contextual_record_numbers(question, history)
+    evidence = access.collect_chat_evidence(
+        scope, question, lambda text, kind: reasons.update(routing.scan(text, config, kind)), context_numbers)
     detail = _describe(evidence.counts())
     if evidence.unavailable:
         detail += f"; {len(evidence.unavailable)} reference(s) not available to you"
     steps.add("Looked up records you can access", detail)
-    earlier = AIMessage.query.filter_by(conversation_id=run.conversation_id).order_by(AIMessage.created_at).all()
-    history = access.history_for_model(scope, [m for m in earlier if m.status == "completed" and m.id != run.message_id])
     for turn in history:
         reasons.update(routing.scan(turn.get("content", ""), config))
     messages, _ = access.build_chat_messages(scope, question, history, evidence)
@@ -251,7 +253,7 @@ def _prepare_chat(run, user, config, steps):
     options = _run_options(run)
     # Chat replies are fast: the model is asked not to spend time on a long reasoning pass.
     return Prepared(messages, evidence.sources, grounded, tuple(access.record_numbers(question)), False, False,
-                    reasons=reasons, kinds={s["kind"] for s in evidence.sources})
+                    reasons=reasons, kinds=evidence.kinds)
 
 
 def _stable_prefix(text):

@@ -9,7 +9,8 @@ from types import SimpleNamespace
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from serviceops_models import AIConfiguration, AIConnection, AIConversation, AIMessage, AIRun, db, now, settings_cipher
+from serviceops_models import (AIAction, AIConfiguration, AIConnection, AIConversation, AIMessage, AIRun, Ticket, db, now,
+                               settings_cipher)
 from serviceops_core.ai import access, discovery_tokens, routing, service
 from serviceops_core.ai.provider import (PROVIDERS, ProviderError, decrypt_key, generate, list_models, normalize_endpoint,
                                          validate_configuration)
@@ -139,6 +140,7 @@ def register(app):
                 config.enabled = request.form.get("enabled") == "on"
                 config.incident_enabled = request.form.get("incident_enabled") == "on"
                 config.chat_enabled = request.form.get("chat_enabled") == "on"
+                config.actions_enabled = request.form.get("actions_enabled") == "on"
                 config.show_reasoning = request.form.get("show_reasoning") == "on"
                 config.external_consent = request.form.get("external_consent") == "on"
                 mode = request.form.get("routing_mode", config.routing_mode or "smart")
@@ -168,6 +170,7 @@ def register(app):
                 service.cancel_active(current_user.tenant_id)
                 audit("ai configured", "AI configuration",
                       f"enabled={config.enabled}; incidents={config.incident_enabled}; chat={config.chat_enabled}; "
+                      f"actions={config.actions_enabled}; "
                       f"routing={config.routing_mode}; external={config.external_scope}; revision={config.revision}")
                 db.session.commit()
                 flash("Saved. Requests waiting or being answered were cancelled so the new settings apply cleanly.", "success")
@@ -383,7 +386,99 @@ def register(app):
             source["url"] = (url_for("ticket_detail", ticket_id=source["record_id"]) if source["kind"] == "ticket" else
                              url_for("knowledge_detail", article_id=source["record_id"]) if source["kind"] == "knowledge" else
                              url_for("ci_edit", ci_id=source["record_id"]))
-        return render_template("ai_result.html", run=run, ticket=ticket, sources=sources)
+        return render_template("ai_result.html", run=run, ticket=ticket, sources=sources, config=config)
+
+    def owned_action(action_id, *, lock=False):
+        query = AIAction.query.filter_by(id=action_id, tenant_id=current_user.tenant_id,
+                                         proposed_by_id=current_user.id)
+        return (query.with_for_update() if lock else query).first_or_404()
+
+    @blueprint.post("/ai/runs/<run_id>/actions/comment")
+    @login_required
+    def propose_comment(run_id):
+        """Freeze the completed answer as an exact, expiring ticket-comment proposal."""
+        identity = service.actor(current_user)
+        config = service.enabled_config(identity.tenant_id)
+        if not config.actions_enabled:
+            abort(403, description="AI ticket actions are disabled by your administrator.")
+        run = AIRun.query.filter_by(id=run_id, tenant_id=identity.tenant_id,
+                                    user_id=identity.id, kind="investigation").with_for_update().first_or_404()
+        if run.actor_role != identity.role:
+            abort(403, description="Switch to the role used to request this investigation.")
+        if run.status != "completed" or not run.result_text.strip():
+            abort(409, description="Only a completed investigation can become a ticket action.")
+        if not service.sources_accessible(identity, json.loads(run.sources_json or "[]")):
+            abort(403, description="You no longer have access to all evidence used by this investigation.")
+        ticket = service.visible_incident(identity, run.ticket_id)
+        existing = AIAction.query.filter_by(run_id=run.id, action_type="add_comment").first()
+        if existing:
+            return redirect(url_for("ai.action_review", action_id=existing.id))
+        action = AIAction(
+            tenant_id=identity.tenant_id, run_id=run.id, ticket_id=ticket.id,
+            proposed_by_id=identity.id, actor_role=identity.role, action_type="add_comment",
+            payload_json=json.dumps({"body": run.result_text[:10000]}),
+            target_updated_at=ticket.updated_at, expires_at=now() + timedelta(minutes=15),
+        )
+        db.session.add(action)
+        db.session.flush()
+        audit("ai action proposed", action.id, f"type=add_comment; ticket={ticket.number}")
+        db.session.commit()
+        return redirect(url_for("ai.action_review", action_id=action.id))
+
+    @blueprint.route("/ai/actions/<action_id>", methods=["GET", "POST"])
+    @login_required
+    def action_review(action_id):
+        from app import effective_role_has_action, log_history, post_ticket_comment
+
+        identity = service.actor(current_user)
+        config = service.enabled_config(identity.tenant_id)
+        action = owned_action(action_id, lock=request.method == "POST")
+        if action.actor_role != identity.role:
+            abort(403, description="Switch to the role used to prepare this action.")
+        ticket = service.visible_incident(identity, action.ticket_id)
+        payload = json.loads(action.payload_json)
+        if request.method == "GET":
+            return render_template("ai_action_review.html", action=action, ticket=ticket, payload=payload,
+                                   expired=action.expires_at.replace(tzinfo=now().tzinfo) <= now())
+        decision = request.form.get("decision")
+        if decision == "reject" and action.status == "pending":
+            action.status, action.approved_by_id, action.decided_at = "rejected", identity.id, now()
+            audit("ai action rejected", action.id, f"type={action.action_type}; ticket={ticket.number}")
+            db.session.commit()
+            return redirect(url_for("ai.action_review", action_id=action.id))
+        if decision != "approve":
+            abort(400)
+        if action.status == "executed":
+            return redirect(url_for("ai.action_review", action_id=action.id))
+        if action.status != "pending":
+            abort(409, description="This action is no longer awaiting approval.")
+        if not config.actions_enabled:
+            abort(403, description="AI ticket actions are disabled by your administrator.")
+        if action.expires_at.replace(tzinfo=now().tzinfo) <= now():
+            action.status, action.decided_at = "expired", now()
+            db.session.commit()
+            abort(410, description="This proposal expired. Prepare it again from a current investigation.")
+        if not effective_role_has_action(identity.role, "comment_public", tenant_id=identity.tenant_id):
+            abort(403)
+        run = AIRun.query.filter_by(id=action.run_id, tenant_id=identity.tenant_id).first_or_404()
+        if not service.sources_accessible(identity, json.loads(run.sources_json or "[]")):
+            abort(403, description="You no longer have access to all evidence used by this investigation.")
+        locked_ticket = Ticket.query.filter_by(id=ticket.id, tenant_id=identity.tenant_id).with_for_update().one()
+        expected = action.target_updated_at.replace(tzinfo=now().tzinfo)
+        actual = locked_ticket.updated_at.replace(tzinfo=now().tzinfo)
+        if actual != expected:
+            action.status, action.decided_at = "stale", now()
+            audit("ai action stale", action.id, f"type={action.action_type}; ticket={ticket.number}")
+            db.session.commit()
+            abort(409, description="The ticket changed after this proposal was prepared. Run a new investigation first.")
+        comment = post_ticket_comment(locked_ticket, current_user, payload["body"])
+        log_history("ticket", locked_ticket.id, "AI-assisted comment added", details=payload["body"][:500])
+        action.status, action.approved_by_id = "executed", identity.id
+        action.decided_at = action.executed_at = now()
+        audit("ai action executed", action.id,
+              f"type=add_comment; ticket={ticket.number}; comment={comment.id}")
+        db.session.commit()
+        return redirect(url_for("ai.action_review", action_id=action.id))
 
     def authorized_run(run_id):
         """Load a run only for the person who started it, under the role they started it with."""
@@ -436,7 +531,9 @@ def register(app):
             if not ok:
                 abort(403, description="You no longer have access to all evidence used by this answer.")
             sources = source_links(sources)
-        problem = {"failed": routing.BLOCKED_TEXT.get(run.error_code, "The assistant could not complete this request."),
+        problem = {"failed": routing.BLOCKED_TEXT.get(
+                       run.error_code, routing.RUN_ERROR_TEXT.get(
+                           run.error_code, "The assistant could not complete this request.")),
                    "cancelled": "Stopped. No answer was kept."}.get(run.status, "")
         return no_store({**body, "changed": True, "text": run.result_text if finished else run.partial_text,
                          "reasoning": "",

@@ -6,7 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app import AIConfiguration, AIConnection, AIRun, Knowledge, Tenant, Ticket, User, db, now
+from app import AIConfiguration, AIConnection, AIRun, Comment, Knowledge, Tenant, Ticket, User, db, now
+from serviceops_models import AIAction
 from serviceops_core.ai import provider, service
 from tests.test_app import app, client, login  # noqa: F401
 
@@ -67,7 +68,7 @@ def test_disabled_default_and_admin_only(app, client):
 def test_configuration_encrypted_and_external_consent_required(app, client):
     login(client)
     form = {"provider": "openai", "model": "test-model", "api_key": "not-a-real-key", "enabled": "on",
-            "incident_enabled": "on"}
+            "incident_enabled": "on", "actions_enabled": "on"}
     response = client.post("/admin/ai", data=form, follow_redirects=True)
     assert b"Authorize external processing" in response.data
     with app.app_context():
@@ -77,6 +78,7 @@ def test_configuration_encrypted_and_external_consent_required(app, client):
     assert b"not-a-real-key" not in response.data
     with app.app_context():
         assert db.session.get(AIConfiguration, 1).enabled
+        assert db.session.get(AIConfiguration, 1).actions_enabled
         primary = AIConnection.query.filter_by(name="Primary").one()
         assert primary.key_encrypted and "not-a-real-key" not in primary.key_encrypted
     # New destination must never receive an old provider's credential.
@@ -141,6 +143,70 @@ def test_worker_retrieves_only_tenant_published_evidence_and_never_mutates(app, 
         Knowledge.query.filter_by(title="VPN guide").one().published = False
         db.session.commit()
     assert client.get(f"/ai/runs/{run_id}").status_code == 403
+
+
+def completed_action_run(app, client, monkeypatch, *, actions_enabled=True):
+    ticket_id = configure(app, actions_enabled=actions_enabled)
+    login(client)
+    run_id = submit(client, ticket_id)
+    monkeypatch.setattr(service, "generate_stream", fake_stream("Check the VPN gateway and client logs [S1]."))
+    with app.app_context():
+        assert service.process_one()
+    return ticket_id, run_id
+
+
+def test_approved_ai_comment_is_exact_reauthorized_and_idempotent(app, client, monkeypatch):
+    ticket_id, run_id = completed_action_run(app, client, monkeypatch)
+    proposal = client.post(f"/ai/runs/{run_id}/actions/comment")
+    assert proposal.status_code == 302
+    action_id = proposal.headers["Location"].rstrip("/").split("/")[-1]
+    review = client.get(proposal.headers["Location"])
+    assert review.status_code == 200
+    assert b"Check the VPN gateway and client logs [S1]." in review.data
+
+    approved = client.post(f"/ai/actions/{action_id}", data={"decision": "approve"})
+    assert approved.status_code == 302
+    # A repeated submit returns the already-executed result and cannot add a second comment.
+    assert client.post(f"/ai/actions/{action_id}", data={"decision": "approve"}).status_code == 302
+    with app.app_context():
+        action = db.session.get(AIAction, action_id)
+        comments = Comment.query.filter_by(ticket_id=ticket_id).all()
+        assert action.status == "executed" and action.approved_by_id
+        assert [row.body for row in comments] == ["Check the VPN gateway and client logs [S1]."]
+
+
+def test_ai_action_switch_expiry_and_stale_ticket_fail_closed(app, client, monkeypatch):
+    ticket_id, run_id = completed_action_run(app, client, monkeypatch, actions_enabled=False)
+    assert client.post(f"/ai/runs/{run_id}/actions/comment").status_code == 403
+    with app.app_context():
+        db.session.get(AIConfiguration, 1).actions_enabled = True
+        db.session.commit()
+    proposal = client.post(f"/ai/runs/{run_id}/actions/comment")
+    action_id = proposal.headers["Location"].rstrip("/").split("/")[-1]
+    with app.app_context():
+        ticket = db.session.get(Ticket, ticket_id)
+        ticket.title = "VPN changed while the proposal was waiting"
+        ticket.updated_at = now() + timedelta(seconds=1)
+        db.session.commit()
+    stale = client.post(f"/ai/actions/{action_id}", data={"decision": "approve"})
+    assert stale.status_code == 409
+    with app.app_context():
+        assert db.session.get(AIAction, action_id).status == "stale"
+        assert Comment.query.filter_by(ticket_id=ticket_id).count() == 0
+
+    # A distinct completed run produces a distinct proposal whose expiry is enforced server-side.
+    next_run = submit(client, ticket_id)
+    with app.app_context():
+        assert service.process_one()
+    next_proposal = client.post(f"/ai/runs/{next_run}/actions/comment")
+    next_id = next_proposal.headers["Location"].rstrip("/").split("/")[-1]
+    with app.app_context():
+        db.session.get(AIAction, next_id).expires_at = now() - timedelta(seconds=1)
+        db.session.commit()
+    assert client.post(f"/ai/actions/{next_id}", data={"decision": "approve"}).status_code == 410
+    with app.app_context():
+        assert db.session.get(AIAction, next_id).status == "expired"
+        assert Comment.query.filter_by(ticket_id=ticket_id).count() == 0
 
 
 def test_disable_during_provider_call_discards_answer(app, client, monkeypatch):
