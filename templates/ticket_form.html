@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}New {{ kind }} · {{ instance_name }}{% endblock %}
 {% block content %}
-{% if form %}<div class="flash error">{{ form_error }}</div>{% endif %}
+{% if form and form_error %}<div class="flash error">{{ form_error }}</div>{% endif %}
+{% if ai_prefill %}<div class="flash">This draft was prepared by the AI assistant from your conversation. Check every field, choose the owning team, then create it. Nothing has been submitted yet.</div>{% endif %}
 {% if kind == 'incident' %}
 {% set f = form %}
 <section class="record-shell">

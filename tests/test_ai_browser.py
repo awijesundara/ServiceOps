@@ -291,6 +291,11 @@ def test_approved_ticket_comment_action_requires_exact_browser_review(ai_browser
         browser.close()
 
 
+def axe_details(page):
+    page.add_script_tag(url="/__axe.js") if not page.evaluate("typeof window.axe !== 'undefined'") else None
+    return page.evaluate("async () => (await axe.run(document, {runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa']}})).violations.map(v => [v.id, v.nodes.map(n => n.html.slice(0,140) + ' :: ' + (n.any[0] ? n.any[0].message : ''))])")
+
+
 def axe_violations(page):
     # The production CSP forbids inline script, so serve axe as a same-origin file via request interception.
     if not getattr(page, "_axe_routed", False):
@@ -431,7 +436,7 @@ def test_full_page_chat_and_stop(ai_browser_server, monkeypatch):
             page.goto(base + "/ai/chat", wait_until="networkidle")
             assert page.locator("[data-chat-launch]").count() == 0
             assert not axe_violations(page)
-            page.get_by_role("button", name="How do I reset my VPN access?").click()
+            page.get_by_role("button", name="Report a problem").click()
             wait_for(lambda: "Working on it" in page.inner_text("[data-chat-log]"))
             page.locator("[data-chat-stop]").click()
             wait_for(lambda: page.locator("[data-chat-send]").is_enabled(), timeout=20)
@@ -505,3 +510,70 @@ def test_admin_adds_a_service_tests_the_privacy_rules_and_removes_it_in_the_brow
             browser.close()
     finally:
         model_server.close()
+
+
+def test_chat_shows_a_ticket_draft_follow_up_chips_and_memory_in_the_browser(ai_browser_server, monkeypatch):
+    from playwright.sync_api import sync_playwright
+    app, base, _ = ai_browser_server
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", ENDPOINT)
+    enable_ai(app)
+    clear_chats(app)
+    with app.app_context():
+        from app import AIMemory
+        AIMemory.query.delete()
+        db.session.commit()
+    answers = iter([
+        ('I have prepared a draft for you.\n[[TICKET]] {"kind":"incident","title":"Email not sending","description":"Outlook cannot send",'
+         '"impact":"Medium","urgency":"High","category":"Software"}\n[[FOLLOWUPS]] Is anyone else affected? | Show email articles | Any freezes?'),
+        "Two people are affected [S1].\n[[FOLLOWUPS]] Anything else?"])
+
+    def stream(config, messages, on_delta, thinking=None):
+        text = next(answers)
+        on_delta("content", text)
+        return text, "", {}
+
+    monkeypatch.setattr(service, "generate_stream", stream)
+    stop_worker = threading.Event()
+
+    def keep_working():
+        with app.app_context():
+            while not stop_worker.is_set():
+                if not service.process_one():
+                    time.sleep(0.2)
+    threading.Thread(target=keep_working, daemon=True).start()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+            problems = []
+            page.on("console", lambda m: problems.append(m.text) if "Content Security Policy" in m.text else None)
+            sign_in(page, base)
+            page.goto(base + "/ai/chat", wait_until="networkidle")
+            page.locator("#ai-chat-input").click()
+            page.keyboard.type("my email will not send, please raise a ticket")
+            page.keyboard.press("Enter")
+            wait_for(lambda: page.locator(".ai-draft").count() == 1)
+            assert "[[" not in page.inner_text("[data-chat-log]")
+            link = page.get_by_role("link", name="Review and create")
+            assert link.get_attribute("href").startswith("/tickets/new/incident?") and "Email not sending" in page.locator(".ai-draft").inner_text()
+            assert page.locator(".ai-suggest-chip").count() == 3
+            bad = axe_violations(page)
+            if bad:
+                print("AXE", axe_details(page))
+            assert not bad
+            page.locator(".ai-suggest-chip").first.click()  # a follow-up question is sent like typed text
+            wait_for(lambda: "Two people are affected" in page.inner_text("[data-chat-log]"))
+            # Memory: ask it to remember, then see and remove the note.
+            page.locator("#ai-chat-input").click()
+            page.keyboard.type("Remember that I prefer short answers")
+            page.keyboard.press("Enter")
+            wait_for(lambda: "I'll remember that" in page.inner_text("[data-chat-log]"))
+            page.get_by_role("button", name="Memory").click()
+            wait_for(lambda: "I prefer short answers" in page.inner_text("[data-chat-memory-list]"))
+            assert not axe_violations(page)
+            page.get_by_role("button", name="Remove note").click()
+            wait_for(lambda: page.locator("[data-chat-memory-list] li").count() == 0)
+            assert not problems, problems
+            browser.close()
+    finally:
+        stop_worker.set()

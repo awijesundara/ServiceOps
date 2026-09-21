@@ -9,9 +9,9 @@ from types import SimpleNamespace
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from serviceops_models import (AIAction, AIConfiguration, AIConnection, AIConversation, AIMessage, AIRun, Ticket, db, now,
+from serviceops_models import (AIAction, AIConfiguration, AIConnection, AIConversation, AIMemory, AIMessage, AIRun, Ticket, db, now,
                                settings_cipher)
-from serviceops_core.ai import access, discovery_tokens, routing, service
+from serviceops_core.ai import access, discovery_tokens, memory, routing, service
 from serviceops_core.ai.provider import (PROVIDERS, ProviderError, decrypt_key, generate, list_models, normalize_endpoint,
                                          validate_configuration)
 from serviceops_core.storage import ipfs_enabled
@@ -150,6 +150,7 @@ def register(app):
                     raise ProviderError("Choose one of the listed options.")
                 config.routing_mode, config.external_scope = mode, scope
                 if "routing_mode" in request.form:  # the full settings form; older clients leave these untouched
+                    config.memory_enabled = request.form.get("memory_enabled") == "on"
                     for flag in ("detect_personal", "detect_credentials", "detect_financial"):
                         setattr(config, flag, request.form.get(flag) == "on")
                 if "sensitive_terms" in request.form:
@@ -509,6 +510,15 @@ def register(app):
                              url_for("ci_edit", ci_id=source["record_id"]))
         return sources
 
+    def with_draft_link(route):
+        """Turn a validated ticket draft into a link that opens the normal ticket form pre-filled."""
+        draft = (route or {}).get("draft")
+        if draft:
+            route = {**route, "draft": {**draft, "url": url_for(
+                "ticket_new", kind=draft["kind"], ai="1", title=draft["title"], description=draft["description"],
+                impact=draft["impact"], urgency=draft["urgency"], category=draft["category"])}}
+        return route
+
     def no_store(payload, status=200):
         response = jsonify(payload)
         response.status_code = status
@@ -541,7 +551,7 @@ def register(app):
         return no_store({**body, "changed": True, "text": run.result_text if finished else run.partial_text,
                          "reasoning": "",
                          "steps": json.loads(run.steps_json or "[]"), "sources": sources, "error": problem,
-                         "route": json.loads(run.route_json or "{}") if finished else {},
+                         "route": with_draft_link(json.loads(run.route_json or "{}")) if finished else {},
                          "usage": json.loads(run.usage_json or "{}") if finished else {}})
 
     @blueprint.route("/ai/runs/<run_id>/cancel", methods=["POST"])
@@ -578,6 +588,7 @@ def register(app):
 
     def message_payload(message, scope, config, run):
         body = {"id": message.id, "role": message.role, "status": message.status, "content": message.content,
+                "error": routing.BLOCKED_TEXT.get(run.error_code, "") if run and message.status == "failed" else "",
                 "reasoning": "", "sources": [], "steps": [], "run_id": run.id if run else message.run_id,
                 "created_at": message.created_at.isoformat()}
         if message.role != "assistant" or message.status != "completed":
@@ -586,7 +597,7 @@ def register(app):
         if not access.sources_still_accessible(scope, sources):
             body.update(content=access.WITHHELD_NOTICE, withheld=True)
             return body
-        body.update(route=json.loads(message.route_json or "{}"), sources=source_links(sources),
+        body.update(route=with_draft_link(json.loads(message.route_json or "{}")), sources=source_links(sources),
                     steps=json.loads(message.steps_json or "[]"),
                     reasoning="")
         return body
@@ -603,7 +614,8 @@ def register(app):
         scope, config = chat_scope()
         rows = AIConversation.query.filter_by(tenant_id=scope.tenant_id, user_id=scope.user_id, actor_role=scope.role).order_by(
             AIConversation.updated_at.desc()).limit(50).all()
-        return no_store({"scope": scope.summary(), "show_reasoning": bool(config.show_reasoning), "conversations": [
+        return no_store({"scope": scope.summary(), "memory_enabled": bool(config.memory_enabled),
+                         "show_reasoning": bool(config.show_reasoning), "conversations": [
             {"id": row.id, "title": row.title, "updated_at": row.updated_at.isoformat()} for row in rows]})
 
     @blueprint.route("/ai/chat/conversations/<conversation_id>")
@@ -626,6 +638,48 @@ def register(app):
         audit("ai chat deleted", conversation_id, "Deleted by its owner")
         db.session.commit()
         return no_store({"deleted": True})
+
+    def note_payload(note):
+        return {"id": note.id, "text": note.text, "kind": note.kind, "source": note.source, "created_at": note.created_at.isoformat()}
+
+    @blueprint.route("/ai/chat/memories")
+    @login_required
+    def memory_list():
+        scope, config = chat_scope()
+        return no_store({"enabled": bool(config.memory_enabled), "limit": memory.MAX_NOTES,
+                         "notes": [note_payload(n) for n in memory.notes_for(scope)] if config.memory_enabled else []})
+
+    @blueprint.route("/ai/chat/memories", methods=["POST"])
+    @login_required
+    def memory_add():
+        scope, config = chat_scope()
+        if not config.memory_enabled:
+            abort(403, description="Your administrator has turned assistant memory off.")
+        data = request.get_json(silent=True) or {}
+        note, message = memory.store(scope, str(data.get("text", "")), config, source="suggested")
+        if not note:
+            return no_store({"error": message}, 400)
+        audit("ai memory saved", note.id, "one note")
+        db.session.commit()
+        return no_store({"note": note_payload(note), "message": message}, 201)
+
+    @blueprint.route("/ai/chat/memories/<note_id>/delete", methods=["POST"])
+    @login_required
+    def memory_delete(note_id):
+        # Always allowed to the owner, even if the feature has since been switched off.
+        note = AIMemory.query.filter_by(id=note_id, tenant_id=current_user.tenant_id, user_id=current_user.id).first_or_404()
+        db.session.delete(note)
+        audit("ai memory deleted", note_id, "Deleted by its owner")
+        db.session.commit()
+        return no_store({"deleted": True})
+
+    @blueprint.route("/ai/chat/memories/clear", methods=["POST"])
+    @login_required
+    def memory_clear():
+        total = AIMemory.query.filter_by(tenant_id=current_user.tenant_id, user_id=current_user.id).delete(synchronize_session=False)
+        audit("ai memory cleared", str(current_user.id), f"notes={total}")
+        db.session.commit()
+        return no_store({"cleared": total})
 
     @blueprint.route("/ai/chat/messages", methods=["POST"])
     @login_required

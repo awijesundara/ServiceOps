@@ -187,6 +187,9 @@ def describe(connection, plan_result, attempt=0):
 
 
 BLOCKED_TEXT = {
+    "provider_busy": "The AI service is busy right now. Please try again in a moment.",
+    "provider_key": "The AI service turned down its access key. Please let your administrator know.",
+    "provider_model": "The AI model is not available. Please let your administrator know.",
     "sensitive_no_private": "This request includes sensitive information, so it can only be handled by your organization's own AI, and none is available right now. Please try again shortly.",
     "external_not_permitted": "Your administrator has not allowed this request to use an external AI service, and no private AI is available.",
     "no_service": "No AI service is available right now. Please ask your administrator.",
