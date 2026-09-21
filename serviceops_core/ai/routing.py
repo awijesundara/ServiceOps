@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 
 from serviceops_core.security import EMAIL_PATTERN, PHONE_PATTERNS
-from serviceops_models import AIRun, now
+from serviceops_models import AIRun, db, now
 
 ROUTING_MODES = {
     "smart": "Smart",
@@ -106,11 +106,9 @@ def circuit_open(connection, at=None):
 
 
 def running_counts(tenant_id):
-    rows = AIRun.query.filter(AIRun.tenant_id == tenant_id, AIRun.status == "running", AIRun.connection_id.isnot(None)).all()
-    counts = {}
-    for row in rows:
-        counts[row.connection_id] = counts.get(row.connection_id, 0) + 1
-    return counts
+    rows = db.session.query(AIRun.connection_id, db.func.count()).filter(
+        AIRun.tenant_id == tenant_id, AIRun.status == "running", AIRun.connection_id.isnot(None)).group_by(AIRun.connection_id).all()
+    return {connection_id: total for connection_id, total in rows}
 
 
 def _weighted(items, rng):
