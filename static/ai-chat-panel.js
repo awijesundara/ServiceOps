@@ -164,7 +164,9 @@
 
   function refreshHistory() {
     return window.AIChat.get("/ai/chat/conversations").then(function (data) {
-      ui.scope.textContent = data.scope;
+      // A short badge; the full description is one hover away.
+      ui.scope.textContent = data.scope.split(":")[0] + " access";
+      ui.scope.title = data.scope;
       ui.memoryToggle.hidden = !data.memory_enabled;
       ui.list.textContent = "";
       ui.empty.hidden = data.conversations.length > 0;
@@ -267,7 +269,10 @@
   }
 
   function updateCount() {
+    ui.count.hidden = ui.input.value.length < MAX - 300;  // only worth showing near the limit
     ui.count.textContent = ui.input.value.length + " / " + MAX;
+    ui.input.style.height = "auto";
+    ui.input.style.height = Math.min(ui.input.scrollHeight, 140) + "px";
   }
 
   document.addEventListener("ai-chat-ask", function (event) { if (!state.busy) submit(String(event.detail || "")); });

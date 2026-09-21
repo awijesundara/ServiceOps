@@ -70,8 +70,10 @@ def test_ai_admin_to_incident_workflow(ai_browser_server, monkeypatch, width, he
                                         endpoint="http://127.0.0.1:18099/v1/chat/completions"))
             db.session.commit()
         page.goto(base + "/admin/ai", wait_until="networkidle")
-        page.get_by_label("Turn AI on for this organization").check()
-        page.get_by_label("Investigate with AI on incidents").check()
+        for label in ("Turn AI on for this organization", "Investigate with AI on incidents"):
+            page.get_by_label(label).uncheck()  # a change is what reveals the save bar
+            page.get_by_label(label).check()
+        assert page.locator("[data-ai-savebar]").is_visible()
         page.get_by_role("button", name="Save AI settings").click()
         page.wait_for_load_state("networkidle")
         assert "Saved" in page.inner_text("body")
@@ -370,6 +372,11 @@ def test_chat_widget_streams_and_deletes_under_the_real_csp(ai_browser_server, m
                 page.screenshot(path=os.path.join(shots, "chat-streaming.png"))
             wait_for(lambda: page.locator("[data-ai-status]").last.inner_text().strip() == "Complete")
             wait_for(lambda: page.locator("[data-ai-answer]").last.locator("a.ai-cite").count() >= 1)
+            if shots:
+                page.locator("[data-chat-history-toggle]").click()
+                page.wait_for_timeout(300)
+                page.screenshot(path=os.path.join(shots, f"chat-history-{width}.png"))
+                page.locator("[data-chat-history-toggle]").click()
             assert "Private · " in page.locator("[data-ai-route]").last.inner_text() or "External · " in page.locator("[data-ai-route]").last.inner_text()
             assert page.locator("[data-ai-thinking]").last.is_hidden()
             answer = page.locator("[data-ai-answer]").last
@@ -491,6 +498,8 @@ def test_admin_adds_a_service_tests_the_privacy_rules_and_removes_it_in_the_brow
                 page.locator(".aiadm-model-item", has_text="Qwen3-8B").click()
                 assert page.locator('[data-ai-f="model"]').input_value() == "Qwen/Qwen3-8B-GGUF:Q4_K_M"
                 assert not axe_violations(page)
+                if os.getenv("AI_SCREENSHOT_DIR"):
+                    page.screenshot(path=os.path.join(os.getenv("AI_SCREENSHOT_DIR"), f"ai-admin-dialog-{size['width']}.png"))
                 page.get_by_text("Provider allowance (optional)").click()
                 page.locator('[data-ai-f="rpd"]').fill("10")
                 page.locator('[data-ai-f="rpm"]').fill("2")
@@ -563,12 +572,12 @@ def test_chat_shows_a_ticket_draft_follow_up_chips_and_memory_in_the_browser(ai_
             assert "[[" not in page.inner_text("[data-chat-log]")
             link = page.get_by_role("link", name="Review and create")
             assert link.get_attribute("href").startswith("/tickets/new/incident?") and "Email not sending" in page.locator(".ai-draft").inner_text()
-            assert page.locator(".ai-suggest-chip").count() == 3
+            assert page.locator(".ai-suggest-chip:not(.ai-page-chip)").count() == 3
             bad = axe_violations(page)
             if bad:
                 print("AXE", axe_details(page))
             assert not bad
-            page.locator(".ai-suggest-chip").first.click()  # a follow-up question is sent like typed text
+            page.locator(".ai-suggest-chip:not(.ai-page-chip)").first.click()  # a follow-up question is sent like typed text
             wait_for(lambda: "Two people are affected" in page.inner_text("[data-chat-log]"))
             # Memory: ask it to remember, then see and remove the note.
             page.locator("#ai-chat-input").click()

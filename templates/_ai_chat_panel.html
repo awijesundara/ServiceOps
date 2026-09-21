@@ -10,13 +10,14 @@
   <header class="ai-chat-head">
     <div class="ai-chat-titles">
       <h2 id="ai-chat-title">Ask ServiceOps</h2>
-      <p class="ai-scope" data-chat-scope>Checking your access…</p>
+      <span class="ai-scope" data-chat-scope>Checking access…</span>
     </div>
     <div class="ai-chat-tools">
-      <button type="button" class="ai-tool" data-chat-history-toggle aria-expanded="false" aria-controls="ai-chat-history">History</button>
-      <button type="button" class="ai-tool" data-chat-memory-toggle aria-expanded="false" aria-controls="ai-chat-memory" hidden>Memory</button>
-      <button type="button" class="ai-tool" data-chat-new>New chat</button>
-      {% if not full_page %}<a class="ai-tool" href="{{ url_for('ai.chat_page') }}">Full page</a><button type="button" class="ai-tool" data-chat-close aria-label="Close chat">✕</button>{% endif %}
+      <button type="button" class="ai-icon" data-chat-new aria-label="New chat" title="New chat"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button type="button" class="ai-icon" data-chat-history-toggle aria-expanded="false" aria-controls="ai-chat-history" aria-label="History" title="History"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></button>
+      <button type="button" class="ai-icon" data-chat-memory-toggle aria-expanded="false" aria-controls="ai-chat-memory" aria-label="Memory" title="What I remember about you" hidden><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12v16l-6-4-6 4z"/></svg></button>
+      {% if not full_page %}<a class="ai-icon" href="{{ url_for('ai.chat_page') }}" aria-label="Open full page" title="Open full page"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg></a>
+      <button type="button" class="ai-icon" data-chat-close aria-label="Close chat" title="Close"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>{% endif %}
     </div>
   </header>
   <div class="ai-chat-body">
@@ -26,7 +27,7 @@
     </nav>
     <section class="ai-chat-memory" id="ai-chat-memory" aria-label="What I remember about you" data-chat-memory hidden>
       <h3>What I remember about you</h3>
-      <p class="muted">Only notes you asked me to keep. Private to you. Remove any of them at any time.</p>
+      <p class="muted">Notes you asked me to keep. Only you can see them.</p>
       <ul data-chat-memory-list></ul>
       <p class="muted" data-chat-memory-empty>Nothing yet. Say “remember that I prefer short answers” to add one.</p>
       <button type="button" class="ai-forget" data-chat-memory-clear hidden>Forget everything</button>
@@ -34,7 +35,7 @@
     <div class="ai-chat-main">
       <div class="ai-chat-log" data-chat-log role="log" aria-live="polite" aria-label="Conversation" tabindex="0">
         <div class="ai-chat-welcome" data-chat-welcome>
-          <h3>What can I help you find?</h3>
+          <h3>How can I help?</h3>
           <p class="muted">Ask about tickets, knowledge, change freezes, services or the catalog, or tell me about a problem and I will help you raise it. I work within your access, and I never change anything myself.</p>
           <ul class="ai-suggestions">
             <li><button type="button" data-chat-suggest="I want to report a problem">Report a problem</button></li>
@@ -47,9 +48,9 @@
       <p class="ai-banner" data-chat-error role="alert" hidden></p>
       <form class="ai-composer" data-chat-form autocomplete="off">
         <label class="ai-sr" for="ai-chat-input">Your question</label>
-        <textarea id="ai-chat-input" name="text" rows="2" maxlength="2000" placeholder="Ask a question…" data-chat-input required></textarea>
+        <textarea id="ai-chat-input" name="text" rows="2" maxlength="2000" placeholder="Message ServiceOps…" data-chat-input required></textarea>
         <div class="ai-composer-row">
-          <span class="ai-count muted" data-chat-count>0 / 2000</span>
+          <span class="ai-count" data-chat-count hidden></span>
           <button type="button" class="button" data-chat-stop hidden>Stop</button>
           <button type="submit" class="primary" data-chat-send>Send</button>
         </div>
@@ -71,7 +72,7 @@
         <article class="ai-answer" data-ai-answer aria-busy="true" hidden></article>
         <p class="ai-banner" data-ai-notice hidden></p>
         <div class="ai-extras" data-ai-extras hidden></div>
-        <ul class="ai-sources ai-sources-inline" data-ai-sources></ul>
+        <details class="ai-src" data-ai-sources-box hidden><summary>Sources</summary><ul class="ai-sources ai-sources-inline" data-ai-sources></ul></details>
         <div class="ai-actions">
           <span class="ai-pill" data-ai-status data-state="queued" hidden>Waiting for the assistant</span>
           <button type="button" class="ai-tool" data-ai-copy hidden>Copy</button>

@@ -397,5 +397,13 @@
   tryKind.addEventListener("change", preview);
   form.querySelectorAll("[data-ai-live]").forEach(function (n) { n.addEventListener("change", preview); n.addEventListener("input", preview); });
 
+  // The save bar appears only once something has changed, so it never sits on top of the page for no reason.
+  const savebar = $("savebar");
+  function showSave(event) {
+    if (event && event.target.closest && event.target.closest("[data-ai-tester]")) return;  // trying a sentence is not a setting
+    if (savebar.hidden) { savebar.hidden = false; savebar.classList.add("is-shown"); } }
+  form.addEventListener("input", showSave);
+  form.addEventListener("change", showSave);
+
   draw();
 })();

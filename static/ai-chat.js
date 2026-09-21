@@ -84,6 +84,11 @@
 
   function renderSources(list, sources) {
     list.textContent = "";
+    const box = list.closest("details");
+    if (box) {
+      box.hidden = !(sources && sources.length);
+      box.querySelector("summary").textContent = "Sources (" + (sources ? sources.length : 0) + ")";
+    }
     (sources || []).forEach(function (source) {
       const item = element("li", "ai-source");
       const link = element("a", "ai-cite", source.id);
@@ -142,6 +147,15 @@
       card.appendChild(yes);
       card.appendChild(no);
       holder.appendChild(card);
+    }
+    if (route && route.pages && route.pages.length) {
+      const row = element("div", "ai-suggest ai-pages");
+      route.pages.forEach(function (page) {
+        const link = element("a", "ai-suggest-chip ai-page-chip", "Open " + page.label + " →");
+        link.href = page.url;
+        row.appendChild(link);
+      });
+      holder.appendChild(row);
     }
     if (withSuggestions && route && route.suggestions && route.suggestions.length) {
       const row = element("div", "ai-suggest");
