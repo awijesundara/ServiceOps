@@ -216,7 +216,7 @@ def test_expired_worker_not_retried_and_retention_purges(app, client, monkeypatc
         assert db.session.get(AIRun, run_id).status == "failed"
         run.created_at = now() - timedelta(days=2)
         db.session.commit()
-        monkeypatch.setattr(service, "_last_purge", 0.0)  # the sweep is throttled; force it
+        monkeypatch.setattr(service, "_last_purge", None)  # the sweep is throttled; force it
         service.process_one()
         assert db.session.get(AIRun, run_id) is None
 

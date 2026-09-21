@@ -165,7 +165,7 @@ def cancel_active(tenant_id):
 
 FLUSH_INTERVAL = 0.4
 PURGE_INTERVAL = 300
-_last_purge = 0.0
+_last_purge = None  # monotonic time of the last sweep
 REASONING_ALLOWANCE = 1500  # extra output tokens granted when the model is asked to think
 
 
@@ -421,7 +421,7 @@ def process_one():
     AIRun.query.filter(AIRun.status == "running", db.func.coalesce(AIRun.heartbeat_at, AIRun.started_at) < cutoff).update(
         {"status": "failed", "error_code": "worker_interrupted", "completed_at": now()}, synchronize_session=False)
     global _last_purge
-    if time.monotonic() - _last_purge > PURGE_INTERVAL:  # retention is in days; no need to sweep on every poll
+    if _last_purge is None or time.monotonic() - _last_purge > PURGE_INTERVAL:  # retention is in days; no need to sweep on every poll
         _last_purge = time.monotonic()
         for config in AIConfiguration.query.all():
             AIRun.query.filter(AIRun.tenant_id == config.tenant_id, AIRun.created_at < now() - timedelta(days=config.retention_days),
