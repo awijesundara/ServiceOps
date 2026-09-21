@@ -40,13 +40,12 @@
         <label class="ai-sr" for="ai-chat-input">Your question</label>
         <textarea id="ai-chat-input" name="text" rows="2" maxlength="2000" placeholder="Ask a question…" data-chat-input required></textarea>
         <div class="ai-composer-row">
-          <label class="ai-think" data-chat-think-wrap hidden><input type="checkbox" id="ai-chat-think" data-chat-think> Think step by step <small>(slower)</small></label>
           <span class="ai-count muted" data-chat-count>0 / 2000</span>
           <button type="button" class="button" data-chat-stop hidden>Stop</button>
           <button type="submit" class="primary" data-chat-send>Send</button>
         </div>
       </form>
-      <p class="ai-privacy">AI can make mistakes. Answers use only records your account may read, checked again before each reply. Your chats are private to you and stay until you delete them.</p>
+      <p class="ai-privacy">AI can make mistakes. Please double-check important answers.</p>
     </div>
   </div>
   <template data-chat-user-turn>
@@ -55,19 +54,16 @@
   <template data-chat-ai-turn>
     <div class="ai-turn ai-turn-ai">
       <div class="ai-run ai-mini" data-ai-run-slot>
-        <details class="ai-thinking" data-ai-thinking open>
-          <summary>Thinking <span data-ai-elapsed></span></summary>
-          <ol class="ai-steps" data-ai-steps></ol>
-          <div class="ai-reasoning" data-ai-reasoning hidden>
-            <h3>Model reasoning</h3>
-            <pre data-ai-reasoning-text></pre>
-          </div>
-        </details>
-        <article class="ai-answer" data-ai-answer aria-busy="true"></article>
+        <div class="ai-thinking-status" data-ai-thinking role="status" aria-live="polite">
+          <span class="ai-thinking-dot" aria-hidden="true"></span>
+          <span data-ai-thinking-label>Getting ready</span>
+          <span data-ai-elapsed></span>
+        </div>
+        <article class="ai-answer" data-ai-answer aria-busy="true" hidden></article>
         <p class="ai-banner" data-ai-notice hidden></p>
         <ul class="ai-sources ai-sources-inline" data-ai-sources></ul>
         <div class="ai-actions">
-          <span class="ai-pill" data-ai-status data-state="queued">Waiting for the assistant</span>
+          <span class="ai-pill" data-ai-status data-state="queued" hidden>Waiting for the assistant</span>
           <button type="button" class="ai-tool" data-ai-copy hidden>Copy</button>
           <span class="muted" data-ai-stats></span>
         </div>

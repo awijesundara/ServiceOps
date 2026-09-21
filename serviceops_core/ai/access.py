@@ -130,6 +130,7 @@ the and for are was were with that this from have has had not but you your our t
 how why can could would should will any all one about into out over under again more most some such only own than then
 there here just also been being does did done doing get got give tell show help need want please issue problem ticket
 incident change request regarding after before because while during these those very much many
+latest newest recent
 """.split())
 
 
@@ -179,12 +180,34 @@ class Evidence:
 def _ticket_text(ticket):
     comments = Comment.query.filter_by(tenant_id=ticket.tenant_id, ticket_id=ticket.id).order_by(
         Comment.created_at.desc()).limit(3).all()
-    parts = [f"State: {ticket.state}; Priority: {ticket.priority}", (ticket.description or "")[:1200]]
+    parts = [
+        f"State: {ticket.state}; Priority: {ticket.priority}; "
+        f"Opened: {ticket.created_at.isoformat()}; Updated: {ticket.updated_at.isoformat()}",
+        (ticket.description or "")[:1200],
+    ]
     parts.extend(f"Comment: {(row.body or '')[:300]}" for row in reversed(comments))
     return "\n".join(parts)
 
 
 OWN_TICKETS = re.compile(r"\b(my|mine|i have|i opened|i raised|i submitted)\b.{0,30}\b(tickets?|incidents?|requests?|changes?|issues?|cases?)\b", re.I | re.S)
+RECENT_TICKETS = re.compile(
+    r"\b(latest|newest|most recent)\b.{0,30}\b(incidents?|tickets?|changes?)\b"
+    r"|\b(incidents?|tickets?|changes?)\b.{0,30}\b(latest|newest|most recent)\b",
+    re.I | re.S,
+)
+
+
+def _recent_ticket_kind(question):
+    """Return the requested ticket kind for an explicit recency question."""
+    match = RECENT_TICKETS.search(question or "")
+    if not match:
+        return None
+    noun = (match.group(2) or match.group(3) or "").lower()
+    if noun.startswith("incident"):
+        return "incident"
+    if noun.startswith("change"):
+        return "change"
+    return "ticket"
 
 
 def collect_chat_evidence(scope, question):
@@ -207,6 +230,15 @@ def collect_chat_evidence(scope, question):
             add_ticket(ticket)
         # Never say whether a number exists: an unreadable record and a missing one look identical.
         evidence.unavailable = [n for n in numbers if n not in {t.number for t in found}]
+
+    recent_kind = _recent_ticket_kind(question)
+    if recent_kind:
+        recent = base
+        if recent_kind != "ticket":
+            recent = recent.filter(Ticket.kind == recent_kind)
+        ticket = recent.order_by(Ticket.created_at.desc(), Ticket.id.desc()).first()
+        if ticket:
+            add_ticket(ticket)
 
     if OWN_TICKETS.search(question):
         mine = Ticket.requester_id == scope.user_id

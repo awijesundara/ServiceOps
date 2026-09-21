@@ -2729,7 +2729,7 @@ class AIConfiguration(db.Model):
     capabilities_json = db.Column(db.Text, nullable=False, default="{}")
     # The chatbot is enabled separately from incident investigation; both need the master switch.
     chat_enabled = db.Column(db.Boolean, nullable=False, default=False)
-    # Whether the model's own reasoning (when it exposes any) is shown to the user.
+    # Whether users may request a deeper reasoning pass. Private reasoning text is never shown or retained.
     show_reasoning = db.Column(db.Boolean, nullable=False, default=True)
     updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)

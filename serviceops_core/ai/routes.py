@@ -268,7 +268,7 @@ def register(app):
         problem = {"failed": "The assistant could not complete this request.",
                    "cancelled": "Stopped. No answer was kept."}.get(run.status, "")
         return no_store({**body, "changed": True, "text": run.result_text if finished else run.partial_text,
-                         "reasoning": run.reasoning_text if config.show_reasoning else "",
+                         "reasoning": "",
                          "steps": json.loads(run.steps_json or "[]"), "sources": sources, "error": problem,
                          "usage": json.loads(run.usage_json or "{}") if finished else {}})
 
@@ -315,7 +315,7 @@ def register(app):
             body.update(content=access.WITHHELD_NOTICE, withheld=True)
             return body
         body.update(sources=source_links(sources), steps=json.loads(message.steps_json or "[]"),
-                    reasoning=message.reasoning if config.show_reasoning else "")
+                    reasoning="")
         return body
 
     @blueprint.route("/ai/chat")
@@ -407,7 +407,7 @@ def register(app):
         run = AIRun(tenant_id=scope.tenant_id, user_id=scope.user_id, actor_role=scope.role, kind="chat",
                     config_revision=config.revision, request_key=request_key, provider=config.provider, model=config.model,
                     prompt_version="chat-v1", conversation_id=conversation.id, message_id=reply.id, question=text,
-                    usage_json=json.dumps({"thinking": bool(data.get("thinking"))}))
+                    usage_json="{}")
         db.session.add(run)
         db.session.flush()
         audit("ai chat requested", run.id, f"role={scope.role}; length={len(text)}")

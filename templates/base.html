@@ -29,6 +29,7 @@
   {% if current_user.is_authenticated %}<script src="{{ url_for('static', filename='guided-tour.js', v=app_version) }}" defer></script>{% endif %}
   {% if current_user.is_authenticated and ((request.endpoint or '').startswith('ai.') or ai_chat_available(current_user)) %}
   <link rel="stylesheet" href="{{ url_for('static', filename='ai-chat.css', v=app_version) }}">
+  {% if ai_chat_available(current_user) %}<script src="{{ url_for('static', filename='ai-chat-boot.js', v=app_version) }}"></script>{% endif %}
   <script src="{{ url_for('static', filename='ai-render.js', v=app_version) }}" defer></script>
   <script src="{{ url_for('static', filename='ai-chat.js', v=app_version) }}" defer></script>
   <script src="{{ url_for('static', filename='ai-chat-panel.js', v=app_version) }}" defer></script>
