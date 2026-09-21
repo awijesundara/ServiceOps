@@ -2,59 +2,144 @@
 {% block title %}AI assistance · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set admin_page_title = 'AI assistance' %}{% set admin_parent_title = 'Platform & security' %}{% set admin_parent_url = url_for('admin_section', section='platform-security') %}{% include '_admin_context.html' %}
-<section class="panel">
-<h1>AI assistance</h1>
-<p>Control AI for your organization. Incident assistance gathers evidence and drafts advice; it cannot change tickets or approve work.</p>
-<p><strong>Status: {{ 'Enabled' if config and config.enabled else 'Disabled' }}</strong>. Disabling cancels queued work and discards in-flight results. Data already sent to a provider cannot be recalled.</p>
-{% if ipfs %}<p>AI jobs require PostgreSQL storage. This deployment uses IPFS.</p>{% endif %}
-<form method="post"><input type="hidden" name="action" value="disable"><button class="button">Disable all AI now</button></form>
-<form method="post" class="form-grid">
-<input type="hidden" name="action" value="save">
-<input type="hidden" name="discovery_token" value="" data-ai-discovery-token>
-<label><span>Enable AI for this organization</span><input type="checkbox" name="enabled" {% if config and config.enabled %}checked{% endif %}></label>
-<label><span>Enable incident investigations</span><input type="checkbox" name="incident_enabled" {% if config and config.incident_enabled %}checked{% endif %}></label>
-<label><span>Enable the chat assistant</span><input type="checkbox" name="chat_enabled" {% if config and config.chat_enabled %}checked{% endif %}><small>Every signed-in user, limited to what their role can already read. Never people, audit or client data.</small></label>
-<label><span>Allow deeper reasoning</span><input type="checkbox" name="show_reasoning" {% if config and config.show_reasoning %}checked{% endif %}><small>Lets people request a slower reasoning pass. The private reasoning text is never displayed; only a temporary activity label appears.</small></label>
-<label>Quick setup<select id="ai-preset" aria-label="Quick setup" data-ai-preset><option value="">Choose a common service…</option>
-<optgroup label="On your network">
-<option value="self_hosted|http://HOST:8080">llama.cpp server (port 8080)</option>
-<option value="self_hosted|http://HOST:11434/v1">Ollama (port 11434)</option>
-<option value="self_hosted|http://HOST:8000/v1">vLLM (port 8000)</option>
-<option value="self_hosted|http://HOST:1234/v1">LM Studio (port 1234)</option>
-</optgroup>
-<optgroup label="Hosted services">
-<option value="openai_compatible|https://openrouter.ai/api/v1">OpenRouter</option>
-<option value="openai_compatible|https://api.groq.com/openai/v1">Groq</option>
-<option value="openai_compatible|https://api.together.xyz/v1">Together AI</option>
-<option value="openai_compatible|https://api.mistral.ai/v1">Mistral</option>
-<option value="openai_compatible|https://generativelanguage.googleapis.com/v1beta/openai">Google Gemini</option>
-<option value="openai|">OpenAI</option>
-<option value="anthropic|">Anthropic (Claude)</option>
-</optgroup></select><small>Fills in the provider and address. Replace HOST with your server's name or IP.</small></label>
-<label>Provider<select name="provider" id="ai-provider" aria-label="Provider" data-ai-provider>
-<option value="self_hosted" {% if not config or config.provider == 'self_hosted' %}selected{% endif %}>Server on your network (llama.cpp, Ollama, vLLM, LM Studio)</option>
-<option value="openai_compatible" {% if config and config.provider == 'openai_compatible' %}selected{% endif %}>Hosted OpenAI-compatible service</option>
-<option value="openai" {% if config and config.provider == 'openai' %}selected{% endif %}>OpenAI</option>
-<option value="anthropic" {% if config and config.provider == 'anthropic' %}selected{% endif %}>Anthropic (Claude)</option></select></label>
-<label class="wide" data-ai-endpoint-row>Server address<input name="endpoint" id="ai-endpoint" type="text" inputmode="url" maxlength="500" placeholder="http://192.168.68.68:8080" value="{{ config.endpoint if config else '' }}" data-ai-endpoint><small>Just the address is enough; the /v1/chat/completions part is added for you.</small></label>
-<label>API key<input type="password" name="api_key" id="ai-key" autocomplete="new-password" maxlength="4096" value="" data-ai-key><small>{{ 'A key is stored. Leave blank to retain it.' if config and config.key_encrypted else 'No key stored. Leave blank if the server needs none.' }}</small></label>
-<div class="wide ai-detect" data-ai-detect-row>
-<button type="button" class="button" id="ai-detect" data-ai-detect>Connect and detect models</button>
-<span class="muted" id="ai-detect-status" role="status" aria-live="polite" data-ai-detect-status>Enter the address and key, then detect the models the server offers.</span>
+{% set on = config and config.enabled %}
+<div class="aiadm" data-ai-admin>
+  <header class="aiadm-head">
+    <div>
+      <p class="eyebrow">AI ASSISTANCE</p>
+      <h1>AI services and privacy</h1>
+      <p class="muted">Connect one or more AI services, choose how requests are shared between them, and decide what may never leave your organization.</p>
+    </div>
+    <div class="aiadm-head-actions">
+      <span class="ai-pill" data-state="{{ 'completed' if on else 'cancelled' }}">{{ 'AI is on' if on else 'AI is off' }}</span>
+      <form method="post"><input type="hidden" name="action" value="disable"><button class="button danger-quiet">Turn AI off now</button></form>
+    </div>
+  </header>
+  {% if ipfs %}<p class="ai-banner">AI needs PostgreSQL storage. This deployment uses IPFS, so AI cannot be turned on.</p>{% endif %}
+
+  <section class="aiadm-section" aria-labelledby="aiadm-services">
+    <div class="aiadm-section-head">
+      <div><h2 id="aiadm-services">AI services</h2><p class="muted">Add as many as you like: your own servers, and hosted services such as OpenAI or Claude.</p></div>
+      <button type="button" class="primary" data-ai-add>Add an AI service</button>
+    </div>
+    <div class="aiadm-cards" data-ai-cards aria-live="polite"></div>
+    <p class="aiadm-empty" data-ai-empty hidden>No AI service yet. Add one to get started.</p>
+  </section>
+
+  <form method="post" class="aiadm-form" data-ai-form>
+    <input type="hidden" name="action" value="save">
+
+    <section class="aiadm-section" aria-labelledby="aiadm-routing">
+      <div class="aiadm-section-head"><div><h2 id="aiadm-routing">How requests are shared</h2><p class="muted">When you have more than one service, this decides which one answers.</p></div></div>
+      <fieldset class="aiadm-choices">
+        <legend class="ai-sr">Sharing method</legend>
+        {% set current_mode = config.routing_mode if config else 'smart' %}
+        <label class="aiadm-choice"><input type="radio" name="routing_mode" value="smart" {% if current_mode == 'smart' %}checked{% endif %} data-ai-live><span><strong>Smart <em>Recommended</em></strong><small>Uses your own AI first and only turns to an outside service when yours is busy or down. Sensitive requests never leave.</small></span></label>
+        <label class="aiadm-choice"><input type="radio" name="routing_mode" value="internal_first" {% if current_mode == 'internal_first' %}checked{% endif %} data-ai-live><span><strong>Private first</strong><small>Always tries your own AI first, even if it is busy.</small></span></label>
+        <label class="aiadm-choice"><input type="radio" name="routing_mode" value="balanced" {% if current_mode == 'balanced' %}checked{% endif %} data-ai-live><span><strong>Spread the load</strong><small>Shares requests between all allowed services, favouring the ones you weight higher.</small></span></label>
+        <label class="aiadm-choice"><input type="radio" name="routing_mode" value="priority" {% if current_mode == 'priority' %}checked{% endif %} data-ai-live><span><strong>In order</strong><small>Uses the first service on your list, and the next only if it fails.</small></span></label>
+      </fieldset>
+    </section>
+
+    <section class="aiadm-section" aria-labelledby="aiadm-privacy">
+      <div class="aiadm-section-head"><div><h2 id="aiadm-privacy">Privacy protection</h2><p class="muted">Requests that contain sensitive information are only ever handled by AI on your own network.</p></div></div>
+      <div class="aiadm-grid">
+        <div>
+          <h3>What may go to an outside service</h3>
+          {% set scope = config.external_scope if config else 'not_sensitive' %}
+          <fieldset class="aiadm-choices compact">
+            <legend class="ai-sr">Outside services</legend>
+            <label class="aiadm-choice"><input type="radio" name="external_scope" value="never" {% if scope == 'never' %}checked{% endif %} data-ai-live><span><strong>Nothing</strong><small>Everything stays on your own AI.</small></span></label>
+            <label class="aiadm-choice"><input type="radio" name="external_scope" value="knowledge_only" {% if scope == 'knowledge_only' %}checked{% endif %} data-ai-live><span><strong>Only published knowledge</strong><small>Questions that use tickets or infrastructure records stay private.</small></span></label>
+            <label class="aiadm-choice"><input type="radio" name="external_scope" value="not_sensitive" {% if scope == 'not_sensitive' %}checked{% endif %} data-ai-live><span><strong>Anything not sensitive</strong><small>Everything except requests marked sensitive.</small></span></label>
+          </fieldset>
+          <label class="aiadm-switch"><input type="checkbox" name="external_consent" {% if config and config.external_consent %}checked{% endif %} data-ai-live><span><strong>My organization allows outside AI services</strong><small>Turn this off and hosted services are never used, whatever else is set.</small></span></label>
+        </div>
+        <div>
+          <h3>What counts as sensitive</h3>
+          <label class="aiadm-switch"><input type="checkbox" name="detect_personal" {% if not config or config.detect_personal %}checked{% endif %} data-ai-live><span><strong>Personal details</strong><small>Email addresses, phone numbers, ID numbers.</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="detect_credentials" {% if not config or config.detect_credentials %}checked{% endif %} data-ai-live><span><strong>Passwords and keys</strong><small>Passwords, access keys, tokens, private keys.</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="detect_financial" {% if not config or config.detect_financial %}checked{% endif %} data-ai-live><span><strong>Payment and bank numbers</strong><small>Card numbers and bank account numbers.</small></span></label>
+          <label class="aiadm-field" for="ai-terms"><strong>Your own sensitive words</strong><small>One per line. A request that mentions any of them stays private.</small></label>
+          <textarea id="ai-terms" name="sensitive_terms" rows="3" maxlength="4000" placeholder="payroll&#10;acquisition" data-ai-live>{{ config.sensitive_terms if config else '' }}</textarea>
+        </div>
+      </div>
+      <div class="aiadm-tester" data-ai-tester>
+        <label for="ai-try"><strong>Try it</strong> <span class="muted">Type a sentence to see where it would go. Nothing is sent to any AI.</span></label>
+        <div class="aiadm-tester-row"><input id="ai-try" type="text" maxlength="500" placeholder="For example: Please call Anna on 090 1234 5678 about her VPN" data-ai-try>
+          <select id="ai-try-kind" aria-label="What the question is about" data-ai-try-kind><option value="ticket">About a ticket</option><option value="knowledge">About a knowledge article</option></select></div>
+        <p class="aiadm-verdict" data-ai-verdict role="status" aria-live="polite">Type something above to check it.</p>
+      </div>
+    </section>
+
+    <section class="aiadm-section" aria-labelledby="aiadm-use">
+      <div class="aiadm-section-head"><div><h2 id="aiadm-use">Who can use it</h2><p class="muted">Switch features on and set sensible limits.</p></div></div>
+      <div class="aiadm-grid">
+        <div>
+          <label class="aiadm-switch"><input type="checkbox" name="enabled" {% if on %}checked{% endif %}><span><strong>Turn AI on for this organization</strong><small>The master switch. Off means nobody can use AI.</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="incident_enabled" {% if config and config.incident_enabled %}checked{% endif %}><span><strong>Investigate with AI on incidents</strong><small>For agents, managers and administrators.</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="chat_enabled" {% if config and config.chat_enabled %}checked{% endif %}><span><strong>Chat assistant for everyone</strong><small>Each person only sees what they can already open.</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="show_reasoning" {% if config and config.show_reasoning %}checked{% endif %}><span><strong>Let investigations think longer</strong><small>Slower, sometimes better. The thinking itself is never shown or kept.</small></span></label>
+        </div>
+        <div class="aiadm-limits">
+          <label>Requests per day<input type="number" name="daily_limit" min="1" max="1000" value="{{ config.daily_limit if config else 100 }}" required></label>
+          <label>Longest answer (tokens)<input type="number" name="max_output_tokens" min="128" max="4096" value="{{ config.max_output_tokens if config else 1500 }}" required></label>
+          <label>Keep results for (days)<input type="number" name="retention_days" min="1" max="30" value="{{ config.retention_days if config else 7 }}" required></label>
+        </div>
+      </div>
+    </section>
+
+    <div class="aiadm-savebar"><span class="muted">Saving cancels requests that are waiting so the new settings apply cleanly.</span><button class="primary">Save AI settings</button></div>
+  </form>
+
+  <dialog class="aiadm-dialog" data-ai-dialog aria-labelledby="aiadm-dialog-title">
+    <form method="dialog" class="aiadm-dialog-head"><h2 id="aiadm-dialog-title" data-ai-dialog-title>Add an AI service</h2><button class="ai-tool-dark" aria-label="Close">✕</button></form>
+    <div class="aiadm-dialog-body">
+      <div class="aiadm-step" data-ai-step="pick">
+        <p class="muted">Pick what you are connecting to. You can change everything afterwards.</p>
+        <h3>On your own network</h3>
+        <div class="aiadm-presets">
+          <button type="button" data-ai-preset="self_hosted|http://HOST:8080|llama.cpp"><strong>llama.cpp</strong><small>Your own server</small></button>
+          <button type="button" data-ai-preset="self_hosted|http://HOST:11434/v1|Ollama"><strong>Ollama</strong><small>Your own server</small></button>
+          <button type="button" data-ai-preset="self_hosted|http://HOST:8000/v1|vLLM"><strong>vLLM</strong><small>Your own server</small></button>
+          <button type="button" data-ai-preset="self_hosted|http://HOST:1234/v1|LM Studio"><strong>LM Studio</strong><small>Your own server</small></button>
+        </div>
+        <h3>Hosted services <span class="muted">(outside your organization)</span></h3>
+        <div class="aiadm-presets">
+          <button type="button" data-ai-preset="openai|"><strong>OpenAI</strong><small>ChatGPT models</small></button>
+          <button type="button" data-ai-preset="anthropic|"><strong>Claude</strong><small>Anthropic</small></button>
+          <button type="button" data-ai-preset="openai_compatible|https://openrouter.ai/api/v1|OpenRouter"><strong>OpenRouter</strong><small>Many models</small></button>
+          <button type="button" data-ai-preset="openai_compatible|https://api.groq.com/openai/v1|Groq"><strong>Groq</strong><small>Fast hosting</small></button>
+          <button type="button" data-ai-preset="openai_compatible|https://api.together.xyz/v1|Together"><strong>Together</strong><small>Open models</small></button>
+          <button type="button" data-ai-preset="openai_compatible|https://api.mistral.ai/v1|Mistral"><strong>Mistral</strong><small>Mistral models</small></button>
+          <button type="button" data-ai-preset="openai_compatible|https://generativelanguage.googleapis.com/v1beta/openai|Gemini"><strong>Gemini</strong><small>Google</small></button>
+          <button type="button" data-ai-preset="openai_compatible||Other"><strong>Something else</strong><small>Any compatible service</small></button>
+        </div>
+      </div>
+      <div class="aiadm-step" data-ai-step="details" hidden>
+        <input type="hidden" data-ai-f="id"><input type="hidden" data-ai-f="provider"><input type="hidden" data-ai-f="token">
+        <p class="aiadm-where" data-ai-where></p>
+        <label>Name<input type="text" maxlength="80" data-ai-f="name" placeholder="For example: Office server"></label>
+        <label data-ai-row="endpoint">Server address<input type="text" inputmode="url" maxlength="500" data-ai-f="endpoint" placeholder="http://192.168.68.68:8080"><small>Just the address. The rest is added for you.</small></label>
+        <label>Access key<input type="password" autocomplete="new-password" maxlength="4096" data-ai-f="api_key"><small data-ai-keyhint>Leave blank if the server needs none.</small></label>
+        <div class="aiadm-detect"><button type="button" class="button" data-ai-detect>Connect and find models</button><span class="muted" role="status" aria-live="polite" data-ai-detect-status>Enter the details, then connect.</span></div>
+        <label>Model<input type="text" maxlength="160" list="ai-models" data-ai-f="model"><small>Filled in for you once connected.</small></label>
+        <datalist id="ai-models" data-ai-models></datalist>
+        <details class="aiadm-more"><summary>Sharing options</summary>
+          <div class="aiadm-limits">
+            <label>Order<input type="number" min="1" max="1000" value="100" data-ai-f="priority"><small>Lower goes first (In order mode).</small></label>
+            <label>Weight<input type="number" min="1" max="10" value="1" data-ai-f="weight"><small>Higher gets more requests (Spread the load).</small></label>
+            <label>At once<input type="number" min="1" max="8" value="1" data-ai-f="max_concurrency"><small>Requests it can handle together.</small></label>
+          </div>
+        </details>
+        <label class="aiadm-switch"><input type="checkbox" checked data-ai-f="enabled"><span><strong>Use this service</strong></span></label>
+        <p class="ai-banner" data-ai-dialog-error role="alert" hidden></p>
+        <div class="aiadm-dialog-actions"><button type="button" class="button" data-ai-back>Back</button><button type="button" class="primary" data-ai-save>Save service</button></div>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="application/json" id="ai-data">{{ {"services": services, "modes": modes}|tojson }}</script>
 </div>
-<label>Model identifier<input name="model" id="ai-model" maxlength="160" list="ai-models" value="{{ config.model if config else '' }}" autocomplete="off" data-ai-model><small>A single model is selected automatically. If several are listed, choose one. You can also type an identifier.</small></label>
-<datalist id="ai-models" data-ai-models></datalist>
-<p class="wide muted">A server on your network must be allowlisted by the deployment operator (<code>AI_SELF_HOSTED_ENDPOINTS</code>; a whole server such as <code>http://192.168.68.68:*</code> is enough). Hosted services need HTTPS, a key and the external-processing authorization below. Changing provider or address clears the saved key unless you enter a replacement.</p>
-<label><span>Remove saved API key</span><input type="checkbox" name="clear_key"></label>
-<label class="wide"><span>Authorize external processing of selected incident, comment, knowledge and CI content</span><input type="checkbox" name="external_consent" {% if config and config.external_consent %}checked{% endif %}></label>
-<p class="wide muted">External processing is required for every hosted provider (OpenAI, Anthropic and hosted OpenAI-compatible services). Common secret patterns are redacted, but free text may still contain sensitive information. No attachments are sent.</p>
-<p class="wide muted">Reported limits are used to shorten evidence and older chat turns before generation. Unreported limits use a conservative budget. Model-list access does not verify inference, streaming, tools, GPU capacity or pricing; use Test saved connection for a synthetic inference check.</p>
-<label>Daily investigations (UTC)<input type="number" name="daily_limit" min="1" max="1000" value="{{ config.daily_limit if config else 100 }}" required></label>
-<label>Maximum output tokens<input type="number" name="max_output_tokens" min="128" max="4096" value="{{ config.max_output_tokens if config else 1500 }}" required></label>
-<label>Result retention (days)<input type="number" name="retention_days" min="1" max="30" value="{{ config.retention_days if config else 7 }}" required></label>
-<div class="wide actions"><button class="primary">Save AI configuration</button></div>
-</form>
-{% if config %}<form method="post"><input type="hidden" name="action" value="test"><p>Test the saved provider using a synthetic prompt. This may incur a small provider charge; no operational records are sent.</p><button class="button">Test saved connection</button></form>{% endif %}
-</section>
 <script src="{{ url_for('static', filename='ai-settings.js', v=app_version) }}" defer></script>
 {% endblock %}
