@@ -14,6 +14,7 @@
     </div>
     <div class="ai-chat-tools">
       <button type="button" class="ai-tool" data-chat-history-toggle aria-expanded="false" aria-controls="ai-chat-history">History</button>
+      <button type="button" class="ai-tool" data-chat-memory-toggle aria-expanded="false" aria-controls="ai-chat-memory" hidden>Memory</button>
       <button type="button" class="ai-tool" data-chat-new>New chat</button>
       {% if not full_page %}<a class="ai-tool" href="{{ url_for('ai.chat_page') }}">Full page</a><button type="button" class="ai-tool" data-chat-close aria-label="Close chat">✕</button>{% endif %}
     </div>
@@ -23,15 +24,23 @@
       <ul data-chat-history-list></ul>
       <p class="muted" data-chat-history-empty>No saved conversations yet.</p>
     </nav>
+    <section class="ai-chat-memory" id="ai-chat-memory" aria-label="What I remember about you" data-chat-memory hidden>
+      <h3>What I remember about you</h3>
+      <p class="muted">Only notes you asked me to keep. Private to you. Remove any of them at any time.</p>
+      <ul data-chat-memory-list></ul>
+      <p class="muted" data-chat-memory-empty>Nothing yet. Say “remember that I prefer short answers” to add one.</p>
+      <button type="button" class="ai-forget" data-chat-memory-clear hidden>Forget everything</button>
+    </section>
     <div class="ai-chat-main">
       <div class="ai-chat-log" data-chat-log role="log" aria-live="polite" aria-label="Conversation" tabindex="0">
         <div class="ai-chat-welcome" data-chat-welcome>
           <h3>What can I help you find?</h3>
-          <p class="muted">Ask about your tickets, published knowledge articles{% if full_page %}, or infrastructure records your role may read{% endif %}. I only see what your account can already open, and I never change anything.</p>
+          <p class="muted">Ask about tickets, knowledge, change freezes, services or the catalog, or tell me about a problem and I will help you raise it. I work within your access, and I never change anything myself.</p>
           <ul class="ai-suggestions">
-            <li><button type="button" data-chat-suggest="How do I reset my VPN access?">How do I reset my VPN access?</button></li>
-            <li><button type="button" data-chat-suggest="What is the status of my open tickets?">What is the status of my open tickets?</button></li>
-            <li><button type="button" data-chat-suggest="Summarise the knowledge articles about email problems">Summarise the knowledge articles about email problems</button></li>
+            <li><button type="button" data-chat-suggest="I want to report a problem">Report a problem</button></li>
+            <li><button type="button" data-chat-suggest="Are there any change freezes coming up?">Any change freezes coming up?</button></li>
+            <li><button type="button" data-chat-suggest="What tickets can you see for me?">What tickets can you see for me?</button></li>
+            <li><button type="button" data-chat-suggest="What can you do for me here?">What can you do for me here?</button></li>
           </ul>
         </div>
       </div>
@@ -61,6 +70,7 @@
         </div>
         <article class="ai-answer" data-ai-answer aria-busy="true" hidden></article>
         <p class="ai-banner" data-ai-notice hidden></p>
+        <div class="ai-extras" data-ai-extras hidden></div>
         <ul class="ai-sources ai-sources-inline" data-ai-sources></ul>
         <div class="ai-actions">
           <span class="ai-pill" data-ai-status data-state="queued" hidden>Waiting for the assistant</span>

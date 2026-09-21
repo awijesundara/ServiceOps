@@ -25,6 +25,16 @@
     return fetch(url, { method: "POST", headers: { "X-CSRF-Token": csrf, Accept: "application/json" }, credentials: "same-origin" });
   }
 
+  function postJson(url, body) {
+    return fetch(url, { method: "POST", headers: { "X-CSRF-Token": csrf, "Content-Type": "application/json", Accept: "application/json" },
+      credentials: "same-origin", body: JSON.stringify(body || {}) }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (json) {
+        if (!response.ok) throw new Error(json.error || "That did not work. Please try again.");
+        return json;
+      });
+    });
+  }
+
   function element(tag, className, text) {
     const created = document.createElement(tag);
     if (className) created.className = className;
@@ -99,6 +109,53 @@
     if (route.sensitive && route.reason) holder.appendChild(element("span", "ai-route-note", route.reason));
   }
 
+  /* Follow-up questions and a ticket draft under an answer. The draft only opens the normal ticket form
+     pre-filled; nothing is created until the person submits it there. */
+  function renderExtras(holder, route, withSuggestions) {
+    if (!holder) return;
+    holder.textContent = "";
+    const draft = route && route.draft;
+    if (draft && draft.url) {
+      const card = element("div", "ai-draft");
+      card.appendChild(element("p", "ai-draft-label", "Draft " + draft.kind + " ready for you"));
+      card.appendChild(element("strong", "", draft.title));
+      card.appendChild(element("p", "ai-draft-body", draft.description));
+      card.appendChild(element("p", "ai-draft-meta", "Impact " + draft.impact + " · Urgency " + draft.urgency + " · " + draft.category));
+      const open = element("a", "primary ai-draft-open", "Review and create");
+      open.href = draft.url;
+      card.appendChild(open);
+      card.appendChild(element("small", "", "Nothing is created until you submit the form."));
+      holder.appendChild(card);
+    }
+    if (withSuggestions && route && route.remember) {
+      const card = element("div", "ai-remember");
+      card.appendChild(element("span", "", "Remember this? “" + route.remember + "”"));
+      const yes = element("button", "ai-remember-yes", "Remember");
+      const no = element("button", "ai-remember-no", "No thanks");
+      yes.type = no.type = "button";
+      yes.addEventListener("click", function () {
+        yes.disabled = no.disabled = true;
+        postJson("/ai/chat/memories", { text: route.remember }).then(function () { card.textContent = "Saved. You can review it under Memory."; })
+          .catch(function (e) { card.textContent = e.message; });
+      });
+      no.addEventListener("click", function () { card.remove(); holder.hidden = !holder.childNodes.length; });
+      card.appendChild(yes);
+      card.appendChild(no);
+      holder.appendChild(card);
+    }
+    if (withSuggestions && route && route.suggestions && route.suggestions.length) {
+      const row = element("div", "ai-suggest");
+      route.suggestions.forEach(function (text) {
+        const chip = element("button", "ai-suggest-chip", text);
+        chip.type = "button";
+        chip.addEventListener("click", function () { document.dispatchEvent(new CustomEvent("ai-chat-ask", { detail: text })); });
+        row.appendChild(chip);
+      });
+      holder.appendChild(row);
+    }
+    holder.hidden = !holder.childNodes.length;
+  }
+
   function summarize(usage) {
     const parts = [];
     if (usage.duration_ms) parts.push("Answered in " + (usage.duration_ms / 1000).toFixed(1) + "s");
@@ -124,7 +181,7 @@
     this.ui = {
       status: find("status"), steps: find("steps"), thinking: find("thinking"), thinkingLabel: find("thinking-label"), elapsed: find("elapsed"),
       reasoning: find("reasoning"), reasoningText: find("reasoning-text"), answer: find("answer"),
-      notice: find("notice"), route: find("route"), sources: find("sources"), stop: find("stop"), copy: find("copy"),
+      notice: find("notice"), route: find("route"), extras: find("extras"), sources: find("sources"), stop: find("stop"), copy: find("copy"),
       action: find("action"), stats: find("stats")
     };
     const self = this;
@@ -224,6 +281,7 @@
     if (ui.action) ui.action.hidden = data.status !== "completed" || !this.text;
     if (ui.sources) renderSources(ui.sources, data.sources);
     renderRoute(ui.route, data.route);
+    renderExtras(ui.extras, data.route, this.suggest !== false);
     if (ui.elapsed && data.usage && data.usage.duration_ms) ui.elapsed.textContent = (data.usage.duration_ms / 1000).toFixed(1) + "s";
     if (ui.stats) ui.stats.textContent = data.usage ? summarize(data.usage) : "";
     if (ui.thinking) ui.thinking.hidden = true;
@@ -256,7 +314,7 @@
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done);
   };
 
-  window.AIChat = { RunView: RunView, get: get, post: post, element: element, renderSteps: renderSteps, renderRoute: renderRoute, renderSources: renderSources, sourceMap: sourceMap, summarize: summarize };
+  window.AIChat = { RunView: RunView, get: get, post: post, element: element, renderSteps: renderSteps, renderRoute: renderRoute, renderExtras: renderExtras, postJson: postJson, renderSources: renderSources, sourceMap: sourceMap, summarize: summarize };
 
   document.querySelectorAll("[data-ai-run]").forEach(function (root) { new RunView(root).start(); });
 })();

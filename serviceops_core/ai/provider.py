@@ -189,14 +189,18 @@ def _tuned_for_host(payload, config):
 
 
 def rejection(status):
-    """A display-safe reason for a non-200 answer, so an administrator knows what to fix."""
+    """A display-safe reason for a non-200 answer, so an administrator knows what to fix. `code` lets the
+    worker retry a busy service once and lets the person asking see why an answer did not arrive."""
     if status in (401, 403):
-        return ProviderError("The service rejected the access key. Check it, and that it may use this model.")
-    if status in (404, 400):
-        return ProviderError("The service does not know this model or request. Check the model name.")
-    if status in (429, 500, 502, 503, 504):
-        return ProviderError("The service is busy or temporarily unavailable. Try again in a moment.")
-    return ProviderError("Provider rejected the request; check credentials, model and service availability.")
+        error, code = ProviderError("The service rejected the access key. Check it, and that it may use this model."), "provider_key"
+    elif status in (404, 400):
+        error, code = ProviderError("The service does not know this model or request. Check the model name."), "provider_model"
+    elif status in (429, 500, 502, 503, 504):
+        error, code = ProviderError("The service is busy or temporarily unavailable. Try again in a moment."), "provider_busy"
+    else:
+        error, code = ProviderError("Provider rejected the request; check credentials, model and service availability."), "provider_failed"
+    error.code = code
+    return error
 
 
 def decrypt_key(config):
