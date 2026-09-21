@@ -60,7 +60,7 @@ jobs:
             label: fc44
             image: fedora:44
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.checkout_ref || github.ref }}
 
@@ -111,11 +111,11 @@ jobs:
           (cd "$rpm_dir" && sha256sum "$rpm_name" > "$rpm_name.sha256")
 
       - name: Attest RPM build provenance
-        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/rpm/${{ matrix.label }}/**/*.noarch.rpm
 
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: serviceops-rpm-${{ matrix.label }}
           path: |
