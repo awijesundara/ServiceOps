@@ -2731,8 +2731,45 @@ class AIConfiguration(db.Model):
     chat_enabled = db.Column(db.Boolean, nullable=False, default=False)
     # Whether users may request a deeper reasoning pass. Private reasoning text is never shown or retained.
     show_reasoning = db.Column(db.Boolean, nullable=False, default=True)
+    # How a request picks between the configured AI services, and what may leave the organization.
+    routing_mode = db.Column(db.String(20), nullable=False, default="smart")
+    external_scope = db.Column(db.String(20), nullable=False, default="not_sensitive")
+    detect_personal = db.Column(db.Boolean, nullable=False, default=True)
+    detect_credentials = db.Column(db.Boolean, nullable=False, default=True)
+    detect_financial = db.Column(db.Boolean, nullable=False, default=True)
+    sensitive_terms = db.Column(db.Text, nullable=False, default="")
     updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
+
+
+class AIConnection(db.Model):
+    """One AI service (a model on the organization's network, or a hosted provider)."""
+    __tablename__ = "ai_connection"
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_ai_connection_name"),)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    name = db.Column(db.String(80), nullable=False)
+    provider = db.Column(db.String(30), nullable=False, default="self_hosted")
+    endpoint = db.Column(db.String(500), nullable=False, default="")
+    model = db.Column(db.String(160), nullable=False, default="")
+    key_encrypted = db.Column(db.Text, nullable=False, default="")
+    capabilities_json = db.Column(db.Text, nullable=False, default="{}")
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    priority = db.Column(db.Integer, nullable=False, default=100)
+    weight = db.Column(db.Integer, nullable=False, default=1)
+    max_concurrency = db.Column(db.Integer, nullable=False, default=1)
+    consecutive_failures = db.Column(db.Integer, nullable=False, default=0)
+    last_failure_at = db.Column(db.DateTime(timezone=True))
+    last_success_at = db.Column(db.DateTime(timezone=True))
+    last_test_ok = db.Column(db.Boolean)
+    last_test_at = db.Column(db.DateTime(timezone=True))
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
+
+    @property
+    def external(self):
+        """A hosted provider sends data outside the organization; a server on its network does not."""
+        return self.provider != "self_hosted"
 
 
 class AIRun(db.Model):
@@ -2767,6 +2804,8 @@ class AIRun(db.Model):
     steps_json = db.Column(db.Text, nullable=False, default="[]")
     seq = db.Column(db.Integer, nullable=False, default=0)
     heartbeat_at = db.Column(db.DateTime(timezone=True))
+    connection_id = db.Column(db.String(36))
+    route_json = db.Column(db.Text, nullable=False, default="{}")
     __table_args__ = (db.UniqueConstraint("tenant_id", "user_id", "request_key", name="uq_ai_run_request"),)
 
 
@@ -2798,7 +2837,8 @@ class AIMessage(db.Model):
     steps_json = db.Column(db.Text, nullable=False, default="[]")
     status = db.Column(db.String(20), nullable=False, default="completed")
     run_id = db.Column(db.String(36))
+    route_json = db.Column(db.Text, nullable=False, default="{}")
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
 
 
-__all__ += ["AIConfiguration", "AIRun", "AIConversation", "AIMessage"]
+__all__ += ["AIConfiguration", "AIConnection", "AIRun", "AIConversation", "AIMessage"]

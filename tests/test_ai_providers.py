@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app import AIConfiguration, db
+from app import AIConfiguration, AIConnection, db
 from serviceops_core.ai import provider
 from serviceops_models import settings_cipher
 from tests.test_app import app, client, login  # noqa: F401
@@ -229,11 +229,11 @@ def test_saving_a_bare_address_stores_the_full_chat_url_and_fixed_providers_stor
             "max_output_tokens": "1500", "retention_days": "7"}
     client.post("/admin/ai", data={**form, "provider": "self_hosted", "endpoint": "http://192.168.68.68:8080"})
     with app.app_context():
-        assert db.session.get(AIConfiguration, 1).endpoint == "http://192.168.68.68:8080/v1/chat/completions"
+        assert AIConnection.query.filter_by(name="Primary").one().endpoint == "http://192.168.68.68:8080/v1/chat/completions"
     client.post("/admin/ai", data={**form, "provider": "anthropic", "endpoint": "http://ignored", "external_consent": "on",
                                    "api_key": "sk-ant-test", "model": "claude-sonnet-5"})
     with app.app_context():
-        saved = db.session.get(AIConfiguration, 1)
+        saved = AIConnection.query.filter_by(name="Primary").one()
         assert saved.provider == "anthropic" and saved.endpoint == "" and saved.key_encrypted
 
 

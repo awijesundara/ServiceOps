@@ -23,6 +23,7 @@
         <button type="button" class="button" data-ai-stop{% if run.status not in ['queued', 'running'] %} hidden{% endif %}>Stop</button>
         <button type="button" class="button" data-ai-copy hidden>Copy answer</button>
         <a class="button" href="{{ url_for('ai.incident', ticket_id=ticket.id) }}">All investigations for this incident</a>
+        <span class="ai-route" data-ai-route hidden></span>
         <span class="muted" data-ai-stats></span>
       </div>
       <p class="muted"><strong>AI-generated draft.</strong> Verify the cited evidence before acting. Possible causes are hypotheses; no ticket changes have been made.</p>
