@@ -90,6 +90,7 @@
     }
     q("thinking").hidden = true;
     if (message.sources && message.sources.length) window.AIChat.renderSources(q("sources"), message.sources);
+    window.AIChat.renderRoute(q("route"), message.route);
     const copy = q("copy");
     if (!failed && message.content && !message.withheld) {
       copy.hidden = false;

@@ -85,6 +85,18 @@
     });
   }
 
+  /* Where the answer was produced, in plain words. Only shown once an answer exists. */
+  function renderRoute(holder, route) {
+    if (!holder) return;
+    holder.textContent = "";
+    holder.hidden = !(route && (route.location === "private" || route.location === "external"));
+    if (holder.hidden) return;
+    const chip = element("span", "ai-route-chip is-" + route.location, route.location === "private" ? "Private AI" : "External AI");
+    chip.title = route.reason || "";
+    holder.appendChild(chip);
+    if (route.sensitive && route.reason) holder.appendChild(element("span", "ai-route-note", route.reason));
+  }
+
   function summarize(usage) {
     const parts = [];
     if (usage.duration_ms) parts.push("Answered in " + (usage.duration_ms / 1000).toFixed(1) + "s");
@@ -108,7 +120,7 @@
     this.ui = {
       status: find("status"), steps: find("steps"), thinking: find("thinking"), thinkingLabel: find("thinking-label"), elapsed: find("elapsed"),
       reasoning: find("reasoning"), reasoningText: find("reasoning-text"), answer: find("answer"),
-      notice: find("notice"), sources: find("sources"), stop: find("stop"), copy: find("copy"), stats: find("stats")
+      notice: find("notice"), route: find("route"), sources: find("sources"), stop: find("stop"), copy: find("copy"), stats: find("stats")
     };
     const self = this;
     if (this.ui.stop) this.ui.stop.addEventListener("click", function () { self.stop(); });
@@ -167,6 +179,7 @@
     if (ui.stop) ui.stop.hidden = true;
     if (ui.copy) ui.copy.hidden = !this.text;
     if (ui.sources) renderSources(ui.sources, data.sources);
+    renderRoute(ui.route, data.route);
     if (ui.elapsed && data.usage && data.usage.duration_ms) ui.elapsed.textContent = (data.usage.duration_ms / 1000).toFixed(1) + "s";
     if (ui.stats) ui.stats.textContent = data.usage ? summarize(data.usage) : "";
     if (ui.thinking) ui.thinking.hidden = true;
@@ -199,7 +212,7 @@
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done);
   };
 
-  window.AIChat = { RunView: RunView, get: get, post: post, element: element, renderSteps: renderSteps, renderSources: renderSources, sourceMap: sourceMap, summarize: summarize };
+  window.AIChat = { RunView: RunView, get: get, post: post, element: element, renderSteps: renderSteps, renderRoute: renderRoute, renderSources: renderSources, sourceMap: sourceMap, summarize: summarize };
 
   document.querySelectorAll("[data-ai-run]").forEach(function (root) { new RunView(root).start(); });
 })();

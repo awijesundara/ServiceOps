@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app import AIConfiguration, AIRun, Knowledge, Tenant, Ticket, User, db, now
+from app import AIConfiguration, AIConnection, AIRun, Knowledge, Tenant, Ticket, User, db, now
 from serviceops_core.ai import provider, service
 from tests.test_app import app, client, login  # noqa: F401
 
@@ -56,7 +56,7 @@ def submit(client, ticket_id, key=None):
 def test_disabled_default_and_admin_only(app, client):
     login(client)
     page = client.get("/admin/ai")
-    assert page.status_code == 200 and b"Disabled" in page.data
+    assert page.status_code == 200 and b"AI is off" in page.data
     assert client.get("/incidents/1/ai").status_code == 403
     client.get("/logout")
     login(client, "employee", "Employee123!")
@@ -76,14 +76,15 @@ def test_configuration_encrypted_and_external_consent_required(app, client):
     response = client.post("/admin/ai", data=form, follow_redirects=True)
     assert b"not-a-real-key" not in response.data
     with app.app_context():
-        config = db.session.get(AIConfiguration, 1)
-        assert config.enabled and config.key_encrypted and "not-a-real-key" not in config.key_encrypted
+        assert db.session.get(AIConfiguration, 1).enabled
+        primary = AIConnection.query.filter_by(name="Primary").one()
+        assert primary.key_encrypted and "not-a-real-key" not in primary.key_encrypted
     # New destination must never receive an old provider's credential.
     form.pop("api_key")
     form.update(provider="self_hosted", endpoint="http://127.0.0.1:18099/v1/chat/completions")
     client.post("/admin/ai", data=form)
     with app.app_context():
-        assert db.session.get(AIConfiguration, 1).key_encrypted == ""
+        assert AIConnection.query.filter_by(name="Primary").one().key_encrypted == ""
 
 
 def test_disable_is_independent_of_invalid_provider_config(app, client):

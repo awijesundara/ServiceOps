@@ -155,12 +155,15 @@ def knowledge_number(row_id):
 class Evidence:
     """Bounded, numbered evidence. `identifiers` is what the model may legitimately name."""
 
-    def __init__(self, budget=EVIDENCE_CHAR_BUDGET):
+    def __init__(self, budget=EVIDENCE_CHAR_BUDGET, scanner=None):
+        self.scanner = scanner
         self.sources, self.items, self.identifiers = [], [], set()
         self.unavailable = []
         self._budget = budget
 
     def add(self, kind, record_id, number, title, body):
+        if self.scanner:
+            self.scanner(f"{title}\n{body}", kind)  # judged on the original text, before personal details are masked
         title, body = mask_pii(redact(title))[:180], mask_pii(redact(body)) if kind != "knowledge" else redact(body)
         body = body[:1800]
         if len(title) + len(body) > self._budget or len(self.sources) >= 12:
@@ -210,10 +213,10 @@ def _recent_ticket_kind(question):
     return "ticket"
 
 
-def collect_chat_evidence(scope, question):
+def collect_chat_evidence(scope, question, scanner=None):
     """Everything the assistant may know for this question, under this identity."""
     from app import visible_ticket_query
-    evidence = Evidence()
+    evidence = Evidence(scanner=scanner)
     seen_tickets = set()
 
     def add_ticket(ticket):

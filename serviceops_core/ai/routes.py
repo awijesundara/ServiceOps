@@ -1,5 +1,7 @@
 """AI routes share application authentication, CSRF, policy and audit controls."""
 import json
+import random
+import time
 import uuid
 from datetime import timedelta
 from types import SimpleNamespace
@@ -7,8 +9,8 @@ from types import SimpleNamespace
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from serviceops_models import AIConfiguration, AIConversation, AIMessage, AIRun, db, now, settings_cipher
-from serviceops_core.ai import access, service, discovery_tokens
+from serviceops_models import AIConfiguration, AIConnection, AIConversation, AIMessage, AIRun, db, now, settings_cipher
+from serviceops_core.ai import access, discovery_tokens, routing, service
 from serviceops_core.ai.provider import (PROVIDERS, ProviderError, decrypt_key, generate, list_models, normalize_endpoint,
                                          validate_configuration)
 from serviceops_core.storage import ipfs_enabled
@@ -17,12 +19,101 @@ def register(app):
     blueprint = Blueprint("ai", __name__)
     from app import audit, require_action, roles
 
+    def service_payload(row, counts):
+        try:
+            caps = json.loads(row.capabilities_json or "{}")
+        except ValueError:
+            caps = {}
+        if not row.enabled:
+            status = "off"
+        elif row.last_test_ok is False or routing.circuit_open(row):
+            status = "failing"
+        elif row.last_test_ok or row.last_success_at:
+            status = "ready"
+        else:
+            status = "untested"
+        return {"id": row.id, "name": row.name, "provider": row.provider, "endpoint": row.endpoint, "model": row.model,
+                "external": row.external, "enabled": bool(row.enabled), "priority": row.priority, "weight": row.weight,
+                "max_concurrency": row.max_concurrency, "has_key": bool(row.key_encrypted), "status": status,
+                "load": counts.get(row.id, 0), "context": caps.get("context_tokens"),
+                "tested_at": row.last_test_at.isoformat() if row.last_test_at else None}
+
+    def clamp(value, low, high, default):
+        try:
+            return max(low, min(high, int(value)))
+        except (TypeError, ValueError):
+            return default
+
+    def save_service(config, data, row=None):
+        """Create or change one AI service from validated input. Raises ProviderError with a display-safe message."""
+        creating = row is None
+        provider = str(data.get("provider", row.provider if row else "self_hosted"))
+        if provider not in PROVIDERS:
+            raise ProviderError("Choose a supported provider.")
+        endpoint = normalize_endpoint(str(data.get("endpoint", row.endpoint if row else ""))[:500]) if provider in {
+            "self_hosted", "openai_compatible"} else ""
+        model = str(data.get("model", row.model if row else "")).strip()[:160]
+        name = " ".join(str(data.get("name", row.name if row else "")).split())[:80] or model[:80] or "AI service"
+        clash = AIConnection.query.filter(AIConnection.tenant_id == current_user.tenant_id, AIConnection.name == name)
+        if row is not None:
+            clash = clash.filter(AIConnection.id != row.id)
+        if clash.first():
+            raise ProviderError("Another AI service already uses that name.")
+        old_destination = (row.provider, row.endpoint) if row else None
+        key_encrypted = row.key_encrypted if row else ""
+        if old_destination != (provider, endpoint) and not creating or data.get("clear_key"):
+            key_encrypted = ""
+        typed = str(data.get("api_key", "")).strip()
+        if len(typed) > 4096 or any(char in typed for char in "\r\n"):
+            raise ProviderError("Invalid API key.")
+        if typed:
+            key_encrypted = settings_cipher().encrypt(typed.encode()).decode()
+        candidate = SimpleNamespace(provider=provider, endpoint=endpoint, model=model, key_encrypted=key_encrypted,
+                                    external_consent=True, max_output_tokens=config.max_output_tokens)
+        validate_configuration(candidate)  # structure only; whether external use is permitted is decided per request
+        capabilities = row.capabilities_json if row else "{}"
+        token = str(data.get("discovery_token", ""))
+        if token:
+            capabilities = json.dumps(discovery_tokens.verify(token, candidate, decrypt_key(candidate), current_user.tenant_id,
+                                                              current_user.id))
+        elif row is not None and (old_destination != (provider, endpoint) or row.model != model or row.key_encrypted != key_encrypted):
+            capabilities = "{}"
+        if creating:
+            row = AIConnection(tenant_id=current_user.tenant_id)
+            db.session.add(row)
+        row.name, row.provider, row.endpoint, row.model, row.key_encrypted = name, provider, endpoint, model, key_encrypted
+        row.capabilities_json = capabilities
+        row.enabled = bool(data.get("enabled", row.enabled if not creating else True))
+        row.priority = clamp(data.get("priority", row.priority if not creating else 100), 1, 1000, 100)
+        row.weight = clamp(data.get("weight", row.weight if not creating else 1), 1, 10, 1)
+        row.max_concurrency = clamp(data.get("max_concurrency", row.max_concurrency if not creating else 1), 1, 8, 1)
+        if not creating and (old_destination != (provider, endpoint)):
+            row.consecutive_failures, row.last_test_ok, row.last_test_at = 0, None, None
+        config.revision += 1
+        config.updated_by_id = current_user.id
+        service.cancel_active(current_user.tenant_id)
+        db.session.flush()
+        audit("ai service " + ("added" if creating else "changed"), row.id,
+              f"provider={provider}; location={'external' if row.external else 'private'}; enabled={row.enabled}")
+        return row
+
+    def owned_service(service_id):
+        return AIConnection.query.filter_by(id=service_id, tenant_id=current_user.tenant_id).first_or_404()
+
+    def tenant_config(create=False):
+        config = AIConfiguration.query.filter_by(tenant_id=current_user.tenant_id).with_for_update().first()
+        if not config and create:
+            config = AIConfiguration(tenant_id=current_user.tenant_id, revision=0, key_encrypted="")
+            db.session.add(config)
+            db.session.flush()
+        return config
+
     @blueprint.route("/admin/ai", methods=["GET", "POST"])
     @roles("admin")
     @require_action("administer")
     def settings():
         service.actor(current_user)
-        config = AIConfiguration.query.filter_by(tenant_id=current_user.tenant_id).with_for_update().first()
+        config = tenant_config()
         if request.method == "POST":
             action = request.form.get("action", "save")
             if action == "disable":
@@ -33,79 +124,154 @@ def register(app):
                     service.cancel_active(current_user.tenant_id)
                 audit("ai disabled", "AI configuration", "Master switch disabled")
                 db.session.commit()
-                flash("AI disabled. Queued work is cancelled; in-flight results will be discarded.", "success")
-                return redirect(url_for("ai.settings"))
-            if action == "test":
-                if not config:
-                    abort(400)
-                from app import route_rate_limit
-                if not route_rate_limit("ai_probe", f"tenant:{current_user.tenant_id}", 3):
-                    db.session.commit()
-                    abort(429)
-                snapshot = SimpleNamespace(**{name: getattr(config, name) for name in
-                    ("provider", "model", "endpoint", "key_encrypted", "external_consent", "max_output_tokens", "capabilities_json")})
-                audit("ai connection test", "AI configuration", "Synthetic prompt only; no operational records")
-                db.session.commit()
-                try:
-                    generate(snapshot, [], probe=True)
-                    flash("Provider connection succeeded using a synthetic prompt.", "success")
-                except ProviderError as error:
-                    flash(str(error), "error")
+                flash("AI is off. Queued work is cancelled; answers still being written are discarded.", "success")
                 return redirect(url_for("ai.settings"))
             if action != "save":
                 abort(400)
-            if not config:
-                config = AIConfiguration(tenant_id=current_user.tenant_id, revision=0, key_encrypted="")
-                db.session.add(config)
-            old_destination = (config.provider, config.endpoint)
-            old_model, old_key = config.model, config.key_encrypted
+            config = tenant_config(create=True)
             try:
-                config.provider = request.form.get("provider", "self_hosted")
-                config.endpoint = normalize_endpoint(request.form.get("endpoint", "")) if config.provider in {
-                    "self_hosted", "openai_compatible"} else ""
-                config.model = request.form.get("model", "").strip()
-                if len(config.endpoint) > 500 or len(config.model) > 160 or config.provider not in PROVIDERS:
-                    raise ProviderError("Invalid provider, endpoint or model.")
+                if request.form.get("provider"):
+                    # Single-service form (older clients and the API): stored as the "Primary" service.
+                    primary = AIConnection.query.filter_by(tenant_id=current_user.tenant_id, name="Primary").first()
+                    form = request.form.to_dict()
+                    form["name"] = "Primary"
+                    save_service(config, form, primary)
                 config.enabled = request.form.get("enabled") == "on"
                 config.incident_enabled = request.form.get("incident_enabled") == "on"
                 config.chat_enabled = request.form.get("chat_enabled") == "on"
                 config.show_reasoning = request.form.get("show_reasoning") == "on"
                 config.external_consent = request.form.get("external_consent") == "on"
+                mode = request.form.get("routing_mode", config.routing_mode or "smart")
+                scope = request.form.get("external_scope", config.external_scope or "not_sensitive")
+                if mode not in routing.ROUTING_MODES or scope not in routing.EXTERNAL_SCOPES:
+                    raise ProviderError("Choose one of the listed options.")
+                config.routing_mode, config.external_scope = mode, scope
+                if "routing_mode" in request.form:  # the full settings form; older clients leave these untouched
+                    for flag in ("detect_personal", "detect_credentials", "detect_financial"):
+                        setattr(config, flag, request.form.get(flag) == "on")
+                if "sensitive_terms" in request.form:
+                    config.sensitive_terms = "\n".join(routing.custom_terms(SimpleNamespace(
+                        sensitive_terms=request.form["sensitive_terms"])))[:4000]
                 for name, low, high, default in (("daily_limit", 1, 1000, 100), ("max_output_tokens", 128, 4096, 1500),
                                                  ("retention_days", 1, 30, 7)):
-                    value = int(request.form.get(name, default))
+                    value = int(request.form.get(name, getattr(config, name) or default))
                     if not low <= value <= high:
                         raise ProviderError(f"{name.replace('_', ' ').capitalize()} must be between {low} and {high}.")
                     setattr(config, name, value)
-                if old_destination != (config.provider, config.endpoint) or request.form.get("clear_key"):
-                    config.key_encrypted = ""
-                key = request.form.get("api_key", "").strip()
-                if len(key) > 4096 or any(char in key for char in "\r\n"):
-                    raise ProviderError("Invalid API key.")
-                if key:
-                    config.key_encrypted = settings_cipher().encrypt(key.encode()).decode()
-                token = request.form.get("discovery_token", "")
-                if token:
-                    profile = discovery_tokens.verify(token, config, decrypt_key(config), current_user.tenant_id, current_user.id)
-                    config.capabilities_json = json.dumps(profile)
-                elif old_destination != (config.provider, config.endpoint) or old_model != config.model or old_key != config.key_encrypted:
-                    config.capabilities_json = "{}"
+                db.session.flush()
                 if config.enabled:
                     if ipfs_enabled():
                         raise ProviderError("AI jobs require PostgreSQL storage; IPFS mode is not supported.")
-                    validate_configuration(config)
+                    service.ready(config)
                 config.revision += 1
                 config.updated_by_id = current_user.id
                 service.cancel_active(current_user.tenant_id)
                 audit("ai configured", "AI configuration",
-                      f"enabled={config.enabled}; incidents={config.incident_enabled}; chat={config.chat_enabled}; reasoning={config.show_reasoning}; provider={config.provider}; revision={config.revision}")
+                      f"enabled={config.enabled}; incidents={config.incident_enabled}; chat={config.chat_enabled}; "
+                      f"routing={config.routing_mode}; external={config.external_scope}; revision={config.revision}")
                 db.session.commit()
-                flash("AI configuration saved. Previous queued and running investigations were cancelled.", "success")
+                flash("Saved. Requests waiting or being answered were cancelled so the new settings apply cleanly.", "success")
             except (ProviderError, ValueError) as error:
                 db.session.rollback()
-                flash(str(error) if isinstance(error, ProviderError) else "Enter valid numeric limits.", "error")
+                flash(str(error) if isinstance(error, ProviderError) else "Enter valid numbers for the limits.", "error")
             return redirect(url_for("ai.settings"))
-        return render_template("ai_settings.html", config=config, ipfs=ipfs_enabled())
+        rows = service.connections_for(config) if config else []
+        counts = routing.running_counts(current_user.tenant_id)
+        return render_template("ai_settings.html", config=config, ipfs=ipfs_enabled(),
+                               services=[service_payload(r, counts) for r in rows], modes=routing.ROUTING_MODES)
+
+    @blueprint.route("/admin/ai/services", methods=["POST"])
+    @roles("admin")
+    @require_action("administer")
+    def service_save():
+        service.actor(current_user)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return no_store({"error": "Expected a JSON object."}, 400)
+        config = tenant_config(create=True)
+        row = owned_service(str(data["id"])) if data.get("id") else None
+        try:
+            row = save_service(config, data, row)
+            db.session.commit()
+        except ProviderError as error:
+            db.session.rollback()
+            return no_store({"error": str(error)}, 400)
+        return no_store({"service": service_payload(row, routing.running_counts(current_user.tenant_id))})
+
+    @blueprint.route("/admin/ai/services/<service_id>/delete", methods=["POST"])
+    @roles("admin")
+    @require_action("administer")
+    def service_delete(service_id):
+        service.actor(current_user)
+        config = tenant_config(create=True)
+        row = owned_service(service_id)
+        AIRun.query.filter_by(connection_id=row.id).update({"connection_id": None}, synchronize_session=False)
+        db.session.delete(row)
+        config.revision += 1
+        service.cancel_active(current_user.tenant_id)
+        audit("ai service removed", service_id, "Deleted by an administrator")
+        db.session.commit()
+        return no_store({"deleted": True})
+
+    @blueprint.route("/admin/ai/services/<service_id>/test", methods=["POST"])
+    @roles("admin")
+    @require_action("administer")
+    def service_test(service_id):
+        from app import route_rate_limit
+        service.actor(current_user)
+        row = owned_service(service_id)
+        config = tenant_config(create=True)
+        if not route_rate_limit("ai_probe", f"tenant:{current_user.tenant_id}", 10):
+            db.session.commit()
+            return no_store({"error": "Too many tests. Wait a minute."}, 429)
+        snapshot = SimpleNamespace(provider=row.provider, model=row.model, endpoint=row.endpoint, key_encrypted=row.key_encrypted,
+                                   external_consent=True, max_output_tokens=config.max_output_tokens,
+                                   capabilities_json=row.capabilities_json)
+        audit("ai connection test", row.id, "Synthetic prompt only; no operational records")
+        db.session.commit()
+        started = time.monotonic()
+        try:
+            generate(snapshot, [], probe=True)
+            ok, message = True, "Connected. The service answered a test question."
+        except ProviderError as error:
+            ok, message = False, str(error)
+        row = owned_service(service_id)
+        row.last_test_ok, row.last_test_at = ok, now()
+        if ok:
+            routing.record_success(row)
+        db.session.commit()
+        return no_store({"ok": ok, "message": message, "ms": int((time.monotonic() - started) * 1000),
+                         "service": service_payload(row, routing.running_counts(current_user.tenant_id))})
+
+    @blueprint.route("/admin/ai/preview", methods=["POST"])
+    @roles("admin")
+    @require_action("administer")
+    def route_preview():
+        """Show, with the real rules, where a request would go. Nothing is sent to any AI service."""
+        service.actor(current_user)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return no_store({"error": "Expected a JSON object."}, 400)
+        config = tenant_config(create=True)
+        pick = lambda name, ok, fallback: data.get(name) if data.get(name) in ok else fallback  # noqa: E731
+        trial = SimpleNamespace(
+            external_consent=data.get("external_consent") is True if "external_consent" in data else config.external_consent,
+            routing_mode=pick("routing_mode", routing.ROUTING_MODES, config.routing_mode),
+            external_scope=pick("external_scope", routing.EXTERNAL_SCOPES, config.external_scope),
+            detect_personal=data.get("detect_personal", config.detect_personal) is True,
+            detect_credentials=data.get("detect_credentials", config.detect_credentials) is True,
+            detect_financial=data.get("detect_financial", config.detect_financial) is True,
+            sensitive_terms=str(data.get("sensitive_terms", config.sensitive_terms))[:4000])
+        text = str(data.get("text", ""))[:4000]
+        kinds = {k for k in data.get("kinds", ["ticket"]) if k in {"ticket", "knowledge", "ci"}} if isinstance(
+            data.get("kinds", ["ticket"]), list) else {"ticket"}
+        reasons = routing.scan(text, trial)
+        chosen = routing.plan(trial, service.connections_for(config), reasons, kinds, {}, random.Random(0))
+        return no_store({
+            "sensitive": chosen.sensitive, "reasons": [routing.REASON_TEXT[r] for r in chosen.reasons],
+            "blocked": routing.BLOCKED_TEXT.get(chosen.blocked, "") if chosen.blocked else "",
+            "eligible": [{"name": c.name, "external": c.external} for c in chosen.candidates],
+            "note": chosen.note})
 
     @blueprint.route("/admin/ai/models", methods=["POST"])
     @roles("admin")
@@ -124,13 +290,18 @@ def register(app):
         if not route_rate_limit("ai_probe", f"tenant:{current_user.tenant_id}", 10):
             db.session.commit()
             return no_store({"error": "Too many attempts. Wait a minute."}, 429)
-        saved = AIConfiguration.query.filter_by(tenant_id=current_user.tenant_id).first()
+        saved = None
+        if data.get("service_id"):
+            saved = AIConnection.query.filter_by(id=str(data["service_id"]), tenant_id=current_user.tenant_id).first()
+        elif AIConnection.query.filter_by(tenant_id=current_user.tenant_id).count() <= 1:
+            saved = AIConnection.query.filter_by(tenant_id=current_user.tenant_id).first() or AIConfiguration.query.filter_by(
+                tenant_id=current_user.tenant_id).first()
         endpoint = str(data.get("endpoint", ""))[:500]
         typed_key = str(data.get("api_key", "")).strip()
         if len(typed_key) > 4096 or any(char in typed_key for char in "\r\n"):
             return no_store({"error": "Invalid API key."}, 400)
         candidate = SimpleNamespace(provider=provider, endpoint=endpoint, model=str(data.get("model", ""))[:160], key_encrypted="",
-                                    external_consent=data.get("external_consent") is True, max_output_tokens=64)
+                                    external_consent=True, max_output_tokens=64)
         try:
             candidate.endpoint = normalize_endpoint(endpoint) if provider in {"self_hosted", "openai_compatible"} else ""
             if typed_key:
@@ -166,7 +337,7 @@ def register(app):
                     abort(409)
                 return redirect(url_for("ai.result", run_id=existing.id))
             try:
-                validate_configuration(config)
+                service.ready(config)
             except ProviderError as error:
                 abort(409, description=str(error))
             # Tenant configuration row lock serializes submissions and daily quota accounting.
@@ -178,7 +349,7 @@ def register(app):
                 abort(409, description="You already have an AI investigation in progress.")
             run = AIRun(tenant_id=identity.tenant_id, user_id=identity.id, ticket_id=ticket.id,
                         actor_role=identity.role, config_revision=config.revision, request_key=request_key,
-                        provider=config.provider, model=config.model)
+                        provider="auto", model="auto")
             db.session.add(run)
             db.session.flush()
             audit("ai requested", run.id, "Read-only incident investigation")
@@ -265,11 +436,12 @@ def register(app):
             if not ok:
                 abort(403, description="You no longer have access to all evidence used by this answer.")
             sources = source_links(sources)
-        problem = {"failed": "The assistant could not complete this request.",
+        problem = {"failed": routing.BLOCKED_TEXT.get(run.error_code, "The assistant could not complete this request."),
                    "cancelled": "Stopped. No answer was kept."}.get(run.status, "")
         return no_store({**body, "changed": True, "text": run.result_text if finished else run.partial_text,
                          "reasoning": "",
                          "steps": json.loads(run.steps_json or "[]"), "sources": sources, "error": problem,
+                         "route": json.loads(run.route_json or "{}") if finished else {},
                          "usage": json.loads(run.usage_json or "{}") if finished else {}})
 
     @blueprint.route("/ai/runs/<run_id>/cancel", methods=["POST"])
@@ -314,7 +486,8 @@ def register(app):
         if not access.sources_still_accessible(scope, sources):
             body.update(content=access.WITHHELD_NOTICE, withheld=True)
             return body
-        body.update(sources=source_links(sources), steps=json.loads(message.steps_json or "[]"),
+        body.update(route=json.loads(message.route_json or "{}"), sources=source_links(sources),
+                    steps=json.loads(message.steps_json or "[]"),
                     reasoning="")
         return body
 
@@ -379,7 +552,7 @@ def register(app):
         if existing:
             return no_store({"run_id": existing.id, "conversation_id": existing.conversation_id, "message_id": existing.message_id})
         try:
-            validate_configuration(config)
+            service.ready(config)
         except ProviderError as error:
             abort(409, description=str(error))
         start = now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -405,7 +578,7 @@ def register(app):
         db.session.add(reply)
         db.session.flush()
         run = AIRun(tenant_id=scope.tenant_id, user_id=scope.user_id, actor_role=scope.role, kind="chat",
-                    config_revision=config.revision, request_key=request_key, provider=config.provider, model=config.model,
+                    config_revision=config.revision, request_key=request_key, provider="auto", model="auto",
                     prompt_version="chat-v1", conversation_id=conversation.id, message_id=reply.id, question=text,
                     usage_json="{}")
         db.session.add(run)

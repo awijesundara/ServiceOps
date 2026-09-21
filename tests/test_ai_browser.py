@@ -62,15 +62,19 @@ def test_ai_admin_to_incident_workflow(ai_browser_server, monkeypatch, width, he
         page.locator("button.primary").click()
         page.wait_for_load_state("networkidle")
         page.goto(base + "/admin/section/platform-security")
-        page.get_by_role("link", name="AI assistance", exact=False).click()
-        page.get_by_label("Enable AI for this organization", exact=True).check()
-        page.get_by_label("Enable incident investigations", exact=True).check()
-        page.get_by_label("Provider", exact=True).select_option("self_hosted")
-        page.get_by_label("Model identifier").fill("local-test")
-        page.get_by_label("Server address").fill("http://127.0.0.1:18099/v1/chat/completions")
-        page.get_by_role("button", name="Save AI configuration").click()
+        page.goto(base + "/admin/ai", wait_until="networkidle")
+        with app.app_context():
+            from app import AIConnection
+            AIConnection.query.delete()
+            db.session.add(AIConnection(tenant_id=1, name="Test server", provider="self_hosted", model="local-test",
+                                        endpoint="http://127.0.0.1:18099/v1/chat/completions"))
+            db.session.commit()
+        page.goto(base + "/admin/ai", wait_until="networkidle")
+        page.get_by_label("Turn AI on for this organization").check()
+        page.get_by_label("Investigate with AI on incidents").check()
+        page.get_by_role("button", name="Save AI settings").click()
         page.wait_for_load_state("networkidle")
-        assert "AI configuration saved" in page.inner_text("body")
+        assert "Saved" in page.inner_text("body")
         for path in ("/admin/ai", f"/incidents/{ticket_id}/ai"):
             page.goto(base + path, wait_until="networkidle")
             # The site's page-entry animation shifts <main> by 9px for 0.3s; measure only once it has settled.
@@ -90,7 +94,7 @@ def test_ai_admin_to_incident_workflow(ai_browser_server, monkeypatch, width, he
         page.add_script_tag(path=axe_path)
         assert not page.evaluate("async () => (await axe.run(document, {runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa']}})).violations")
         page.goto(base + "/admin/ai")
-        page.get_by_role("button", name="Disable all AI now").click()
+        page.get_by_role("button", name="Turn AI off now").click()
         page.wait_for_load_state("networkidle")
         with app.app_context():
             assert not db.session.get(AIConfiguration, 1).enabled
@@ -399,39 +403,56 @@ def test_full_page_chat_and_stop(ai_browser_server, monkeypatch):
         stop_worker.set()
 
 
-def test_admin_detects_models_from_an_address_and_key_in_the_browser(ai_browser_server, monkeypatch):
-    """The whole point of the connection form: give an address and a key, get the models, save, done."""
+def test_admin_adds_a_service_tests_the_privacy_rules_and_removes_it_in_the_browser(ai_browser_server, monkeypatch):
+    """Add a service from a preset with automatic model detection, check the sensitive-data tester, remove it."""
     from playwright.sync_api import sync_playwright
     from tests.test_ai_providers import Server
     app, base, _ = ai_browser_server
+    with app.app_context():
+        from app import AIConnection
+        AIConnection.query.delete()
+        db.session.commit()
     model_server = Server(get_body={"data": [{"id": "Qwen/Qwen3-8B-GGUF:Q4_K_M", "meta": {"n_ctx": 4096}}]})
-    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", f"{model_server.origin}")
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", model_server.origin)
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
-            page = browser.new_context(viewport={"width": 1280, "height": 1000}).new_page()
-            problems = []
-            page.on("console", lambda m: problems.append(m.text) if "Content Security Policy" in m.text else None)
-            sign_in(page, base)
-            page.goto(base + "/admin/ai", wait_until="networkidle")
-            assert not axe_violations(page)
-            page.get_by_label("Quick setup").select_option(index=1)
-            assert page.get_by_label("Server address").input_value() == "http://HOST:8080"
-            page.get_by_label("Server address").fill(model_server.origin)
-            page.locator("#ai-key").fill("typed-key-123")
-            page.get_by_role("button", name="Connect and detect models").click()
-            wait_for(lambda: "Model discovery succeeded" in page.inner_text("[data-ai-detect-status]"))
-            assert page.get_by_label("Model identifier").input_value() == "Qwen/Qwen3-8B-GGUF:Q4_K_M"
-            assert "Context: 4096" in page.inner_text("[data-ai-detect-status]")
-            assert "not yet verified" in page.inner_text("[data-ai-detect-status]")
-            assert model_server.seen[0][2]["Authorization"] == "Bearer typed-key-123"
-            # Hosted providers do not need an address.
-            page.get_by_label("Provider", exact=True).select_option("anthropic")
-            assert page.locator("[data-ai-endpoint-row]").is_hidden()
-            page.get_by_label("Provider", exact=True).select_option("self_hosted")
-            assert page.locator("[data-ai-endpoint-row]").is_visible()
-            assert not axe_violations(page)
-            assert not problems, problems
+            for size in ({"width": 1280, "height": 1000}, {"width": 390, "height": 844}):
+                page = browser.new_context(viewport=size, reduced_motion="reduce").new_page()
+                problems = []
+                page.on("console", lambda m: problems.append(m.text) if "Content Security Policy" in m.text else None)
+                sign_in(page, base)
+                page.goto(base + "/admin/ai", wait_until="networkidle")
+                assert not axe_violations(page)
+                page.get_by_role("button", name="Add an AI service").click()
+                if os.getenv("AI_SCREENSHOT_DIR"):
+                    page.screenshot(path=os.path.join(os.getenv("AI_SCREENSHOT_DIR"), f"ai-admin-picker-{size['width']}.png"))
+                page.locator('[data-ai-preset^="self_hosted|http://HOST:8080"]').click()
+                page.locator('[data-ai-f="endpoint"]').fill(model_server.origin)
+                page.locator('[data-ai-f="api_key"]').fill("typed-key-123")
+                page.get_by_role("button", name="Connect and find models").click()
+                wait_for(lambda: "Connected" in page.inner_text("[data-ai-detect-status]"))
+                assert page.locator('[data-ai-f="model"]').input_value() == "Qwen/Qwen3-8B-GGUF:Q4_K_M"
+                assert "4,096" in page.inner_text("[data-ai-detect-status]")
+                assert not axe_violations(page)
+                page.get_by_role("button", name="Save service").click()
+                wait_for(lambda: page.locator(".aiadm-card").count() == 1)
+                assert "Private" in page.locator(".aiadm-card").inner_text()
+                # The privacy tester uses the real rules.
+                page.locator("[data-ai-try]").click()
+                page.keyboard.type("Please email anna@corp.example about her VPN")
+                wait_for(lambda: "Stays on your own AI" in page.inner_text("[data-ai-verdict]"))
+                page.locator("[data-ai-try]").fill("")
+                page.keyboard.type("VPN drops after roaming")
+                wait_for(lambda: "Not sensitive" in page.inner_text("[data-ai-verdict]"))
+                assert page.evaluate("document.documentElement.scrollWidth") <= size["width"] + 1
+                assert not axe_violations(page)
+                if os.getenv("AI_SCREENSHOT_DIR"):
+                    page.screenshot(path=os.path.join(os.getenv("AI_SCREENSHOT_DIR"), f"ai-admin-{size['width']}.png"), full_page=True)
+                page.locator(".aiadm-card").get_by_role("button", name="Remove").first.click()
+                page.locator(".aiadm-card").get_by_role("button", name="Confirm removing").first.click()
+                wait_for(lambda: page.locator(".aiadm-card").count() == 0)
+                assert not problems, problems
             browser.close()
     finally:
         model_server.close()
