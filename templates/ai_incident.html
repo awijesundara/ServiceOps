@@ -20,7 +20,7 @@
           <li>Look at related configuration items your role may read.</li>
           <li>Write a summary, likely causes, missing information and safe next steps, citing each source.</li>
         </ul>
-        <p class="muted">You will see each step as it happens{% if config.show_reasoning %}, along with the model's own reasoning when it provides one{% endif %}. It drafts advice for your review and makes no operational changes.</p>
+        <p class="muted">A small activity label appears while the assistant works and disappears when the answer is ready. Private model reasoning is not shown. It drafts advice for your review and makes no operational changes.</p>
         <form method="post" class="ai-actions"><input type="hidden" name="request_key" value="{{ request_key }}"><button class="primary">Start investigation</button></form>
       </div>
       <div class="panel">
@@ -37,7 +37,7 @@
     <aside class="ai-side">
       <div class="panel">
         <h2>Privacy</h2>
-        <p class="ai-privacy">The assistant only receives records <strong>you</strong> are allowed to see. It has no access to user accounts, audit logs or attachments, and it cannot change anything.</p>
+        <p class="ai-privacy">The assistant only sees what <strong>you</strong> are allowed to see, and it cannot change anything.</p>
       </div>
     </aside>
   </div>

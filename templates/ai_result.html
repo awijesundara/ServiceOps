@@ -12,15 +12,11 @@
   </div>
   <div class="ai-layout">
     <div class="ai-main">
-      <details class="ai-thinking" data-ai-thinking open>
-        <summary>Thinking <span data-ai-elapsed></span></summary>
-        <ol class="ai-steps" data-ai-steps></ol>
-        <div class="ai-reasoning" data-ai-reasoning hidden>
-          <h3>Model reasoning</h3>
-          <p class="muted">Written by the model as it works. It can be incomplete or wrong, so check the cited records.</p>
-          <pre data-ai-reasoning-text></pre>
-        </div>
-      </details>
+      <div class="ai-thinking-status" data-ai-thinking role="status" aria-live="polite">
+        <span class="ai-thinking-dot" aria-hidden="true"></span>
+        <span data-ai-thinking-label>Getting ready</span>
+        <span data-ai-elapsed></span>
+      </div>
       <article class="ai-answer" data-ai-answer aria-busy="true"></article>
       <p class="ai-banner" data-ai-notice hidden></p>
       <div class="ai-actions">
@@ -46,7 +42,7 @@
       </div>
       <div class="panel">
         <h2>Privacy</h2>
-        <p class="ai-privacy">Only records <strong>you</strong> can access were sent to the model, and your access was checked again before this answer was kept. Nothing was changed in ServiceOps.</p>
+        <p class="ai-privacy">The assistant only used what <strong>you</strong> are allowed to see. Nothing was changed.</p>
       </div>
     </aside>
   </div>

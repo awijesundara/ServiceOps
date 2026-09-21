@@ -168,7 +168,7 @@ def test_output_cut_off_by_the_token_cap_is_flagged(app, sse):
 
 # --- the worker publishes progress ------------------------------------------------------------
 
-def test_worker_publishes_steps_reasoning_and_partial_text_while_running(app, client, monkeypatch):
+def test_worker_publishes_activity_and_partial_text_but_never_private_reasoning(app, client, monkeypatch):
     ticket_id = configure(app)
     login(client)
     run_id = submit(client, ticket_id)
@@ -188,7 +188,8 @@ def test_worker_publishes_steps_reasoning_and_partial_text_while_running(app, cl
     with app.app_context():
         assert service.process_one()
     first, second, unchanged = polls
-    assert first["status"] == "running" and first["reasoning"].startswith("Checking") and first["text"] == ""
+    assert first["status"] == "running" and first["reasoning"] == "" and first["text"] == ""
+    assert "Checking the VPN evidence" not in json.dumps(first)
     labels = [step["label"] for step in first["steps"]]
     assert labels[:3] == ["Verified your access", "Collected evidence", "Sending to the model"]
     assert "The model is reasoning" in labels
@@ -197,13 +198,13 @@ def test_worker_publishes_steps_reasoning_and_partial_text_while_running(app, cl
 
     done = client.get(f"/ai/runs/{run_id}/stream?after=-1").get_json()
     assert done["status"] == "completed" and done["text"] == "The VPN drops after roaming [S1]. "
-    assert done["reasoning"] == "Checking the VPN evidence. "
+    assert done["reasoning"] == "" and "Checking the VPN evidence" not in json.dumps(done)
     assert [s["state"] for s in done["steps"]] == ["done"] * len(done["steps"])
     assert done["steps"][-1]["label"] == "Checked your access again"
     assert done["sources"][0]["url"].startswith("/ticket/") and done["usage"]["total_tokens"] == 7
     with app.app_context():
         run = db.session.get(AIRun, run_id)
-        assert run.partial_text == "" and run.question == ""
+        assert run.partial_text == "" and run.reasoning_text == "" and run.question == ""
 
 
 def test_an_unfinished_word_is_held_back_from_the_partial_text(app, client, monkeypatch):
