@@ -350,3 +350,50 @@ def test_ready_requires_a_usable_service(app):
         db.session.commit()
         with pytest.raises(ProviderError):
             service.ready(config)
+
+
+def test_ai_pages_and_services_are_found_by_the_global_search(app, client, ai):
+    with app.app_context():
+        add_service("Gemini", "openai_compatible")
+    login(client)
+    for term, expected in (("gemini", "Gemini"), ("routing privacy", "AI assistance"), ("sensitive data", "AI assistance"),
+                           ("chatbot", "AI chat"), ("sessions", "Active sessions"), ("legal hold", "Data governance")):
+        page = client.get("/ui/search", query_string={"q": term}).get_data(as_text=True)
+        assert expected in page, term
+    login_employee = client
+    client.get("/logout")
+    login(login_employee, "employee", "Employee123!")
+    assert "Gemini" not in client.get("/ui/search", query_string={"q": "gemini"}).get_data(as_text=True)
+    assert "AI assistance" not in client.get("/ui/search", query_string={"q": "routing privacy"}).get_data(as_text=True)
+
+
+def test_search_matches_every_word_in_any_order_and_finds_comment_text(app, client, world):
+    from app import Comment
+    with app.app_context():
+        db.session.add(Comment(ticket_id=world.tickets["own"], user_id=world.employee, tenant_id=1, body="Replaced the tokyo gateway certificate"))
+        db.session.commit()
+    login(client, "employee", "Employee123!")
+    assert "INC0100001" in client.get("/ui/search", query_string={"q": "connection vpn"}).get_data(as_text=True)
+    assert "INC0100001" in client.get("/ui/search", query_string={"q": "gateway certificate"}).get_data(as_text=True)
+    other = client.get("/ui/search", query_string={"q": "payroll finance"}).get_data(as_text=True)
+    assert "INC0100002" not in other and "CANARY-OTHER" not in other
+
+
+def test_the_answer_records_the_exact_model_and_usage_is_counted(app, client, world, ai, monkeypatch):
+    with app.app_context():
+        add_service("Mac")
+        row = AIConnection.query.one()
+        row.model = "Qwen/Qwen3-8B-GGUF:Q4_K_M"
+        db.session.commit()
+    monkeypatch.setattr(service, "generate_stream", fake_stream("Done.", {"total_tokens": 42}))
+    login(client, "employee", "Employee123!")
+    reply = chat(client, "Explain how to request a new laptop please")
+    drain(app)
+    assert last_route(app, reply["conversation_id"])["model"] == "Qwen/Qwen3-8B-GGUF:Q4_K_M"
+    with app.app_context():
+        per, total = routing.usage_today(1)
+        assert total == {"requests": 1, "tokens": 42} and list(per.values())[0]["tokens"] == 42
+    client.get("/logout")
+    login(client)
+    page = client.get("/admin/ai").get_data(as_text=True)
+    assert "requests today" in page and "42" in page

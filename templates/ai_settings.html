@@ -22,6 +22,12 @@
       <div><h2 id="aiadm-services">AI services</h2><p class="muted">Add as many as you like: your own servers, and hosted services such as OpenAI or Claude.</p></div>
       <button type="button" class="primary" data-ai-add>Add an AI service</button>
     </div>
+    <div class="aiadm-usage" aria-label="Use today">
+      <div><strong>{{ today.requests }}</strong><span>requests today</span></div>
+      <div><strong>{{ daily_limit - today.requests if daily_limit > today.requests else 0 }}</strong><span>left of {{ daily_limit }} allowed per day</span></div>
+      <div><strong>{{ '{:,}'.format(today.tokens) }}</strong><span>tokens used today</span></div>
+      <p class="muted">Counted by ServiceOps. Your provider's own remaining credit is not available through its API; check the provider's dashboard.</p>
+    </div>
     <div class="aiadm-cards" data-ai-cards aria-live="polite"></div>
     <p class="aiadm-empty" data-ai-empty hidden>No AI service yet. Add one to get started.</p>
   </section>
@@ -124,8 +130,14 @@
         <label data-ai-row="endpoint">Server address<input type="text" inputmode="url" maxlength="500" data-ai-f="endpoint" placeholder="http://192.168.68.68:8080"><small>Just the address. The rest is added for you.</small></label>
         <label>Access key<input type="password" autocomplete="new-password" maxlength="4096" data-ai-f="api_key"><small data-ai-keyhint>Leave blank if the server needs none.</small></label>
         <div class="aiadm-detect"><button type="button" class="button" data-ai-detect>Connect and find models</button><span class="muted" role="status" aria-live="polite" data-ai-detect-status>Enter the details, then connect.</span></div>
-        <label>Model<input type="text" maxlength="160" list="ai-models" data-ai-f="model"><small>Filled in for you once connected.</small></label>
-        <datalist id="ai-models" data-ai-models></datalist>
+        <div class="aiadm-model">
+          <label for="ai-model-input">Model</label>
+          <div class="aiadm-model-wrap">
+            <input type="text" id="ai-model-input" maxlength="160" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="ai-model-list" aria-autocomplete="list" data-ai-f="model" placeholder="Search models…">
+            <ul class="aiadm-model-list" id="ai-model-list" role="listbox" aria-label="Available models" data-ai-model-list hidden></ul>
+          </div>
+          <small data-ai-model-hint>Connect first to see every model, or type a name.</small>
+        </div>
         <details class="aiadm-more"><summary>Sharing options</summary>
           <div class="aiadm-limits">
             <label>Order<input type="number" min="1" max="1000" value="100" data-ai-f="priority"><small>Lower goes first (In order mode).</small></label>

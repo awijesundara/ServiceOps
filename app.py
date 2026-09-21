@@ -17897,13 +17897,20 @@ def create_app(test_config=None):
             visible_ticket_ids = visible_ticket_query(current_user).with_entities(Ticket.id)
             visible_enterprise_ids = visible_enterprise_record_query(current_user).with_entities(EnterpriseRecord.id)
             visible_request_ids = visible_catalog_request_query(current_user).with_entities(CatalogRequest.id)
+            def all_terms(columns):
+                """Every word must appear somewhere in the record, in any order ("vpn tokyo" finds both words)."""
+                words = [w for w in q.split() if w][:6]
+                return db.and_(*[db.or_(*[c.ilike(f"%{w}%") for c in columns]) for w in words])
+
+            commented_ticket_ids = db.session.query(Comment.ticket_id).filter(
+                Comment.tenant_id == current_user.tenant_id, Comment.body.ilike(pattern))
             for row in Ticket.query.filter(Ticket.id.in_(visible_ticket_ids), db.or_(
-                                                   Ticket.number.ilike(pattern), Ticket.title.ilike(pattern),
-                                                   Ticket.description.ilike(pattern))).limit(20):
+                                                   all_terms([Ticket.number, Ticket.title, Ticket.description]),
+                                                   Ticket.id.in_(commented_ticket_ids))).limit(20):
                 results.append({"type": row.kind.title(), "label": f"{row.number} · {row.title}",
                                 "url": url_for("ticket_detail", ticket_id=row.id), "meta": row.state})
-            for row in tenant_query(Knowledge).filter(db.or_(
-                Knowledge.title.ilike(pattern), Knowledge.body.ilike(pattern)
+            for row in tenant_query(Knowledge).filter(all_terms(
+                [Knowledge.title, Knowledge.body, Knowledge.category]
             )).limit(20):
                 results.append({"type": "Knowledge", "label": row.title, "url": url_for("knowledge"),
                                 "meta": row.category})
@@ -17913,15 +17920,11 @@ def create_app(test_config=None):
                                                              EnterpriseRecord.external_id.ilike(pattern))).limit(20):
                 results.append({"type": DOMAIN_CONFIG[row.domain]["name"], "label": f"{row.number} · {row.title}",
                                 "url": url_for("enterprise_detail", record_id=row.id), "meta": row.state})
-            for row in tenant_query(ConfigurationItem).filter(db.or_(
-                ConfigurationItem.name.ilike(pattern),
-                ConfigurationItem.serial_number.ilike(pattern),
-                ConfigurationItem.ip_address.ilike(pattern),
-                ConfigurationItem.model.ilike(pattern),
-                ConfigurationItem.vendor.ilike(pattern),
-                ConfigurationItem.description.ilike(pattern),
-                ConfigurationItem.location.ilike(pattern),
-            )).limit(20):
+            for row in tenant_query(ConfigurationItem).filter(all_terms([
+                ConfigurationItem.name, ConfigurationItem.serial_number, ConfigurationItem.ip_address,
+                ConfigurationItem.model, ConfigurationItem.vendor, ConfigurationItem.description,
+                ConfigurationItem.location, ConfigurationItem.ci_class, ConfigurationItem.environment,
+            ])).limit(20):
                 ci_url = url_for("ci_edit", ci_id=row.id) if role_at_least(current_user.effective_role, "admin") else url_for("cmdb")
                 results.append({"type": "Configuration item", "label": row.name,
                                 "url": ci_url, "meta": row.ci_class})
@@ -17965,16 +17968,14 @@ def create_app(test_config=None):
                     "label": f"{row.number} · {row.title}",
                     "url": record_url(parent), "meta": row.state,
                 })
-            for row in tenant_query(Asset).filter(db.or_(
-                Asset.asset_tag.ilike(pattern), Asset.name.ilike(pattern),
-                Asset.asset_type.ilike(pattern), Asset.serial_number.ilike(pattern),
-            )).limit(20):
+            for row in tenant_query(Asset).filter(all_terms([
+                Asset.asset_tag, Asset.name, Asset.asset_type, Asset.serial_number,
+            ])).limit(20):
                 results.append({"type": "Asset", "label": f"{row.asset_tag} · {row.name}",
                                 "url": url_for("assets"), "meta": f"{row.asset_type} · {row.status}"})
-            for row in tenant_query(CatalogItem).filter(db.or_(
-                CatalogItem.name.ilike(pattern), CatalogItem.category.ilike(pattern),
-                CatalogItem.description.ilike(pattern),
-            )).limit(20):
+            for row in tenant_query(CatalogItem).filter(all_terms([
+                CatalogItem.name, CatalogItem.category, CatalogItem.description,
+            ])).limit(20):
                 results.append({"type": "Catalog item", "label": row.name,
                                 "url": url_for("catalog"), "meta": row.category})
             if user_can_access_client_management(current_user):
@@ -18011,6 +18012,10 @@ def create_app(test_config=None):
                     results.append({"type": "Group", "label": row.name,
                                     "url": url_for("itil_admin_section", section="governance-groups"),
                                     "meta": row.group_type})
+                for row in AIConnection.query.filter(AIConnection.tenant_id == current_user.tenant_id, all_terms([
+                        AIConnection.name, AIConnection.provider, AIConnection.model, AIConnection.endpoint])).limit(10):
+                    results.append({"type": "AI service", "label": f"{row.name} · {row.model}",
+                                    "url": url_for("ai.settings"), "meta": "Outside your organization" if row.external else "Private"})
                 for row in tenant_query(IntegrationConnection).filter(db.or_(
                     IntegrationConnection.name.ilike(pattern),
                     IntegrationConnection.kind.ilike(pattern),
