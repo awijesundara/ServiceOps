@@ -61,7 +61,7 @@ jobs:
       artifact-metadata: write
     steps:
       - name: Checkout immutable source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.checkout_ref || github.ref }}
           # Migration policy compares the candidate with its parent. The default
@@ -115,7 +115,7 @@ jobs:
           python -m pip_audit -r requirements.txt --strict
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Authenticate to GHCR for releases
         if: inputs.publish_release || startsWith(github.ref, 'refs/tags/v')
@@ -127,7 +127,7 @@ jobs:
 
       - name: Build immutable image
         id: image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile
@@ -174,7 +174,7 @@ jobs:
 
       - name: Attest SLSA build provenance
         if: inputs.publish_release || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.image.outputs.digest }}
@@ -182,7 +182,7 @@ jobs:
 
       - name: Attest CycloneDX SBOM
         if: inputs.publish_release || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.image.outputs.digest }}
@@ -205,7 +205,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.checkout_ref || github.ref }}
           persist-credentials: false
@@ -262,7 +262,7 @@ jobs:
 
       - name: Upload browser traces, screenshots, and diagnostics
         if: failure()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: browser-quality-failure-${{ github.run_id }}
           path: test-results/
