@@ -276,3 +276,12 @@ a.ai-cite:hover,a.ai-cite:focus-visible{background:var(--ai-accent);color:#fff}
 .ai-remember button{padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;font-weight:650;cursor:pointer}
 .ai-remember-yes{background:var(--ai-accent,#003e4c)!important;color:#fff!important;border-color:var(--ai-accent,#003e4c)!important}
 .ai-run a.ai-draft-open,.ai-draft a.ai-draft-open{color:#fff!important;text-decoration:none!important}
+.aiadm-allow{display:grid;gap:6px;padding:8px 10px;border-radius:10px;background:#f5f8f9}
+.aiadm-allow.is-used{background:#fff8ea}
+.aiadm-allow-row{display:grid;gap:3px;font-size:12px}
+.aiadm-allow-row progress{width:100%;height:6px;accent-color:var(--brand-teal,#003e4c)}
+.aiadm-allow-note{margin:0;font-size:12px;font-weight:650;color:#7a4c00}
+.aiadm-bulk{border:1px dashed #c6d4d8;border-radius:12px;padding:12px 14px;margin:12px 0}
+.aiadm-bulk legend{font-weight:700;font-size:13px;padding:0 6px}
+.aiadm-bulk ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:2px}
+.aiadm-bulk[hidden]{display:none}

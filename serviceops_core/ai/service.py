@@ -10,9 +10,9 @@ from types import SimpleNamespace
 from flask import abort
 from sqlalchemy import or_
 
-from serviceops_models import (AIConfiguration, AIConnection, AIConversation, AIMemory, AIMessage, AIRun, Comment, ConfigurationItem, Knowledge,
+from serviceops_models import (AICall, AIConfiguration, AIConnection, AIConversation, AIMemory, AIMessage, AIRun, Comment, ConfigurationItem, Knowledge,
                               TaskCI, Tenant, Ticket, User, db, now)
-from serviceops_core.ai import access, memory, routing
+from serviceops_core.ai import access, memory, quota, routing
 from serviceops_core.ai.provider import INSTRUCTIONS, ProviderError, StreamCancelled, generate_stream, provider_timeout
 from serviceops_core.ci_class_policy import ci_class_read_allowed
 from serviceops_core.security import redact
@@ -389,23 +389,23 @@ def _finish(run_id, prepared, steps, content, reasoning, usage, sanitize, featur
     db.session.commit()
 
 
-def _record_health(connection, ok):
+def _record_health(connection, ok, rate_limited=False):
     if connection.id == "legacy":
         return
     row = db.session.get(AIConnection, connection.id)
     if row:
-        (routing.record_success if ok else routing.record_failure)(row)
+        routing.record_success(row) if ok else routing.record_failure(row, rate_limited)
         db.session.commit()
 
 
-def _block(run_id, steps, code, prepared):
+def _block(run_id, steps, code, prepared, retry_after=0):
     """Nothing may answer this request (for example sensitive text and no private AI): say so plainly."""
     from app import audit
     run = AIRun.query.filter_by(id=run_id).populate_existing().with_for_update().one()
     if run.status != "running":
         return
     steps.finish()
-    text = routing.BLOCKED_TEXT.get(code, routing.BLOCKED_TEXT["no_service"])
+    text = routing.blocked_message(code, retry_after)
     route = {"name": "", "location": "none", "reason": text, "sensitive": bool(prepared.reasons)}
     run.steps_json, run.question, run.partial_text = steps.dump(), "", ""
     run.completed_at, run.seq, run.route_json = now(), run.seq + 1, json.dumps(route)
@@ -454,6 +454,7 @@ def process_one():
         for config in AIConfiguration.query.all():
             AIRun.query.filter(AIRun.tenant_id == config.tenant_id, AIRun.created_at < now() - timedelta(days=config.retention_days),
                                ~AIRun.status.in_(ACTIVE)).delete(synchronize_session=False)
+        AICall.query.filter(AICall.started_at < now() - timedelta(days=3)).delete(synchronize_session=False)
     db.session.commit()
     run = AIRun.query.filter_by(status="queued").order_by(AIRun.created_at).with_for_update(skip_locked=True).first()
     if not run:
@@ -482,10 +483,14 @@ def process_one():
         if prepared.refusal or prepared.reply:
             _decline(run_id, prepared, steps)
             return True
-        chosen = routing.plan(config, connections_for(config), prepared.reasons, prepared.kinds,
-                              routing.running_counts(run.tenant_id))
+        services = connections_for(config)
+        estimate = quota.estimate_tokens(prepared.messages)
+        calls = quota.recent_calls(run.tenant_id)
+        chosen = routing.plan(config, services, prepared.reasons, prepared.kinds, routing.running_counts(run.tenant_id),
+                              headroom={c.id: quota.headroom(c, calls, estimate) for c in services},
+                              prefer="quality" if run.kind == "investigation" else "economy")
         if not chosen.candidates:
-            _block(run_id, steps, chosen.blocked, prepared)
+            _block(run_id, steps, chosen.blocked, prepared, chosen.retry_after)
             return True
         outcome, retried = None, set()
         attempt = -1
@@ -498,19 +503,25 @@ def process_one():
                 {"connection_id": connection.id if connection.id != "legacy" else None, "provider": connection.provider,
                  "model": connection.model, "route_json": json.dumps(route)}, synchronize_session=False)
             db.session.commit()
+            call_id = quota.open_call(run.tenant_id, connection.id, estimate) if connection.id != "legacy" else None
             try:
                 outcome = _stream(run, config, prepared, steps, connection)
             except ProviderError as failure:
+                limited = getattr(failure, "status", 0) == 429
+                if call_id:
+                    quota.close_call(call_id, "limited" if limited else "failed")
                 delivered = getattr(failure, "delivered", False)
                 if getattr(failure, "code", "") == "provider_busy" and not delivered and connection.id not in retried:
                     retried.add(connection.id)  # a busy service often recovers within seconds: try it once more
                     time.sleep(2)
                     attempt -= 1
                     continue
-                _record_health(connection, ok=False)
+                _record_health(connection, ok=False, rate_limited=limited)
                 if delivered or attempt + 1 >= len(candidates):
                     raise
                 continue
+            if call_id:
+                quota.close_call(call_id, "ok", outcome[2])
             _record_health(connection, ok=True)
         content, reasoning, usage, sanitize, used = outcome
         _finish(run_id, used, steps, content, reasoning, usage, sanitize, feature, route)
