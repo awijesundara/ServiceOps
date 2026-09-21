@@ -139,6 +139,22 @@
           </div>
           <small data-ai-model-hint>Connect first to see every model, or type a name.</small>
         </div>
+        <details class="aiadm-more" data-ai-allowance><summary>Provider allowance (optional)</summary>
+          <p class="muted">If your plan limits how much you can use, such as a free tier, enter it. ServiceOps then avoids a service that has used its allowance, spreads work across your services in proportion to what each has left, and saves the most capable models for the hardest work.</p>
+          <div class="aiadm-limits">
+            <label>Requests per minute<input type="number" min="0" max="1000000" data-ai-f="rpm" placeholder="No limit"></label>
+            <label>Tokens per minute<input type="number" min="0" max="1000000000" data-ai-f="tpm" placeholder="No limit"></label>
+            <label>Requests per day<input type="number" min="0" max="1000000000" data-ai-f="rpd" placeholder="No limit"></label>
+            <label>The day resets in<select data-ai-f="tz"><option value="UTC">UTC</option><option value="America/Los_Angeles">Pacific time (Google)</option><option value="America/New_York">US Eastern</option><option value="Europe/London">London</option><option value="Asia/Tokyo">Tokyo</option></select></label>
+          </div>
+          <button type="button" class="button" data-ai-use-preset hidden>Use the free-tier limits Google publishes for this model</button>
+          <small class="muted" data-ai-preset-note></small>
+        </details>
+        <fieldset class="aiadm-bulk" data-ai-bulk hidden>
+          <legend>Also add these models from the same account</legend>
+          <p class="muted">Each model has its own allowance, so using several multiplies what you can do each day. They share the key you entered.</p>
+          <ul data-ai-bulk-list></ul>
+        </fieldset>
         <details class="aiadm-more"><summary>Sharing options</summary>
           <div class="aiadm-limits">
             <label>Order<input type="number" min="1" max="1000" value="100" data-ai-f="priority"><small>Lower goes first (In order mode).</small></label>

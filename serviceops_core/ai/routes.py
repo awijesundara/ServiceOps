@@ -11,7 +11,7 @@ from flask_login import current_user, login_required
 
 from serviceops_models import (AIAction, AIConfiguration, AIConnection, AIConversation, AIMemory, AIMessage, AIRun, Ticket, db, now,
                                settings_cipher)
-from serviceops_core.ai import access, discovery_tokens, memory, routing, service
+from serviceops_core.ai import access, discovery_tokens, memory, quota, routing, service
 from serviceops_core.ai.provider import (PROVIDERS, ProviderError, decrypt_key, generate, list_models, normalize_endpoint,
                                          validate_configuration)
 from serviceops_core.storage import ipfs_enabled
@@ -20,7 +20,7 @@ def register(app):
     blueprint = Blueprint("ai", __name__)
     from app import audit, require_action, roles
 
-    def service_payload(row, counts, usage=None):
+    def service_payload(row, counts, usage=None, calls=None):
         try:
             caps = json.loads(row.capabilities_json or "{}")
         except ValueError:
@@ -38,7 +38,17 @@ def register(app):
                 "max_concurrency": row.max_concurrency, "has_key": bool(row.key_encrypted), "status": status,
                 "load": counts.get(row.id, 0), "context": caps.get("context_tokens"),
                 "today": (usage or {}).get(row.id, {"requests": 0, "tokens": 0}),
+                "limits": {"rpm": row.rpm_limit, "tpm": row.tpm_limit, "rpd": row.rpd_limit, "tz": row.quota_tz or "UTC"},
+                "tier": quota.tier_of(row.model), "allowance": allowance_of(row, calls),
+                "preset": quota.preset_for(row.provider, row.endpoint, row.model),
                 "tested_at": row.last_test_at.isoformat() if row.last_test_at else None}
+
+    def allowance_of(row, calls):
+        if calls is None or all(v is None for v in (row.rpm_limit, row.tpm_limit, row.rpd_limit)):
+            return None
+        head = quota.headroom(row, calls)
+        return {"ok": head.ok, "reason": head.reason, "rpm_used": head.rpm_used, "tpm_used": head.tpm_used,
+                "rpd_used": head.rpd_used, "resets_in": head.resets_in, "wait": head.wait}
 
     def clamp(value, low, high, default):
         try:
@@ -89,6 +99,17 @@ def register(app):
         row.priority = clamp(data.get("priority", row.priority if not creating else 100), 1, 1000, 100)
         row.weight = clamp(data.get("weight", row.weight if not creating else 1), 1, 10, 1)
         row.max_concurrency = clamp(data.get("max_concurrency", row.max_concurrency if not creating else 1), 1, 8, 1)
+        limits = data.get("limits") if isinstance(data.get("limits"), dict) else None
+        if limits is None and creating and "limits" not in data:
+            limits = quota.preset_for(provider, endpoint, model)  # a known free tier: start from its published allowance
+            limits = {("tz" if k == "quota_tz" else k[:-6]): v for k, v in (limits or {}).items()} or None
+        if limits is not None:
+            for field, attribute in (("rpm", "rpm_limit"), ("tpm", "tpm_limit"), ("rpd", "rpd_limit")):
+                value = limits.get(field)
+                setattr(row, attribute, None if value in (None, "") else clamp(value, 0, 10**9, 0))
+            zone = str(limits.get("tz") or "UTC")
+            row.quota_tz = zone if quota.valid_timezone(zone) else "UTC"
+        row.cooldown_until = None if creating or old_destination != (provider, endpoint) else row.cooldown_until
         if not creating and (old_destination != (provider, endpoint)):
             row.consecutive_failures, row.last_test_ok, row.last_test_at = 0, None, None
         config.revision += 1
@@ -183,8 +204,9 @@ def register(app):
         rows = service.connections_for(config) if config else []
         counts = routing.running_counts(current_user.tenant_id)
         per_service, today = routing.usage_today(current_user.tenant_id)
+        calls = quota.recent_calls(current_user.tenant_id)
         return render_template("ai_settings.html", config=config, ipfs=ipfs_enabled(), modes=routing.ROUTING_MODES,
-                               services=[service_payload(r, counts, per_service) for r in rows],
+                               services=[service_payload(r, counts, per_service, calls) for r in rows],
                                today=today, daily_limit=config.daily_limit if config else 100)
 
     @blueprint.route("/admin/ai/services", methods=["POST"])
@@ -203,7 +225,40 @@ def register(app):
         except ProviderError as error:
             db.session.rollback()
             return no_store({"error": str(error)}, 400)
-        return no_store({"service": service_payload(row, routing.running_counts(current_user.tenant_id), routing.usage_today(current_user.tenant_id)[0])})
+        return no_store({"service": service_payload(row, routing.running_counts(current_user.tenant_id), routing.usage_today(current_user.tenant_id)[0], quota.recent_calls(current_user.tenant_id))})
+
+    @blueprint.route("/admin/ai/services/bulk", methods=["POST"])
+    @roles("admin")
+    @require_action("administer")
+    def service_bulk():
+        """Add several models from one provider account in one step (each is its own service with its own allowance)."""
+        service.actor(current_user)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not isinstance(data.get("models"), list):
+            return no_store({"error": "Expected a list of models."}, 400)
+        config = tenant_config(create=True)
+        models = [str(m)[:160] for m in data["models"]][:12]
+        source = AIConnection.query.filter_by(id=str(data["from_service_id"]), tenant_id=current_user.tenant_id).first() \
+            if data.get("from_service_id") else None
+        typed = str(data.get("api_key", "")).strip()
+        made = []
+        try:
+            for model in models:
+                if AIConnection.query.filter_by(tenant_id=current_user.tenant_id, provider=str(data.get("provider")),
+                                                endpoint=normalize_endpoint(str(data.get("endpoint", ""))) if data.get("provider") in {
+                                                    "self_hosted", "openai_compatible"} else "", model=model).first():
+                    continue  # already added
+                body = {"name": model[:80], "provider": data.get("provider"), "endpoint": data.get("endpoint", ""), "model": model,
+                        "api_key": typed or (decrypt_key(source) if source and source.key_encrypted else ""), "enabled": True}
+                made.append(save_service(config, body))
+            db.session.commit()
+        except ProviderError as error:
+            db.session.rollback()
+            return no_store({"error": str(error)}, 400)
+        counts = routing.running_counts(current_user.tenant_id)
+        per, _ = routing.usage_today(current_user.tenant_id)
+        calls = quota.recent_calls(current_user.tenant_id)
+        return no_store({"services": [service_payload(r, counts, per, calls) for r in made]})
 
     @blueprint.route("/admin/ai/services/<service_id>/delete", methods=["POST"])
     @roles("admin")
@@ -248,7 +303,8 @@ def register(app):
             routing.record_success(row)
         db.session.commit()
         return no_store({"ok": ok, "message": message, "ms": int((time.monotonic() - started) * 1000),
-                         "service": service_payload(row, routing.running_counts(current_user.tenant_id), routing.usage_today(current_user.tenant_id)[0])})
+                         "service": service_payload(row, routing.running_counts(current_user.tenant_id), routing.usage_today(current_user.tenant_id)[0],
+                                                    quota.recent_calls(current_user.tenant_id))})
 
     @blueprint.route("/admin/ai/preview", methods=["POST"])
     @roles("admin")
@@ -323,7 +379,9 @@ def register(app):
             context, profiles = {}, {}
             models = list_models(candidate, key, context, profiles)
             token = discovery_tokens.issue(candidate, key, profiles, current_user.tenant_id, current_user.id)
-            return no_store({"models": models, "context": context, "profiles": profiles, "discovery_token": token})
+            quotas = {m: p for m in models if (p := quota.preset_for(provider, candidate.endpoint, m))}
+            return no_store({"models": models, "context": context, "profiles": profiles, "discovery_token": token,
+                             "quotas": quotas})
         except ProviderError as error:
             return no_store({"error": str(error)}, 400)
 
@@ -544,7 +602,11 @@ def register(app):
             if not ok:
                 abort(403, description="You no longer have access to all evidence used by this answer.")
             sources = source_links(sources)
-        problem = {"failed": routing.BLOCKED_TEXT.get(
+        if run.status == "failed" and run.error_code == "quota":
+            problem_override = json.loads(run.route_json or "{}").get("reason", "")
+        else:
+            problem_override = ""
+        problem = {"failed": problem_override or routing.BLOCKED_TEXT.get(
                        run.error_code, routing.RUN_ERROR_TEXT.get(
                            run.error_code, "The assistant could not complete this request.")),
                    "cancelled": "Stopped. No answer was kept."}.get(run.status, "")
