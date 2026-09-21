@@ -51,6 +51,7 @@ env:
 jobs:
   verify-build-publish:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60  # a hung hosted runner must fail, not block a release for hours
     outputs:
       image_digest: ${{ steps.image.outputs.digest }}
     permissions:
@@ -201,6 +202,7 @@ jobs:
   browser-quality-gate:
     name: Browser and accessibility quality gate
     runs-on: ubuntu-24.04
+    timeout-minutes: 60  # a hung hosted runner must fail, not block a release for hours
     permissions:
       contents: read
     steps:
