@@ -13,13 +13,16 @@
   const ui = {
     scope: $("scope"), log: $("log"), welcome: $("welcome"), form: $("form"), input: $("input"), count: $("count"),
     send: $("send"), stop: $("stop"), error: $("error"), history: $("history"), list: root.querySelector("[data-chat-history-list]"),
-    empty: $("history-empty"), toggle: $("history-toggle"), fresh: $("new"), think: $("think"), thinkWrap: $("think-wrap"),
+    empty: $("history-empty"), toggle: $("history-toggle"), fresh: $("new"),
     userTurn: $("user-turn"), aiTurn: $("ai-turn")
   };
   const launcher = document.querySelector("[data-chat-launch]");
   const widget = root.classList.contains("is-widget");
   const MAX = 2000;
   const state = { conversation: null, active: null, loaded: false, busy: false };
+
+  function keep(key, value) { try { if (value) sessionStorage.setItem(key, value); else sessionStorage.removeItem(key); } catch (e) { /* storage may be blocked */ } }
+  function kept(key) { try { return sessionStorage.getItem(key); } catch (e) { return null; } }
 
   function remember(id) { try { if (id) sessionStorage.setItem("ai-chat-conversation", id); else sessionStorage.removeItem("ai-chat-conversation"); } catch (e) { /* storage may be blocked */ } }
   function recalled() { try { return sessionStorage.getItem("ai-chat-conversation"); } catch (e) { return null; } }
@@ -76,6 +79,7 @@
     const q = function (name) { return view.querySelector("[data-ai-" + name + "]"); };
     q("status").hidden = true;
     const answer = q("answer");
+    answer.hidden = false;
     answer.setAttribute("aria-busy", "false");
     const failed = message.status !== "completed";
     if (failed) {
@@ -84,10 +88,7 @@
     } else {
       answer.appendChild(window.AIRender.render(message.content, window.AIChat.sourceMap(message.sources)));
     }
-    if (message.steps && message.steps.length) window.AIChat.renderSteps(q("steps"), message.steps);
-    else q("thinking").hidden = true;
-    q("thinking").open = false;
-    if (message.reasoning) { q("reasoning").hidden = false; q("reasoning-text").textContent = message.reasoning; }
+    q("thinking").hidden = true;
     if (message.sources && message.sources.length) window.AIChat.renderSources(q("sources"), message.sources);
     const copy = q("copy");
     if (!failed && message.content && !message.withheld) {
@@ -138,11 +139,18 @@
       else staticAnswer(node, message);
     });
     scrollDown();
+    // Keep a copy so the next page shows this chat instantly instead of an empty panel.
+    const settled = conversation.messages.every(function (m) { return m.status !== "pending"; });
+    keep("ai-chat-cache", settled ? JSON.stringify(conversation) : null);
   }
 
   function open(id) {
     showError("");
-    return window.AIChat.get("/ai/chat/conversations/" + encodeURIComponent(id)).then(render).catch(function (error) {
+    return window.AIChat.get("/ai/chat/conversations/" + encodeURIComponent(id)).then(function (conversation) {
+      // Skip the redraw when nothing changed since the cached copy was shown.
+      if (state.conversation === conversation.id && kept("ai-chat-cache") === JSON.stringify(conversation)) return;
+      render(conversation);
+    }).catch(function (error) {
       remember(null);
       if (error.status === 403 || error.status === 404) { render(null); return; }
       showError("Could not load that conversation.");
@@ -152,7 +160,6 @@
   function refreshHistory() {
     return window.AIChat.get("/ai/chat/conversations").then(function (data) {
       ui.scope.textContent = data.scope;
-      ui.thinkWrap.hidden = !data.show_reasoning;
       ui.list.textContent = "";
       ui.empty.hidden = data.conversations.length > 0;
       data.conversations.forEach(function (item) {
@@ -199,13 +206,14 @@
     showError("");
     setBusy(true);
     send("/ai/chat/messages", {
-      text: text, conversation_id: state.conversation, request_key: uuid(), thinking: Boolean(ui.think && ui.think.checked)
+      text: text, conversation_id: state.conversation, request_key: uuid()
     }).then(function (data) {
       state.conversation = data.conversation_id;
       remember(state.conversation);
       ui.welcome.hidden = true;
       userTurn(text);
       ui.input.value = "";
+      keep("ai-chat-draft", null);
       updateCount();
       attach(aiTurn(), data.run_id);
       scrollDown();
@@ -221,7 +229,9 @@
   }
 
   ui.form.addEventListener("submit", function (event) { event.preventDefault(); submit(ui.input.value); });
-  ui.input.addEventListener("input", updateCount);
+  ui.input.addEventListener("input", function () { updateCount(); keep("ai-chat-draft", ui.input.value); });
+  ui.input.value = kept("ai-chat-draft") || "";
+  updateCount();
   ui.input.addEventListener("keydown", function (event) {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit(ui.input.value); }
   });
@@ -237,20 +247,30 @@
     state.loaded = true;
     refreshHistory();
     const previous = recalled();
-    if (previous) open(previous);
+    if (previous) {
+      try {
+        const cached = JSON.parse(kept("ai-chat-cache") || "null");
+        if (cached && cached.id === previous) render(cached);
+      } catch (e) { /* fall through to the server copy */ }
+      open(previous);
+    }
   }
 
   if (widget) {
     const close = root.querySelector("[data-chat-close]");
-    const show = function (visible) {
+    const show = function (visible, focus) {
       root.hidden = !visible;
       launcher.setAttribute("aria-expanded", visible ? "true" : "false");
       launcher.hidden = visible;
-      if (visible) { start(); ui.input.focus(); } else { launcher.focus(); }
+      document.documentElement.classList.toggle("ai-chat-open", visible);
+      keep("ai-chat-open", visible ? "1" : null);
+      if (visible) { start(); if (focus !== false) ui.input.focus(); } else if (focus !== false) { launcher.focus(); }
     };
     launcher.addEventListener("click", function () { show(true); });
     close.addEventListener("click", function () { show(false); });
     root.addEventListener("keydown", function (event) { if (event.key === "Escape") show(false); });
+    // The chat stays open across pages: reopen it quietly, without stealing focus from the page.
+    if (kept("ai-chat-open") === "1") show(true, false);
   } else {
     if (window.matchMedia && window.matchMedia("(max-width: 700px)").matches) toggleHistory(false);
     start();

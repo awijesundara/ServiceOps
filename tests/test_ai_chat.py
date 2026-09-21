@@ -204,13 +204,16 @@ def test_audit_rows_carry_metadata_never_content(app, client, world, monkeypatch
         assert "ai chat requested" in {row.action for row in Audit.query.all()}
 
 
-def test_reasoning_only_returned_when_admin_allows_it(app, client, world, monkeypatch):
+def test_private_reasoning_is_never_returned_or_restored_from_history(app, client, world, monkeypatch):
     answer_with(monkeypatch, "Restart it.", reasoning="Let me think about the VPN.")
     login(client, "employee", "Employee123!")
     conversation_id = ask(client, "vpn keeps failing", thinking=True).get_json()["conversation_id"]
     finish_all(app)
     shown = client.get(f"/ai/chat/conversations/{conversation_id}").get_json()["messages"][1]
-    assert shown["reasoning"] == "Let me think about the VPN."
+    assert shown["reasoning"] == ""
+    with app.app_context():
+        message = AIMessage.query.filter_by(conversation_id=conversation_id, role="assistant").one()
+        assert message.reasoning == ""
     with app.app_context():
         db.session.get(AIConfiguration, 1).show_reasoning = False
         db.session.commit()

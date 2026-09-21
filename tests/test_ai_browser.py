@@ -188,9 +188,11 @@ def test_investigation_streams_steps_reasoning_and_text_under_the_real_csp(ai_br
         page.get_by_role("button", name="Start investigation").click()
         page.wait_for_selector("[data-ai-status]")
         start_worker(app)
-        # Reasoning appears first, while the pill still says "Working".
-        wait_for(lambda: "roaming" in (page.locator("[data-ai-reasoning-text]").text_content() or ""))
+        # A compact status replaces itself as work advances. Private reasoning is never put in the DOM.
+        wait_for(lambda: page.locator("[data-ai-thinking-label]").inner_text() == "Thinking")
         assert page.inner_text("[data-ai-status]") == "Working"
+        assert page.locator("[data-ai-reasoning-text], [data-ai-steps]").count() == 0
+        wait_for(lambda: page.locator("[data-ai-thinking-label]").inner_text() == "Writing answer")
         # The answer grows progressively rather than appearing all at once.
         lengths = []
         deadline = time.time() + 20
@@ -210,11 +212,7 @@ def test_investigation_streams_steps_reasoning_and_text_under_the_real_csp(ai_br
         # The injection attempt is displayed as text and never becomes an element or runs.
         assert answer.locator("img, script").count() == 0
         assert "<img src=x" in answer.inner_text() and page.evaluate("typeof window.__xss") == "undefined"
-        steps = page.locator("[data-ai-steps]").text_content()
-        for label in ("Verified your access", "Collected evidence", "Sending to the model", "The model is reasoning",
-                      "Writing the answer", "Checked your access again"):
-            assert label in steps
-        assert page.locator("[data-ai-thinking]").get_attribute("open") is None
+        assert page.locator("[data-ai-thinking]").is_hidden()
         assert "42 tokens" in page.inner_text("[data-ai-stats]")
         assert page.locator("[data-ai-sources] a.ai-cite").count() == 1
         assert not problems, problems
@@ -273,13 +271,14 @@ def test_chat_widget_streams_and_deletes_under_the_real_csp(ai_browser_server, m
     enable_ai(app)
     clear_chats(app)
     seen = []
-    pieces = [("reasoning", "The user asks about the VPN. "), ("content", "The VPN drops after roaming [S1]. "),
+    pieces = [("reasoning", "The user asks about the VPN. "), ("reasoning", "Reviewing the permitted records. "),
+              ("content", "The VPN drops after roaming [S1]. "),
               ("content", "Renew the **certificate**. <img src=x onerror=window.__xss=1>")]
 
     def slow_stream(config, messages, on_delta, thinking=None):
         seen.append(thinking)
         for kind, text in pieces:
-            time.sleep(0.6)
+            time.sleep(0.8)
             if on_delta(kind, text) is False:
                 raise provider.StreamCancelled()
         return ("".join(t for k, t in pieces if k == "content"), "".join(t for k, t in pieces if k == "reasoning"), {"completion_tokens": 9})
@@ -312,24 +311,36 @@ def test_chat_widget_streams_and_deletes_under_the_real_csp(ai_browser_server, m
             wait_for(lambda: "Admin" in page.inner_text("[data-chat-scope]"))
             assert page.evaluate("document.activeElement.id") == "ai-chat-input"
             assert not axe_violations(page)
-            page.locator("[data-chat-think-wrap]").click()
             page.locator("#ai-chat-input").fill("Why does my VPN keep dropping?")
             page.keyboard.press("Enter")
             wait_for(lambda: page.locator(".ai-turn-user").count() == 1)
             wait_for(lambda: page.locator("[data-ai-status]").last.inner_text().strip() in ("Working", "Complete"))
-            wait_for(lambda: "The user asks" in (page.locator("[data-ai-reasoning-text]").last.text_content() or ""))
+            wait_for(lambda: page.locator("[data-ai-thinking-label]").last.inner_text() == "Thinking")
+            assert page.locator("[data-ai-reasoning-text], [data-ai-steps]").count() == 0
+            assert page.locator("[data-ai-answer]").last.is_hidden()
+            assert page.locator("[data-ai-status]").last.is_hidden()
             if shots and width == 1440:
                 page.screenshot(path=os.path.join(shots, "chat-streaming.png"))
             wait_for(lambda: page.locator("[data-ai-status]").last.inner_text().strip() == "Complete")
+            assert page.locator("[data-ai-thinking]").last.is_hidden()
             answer = page.locator("[data-ai-answer]").last
+            assert answer.is_visible() and page.locator("[data-ai-status]").last.is_hidden()
             assert "Renew the certificate" in answer.inner_text() and answer.locator("strong").count() == 1
             assert answer.locator("img, script").count() == 0 and page.evaluate("typeof window.__xss") == "undefined"
             assert answer.locator("a.ai-cite").count() == 1
-            assert seen == [True]
+            assert seen == [False]  # chat replies never request a long reasoning pass
             if shots:
                 page.screenshot(path=os.path.join(shots, f"chat-complete-{width}.png"))
             assert not axe_violations(page)
             assert page.evaluate("document.documentElement.scrollWidth") <= width + 1
+            # Moving to another page keeps the chat open, with its messages and any half-typed text.
+            page.locator("#ai-chat-input").fill("still typing")
+            page.goto(base + "/tickets", wait_until="domcontentloaded")
+            assert page.locator("[data-chat]").is_visible() and page.locator("[data-chat-launch]").is_hidden()
+            wait_for(lambda: page.locator(".ai-turn-user").count() == 1 and page.locator("[data-ai-answer]").count() == 1)
+            assert page.locator("#ai-chat-input").input_value() == "still typing"
+            assert "Renew the certificate" in page.locator("[data-ai-answer]").last.inner_text()
+            page.locator("#ai-chat-input").fill("")
             # History lists the conversation; deleting it needs a confirming second press.
             page.locator("[data-chat-history-toggle]").click()
             wait_for(lambda: page.locator(".ai-history-open").count() == 1)

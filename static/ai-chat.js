@@ -52,6 +52,26 @@
     });
   }
 
+  const THINKING_LABELS = {
+    "Verified your access": "Checking access",
+    "Confirmed who is asking": "Checking access",
+    "Collected evidence": "Reviewing evidence",
+    "Looked up records you can access": "Reviewing records",
+    "Adapted to model context": "Preparing context",
+    "Sending to the model": "Preparing answer",
+    "The model is reasoning": "Thinking",
+    "Writing the answer": "Writing answer",
+    "Checked your access again": "Finishing"
+  };
+
+  function thinkingLabel(data) {
+    if (data.text) return "Writing answer";
+    if (data.reasoning) return "Thinking";
+    const steps = data.steps || [];
+    const current = steps.slice().reverse().find(function (step) { return step.state === "active"; }) || steps[steps.length - 1];
+    return current ? (THINKING_LABELS[current.label] || "Working") : (data.status === "queued" ? "Getting ready" : "Working");
+  }
+
   function renderSources(list, sources) {
     list.textContent = "";
     (sources || []).forEach(function (source) {
@@ -86,7 +106,7 @@
     this.onDone = options.onDone || function () {};
     const find = function (name) { return root.querySelector("[data-ai-" + name + "]"); };
     this.ui = {
-      status: find("status"), steps: find("steps"), thinking: find("thinking"), elapsed: find("elapsed"),
+      status: find("status"), steps: find("steps"), thinking: find("thinking"), thinkingLabel: find("thinking-label"), elapsed: find("elapsed"),
       reasoning: find("reasoning"), reasoningText: find("reasoning-text"), answer: find("answer"),
       notice: find("notice"), sources: find("sources"), stop: find("stop"), copy: find("copy"), stats: find("stats")
     };
@@ -124,16 +144,12 @@
     }
     if (!data.changed) return;
     this.seq = data.seq;
-    if (ui.steps) renderSteps(ui.steps, data.steps || []);
-    if (ui.reasoning) {
-      const has = Boolean(data.reasoning);
-      ui.reasoning.hidden = !has;
-      if (has && ui.reasoningText) {
-        ui.reasoningText.textContent = data.reasoning;
-        if (data.status === "running") ui.reasoningText.scrollTop = ui.reasoningText.scrollHeight;
-      }
+    if (ui.thinking) {
+      ui.thinking.hidden = TERMINAL.indexOf(data.status) !== -1;
+      if (ui.thinkingLabel) ui.thinkingLabel.textContent = thinkingLabel(data);
     }
     if (ui.answer) {
+      ui.answer.hidden = !data.text;
       ui.answer.textContent = "";
       ui.answer.appendChild(window.AIRender.render(data.text || "", sourceMap(data.sources)));
       ui.answer.setAttribute("aria-busy", TERMINAL.indexOf(data.status) === -1 ? "true" : "false");
@@ -147,12 +163,13 @@
     clearInterval(this.clock);
     const ui = this.ui;
     this.text = data.text || "";
+    if (ui.answer) ui.answer.hidden = !this.text;
     if (ui.stop) ui.stop.hidden = true;
     if (ui.copy) ui.copy.hidden = !this.text;
     if (ui.sources) renderSources(ui.sources, data.sources);
     if (ui.elapsed && data.usage && data.usage.duration_ms) ui.elapsed.textContent = (data.usage.duration_ms / 1000).toFixed(1) + "s";
     if (ui.stats) ui.stats.textContent = data.usage ? summarize(data.usage) : "";
-    if (ui.thinking && data.status === "completed") ui.thinking.open = false;
+    if (ui.thinking) ui.thinking.hidden = true;
     if (ui.notice) {
       const hint = data.error || (data.usage && data.usage.truncated
         ? "The answer was cut off at the length limit. An administrator can raise the maximum output length in Admin → AI." : "");

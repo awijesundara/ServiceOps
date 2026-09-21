@@ -202,8 +202,8 @@ def _prepare_chat(run, user, config, steps):
     messages, _ = access.build_chat_messages(scope, question, history, evidence)
     grounded = access.identifiers_in(json.dumps(evidence.items)) | evidence.identifiers
     options = _run_options(run)
-    thinking = bool(options.get("thinking")) if config.show_reasoning else False
-    return Prepared(messages, evidence.sources, grounded, tuple(access.record_numbers(question)), False, thinking)
+    # Chat replies are fast: the model is asked not to spend time on a long reasoning pass.
+    return Prepared(messages, evidence.sources, grounded, tuple(access.record_numbers(question)), False, False)
 
 
 def _stable_prefix(text):
@@ -247,7 +247,8 @@ def _stream(run, config, prepared, steps):
             return True
         state["last"] = time.monotonic()
         text = state["content"] if force else _stable_prefix(state["content"])
-        if not _publish_progress(run_id, partial_text=sanitize(text), reasoning_text=state["reasoning"], steps_json=steps.dump()):
+        # Reasoning controls the transient activity label, but private chain-of-thought is never persisted or sent to browsers.
+        if not _publish_progress(run_id, partial_text=sanitize(text), reasoning_text="", steps_json=steps.dump()):
             return False
         current = db.session.get(AIConfiguration, tenant_id, populate_existing=True)
         return bool(current and current.enabled and current.revision == revision)
@@ -290,13 +291,12 @@ def _finish(run_id, prepared, steps, content, reasoning, usage, sanitize, featur
         raise ProviderError("Provider returned an answer without evidence citations.")
     steps.add("Checked your access again", "Every source is still readable by you")
     steps.finish()
-    show = bool(config.show_reasoning)
-    run.result_text, run.partial_text, run.reasoning_text = final, "", (reasoning if show else "")
+    run.result_text, run.partial_text, run.reasoning_text = final, "", ""
     run.sources_json, run.usage_json, run.steps_json, run.question = json.dumps(prepared.sources), json.dumps(usage), steps.dump(), ""
     run.status, run.completed_at, run.seq = "completed", now(), run.seq + 1
     if run.kind == "chat":
         message = db.session.get(AIMessage, run.message_id)
-        message.content, message.reasoning, message.status, message.run_id = final, (reasoning if show else ""), "completed", run.id
+        message.content, message.reasoning, message.status, message.run_id = final, "", "completed", run.id
         message.sources_json, message.steps_json = json.dumps(prepared.sources), steps.dump()
         db.session.get(AIConversation, run.conversation_id).updated_at = now()
         audit("ai chat answered", run.id, f"sources={_describe(Counter(s['kind'] for s in prepared.sources))}",

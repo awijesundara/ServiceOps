@@ -14,7 +14,7 @@
 <label><span>Enable AI for this organization</span><input type="checkbox" name="enabled" {% if config and config.enabled %}checked{% endif %}></label>
 <label><span>Enable incident investigations</span><input type="checkbox" name="incident_enabled" {% if config and config.incident_enabled %}checked{% endif %}></label>
 <label><span>Enable the chat assistant</span><input type="checkbox" name="chat_enabled" {% if config and config.chat_enabled %}checked{% endif %}><small>Every signed-in user, limited to what their role can already read. Never people, audit or client data.</small></label>
-<label><span>Show model reasoning</span><input type="checkbox" name="show_reasoning" {% if config and config.show_reasoning %}checked{% endif %}><small>Displays a reasoning model's thinking to the person who asked. Off keeps only the activity steps.</small></label>
+<label><span>Allow deeper reasoning</span><input type="checkbox" name="show_reasoning" {% if config and config.show_reasoning %}checked{% endif %}><small>Lets people request a slower reasoning pass. The private reasoning text is never displayed; only a temporary activity label appears.</small></label>
 <label>Quick setup<select id="ai-preset" aria-label="Quick setup" data-ai-preset><option value="">Choose a common service…</option>
 <optgroup label="On your network">
 <option value="self_hosted|http://HOST:8080">llama.cpp server (port 8080)</option>

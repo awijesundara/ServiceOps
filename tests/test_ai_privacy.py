@@ -131,6 +131,25 @@ def test_fulfillment_agent_sees_what_the_application_already_lets_them_see(app, 
         assert "CANARY-OTHER-EMPLOYEE-TICKET" in text  # IT fulfillment members can read all tenant tickets in the app
 
 
+def test_latest_incident_uses_newest_visible_record_without_widening_access(app, world):
+    with app.app_context():
+        requester_text, requester_evidence = payload(world.employee, "what is the latest incident?")
+        requester_tickets = [source for source in requester_evidence.sources if source["kind"] == "ticket"]
+        assert [source["number"] for source in requester_tickets] == ["INC0100001"]
+        assert "CANARY-OTHER-EMPLOYEE-TICKET" not in requester_text
+        assert "CANARY-TENANT-TWO-TICKET" not in requester_text
+
+        staff_text, staff_evidence = payload(world.insider, "what is the latest incident?")
+        staff_tickets = [source for source in staff_evidence.sources if source["kind"] == "ticket"]
+        assert [source["number"] for source in staff_tickets] == ["INC0100002"]
+        assert "CANARY-OTHER-EMPLOYEE-TICKET" in staff_text
+        assert "CANARY-TENANT-TWO-TICKET" not in staff_text
+
+        outsider_text, outsider_evidence = payload(world.outsider, "what is the latest incident?")
+        assert not [source for source in outsider_evidence.sources if source["kind"] == "ticket"]
+        assert "CANARY-OTHER-EMPLOYEE-TICKET" not in outsider_text
+
+
 # --- vertical isolation (paygrade) ----------------------------------------------------------
 
 def test_requester_gets_no_cmdb_but_staff_do(app, world):
