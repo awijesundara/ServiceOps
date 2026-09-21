@@ -58,7 +58,8 @@ def selected_profile(config):
 
 def estimate(messages):
     # Conservative byte accounting, not an exact tokenizer claim. Includes template reserve below.
-    return sum(len(item["content"].encode("utf-8")) + 32 for item in messages)
+    # About three UTF-8 bytes per token is typical for English and code; the 32 covers each message's template overhead.
+    return sum(len(item["content"].encode("utf-8")) // 3 + 32 for item in messages)
 
 
 def fit_messages(config, messages, requested_output):

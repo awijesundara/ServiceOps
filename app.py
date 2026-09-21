@@ -10230,6 +10230,13 @@ def create_app(test_config=None):
         if kind == "change" and current_user.effective_role == "requester" and not eligible_it_team_ids:
             abort(403)
 
+        # A draft prepared by the AI assistant arrives as query parameters. It only fills the form in; the person
+        # reviews every field, picks the owning team and submits through the normal, fully validated path.
+        ai_prefill = None
+        if request.method == "GET" and request.args.get("ai") == "1":
+            limits = {"title": 180, "description": 1500, "impact": 10, "urgency": 10, "category": 20, "subcategory": 80}
+            ai_prefill = {name: request.args.get(name, "")[:size] for name, size in limits.items() if request.args.get(name)}
+
         def render_form(error=None):
             teams_query = tenant_query(SupportGroup).filter_by(
                 group_type="IT Fulfillment", active=True
@@ -10255,7 +10262,7 @@ def create_app(test_config=None):
                     ).order_by(ChangeFreezeWindow.starts_at).all()
                     if kind == "change" else []
                 ),
-                form=request.form if error else None, form_error=error,
+                form=request.form if error else ai_prefill, form_error=error, ai_prefill=bool(ai_prefill and not error),
             ), (400 if error else 200)
 
         if request.method == "POST":

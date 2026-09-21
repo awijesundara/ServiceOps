@@ -14,7 +14,8 @@
     scope: $("scope"), log: $("log"), welcome: $("welcome"), form: $("form"), input: $("input"), count: $("count"),
     send: $("send"), stop: $("stop"), error: $("error"), history: $("history"), list: root.querySelector("[data-chat-history-list]"),
     empty: $("history-empty"), toggle: $("history-toggle"), fresh: $("new"),
-    userTurn: $("user-turn"), aiTurn: $("ai-turn")
+    userTurn: $("user-turn"), aiTurn: $("ai-turn"), memory: $("memory"), memoryList: root.querySelector("[data-chat-memory-list]"),
+    memoryEmpty: $("memory-empty"), memoryToggle: $("memory-toggle"), memoryClear: $("memory-clear")
   };
   const launcher = document.querySelector("[data-chat-launch]");
   const widget = root.classList.contains("is-widget");
@@ -84,13 +85,14 @@
     const failed = message.status !== "completed";
     if (failed) {
       answer.appendChild(window.AIRender.render(
-        message.status === "cancelled" ? "Stopped. No answer was kept." : "The assistant could not complete this request.", {}));
+        message.status === "cancelled" ? "Stopped. No answer was kept." : (message.error || "The assistant could not complete this request. Please try again."), {}));
     } else {
       answer.appendChild(window.AIRender.render(message.content, window.AIChat.sourceMap(message.sources)));
     }
     q("thinking").hidden = true;
     if (message.sources && message.sources.length) window.AIChat.renderSources(q("sources"), message.sources);
     window.AIChat.renderRoute(q("route"), message.route);
+    window.AIChat.renderExtras(q("extras"), message.route, Boolean(message.latest));
     const copy = q("copy");
     if (!failed && message.content && !message.withheld) {
       copy.hidden = false;
@@ -133,7 +135,9 @@
     remember(state.conversation);
     ui.welcome.hidden = Boolean(conversation && conversation.messages.length);
     if (!conversation) return;
-    conversation.messages.forEach(function (message) {
+    const lastAssistant = conversation.messages.map(function (m) { return m.role; }).lastIndexOf("assistant");
+    conversation.messages.forEach(function (message, index) {
+      message.latest = index === lastAssistant;
       if (message.role === "user") { userTurn(message.content); return; }
       const node = aiTurn();
       if (message.status === "pending" && message.run_id) attach(node, message.run_id);
@@ -161,6 +165,7 @@
   function refreshHistory() {
     return window.AIChat.get("/ai/chat/conversations").then(function (data) {
       ui.scope.textContent = data.scope;
+      ui.memoryToggle.hidden = !data.memory_enabled;
       ui.list.textContent = "";
       ui.empty.hidden = data.conversations.length > 0;
       data.conversations.forEach(function (item) {
@@ -194,6 +199,42 @@
       ui.scope.textContent = error.status === 403 ? "The assistant is not available for your account right now." : "Could not check your access.";
     });
   }
+
+  function refreshMemory() {
+    return window.AIChat.get("/ai/chat/memories").then(function (data) {
+      ui.memoryList.textContent = "";
+      ui.memoryEmpty.hidden = data.notes.length > 0;
+      ui.memoryClear.hidden = data.notes.length === 0;
+      data.notes.forEach(function (note) {
+        const row = window.AIChat.element("li", "");
+        row.appendChild(window.AIChat.element("span", "ai-memory-text", note.text));
+        const remove = window.AIChat.element("button", "ai-history-delete", "Remove");
+        remove.type = "button";
+        remove.setAttribute("aria-label", "Remove note: " + note.text);
+        remove.addEventListener("click", function () {
+          send("/ai/chat/memories/" + encodeURIComponent(note.id) + "/delete").then(refreshMemory).catch(function (e) { showError(e.message); });
+        });
+        row.appendChild(remove);
+        ui.memoryList.appendChild(row);
+      });
+    }).catch(function () { ui.memory.hidden = true; });
+  }
+
+  ui.memoryToggle.addEventListener("click", function () {
+    const show = ui.memory.hidden;
+    ui.memory.hidden = !show;
+    ui.memoryToggle.setAttribute("aria-expanded", show ? "true" : "false");
+    if (show) refreshMemory();
+  });
+  ui.memoryClear.addEventListener("click", function () {
+    if (!ui.memoryClear.dataset.armed) {
+      ui.memoryClear.dataset.armed = "1"; ui.memoryClear.textContent = "Confirm: forget everything";
+      setTimeout(function () { delete ui.memoryClear.dataset.armed; ui.memoryClear.textContent = "Forget everything"; }, 4000);
+      return;
+    }
+    delete ui.memoryClear.dataset.armed; ui.memoryClear.textContent = "Forget everything";
+    send("/ai/chat/memories/clear").then(refreshMemory).catch(function (e) { showError(e.message); });
+  });
 
   function toggleHistory(force) {
     const show = typeof force === "boolean" ? force : ui.history.hidden;
@@ -229,6 +270,7 @@
     ui.count.textContent = ui.input.value.length + " / " + MAX;
   }
 
+  document.addEventListener("ai-chat-ask", function (event) { if (!state.busy) submit(String(event.detail || "")); });
   ui.form.addEventListener("submit", function (event) { event.preventDefault(); submit(ui.input.value); });
   ui.input.addEventListener("input", function () { updateCount(); keep("ai-chat-draft", ui.input.value); });
   ui.input.value = kept("ai-chat-draft") || "";

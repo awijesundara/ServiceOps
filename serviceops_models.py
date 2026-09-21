@@ -2739,6 +2739,8 @@ class AIConfiguration(db.Model):
     detect_personal = db.Column(db.Boolean, nullable=False, default=True)
     detect_credentials = db.Column(db.Boolean, nullable=False, default=True)
     detect_financial = db.Column(db.Boolean, nullable=False, default=True)
+    # Whether the chat assistant may keep short notes a person explicitly asks it to remember.
+    memory_enabled = db.Column(db.Boolean, nullable=False, default=True)
     sensitive_terms = db.Column(db.Text, nullable=False, default="")
     updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
@@ -2772,6 +2774,20 @@ class AIConnection(db.Model):
     def external(self):
         """A hosted provider sends data outside the organization; a server on its network does not."""
         return self.provider != "self_hosted"
+
+
+class AIMemory(db.Model):
+    """A short note a person asked the assistant to remember. Private to that person, listed and deletable by them."""
+    __tablename__ = "ai_memory"
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    kind = db.Column(db.String(20), nullable=False, default="fact")  # preference | fact
+    text = db.Column(db.String(240), nullable=False)
+    source = db.Column(db.String(30), nullable=False, default="asked")  # asked | suggested
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    last_used_at = db.Column(db.DateTime(timezone=True))
+    use_count = db.Column(db.Integer, nullable=False, default=0)
 
 
 class AIRun(db.Model):
@@ -2864,4 +2880,4 @@ class AIAction(db.Model):
     __table_args__ = (db.UniqueConstraint("run_id", "action_type", name="uq_ai_action_run_type"),)
 
 
-__all__ += ["AIConfiguration", "AIConnection", "AIRun", "AIConversation", "AIMessage", "AIAction"]
+__all__ += ["AIConfiguration", "AIConnection", "AIMemory", "AIRun", "AIConversation", "AIMessage", "AIAction"]

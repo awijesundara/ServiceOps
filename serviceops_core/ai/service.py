@@ -10,9 +10,9 @@ from types import SimpleNamespace
 from flask import abort
 from sqlalchemy import or_
 
-from serviceops_models import (AIConfiguration, AIConnection, AIConversation, AIMessage, AIRun, Comment, ConfigurationItem, Knowledge,
+from serviceops_models import (AIConfiguration, AIConnection, AIConversation, AIMemory, AIMessage, AIRun, Comment, ConfigurationItem, Knowledge,
                               TaskCI, Tenant, Ticket, User, db, now)
-from serviceops_core.ai import access, routing
+from serviceops_core.ai import access, memory, routing
 from serviceops_core.ai.provider import INSTRUCTIONS, ProviderError, StreamCancelled, generate_stream, provider_timeout
 from serviceops_core.ci_class_policy import ci_class_read_allowed
 from serviceops_core.security import redact
@@ -199,6 +199,8 @@ class Prepared:
     refusal: str = ""
     reasons: set = field(default_factory=set)
     kinds: set = field(default_factory=set)
+    reply: str = ""  # a fixed answer that needs no model (for example confirming a saved note)
+    audit: tuple = ()
 
 
 def _describe(counts):
@@ -240,8 +242,24 @@ def _prepare_chat(run, user, config, steps):
     earlier = AIMessage.query.filter_by(conversation_id=run.conversation_id).order_by(AIMessage.created_at).all()
     history = access.history_for_model(scope, [m for m in earlier if m.status == "completed" and m.id != run.message_id])
     context_numbers = access.contextual_record_numbers(question, history)
+    if config.memory_enabled:
+        command = memory.parse_command(question)
+        if command and command[0] == "forget_all":
+            total = memory.clear(scope)
+            steps.add("Cleared what I remembered")
+            return Prepared(reply=f"Done. I've forgotten {total} note{'s' if total != 1 else ''} about you." if total
+                            else "I wasn't keeping any notes about you.", audit=("ai memory cleared", f"notes={total}"))
+        if command:
+            note, message = memory.store(scope, command[1], config)
+            steps.add("Saved a note" if note else "Did not save")
+            reply = f"{message} “{note.text}”" if note else message
+            return Prepared(reply=reply + (" You can see or remove what I remember from the Memory button." if note else ""),
+                            audit=("ai memory saved" if note else "ai memory refused", "one note"))
     evidence = access.collect_chat_evidence(
         scope, question, lambda text, kind: reasons.update(routing.scan(text, config, kind)), context_numbers)
+    reasons.update(evidence.flags)
+    if config.memory_enabled:
+        memory.add_to_evidence(scope, question, evidence, config)
     detail = _describe(evidence.counts())
     if evidence.unavailable:
         detail += f"; {len(evidence.unavailable)} reference(s) not available to you"
@@ -343,6 +361,11 @@ def _finish(run_id, prepared, steps, content, reasoning, usage, sanitize, featur
         if not sources_accessible(actor(user, run.actor_role), prepared.sources):
             abort(403)
     final = sanitize(content)
+    extras = {}
+    if run.kind == "chat":
+        from serviceops_core.ai import context
+        extras = access.extract_extras(content, context.may_raise_change(access.build_scope(user, run.actor_role)))
+        route = {**route, **extras}
     if prepared.cite_required and not re.search(r"\[S\d+\]", final):
         raise ProviderError("Provider returned an answer without evidence citations.")
     steps.add("Checked your access again", "Every source is still readable by you")
@@ -405,13 +428,16 @@ def _decline(run_id, prepared, steps):
     if run.status != "running":
         return
     steps.finish()
-    text = access.REFUSALS[prepared.refusal]
+    text = prepared.reply or access.REFUSALS[prepared.refusal]
     run.result_text, run.partial_text, run.steps_json, run.question = text, "", steps.dump(), ""
     run.status, run.completed_at, run.seq = "completed", now(), run.seq + 1
     message = db.session.get(AIMessage, run.message_id)
     message.content, message.status, message.run_id, message.steps_json = text, "completed", run.id, steps.dump()
     db.session.get(AIConversation, run.conversation_id).updated_at = now()
-    audit("ai chat denied", run.id, f"reason={prepared.refusal}", user_id=run.user_id, tenant_id=run.tenant_id)
+    if prepared.reply:
+        audit(prepared.audit[0], run.id, prepared.audit[1], user_id=run.user_id, tenant_id=run.tenant_id)
+    else:
+        audit("ai chat denied", run.id, f"reason={prepared.refusal}", user_id=run.user_id, tenant_id=run.tenant_id)
     db.session.commit()
 
 
@@ -453,7 +479,7 @@ def process_one():
             abort(403)
         steps = Steps()
         prepared = (_prepare_chat if run.kind == "chat" else _prepare_investigation)(run, user, config, steps)
-        if prepared.refusal:
+        if prepared.refusal or prepared.reply:
             _decline(run_id, prepared, steps)
             return True
         chosen = routing.plan(config, connections_for(config), prepared.reasons, prepared.kinds,
@@ -461,8 +487,12 @@ def process_one():
         if not chosen.candidates:
             _block(run_id, steps, chosen.blocked, prepared)
             return True
-        outcome = None
-        for attempt, connection in enumerate(chosen.candidates[:3]):
+        outcome, retried = None, set()
+        attempt = -1
+        candidates = chosen.candidates[:3]
+        while outcome is None:
+            attempt += 1
+            connection = candidates[min(attempt, len(candidates) - 1)] if attempt < len(candidates) else candidates[-1]
             route = routing.describe(connection, chosen, attempt)
             AIRun.query.filter_by(id=run_id, status="running").update(
                 {"connection_id": connection.id if connection.id != "legacy" else None, "provider": connection.provider,
@@ -471,18 +501,24 @@ def process_one():
             try:
                 outcome = _stream(run, config, prepared, steps, connection)
             except ProviderError as failure:
+                delivered = getattr(failure, "delivered", False)
+                if getattr(failure, "code", "") == "provider_busy" and not delivered and connection.id not in retried:
+                    retried.add(connection.id)  # a busy service often recovers within seconds: try it once more
+                    time.sleep(2)
+                    attempt -= 1
+                    continue
                 _record_health(connection, ok=False)
-                if getattr(failure, "delivered", False) or attempt + 1 >= len(chosen.candidates[:3]):
+                if delivered or attempt + 1 >= len(candidates):
                     raise
                 continue
             _record_health(connection, ok=True)
-            break
         content, reasoning, usage, sanitize, used = outcome
         _finish(run_id, used, steps, content, reasoning, usage, sanitize, feature, route)
     except (ProviderError, StreamCancelled, HTTPException, access.ScopeError) as error:
         db.session.rollback()
         cancelled = isinstance(error, (StreamCancelled, HTTPException, access.ScopeError))
-        status, code = ("cancelled", "access_or_configuration_changed") if cancelled else ("failed", "provider_failed")
+        status, code = (("cancelled", "access_or_configuration_changed") if cancelled
+                        else ("failed", getattr(error, "code", "provider_failed")))
         AIRun.query.filter_by(id=run_id, status="running").update({
             "status": status, "error_code": code, "completed_at": now(), "partial_text": "", "reasoning_text": "",
             "question": "", "seq": AIRun.seq + 1,
@@ -507,3 +543,4 @@ def purge_user_conversations(user_id):
     """Used when a person is erased: their chat history goes with their personal data."""
     for conversation in AIConversation.query.filter_by(user_id=user_id).all():
         delete_conversation(conversation)
+    AIMemory.query.filter_by(user_id=user_id).delete(synchronize_session=False)

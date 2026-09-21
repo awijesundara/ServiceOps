@@ -249,3 +249,30 @@ a.ai-cite:hover,a.ai-cite:focus-visible{background:var(--ai-accent);color:#fff}
 @keyframes ai-shimmer{to{background-position:-200% 0}}
 @keyframes ai-bounce{0%,80%,100%{transform:translateY(0);opacity:.45}40%{transform:translateY(-4px);opacity:1}}
 @media(prefers-reduced-motion:reduce){.ai-thinking-status [data-ai-thinking-label]{animation:none;color:currentColor;background:none}.ai-thinking-dot,.ai-thinking-dot::before,.ai-thinking-dot::after{animation:none}}
+
+/* Follow-up questions and ticket drafts */
+.ai-suggest{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+.ai-suggest-chip{padding:7px 12px;border-radius:99px;border:1px solid var(--line);background:#fff;font-size:12.5px;font-weight:600;color:var(--ai-accent,#003e4c);cursor:pointer;text-align:left}
+.ai-suggest-chip:hover{border-color:var(--ai-accent,#003e4c);background:var(--ai-soft,#e8f1f3)}
+.ai-draft{display:grid;gap:6px;padding:14px;border-radius:12px;border:1.5px solid var(--ai-accent,#003e4c);background:#fff}
+.ai-draft-label{margin:0;font-size:11.5px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--ai-accent,#003e4c)}
+.ai-draft-body{margin:0;font-size:13px;color:#44525d;white-space:pre-wrap;overflow-wrap:anywhere;max-height:110px;overflow:auto}
+.ai-draft-meta{margin:0;font-size:12px;color:var(--muted)}
+.ai-draft-open{justify-self:start;text-decoration:none;padding:8px 16px}
+.ai-draft small{color:var(--muted)}
+.ai-extras[hidden]{display:none}
+
+/* Assistant memory */
+.ai-chat-memory{position:absolute;inset:60px 0 0 0;z-index:3;background:#fff;padding:16px;overflow:auto}
+.ai-chat.is-page .ai-chat-memory{inset:60px 0 0 0}
+.ai-chat-memory[hidden]{display:none}
+.ai-chat-memory h3{margin:0 0 4px;font-size:16px}
+.ai-chat-memory ul{list-style:none;margin:12px 0;padding:0;display:grid;gap:6px}
+.ai-chat-memory li{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.ai-memory-text{flex:1;font-size:13.5px;overflow-wrap:anywhere}
+.ai-forget{border:1px solid #ecc7c3;background:#fff;color:#9d2a22;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:12.5px}
+.ai-remember{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:#fff8ea;border:1px solid #f3d9a4;font-size:13px}
+.ai-remember span{flex:1 1 100%}
+.ai-remember button{padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;font-weight:650;cursor:pointer}
+.ai-remember-yes{background:var(--ai-accent,#003e4c)!important;color:#fff!important;border-color:var(--ai-accent,#003e4c)!important}
+.ai-run a.ai-draft-open,.ai-draft a.ai-draft-open{color:#fff!important;text-decoration:none!important}

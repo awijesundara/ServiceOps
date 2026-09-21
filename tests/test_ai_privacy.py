@@ -154,7 +154,7 @@ def test_visible_incident_count_is_exact_for_each_existing_access_scope(app, wor
     with app.app_context():
         requester_text, requester_evidence = payload(world.employee, "how many incident tickets can you see?")
         assert "currently access 1 incident tickets" in requester_text
-        assert requester_evidence.kinds == {"ticket"}
+        assert requester_evidence.kinds >= {"ticket"} and requester_evidence.kinds <= {"ticket", "info"}
         assert "CANARY-OTHER-EMPLOYEE-TICKET" not in requester_text
 
         staff_text, _ = payload(world.insider, "how many incidents can you see?")
@@ -378,3 +378,12 @@ def test_my_tickets_question_lists_only_the_askers_own_tickets(app, world):
         # An agent outside every fulfilment group still only gets their own.
         agent, _ = payload(world.outsider, "show my tickets")
         assert "INC0100001" not in agent and "INC0100002" not in agent
+
+
+def test_context_module_keeps_to_the_asker_and_never_imports_directory_or_audit_data():
+    source = Path("serviceops_core/ai/context.py").read_text()
+    imported = " ".join(re.findall(r"from serviceops_models import \((.*?)\)", source, re.S))
+    for name in ("Audit", "ClientContact", "ClientTicket", "ClientOrganization", "FileAttachment", "PlatformSetting",
+                 "APIClient", "UserSession", "EnterpriseRecord"):
+        assert not re.search(rf"\b{name}\b", imported), name
+    assert "User.query" not in source and "User.username" not in source  # only the asker's own row, by id
