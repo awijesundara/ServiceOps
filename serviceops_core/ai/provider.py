@@ -180,6 +180,25 @@ def resolve_destination(url, local):
     return parsed.hostname, infos
 
 
+def _tuned_for_host(payload, config):
+    """Gemini's OpenAI-compatible API spends the token cap on hidden thinking unless told to think briefly,
+    which leaves an empty answer (finish reason "length")."""
+    if config.provider == "openai_compatible" and urlsplit(config.endpoint or "").hostname == "generativelanguage.googleapis.com":
+        payload["reasoning_effort"] = "low"
+    return payload
+
+
+def rejection(status):
+    """A display-safe reason for a non-200 answer, so an administrator knows what to fix."""
+    if status in (401, 403):
+        return ProviderError("The service rejected the access key. Check it, and that it may use this model.")
+    if status in (404, 400):
+        return ProviderError("The service does not know this model or request. Check the model name.")
+    if status in (429, 500, 502, 503, 504):
+        return ProviderError("The service is busy or temporarily unavailable. Try again in a moment.")
+    return ProviderError("Provider rejected the request; check credentials, model and service availability.")
+
+
 def decrypt_key(config):
     try:
         return settings_cipher().decrypt(config.key_encrypted.encode()).decode() if config.key_encrypted else ""
@@ -230,6 +249,15 @@ def read_metadata(config, url, key, *, optional=False):
         raise ProviderError("Could not reach the server. Check the address and that it is running.") from None
 
 
+_NOT_CHAT = re.compile(r"(embed|tts|imagen|image|veo|aqa|audio|transcri|whisper|moderation|dall-e|rerank|live|robotics)", re.I)
+
+
+def suggested_order(names):
+    """Chat-capable models first, and a provider's rolling "-latest" alias ahead of pinned versions, which
+    providers retire (a retired model still appears in some model lists)."""
+    return sorted(names, key=lambda n: (bool(_NOT_CHAT.search(n)), "latest" not in n.lower(), names.index(n)))
+
+
 def list_models(config, key=None, details=None, profiles=None):
     """Discover IDs and only explicitly reported limits; training size is not runtime capacity."""
     from serviceops_core.ai.capabilities import profile_from_model, runtime_properties
@@ -240,6 +268,8 @@ def list_models(config, key=None, details=None, profiles=None):
     names = []
     for row in rows if isinstance(rows, list) else []:
         name = row.get("id") or row.get("model") or row.get("name") if isinstance(row, dict) else None
+        if isinstance(name, str) and name.startswith("models/"):
+            name = name[len("models/"):]  # Google lists models as "models/<id>"
         if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_./:@+-]{1,160}", name) or name in names:
             continue
         names.append(name)
@@ -252,6 +282,7 @@ def list_models(config, key=None, details=None, profiles=None):
             break
     if not names:
         raise ProviderError("The server answered but listed no models. Enter the model identifier manually.")
+    names = suggested_order(names)  # the first entry is what the settings page selects for a new service
     # Query runtime props only for the selected model, or an unambiguous single-model server.
     selected = config.model if config.model in names else names[0] if len(names) == 1 else None
     if profiles is not None and selected and config.provider == "self_hosted":
@@ -283,6 +314,7 @@ def generate(config, evidence, *, probe=False):
     else:
         payload = {"model": config.model, "messages": [{"role": "system", "content": INSTRUCTIONS},
                    {"role": "user", "content": prompt}], "max_tokens": cap, "stream": False}
+        _tuned_for_host(payload, config)
     headers = auth_headers(config.provider, key)
     started = time.monotonic()
     limit = provider_timeout()
@@ -294,7 +326,7 @@ def generate(config, evidence, *, probe=False):
             with client.post(url, json=payload, headers=headers, timeout=(5, limit),
                              allow_redirects=False, stream=True) as response:
                 if response.status_code != 200:
-                    raise ProviderError("Provider rejected the request; check credentials, model and service availability.")
+                    raise rejection(response.status_code)
                 body = bytearray()
                 for chunk in response.iter_content(1):
                     body.extend(chunk)
@@ -408,6 +440,7 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
                    "messages": [m for m in messages if m["role"] != "system"]}
     else:
         payload = {"model": config.model, "messages": messages, "max_tokens": cap, "stream": True}
+        _tuned_for_host(payload, config)
         if (thinking is not None and config.provider == "self_hosted"
                 and selected_profile(config).get("thinking_control") == "chat_template"):
             # llama.cpp / vLLM chat templates; hosted services ignore or reject unknown fields.
@@ -426,7 +459,7 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
             with client.post(url, json=payload, headers=headers, timeout=(5, limit), allow_redirects=False,
                              stream=config.provider != "openai") as response:
                 if response.status_code != 200:
-                    raise ProviderError("Provider rejected the request; check credentials, model and service availability.")
+                    raise rejection(response.status_code)
                 if config.provider == "openai":
                     data = response.json()
                     if data.get("status") != "completed":

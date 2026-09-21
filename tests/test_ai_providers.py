@@ -287,3 +287,27 @@ def test_context_window_is_reported_when_the_server_states_it(app, server, monke
     with app.app_context():
         assert provider.list_models(config_for(endpoint=item.origin), details=details) == ["qwen3-8b", "other"]
     assert details == {"qwen3-8b": 4096}
+
+
+@pytest.mark.parametrize("status,fragment", [(401, "access key"), (403, "access key"), (404, "model"), (503, "busy"), (429, "busy"), (418, "rejected")])
+def test_rejections_say_what_to_fix(status, fragment):
+    assert fragment in str(provider.rejection(status))
+
+
+def test_gemini_is_asked_to_think_briefly_and_model_names_lose_the_models_prefix(app, server, monkeypatch):
+    payload = {}
+    gemini = config_for(provider="openai_compatible", endpoint="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+    assert provider._tuned_for_host(payload, gemini)["reasoning_effort"] == "low"
+    other = {}
+    assert "reasoning_effort" not in provider._tuned_for_host(other, config_for(provider="openai_compatible", endpoint="https://api.groq.com/openai/v1/chat/completions"))
+    item = server(get_body={"data": [{"id": "models/gemini-2.5-flash"}, {"id": "models/gemini-2.5-pro"}]})
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", item.origin)
+    with app.app_context():
+        assert provider.list_models(config_for(endpoint=item.origin)) == ["gemini-2.5-flash", "gemini-2.5-pro"]
+
+
+def test_suggested_order_prefers_chat_models_and_rolling_latest_aliases():
+    names = ["gemini-2.5-flash", "gemini-2.5-flash-preview-tts", "text-embedding-004", "gemini-flash-latest", "gemini-2.5-pro"]
+    assert provider.suggested_order(names) == ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-pro",
+                                               "gemini-2.5-flash-preview-tts", "text-embedding-004"]
+    assert provider.suggested_order(["b", "a"]) == ["b", "a"]  # otherwise the server's own order is kept
