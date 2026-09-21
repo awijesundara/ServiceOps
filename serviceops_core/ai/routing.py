@@ -182,7 +182,8 @@ def describe(connection, plan_result, attempt=0):
         reason = "Answered by an external AI service. Nothing sensitive was included."
     if attempt:
         reason += " The first choice was unavailable."
-    return {"name": connection.name, "location": where, "reason": reason, "sensitive": plan_result.sensitive}
+    return {"name": connection.name, "model": connection.model, "location": where, "reason": reason,
+            "sensitive": plan_result.sensitive}
 
 
 BLOCKED_TEXT = {
@@ -198,6 +199,28 @@ RUN_ERROR_TEXT = {
     ),
     "worker_interrupted": "The AI worker was interrupted before it finished. Please try again.",
 }
+
+
+def usage_today(tenant_id):
+    """Requests and tokens used so far today (UTC), per service and in total. What ServiceOps itself sent:
+    providers do not report a remaining quota for an API key."""
+    import json
+    start = now().replace(hour=0, minute=0, second=0, microsecond=0)
+    per, total = {}, {"requests": 0, "tokens": 0}
+    for connection_id, usage in db.session.query(AIRun.connection_id, AIRun.usage_json).filter(
+            AIRun.tenant_id == tenant_id, AIRun.created_at >= start, AIRun.status == "completed").limit(5000):
+        try:
+            data = json.loads(usage or "{}")
+        except ValueError:
+            data = {}
+        tokens = int(data.get("total_tokens") or 0) or int(data.get("prompt_tokens") or data.get("input_tokens") or 0) + int(
+            data.get("completion_tokens") or data.get("output_tokens") or 0)
+        slot = per.setdefault(connection_id, {"requests": 0, "tokens": 0})
+        slot["requests"] += 1
+        slot["tokens"] += tokens
+        total["requests"] += 1
+        total["tokens"] += tokens
+    return per, total
 
 
 def record_success(connection):

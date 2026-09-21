@@ -61,6 +61,9 @@
     load.appendChild(bar);
     load.appendChild(el("span", "muted", service.load ? "Busy " + service.load + "/" + service.max_concurrency : "Free"));
     node.appendChild(load);
+    const today = service.today || { requests: 0, tokens: 0 };
+    node.appendChild(el("p", "muted aiadm-fine", "Today: " + today.requests + (today.requests === 1 ? " request" : " requests") +
+      " · " + today.tokens.toLocaleString() + " tokens"));
     if (service.context) node.appendChild(el("p", "muted aiadm-fine", "Remembers about " + service.context.toLocaleString() + " tokens"));
     const note = el("p", "aiadm-testnote", "");
     note.setAttribute("role", "status");
@@ -142,7 +145,9 @@
     dError.hidden = true;
     dStatus.textContent = "Enter the details, then connect.";
     dStatus.classList.remove("is-error");
-    $("models", dialog).textContent = "";
+    allModels = [];
+    closeList();
+    $("model-hint", dialog).textContent = "Connect first to see every model, or type a name.";
     f("token").value = "";
     f("api_key").value = "";
     const s = service || {};
@@ -184,9 +189,8 @@
       provider: f("provider").value, endpoint: f("endpoint").value, api_key: f("api_key").value, service_id: f("id").value,
       model: f("model").value, external_consent: true
     }).then(function (json) {
-      const list = $("models", dialog);
-      list.textContent = "";
-      json.models.forEach(function (name) { const o = document.createElement("option"); o.value = name; list.appendChild(o); });
+      allModels = json.models.slice();
+      $("model-hint", dialog).textContent = json.models.length + " models found. Click the box to see them all, or type to search.";
       if (!f("model").value || json.models.indexOf(f("model").value) === -1) f("model").value = json.models[0];
       f("token").value = json.discovery_token || "";
       if (!f("name").value) f("name").value = f("model").value.slice(0, 60);
@@ -205,13 +209,64 @@
   }
   f("endpoint").addEventListener("input", auto);
   f("api_key").addEventListener("input", auto);
-  f("model").addEventListener("input", function () { f("token").value = ""; });
+
+  /* ---------- searchable model list: every model, filtered as you type ---------- */
+  let allModels = [], activeIndex = -1;
+  const modelList = $("model-list", dialog), modelBox = f("model");
+
+  function closeList() { modelList.hidden = true; modelBox.setAttribute("aria-expanded", "false"); activeIndex = -1; }
+
+  function openList(filter) {
+    const needle = (filter || "").trim().toLowerCase();
+    const shown = allModels.filter(function (name) { return !needle || name.toLowerCase().indexOf(needle) !== -1; });
+    modelList.textContent = "";
+    shown.forEach(function (name, index) {
+      const item = el("li", "aiadm-model-item" + (name === modelBox.value ? " is-current" : ""), name);
+      item.id = "ai-model-opt-" + index;
+      item.setAttribute("role", "option");
+      item.setAttribute("aria-selected", name === modelBox.value ? "true" : "false");
+      if (index === 0 && !needle && /latest/i.test(name)) item.appendChild(el("span", "aiadm-model-tag", "suggested"));
+      item.addEventListener("mousedown", function (event) { event.preventDefault(); choose(name); });
+      modelList.appendChild(item);
+    });
+    if (!shown.length) modelList.appendChild(el("li", "aiadm-model-none", allModels.length ? "No model matches. You can still use what you typed." : "Connect first to list models."));
+    modelList.hidden = false;
+    modelBox.setAttribute("aria-expanded", "true");
+    activeIndex = -1;
+  }
+
+  function choose(name) {
+    modelBox.value = name;
+    if (!f("name").value) f("name").value = name.slice(0, 60);
+    closeList();
+  }
+
+  function highlight(index) {
+    const items = modelList.querySelectorAll(".aiadm-model-item");
+    if (!items.length) return;
+    activeIndex = (index + items.length) % items.length;
+    items.forEach(function (item, i) { item.classList.toggle("is-active", i === activeIndex); });
+    modelBox.setAttribute("aria-activedescendant", items[activeIndex].id);
+    items[activeIndex].scrollIntoView({ block: "nearest" });
+  }
+
+  modelBox.addEventListener("focus", function () { if (allModels.length) openList(""); });
+  modelBox.addEventListener("click", function () { if (allModels.length && modelList.hidden) openList(""); });
+  modelBox.addEventListener("input", function () { openList(modelBox.value); });
+  modelBox.addEventListener("blur", closeList);
+  modelBox.addEventListener("keydown", function (event) {
+    if (event.key === "ArrowDown") { event.preventDefault(); if (modelList.hidden) openList(""); highlight(activeIndex + 1); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); highlight(activeIndex - 1); }
+    else if (event.key === "Enter" && !modelList.hidden && activeIndex >= 0) { event.preventDefault(); choose(modelList.querySelectorAll(".aiadm-model-item")[activeIndex].textContent.replace(/suggested$/, "")); }
+    else if (event.key === "Escape" && !modelList.hidden) { event.stopPropagation(); closeList(); }
+  });
 
   $("save", dialog).addEventListener("click", function () {
     dError.hidden = true;
     const body = {
       id: f("id").value || undefined, name: f("name").value, provider: f("provider").value, endpoint: f("endpoint").value,
-      model: f("model").value, api_key: f("api_key").value, discovery_token: f("token").value,
+      model: f("model").value, api_key: f("api_key").value,
+      discovery_token: allModels.indexOf(f("model").value) !== -1 ? f("token").value : "",
       priority: Number(f("priority").value), weight: Number(f("weight").value), max_concurrency: Number(f("max_concurrency").value),
       enabled: f("enabled").checked
     };
