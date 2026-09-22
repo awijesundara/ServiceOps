@@ -4,7 +4,8 @@ import uuid
 
 import pytest
 
-from app import AIConfiguration, AIConversation, AIMessage, AIRun, Audit, User, db
+from app import AIConfiguration, AIConversation, AIMessage, AIRun, Audit, Comment, Ticket, User, db
+from serviceops_models import AIAction
 from serviceops_core.ai import provider, service
 from tests.test_ai_assistant import fake_stream
 from tests.test_ai_privacy import world  # noqa: F401
@@ -292,3 +293,66 @@ def test_admin_switches_control_chat_and_reasoning(app, client):
     with app.app_context():
         config = db.session.get(AIConfiguration, 1)
         assert not config.chat_enabled and not config.show_reasoning
+
+
+def _admin_action_ticket(app):
+    with app.app_context():
+        config = db.session.get(AIConfiguration, 1)
+        config.actions_enabled = True
+        admin = User.query.filter_by(username="admin").one()
+        ticket = Ticket(number="INC0099999", kind="incident", title="AI action test", description="Review safely",
+                        requester_id=admin.id, tenant_id=1, state="New", priority="P3")
+        db.session.add(ticket)
+        db.session.commit()
+        return ticket.id
+
+
+def test_admin_chat_ticket_update_requires_exact_review_and_approval(app, client, world, monkeypatch):
+    ticket_id = _admin_action_ticket(app)
+    answer_with(monkeypatch, "I prepared the exact ticket update for your review [S1].")
+    login(client, "admin", "Admin123!")
+    created = ask(client, "Set INC0099999 priority to P1 and move state to In Progress")
+    finish_all(app)
+    stream = client.get(f"/ai/runs/{created.get_json()['run_id']}/stream").get_json()
+    proposed = stream["route"]["action"]
+    assert proposed["ticket"] == "INC0099999"
+    assert "payload" not in proposed
+    with app.app_context():
+        ticket = db.session.get(Ticket, ticket_id)
+        assert (ticket.state, ticket.priority) == ("New", "P3")
+
+    prepared = client.post(proposed["prepare_url"], json={})
+    assert prepared.status_code == 201
+    review_url = prepared.get_json()["url"]
+    review = client.get(review_url)
+    assert review.status_code == 200 and b"In Progress" in review.data and b"P1" in review.data
+    action_id = review_url.rsplit("/", 1)[-1]
+    assert client.post(review_url, data={"decision": "approve"}).status_code == 302
+    assert client.post(review_url, data={"decision": "approve"}).status_code == 302
+    with app.app_context():
+        ticket = db.session.get(Ticket, ticket_id)
+        action = db.session.get(AIAction, action_id)
+        assert (ticket.state, ticket.priority) == ("In Progress", "P1")
+        assert action.status == "executed"
+
+
+def test_admin_chat_exact_comment_and_non_admin_action_boundary(app, client, world, monkeypatch):
+    ticket_id = _admin_action_ticket(app)
+    answer_with(monkeypatch, "I prepared the exact comment for review [S1].")
+    login(client, "admin", "Admin123!")
+    created = ask(client, 'Add comment to INC0099999: "Network team confirmed recovery"')
+    finish_all(app)
+    route = client.get(f"/ai/runs/{created.get_json()['run_id']}/stream").get_json()["route"]
+    assert route["action"]["summary"].startswith("Add comment")
+    review_url = client.post(route["action"]["prepare_url"], json={}).get_json()["url"]
+    client.post(review_url, data={"decision": "approve"})
+    with app.app_context():
+        assert [row.body for row in Comment.query.filter_by(ticket_id=ticket_id)] == ["Network team confirmed recovery"]
+
+    client.get("/logout")
+    answer_with(monkeypatch, "I cannot make that change, but I can explain the record [S1].")
+    login(client, "employee", "Employee123!")
+    created = ask(client, "Set INC0100001 priority to P1")
+    finish_all(app)
+    route = client.get(f"/ai/runs/{created.get_json()['run_id']}/stream").get_json()["route"]
+    assert "action" not in route
