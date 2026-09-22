@@ -14,7 +14,8 @@ from serviceops_models import Knowledge, Ticket, User, db
 
 ADMIN_ROLES = frozenset({"admin", "superadmin"})
 PRIORITIES = ("P1", "P2", "P3", "P4")
-ACTION_VERB = re.compile(r"\b(set|change|update|move|mark|assign|unassign|add|post)\b", re.I)
+# \w* after the verb root tolerates a common typing slip (a missing space before the next word, e.g. "adda comment").
+ACTION_VERB = re.compile(r"\b(set|change|update|move|mark|assign\w*|unassign\w*|add\w*|post\w*)\b", re.I)
 
 
 def _visible_ticket(scope, number):
@@ -39,7 +40,7 @@ def propose_from_question(scope, question, enabled):
     if not user_can_manage_ticket(scope.identity, ticket):
         return None
 
-    quoted = re.search(r"\b(?:add|post)\s+(?:an?\s+)?comment\b.*?[\"“](.{1,2000}?)[\"”]", question, re.I | re.S)
+    quoted = re.search(r"\b(?:add|post)\w*\s+(?:an?\s+)?comment\b.*?[\"“](.{1,2000}?)[\"”]", question, re.I | re.S)
     if quoted:
         body = redact(quoted.group(1).strip())
         if body:

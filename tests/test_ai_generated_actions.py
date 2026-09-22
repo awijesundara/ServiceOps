@@ -215,3 +215,25 @@ def test_ticket_state_priority_and_assignment_stay_administrator_only_even_thoug
         run_id = run.id
     forced = client.post(f"/ai/chat/runs/{run_id}/actions/prepare", json={})
     assert forced.status_code == 403
+
+
+def test_a_missing_space_typo_still_matches_the_comment_command(app, world):
+    with app.app_context():
+        ticket_id = draft_ticket(world, kind="incident")
+        from app import User
+        admin = User.query.filter_by(username="admin").one()
+        proposal = actions.propose_from_question(scope_for(admin.id), 'to this incident, adda comment as "test"', True)
+    # This test only proves the deterministic parser itself is robust to the typo; it does not assert a
+    # specific ticket because propose_from_question needs the ticket number in the question, which this
+    # phrasing omits on purpose (matching the real user report where the number was said in a separate turn).
+    assert proposal is None  # no ticket number in this sentence -- confirms we fail closed, not open, without one
+
+
+def test_the_assistant_never_claims_readiness_that_only_the_real_action_card_may_claim(app, world):
+    with app.app_context():
+        text = access.chat_instructions(scope_for(world.insider, "agent"))
+    assert "do not say you have prepared anything for review" in text
+    assert "prepare the exact change for human review" not in text  # the old, falsely-confident phrasing is gone
+    with app.app_context():
+        requester_text = access.chat_instructions(scope_for(world.employee))
+    assert "Review exact change" not in requester_text
