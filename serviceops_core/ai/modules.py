@@ -25,7 +25,7 @@ _INTENTS = {
     "records": r"\bproblems?\b|\bprb\b|known errors?|\bevents?\b|\balerts?\b|improvement|\brisks?\b|security incident|\bsir\b|\bhr\b|portfolio|\bprojects?\b|field service|work orders?|customer service",
     "approvals": r"approv|awaiting (my|your)|pending (my|your)|sign[- ]?off|\bccb\b",
     "tasks": r"\btasks?\b|my work|assigned to me|to[- ]?do|workload|\bctask|\bptask",
-    "knowledge": r"knowledge|\bkb\b|articles?|how[- ]to|documentation",
+    "knowledge": r"knowledge|\bkb\b|articles?|notes?\b|how[- ]to|documentation",
     "cmdb": r"\bcmdb\b|configuration items?|\bcis\b|\bci\b|servers?|hardware|inventory|assets?|dell|vmware|network device|laptops?|infrastructure",
     "users": r"\busers\b|\baccounts\b|head ?count|how many (staff|people|employees)|who is the admin|admins?\b",
     "clients": r"customers?\b|clients?\b|customer tickets?|client organi[sz]ations?",
@@ -134,12 +134,13 @@ def _users(scope):
 
 
 def _clients(scope):
-    from app import user_can_access_client_management, visible_client_ticket_query
+    from app import user_can_access_client_management, visible_client_organization_query, visible_client_ticket_query
     if not user_can_access_client_management(scope.identity):
         return "Customer management", "Your access level does not include customer management."
+    organizations = visible_client_organization_query(scope.identity).filter_by(active=True).count()
     rows = dict(visible_client_ticket_query(scope.identity).with_entities(ClientTicket.status, func.count()).group_by(
         ClientTicket.status).all())
-    return "Customer management (numbers only)", ("Customer tickets you can see: " + (", ".join(f"{n} {s}" for s, n in sorted(rows.items()))
+    return "Customer management (numbers only)", (f"Client organizations you can see: {organizations}. Customer tickets you can see: " + (", ".join(f"{n} {s}" for s, n in sorted(rows.items()))
                                                     or "none") + ". Customer names and messages are never shared by the assistant.")
 
 

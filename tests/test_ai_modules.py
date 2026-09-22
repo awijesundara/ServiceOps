@@ -2,7 +2,7 @@
 from datetime import timedelta
 
 from app import (ApprovalVote, Asset, CatalogItem, CatalogRequest, ConfigurationItem, EnterpriseRecord, Knowledge, OperationalTask,
-                 RequestedItem, SLADefinition, SupportGroup, TaskSLA, Ticket, User, db, now)
+                 RequestedItem, SLADefinition, SupportGroup, TaskCI, TaskSLA, Ticket, User, db, now)
 from serviceops_core.ai import access, modules
 from tests.test_ai_privacy import scope_for, world  # noqa: F401
 from tests.test_app import app, client, login  # noqa: F401
@@ -75,6 +75,34 @@ def test_approvals_and_tasks_belong_to_the_person_asking(app, world):
         assert "No approvals are waiting" in facts(world.admin, "any approvals for me?")["Approvals"]
         assert "1 change or problem tasks" in facts(world.manager, "what tasks are assigned to me?")["Your tasks"]
         assert "0 change or problem tasks" in facts(world.employee, "my tasks")["Your tasks"]
+
+
+def test_cmdb_serial_lookup_returns_specs_and_only_visible_related_tickets(app, world):
+    with app.app_context():
+        ci = ConfigurationItem(name="Production database", ci_class="Server", serial_number="SN000002", vendor="Dell",
+                               model="PowerEdge R750", environment="Production", operational_status="Operational", tenant_id=1)
+        db.session.add(ci)
+        db.session.flush()
+        db.session.add(TaskCI(target_type="ticket", target_id=world.tickets["own"], ci_id=ci.id))
+        db.session.commit()
+        evidence = access.collect_chat_evidence(scope_for(world.admin), "SN000002 give me the server spec and related tickets")
+        cmdb = [item for item in evidence.items if item.get("kind") == "ci"]
+        assert len(cmdb) == 1 and cmdb[0]["reference"] == "SN000002"
+        assert "Dell" in cmdb[0]["text"] and "PowerEdge R750" in cmdb[0]["text"]
+        summary = {item["title"]: item["text"] for item in evidence.items if item["kind"] == "summary"}
+        assert "1 tickets" in summary["Visible tickets related to Production database"]
+
+
+def test_last_incident_and_active_change_list_use_visible_records(app, world):
+    with app.app_context():
+        change = Ticket(number="CHG0100099", kind="change", title="Database maintenance", description="Apply updates", state="Pending",
+                        requester_id=world.admin, tenant_id=1)
+        db.session.add(change)
+        db.session.commit()
+        recent = access.collect_chat_evidence(scope_for(world.admin), "what is the last incident received?")
+        assert any(item.get("reference", "").startswith("INC") for item in recent.items)
+        active = access.collect_chat_evidence(scope_for(world.admin), "Show me active changes")
+        assert any(item.get("reference") == "CHG0100099" for item in active.items)
 
 
 def test_page_suggestions_never_point_somewhere_the_person_may_not_go(app, world):
