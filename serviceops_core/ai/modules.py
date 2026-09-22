@@ -15,7 +15,8 @@ from serviceops_core.ai import access
 from serviceops_core.ci_class_policy import ci_class_read_allowed
 from serviceops_core.navigation import NAVIGATION_ENTRIES
 from serviceops_models import (ApprovalVote, Asset, CatalogRequest, CatalogTask, ClientTicket, ConfigurationItem, EnterpriseRecord,
-                               Knowledge, OperationalTask, RequestedItem, TaskSLA, Ticket, User, db, now)
+                               Knowledge, OperationalTask, RequestedItem, SupportGroup, TaskSLA, Ticket, TicketAssignmentGroup,
+                               User, db, now)
 
 CLOSED = ("Resolved", "Closed", "Cancelled", "Canceled", "Completed", "Implemented", "Fulfilled", "Complete")
 
@@ -30,6 +31,7 @@ _INTENTS = {
     "users": r"\busers\b|\baccounts\b|head ?count|how many (staff|people|employees)|who is the admin|admins?\b",
     "clients": r"customers?\b|clients?\b|customer tickets?|client organi[sz]ations?",
     "access": r"can'?t access|cannot access|no access|not allowed|sections?|what can i (see|open|use|access)|permissions?|\bmenu\b|modules?|features?|what.*(cannot|can'?t).*(access|see)|restricted",
+    "find": r"\b(show|find|list|search for|which|filter)\b.{0,40}\b(tickets?|incidents?|changes?)\b",
 }
 _COMPILED = {name: re.compile(pattern, re.I) for name, pattern in _INTENTS.items()}
 
@@ -123,6 +125,58 @@ def _cmdb(scope):
     if assets:
         text += " Assets by status: " + ", ".join(f"{s} {n}" for s, n in sorted(assets.items())) + "."
     return "Configuration items and assets", text
+
+
+_TIME_WINDOWS = (
+    (re.compile(r"\btoday\b", re.I), 1), (re.compile(r"\byesterday\b", re.I), 2),
+    (re.compile(r"\bthis week\b", re.I), 7), (re.compile(r"\blast (\d{1,3}) days?\b", re.I), None),
+    (re.compile(r"\blast week\b", re.I), 14), (re.compile(r"\bthis month\b", re.I), 31),
+)
+_PRIORITY = re.compile(r"\bP([1-4])\b", re.I)
+_STATE_WORDS = ("New", "In Progress", "Pending", "On Hold", "Resolved", "Closed", "Cancelled")
+
+
+def _find_tickets(scope, question, base):
+    """A bounded, safe slice of natural-language query: recognized filters (priority, kind, state, team name,
+    a relative time window) run through the same visible-ticket query as everything else; nothing free-form
+    reaches the database. Returns a compact list, not raw SQL, and is silent (returns None) if it recognizes
+    no filter, so an ordinary keyword question is left to the usual evidence search."""
+    filtered, applied = base, []
+    priority = _PRIORITY.search(question)
+    if priority:
+        filtered = filtered.filter(Ticket.priority == f"P{priority.group(1)}")
+        applied.append(f"priority P{priority.group(1)}")
+    if re.search(r"\bincidents?\b", question, re.I) and not re.search(r"\bchanges?\b", question, re.I):
+        filtered = filtered.filter(Ticket.kind == "incident")
+        applied.append("incidents")
+    elif re.search(r"\bchanges?\b", question, re.I) and not re.search(r"\bincidents?\b", question, re.I):
+        filtered = filtered.filter(Ticket.kind == "change")
+        applied.append("changes")
+    for state in _STATE_WORDS:
+        if re.search(rf"\b{re.escape(state.lower())}\b", question, re.I):
+            filtered = filtered.filter(Ticket.state == state)
+            applied.append(f"state {state}")
+            break
+    for group in SupportGroup.query.filter_by(tenant_id=scope.tenant_id, active=True).all():
+        if group.name and re.search(rf"\b{re.escape(group.name.lower())}\b", question, re.I):
+            ticket_ids = db.session.query(TicketAssignmentGroup.ticket_id).filter(TicketAssignmentGroup.group_id == group.id)
+            filtered = filtered.filter(Ticket.id.in_(ticket_ids))
+            applied.append(f"assigned to {group.name}")
+            break
+    since = None
+    for pattern, days in _TIME_WINDOWS:
+        match = pattern.search(question)
+        if match:
+            since = int(match.group(1)) if days is None else days
+            break
+    if since:
+        filtered = filtered.filter(Ticket.updated_at >= now() - timedelta(days=since))
+        applied.append(f"updated in the last {since} days")
+    if not applied:
+        return None
+    rows = filtered.order_by(Ticket.updated_at.desc()).limit(15).all()
+    listing = "; ".join(f"{r.number} {r.title[:60]} ({r.state}, {r.priority})" for r in rows) or "none matched"
+    return (f"Tickets matching {', '.join(applied)}", f"{len(rows)} shown (of the ones you can see): {listing}")
 
 
 def _users(scope):
@@ -221,6 +275,10 @@ def add_module_context(scope, question, evidence, base):
         builders.append(lambda: _clients(scope))
     if "access" in found:
         builders.append(lambda: _access_map(scope))
+    if "find" in found:
+        builders.append(lambda: _find_tickets(scope, question, base))
     for build in builders:
-        title, text = build()
-        evidence.add_context("info", title, text)
+        result = build()
+        if result:
+            title, text = result
+            evidence.add_context("info", title, text)
