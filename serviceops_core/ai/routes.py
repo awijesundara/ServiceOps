@@ -458,12 +458,15 @@ def register(app):
     @blueprint.post("/ai/chat/runs/<run_id>/actions/prepare")
     @login_required
     def prepare_chat_action(run_id):
-        """Freeze a deterministic admin chat command as an expiring proposal."""
+        """Freeze a deterministic staff chat command, or a staff-requested generated draft, as an expiring proposal.
+        Ticket state/priority/assignment stays administrator-only; comments, notes and knowledge drafts are open
+        to any staff role, matching who may already post a comment or write a knowledge article by hand."""
         from app import visible_ticket_query
+        from serviceops_core.ai import actions
 
         scope, config = chat_scope()
-        if scope.role not in ("admin", "superadmin"):
-            abort(403, description="Administrator access is required for AI actions.")
+        if not scope.is_staff:
+            abort(403, description="Staff access is required for AI actions.")
         if not config.actions_enabled:
             abort(403, description="AI ticket actions are disabled by your administrator.")
         run = AIRun.query.filter_by(id=run_id, tenant_id=scope.tenant_id, user_id=scope.user_id,
@@ -471,8 +474,11 @@ def register(app):
         if not access.sources_still_accessible(scope, json.loads(run.sources_json or "[]")):
             abort(403, description="You no longer have access to all evidence used by this answer.")
         candidate = json.loads(run.route_json or "{}").get("action")
-        if not isinstance(candidate, dict) or candidate.get("type") not in ("add_comment", "update_ticket"):
+        supported = {"add_comment", "update_ticket", "kb_article", *actions.DRAFT_COMMENT_PREFIX}
+        if not isinstance(candidate, dict) or candidate.get("type") not in supported:
             abort(409, description="This answer does not contain a supported action proposal.")
+        if candidate["type"] == "update_ticket" and scope.role not in ("admin", "superadmin"):
+            abort(403, description="Administrator access is required to change ticket state, priority or assignment.")
         ticket = visible_ticket_query(scope.identity).filter_by(
             number=candidate.get("ticket"), deleted_at=None).first_or_404()
         existing = AIAction.query.filter_by(run_id=run.id, action_type=candidate["type"]).first()

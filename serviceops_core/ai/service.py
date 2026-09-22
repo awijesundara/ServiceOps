@@ -368,6 +368,10 @@ def _finish(run_id, prepared, steps, content, reasoning, usage, sanitize, featur
         extras = access.extract_extras(content, context.may_raise_change(scope_now))
         from serviceops_core.ai import actions
         proposed_action = actions.propose_from_question(scope_now, run.question or "", config.actions_enabled)
+        if not proposed_action and config.actions_enabled:
+            draft = access.extract_generated_draft(content, scope_now, prepared.allowed)
+            if draft:
+                proposed_action = actions.prepare_from_draft(draft)
         if proposed_action:
             extras["action"] = proposed_action
         from serviceops_core.ai import modules

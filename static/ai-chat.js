@@ -135,7 +135,8 @@
     const action = route && route.action;
     if (action && action.prepare_url) {
       const card = element("div", "ai-draft ai-action-draft");
-      card.appendChild(element("p", "ai-draft-label", "Administrator action ready for review"));
+      const isUpdate = action.type === "update_ticket";
+      card.appendChild(element("p", "ai-draft-label", isUpdate ? "Administrator action ready for review" : "Ready for your review"));
       card.appendChild(element("strong", "", action.ticket));
       card.appendChild(element("p", "ai-draft-body", action.summary));
       const review = element("button", "primary ai-draft-open", "Review exact change");
