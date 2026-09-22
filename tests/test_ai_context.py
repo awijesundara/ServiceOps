@@ -66,6 +66,26 @@ def test_profile_is_only_the_askers_own_and_keeps_the_question_private(app, worl
         assert "Test Employee" not in other["Your profile"] and "Database Manager" not in other["Your profile"]
 
 
+def test_profile_answers_exact_group_and_ccb_membership(app, world):
+    with app.app_context():
+        manager, evidence = facts(world.manager, "am i a member of the CCB group?")
+        text = manager["Your profile"]
+        assert "Change Control Board (CCB Approval; CCB approver)" in text
+        assert "Change Control Board membership: yes (CCB approver)" in text
+        assert "personal" in evidence.flags
+        employee, _ = facts(world.employee, "do i belong to the CCB group?")
+        assert "Change Control Board membership: no" in employee["Your profile"]
+
+
+def test_admin_can_ask_who_manages_governance_groups(app, world):
+    with app.app_context():
+        ccb = SupportGroup.query.filter_by(name="Change Control Board").one()
+        ccb.manager_id = world.manager
+        db.session.commit()
+        found, _ = facts(world.admin, "who manages the CCB group?")
+        assert "Change Control Board: manager Database Manager" in found["Governance groups"]
+
+
 def test_capabilities_follow_the_role_policy(app, world):
     with app.app_context():
         requester = context.capability_sentence(scope_for(world.employee))
