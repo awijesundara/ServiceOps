@@ -137,3 +137,39 @@ def test_pages_arrive_as_working_links_with_the_answer(app, client, world, monke
             pass
     pages = client.get(f"/ai/chat/conversations/{reply['conversation_id']}").get_json()["messages"][1]["route"]["pages"]
     assert any(p["label"] == "Knowledge" and p["url"].startswith("/") for p in pages)
+
+
+def test_change_risk_is_explained_when_the_ticket_is_cited(app, world):
+    from app import ChangeGovernance
+    with app.app_context():
+        change = Ticket(number="CHG0088001", kind="change", title="Patch routers", description="d",
+                        requester_id=world.admin, tenant_id=1)
+        db.session.add(change)
+        db.session.flush()
+        db.session.add(ChangeGovernance(ticket_id=change.id, change_type="Normal", risk_score=72, impact="High",
+                                        ccb_required=True, conflict_status="Conflict detected",
+                                        implementation_plan="Apply firmware update", backout_plan="Roll back firmware"))
+        db.session.commit()
+        evidence = access.collect_chat_evidence(scope_for(world.admin), "tell me about CHG0088001")
+        text = next(i["text"] for i in evidence.items if i.get("reference") == "CHG0088001")
+        assert "risk: score 72/100" in text and "CCB approval required: yes" in text and "Conflict detected" in text
+
+
+def test_natural_language_ticket_search_uses_only_visible_tickets(app, world):
+    from app import GroupMember, SupportGroup, TicketAssignmentGroup
+    with app.app_context():
+        group = SupportGroup.query.filter(SupportGroup.group_type == "IT Fulfillment", SupportGroup.id.in_(
+            GroupMember.query.filter_by(user_id=world.insider).with_entities(GroupMember.group_id))).one()
+        p1 = Ticket(number="INC0088010", kind="incident", title="Payroll outage", description="d",
+                   requester_id=world.admin, tenant_id=1, priority="P1", state="New")
+        db.session.add(p1)
+        db.session.flush()
+        db.session.add(TicketAssignmentGroup(ticket_id=p1.id, group_id=group.id))
+        db.session.commit()
+        found = facts(world.insider, f"show me P1 incidents assigned to {group.name}")
+        key = next(k for k in found if k.startswith("Tickets matching"))
+        assert "INC0088010" in found[key] and "priority P1" in key and group.name in key
+        # A requester never sees tickets outside their own, however the filters are phrased.
+        requester_found = facts(world.other, "show me P1 incidents")
+        rkey = next(k for k in requester_found if k.startswith("Tickets matching"))
+        assert "INC0088010" not in requester_found[rkey]

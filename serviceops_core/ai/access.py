@@ -200,6 +200,18 @@ def _ticket_text(ticket):
         f"Opened: {ticket.created_at.isoformat()}; Updated: {ticket.updated_at.isoformat()}",
         (ticket.description or "")[:1200],
     ]
+    if ticket.kind == "change":
+        from serviceops_models import ChangeGovernance
+        governance = ChangeGovernance.query.filter_by(ticket_id=ticket.id).first()
+        if governance:
+            window = (f"{governance.planned_start.isoformat()} to {governance.planned_end.isoformat()}"
+                      if governance.planned_start and governance.planned_end else "not scheduled")
+            parts.append(
+                f"Change risk: score {governance.risk_score}/100 ({governance.change_type} change, impact "
+                f"{governance.impact}){' [administrator overrode the calculated score: ' + governance.risk_score_override_reason[:200] + ']' if governance.risk_score_overridden and governance.risk_score_override_reason else ''}. "
+                f"CCB approval required: {'yes' if governance.ccb_required else 'no'}. Conflict check: {governance.conflict_status}. "
+                f"Planned window: {window}. Implementation plan: {(governance.implementation_plan or 'not supplied')[:400]} "
+                f"Backout plan: {(governance.backout_plan or 'not supplied')[:300]}")
     parts.extend(f"Comment: {(row.body or '')[:300]}" for row in reversed(comments))
     return "\n".join(parts)
 
@@ -469,7 +481,15 @@ def chat_instructions(scope):
         "(short things this person might ask next, at most three). "
         "MEMORY: if the person tells you a lasting preference or a stable fact about how they work (never a password, key, "
         "payment number, or anything about someone else), you may add one line before the follow-ups: "
-        "[[REMEMBER]] a short note in the third person. They decide whether to keep it."
+        "[[REMEMBER]] a short note in the third person. They decide whether to keep it. "
+        + ("DRAFTS: if this staff member asks you to draft a resolution note, a closure note, a suggested reply to "
+           "the requester, a sentiment assessment, or (for a resolved ticket) a knowledge article, write it from the "
+           "supplied evidence, then add one final line: "
+           '[[DRAFT]] {"type":"resolution_note","ticket":"INC0010552","text":"..."} '
+           "(type is one of resolution_note, closure_note, suggested_response, sentiment, kb_article; for kb_article "
+           'also include "title"; ticket must be exactly one of the ticket numbers supplied to you as evidence, never '
+           "one you were not given; write only one draft per answer; never claim it was already saved, sent or "
+           "published -- it always waits for a person to review and approve it). " if scope.is_staff else "")
     )
 
 
@@ -503,7 +523,7 @@ def history_for_model(scope, messages, limit=6):
     return replay
 
 
-_MARKER_START = re.compile(r"\[\[\s*(?:TICKET|FOLLOW|REMEMBER)|\[\[[A-Za-z -]{0,10}$|\[$", re.I)
+_MARKER_START = re.compile(r"\[\[\s*(?:TICKET|FOLLOW|REMEMBER|DRAFT)|\[\[[A-Za-z -]{0,10}$|\[$", re.I)
 _LEVELS = ("Low", "Medium", "High", "Critical")
 _CATEGORIES = ("General", "Access", "Hardware", "Software", "Network", "Security")
 
@@ -512,6 +532,43 @@ def _scan_sensitive(text):
     from types import SimpleNamespace
     from serviceops_core.ai import routing
     return routing.scan(text, SimpleNamespace(detect_personal=True, detect_credentials=True, detect_financial=True, sensitive_terms=""))
+
+
+_DRAFT_TYPES = {"resolution_note", "closure_note", "suggested_response", "sentiment", "kb_article"}
+
+
+def extract_generated_draft(text, scope, grounded_identifiers):
+    """A staff-requested draft (resolution note, closure note, suggested reply, sentiment note, or a knowledge
+    article) the model wrote from evidence already supplied to it. Bound to a ticket number that was actually
+    part of that evidence -- the model cannot target a ticket it was never shown. Nothing is saved here; this
+    only produces a bounded, validated proposal for `serviceops_core.ai.actions` to turn into a review."""
+    if not scope.is_staff:
+        return None
+    match = re.search(r"\[\[\s*DRAFT\s*\]\]\s*", text or "", re.I)
+    if not match:
+        return None
+    try:
+        data, _ = json.JSONDecoder().raw_decode(text[match.end():])
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    draft_type = str(data.get("type", ""))
+    if draft_type not in _DRAFT_TYPES:
+        return None
+    ticket = str(data.get("ticket", "")).upper().strip()
+    if not _RECORD_NUMBER.fullmatch(ticket) or ticket not in {g.upper() for g in grounded_identifiers}:
+        return None
+    body = redact(str(data.get("text", "")).strip())[:2000]
+    if len(body) < 3:
+        return None
+    result = {"type": draft_type, "ticket": ticket, "text": body}
+    if draft_type == "kb_article":
+        title = " ".join(str(data.get("title", "")).split())[:180]
+        if not title:
+            return None
+        result["title"] = redact(title)
+    return result
 
 
 def extract_extras(text, may_raise_change=False):

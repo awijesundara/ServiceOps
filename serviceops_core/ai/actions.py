@@ -8,9 +8,9 @@ import re
 
 from flask import abort
 
-from serviceops_core.ai.access import record_numbers
+from serviceops_core.ai.access import record_numbers  # noqa: F401 (re-exported for callers that import it from here)
 from serviceops_core.security import redact
-from serviceops_models import Ticket, User, db
+from serviceops_models import Knowledge, Ticket, User, db
 
 ADMIN_ROLES = frozenset({"admin", "superadmin"})
 PRIORITIES = ("P1", "P2", "P3", "P4")
@@ -96,12 +96,36 @@ def propose_from_question(scope, question, enabled):
             "summary": "Set " + ", ".join(labels), "payload": payload}
 
 
+DRAFT_LABELS = {"resolution_note": "Resolution note", "closure_note": "Closure note",
+                "suggested_response": "Suggested reply", "sentiment": "Sentiment assessment", "kb_article": "Knowledge article"}
+DRAFT_COMMENT_PREFIX = {"resolution_note": "Resolution note (AI-drafted, human-approved)",
+                        "closure_note": "Closure note (AI-drafted, human-approved)",
+                        "suggested_response": "Suggested reply (AI-drafted, human-approved)",
+                        "sentiment": "Sentiment assessment (AI-drafted, human-approved)"}
+
+
 def action_label(action_type):
+    if action_type in DRAFT_LABELS:
+        return DRAFT_LABELS[action_type]
     return {"add_comment": "Add ticket comment", "update_ticket": "Update ticket"}.get(action_type, "ServiceOps action")
 
 
+def prepare_from_draft(draft):
+    """Turn a validated generated draft (from access.extract_generated_draft) into the same proposal shape
+    propose_from_question produces, so both flow through one review-and-approve path."""
+    if draft["type"] == "kb_article":
+        summary = f'Create draft knowledge article "{draft["title"]}"'
+        payload = {"title": draft["title"], "body": draft["text"]}
+    else:
+        summary = f"{DRAFT_LABELS[draft['type']]}: {draft['text'][:160]}"
+        payload = {"body": draft["text"]}
+    return {"type": draft["type"], "ticket": draft["ticket"], "summary": summary, "payload": payload}
+
+
 def describe_payload(action_type, payload):
-    if action_type == "add_comment":
+    if action_type == "kb_article":
+        return [("Title", payload["title"]), ("Body", payload["body"])]
+    if action_type in ("add_comment", *DRAFT_COMMENT_PREFIX):
         return [("Comment", payload["body"])]
     labels = {"state": "State", "priority": "Priority", "assigned_to_id": "Assigned to"}
     values = []
@@ -132,6 +156,35 @@ def execute(action, ticket, actor):
         comment = post_ticket_comment(ticket, actor, body)
         log_history("ticket", ticket.id, "AI-assisted comment added", details=body[:500])
         audit("ai action execute", ticket.number, f"type=add_comment; comment={comment.id}")
+        return
+    if action.action_type in DRAFT_COMMENT_PREFIX:
+        if actor.effective_role not in ADMIN_ROLES | {"agent", "manager"} or not user_can_manage_ticket(actor, ticket):
+            abort(403)
+        if not effective_role_has_action(actor.effective_role, "comment_public", tenant_id=actor.tenant_id):
+            abort(403)
+        body = str(payload.get("body", "")).strip()
+        if not body or len(body) > 10000:
+            abort(400, description="The proposed note is no longer valid.")
+        text = f"{DRAFT_COMMENT_PREFIX[action.action_type]}: {body}"
+        comment = post_ticket_comment(ticket, actor, text)
+        log_history("ticket", ticket.id, f"AI-assisted {action.action_type.replace('_', ' ')} added", details=body[:500])
+        audit("ai action execute", ticket.number, f"type={action.action_type}; comment={comment.id}")
+        return
+    if action.action_type == "kb_article":
+        if actor.effective_role not in ADMIN_ROLES | {"agent", "manager"}:
+            abort(403)
+        if not effective_role_has_action(actor.effective_role, "create", tenant_id=actor.tenant_id):
+            abort(403)
+        title = str(payload.get("title", "")).strip()[:180]
+        body = str(payload.get("body", "")).strip()
+        if not title or not body:
+            abort(400, description="The proposed article is no longer valid.")
+        article = Knowledge(title=title, category="General", body=body, author_id=actor.id,
+                            tenant_id=actor.tenant_id, published=False)
+        db.session.add(article)
+        db.session.flush()
+        log_history("ticket", ticket.id, "AI-drafted knowledge article created (unpublished)", details=title[:500])
+        audit("ai action execute", ticket.number, f"type=kb_article; article=KB{article.id:07d}")
         return
     if action.action_type != "update_ticket":
         abort(400, description="This AI action type is not supported.")
