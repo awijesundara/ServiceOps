@@ -163,7 +163,27 @@ def suggested_pages(scope, question, limit=3):
     from app import user_can_access_client_management
     allowed = _rank(scope.role)
     can_clients = user_can_access_client_management(scope.identity)
-    words = set(access.keywords(question, limit=10)) | set(access.expanded_keywords(question))
+    words = (set(access.keywords(question, limit=10)) | set(access.expanded_keywords(question))) - {
+        "active", "open", "current", "show", "view", "list", "run", "display", "get",
+    }
+    lowered = (question or "").lower()
+
+    def intent_boost(entry):
+        """Keep generic words such as 'active' from suggesting Active sessions for an active-change question."""
+        if re.search(r"\bchanges?\b", lowered) and entry.params.get("kind") == "change":
+            return 20
+        if re.search(r"\bincidents?\b", lowered) and entry.params.get("kind") == "incident":
+            return 20
+        targets = (
+            (r"\b(cmdb|configuration item|serial number|servers?)\b", "CMDB and service map"),
+            (r"\b(knowledge|articles?|notes?)\b", "Knowledge"),
+            (r"\bservice (status|health)\b", "Service offerings"),
+            (r"\b(freeze|blackout)\b", "Change freeze windows"),
+            (r"\b(ccb|change control board)\b", "Change Control Board"),
+            (r"\bclients?\b", "Client organizations"),
+        )
+        return 20 if any(re.search(pattern, lowered) and entry.label == label for pattern, label in targets) else 0
+
     scored = []
     for entry in NAVIGATION_ENTRIES:
         if entry.minimum_role and not allowed(entry.minimum_role):
@@ -171,7 +191,7 @@ def suggested_pages(scope, question, limit=3):
         if entry.client_management and not can_clients:
             continue
         hay = f"{entry.label} {entry.keywords}".lower()
-        score = sum(1 for w in words if w and w in hay)
+        score = intent_boost(entry) + sum(1 for w in words if w and w in hay)
         if score:
             scored.append((-score, entry.label, entry))
     scored.sort(key=lambda t: t[:2])
