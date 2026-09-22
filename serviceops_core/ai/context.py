@@ -61,6 +61,8 @@ def capabilities(scope):
                            ("administer", "administer ServiceOps settings")):
         if _role_allows(scope, action):
             can.append(phrase)
+    if scope.role in ("admin", "superadmin"):
+        can.append("prepare ticket state, priority, assignment and exact-comment actions for explicit human approval")
     cannot = []
     if not scope.is_staff:
         cannot.append("see other people's tickets, configuration items or team queues")

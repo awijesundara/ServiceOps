@@ -455,6 +455,41 @@ def register(app):
                                          proposed_by_id=current_user.id)
         return (query.with_for_update() if lock else query).first_or_404()
 
+    @blueprint.post("/ai/chat/runs/<run_id>/actions/prepare")
+    @login_required
+    def prepare_chat_action(run_id):
+        """Freeze a deterministic admin chat command as an expiring proposal."""
+        from app import visible_ticket_query
+
+        scope, config = chat_scope()
+        if scope.role not in ("admin", "superadmin"):
+            abort(403, description="Administrator access is required for AI actions.")
+        if not config.actions_enabled:
+            abort(403, description="AI ticket actions are disabled by your administrator.")
+        run = AIRun.query.filter_by(id=run_id, tenant_id=scope.tenant_id, user_id=scope.user_id,
+                                    actor_role=scope.role, kind="chat", status="completed").with_for_update().first_or_404()
+        if not access.sources_still_accessible(scope, json.loads(run.sources_json or "[]")):
+            abort(403, description="You no longer have access to all evidence used by this answer.")
+        candidate = json.loads(run.route_json or "{}").get("action")
+        if not isinstance(candidate, dict) or candidate.get("type") not in ("add_comment", "update_ticket"):
+            abort(409, description="This answer does not contain a supported action proposal.")
+        ticket = visible_ticket_query(scope.identity).filter_by(
+            number=candidate.get("ticket"), deleted_at=None).first_or_404()
+        existing = AIAction.query.filter_by(run_id=run.id, action_type=candidate["type"]).first()
+        if existing:
+            return no_store({"url": url_for("ai.action_review", action_id=existing.id)})
+        action = AIAction(
+            tenant_id=scope.tenant_id, run_id=run.id, ticket_id=ticket.id,
+            proposed_by_id=scope.user_id, actor_role=scope.role, action_type=candidate["type"],
+            payload_json=json.dumps(candidate.get("payload", {})), target_updated_at=ticket.updated_at,
+            expires_at=now() + timedelta(minutes=15),
+        )
+        db.session.add(action)
+        db.session.flush()
+        audit("ai action proposed", action.id, f"type={action.action_type}; ticket={ticket.number}")
+        db.session.commit()
+        return no_store({"url": url_for("ai.action_review", action_id=action.id)}, 201)
+
     @blueprint.post("/ai/runs/<run_id>/actions/comment")
     @login_required
     def propose_comment(run_id):
@@ -490,21 +525,35 @@ def register(app):
     @blueprint.route("/ai/actions/<action_id>", methods=["GET", "POST"])
     @login_required
     def action_review(action_id):
-        from app import effective_role_has_action, log_history, post_ticket_comment
+        from app import visible_ticket_query
+        from serviceops_core.ai import actions
 
-        identity = service.actor(current_user)
-        config = service.enabled_config(identity.tenant_id)
         action = owned_action(action_id, lock=request.method == "POST")
+        run = AIRun.query.filter_by(id=action.run_id, tenant_id=action.tenant_id).first_or_404()
+        if run.kind == "chat":
+            identity = access.build_scope(current_user)
+            config = service.enabled_config(identity.tenant_id, feature="chat")
+            sources_ok = access.sources_still_accessible(identity, json.loads(run.sources_json or "[]"))
+            back_url = url_for("ai.chat_page")
+        else:
+            identity = service.actor(current_user)
+            config = service.enabled_config(identity.tenant_id)
+            sources_ok = service.sources_accessible(identity, json.loads(run.sources_json or "[]"))
+            back_url = url_for("ai.result", run_id=run.id)
+        actor_id = getattr(identity, "id", getattr(identity, "user_id", None))
         if action.actor_role != identity.role:
             abort(403, description="Switch to the role used to prepare this action.")
-        ticket = service.visible_incident(identity, action.ticket_id)
+        ticket = visible_ticket_query(identity.identity if hasattr(identity, "identity") else identity).filter_by(
+            id=action.ticket_id, deleted_at=None).first_or_404()
         payload = json.loads(action.payload_json)
         if request.method == "GET":
             return render_template("ai_action_review.html", action=action, ticket=ticket, payload=payload,
+                                   fields=actions.describe_payload(action.action_type, payload),
+                                   action_label=actions.action_label(action.action_type), back_url=back_url,
                                    expired=action.expires_at.replace(tzinfo=now().tzinfo) <= now())
         decision = request.form.get("decision")
         if decision == "reject" and action.status == "pending":
-            action.status, action.approved_by_id, action.decided_at = "rejected", identity.id, now()
+            action.status, action.approved_by_id, action.decided_at = "rejected", actor_id, now()
             audit("ai action rejected", action.id, f"type={action.action_type}; ticket={ticket.number}")
             db.session.commit()
             return redirect(url_for("ai.action_review", action_id=action.id))
@@ -520,10 +569,7 @@ def register(app):
             action.status, action.decided_at = "expired", now()
             db.session.commit()
             abort(410, description="This proposal expired. Prepare it again from a current investigation.")
-        if not effective_role_has_action(identity.role, "comment_public", tenant_id=identity.tenant_id):
-            abort(403)
-        run = AIRun.query.filter_by(id=action.run_id, tenant_id=identity.tenant_id).first_or_404()
-        if not service.sources_accessible(identity, json.loads(run.sources_json or "[]")):
+        if not sources_ok:
             abort(403, description="You no longer have access to all evidence used by this investigation.")
         locked_ticket = Ticket.query.filter_by(id=ticket.id, tenant_id=identity.tenant_id).with_for_update().one()
         expected = action.target_updated_at.replace(tzinfo=now().tzinfo)
@@ -533,12 +579,11 @@ def register(app):
             audit("ai action stale", action.id, f"type={action.action_type}; ticket={ticket.number}")
             db.session.commit()
             abort(409, description="The ticket changed after this proposal was prepared. Run a new investigation first.")
-        comment = post_ticket_comment(locked_ticket, current_user, payload["body"])
-        log_history("ticket", locked_ticket.id, "AI-assisted comment added", details=payload["body"][:500])
-        action.status, action.approved_by_id = "executed", identity.id
+        actions.execute(action, locked_ticket, current_user)
+        action.status, action.approved_by_id = "executed", actor_id
         action.decided_at = action.executed_at = now()
         audit("ai action executed", action.id,
-              f"type=add_comment; ticket={ticket.number}; comment={comment.id}")
+              f"type={action.action_type}; ticket={ticket.number}")
         db.session.commit()
         return redirect(url_for("ai.action_review", action_id=action.id))
 
@@ -568,7 +613,7 @@ def register(app):
                              url_for("ci_edit", ci_id=source["record_id"]))
         return sources
 
-    def with_draft_link(route):
+    def with_draft_link(route, run_id=None):
         """Turn a validated ticket draft into a link that opens the normal ticket form pre-filled."""
         pages = []
         for page in (route or {}).get("pages", []):
@@ -583,6 +628,11 @@ def register(app):
             route = {**route, "draft": {**draft, "url": url_for(
                 "ticket_new", kind=draft["kind"], ai="1", title=draft["title"], description=draft["description"],
                 impact=draft["impact"], urgency=draft["urgency"], category=draft["category"])}}
+        proposed_action = (route or {}).get("action")
+        if proposed_action and run_id:
+            public_action = {key: value for key, value in proposed_action.items() if key != "payload"}
+            route = {**route, "action": {**public_action, "prepare_url": url_for(
+                "ai.prepare_chat_action", run_id=run_id)}}
         return route
 
     def no_store(payload, status=200):
@@ -621,7 +671,7 @@ def register(app):
         return no_store({**body, "changed": True, "text": run.result_text if finished else run.partial_text,
                          "reasoning": "",
                          "steps": json.loads(run.steps_json or "[]"), "sources": sources, "error": problem,
-                         "route": with_draft_link(json.loads(run.route_json or "{}")) if finished else {},
+                         "route": with_draft_link(json.loads(run.route_json or "{}"), run.id) if finished else {},
                          "usage": json.loads(run.usage_json or "{}") if finished else {}})
 
     @blueprint.route("/ai/runs/<run_id>/cancel", methods=["POST"])
@@ -667,7 +717,7 @@ def register(app):
         if not access.sources_still_accessible(scope, sources):
             body.update(content=access.WITHHELD_NOTICE, withheld=True)
             return body
-        body.update(route=with_draft_link(json.loads(message.route_json or "{}")), sources=source_links(sources),
+        body.update(route=with_draft_link(json.loads(message.route_json or "{}"), run.id if run else message.run_id), sources=source_links(sources),
                     steps=json.loads(message.steps_json or "[]"),
                     reasoning="")
         return body

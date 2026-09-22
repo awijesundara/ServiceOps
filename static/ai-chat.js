@@ -132,6 +132,24 @@
       card.appendChild(element("small", "", "Nothing is created until you submit the form."));
       holder.appendChild(card);
     }
+    const action = route && route.action;
+    if (action && action.prepare_url) {
+      const card = element("div", "ai-draft ai-action-draft");
+      card.appendChild(element("p", "ai-draft-label", "Administrator action ready for review"));
+      card.appendChild(element("strong", "", action.ticket));
+      card.appendChild(element("p", "ai-draft-body", action.summary));
+      const review = element("button", "primary ai-draft-open", "Review exact change");
+      review.type = "button";
+      review.addEventListener("click", function () {
+        review.disabled = true;
+        review.textContent = "Preparing…";
+        postJson(action.prepare_url, {}).then(function (result) { window.location.assign(result.url); })
+          .catch(function (error) { review.disabled = false; review.textContent = "Review exact change"; card.appendChild(element("small", "ai-error", error.message)); });
+      });
+      card.appendChild(review);
+      card.appendChild(element("small", "", "Nothing changes until you approve the exact action."));
+      holder.appendChild(card);
+    }
     if (withSuggestions && route && route.remember) {
       const card = element("div", "ai-remember");
       card.appendChild(element("span", "", "Remember this? “" + route.remember + "”"));
