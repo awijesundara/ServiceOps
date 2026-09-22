@@ -204,10 +204,28 @@ def _ticket_text(ticket):
     return "\n".join(parts)
 
 
+def _ci_text(row):
+    """Useful CMDB specifications without owner/contact data or unrestricted JSON."""
+    fields = (
+        ("Class", row.ci_class), ("Description", row.description), ("Environment", row.environment),
+        ("Operational status", row.operational_status), ("Lifecycle", row.lifecycle_state),
+        ("Business criticality", row.business_criticality), ("IP address", row.ip_address),
+        ("Serial number", row.serial_number), ("Vendor", row.vendor), ("Model", row.model),
+        ("Location", row.location), ("Discovery source", row.discovery_source),
+        ("Install date", row.install_date), ("Warranty expiry", row.warranty_expiry_date),
+    )
+    return "; ".join(f"{label}: {value}" for label, value in fields if value not in (None, ""))
+
+
 OWN_TICKETS = re.compile(r"\b(my|mine|i have|i opened|i raised|i submitted)\b.{0,30}\b(tickets?|incidents?|requests?|changes?|issues?|cases?)\b", re.I | re.S)
 RECENT_TICKETS = re.compile(
-    r"\b(latest|newest|most recent)\b.{0,30}\b(incidents?|tickets?|changes?)\b"
-    r"|\b(incidents?|tickets?|changes?)\b.{0,30}\b(latest|newest|most recent)\b",
+    r"\b(latest|newest|most recent|last)\b.{0,40}\b(incidents?|tickets?|changes?)\b"
+    r"|\b(incidents?|tickets?|changes?)\b.{0,40}\b(latest|newest|most recent|last|received)\b",
+    re.I | re.S,
+)
+LIST_TICKETS = re.compile(
+    r"\b(show|view|list|run|display|get)\b.{0,35}\b(active|open|current)?\s*(incidents?|changes?|tickets?)\b"
+    r"|\b(active|open|current)\b.{0,20}\b(incidents?|changes?|tickets?)\b",
     re.I | re.S,
 )
 COUNT_TICKETS = re.compile(
@@ -292,6 +310,18 @@ def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
         if ticket:
             add_ticket(ticket)
 
+    list_match = LIST_TICKETS.search(question or "")
+    if list_match:
+        noun = next((part for part in list_match.groups()
+                     if part and part.lower().startswith(("incident", "change", "ticket"))), "tickets").lower()
+        listed = base.filter(~Ticket.state.in_(("Resolved", "Closed", "Cancelled", "Canceled", "Completed", "Implemented")))
+        if noun.startswith("incident"):
+            listed = listed.filter(Ticket.kind == "incident")
+        elif noun.startswith("change"):
+            listed = listed.filter(Ticket.kind == "change")
+        for ticket in listed.order_by(Ticket.updated_at.desc(), Ticket.id.desc()).limit(10):
+            add_ticket(ticket)
+
     if OWN_TICKETS.search(question):
         mine = Ticket.requester_id == scope.user_id
         if scope.is_staff:
@@ -326,10 +356,22 @@ def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
             added = 0
             for row in ConfigurationItem.query.filter(
                     ConfigurationItem.tenant_id == scope.tenant_id,
-                    or_(*[ConfigurationItem.name.ilike(f"%{w}%") for w in words])).order_by(ConfigurationItem.id).limit(10):
-                if added < 3 and ci_class_read_allowed(scope.tenant_id, row.ci_class, scope.role):
-                    evidence.add("ci", row.id, None, row.name,
-                                 f"Class: {row.ci_class}; Environment: {row.environment}; Status: {row.operational_status}")
+                    or_(*[
+                        column.ilike(f"%{word}%")
+                        for word in words
+                        for column in (ConfigurationItem.name, ConfigurationItem.serial_number, ConfigurationItem.vendor,
+                                       ConfigurationItem.model, ConfigurationItem.ip_address, ConfigurationItem.location,
+                                       ConfigurationItem.external_id)
+                    ])).order_by(ConfigurationItem.id).limit(20):
+                if added < 8 and ci_class_read_allowed(scope.tenant_id, row.ci_class, scope.role):
+                    evidence.add("ci", row.id, row.serial_number, row.name, _ci_text(row))
+                    if re.search(r"\b(related|linked|associated)\b.{0,30}\b(tickets?|incidents?|changes?)\b|\b(tickets?|incidents?|changes?)\b.{0,30}\b(related|linked|associated)\b", question, re.I | re.S):
+                        linked_ids = TaskCI.query.filter_by(target_type="ticket", ci_id=row.id).with_entities(TaskCI.target_id)
+                        linked = base.filter(Ticket.id.in_(linked_ids)).order_by(Ticket.updated_at.desc()).limit(8).all()
+                        evidence.add_context("ci", f"Visible tickets related to {row.name}",
+                                             f"The signed-in user can currently access {len(linked)} tickets attached to this configuration item.")
+                        for ticket in linked:
+                            add_ticket(ticket)
                     added += 1
 
     if numbers and RELATED_CONTEXT.search(question or ""):

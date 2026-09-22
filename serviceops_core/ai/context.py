@@ -8,19 +8,20 @@ import re
 from datetime import timezone
 
 from serviceops_core.ai import access
-from serviceops_models import (CatalogItem, ChangeFreezeWindow, ServiceOffering, SLADefinition, SupportGroup, Ticket, User,
+from serviceops_models import (CatalogItem, ChangeFreezeWindow, GroupMember, ServiceOffering, SLADefinition, SupportGroup, Ticket, User,
                                db, now)
 
 OPEN_STATES_EXCLUDED = ("Resolved", "Closed", "Cancelled", "Canceled", "Completed", "Implemented")
 
 _INTENTS = {
-    "profile": r"\b(my|me)\b.{0,25}\b(team|teams|group|manager|department|title|position|job)\b|\bwho am i\b|\bline manager\b|\bwho do i report\b",
+    "profile": r"\b(my|me)\b.{0,25}\b(team|teams|group|manager|department|title|position|job)\b|\b(am i|do i|i)\b.{0,30}\b(ccb|group|team|belong|member)\b|\bwhat do you know about me\b|\btell me about me\b|\bwho am i\b|\bline manager\b|\bwho do i report\b",
     "stats": r"\bhow many\b|\bcount\b|\bnumber of\b|\bstatistics|\bstats\b|\boverview\b|\bsummary\b|\bbacklog\b|\bopen\b|\bcritical\b|\bp[1-4]\b|\bworkload\b|\bwhat can you see\b",
     "freeze": r"\bfreeze|\bblackout|\bchange window|\bschedul|\bplanned\b|\bmaintenance\b|\bdeploy|\brelease\b|\bcan i (do|make|run|raise)\b|\bgo live\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b|\bnext (week|month)\b|\bchange\b",
     "catalog": r"\bcatalog|\brequest (a|an|new)\b|\border\b|\blaptop|\bsoftware\b|\bnew (starter|joiner|account|access)\b|\bwhat (can|could) i (request|order)\b|\bservices? (do you|are)\b",
     "services": r"\bservice (status|health)|\boutage|\bdown\b|\bavailab|\bstatus of\b|\bdegraded|\boffering",
     "sla": r"\bsla\b|\bresponse time|\bresolution time|\btarget\b|\bhow long\b|\bwithin how|\bservice level",
     "teams": r"\bwhich team|\bwhat team|\bwho (handles|owns|fixes)|\bsupport (group|team)|\bassign(ed)? to\b|\bteams?\b|\bgroups?\b",
+    "governance": r"\bccb\b|change control board|governance groups?|who manages? .{0,20}(group|board)",
     "about": r"\bwhat can you\b|\bwhat do you\b|\bhelp me\b|\bhow (do|can) i\b|\bserviceops\b|\bthis (tool|system|app|platform)\b|\bfeatures?\b|\bcapabilit|\braise\b|\bcreate\b|\blog (a|an)\b|\breport (a|an)\b|\bopen a\b|\bnew (ticket|incident)\b|\bget started\b",
 }
 _COMPILED = {name: re.compile(pattern, re.I) for name, pattern in _INTENTS.items()}
@@ -93,14 +94,24 @@ def _profile(scope, evidence):
     if not user:
         return None
     manager = db.session.get(User, user.manager_id).name if user.manager_id else None
-    teams = _it_team_names(scope)
+    memberships = db.session.query(SupportGroup.name, SupportGroup.group_type, GroupMember.role).join(
+        GroupMember, GroupMember.group_id == SupportGroup.id).filter(
+        GroupMember.user_id == scope.user_id,
+        GroupMember.tenant_id == scope.tenant_id,
+        SupportGroup.tenant_id == scope.tenant_id,
+        SupportGroup.active.is_(True),
+    ).order_by(SupportGroup.name).all()
     evidence.flags.add("personal")  # a person's own details: keep the question on the organization's own AI
     lines = [f"Name: {user.name}", f"Access level: {scope.role}"]
     if user.title:
         lines.append(f"Job title: {user.title}")
     if user.department:
         lines.append(f"Department: {user.department}")
-    lines.append("Support teams: " + (", ".join(teams) if teams else "none (not a member of an IT fulfillment team)"))
+    lines.append("Group memberships: " + (", ".join(
+        f"{name} ({group_type}; {role})" for name, group_type, role in memberships
+    ) if memberships else "none recorded"))
+    ccb = next((role for name, _group_type, role in memberships if name == "Change Control Board"), None)
+    lines.append("Change Control Board membership: " + (f"yes ({ccb})" if ccb else "no"))
     lines.append("Line manager: " + (manager or "not recorded"))
     return "Your profile", "; ".join(lines) + "."
 
@@ -177,6 +188,24 @@ def _teams(scope):
     return "IT support teams", "Teams that fulfil incidents and changes: " + ", ".join(r.name for r in rows) + "."
 
 
+def _governance(scope):
+    """Governance group structure visible to managers/admins; everyone may check their own membership via _profile."""
+    from app import role_at_least
+    if not role_at_least(scope.role, "manager"):
+        return "Governance groups", "Your access level does not include governance-group administration."
+    rows = SupportGroup.query.filter(
+        SupportGroup.tenant_id == scope.tenant_id,
+        SupportGroup.active.is_(True),
+        SupportGroup.group_type.in_(("CCB Approval", "Executive Approval")),
+    ).order_by(SupportGroup.name).all()
+    if not rows:
+        return "Governance groups", "No active governance groups are configured."
+    return "Governance groups", " | ".join(
+        f"{row.name}: manager {row.manager.name if row.manager else 'not assigned'}; {len(row.members)} members"
+        for row in rows
+    )
+
+
 _ABOUT = ("ServiceOps is the organization's IT service management tool: incidents (restore service), changes (controlled "
           "production modifications with approvals and freezes), service requests from the catalog, knowledge articles, and "
           "configuration items. To raise something, the assistant can prepare a draft ticket for the person to review and "
@@ -193,7 +222,8 @@ def add_organization_context(scope, question, evidence, base):
         builders.append(lambda: _stats(scope, base))
     if "freeze" in found:
         builders.append(lambda: _freeze(scope))
-    for name, builder in (("catalog", _catalog), ("services", _services), ("sla", _sla), ("teams", _teams)):
+    for name, builder in (("catalog", _catalog), ("services", _services), ("sla", _sla), ("teams", _teams),
+                          ("governance", _governance)):
         if name in found:
             builders.append(lambda b=builder: b(scope))
     if "about" in found:
