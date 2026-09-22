@@ -112,6 +112,10 @@ def test_page_suggestions_never_point_somewhere_the_person_may_not_go(app, world
         assert "Audit log" not in requester and "Users and access" not in requester
         admin = [p["label"] for p in modules.suggested_pages(scope_for(world.admin), "show me the audit log", limit=5)]
         assert "Audit log" in admin
+        active_changes = [p["label"] for p in modules.suggested_pages(scope_for(world.admin), "Show me active changes")]
+        assert active_changes[0] == "Changes" and "Active sessions" not in active_changes
+        serial = [p["label"] for p in modules.suggested_pages(scope_for(world.admin), "Find serial number SN000002")]
+        assert serial[0] == "CMDB and service map"
         assert modules.suggested_pages(scope_for(world.employee), "asdfgh qwerty") == []
 
 
