@@ -342,3 +342,13 @@ a.ai-cite:hover,a.ai-cite:focus-visible{background:var(--ai-accent);color:#fff}
 .ai-composer .primary{padding:9px 16px}
 a.ai-page-chip{text-decoration:none;display:inline-block}
 .ai-run a.ai-page-chip{color:var(--ai-accent,#003e4c);font-weight:650}
+
+/* Admin action review page */
+.detail-list{display:grid;grid-template-columns:140px minmax(0,1fr);gap:10px 16px;margin:14px 0}
+.detail-list dt{color:var(--muted);font-weight:650;margin:0}
+.detail-list dd{margin:0;font-weight:650}
+.detail-list dd.pre{font-weight:400;white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* Administrator action proposal card in chat */
+.ai-action-draft{border-color:var(--ai-amber,#f9aa3c)}
+.ai-error{display:block;margin-top:6px;color:#9d2a22;font-size:12px;font-weight:650}

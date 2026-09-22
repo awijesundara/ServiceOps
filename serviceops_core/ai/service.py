@@ -366,6 +366,10 @@ def _finish(run_id, prepared, steps, content, reasoning, usage, sanitize, featur
         from serviceops_core.ai import context
         scope_now = access.build_scope(user, run.actor_role)
         extras = access.extract_extras(content, context.may_raise_change(scope_now))
+        from serviceops_core.ai import actions
+        proposed_action = actions.propose_from_question(scope_now, run.question or "", config.actions_enabled)
+        if proposed_action:
+            extras["action"] = proposed_action
         from serviceops_core.ai import modules
         pages = modules.suggested_pages(scope_now, run.question or "", 2) if run.question else []
         if pages:
