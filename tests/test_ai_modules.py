@@ -1,8 +1,9 @@
 """The assistant reaches across the product, always within the asker's authority."""
 from datetime import timedelta
 
-from app import (ApprovalVote, Asset, CatalogItem, CatalogRequest, ConfigurationItem, EnterpriseRecord, Knowledge, OperationalTask,
-                 RequestedItem, SLADefinition, SupportGroup, TaskCI, TaskSLA, Ticket, User, db, now)
+from app import (ApprovalVote, Asset, CatalogItem, CatalogRequest, ClientContact, ClientOrganization, ClientTicket,
+                 ClientTicketMessage, ConfigurationItem, EnterpriseRecord, Knowledge, OperationalTask, RequestedItem,
+                 SLADefinition, SupportGroup, TaskCI, TaskSLA, Ticket, User, db, now)
 from serviceops_core.ai import access, modules
 from tests.test_ai_privacy import scope_for, world  # noqa: F401
 from tests.test_app import app, client, login  # noqa: F401
@@ -66,6 +67,57 @@ def test_an_administrator_gets_the_whole_picture_as_numbers_never_as_people(app,
         assert "REQ0000001" in facts(world.admin, "list requests")["Service requests"]
         access_map = facts(world.admin, "what can I access?")["What you can and cannot open in ServiceOps"]
         assert "Audit log" in access_map.split("You can open:")[1]
+
+
+def test_exact_cross_module_records_supply_authorized_content_and_recheckable_sources(app, world):
+    with app.app_context():
+        seed(world)
+        problem = EnterpriseRecord.query.filter_by(number="PRB0000001").one()
+        problem.description = "Mail relay fails after certificate rotation"
+        request = CatalogRequest.query.filter_by(number="REQ0000001").one()
+        request.items[0].variables_json = '{"requested_model":"Latitude 7450"}'
+        client_group = SupportGroup(name="Client support", group_type="Client Support", tenant_id=1)
+        organization = ClientOrganization(name="Example client", tenant_id=1)
+        db.session.add_all([client_group, organization])
+        db.session.flush()
+        contact = ClientContact(name="Private Person", email="private@example.invalid", organization_id=organization.id, tenant_id=1)
+        db.session.add(contact)
+        db.session.flush()
+        client_ticket = ClientTicket(number="CXT0000042", subject="Hosted mail unavailable", description="Mailbox is offline",
+                                     contact_id=contact.id, organization_id=organization.id, support_group_id=client_group.id,
+                                     created_by_id=world.admin, tenant_id=1)
+        db.session.add(client_ticket)
+        db.session.flush()
+        db.session.add(ClientTicketMessage(client_ticket_id=client_ticket.id, body="Contact me at private@example.invalid",
+                                           visibility="public", tenant_id=1))
+        db.session.commit()
+
+        problem_evidence = access.collect_chat_evidence(scope_for(world.admin), "Tell me about PRB0000001")
+        assert any(s["kind"] == "enterprise" and s["record_id"] == problem.id for s in problem_evidence.sources)
+        assert "certificate rotation" in next(i["text"] for i in problem_evidence.items if i.get("reference") == problem.number)
+        request_evidence = access.collect_chat_evidence(scope_for(world.admin), "Show REQ0000001 details")
+        assert "Latitude 7450" in next(i["text"] for i in request_evidence.items if i.get("reference") == request.number)
+        assert "service_request_content" in request_evidence.flags
+        client_evidence = access.collect_chat_evidence(scope_for(world.admin), "Tell me about CXT0000042", lambda text, kind: None)
+        client_item = next(i for i in client_evidence.items if i.get("reference") == client_ticket.number)
+        assert "Mailbox is offline" in client_item["text"]
+        assert "private@example.invalid" not in client_item["text"]
+        assert "customer_content" in client_evidence.flags
+        assert access.sources_still_accessible(scope_for(world.admin), client_evidence.sources)
+
+        requester = access.collect_chat_evidence(scope_for(world.employee), "Tell me about CXT0000042")
+        assert not any(s["kind"] == "client_ticket" for s in requester.sources)
+
+
+def test_legacy_invalid_request_variables_do_not_break_ai_retrieval(app, world):
+    with app.app_context():
+        seed(world)
+        request = CatalogRequest.query.filter_by(number="REQ0000001").one()
+        request.items[0].variables_json = "not-json"
+        db.session.commit()
+        evidence = access.collect_chat_evidence(scope_for(world.admin), "Show REQ0000001 details")
+        text = next(i["text"] for i in evidence.items if i.get("reference") == request.number)
+        assert "unreadable legacy request details" in text
 
 
 def test_approvals_and_tasks_belong_to_the_person_asking(app, world):

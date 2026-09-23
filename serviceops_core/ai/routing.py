@@ -31,6 +31,9 @@ REASON_TEXT = {
     "credentials": "passwords or keys",
     "financial": "payment or bank numbers",
     "custom": "a word marked as sensitive",
+    "customer_content": "customer support content",
+    "service_request_content": "service request details",
+    "restricted_record": "a restricted operational record",
 }
 
 _CARD = re.compile(r"(?<![\d.])(?:\d[ -]?){12,18}\d(?![\d.])")

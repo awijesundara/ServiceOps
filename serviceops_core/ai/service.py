@@ -204,7 +204,10 @@ class Prepared:
 
 
 def _describe(counts):
-    labels = (("ticket", "ticket", "tickets"), ("knowledge", "knowledge article", "knowledge articles"), ("ci", "configuration item", "configuration items"))
+    labels = (("ticket", "ticket", "tickets"), ("knowledge", "knowledge article", "knowledge articles"),
+              ("ci", "configuration item", "configuration items"), ("enterprise", "operational record", "operational records"),
+              ("request", "service request", "service requests"), ("client_ticket", "customer ticket", "customer tickets"),
+              ("asset", "asset", "assets"))
     parts = [f"{counts[k]} {one if counts[k] == 1 else many}" for k, one, many in labels if counts.get(k)]
     return ", ".join(parts) or "nothing relevant"
 
