@@ -5,7 +5,7 @@ service catalog, SLAs, and approvals. No vendor lock-in, runs on your own
 infrastructure.
 
 [![Supply chain](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml/badge.svg)](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml)
-[![Version](https://img.shields.io/badge/version-1.87.23-003E4C)](VERSION)
+[![Version](https://img.shields.io/badge/version-1.101.5-003E4C)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](Dockerfile)
 [![Docker](https://img.shields.io/badge/docker-compose%20%7C%20kubernetes-2496ED?logo=docker&logoColor=white)](#deploy)
 [![PostgreSQL](https://img.shields.io/badge/database-postgresql-4169E1?logo=postgresql&logoColor=white)](#architecture)
@@ -28,7 +28,7 @@ infrastructure.
 - CMDB with asset and service-map ownership, NetBox sync
 - Manager / CI-owner / CCB approval chains with reapproval on material change
 - SLAs, escalations, workflow automation, in-app + email + chat notifications
-- Optional AI incident investigations with administrator enable/disable, self-hosted or OpenAI inference, and cited read-only drafts ([setup](https://github.com/awijesundara/serviceops-notes/blob/main/docs/AI_OPERATIONS.md))
+- Optional AI assistant (role-scoped chat, cited incident investigations, generated resolution/closure notes and suggested replies) with administrator enable/disable and self-hosted or external inference; every write stays a human-reviewed proposal, never autonomous ([setup](https://github.com/awijesundara/serviceops-notes/blob/main/docs/AI_OPERATIONS.md))
 - Threaded ticket comments, @mentions, and follow/watch
 - Analytics dashboard (MTTR, SLA compliance, CSAT, backlog aging) with CSV export
 - Public status page for major incidents and service uptime

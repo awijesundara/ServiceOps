@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+README_BADGE = re.compile(r"badge/version-([0-9]+\.[0-9]+\.[0-9]+)-")
 
 
 def parse(value: str) -> tuple[int, int, int]:
@@ -31,6 +32,19 @@ def next_version(current: tuple[int, int, int], part: str) -> tuple[int, int, in
 
 def render(version: tuple[int, int, int]) -> str:
     return ".".join(map(str, version))
+
+
+def readme_badge_version(text: str) -> str:
+    """The version the README's badge actually displays, read back from the rendered text.
+
+    Kept separate from `synchronized_content`'s string-replace: a replace of the current version for
+    itself is a silent no-op, so a badge that drifted out of sync in the past (edited by hand, or left
+    behind by a release where the replace target didn't match) would never again be flagged as drift by
+    a before/after content diff alone -- it has to be read back and compared to VERSION directly."""
+    match = README_BADGE.search(text)
+    if not match:
+        raise ValueError("README.md has no version badge matching badge/version-X.Y.Z-")
+    return match.group(1)
 
 
 def synchronized_content(version: str) -> dict[Path, str]:
@@ -116,6 +130,9 @@ def main() -> int:
             path.write_text(content)
     if args.check:
         mismatches = [str(path.relative_to(ROOT)) for path, content in files.items() if path.read_text() != content]
+        readme_text = files[ROOT / "README.md"] if args.write else (ROOT / "README.md").read_text()
+        if readme_badge_version(readme_text) != version:
+            mismatches.append("README.md (badge does not read back as the current version)")
         if mismatches:
             raise SystemExit("Version drift: " + ", ".join(mismatches))
     print(version)

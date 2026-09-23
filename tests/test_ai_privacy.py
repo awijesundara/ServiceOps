@@ -14,7 +14,7 @@ from werkzeug.security import generate_password_hash
 
 from app import (CiClassPermission, ConfigurationItem, GroupMember, Knowledge, RecordLink, SupportGroup, Tenant, Ticket,
                  User, UserRoleGrant, db)
-from serviceops_core.ai import access
+from serviceops_core.ai import access, modules
 from tests.test_app import app, client  # noqa: F401  (pytest fixtures)
 
 
@@ -272,6 +272,23 @@ def test_assistant_code_cannot_reach_restricted_models():
     for name in forbidden:
         assert not re.search(rf"\b{name}\b", imported), f"{name} must not be imported by the AI access layer"
     assert "import User" not in source and re.search(r"\bUser\b", imported) is None
+
+
+def test_module_content_code_still_cannot_reach_directory_audit_or_settings(app, world):
+    """Structural guard for modules.py specifically: unlike access.py, it is allowed to read customer-ticket,
+    service-request and other operational record *content* (see test_exact_cross_module_records_supply_
+    authorized_content_and_recheckable_sources in test_ai_modules.py for proof that content is always routed
+    private-only) -- but it must never gain a path to the tables this guard forbids, regardless of routing."""
+    # Unlike access.py, modules.py legitimately imports User -- _users() reports role head-counts as plain
+    # numbers (never names or contact details), which test_an_administrator_gets_the_whole_picture_as_numbers_
+    # never_as_people in test_ai_modules.py verifies directly. That one exception aside, the same forbidden
+    # tables apply here as in access.py.
+    source = Path(modules.__file__).read_text()
+    forbidden = ("Audit", "ClientContact", "ClientOrganization", "FileAttachment", "PlatformSetting",
+                 "AuditIntegrityKey", "APIClient", "UserSession")
+    imported = " ".join(re.findall(r"from serviceops_models import \((.*?)\)|from serviceops_models import ([^\n]+)", source, re.S)[0])
+    for name in forbidden:
+        assert not re.search(rf"\b{name}\b", imported), f"{name} must not be imported by the AI module-content layer"
 
 
 def test_personal_contact_details_are_masked_but_dates_ids_and_ips_survive(app, world):
