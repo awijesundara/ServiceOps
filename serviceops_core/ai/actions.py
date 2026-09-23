@@ -15,7 +15,10 @@ from serviceops_models import Knowledge, Ticket, User, db
 ADMIN_ROLES = frozenset({"admin", "superadmin"})
 PRIORITIES = ("P1", "P2", "P3", "P4")
 # \w* after the verb root tolerates a common typing slip (a missing space before the next word, e.g. "adda comment").
-ACTION_VERB = re.compile(r"\b(set|change|update|move|mark|assign\w*|unassign\w*|add\w*|post\w*)\b", re.I)
+# Lifecycle words (cancel/close/resolve/reopen) are included here too, not only in the state-phrase list below:
+# without them, a bare command like "cancel CHG0003623" never reaches that list at all.
+ACTION_VERB = re.compile(
+    r"\b(set|change|update|move|mark|assign\w*|unassign\w*|add\w*|post\w*|cancel\w*|close\w*|resolve\w*|reopen\w*)\b", re.I)
 
 
 def _visible_ticket(scope, number):

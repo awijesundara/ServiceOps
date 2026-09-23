@@ -237,3 +237,33 @@ def test_the_assistant_never_claims_readiness_that_only_the_real_action_card_may
     with app.app_context():
         requester_text = access.chat_instructions(scope_for(world.employee))
     assert "Review exact change" not in requester_text
+
+
+def test_cancel_close_resolve_reopen_are_recognized_as_standalone_commands(app, world):
+    """User report: 'cancel CHG0003623' never produced a review card. The lifecycle verbs were only checked
+    inside the state-phrase list, never in the entry gate, so a bare 'cancel <ticket>' command (with no other
+    recognized verb in the same message) was silently dropped before that list was ever reached."""
+    with app.app_context():
+        from app import Ticket, User
+        change = Ticket(number="CHG0099001", kind="change", title="Test change", description="d",
+                        requester_id=world.admin, tenant_id=1, state="Pending", priority="P3")
+        db.session.add(change)
+        db.session.commit()
+        admin = User.query.filter_by(username="admin").one()
+        proposal = actions.propose_from_question(scope_for(admin.id), "cancel CHG0099001", True)
+    assert proposal == {"type": "update_ticket", "ticket": "CHG0099001", "summary": "Set state to Cancelled",
+                        "payload": {"state": "Cancelled"}}
+
+
+@pytest.mark.parametrize("verb,expected", [("close", "Closed"), ("resolve", "Resolved"), ("reopen", "In Progress")])
+def test_the_other_lifecycle_verbs_also_stand_alone(app, world, verb, expected):
+    with app.app_context():
+        from app import Ticket, User
+        state_for = {"close": "Resolved", "resolve": "In Progress", "reopen": "Resolved"}[verb]
+        ticket = Ticket(number="INC0099002", kind="incident", title="Test incident", description="d",
+                        requester_id=world.admin, tenant_id=1, state=state_for, priority="P3")
+        db.session.add(ticket)
+        db.session.commit()
+        admin = User.query.filter_by(username="admin").one()
+        proposal = actions.propose_from_question(scope_for(admin.id), f"{verb} INC0099002", True)
+    assert proposal["payload"] == {"state": expected}
