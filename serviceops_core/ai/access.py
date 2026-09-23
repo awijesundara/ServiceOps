@@ -9,8 +9,8 @@ could not already read in ServiceOps. The controls, in order of strength:
 2. Retrieval goes through the application's own visibility helpers
    (`visible_ticket_query`, `ci_class_read_allowed`, published-knowledge rules).
    This module must never grow its own query for a record type those helpers cover.
-3. User directory, audit log, customer (client-module) data, attachments, settings
-   and secrets are excluded by construction: nothing here queries them.
+3. User directory, audit log, attachments, settings and secrets are excluded by construction. Authorized customer
+   support content, service request details and restricted operational records are explicitly private-only.
 4. Every turn is re-authorized against the *current* role. Earlier answers are only
    replayed to the model if every source they used is still accessible.
 5. The pre-model intent screen, the record-identifier guard and PII masking are
@@ -25,12 +25,12 @@ from sqlalchemy import or_
 
 from serviceops_core.ci_class_policy import ci_class_read_allowed
 from serviceops_core.security import mask_pii, redact
-from serviceops_models import Comment, ConfigurationItem, Knowledge, RecordLink, TaskCI, Tenant, Ticket, db
+from serviceops_models import Asset, Comment, ConfigurationItem, Knowledge, RecordLink, TaskCI, Tenant, Ticket, db
 
 CHAT_ROLES = ("requester", "agent", "manager", "admin", "superadmin")
 STAFF_ROLES = frozenset({"agent", "manager", "admin", "superadmin"})
 MAX_QUESTION_CHARS = 2000
-EVIDENCE_CHAR_BUDGET = 12000
+EVIDENCE_CHAR_BUDGET = 32000
 WITHHELD_NOTICE = "[An earlier answer was withheld because your access to its sources has changed.]"
 UNVERIFIED_REFERENCE = "[unverified reference removed]"
 
@@ -123,8 +123,9 @@ def screen_question(scope, question):
 
 # --------------------------------------------------------------------------- retrieval
 
-_RECORD_NUMBER = re.compile(r"\b(?:INC|CHG)\d{4,10}\b", re.I)
-_RECORD_ID = re.compile(r"\b(?:INC|CHG|PRB|REQ|RITM|SCTASK|CTASK|PTASK|KB)\d{4,10}\b")
+_RECORD_NUMBER = re.compile(r"\b(?:INC|CHG|PRB|CS|HRC|SIR|RSK|PRJ|WO|EVT|REL|REQ|RITM|SCTASK|CTASK|PTASK|CXT)\d{4,10}\b", re.I)
+_RECORD_ID = re.compile(
+    r"\b(?:INC|CHG|PRB|CS|HRC|SIR|RSK|PRJ|WO|EVT|REL|REQ|RITM|SCTASK|CTASK|PTASK|CXT|KB)\d{4,10}\b")
 _STOPWORDS = frozenset("""
 the and for are was were with that this from have has had not but you your our their they them what when where which who
 how why can could would should will any all one about into out over under again more most some such only own than then
@@ -166,7 +167,9 @@ class Evidence:
         if self.scanner:
             self.scanner(f"{title}\n{body}", kind)  # judged on the original text, before personal details are masked
         title, body = mask_pii(redact(title))[:180], mask_pii(redact(body)) if kind != "knowledge" else redact(body)
-        body = body[:1800]
+        # Retrieve the complete useful narrative first. Model-specific context fitting later shortens the longest
+        # excerpts when a small local model cannot accept the full evidence set.
+        body = body[:6000]
         if len(title) + len(body) > self._budget or len(self.sources) >= 12:
             return None
         self._budget -= len(title) + len(body)
@@ -188,17 +191,18 @@ class Evidence:
         self.kinds.add(data_kind)
 
     def counts(self):
-        return {kind: sum(1 for s in self.sources if s["kind"] == kind) for kind in ("ticket", "knowledge", "ci")}
+        return {kind: sum(1 for s in self.sources if s["kind"] == kind) for kind in
+                ("ticket", "knowledge", "ci", "enterprise", "request", "client_ticket", "asset")}
 
 
 def _ticket_text(ticket):
     comments = Comment.query.filter_by(tenant_id=ticket.tenant_id, ticket_id=ticket.id).order_by(
-        Comment.created_at.desc()).limit(3).all()
+        Comment.created_at.desc()).limit(20).all()
     parts = [
         f"State: {ticket.state}; Priority: {ticket.priority}; Impact: {ticket.impact}; Urgency: {ticket.urgency}; "
         f"Category: {ticket.category}; Subcategory: {ticket.subcategory or 'Not set'}; "
         f"Opened: {ticket.created_at.isoformat()}; Updated: {ticket.updated_at.isoformat()}",
-        (ticket.description or "")[:1200],
+        (ticket.description or "")[:5000],
     ]
     if ticket.kind == "change":
         from serviceops_models import ChangeGovernance
@@ -212,7 +216,7 @@ def _ticket_text(ticket):
                 f"CCB approval required: {'yes' if governance.ccb_required else 'no'}. Conflict check: {governance.conflict_status}. "
                 f"Planned window: {window}. Implementation plan: {(governance.implementation_plan or 'not supplied')[:400]} "
                 f"Backout plan: {(governance.backout_plan or 'not supplied')[:300]}")
-    parts.extend(f"Comment: {(row.body or '')[:300]}" for row in reversed(comments))
+    parts.extend(f"Comment: {(row.body or '')[:1000]}" for row in reversed(comments))
     return "\n".join(parts)
 
 
@@ -356,7 +360,7 @@ def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
     words = expanded_keywords(question)
     if words:
         if not KNOWLEDGE_ONLY.search(question or ""):
-            title_match = or_(*[Ticket.title.ilike(f"%{w}%") for w in words])
+            title_match = or_(*[or_(Ticket.title.ilike(f"%{w}%"), Ticket.description.ilike(f"%{w}%")) for w in words])
             for ticket in base.filter(title_match).order_by(Ticket.updated_at.desc()).limit(4):
                 add_ticket(ticket)
         article_match = or_(*[or_(Knowledge.title.ilike(f"%{w}%"), Knowledge.body.ilike(f"%{w}%")) for w in words])
@@ -441,6 +445,22 @@ def sources_still_accessible(scope, sources):
         elif kind == "ci":
             row = ConfigurationItem.query.filter_by(id=record_id, tenant_id=scope.tenant_id).first()
             if not scope.can_read_cmdb or not row or not ci_class_read_allowed(scope.tenant_id, row.ci_class, scope.role):
+                return False
+        elif kind == "enterprise":
+            from app import visible_enterprise_record_query
+            if not visible_enterprise_record_query(scope.identity).filter_by(id=record_id).first():
+                return False
+        elif kind == "request":
+            from app import visible_catalog_request_query
+            if not visible_catalog_request_query(scope.identity).filter_by(id=record_id).first():
+                return False
+        elif kind == "client_ticket":
+            from app import user_can_access_client_management, visible_client_ticket_query
+            if (not user_can_access_client_management(scope.identity)
+                    or not visible_client_ticket_query(scope.identity).filter_by(id=record_id).first()):
+                return False
+        elif kind == "asset":
+            if not scope.is_staff or not Asset.query.filter_by(id=record_id, tenant_id=scope.tenant_id).first():
                 return False
         else:
             return False

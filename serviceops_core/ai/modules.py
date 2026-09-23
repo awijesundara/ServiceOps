@@ -3,9 +3,11 @@ service-level breaches, knowledge, configuration items and assets, plus an hones
 
 Every function is read-only and runs under the asker's identity, using the same visibility helpers as the rest of
 the application (never a wider query of its own). What is handed to the model is aggregate counts and a few recent
-records, as plain facts. People, the audit log, customer data content, settings and secrets are never included; an
-administrator additionally gets head-counts of accounts by role (numbers only).
+records, as plain facts. Directory contacts, the audit log, attachments, settings and secrets are never included.
+Customer-ticket content, service-request variables and restricted operational records are always marked private so
+they cannot leave the organization; an administrator additionally gets head-counts of accounts by role (numbers only).
 """
+import json
 import re
 from datetime import timedelta
 
@@ -14,22 +16,22 @@ from sqlalchemy import func
 from serviceops_core.ai import access
 from serviceops_core.ci_class_policy import ci_class_read_allowed
 from serviceops_core.navigation import NAVIGATION_ENTRIES
-from serviceops_models import (ApprovalVote, Asset, CatalogRequest, CatalogTask, ClientTicket, ConfigurationItem, EnterpriseRecord,
-                               Knowledge, OperationalTask, RequestedItem, SupportGroup, TaskSLA, Ticket, TicketAssignmentGroup,
-                               User, db, now)
+from serviceops_models import (ApprovalVote, Asset, CatalogRequest, CatalogTask, ClientTicket, ClientTicketMessage,
+                               ConfigurationItem, EnterpriseRecord, Knowledge, OperationalTask, RequestedItem, SupportGroup,
+                               TaskNote, TaskSLA, Ticket, TicketAssignmentGroup, User, db, now)
 
 CLOSED = ("Resolved", "Closed", "Cancelled", "Canceled", "Completed", "Implemented", "Fulfilled", "Complete")
 
 _INTENTS = {
     "breaches": r"breach|overdue|violat|at risk|running late|missed (the )?(sla|target)",
-    "requests": r"\brequests?\b|\britms?\b|\bsctask|catalog task|fulfil|\bordered\b",
-    "records": r"\bproblems?\b|\bprb\b|known errors?|\bevents?\b|\balerts?\b|improvement|\brisks?\b|security incident|\bsir\b|\bhr\b|portfolio|\bprojects?\b|field service|work orders?|customer service",
+    "requests": r"\brequests?\b|\b(?:REQ|RITM|SCTASK)\d+\b|\britms?\b|\bsctask|catalog task|fulfil|\bordered\b",
+    "records": r"\b(?:PRB|CS|HRC|SIR|RSK|PRJ|WO|EVT|REL)\d+\b|\bproblems?\b|\bprb\b|known errors?|\bevents?\b|\balerts?\b|improvement|\brisks?\b|security incident|\bsir\b|\bhr\b|portfolio|\bprojects?\b|field service|work orders?|customer service",
     "approvals": r"approv|awaiting (my|your)|pending (my|your)|sign[- ]?off|\bccb\b",
     "tasks": r"\btasks?\b|my work|assigned to me|to[- ]?do|workload|\bctask|\bptask",
     "knowledge": r"knowledge|\bkb\b|articles?|notes?\b|how[- ]to|documentation",
     "cmdb": r"\bcmdb\b|configuration items?|\bcis\b|\bci\b|servers?|hardware|inventory|assets?|dell|vmware|network device|laptops?|infrastructure",
     "users": r"\busers\b|\baccounts\b|head ?count|how many (staff|people|employees)|who is the admin|admins?\b",
-    "clients": r"customers?\b|clients?\b|customer tickets?|client organi[sz]ations?",
+    "clients": r"\bCXT\d+\b|customers?\b|clients?\b|customer tickets?|client organi[sz]ations?",
     "access": r"can'?t access|cannot access|no access|not allowed|sections?|what can i (see|open|use|access)|permissions?|\bmenu\b|modules?|features?|what.*(cannot|can'?t).*(access|see)|restricted",
     "find": r"\b(show|find|list|search for|which|filter)\b.{0,40}\b(tickets?|incidents?|changes?)\b",
 }
@@ -57,7 +59,7 @@ def _breaches(scope, base):
         f"{ever} tickets have breached a target at some point.")
 
 
-def _requests(scope, evidence):
+def _requests(scope, evidence, question):
     from app import visible_catalog_request_query
     visible = visible_catalog_request_query(scope.identity)
     ids = visible.with_entities(CatalogRequest.id)
@@ -69,10 +71,43 @@ def _requests(scope, evidence):
     text = (f"Requests you can see: " + (", ".join(f"{n} {s}" for s, n in sorted(states.items())) or "none") +
             f". Requested items: " + (", ".join(f"{n} {s}" for s, n in sorted(items.items())) or "none") +
             f". {mine} open requests are for you." + (f" Most recent: {'; '.join(recent)}." if recent else ""))
+    numbers = access.record_numbers(question)
+    words = access.expanded_keywords(question)
+    selected = visible
+    request_numbers = [n for n in numbers if n.startswith("REQ")]
+    item_numbers = [n for n in numbers if n.startswith(("RITM", "SCTASK"))]
+    if request_numbers:
+        selected = selected.filter(CatalogRequest.number.in_(request_numbers))
+    elif item_numbers:
+        request_ids = db.session.query(RequestedItem.request_id).outerjoin(
+            CatalogTask, CatalogTask.requested_item_id == RequestedItem.id).filter(
+                db.or_(RequestedItem.number.in_(item_numbers), CatalogTask.number.in_(item_numbers)))
+        selected = selected.filter(CatalogRequest.id.in_(request_ids))
+    elif words:
+        request_ids = db.session.query(RequestedItem.request_id).join(RequestedItem.item).outerjoin(
+            CatalogTask, CatalogTask.requested_item_id == RequestedItem.id).filter(db.or_(*[
+            db.or_(RequestedItem.number.ilike(f"%{word}%"), CatalogTask.title.ilike(f"%{word}%"))
+            for word in words
+        ]))
+        selected = selected.filter(CatalogRequest.id.in_(request_ids))
+    else:
+        selected = selected.filter(CatalogRequest.id == -1)
+    for request in selected.order_by(CatalogRequest.opened_at.desc()).limit(4):
+        evidence.flags.add("service_request_content")
+        details = [f"State: {request.state}; Opened: {request.opened_at.isoformat()}"]
+        for item in request.items[:6]:
+            try:
+                variables = json.dumps(json.loads(item.variables_json or "{}"), ensure_ascii=True)[:700]
+            except (TypeError, ValueError):
+                variables = "[unreadable legacy request details]"
+            details.append(f"{item.number}: {item.item.name}; state {item.state}; stage {item.stage}; requested details {variables}")
+            for task in item.tasks[:6]:
+                details.append(f"{task.number}: {task.title}; state {task.state}; work notes {(task.work_notes or 'none')[:500]}")
+        evidence.add("request", request.id, request.number, request.number, "\n".join(details))
     return "Service requests", text
 
 
-def _records(scope):
+def _records(scope, question, evidence):
     from app import DOMAIN_CONFIG, visible_enterprise_record_query
     visible = visible_enterprise_record_query(scope.identity)
     rows = visible.with_entities(EnterpriseRecord.domain, EnterpriseRecord.state, func.count()).group_by(
@@ -87,6 +122,26 @@ def _records(scope):
             entry["open"] += total
     parts = [f"{DOMAIN_CONFIG.get(d, {}).get('name', d)}: {v['total']} ({v['open']} open)" for d, v in sorted(per.items())]
     recent = [f"{r.number} {r.title[:60]} ({r.state})" for r in visible.order_by(EnterpriseRecord.updated_at.desc()).limit(5)]
+    numbers, words = access.record_numbers(question), access.expanded_keywords(question)
+    selected = visible
+    enterprise_numbers = [n for n in numbers if not n.startswith(("INC", "CHG", "REQ", "RITM", "SCTASK", "CXT"))]
+    if enterprise_numbers:
+        selected = selected.filter(EnterpriseRecord.number.in_(enterprise_numbers))
+    elif words:
+        selected = selected.filter(db.or_(*[
+            db.or_(EnterpriseRecord.number.ilike(f"%{word}%"), EnterpriseRecord.title.ilike(f"%{word}%"),
+                   EnterpriseRecord.description.ilike(f"%{word}%")) for word in words]))
+    else:
+        selected = selected.filter(EnterpriseRecord.id == -1)
+    for record in selected.order_by(EnterpriseRecord.updated_at.desc()).limit(5):
+        if record.domain in {"customer", "hr", "security", "risk"}:
+            evidence.flags.add("restricted_record")
+        notes = TaskNote.query.filter_by(target_type="enterprise", target_id=record.id).order_by(
+            TaskNote.created_at.desc()).limit(4).all()
+        details = (f"Domain: {record.domain}; Type: {record.record_type}; State: {record.state}; Priority: {record.priority}; "
+                   f"Risk: {record.risk}; Due: {record.due_at or 'not set'}\n{record.description[:1400]}" +
+                   "".join(f"\nWork note: {note.body[:400]}" for note in reversed(notes)))
+        evidence.add("enterprise", record.id, record.number, f"{record.number} {record.title}", details)
     return "Problems, events and other records", "; ".join(parts) + ". Most recently updated: " + "; ".join(recent) + "."
 
 
@@ -110,7 +165,7 @@ def _knowledge(scope):
         rows.items(), key=lambda x: -x[1])[:8]) if rows else "") + ".")
 
 
-def _cmdb(scope):
+def _cmdb(scope, question, evidence):
     if not scope.can_read_cmdb:
         return "Configuration items and assets", "Your access level does not include the configuration database or asset inventory."
     per = {}
@@ -124,6 +179,15 @@ def _cmdb(scope):
     assets = dict(Asset.query.filter_by(tenant_id=scope.tenant_id).with_entities(Asset.status, func.count()).group_by(Asset.status).all())
     if assets:
         text += " Assets by status: " + ", ".join(f"{s} {n}" for s, n in sorted(assets.items())) + "."
+    words = access.expanded_keywords(question)
+    if words:
+        matching = Asset.query.filter(Asset.tenant_id == scope.tenant_id, db.or_(*[
+            column.ilike(f"%{word}%") for word in words
+            for column in (Asset.asset_tag, Asset.name, Asset.asset_type, Asset.serial_number)
+        ])).order_by(Asset.asset_tag).limit(5)
+        for row in matching:
+            evidence.add("asset", row.id, row.asset_tag, f"{row.asset_tag} {row.name}",
+                         f"Type: {row.asset_type}; Status: {row.status}; Serial number: {row.serial_number or 'not set'}")
     return "Configuration items and assets", text
 
 
@@ -187,15 +251,36 @@ def _users(scope):
                                        ". Names and contact details are never shared by the assistant.")
 
 
-def _clients(scope):
+def _clients(scope, question, evidence):
     from app import user_can_access_client_management, visible_client_organization_query, visible_client_ticket_query
     if not user_can_access_client_management(scope.identity):
         return "Customer management", "Your access level does not include customer management."
     organizations = visible_client_organization_query(scope.identity).filter_by(active=True).count()
     rows = dict(visible_client_ticket_query(scope.identity).with_entities(ClientTicket.status, func.count()).group_by(
         ClientTicket.status).all())
-    return "Customer management (numbers only)", (f"Client organizations you can see: {organizations}. Customer tickets you can see: " + (", ".join(f"{n} {s}" for s, n in sorted(rows.items()))
-                                                    or "none") + ". Customer names and messages are never shared by the assistant.")
+    visible = visible_client_ticket_query(scope.identity)
+    numbers, words = access.record_numbers(question), access.expanded_keywords(question)
+    selected = visible
+    cxt_numbers = [n for n in numbers if n.startswith("CXT")]
+    if cxt_numbers:
+        selected = selected.filter(ClientTicket.number.in_(cxt_numbers))
+    elif words:
+        selected = selected.filter(db.or_(*[
+            db.or_(ClientTicket.number.ilike(f"%{word}%"), ClientTicket.subject.ilike(f"%{word}%"),
+                   ClientTicket.description.ilike(f"%{word}%")) for word in words]))
+    else:
+        selected = selected.filter(ClientTicket.id == -1)
+    for ticket in selected.order_by(ClientTicket.updated_at.desc()).limit(4):
+        evidence.flags.add("customer_content")
+        messages = ClientTicketMessage.query.filter_by(tenant_id=scope.tenant_id, client_ticket_id=ticket.id).order_by(
+            ClientTicketMessage.created_at.desc()).limit(5).all()
+        body = (f"Status: {ticket.status}; Priority: {ticket.priority}; Type: {ticket.ticket_type}; Channel: {ticket.channel}; "
+                f"Updated: {ticket.updated_at.isoformat()}\n{ticket.description[:1200]}" +
+                "".join(f"\n{message.visibility} message: {message.body[:400]}" for message in reversed(messages)))
+        evidence.add("client_ticket", ticket.id, ticket.number, f"{ticket.number} {ticket.subject}", body)
+    return "Customer management", (f"Client organizations you can see: {organizations}. Customer tickets you can see: " +
+                                    (", ".join(f"{n} {s}" for s, n in sorted(rows.items())) or "none") +
+                                    ". Ticket content is supplied only when it matches this question and passes current access checks.")
 
 
 def _access_map(scope):
@@ -258,9 +343,9 @@ def add_module_context(scope, question, evidence, base):
     if "breaches" in found:
         builders.append(lambda: _breaches(scope, base))
     if "requests" in found:
-        builders.append(lambda: _requests(scope, evidence))
+        builders.append(lambda: _requests(scope, evidence, question))
     if "records" in found:
-        builders.append(lambda: _records(scope))
+        builders.append(lambda: _records(scope, question, evidence))
     if "approvals" in found:
         builders.append(lambda: _approvals(scope))
     if "tasks" in found:
@@ -268,11 +353,11 @@ def add_module_context(scope, question, evidence, base):
     if "knowledge" in found:
         builders.append(lambda: _knowledge(scope))
     if "cmdb" in found:
-        builders.append(lambda: _cmdb(scope))
+        builders.append(lambda: _cmdb(scope, question, evidence))
     if "users" in found:
         builders.append(lambda: _users(scope))
     if "clients" in found:
-        builders.append(lambda: _clients(scope))
+        builders.append(lambda: _clients(scope, question, evidence))
     if "access" in found:
         builders.append(lambda: _access_map(scope))
     if "find" in found:
