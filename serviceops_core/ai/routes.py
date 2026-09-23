@@ -444,10 +444,7 @@ def register(app):
         sources = json.loads(run.sources_json)
         if not service.sources_accessible(identity, sources):
             abort(403, description="You no longer have access to all evidence used by this investigation.")
-        for source in sources:
-            source["url"] = (url_for("ticket_detail", ticket_id=source["record_id"]) if source["kind"] == "ticket" else
-                             url_for("knowledge_detail", article_id=source["record_id"]) if source["kind"] == "knowledge" else
-                             url_for("ci_edit", ci_id=source["record_id"]))
+        source_links(sources)
         return render_template("ai_result.html", run=run, ticket=ticket, sources=sources, config=config)
 
     def owned_action(action_id, *, lock=False):
@@ -614,9 +611,16 @@ def register(app):
 
     def source_links(sources):
         for source in sources:
-            source["url"] = (url_for("ticket_detail", ticket_id=source["record_id"]) if source["kind"] == "ticket" else
-                             url_for("knowledge_detail", article_id=source["record_id"]) if source["kind"] == "knowledge" else
-                             url_for("ci_edit", ci_id=source["record_id"]))
+            kind, record_id = source["kind"], source["record_id"]
+            source["url"] = {
+                "ticket": lambda: url_for("ticket_detail", ticket_id=record_id),
+                "knowledge": lambda: url_for("knowledge_detail", article_id=record_id),
+                "ci": lambda: url_for("ci_edit", ci_id=record_id),
+                "enterprise": lambda: url_for("enterprise_detail", record_id=record_id),
+                "request": lambda: url_for("request_detail", request_id=record_id),
+                "client_ticket": lambda: url_for("client_ticket_detail", ticket_id=record_id),
+                "asset": lambda: url_for("assets", q=source.get("number", "")),
+            }[kind]()
         return sources
 
     def with_draft_link(route, run_id=None):
