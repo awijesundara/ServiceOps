@@ -145,6 +145,25 @@ def test_fixed_providers_ignore_any_supplied_endpoint():
         assert provider.validate_configuration(config) == url
 
 
+def test_provider_proxy_policy_uses_default_custom_or_direct_and_ignores_process_environment(monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://environment-proxy:9999")
+    default = config_for(proxy_mode="default", default_proxy_url="http://system-proxy:3128")
+    custom = config_for(proxy_mode="custom", proxy_url="http://model-proxy:8080",
+                        default_proxy_url="http://system-proxy:3128")
+    direct = config_for(proxy_mode="none", default_proxy_url="http://system-proxy:3128")
+    for config, expected in ((default, "http://system-proxy:3128"), (custom, "http://model-proxy:8080"),
+                             (direct, None)):
+        session, resolved = provider.provider_session(config)
+        try:
+            assert resolved == (expected or "")
+            assert session.trust_env is False
+            assert session.proxies.get("https") == expected
+        finally:
+            session.close()
+    with pytest.raises(provider.ProviderError):
+        provider.proxy_url(config_for(proxy_mode="custom", proxy_url="socks5://bad:1080"))
+
+
 # ---- model discovery ----
 
 def encrypted(key):

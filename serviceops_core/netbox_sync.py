@@ -215,6 +215,10 @@ def _netbox_session(base_url, token):
     import app as core_app
 
     session = requests.Session()
+    proxies = core_app.resolve_outbound_proxies(None)
+    if proxies:
+        session.proxies.update(proxies)
+    session.trust_env = False
     session.headers.update({
         # NetBox v2 tokens (introduced in 4.5) use Bearer authentication;
         # legacy v1 tokens use Token. Supporting both keeps older supported

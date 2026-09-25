@@ -1892,7 +1892,7 @@ def test_outbound_network_settings_page_renders_and_saves(client, app):
     login(client, "admin", "Admin123!")
     page = client.get("/admin/settings/outbound_network")
     assert page.status_code == 200
-    assert b"Default outbound proxy" in page.data
+    assert b"System default outbound proxy" in page.data
     response = client.post("/admin/settings/outbound_network", data={
         "OUTBOUND_PROXY_URL": "http://corp-proxy.internal:3128",
         "UPDATE_CHECK_ENABLED": "on",
@@ -1902,6 +1902,14 @@ def test_outbound_network_settings_page_renders_and_saves(client, app):
     with app.app_context():
         from app import setting_value
         assert setting_value("OUTBOUND_PROXY_URL", "") == "http://corp-proxy.internal:3128"
+        row = db.session.get(PlatformSetting, "OUTBOUND_PROXY_URL")
+        assert row.encrypted is True and "corp-proxy" not in row.value
+    client.post("/admin/settings/outbound_network", data={
+        "OUTBOUND_PROXY_URL_CLEAR": "on", "UPDATE_CHECK_ENABLED": "on", "SMTP_PROXY_MODE": "none",
+    })
+    with app.app_context():
+        from app import setting_value
+        assert setting_value("OUTBOUND_PROXY_URL", "") == ""
 
 
 def test_process_update_check_schedule_caches_a_newer_release_and_gates_by_interval(monkeypatch, app):
@@ -3572,7 +3580,7 @@ def test_production_management_and_critical_cis_always_require_ccb(client, app):
         "operational_status": "Operational",
     }, follow_redirects=True)
     with app.app_context():
-        assert ConfigurationItem.query.get(dev_id).require_ccb_approval is False
+        assert db.session.get(ConfigurationItem, dev_id).require_ccb_approval is False
     # ...but switching its environment to Production forces it on, even
     # without the checkbox being ticked.
     client.post(f"/cmdb/{dev_id}/edit", data={
@@ -3580,7 +3588,7 @@ def test_production_management_and_critical_cis_always_require_ccb(client, app):
         "operational_status": "Operational",
     }, follow_redirects=True)
     with app.app_context():
-        assert ConfigurationItem.query.get(dev_id).require_ccb_approval is True
+        assert db.session.get(ConfigurationItem, dev_id).require_ccb_approval is True
 
 
 def test_environment_synonyms_normalize_to_canonical_label(client, app):
@@ -3641,7 +3649,7 @@ def test_adding_alias_for_existing_duplicate_team_merges_it(client, app):
     with app.app_context():
         ci = db.session.get(ConfigurationItem, ci_id)
         assert ci.support_group_id == database_id
-        assert SupportGroup.query.get(dba_id) is None
+        assert db.session.get(SupportGroup, dba_id) is None
         assert SupportGroup.query.filter_by(name="Database").one().manager_id == database_manager_id
 
 
@@ -3942,7 +3950,7 @@ def test_catalog_task_blocks_production_work_until_linked_change_is_approved(cli
     assert blocked.status_code == 200
     assert b"cannot start production work" in blocked.data
     with app.app_context():
-        assert CatalogTask.query.get(task_id).state == "Pending"
+        assert db.session.get(CatalogTask, task_id).state == "Pending"
 
     assert client.post(f"/approval-votes/{vote_id}/decide", data={
         "decision": "Approved",
@@ -3953,7 +3961,7 @@ def test_catalog_task_blocks_production_work_until_linked_change_is_approved(cli
     })
     assert unblocked.status_code == 302
     with app.app_context():
-        assert CatalogTask.query.get(task_id).state == "Work in Progress"
+        assert db.session.get(CatalogTask, task_id).state == "Work in Progress"
 
 
 def test_catalog_task_detail_page_shows_notes_form_responses_and_siblings(client, app):
@@ -3977,7 +3985,7 @@ def test_catalog_task_detail_page_shows_notes_form_responses_and_siblings(client
         first_task_id = ritm.tasks[0].id
         sibling = CatalogTask(
             number="TASKSIB0001", requested_item_id=ritm_id, title="Sibling task",
-            assignment_group_id=RequestedItem.query.get(ritm_id).tasks[0].assignment_group_id,
+            assignment_group_id=db.session.get(RequestedItem, ritm_id).tasks[0].assignment_group_id,
         )
         db.session.add(sibling)
         db.session.commit()
@@ -4926,7 +4934,7 @@ def test_priority_override_rejection_stays_on_ticket_page(client, app):
     assert too_short.request.path == f"/ticket/{ticket_id}"
     assert b"Only a manager or administrator may override calculated priority" in too_short.data
     with app.app_context():
-        assert Ticket.query.get(ticket_id).priority_overridden is False
+        assert db.session.get(Ticket, ticket_id).priority_overridden is False
 
     accepted = client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": current_state, "priority": "P1",
@@ -4937,7 +4945,7 @@ def test_priority_override_rejection_stays_on_ticket_page(client, app):
     assert b"Priority override reason recorded" in accepted.data
     assert b"Customer executive escalation" in accepted.data
     with app.app_context():
-        ticket = Ticket.query.get(ticket_id)
+        ticket = db.session.get(Ticket, ticket_id)
         assert ticket.priority_overridden is True
         assert ticket.priority_override_reason == "Customer executive escalation, needs immediate handling"
 
@@ -4956,7 +4964,7 @@ def test_resolved_ticket_locks_edits_but_allows_comments_and_reopen(client, app)
         "action": "update", "state": "Resolved", "priority": "P3", "assignee_id": "",
     }).status_code == 302
     with app.app_context():
-        assert Ticket.query.get(ticket_id).state == "Resolved"
+        assert db.session.get(Ticket, ticket_id).state == "Resolved"
 
     blocked_update = client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": "Resolved", "priority": "P1", "assignee_id": "",
@@ -4964,7 +4972,7 @@ def test_resolved_ticket_locks_edits_but_allows_comments_and_reopen(client, app)
     assert blocked_update.status_code == 200
     assert b"is Resolved and locked" in blocked_update.data
     with app.app_context():
-        assert Ticket.query.get(ticket_id).priority == "P3"
+        assert db.session.get(Ticket, ticket_id).priority == "P3"
 
     blocked_checklist = client.post(f"/ticket/{ticket_id}/checklist", data={
         "text": "Should not be added",
@@ -4985,13 +4993,13 @@ def test_resolved_ticket_locks_edits_but_allows_comments_and_reopen(client, app)
     assert reopened.status_code == 200
     assert b"reopened" in reopened.data.lower()
     with app.app_context():
-        assert Ticket.query.get(ticket_id).state == "In Progress"
+        assert db.session.get(Ticket, ticket_id).state == "In Progress"
 
     assert client.post(f"/ticket/{ticket_id}", data={
         "action": "update", "state": "In Progress", "priority": "P1", "assignee_id": "",
     }).status_code == 302
     with app.app_context():
-        assert Ticket.query.get(ticket_id).priority == "P1"
+        assert db.session.get(Ticket, ticket_id).priority == "P1"
 
 
 def test_resolved_ticket_can_be_closed_via_close_action(client, app):
@@ -5013,13 +5021,13 @@ def test_resolved_ticket_can_be_closed_via_close_action(client, app):
         "action": "update", "state": "Resolved", "priority": "P3", "assignee_id": "",
     }).status_code == 302
     with app.app_context():
-        assert Ticket.query.get(ticket_id).state == "Resolved"
+        assert db.session.get(Ticket, ticket_id).state == "Resolved"
 
     closed = client.post(f"/ticket/{ticket_id}", data={"action": "close"}, follow_redirects=True)
     assert closed.status_code == 200
     assert b"closed" in closed.data.lower()
     with app.app_context():
-        ticket = Ticket.query.get(ticket_id)
+        ticket = db.session.get(Ticket, ticket_id)
         assert ticket.state == "Closed"
         assert TaskHistory.query.filter_by(
             target_type="ticket", target_id=ticket_id, field_name="state", new_value="Closed",
@@ -5054,7 +5062,7 @@ def test_org_chart_reflects_manager_assignment_and_blocks_cycles(client, app):
     }).status_code == 302
 
     with app.app_context():
-        assert User.query.get(lead_id).manager_id == exec_id
+        assert db.session.get(User, lead_id).manager_id == exec_id
 
     chart = client.get("/org-chart")
     assert chart.status_code == 200
@@ -5068,7 +5076,7 @@ def test_org_chart_reflects_manager_assignment_and_blocks_cycles(client, app):
     assert cycle.status_code == 200
     assert b"reporting-line loop" in cycle.data
     with app.app_context():
-        assert User.query.get(exec_id).manager_id is None
+        assert db.session.get(User, exec_id).manager_id is None
 
     self_manage = client.post(f"/admin/users/{exec_id}", data={
         "name": "Org Exec", "email": "org.exec@example.com", "granted_roles": ["manager"],
@@ -7455,7 +7463,7 @@ def test_change_task_unlocking_model_gates_implementation_and_review(client, app
     assert blocked.status_code == 200
     assert b"must stay Pending until" in blocked.data
     with app.app_context():
-        assert OperationalTask.query.get(implementation_task_id).state == "Pending"
+        assert db.session.get(OperationalTask, implementation_task_id).state == "Pending"
 
     # The state dropdown itself must be disabled while gated, with an explanatory note.
     gated_page = client.get(f"/operational-task/{implementation_task_id}")
@@ -7481,7 +7489,7 @@ def test_change_task_unlocking_model_gates_implementation_and_review(client, app
     })
     assert unblocked.status_code == 302
     with app.app_context():
-        assert OperationalTask.query.get(implementation_task_id).state == "Work in Progress"
+        assert db.session.get(OperationalTask, implementation_task_id).state == "Work in Progress"
 
     # Review is added and must stay Pending until implementation is closed.
     review_added = client.post(f"/change/{ticket_id}/tasks", data={
@@ -7521,7 +7529,7 @@ def test_change_task_unlocking_model_gates_implementation_and_review(client, app
     })
     assert review_open.status_code == 302
     with app.app_context():
-        assert OperationalTask.query.get(review_task_id).state == "Work in Progress"
+        assert db.session.get(OperationalTask, review_task_id).state == "Work in Progress"
 
 
 def test_operational_task_detail_shows_activity_notes_and_siblings(client, app):

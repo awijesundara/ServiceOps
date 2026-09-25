@@ -319,7 +319,7 @@ def test_enterprise_record_owning_team_can_manage_not_just_view(client, app):
     })
     assert updated.status_code == 302
     with app.app_context():
-        assert EnterpriseRecord.query.get(record_id).state == "In Progress"
+        assert db.session.get(EnterpriseRecord, record_id).state == "In Progress"
 
 
 
@@ -375,7 +375,7 @@ def test_requester_cannot_self_manage_their_own_enterprise_record(client, app):
     })
     assert blocked.status_code == 403
     with app.app_context():
-        assert EnterpriseRecord.query.get(record_id).state == "New"
+        assert db.session.get(EnterpriseRecord, record_id).state == "New"
 
 
 def _other_tenant(app):
@@ -383,7 +383,7 @@ def _other_tenant(app):
     for proving this session's new features don't leak across tenants.
     """
     with app.app_context():
-        if Tenant.query.get(2):
+        if db.session.get(Tenant, 2):
             return
         other_tenant = Tenant(id=2, slug="other", name="Other organisation")
         other_user = User(

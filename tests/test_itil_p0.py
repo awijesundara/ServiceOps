@@ -115,7 +115,7 @@ def test_improvement_item_can_be_raised_from_a_ticket_and_updated(client, app):
     })
     assert updated.status_code == 302
     with app.app_context():
-        assert ImprovementItem.query.get(item_id).status == "In Progress"
+        assert db.session.get(ImprovementItem, item_id).status == "In Progress"
 
 
 def test_improvement_redirect_rejects_scheme_relative_external_url(client, app):

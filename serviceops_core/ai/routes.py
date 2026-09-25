@@ -14,6 +14,7 @@ from serviceops_models import (AIAction, AIConfiguration, AIConnection, AIConver
 from serviceops_core.ai import access, discovery_tokens, memory, quota, routing, service
 from serviceops_core.ai.provider import (PROVIDERS, ProviderError, decrypt_key, generate, list_models, normalize_endpoint,
                                          validate_configuration)
+from serviceops_core.proxy_tunnel import parse_proxy_url
 from serviceops_core.storage import ipfs_enabled
 
 def register(app):
@@ -36,6 +37,8 @@ def register(app):
         return {"id": row.id, "name": row.name, "provider": row.provider, "endpoint": row.endpoint, "model": row.model,
                 "external": row.external, "enabled": bool(row.enabled), "priority": row.priority, "weight": row.weight,
                 "max_concurrency": row.max_concurrency, "has_key": bool(row.key_encrypted), "status": status,
+                "proxy_mode": getattr(row, "proxy_mode", "default"),
+                "has_proxy": bool(getattr(row, "proxy_url_encrypted", "")),
                 "load": counts.get(row.id, 0), "context": caps.get("context_tokens"),
                 "today": (usage or {}).get(row.id, {"requests": 0, "tokens": 0}),
                 "limits": {"rpm": row.rpm_limit, "tpm": row.tpm_limit, "rpd": row.rpd_limit, "tz": row.quota_tz or "UTC"},
@@ -80,8 +83,35 @@ def register(app):
             raise ProviderError("Invalid API key.")
         if typed:
             key_encrypted = settings_cipher().encrypt(typed.encode()).decode()
+        proxy_mode = str(data.get("proxy_mode", getattr(row, "proxy_mode", "default") if row else "default"))
+        if proxy_mode not in {"default", "none", "custom"}:
+            raise ProviderError("Choose a supported proxy option.")
+        proxy_url_encrypted = getattr(row, "proxy_url_encrypted", "") if row else ""
+        typed_proxy = str(data.get("proxy_url", "")).strip()
+        if len(typed_proxy) > 2048 or any(char in typed_proxy for char in "\r\n"):
+            raise ProviderError("Invalid proxy URL.")
+        if proxy_mode == "custom":
+            if typed_proxy:
+                try:
+                    parse_proxy_url(typed_proxy)
+                except ValueError as error:
+                    raise ProviderError(str(error)) from None
+                proxy_url_encrypted = settings_cipher().encrypt(typed_proxy.encode()).decode()
+            elif not proxy_url_encrypted:
+                raise ProviderError("Enter the custom proxy URL.")
+        else:
+            proxy_url_encrypted = ""
+        from app import setting_value
+        resolved_proxy = typed_proxy if proxy_mode == "custom" else ""
+        if proxy_mode == "custom" and not resolved_proxy and proxy_url_encrypted:
+            try:
+                resolved_proxy = settings_cipher().decrypt(proxy_url_encrypted.encode()).decode()
+            except Exception:
+                raise ProviderError("AI proxy credential could not be decrypted.") from None
         candidate = SimpleNamespace(provider=provider, endpoint=endpoint, model=model, key_encrypted=key_encrypted,
-                                    external_consent=True, max_output_tokens=config.max_output_tokens)
+                                    external_consent=True, max_output_tokens=config.max_output_tokens,
+                                    proxy_mode=proxy_mode, proxy_url=resolved_proxy,
+                                    default_proxy_url=setting_value("OUTBOUND_PROXY_URL", ""))
         validate_configuration(candidate)  # structure only; whether external use is permitted is decided per request
         capabilities = row.capabilities_json if row else "{}"
         token = str(data.get("discovery_token", ""))
@@ -94,6 +124,7 @@ def register(app):
             row = AIConnection(tenant_id=current_user.tenant_id)
             db.session.add(row)
         row.name, row.provider, row.endpoint, row.model, row.key_encrypted = name, provider, endpoint, model, key_encrypted
+        row.proxy_mode, row.proxy_url_encrypted = proxy_mode, proxy_url_encrypted
         row.capabilities_json = capabilities
         row.enabled = bool(data.get("enabled", row.enabled if not creating else True))
         row.priority = clamp(data.get("priority", row.priority if not creating else 100), 1, 1000, 100)
@@ -249,7 +280,10 @@ def register(app):
                                                     "self_hosted", "openai_compatible"} else "", model=model).first():
                     continue  # already added
                 body = {"name": model[:80], "provider": data.get("provider"), "endpoint": data.get("endpoint", ""), "model": model,
-                        "api_key": typed or (decrypt_key(source) if source and source.key_encrypted else ""), "enabled": True}
+                        "api_key": typed or (decrypt_key(source) if source and source.key_encrypted else ""), "enabled": True,
+                        "proxy_mode": getattr(source, "proxy_mode", "default") if source else "default",
+                        "proxy_url": (settings_cipher().decrypt(source.proxy_url_encrypted.encode()).decode()
+                                      if source and source.proxy_url_encrypted else "")}
                 made.append(save_service(config, body))
             db.session.commit()
         except ProviderError as error:
@@ -286,9 +320,8 @@ def register(app):
         if not route_rate_limit("ai_probe", f"tenant:{current_user.tenant_id}", 10):
             db.session.commit()
             return no_store({"error": "Too many tests. Wait a minute."}, 429)
-        snapshot = SimpleNamespace(provider=row.provider, model=row.model, endpoint=row.endpoint, key_encrypted=row.key_encrypted,
-                                   external_consent=True, max_output_tokens=config.max_output_tokens,
-                                   capabilities_json=row.capabilities_json)
+        snapshot = service._snapshot(config, row)
+        snapshot.external_consent = True
         audit("ai connection test", row.id, "Synthetic prompt only; no operational records")
         db.session.commit()
         started = time.monotonic()
@@ -363,8 +396,21 @@ def register(app):
         typed_key = str(data.get("api_key", "")).strip()
         if len(typed_key) > 4096 or any(char in typed_key for char in "\r\n"):
             return no_store({"error": "Invalid API key."}, 400)
+        proxy_mode = str(data.get("proxy_mode", getattr(saved, "proxy_mode", "default") if saved else "default"))
+        if proxy_mode not in {"default", "none", "custom"}:
+            return no_store({"error": "Choose a supported proxy option."}, 400)
+        typed_proxy = str(data.get("proxy_url", "")).strip()
+        saved_proxy = ""
+        if proxy_mode == "custom" and not typed_proxy and saved and getattr(saved, "proxy_url_encrypted", ""):
+            try:
+                saved_proxy = settings_cipher().decrypt(saved.proxy_url_encrypted.encode()).decode()
+            except Exception:
+                return no_store({"error": "AI proxy credential could not be decrypted."}, 400)
+        from app import setting_value
         candidate = SimpleNamespace(provider=provider, endpoint=endpoint, model=str(data.get("model", ""))[:160], key_encrypted="",
-                                    external_consent=True, max_output_tokens=64)
+                                    external_consent=True, max_output_tokens=64, proxy_mode=proxy_mode,
+                                    proxy_url=typed_proxy or saved_proxy,
+                                    default_proxy_url=setting_value("OUTBOUND_PROXY_URL", ""))
         try:
             candidate.endpoint = normalize_endpoint(endpoint) if provider in {"self_hosted", "openai_compatible"} else ""
             if typed_key:

@@ -157,7 +157,7 @@ SETTING_DEFINITIONS = {
     ],
     "outbound_network": [
         {
-            "key": "OUTBOUND_PROXY_URL", "label": "Default outbound proxy (HTTP/HTTPS)", "type": "url", "default": "",
+            "key": "OUTBOUND_PROXY_URL", "label": "System default outbound proxy (HTTP/HTTPS)", "type": "secret", "default": "",
             "live": True,
         },
         {
@@ -224,9 +224,9 @@ SETTING_GROUP_META = {
     "email_delivery": ("Email delivery", "SMTP connection and sender identity used for outgoing notifications."),
     "outbound_network": (
         "Outbound proxy & updates",
-        "Default egress proxy for notification channels and email in networks without direct internet access, "
-        "plus GitHub release update checking. Every notification channel and email delivery can also use its "
-        "own proxy, or none, overriding this default.",
+        "System egress proxy for AI models, notifications, email, integrations, object storage, mobile push, "
+        "identity verification, imports, and release checks. Each AI model and notification channel may inherit "
+        "this proxy, use its own proxy, or connect directly.",
     ),
     "google_chat_app": (
         "Google Chat bot",

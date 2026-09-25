@@ -11,7 +11,7 @@ from flask import abort
 from sqlalchemy import or_
 
 from serviceops_models import (AICall, AIConfiguration, AIConnection, AIConversation, AIMemory, AIMessage, AIRun, Comment, ConfigurationItem, Knowledge,
-                              TaskCI, Tenant, Ticket, User, db, now)
+                              TaskCI, Tenant, Ticket, User, db, now, settings_cipher)
 from serviceops_core.ai import access, memory, quota, routing
 from serviceops_core.ai.provider import INSTRUCTIONS, ProviderError, StreamCancelled, generate_stream, provider_timeout
 from serviceops_core.ci_class_policy import ci_class_read_allowed
@@ -130,6 +130,7 @@ def connections_for(config):
         return rows
     return [AIConnection(id="legacy", tenant_id=config.tenant_id, name="Primary", provider=config.provider,
                          endpoint=config.endpoint, model=config.model, key_encrypted=config.key_encrypted,
+                         proxy_mode="default", proxy_url_encrypted="",
                          capabilities_json=getattr(config, "capabilities_json", "{}") or "{}", enabled=True, priority=100,
                          weight=1, max_concurrency=1, consecutive_failures=0)]
 
@@ -153,9 +154,18 @@ def ready(config):
 
 def _snapshot(config, connection):
     """What the provider adapter needs to call one service."""
+    from app import setting_value
+    proxy_url = ""
+    if getattr(connection, "proxy_mode", "default") == "custom" and getattr(connection, "proxy_url_encrypted", ""):
+        try:
+            proxy_url = settings_cipher().decrypt(connection.proxy_url_encrypted.encode()).decode()
+        except Exception:
+            raise ProviderError("AI proxy credential could not be decrypted.") from None
     return SimpleNamespace(provider=connection.provider, model=connection.model, endpoint=connection.endpoint,
                            key_encrypted=connection.key_encrypted, external_consent=config.external_consent,
-                           max_output_tokens=config.max_output_tokens, capabilities_json=connection.capabilities_json or "{}")
+                           max_output_tokens=config.max_output_tokens, capabilities_json=connection.capabilities_json or "{}",
+                           proxy_mode=getattr(connection, "proxy_mode", "default"), proxy_url=proxy_url,
+                           default_proxy_url=setting_value("OUTBOUND_PROXY_URL", ""))
 
 
 def cancel_active(tenant_id):
