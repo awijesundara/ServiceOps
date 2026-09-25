@@ -2757,6 +2757,9 @@ class AIConnection(db.Model):
     endpoint = db.Column(db.String(500), nullable=False, default="")
     model = db.Column(db.String(160), nullable=False, default="")
     key_encrypted = db.Column(db.Text, nullable=False, default="")
+    # Per-model egress policy. A custom URL may contain proxy credentials, so it is encrypted.
+    proxy_mode = db.Column(db.String(12), nullable=False, default="default")
+    proxy_url_encrypted = db.Column(db.Text, nullable=False, default="")
     capabilities_json = db.Column(db.Text, nullable=False, default="{}")
     enabled = db.Column(db.Boolean, nullable=False, default=True)
     priority = db.Column(db.Integer, nullable=False, default=100)

@@ -216,6 +216,7 @@ a.ai-cite:hover,a.ai-cite:focus-visible{background:var(--ai-accent);color:#fff}
 .aiadm-detect{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:8px 0}
 .aiadm-detect .is-error{color:#9d2a22;font-weight:650}
 .aiadm-more{margin:12px 0}
+.aiadm-more [data-ai-row="proxy_url"][hidden]{display:none!important}
 .aiadm-more summary{cursor:pointer;font-weight:650}
 .aiadm-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
 @media(max-width:700px){.aiadm-section{padding:16px}.aiadm-savebar{flex-direction:column;align-items:stretch}.aiadm-dialog{width:100vw;max-height:100dvh;border-radius:0}}

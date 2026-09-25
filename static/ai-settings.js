@@ -184,6 +184,10 @@
       : "This service is hosted outside your organization. Sensitive requests are never sent to it.";
   }
 
+  function syncProxy() {
+    dialog.querySelector('[data-ai-row="proxy_url"]').hidden = f("proxy_mode").value !== "custom";
+  }
+
   function fillDetails(service, defaults) {
     dError.hidden = true;
     dStatus.textContent = "Enter the details, then connect.";
@@ -194,6 +198,8 @@
     f("token").value = "";
     f("api_key").value = "";
     const s = service || {};
+    f("proxy_mode").value = s.proxy_mode || "default";
+    f("proxy_url").value = "";
     f("id").value = s.id || "";
     f("provider").value = s.provider || defaults.provider;
     f("name").value = s.name || defaults.name || "";
@@ -214,8 +220,12 @@
     bulkList.textContent = "";
     updatePresetButton();
     $("keyhint", dialog).textContent = service && s.has_key ? "A key is saved. Leave blank to keep it." : "Leave blank if the server needs none.";
+    $("proxyhint", dialog).textContent = service && s.has_proxy
+      ? "A proxy is saved. Leave blank to keep it. Credentials are never shown again."
+      : "Credentials are encrypted and are never shown again.";
     $("dialog-title", dialog).textContent = service ? "Edit " + s.name : "Add an AI service";
     syncProvider();
+    syncProxy();
   }
 
   function openDialog(service) {
@@ -240,7 +250,8 @@
     dStatus.textContent = "Connecting…";
     call("/admin/ai/models", {
       provider: f("provider").value, endpoint: f("endpoint").value, api_key: f("api_key").value, service_id: f("id").value,
-      model: f("model").value, external_consent: true
+      model: f("model").value, external_consent: true,
+      proxy_mode: f("proxy_mode").value, proxy_url: f("proxy_url").value
     }).then(function (json) {
       allModels = json.models.slice();
       quotas = json.quotas || {};
@@ -280,6 +291,7 @@
   }
   f("endpoint").addEventListener("input", auto);
   f("api_key").addEventListener("input", auto);
+  f("proxy_mode").addEventListener("change", syncProxy);
 
   /* ---------- searchable model list: every model, filtered as you type ---------- */
   let allModels = [], activeIndex = -1;
@@ -338,6 +350,7 @@
     const body = {
       id: f("id").value || undefined, name: f("name").value, provider: f("provider").value, endpoint: f("endpoint").value,
       model: f("model").value, api_key: f("api_key").value,
+      proxy_mode: f("proxy_mode").value, proxy_url: f("proxy_url").value,
       discovery_token: allModels.indexOf(f("model").value) !== -1 ? f("token").value : "",
       priority: Number(f("priority").value), weight: Number(f("weight").value), max_concurrency: Number(f("max_concurrency").value),
       enabled: f("enabled").checked

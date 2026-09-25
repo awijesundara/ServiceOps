@@ -65,7 +65,7 @@ def test_update_tour_and_add_step_bump_version(app, client):
     login(client)
     tour_id = _create_tour_with_step(app)
     with app.app_context():
-        assert GuidedTour.query.get(tour_id).version == 1
+        assert db.session.get(GuidedTour, tour_id).version == 1
 
     updated = client.post("/admin/guided-tours", data={
         "action": "update_tour", "tour_id": tour_id, "title": "Dashboard tour v2",
@@ -73,7 +73,7 @@ def test_update_tour_and_add_step_bump_version(app, client):
     })
     assert updated.status_code == 302
     with app.app_context():
-        assert GuidedTour.query.get(tour_id).version == 2
+        assert db.session.get(GuidedTour, tour_id).version == 2
 
     added = client.post("/admin/guided-tours", data={
         "action": "add_step", "tour_id": tour_id, "step_title": "Second step",
@@ -81,7 +81,7 @@ def test_update_tour_and_add_step_bump_version(app, client):
     })
     assert added.status_code == 302
     with app.app_context():
-        tour = GuidedTour.query.get(tour_id)
+        tour = db.session.get(GuidedTour, tour_id)
         assert tour.version == 3
         assert len(tour.steps) == 2
 

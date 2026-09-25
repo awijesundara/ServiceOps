@@ -153,6 +153,10 @@ def _rt_session(base_url, token):
     import app as core_app
 
     session = requests.Session()
+    proxies = core_app.resolve_outbound_proxies(None)
+    if proxies:
+        session.proxies.update(proxies)
+    session.trust_env = False
     session.headers.update({
         "Authorization": f"token {token}",
         "Accept": "application/json",

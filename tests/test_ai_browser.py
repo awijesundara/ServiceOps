@@ -538,6 +538,13 @@ def test_admin_adds_a_service_tests_the_privacy_rules_and_removes_it_in_the_brow
                 page.locator('[data-ai-preset^="self_hosted|http://HOST:8080"]').click()
                 page.locator('[data-ai-f="endpoint"]').fill(model_server.origin)
                 page.locator('[data-ai-f="api_key"]').fill("typed-key-123")
+                proxy_mode = page.locator('[data-ai-f="proxy_mode"]')
+                assert proxy_mode.input_value() == "default"
+                assert page.locator('[data-ai-row="proxy_url"]').is_hidden()
+                proxy_mode.select_option("custom")
+                assert page.locator('[data-ai-row="proxy_url"]').is_visible()
+                proxy_mode.select_option("none")
+                assert page.locator('[data-ai-row="proxy_url"]').is_hidden()
                 page.get_by_role("button", name="Connect and find models").click()
                 wait_for(lambda: "Connected" in page.inner_text("[data-ai-detect-status]"))
                 assert page.locator('[data-ai-f="model"]').input_value() == "qwen3-latest"

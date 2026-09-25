@@ -286,19 +286,30 @@ def test_service_management_is_admin_only_and_never_returns_keys(app, client):
     client.get("/logout")
     login(client)
     body = {"name": "Mac", "provider": "self_hosted", "endpoint": "http://192.168.68.68:8080", "model": "qwen3",
-            "api_key": "super-secret-key"}
+            "api_key": "super-secret-key", "proxy_mode": "custom",
+            "proxy_url": "http://proxy-user:proxy-password@proxy.example:3128"}
     import os
     os.environ["AI_SELF_HOSTED_ENDPOINTS"] = "http://192.168.68.68:*"
     try:
         created = client.post("/admin/ai/services", json=body)
         assert created.status_code == 200
         text = created.get_data(as_text=True)
-        assert "super-secret-key" not in text and created.get_json()["service"]["has_key"] is True
+        assert "super-secret-key" not in text and "proxy-password" not in text
+        assert created.get_json()["service"]["has_key"] is True
+        assert created.get_json()["service"]["proxy_mode"] == "custom"
+        assert created.get_json()["service"]["has_proxy"] is True
         sid = created.get_json()["service"]["id"]
         assert client.post("/admin/ai/services", json={**body, "name": "Mac"}).status_code == 400  # duplicate name
         renamed = client.post("/admin/ai/services", json={"id": sid, "name": "Mac mini", "weight": 3})
         assert renamed.get_json()["service"]["weight"] == 3 and renamed.get_json()["service"]["has_key"] is True
-        assert "super-secret-key" not in client.get("/admin/ai").get_data(as_text=True)
+        page = client.get("/admin/ai").get_data(as_text=True)
+        assert "super-secret-key" not in page and "proxy-password" not in page
+        with app.app_context():
+            row = db.session.get(AIConnection, sid)
+            assert "proxy-password" not in row.proxy_url_encrypted
+            assert settings_cipher().decrypt(row.proxy_url_encrypted.encode()).decode().endswith("@proxy.example:3128")
+        direct = client.post("/admin/ai/services", json={"id": sid, "proxy_mode": "none"}).get_json()["service"]
+        assert direct["proxy_mode"] == "none" and direct["has_proxy"] is False
         assert client.post(f"/admin/ai/services/{sid}/delete").get_json() == {"deleted": True}
     finally:
         os.environ.pop("AI_SELF_HOSTED_ENDPOINTS", None)
