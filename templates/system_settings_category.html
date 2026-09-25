@@ -27,6 +27,7 @@
           <select name="{{ setting.key }}">{% for choice in setting.choices %}<option value="{{ choice }}" {% if values[setting.key] == choice %}selected{% endif %}>{{ choice|title }}</option>{% endfor %}</select>
         {% elif setting.type == 'secret' %}
           <input type="password" name="{{ setting.key }}" value="" placeholder="{{ 'Configured — leave blank to retain' if setting.configured else 'Not configured' }}" autocomplete="new-password">
+          {% if setting.key == 'OUTBOUND_PROXY_URL' and setting.configured %}<span class="switch-row"><input type="checkbox" name="OUTBOUND_PROXY_URL_CLEAR"> Remove the system default proxy</span>{% endif %}
         {% elif setting.type == 'color' %}
           <span class="color-field"><input type="color" name="{{ setting.key }}" value="{{ values[setting.key] }}"><code>{{ values[setting.key] }}</code></span>
         {% else %}

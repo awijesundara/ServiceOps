@@ -35,6 +35,7 @@ import requests
 import httpx
 import pyotp
 import boto3
+from botocore.config import Config as BotoConfig
 from flask import Flask, Response, abort, current_app, flash, g, has_app_context, has_request_context, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from markupsafe import Markup, escape
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
@@ -386,11 +387,13 @@ def ipfs_user_from_dict(fields):
 
 
 def object_storage_client():
+    proxies = resolve_outbound_proxies(None)
     return boto3.client(
         "s3", endpoint_url=os.getenv("OBJECT_STORAGE_ENDPOINT") or None,
         region_name=os.getenv("OBJECT_STORAGE_REGION", "us-east-1"),
         aws_access_key_id=os.getenv("OBJECT_STORAGE_ACCESS_KEY") or None,
         aws_secret_access_key=os.getenv("OBJECT_STORAGE_SECRET_KEY") or None,
+        config=BotoConfig(proxies=proxies) if proxies else BotoConfig(proxies={}),
     )
 
 
@@ -1485,7 +1488,8 @@ def deliver_mobile_push(event):
         raise RuntimeError("APNS_BUNDLE_ID is required.")
     authorization = _apns_authorization_token()
     delivered = 0
-    with httpx.Client(http2=True, timeout=10.0) as client:
+    proxy_url = setting_value("OUTBOUND_PROXY_URL", "") or None
+    with httpx.Client(http2=True, timeout=10.0, proxy=proxy_url, trust_env=False) as client:
         for device in devices:
             token = settings_cipher().decrypt(device.token_encrypted.encode()).decode()
             host = "api.sandbox.push.apple.com" if device.environment == "sandbox" else "api.push.apple.com"
@@ -3922,7 +3926,8 @@ def _process_one_inbound_email(mailbox, connection, msg_num):
 
 def _poll_client_mailbox(mailbox, limit=50):
     connection_cls = imaplib.IMAP4_SSL if mailbox.imap_use_ssl else imaplib.IMAP4
-    connection = connection_cls(mailbox.imap_host, mailbox.imap_port)
+    with tunnel_through_proxy(resolve_smtp_proxy_url()):
+        connection = connection_cls(mailbox.imap_host, mailbox.imap_port)
     try:
         connection.login(mailbox.imap_username, mailbox.imap_password)
         connection.select(mailbox.imap_folder)
@@ -4004,14 +4009,15 @@ def deliver_client_email_reply(ticket, message, mailbox):
         outbound["References"] = build_references_header(prior.message_id, prior.in_reply_to or "")
     outbound.set_content(message.body)
 
-    with smtplib.SMTP(mailbox.smtp_host, mailbox.smtp_port, timeout=10) as smtp:
-        smtp.ehlo()
-        if mailbox.smtp_use_tls:
-            smtp.starttls(context=ssl.create_default_context())
+    with tunnel_through_proxy(resolve_smtp_proxy_url()):
+        with smtplib.SMTP(mailbox.smtp_host, mailbox.smtp_port, timeout=10) as smtp:
             smtp.ehlo()
-        if mailbox.smtp_username:
-            smtp.login(mailbox.smtp_username, mailbox.smtp_password)
-        smtp.send_message(outbound)
+            if mailbox.smtp_use_tls:
+                smtp.starttls(context=ssl.create_default_context())
+                smtp.ehlo()
+            if mailbox.smtp_username:
+                smtp.login(mailbox.smtp_username, mailbox.smtp_password)
+            smtp.send_message(outbound)
     message.message_id = generated_message_id
 
 
@@ -6535,7 +6541,8 @@ def _cloudflare_access_key_set():
         if time_module.monotonic() - _cloudflare_access_jwks_cache["fetched_at"] < 3600 and _cloudflare_access_jwks_cache["key_set"] is not None:
             return _cloudflare_access_jwks_cache["key_set"]
         team_domain = current_app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]
-        response = requests.get(f"https://{team_domain}/cdn-cgi/access/certs", timeout=5)
+        response = requests.get(f"https://{team_domain}/cdn-cgi/access/certs", timeout=5,
+                                proxies=resolve_outbound_proxies(None))
         response.raise_for_status()
         key_set = KeySet.import_key_set(response.json())
         _cloudflare_access_jwks_cache["key_set"] = key_set
@@ -14019,13 +14026,17 @@ def create_app(test_config=None):
             errors, restart_required, changed = [], False, []
             for definition in definitions:
                 key, field_type = definition["key"], definition["type"]
-                if key not in request.form and field_type != "bool":
+                if (key not in request.form and field_type != "bool"
+                        and not (key == "OUTBOUND_PROXY_URL" and request.form.get("OUTBOUND_PROXY_URL_CLEAR"))):
                     continue
                 submitted = request.form.get(key)
                 if field_type == "bool":
                     submitted = "true" if submitted else "false"
                 elif field_type == "secret" and not submitted:
-                    continue
+                    if key == "OUTBOUND_PROXY_URL" and request.form.get("OUTBOUND_PROXY_URL_CLEAR"):
+                        submitted = ""
+                    else:
+                        continue
                 else:
                     submitted = (submitted or "").strip()
                 if field_type == "color" and not re.fullmatch(r"#[0-9a-fA-F]{6}", submitted):
@@ -14053,6 +14064,12 @@ def create_app(test_config=None):
                 if field_type == "choice" and submitted not in definition["choices"]:
                     errors.append(f"{definition['label']} has an invalid value.")
                     continue
+                if key == "OUTBOUND_PROXY_URL" and submitted:
+                    try:
+                        parse_proxy_url(submitted)
+                    except ValueError as error:
+                        errors.append(str(error))
+                        continue
                 old_value = setting_value(key, definition.get("default", ""))
                 if old_value == submitted:
                     continue
@@ -15452,7 +15469,8 @@ def create_app(test_config=None):
                         return render_template("cmdb_import.html", preview=None, csv_text="",
                                                 netbox_enabled=setting_bool("NETBOX_ENABLED"),
                                                 netbox_sync_result=session.pop("netbox_sync_result", None))
-                    ok, hostname, infos = resolve_endpoint_addresses_safely(export_url)
+                    proxies = resolve_outbound_proxies(None)
+                    ok, hostname, infos = (True, None, None) if proxies else resolve_endpoint_addresses_safely(export_url)
                     if not ok:
                         flash("That sheet URL could not be reached safely.", "error")
                         return render_template("cmdb_import.html", preview=None, csv_text="",
@@ -15467,9 +15485,9 @@ def create_app(test_config=None):
                         # webhooks (see serviceops_core/dns_pin.py).
                         if hostname and infos:
                             with pin_resolved_addresses(hostname, infos):
-                                response = requests.get(export_url, timeout=15, allow_redirects=False)
+                                response = requests.get(export_url, timeout=15, allow_redirects=False, proxies=proxies)
                         else:
-                            response = requests.get(export_url, timeout=15, allow_redirects=False)
+                            response = requests.get(export_url, timeout=15, allow_redirects=False, proxies=proxies)
                         response.raise_for_status()
                         csv_text = response.text
                     except requests.RequestException as error:

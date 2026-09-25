@@ -5,11 +5,13 @@ import os
 import re
 import socket
 import time
+from contextlib import nullcontext
 from urllib.parse import urlsplit
 
 import requests
 
 from serviceops_core.dns_pin import pin_resolved_addresses
+from serviceops_core.proxy_tunnel import parse_proxy_url
 from serviceops_core.security import redact
 from serviceops_models import settings_cipher
 
@@ -211,6 +213,30 @@ def decrypt_key(config):
         raise ProviderError("Provider credential could not be decrypted.") from None
 
 
+def proxy_url(config):
+    """Resolve one model's egress policy without consulting process proxy variables."""
+    mode = getattr(config, "proxy_mode", "default")
+    if mode == "none":
+        return ""
+    value = getattr(config, "proxy_url", "") if mode == "custom" else getattr(config, "default_proxy_url", "")
+    if not value:
+        return ""
+    try:
+        parse_proxy_url(value)
+    except ValueError:
+        raise ProviderError("The configured outbound proxy URL is invalid.") from None
+    return value
+
+
+def provider_session(config):
+    client = requests.Session()
+    client.trust_env = False
+    proxy = proxy_url(config)
+    if proxy:
+        client.proxies.update({"http": proxy, "https": proxy})
+    return client, proxy
+
+
 def auth_headers(provider, key):
     headers = {"Content-Type": "application/json"}
     if provider == "anthropic":
@@ -224,11 +250,12 @@ def auth_headers(provider, key):
 
 def read_metadata(config, url, key, *, optional=False):
     """Bounded authenticated metadata reads, including slow-response and redirect protection."""
-    hostname, infos = resolve_destination(url, config.provider == "self_hosted")
+    proxy = proxy_url(config)
+    hostname, infos = (None, None) if proxy else resolve_destination(url, config.provider == "self_hosted")
     started = time.monotonic()
     try:
-        with requests.Session() as client, pin_resolved_addresses(hostname, infos):
-            client.trust_env = False
+        pin = pin_resolved_addresses(hostname, infos) if hostname else nullcontext()
+        with provider_session(config)[0] as client, pin:
             with client.get(url, headers=auth_headers(config.provider, key), timeout=(5, 10), allow_redirects=False,
                             stream=True) as response:
                 if optional and response.status_code != 200:
@@ -300,7 +327,8 @@ def list_models(config, key=None, details=None, profiles=None):
 
 def generate(config, evidence, *, probe=False):
     url = validate_configuration(config)
-    hostname, infos = resolve_destination(url, config.provider == "self_hosted")
+    proxy = proxy_url(config)
+    hostname, infos = (None, None) if proxy else resolve_destination(url, config.provider == "self_hosted")
     key = decrypt_key(config)
     prompt = "Reply with the word READY." if probe else json.dumps(evidence, ensure_ascii=True)
     if len(prompt) > 40000:
@@ -324,8 +352,8 @@ def generate(config, evidence, *, probe=False):
     started = time.monotonic()
     limit = provider_timeout()
     try:
-        with requests.Session() as client, pin_resolved_addresses(hostname, infos):
-            client.trust_env = False
+        pin = pin_resolved_addresses(hostname, infos) if hostname else nullcontext()
+        with provider_session(config)[0] as client, pin:
             # A non-streaming model sends nothing until it has finished generating,
             # so the read timeout must cover the whole generation, not just a gap.
             with client.post(url, json=payload, headers=headers, timeout=(5, limit),
@@ -428,7 +456,8 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
     delivered as a single content delta.
     """
     url = validate_configuration(config)
-    hostname, infos = resolve_destination(url, config.provider == "self_hosted")
+    proxy = proxy_url(config)
+    hostname, infos = (None, None) if proxy else resolve_destination(url, config.provider == "self_hosted")
     key = decrypt_key(config)
     from serviceops_core.ai.capabilities import fit_messages, selected_profile
     messages, cap, budget_info = fit_messages(config, messages, max_tokens or config.max_output_tokens)
@@ -459,8 +488,8 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
             raise StreamCancelled()
 
     try:
-        with requests.Session() as client, pin_resolved_addresses(hostname, infos):
-            client.trust_env = False
+        pin = pin_resolved_addresses(hostname, infos) if hostname else nullcontext()
+        with provider_session(config)[0] as client, pin:
             with client.post(url, json=payload, headers=headers, timeout=(5, limit), allow_redirects=False,
                              stream=config.provider != "openai") as response:
                 if response.status_code != 200:

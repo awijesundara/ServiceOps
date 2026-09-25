@@ -130,6 +130,11 @@
         <label>Name<input type="text" maxlength="80" data-ai-f="name" placeholder="For example: Office server"></label>
         <label data-ai-row="endpoint">Server address<input type="text" inputmode="url" maxlength="500" data-ai-f="endpoint" placeholder="http://192.168.68.68:8080"><small>Just the address. The rest is added for you.</small></label>
         <label>Access key<input type="password" autocomplete="new-password" maxlength="4096" data-ai-f="api_key"><small data-ai-keyhint>Leave blank if the server needs none.</small></label>
+        <fieldset class="aiadm-more">
+          <legend>Internet connection</legend>
+          <label>Proxy<select data-ai-f="proxy_mode"><option value="default">Use the system default proxy</option><option value="none">No proxy (direct connection)</option><option value="custom">Use a proxy for this model</option></select><small>The system default is managed in Outbound network settings.</small></label>
+          <label data-ai-row="proxy_url">Proxy URL<input type="password" autocomplete="new-password" maxlength="2048" data-ai-f="proxy_url" placeholder="http://user:password@proxy.example:3128"><small data-ai-proxyhint>Credentials are encrypted and are never shown again.</small></label>
+        </fieldset>
         <div class="aiadm-detect"><button type="button" class="button" data-ai-detect>Connect and find models</button><span class="muted" role="status" aria-live="polite" data-ai-detect-status>Enter the details, then connect.</span></div>
         <div class="aiadm-model">
           <label for="ai-model-input">Model</label>
