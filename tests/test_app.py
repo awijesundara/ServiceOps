@@ -2575,6 +2575,21 @@ def test_client_ticket_filter_control_uses_toolbar_button_dimensions(client):
     assert b".client-toolbar .list-filter .list-filter-toggle{height:100%;min-height:40px" in stylesheet.data
 
 
+def test_record_grid_top_aligns_rows_so_a_taller_field_does_not_offset_its_row_mate(client):
+    """Found from a live screenshot: Subcategory's "Other (describe below)" free-text
+    input (rendered inside the same grid cell as its <select>, see
+    _ticket_category_fields.html) makes that cell taller than its row-mate. With no
+    align-items on .record-grid (default: stretch), the shorter cell -- e.g. Urgency,
+    sharing that row -- stretched to match, and its own internal align-items:center
+    then centered its content in the middle of that taller row instead of at the top,
+    reading as a misaligned page. align-items:start on the outer grid fixes it for every
+    template that uses .record-grid (10 of them), not just this one field."""
+    login(client)
+    stylesheet = client.get("/static/itil.css")
+    assert b".record-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:clamp(32px,7vw,110px);row-gap:10px;align-items:start}" in stylesheet.data
+    assert b".record-grid-trio{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:clamp(20px,4vw,56px);row-gap:10px;align-items:start}" in stylesheet.data
+
+
 def test_declarative_action_policy_and_requester_field_projection(client, app):
     assert validate_policy()
     assert role_has_action("requester", "comment_public")
