@@ -280,6 +280,26 @@ def test_widget_and_page_only_render_for_users_who_may_chat(app, client, world):
     assert b"data-chat-launch" not in client.get("/").data
 
 
+def test_the_open_chat_state_is_rendered_server_side_from_a_cookie_not_flashed_in_by_js(app, client, world):
+    """B-392 follow-up: the widget used to flash the launcher button before JS could
+    hide it on every full-page navigation, because open/closed state lived only in
+    sessionStorage, invisible to the server. It's now a small, non-sensitive cookie
+    the server reads before the first byte of HTML is sent."""
+    login(client, "employee", "Employee123!")
+    closed = client.get("/dashboard")
+    assert b'<html lang="en">' in closed.data  # no stray class when never opened
+    client.set_cookie("ai_chat_open", "1")
+    opened = client.get("/dashboard")
+    assert b'<html lang="en" class="ai-chat-open">' in opened.data
+    full_page = client.get("/ai/chat")  # the full chat page has no launcher/widget at all
+    assert b"ai-chat-open" not in full_page.data
+    client.set_cookie("ai_chat_open", "not-the-literal-string-1")  # anything else reads as closed
+    assert b"ai-chat-open" not in client.get("/dashboard").data
+    client.delete_cookie("ai_chat_open")
+    client.get("/logout")
+    assert b"ai-chat-open" not in client.get("/login").data  # never for a signed-out visitor
+
+
 def test_admin_switches_control_chat_and_reasoning(app, client):
     login(client, "admin", "Admin123!")
     form = {"action": "save", "enabled": "on", "incident_enabled": "on", "provider": "self_hosted", "model": "local-model",
