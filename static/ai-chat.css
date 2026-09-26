@@ -326,11 +326,37 @@ span.ai-cite-pending{border-bottom:1px dotted var(--muted);opacity:.85}
 .ai-src[hidden]{display:none}
 .ai-src ul{margin-top:6px}
 .ai-chat.is-widget:not([hidden]){animation:ai-pop .18s ease-out}
+/* A page navigation while the widget is already open restores it quietly (see
+   ai-chat-panel.js) -- the server already rendered it visible from the first
+   paint (the "ai-chat-open" class on <html>, set from a cookie), so nothing
+   here is actually "opening" and the entrance pop must not replay. */
+.ai-chat.is-widget.is-restoring{animation:none}
+/* An explicit close plays the same pop in reverse, for a symmetric feel;
+   skipped entirely under reduced motion (ai-chat-panel.js checks first and
+   hides instantly instead, so this class is never even added in that case). */
+.ai-chat.is-widget.is-closing{animation:ai-pop .15s ease-in reverse}
 .ai-turn{animation:ai-in .22s ease-out}
 @keyframes ai-pop{from{opacity:0;transform:translateY(10px) scale(.98)}}
 @keyframes ai-in{from{opacity:0;transform:translateY(6px)}}
 @keyframes ai-fade{from{opacity:0}}
-@media(prefers-reduced-motion:reduce){.ai-chat.is-widget:not([hidden]),.ai-turn,.ai-chat-history,.ai-chat-memory{animation:none}.ai-chat-log{scroll-behavior:auto}}
+@media(prefers-reduced-motion:reduce){.ai-chat.is-widget:not([hidden]),.ai-chat.is-widget.is-closing,.ai-turn,.ai-chat-history,.ai-chat-memory{animation:none}.ai-chat-log{scroll-behavior:auto}}
+
+/* ===== Chat: friendlier header, nested-curve transition into the body, more compact spacing ===== */
+.ai-avatar{display:inline-grid;place-items:center;width:28px;height:28px;flex:0 0 auto;border-radius:50%;background:rgba(255,255,255,.18);color:#fff}
+.ai-chat-head{border-radius:0 0 18px 18px;padding-bottom:14px}
+.ai-chat-main{position:relative;margin-top:-14px;border-radius:16px 16px 0 0;background:#fff;overflow:hidden}
+.ai-chat.is-page .ai-chat-main{margin-top:0;border-radius:0}
+/* More compact: less air between turns, tighter bubbles and action rows, so a
+   short exchange doesn't feel sparse and a long one doesn't scroll too fast. */
+.ai-chat-log{gap:10px;padding:14px}
+.ai-bubble{padding:9px 13px}
+.ai-mini .ai-answer{padding:10px 13px}
+.ai-mini .ai-actions{gap:6px}
+.ai-actions{gap:8px}
+.ai-suggest{gap:6px}
+.ai-suggest-chip{padding:6px 11px;transition:transform .12s ease,background-color .12s ease,border-color .12s ease}
+.ai-suggest-chip:hover{transform:translateY(-1px)}
+.ai-suggest-chip:active{transform:translateY(0)}
 
 /* ===== Admin: fixes for controls that global form rules were overriding ===== */
 .aiadm-step label.aiadm-switch,.aiadm-bulk label.aiadm-switch{display:flex;grid-template-columns:none;align-items:flex-start;gap:12px;margin:10px 0;font-weight:400}

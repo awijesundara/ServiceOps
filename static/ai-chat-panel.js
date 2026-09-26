@@ -28,6 +28,18 @@
   function remember(id) { try { if (id) sessionStorage.setItem("ai-chat-conversation", id); else sessionStorage.removeItem("ai-chat-conversation"); } catch (e) { /* storage may be blocked */ } }
   function recalled() { try { return sessionStorage.getItem("ai-chat-conversation"); } catch (e) { return null; } }
 
+  // Whether the widget is open has to survive full page navigations (this is a
+  // classic multi-page app, not an SPA), but sessionStorage is invisible to the
+  // server at render time -- that gap is what used to show as a flash of the
+  // launcher button before this script could react. A small, non-sensitive
+  // cookie lets the server pre-render the correct state instead (see the
+  // `ai-chat-open` class on <html> in base.html and the matching CSS override
+  // in ai-chat.css); this is purely UI-state, never read for anything else, so
+  // it carries no CSRF or data-exposure surface.
+  function setChatOpenCookie(open) {
+    try { document.cookie = "ai_chat_open=" + (open ? "1" : "") + "; path=/; SameSite=Lax" + (open ? "" : "; Max-Age=0"); } catch (e) { /* cookies may be blocked */ }
+  }
+
   // Which AI service to ask for next time -- a lasting preference (unlike the
   // conversation pointer above, which is per-tab session state), so this is
   // localStorage, not sessionStorage. Purely a per-viewer convenience: the
@@ -333,19 +345,43 @@
 
   if (widget) {
     const close = root.querySelector("[data-chat-close]");
+    const CLOSE_MS = 150;  // matches .ai-chat.is-widget.is-closing's animation-duration in ai-chat.css
+    const reduceMotion = function () { return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; };
     const show = function (visible, focus) {
-      root.hidden = !visible;
+      root.classList.remove("is-restoring");  // an explicit toggle always gets the real open/close animation
+      if (visible) {
+        root.classList.remove("is-closing");
+        root.hidden = false;
+      } else if (reduceMotion()) {
+        root.hidden = true;
+      } else {
+        // Play the close animation before actually hiding it -- [hidden] is
+        // display:none, which can't itself be transitioned or animated.
+        root.classList.add("is-closing");
+        setTimeout(function () { root.hidden = true; root.classList.remove("is-closing"); }, CLOSE_MS);
+      }
       launcher.setAttribute("aria-expanded", visible ? "true" : "false");
       launcher.hidden = visible;
       document.documentElement.classList.toggle("ai-chat-open", visible);
-      keep("ai-chat-open", visible ? "1" : null);
+      setChatOpenCookie(visible);
       if (visible) { start(); if (focus !== false) ui.input.focus(); } else if (focus !== false) { launcher.focus(); }
     };
     launcher.addEventListener("click", function () { show(true); });
     close.addEventListener("click", function () { show(false); });
     root.addEventListener("keydown", function (event) { if (event.key === "Escape") show(false); });
-    // The chat stays open across pages: reopen it quietly, without stealing focus from the page.
-    if (kept("ai-chat-open") === "1") show(true, false);
+    // The chat stays open across pages. The server already rendered the correct
+    // state (the "ai-chat-open" class on <html>, from the cookie above) before
+    // this script ever ran -- there is no flash to fix here, just two things
+    // left to do: make it *really* open (the actual `hidden` property, not just
+    // the CSS override that bridged the first paint) and populate its content,
+    // without replaying the entrance animation since nothing visibly "opened."
+    if (document.documentElement.classList.contains("ai-chat-open")) {
+      root.classList.add("is-restoring");
+      root.hidden = false;
+      launcher.hidden = true;
+      launcher.setAttribute("aria-expanded", "true");
+      start();
+    }
   } else {
     if (window.matchMedia && window.matchMedia("(max-width: 700px)").matches) toggleHistory(false);
     start();
