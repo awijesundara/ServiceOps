@@ -328,6 +328,19 @@
   ui.fresh.addEventListener("click", function () { render(null); ui.welcome.hidden = false; refreshHistory(); ui.input.focus(); if (widget) toggleHistory(false); });
   ui.toggle.addEventListener("click", function () { toggleHistory(); });
 
+  // The widget header's "..." options menu (New chat/History/Memory/Open full page)
+  // is a plain <details>, which has no built-in "close after picking one" or
+  // "close on an outside click" behavior -- add both, matching how every other
+  // dropdown-like control in the chat panel already closes itself after use.
+  const menu = root.querySelector(".ai-chat-menu");
+  if (menu) {
+    menu.querySelectorAll("[data-chat-new], [data-chat-history-toggle], [data-chat-memory-toggle], a").forEach(function (item) {
+      item.addEventListener("click", function () { menu.open = false; });
+    });
+    document.addEventListener("click", function (event) { if (menu.open && !menu.contains(event.target)) menu.open = false; });
+    menu.addEventListener("keydown", function (event) { if (event.key === "Escape") { menu.open = false; menu.querySelector("summary").focus(); } });
+  }
+
   function start() {
     if (state.loaded) return;
     state.loaded = true;

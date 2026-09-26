@@ -272,7 +272,7 @@ def test_widget_and_page_only_render_for_users_who_may_chat(app, client, world):
     login(client, "employee", "Employee123!")
     assert b"data-chat-launch" in client.get("/dashboard").data or b"data-chat-launch" in client.get("/").data
     page = client.get("/ai/chat")
-    assert page.status_code == 200 and b"Ask ServiceOps" in page.data and b"data-chat-launch" not in page.data
+    assert page.status_code == 200 and b"ServiceOps AI" in page.data and b"data-chat-launch" not in page.data
     with app.app_context():
         db.session.get(AIConfiguration, 1).chat_enabled = False
         db.session.commit()
@@ -287,10 +287,10 @@ def test_the_open_chat_state_is_rendered_server_side_from_a_cookie_not_flashed_i
     the server reads before the first byte of HTML is sent."""
     login(client, "employee", "Employee123!")
     closed = client.get("/dashboard")
-    assert b'<html lang="en">' in closed.data  # no stray class when never opened
+    assert b' class="ai-chat-open"' not in closed.data  # no stray class when never opened
     client.set_cookie("ai_chat_open", "1")
     opened = client.get("/dashboard")
-    assert b'<html lang="en" class="ai-chat-open">' in opened.data
+    assert b'<html lang="en" class="ai-chat-open" style="--brand-primary:' in opened.data
     full_page = client.get("/ai/chat")  # the full chat page has no launcher/widget at all
     assert b"ai-chat-open" not in full_page.data
     client.set_cookie("ai_chat_open", "not-the-literal-string-1")  # anything else reads as closed

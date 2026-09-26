@@ -1,6 +1,6 @@
 {% set chat_was_open = ai_chat_available(current_user) and request.endpoint != 'ai.chat_page' and request.cookies.get('ai_chat_open') == '1' %}
 <!doctype html>
-<html lang="en"{% if chat_was_open %} class="ai-chat-open"{% endif %}>
+<html lang="en"{% if chat_was_open %} class="ai-chat-open"{% endif %} style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }}">
 <head>
   <link rel="manifest" href="{{ url_for('pwa_manifest') }}">
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png', v=app_version) }}">

@@ -6840,6 +6840,26 @@ def test_admin_can_update_live_platform_branding(client, app):
     assert b"Administration settings saved" in response.data
 
 
+def test_configured_brand_colors_actually_reach_the_page_not_just_the_database(client, app):
+    """The admin-can-save test above only proves BRAND_TEAL/BRAND_AMBER persist to the
+    database -- it never proved a configured color actually renders anywhere. It didn't:
+    brand.css's :root block computes --brand-teal/--brand-amber from --brand-primary/
+    --brand-accent, but those were only ever set as an inline style on <body>. CSS custom
+    properties never flow upward from a child to an ancestor, so :root's own var() lookup
+    could never see them and silently kept the hard-coded default forever, regardless of
+    what an administrator configured -- sitewide, not just in one feature. Fixed by also
+    setting them on <html> (:root itself). This pins the actual rendered value, not just
+    the saved one."""
+    login(client)
+    client.post("/admin/settings/appearance", data={
+        "BRAND_TEAL": "#124c5a", "BRAND_AMBER": "#f4a340", "DEFAULT_DENSITY": "comfortable",
+    })
+    page = client.get("/dashboard").data
+    start = page.index(b"<html")
+    html_tag = page[start:page.index(b">", start) + 1]
+    assert b"--brand-primary:#124c5a" in html_tag and b"--brand-accent:#f4a340" in html_tag
+
+
 def test_settings_category_page_does_not_trigger_auth_method_check_for_other_categories(client):
     """B-320: the "at least one authentication method must remain
     enabled" validation used to run unconditionally on every save because
