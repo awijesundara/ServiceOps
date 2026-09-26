@@ -198,9 +198,10 @@ class Evidence:
 def _ticket_text(ticket):
     comments = Comment.query.filter_by(tenant_id=ticket.tenant_id, ticket_id=ticket.id).order_by(
         Comment.created_at.desc()).limit(20).all()
+    offering = ticket.service_offering.name if getattr(ticket, "service_offering", None) else "Not set"
     parts = [
         f"State: {ticket.state}; Priority: {ticket.priority}; Impact: {ticket.impact}; Urgency: {ticket.urgency}; "
-        f"Category: {ticket.category}; Subcategory: {ticket.subcategory or 'Not set'}; "
+        f"Category: {ticket.category}; Subcategory: {ticket.subcategory or 'Not set'}; Service offering: {offering}; "
         f"Opened: {ticket.created_at.isoformat()}; Updated: {ticket.updated_at.isoformat()}",
         (ticket.description or "")[:5000],
     ]
@@ -499,7 +500,7 @@ def chat_instructions(scope):
         "supplied freeze windows before proposing a change date, and mention related tickets or articles that already "
         "exist. When you have enough, say you have prepared a draft for them to review, then add one final line exactly "
         'like: [[TICKET]] {"kind":"incident","title":"...","description":"...","impact":"Low|Medium|High|Critical",'
-        '"urgency":"Low|Medium|High|Critical","category":"General|Access|Hardware|Software|Network|Security"} '
+        f'"urgency":"Low|Medium|High|Critical","category":"{"|".join(_tenant_categories(scope.tenant_id))}"}} '
         "(kind may be change only if this person may raise changes). The person reviews and submits it themselves. "
         "FOLLOW-UPS: end every answer with one last line: [[FOLLOWUPS]] first question | second question | third question "
         "(short things this person might ask next, at most three). "
@@ -549,7 +550,21 @@ def history_for_model(scope, messages, limit=6):
 
 _MARKER_START = re.compile(r"\[\[\s*(?:TICKET|FOLLOW|REMEMBER|DRAFT)|\[\[[A-Za-z -]{0,10}$|\[$", re.I)
 _LEVELS = ("Low", "Medium", "High", "Critical")
+# Historical hard-coded default -- kept only as the last-resort fallback in
+# _tenant_categories() below if a tenant's admin-managed list is ever empty
+# (migration 20260926_0103 always seeds it, so this should not normally apply)
+# or when no tenant_id is available at all (e.g. a unit test calling
+# extract_extras() directly, outside a request).
 _CATEGORIES = ("General", "Access", "Hardware", "Software", "Network", "Security")
+
+
+def _tenant_categories(tenant_id):
+    if not tenant_id:
+        return _CATEGORIES
+    from app import TicketCategory
+    names = tuple(row.name for row in TicketCategory.query.filter_by(
+        tenant_id=tenant_id, active=True).order_by(TicketCategory.name).all())
+    return names or _CATEGORIES
 
 
 def _scan_sensitive(text):
@@ -595,7 +610,7 @@ def extract_generated_draft(text, scope, grounded_identifiers):
     return result
 
 
-def extract_extras(text, may_raise_change=False):
+def extract_extras(text, may_raise_change=False, tenant_id=None):
     """Pull the machine-readable tail (ticket draft, follow-up questions) out of an answer.
 
     The draft is only ever a suggestion for the person to review in the normal ticket form; every field is
@@ -603,6 +618,7 @@ def extract_extras(text, may_raise_change=False):
     import json
     extras = {}
     text = text or ""
+    categories = _tenant_categories(tenant_id)
     match = re.search(r"\[\[\s*TICKET\s*\]\]\s*", text, re.I)
     if match:
         try:
@@ -620,7 +636,7 @@ def extract_extras(text, may_raise_change=False):
                 extras["draft"] = {"kind": kind, "title": redact(title), "description": redact(description),
                                    "impact": pick(data.get("impact"), _LEVELS, "Medium"),
                                    "urgency": pick(data.get("urgency"), _LEVELS, "Medium"),
-                                   "category": pick(data.get("category"), _CATEGORIES, "General")}
+                                   "category": pick(data.get("category"), categories, "General")}
     note = re.search(r"\[\[\s*REMEMBER\s*\]\]\s*(.+?)\s*(?:\[\[|$)", text, re.I | re.S)
     if note:
         candidate = " ".join(note.group(1).split()).strip(" \"'")[:240]

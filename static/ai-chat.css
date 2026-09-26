@@ -38,9 +38,12 @@
 .ai-answer .ai-code{background:#13252b;color:#e6eef0;border-radius:8px;padding:12px 14px;overflow:auto;margin:0 0 12px}.ai-answer .ai-code code{background:none;color:inherit;padding:0}
 .ai-answer .ai-quote{margin:0 0 12px;padding:2px 14px;border-left:3px solid var(--line);color:#44525d}
 .ai-answer.is-streaming>*:last-child::after{content:"\258D";margin-left:2px;color:var(--ai-accent);animation:ai-blink 1s steps(2,start) infinite}
-.ai-cite{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:19px;padding:0 6px;margin:0 2px;border-radius:5px;background:var(--ai-soft);color:var(--ai-accent);font-size:11px;font-weight:800;text-decoration:none;vertical-align:1px}
-a.ai-cite:hover,a.ai-cite:focus-visible{background:var(--ai-accent);color:#fff}
-.ai-cite-pending{opacity:.55}
+/* A citation now links the word/record it supports directly, rather than
+   appending a separate "S1" footnote chip -- styled as a normal in-text link
+   with a dotted underline, so it reads as sourced without looking clickable-away. */
+a.ai-cite{color:var(--ai-accent);font-weight:650;text-decoration:none;border-bottom:1px dotted var(--ai-accent);text-underline-offset:2px}
+a.ai-cite:hover,a.ai-cite:focus-visible{border-bottom-style:solid}
+span.ai-cite-pending{border-bottom:1px dotted var(--muted);opacity:.85}
 
 .ai-banner{margin:0;padding:11px 14px;border-radius:8px;background:#fff6e8;color:#7a4c00}
 .ai-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}

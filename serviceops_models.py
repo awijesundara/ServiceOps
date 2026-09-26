@@ -116,6 +116,8 @@ __all__ = [
     "ApprovalGate",
     "ApprovalVote",
     "ServiceOffering",
+    "TicketCategory",
+    "TicketSubcategory",
     "SLADefinition",
     "TaskSLA",
     "BusinessSchedule",
@@ -2006,6 +2008,33 @@ class ServiceOffering(db.Model):
     owner = db.relationship("User")
     support_group = db.relationship("SupportGroup")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+
+
+class TicketCategory(db.Model):
+    """Admin-configurable ITIL v4/ServiceNow-style ticket category. Ticket.category
+    stays free text (see migration 20260926_0103) -- this table supplies the controlled
+    vocabulary the ticket form and AI drafting validate against, replacing what used to
+    be a hard-coded Python list, without a destructive FK migration of existing data."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_ticket_category_tenant_name"),)
+
+
+class TicketSubcategory(db.Model):
+    """Belongs to one TicketCategory. `default_service_offering_id` only *suggests* a
+    service offering on the ticket form when this subcategory is picked -- it never
+    overwrites what a ticket already has, and Ticket.subcategory itself stays free text."""
+    id = db.Column(db.Integer, primary_key=True)
+    category_id = db.Column(db.Integer, db.ForeignKey("ticket_category.id"), nullable=False)
+    name = db.Column(db.String(80), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    default_service_offering_id = db.Column(db.Integer, db.ForeignKey("service_offering.id"))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    category = db.relationship("TicketCategory", backref=db.backref("subcategories", cascade="all, delete-orphan"))
+    default_service_offering = db.relationship("ServiceOffering")
+    __table_args__ = (db.UniqueConstraint("category_id", "name", name="uq_ticket_subcategory_category_name"),)
 
 
 SLA_AGREEMENT_TYPES = ["SLA", "OLA", "UC"]
