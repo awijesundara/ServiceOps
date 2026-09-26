@@ -7475,7 +7475,7 @@ def create_app(test_config=None):
         if (
             (request.path.startswith("/api/v1/") or request.path.startswith("/scim/v2/"))
             and request.endpoint not in {
-                "api_openapi", "api_docs", "monitoring_ingest",
+                "api_openapi", "api_docs", "monitoring_ingest", "monitoring_backup_report",
                 "api_mobile_login", "api_mobile_refresh",
                 "api_passkey_authentication_options", "api_passkey_authentication_complete",
                 "apple_app_site_association",
@@ -8233,6 +8233,20 @@ def create_app(test_config=None):
                         "security": [{"monitoringToken": []}],
                     },
                 },
+                "/monitoring/{source_id}/backup-report": {
+                    "parameters": [{"name": "source_id", "in": "path", "required": True,
+                                    "schema": {"type": "string", "format": "uuid"}}],
+                    "post": {
+                        "summary": "Record a successful backup for System Health's recovery-set status",
+                        "description": (
+                            "Routine, not an incident -- unlike /monitoring/{source_id}/events, "
+                            "this never creates a record; it only updates the recovery-set "
+                            "timestamp an external backup job (Kubernetes CronJob, cron, a "
+                            "managed snapshot pipeline) reports after each successful run."
+                        ),
+                        "security": [{"monitoringToken": []}],
+                    },
+                },
                 "/cmdb/configuration-items": {
                     "put": {
                         "summary": "Create or update a configuration item by name",
@@ -8580,6 +8594,66 @@ def create_app(test_config=None):
                 "event_id": event.id,
                 "record_number": record.number,
                 "deduplicated": False,
+            })
+        }), 201
+
+    @app.post("/api/v1/monitoring/<source_id>/backup-report")
+    def monitoring_backup_report(source_id):
+        # A narrow sibling of monitoring_ingest(): a daily backup succeeding
+        # is routine, not an incident, so unlike that endpoint this never
+        # creates an EnterpriseRecord -- it only updates the same
+        # PlatformSetting rows tools/record_backup_status.py already writes
+        # for the Compose/RPM install path, so System Health's "Recovery
+        # set" widget (see _recovery_set_status()) is accurate for a
+        # Kubernetes deployment's backup CronJob too, without needing the
+        # full application image (with database credentials and every
+        # Python dependency) inside that job just to run one CLI script.
+        # Reuses the same MonitoringSource credential a deployment already
+        # created for backup-failure alerting -- no separate credential
+        # type to manage.
+        authorization = request.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer "):
+            abort(401, description="A monitoring bearer token is required.")
+        token = authorization[7:].strip()
+        source = MonitoringSource.query.filter_by(
+            source_id=source_id, active=True
+        ).first()
+        token_hash = api_token_hash(token) if token else ""
+        if (
+            not source or not token_hash
+            or not hmac.compare_digest(source.token_hash, token_hash)
+        ):
+            abort(401, description="The monitoring token is invalid or revoked.")
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            abort(400, description="A JSON object is required.")
+        manifest = str(body.get("manifest", "")).strip()
+        offsite = str(body.get("offsite", "")).strip()
+        if not manifest or len(manifest) > 500 or offsite not in ("archived", "not-configured"):
+            abort(400, description=(
+                "manifest (non-empty, max 500 chars) and offsite "
+                "(archived or not-configured) are required."
+            ))
+        values = {
+            "LAST_BACKUP_AT": now().isoformat(),
+            "LAST_BACKUP_MANIFEST": manifest,
+            "LAST_BACKUP_OFFSITE_STATUS": offsite,
+        }
+        for key, value in values.items():
+            row = db.session.get(PlatformSetting, key)
+            if row:
+                row.value = value
+            else:
+                db.session.add(PlatformSetting(key=key, value=value))
+        source.last_seen_at = now()
+        audit(
+            "backup report", manifest, f"source={source.source_id}; offsite={offsite}",
+            user_id=source.created_by_id, tenant_id=source.tenant_id,
+        )
+        db.session.commit()
+        return jsonify({
+            "data": project_document("backup_report_ack", "monitoring_source", {
+                "recorded_at": values["LAST_BACKUP_AT"],
             })
         }), 201
 

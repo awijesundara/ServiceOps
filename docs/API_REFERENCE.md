@@ -403,6 +403,32 @@ The pair of source and `external_id` is deduplicated. First ingestion returns
 `201`; a replay returns `200` with `"deduplicated": true`. ServiceOps creates
 an EVT record and an investigation task routed to the source's configured team.
 
+### 10a. Backup status reporting
+
+A daily backup succeeding is routine, not an incident, so this is a
+narrower sibling of monitoring ingestion: it never creates a record, it only
+updates the recovery-set status shown on **Administration → System health**.
+Point an external backup job (a Kubernetes CronJob, cron, a managed snapshot
+pipeline) at it after each successful run, using the same monitoring source
+credential created above.
+
+```http
+POST /api/v1/monitoring/7faacfb5-3f78-4cb4-a661-f3eeb20c9864/backup-report
+Authorization: Bearer REDACTED_MONITORING_TOKEN
+Content-Type: application/json
+
+{
+  "manifest": "/backups/serviceops-20260926T183000Z.dump",
+  "offsite": "not-configured"
+}
+```
+
+Required fields are `manifest` (a path or identifier for the backup that was
+taken, up to 500 characters) and `offsite` (`archived` if it was also copied
+to off-site/object storage, otherwise `not-configured`). Report backup
+*failure* through the regular monitoring-events endpoint above instead, so it
+becomes a tracked, routed incident rather than a status flag.
+
 ## 11. Error contract
 
 ```json

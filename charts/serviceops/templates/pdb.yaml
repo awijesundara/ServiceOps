@@ -10,3 +10,41 @@ spec:
   selector:
     matchLabels: {{- include "serviceops.webSelectorLabels" . | nindent 6 }}
 {{- end }}
+{{- if .Values.podDisruptionBudget.enabled }}
+# The outbox and AI workers are intentionally single-replica queue-drainers
+# (see worker.yaml/ai-worker.yaml), so "minAvailable: 1" here means neither
+# may ever be voluntarily evicted (a node drain or cluster-autoscaler
+# scale-down blocks on them, same as it would on the last replica of
+# anything else) -- that's the point: losing the only outbox/AI worker to a
+# routine drain would otherwise pass silently. A real drain still succeeds
+# with `kubectl drain --disable-eviction` or `--force`, same as for any
+# other PDB-protected singleton.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "serviceops.fullname" . }}-worker
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: worker
+{{- end }}
+{{- if and .Values.podDisruptionBudget.enabled .Values.ai.workerEnabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "serviceops.fullname" . }}-ai-worker
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: ai-worker
+{{- end }}

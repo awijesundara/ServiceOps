@@ -15,6 +15,12 @@ spec:
               app.kubernetes.io/name: {{ include "serviceops.name" . }}
               app.kubernetes.io/instance: {{ .Release.Name }}
               app.kubernetes.io/component: helm-test
+        {{- if .Values.backup.enabled }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: backup
+        {{- end }}
         {{- if .Values.ingress.enabled }}
         - namespaceSelector: {{- toYaml .Values.networkPolicy.ingressNamespaceSelector | nindent 12 }}
         {{- end }}

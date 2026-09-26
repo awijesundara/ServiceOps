@@ -54,6 +54,12 @@
         "monitoring_source": ["event_id", "record_number", "deduplicated"]
       }
     },
+    "backup_report_ack": {
+      "allowed_fields": ["recorded_at"],
+      "audiences": {
+        "monitoring_source": ["recorded_at"]
+      }
+    },
     "workflow_ack": {
       "allowed_fields": ["event_id", "state", "ticket"],
       "audiences": {
