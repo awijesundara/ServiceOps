@@ -9,6 +9,7 @@
 <section class="ai-chat{% if full_page %} is-page{% else %} is-widget{% endif %}" id="ai-chat-panel" data-chat{% if not full_page %} role="dialog" aria-modal="false" aria-labelledby="ai-chat-title" hidden{% endif %}>
   <header class="ai-chat-head">
     <div class="ai-chat-titles">
+      <span class="ai-avatar" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" focusable="false"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-8l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
       <h2 id="ai-chat-title">Ask ServiceOps</h2>
       <span class="ai-scope" data-chat-scope>Checking access…</span>
       <select class="ai-model-pick" data-chat-model aria-label="AI model" title="Choose which AI service answers your next message" hidden>

@@ -496,7 +496,7 @@ def test_chat_model_picker_lists_services_hides_with_one_and_remembers_the_choic
         picker.select_option(label=[o for o in options if "Backup server" in o][0])
         assert page.evaluate("localStorage.getItem('ai-chat-model')") == "second-service"
         # Reloading (a fresh page load, not just re-opening the panel) must restore the choice.
-        # The widget reopens itself on load (sessionStorage "ai-chat-open") -- no launcher click here.
+        # The widget reopens itself on load (the ai_chat_open cookie) -- no launcher click here.
         page.goto(base + "/", wait_until="networkidle")
         wait_for(lambda: page.locator("[data-chat-model]").is_visible())
         assert page.locator("[data-chat-model]").input_value() == "second-service"
@@ -521,6 +521,52 @@ def test_chat_model_picker_lists_services_hides_with_one_and_remembers_the_choic
         # this file) -- leaving "first-service" behind would bleed into later tests.
         db.session.query(AIConnection).filter_by(id="first-service").delete()
         db.session.commit()
+
+
+def test_chat_reappears_without_a_flash_or_replayed_entrance_across_a_page_navigation(ai_browser_server, monkeypatch):
+    """B-392: the widget used to flash the launcher button, then replay its
+    entrance "pop," on every single page navigation while it was open --
+    because open/closed state lived only in sessionStorage, invisible to the
+    server rendering the next page. It's now a cookie the server reads before
+    the first byte of HTML, so the correct state is there from first paint."""
+    from playwright.sync_api import sync_playwright
+    app, base, _ = ai_browser_server
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", ENDPOINT)
+    enable_ai(app)
+    clear_chats(app)
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_context(viewport={"width": 1440, "height": 1000}).new_page()
+        sign_in(page, base)
+        page.goto(base + "/", wait_until="networkidle")
+        assert "ai-chat-open" not in (page.evaluate("document.documentElement.className") or "")
+        page.locator("[data-chat-launch]").click()
+        wait_for(lambda: page.locator("[data-chat]").is_visible())
+        assert page.locator(".ai-avatar").count() == 1  # the redesigned header
+        assert "ai_chat_open=1" in page.evaluate("document.cookie")
+        # A fresh navigation: the server must render it already open (no launcher
+        # click here at all), and must not replay the entrance animation.
+        page.goto(base + "/tickets", wait_until="domcontentloaded")
+        assert "ai-chat-open" in page.evaluate("document.documentElement.className")
+        assert page.locator("[data-chat]").is_visible()
+        assert page.locator("[data-chat-launch]").is_hidden()
+        assert page.locator("[data-chat].is-restoring").count() == 1
+        # An explicit close removes the cookie and plays the reverse-pop close
+        # animation rather than vanishing instantly.
+        page.locator("[data-chat-close]").click()
+        assert "ai_chat_open=1" not in page.evaluate("document.cookie")
+        wait_for(lambda: page.locator("[data-chat-launch]").is_visible())
+        wait_for(lambda: page.locator("[data-chat]").is_hidden())
+        # Explicitly reopening (not restoring) plays the entrance pop again --
+        # is-restoring must not still be suppressing it from the earlier restore.
+        page.locator("[data-chat-launch]").click()
+        wait_for(lambda: page.locator("[data-chat]").is_visible())
+        assert page.locator("[data-chat].is-restoring").count() == 0
+        page.locator("[data-chat-close]").click()
+        wait_for(lambda: page.locator("[data-chat]").is_hidden())
+        page.goto(base + "/", wait_until="networkidle")
+        assert "ai-chat-open" not in page.evaluate("document.documentElement.className")  # closed, stayed closed
+        browser.close()
 
 
 def test_full_page_chat_and_stop(ai_browser_server, monkeypatch):
