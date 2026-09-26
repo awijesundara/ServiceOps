@@ -126,6 +126,24 @@ def test_a_change_draft_needs_authority_and_bad_drafts_are_dropped():
         assert "draft" not in access.extract_extras(bad, may_raise_change=True)
 
 
+def test_draft_category_validates_against_the_tenants_own_admin_managed_list(app):
+    """B-388 follow-up: the six categories used to be a hard-coded tuple everywhere.
+    Now that they're admin-managed (app.py's TicketCategory), a drafted category must
+    validate against what this tenant actually has configured, not the old fallback."""
+    with app.app_context():
+        from app import TicketCategory, db
+        db.session.add(TicketCategory(name="Facilities", active=True, tenant_id=1))
+        db.session.commit()
+        drafted = '[[TICKET]] {"kind":"incident","title":"Broken chair","description":"x","category":"Facilities"}'
+        assert access.extract_extras(drafted, tenant_id=1)["draft"]["category"] == "Facilities"
+        # A category real for a *different* tenant must not leak in as valid here.
+        unscoped = access.extract_extras(drafted, tenant_id=999)["draft"]["category"]
+        assert unscoped == "General"
+        from app import User
+        admin_id = User.query.filter_by(username="admin").one().id
+        assert "Facilities" in access.chat_instructions(scope_for(admin_id))
+
+
 @pytest.fixture()
 def chat_ready(app, monkeypatch):
     monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", "http://127.0.0.1:18099/v1/chat/completions")

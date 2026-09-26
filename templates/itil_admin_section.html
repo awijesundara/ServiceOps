@@ -347,6 +347,62 @@
 </section>
 {% endif %}
 
+{% if section == 'ticket-categories' %}
+<section class="panel admin-section">
+  <p class="muted">The category and subcategory choices offered on the ticket form. Deactivating a category or subcategory removes it from the form without changing tickets that already used it. Picking a subcategory on the ticket form only ever suggests its linked service offering — it never overwrites what the requester already chose.</p>
+  <form method="post" action="{{ post_url }}" class="form-grid">
+    <input type="hidden" name="action" value="create_ticket_category">
+    <label class="required-field"><span>New category name</span><input name="name" required maxlength="80" placeholder="e.g. Facilities"></label>
+    <div class="wide actions"><button class="primary">Create category</button></div>
+  </form>
+  {% for category in ticket_categories %}
+  <article class="config-row" style="flex-direction:column;align-items:stretch;gap:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div><strong>{{ category.name }}</strong>{% if not category.active %}<small class="muted"> · inactive</small>{% endif %}</div>
+      <details><summary>Edit</summary>
+        <form method="post" action="{{ post_url }}" class="stack compact-form">
+          <input type="hidden" name="action" value="update_ticket_category">
+          <input type="hidden" name="category_id" value="{{ category.id }}">
+          <label><span>Name</span><input name="name" value="{{ category.name }}" required maxlength="80"></label>
+          <label class="check"><input type="checkbox" name="active" {% if category.active %}checked{% endif %}> Active</label>
+          <button class="button">Update</button>
+        </form>
+      </details>
+    </div>
+    <table><thead><tr><th>Subcategory</th><th>Suggests service offering</th><th></th></tr></thead>
+      <tbody>
+        {% for subcategory in category.subcategories %}
+        <tr>
+          <td>{{ subcategory.name }}{% if not subcategory.active %} <small class="muted">(inactive)</small>{% endif %}</td>
+          <td>{{ subcategory.default_service_offering.name if subcategory.default_service_offering else "—" }}</td>
+          <td>
+            <details><summary>Edit</summary>
+              <form method="post" action="{{ post_url }}" class="stack compact-form">
+                <input type="hidden" name="action" value="update_ticket_subcategory">
+                <input type="hidden" name="subcategory_id" value="{{ subcategory.id }}">
+                <label><span>Name</span><input name="name" value="{{ subcategory.name }}" required maxlength="80"></label>
+                <label><span>Suggests service offering</span><select name="default_service_offering_id"><option value="">None</option>{% for service in services %}<option value="{{ service.id }}" {% if subcategory.default_service_offering_id == service.id %}selected{% endif %}>{{ service.name }}</option>{% endfor %}</select></label>
+                <label class="check"><input type="checkbox" name="active" {% if subcategory.active %}checked{% endif %}> Active</label>
+                <button class="button">Update</button>
+              </form>
+            </details>
+          </td>
+        </tr>
+        {% else %}<tr><td colspan="3" class="muted">No subcategories yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    <form method="post" action="{{ post_url }}" class="inline-form">
+      <input type="hidden" name="action" value="create_ticket_subcategory">
+      <input type="hidden" name="category_id" value="{{ category.id }}">
+      <input name="name" maxlength="80" placeholder="New subcategory name" required>
+      <select name="default_service_offering_id"><option value="">Suggests no service offering</option>{% for service in services %}<option value="{{ service.id }}">{{ service.name }}</option>{% endfor %}</select>
+      <button class="button">Add subcategory</button>
+    </form>
+  </article>
+  {% else %}<p>No ticket categories configured.</p>{% endfor %}
+</section>
+{% endif %}
+
 {% if section == 'sla' %}
 <section class="panel admin-section">
   <p>New work uses the selected timezone-aware calendar. Existing running SLA targets are preserved.</p>

@@ -153,6 +153,75 @@ def display_version():
     return f"{APP_VERSION}-ipfs" if ipfs_enabled() else APP_VERSION
 
 TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
+# Historical hard-coded default. Migration 20260926_0103 seeds every tenant with
+# these same six names into TicketCategory, so this constant now only serves as
+# the last-resort fallback below if a tenant's table is ever unexpectedly empty.
+
+# Starter taxonomy used both by seed_itil() (fresh/bootstrapped databases) and
+# mirrored in migrations/versions/20260926_0103_ticket_category_taxonomy.py
+# (already-deployed databases) -- kept as two copies deliberately, since a
+# migration must never import from app.py (it has to keep working unchanged
+# regardless of how app.py evolves later).
+TICKET_CATEGORY_TAXONOMY = {
+    "General": ["General Inquiry", "How-To Question"],
+    "Access": ["Account Lockout", "Password Reset", "Permission Request", "MFA / Authentication"],
+    "Hardware": ["Laptop", "Desktop", "Printer", "Mobile Device", "Peripheral", "Server"],
+    "Software": ["Application Issue", "Installation", "License", "Email & Collaboration", "Operating System"],
+    "Network": ["Connectivity", "VPN", "Wireless", "DNS / DHCP", "Firewall"],
+    "Security": ["Security Incident", "Vulnerability", "Policy Violation", "Phishing / Malware"],
+}
+
+
+def tenant_ticket_categories(tenant_id):
+    """Active, admin-managed ticket categories for one tenant, alphabetical."""
+    rows = TicketCategory.query.filter_by(tenant_id=tenant_id, active=True).order_by(TicketCategory.name).all()
+    return rows or [SimpleNamespace(id=None, name=name) for name in TICKET_CATEGORY_OPTIONS]
+
+
+def tenant_ticket_subcategories(tenant_id):
+    """Active subcategories for one tenant, grouped by their (active) category,
+    for building a <select><optgroup> subcategory list on the ticket form."""
+    return (TicketSubcategory.query.join(TicketCategory)
+            .filter(TicketSubcategory.tenant_id == tenant_id, TicketSubcategory.active.is_(True),
+                    TicketCategory.active.is_(True))
+            .order_by(TicketCategory.name, TicketSubcategory.name).all())
+
+
+def normalize_ticket_category(tenant_id, submitted):
+    """Canonicalizes a submitted category against the tenant's active list
+    (case-insensitive). Never rejects outright -- an unrecognized value (e.g.
+    from an older integration, or a tenant with a since-renamed category)
+    falls back to "General", matching this field's already-lenient historical
+    default rather than breaking ticket creation on a taxonomy mismatch."""
+    submitted = (submitted or "").strip()
+    for category in tenant_ticket_categories(tenant_id):
+        if category.name.casefold() == submitted.casefold():
+            return category.name
+    return "General"
+
+
+def normalize_ticket_subcategory(tenant_id, category_name, submitted):
+    """Canonicalizes a submitted subcategory against the ones modeled under
+    `category_name`; anything else (including a category with none modeled
+    yet) is kept as free text -- the "Other" path, preserving this field's
+    historical fully-free-text behavior for whatever an administrator hasn't
+    modeled yet."""
+    submitted = (submitted or "").strip()[:80]
+    if not submitted:
+        return submitted
+    for subcategory in tenant_ticket_subcategories(tenant_id):
+        if subcategory.category.name.casefold() == category_name.casefold() and subcategory.name.casefold() == submitted.casefold():
+            return subcategory.name
+    return submitted
+
+
+def submitted_subcategory(form, fallback=""):
+    """The ticket form's subcategory <select> posts the sentinel "__other__"
+    when the person typed a value not in the modeled list (see
+    _ticket_category_fields.html/static/ticket-category.js) -- resolve that
+    back to the actual typed text before it reaches normalize_ticket_subcategory()."""
+    value = form.get("subcategory", fallback)
+    return form.get("subcategory_other", "") if value == "__other__" else value
 
 # Generic ServiceNow-style list filtering: a list view declares which
 # columns are filterable (FilterField) and the client posts back a JSON
@@ -5868,6 +5937,23 @@ def seed_itil(admin):
             SLADefinition(name="P3 incident resolution", target_type="ticket", priority="P3", duration_minutes=1440),
             SLADefinition(name="Catalog fulfillment", target_type="ritm", duration_minutes=4320),
         ])
+    # Starter ITIL v4/ServiceNow-style ticket category taxonomy. An already-running
+    # deployment gets these from migration 20260926_0103 instead; this mirrors the
+    # same starter set here so a freshly bootstrapped database (tests, a new
+    # tenant, `./serviceops install`, which build the schema from the current
+    # ORM metadata rather than replaying every migration) isn't left with an
+    # empty admin screen. Administrators can rename/add/deactivate every row.
+    for category_name, subcategory_names in TICKET_CATEGORY_TAXONOMY.items():
+        category = TicketCategory.query.filter_by(tenant_id=admin.tenant_id, name=category_name).first()
+        if not category:
+            category = TicketCategory(name=category_name, active=True, tenant_id=admin.tenant_id)
+            db.session.add(category)
+            db.session.flush()
+        for subcategory_name in subcategory_names:
+            if not TicketSubcategory.query.filter_by(category_id=category.id, name=subcategory_name).first():
+                db.session.add(TicketSubcategory(
+                    category_id=category.id, name=subcategory_name, active=True, tenant_id=admin.tenant_id,
+                ))
 
 
 def bootstrap_ipfs_tenant_and_admin():
@@ -8656,7 +8742,7 @@ def create_app(test_config=None):
         ticket = create_ticket_with_unique_number(
             "incident",
             title=title, description=description,
-            category=str(body.get("category", "General"))[:80],
+            category=normalize_ticket_category(g.api_client.tenant_id, str(body.get("category", "General"))[:80]),
             priority=priority, requester_id=g.api_user.id,
             tenant_id=g.api_client.tenant_id,
         )
@@ -9878,7 +9964,7 @@ def create_app(test_config=None):
             "state": {"label": "State", "type": "choice", "column": Ticket.state,
                       "options": [(s, s) for s in TICKET_STATE_OPTIONS]},
             "category": {"label": "Category", "type": "choice", "column": Ticket.category,
-                        "options": [(c, c) for c in TICKET_CATEGORY_OPTIONS]},
+                        "options": [(c.name, c.name) for c in tenant_ticket_categories(current_user.tenant_id)]},
             "opened": {"label": "Opened", "type": "date", "column": Ticket.created_at},
             "updated": {"label": "Updated", "type": "date", "column": Ticket.updated_at},
         }
@@ -10260,6 +10346,8 @@ def create_app(test_config=None):
                 service_offerings=tenant_query(ServiceOffering).filter_by(
                     status="Operational"
                 ).order_by(ServiceOffering.name).all(),
+                ticket_categories=tenant_ticket_categories(current_user.tenant_id),
+                ticket_subcategories=tenant_ticket_subcategories(current_user.tenant_id),
                 # Active/upcoming freeze windows, surfaced on the form itself
                 # so a Standard/Normal change author sees the block coming
                 # instead of only discovering it after a failed submit.
@@ -10404,12 +10492,13 @@ def create_app(test_config=None):
             impact = request.form.get("impact", "Medium")
             urgency = request.form.get("urgency", "Medium")
             priority = calculate_priority(impact, urgency)
+            category = normalize_ticket_category(current_user.tenant_id, request.form.get("category", "General"))
             ticket = create_ticket_with_unique_number(
                 kind,
                 title=title, description=description,
-                category=request.form.get("category", "General"), priority=priority,
+                category=category, priority=priority,
                 impact=impact, urgency=urgency,
-                subcategory=request.form.get("subcategory", "").strip(),
+                subcategory=normalize_ticket_subcategory(current_user.tenant_id, category, submitted_subcategory(request.form)),
                 contact_type=contact_type, notify=notify,
                 service_offering_id=offering.id if offering else None,
                 requester_id=current_user.id)
@@ -10685,12 +10774,12 @@ def create_app(test_config=None):
                     ticket.description = request.form.get(
                         "description", ticket.description
                     ).strip()
-                    ticket.category = request.form.get(
-                        "category", ticket.category
-                    ).strip()
-                    ticket.subcategory = request.form.get(
-                        "subcategory", ticket.subcategory
-                    ).strip()
+                    ticket.category = normalize_ticket_category(
+                        current_user.tenant_id, request.form.get("category", ticket.category)
+                    )
+                    ticket.subcategory = normalize_ticket_subcategory(
+                        current_user.tenant_id, ticket.category, submitted_subcategory(request.form, ticket.subcategory)
+                    )
                     ticket.contact_type = contact_type
                     ticket.notify = notify
                     offering_id = request.form.get("service_offering_id", "")
@@ -10852,6 +10941,8 @@ def create_app(test_config=None):
             service_offerings=tenant_query(ServiceOffering).filter_by(
                 status="Operational"
             ).order_by(ServiceOffering.name).all(),
+            ticket_categories=tenant_ticket_categories(current_user.tenant_id),
+            ticket_subcategories=tenant_ticket_subcategories(current_user.tenant_id),
             pir_outcomes=CHANGE_PIR_OUTCOMES,
             is_following=is_following_ticket(current_user, ticket),
             change_freeze_windows=(
@@ -16796,6 +16887,71 @@ def create_app(test_config=None):
                     sync_implied_role_grants(affected)
                 audit("update", f"Support group: {name}", f"{before} -> {group_type}; active={group.active}")
                 flash(f"Team {name} updated.", "success")
+            elif action == "create_ticket_category":
+                name = request.form.get("name", "").strip()
+                if not name or len(name) > 80:
+                    abort(400, description="Category name must contain 1 to 80 characters.")
+                if tenant_query(TicketCategory).filter(func.lower(TicketCategory.name) == name.casefold()).first():
+                    abort(409, description="A category with that name already exists.")
+                category = TicketCategory(name=name, active=True, tenant_id=current_user.tenant_id)
+                db.session.add(category)
+                db.session.flush()
+                audit("create", f"Ticket category: {name}", "")
+                flash(f"Category {name} created.", "success")
+            elif action == "update_ticket_category":
+                category = tenant_record_or_404(TicketCategory, int(request.form["category_id"]))
+                name = request.form.get("name", "").strip()
+                if not name or len(name) > 80:
+                    abort(400, description="Category name must contain 1 to 80 characters.")
+                duplicate = tenant_query(TicketCategory).filter(
+                    TicketCategory.id != category.id, func.lower(TicketCategory.name) == name.casefold(),
+                ).first()
+                if duplicate:
+                    abort(409, description="A category with that name already exists.")
+                before = f"{category.name}; active={category.active}"
+                category.name = name
+                category.active = bool(request.form.get("active"))
+                audit("update", f"Ticket category: {name}", f"{before} -> active={category.active}")
+                flash(f"Category {name} updated.", "success")
+            elif action == "create_ticket_subcategory":
+                category = tenant_record_or_404(TicketCategory, int(request.form["category_id"]))
+                name = request.form.get("name", "").strip()
+                if not name or len(name) > 80:
+                    abort(400, description="Subcategory name must contain 1 to 80 characters.")
+                if TicketSubcategory.query.filter(
+                    TicketSubcategory.category_id == category.id,
+                    func.lower(TicketSubcategory.name) == name.casefold(),
+                ).first():
+                    abort(409, description="That category already has a subcategory with this name.")
+                offering_id = request.form.get("default_service_offering_id") or None
+                if offering_id:
+                    tenant_record_or_404(ServiceOffering, int(offering_id))
+                subcategory = TicketSubcategory(category_id=category.id, name=name, active=True,
+                                                default_service_offering_id=offering_id, tenant_id=current_user.tenant_id)
+                db.session.add(subcategory)
+                db.session.flush()
+                audit("create", f"Ticket subcategory: {category.name} / {name}", "")
+                flash(f"Subcategory {name} created under {category.name}.", "success")
+            elif action == "update_ticket_subcategory":
+                subcategory = tenant_record_or_404(TicketSubcategory, int(request.form["subcategory_id"]))
+                name = request.form.get("name", "").strip()
+                if not name or len(name) > 80:
+                    abort(400, description="Subcategory name must contain 1 to 80 characters.")
+                duplicate = TicketSubcategory.query.filter(
+                    TicketSubcategory.category_id == subcategory.category_id, TicketSubcategory.id != subcategory.id,
+                    func.lower(TicketSubcategory.name) == name.casefold(),
+                ).first()
+                if duplicate:
+                    abort(409, description="That category already has a subcategory with this name.")
+                offering_id = request.form.get("default_service_offering_id") or None
+                if offering_id:
+                    tenant_record_or_404(ServiceOffering, int(offering_id))
+                before = f"{subcategory.name}; active={subcategory.active}"
+                subcategory.name = name
+                subcategory.active = bool(request.form.get("active"))
+                subcategory.default_service_offering_id = offering_id
+                audit("update", f"Ticket subcategory: {name}", f"{before} -> active={subcategory.active}")
+                flash(f"Subcategory {name} updated.", "success")
             elif action == "add_directory_mapping":
                 directory_group = request.form.get("directory_group", "").strip()
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
@@ -17281,6 +17437,7 @@ def create_app(test_config=None):
         "ccb": ("Change Control Board approvers", "Users granted CCB voting authority for non-standard changes."),
         "change-freeze": ("Change freeze windows", "Blocks Standard/Normal change scheduling and approval during active windows."),
         "service-offerings": ("Service offerings", "Map services to their supporting configuration items."),
+        "ticket-categories": ("Ticket categories", "The category/subcategory taxonomy offered on the ticket form, and which service offering each subcategory suggests."),
         "sla": ("SLA definitions and business calendars", "Business schedules and SLA target durations by priority."),
     }
 
@@ -17358,6 +17515,7 @@ def create_app(test_config=None):
                 SupportGroupAlias.alias
             ).all(),
             services=tenant_query(ServiceOffering).all(),
+            ticket_categories=tenant_query(TicketCategory).order_by(TicketCategory.name).all(),
             sla_definitions=tenant_query(SLADefinition).all(),
             client_organizations=tenant_query(ClientOrganization).order_by(ClientOrganization.name).all(),
             business_schedules=tenant_query(BusinessSchedule).order_by(

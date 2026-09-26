@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ticket_category_fields.html" import category_field, subcategory_field %}
 {% block title %}New {{ kind }} · {{ instance_name }}{% endblock %}
 {% block content %}
 {% if form and form_error %}<div class="flash error">{{ form_error }}</div>{% endif %}
@@ -23,9 +24,9 @@
       <label><span>Contact type</span><select name="contact_type">{% for opt in ['Self-service','Phone','Email','Chat','Monitoring'] %}<option {% if (f and f.get('contact_type')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
       <label class="required-field"><span>Caller</span><input value="{{ current_user.name }} · {{ current_user.email }}" title="{{ current_user.name }} · {{ current_user.email }}" disabled></label>
       <label><span>State</span><input value="New" disabled></label>
-      <label><span>Category</span><select name="category">{% for opt in ['General','Access','Hardware','Software','Network','Security'] %}<option {% if (f and f.get('category')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
+      <label><span>Category</span>{{ category_field(f.get('category') if f else None) }}</label>
       <label class="required-field"><span>Impact</span><select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('impact')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-      <label><span>Subcategory</span><input name="subcategory" maxlength="80" placeholder="Select or describe the affected area" value="{{ f.get('subcategory','') if f else '' }}"></label>
+      <label><span>Subcategory</span>{{ subcategory_field(f.get('subcategory') if f else None) }}</label>
       <label class="required-field"><span>Urgency</span><select name="urgency" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('urgency')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label><span>Service offering</span><select name="service_offering_id"><option value="">Not selected</option>{% for offering in service_offerings %}<option value="{{ offering.id }}" {% if f and f.get('service_offering_id')==offering.id|string %}selected{% endif %}>{{ offering.name }}</option>{% endfor %}</select></label>
       <label><span>Priority<span class="info-tip" tabindex="0" data-tip="Priority is calculated automatically from impact and urgency.">i</span></span><input value="Calculated from impact and urgency" disabled></label>
@@ -50,7 +51,7 @@
 {% endif %}
 <form method="post" class="panel form-grid" data-track-dirty>
   <label class="wide required-field"><span>Short description</span><input name="title" maxlength="180" required autofocus value="{{ f.get('title','') if f else '' }}"></label>
-  <label><span>Category</span><select name="category">{% for opt in ['General','Access','Hardware','Software','Network','Security'] %}<option {% if (f and f.get('category')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
+  <label><span>Category</span>{{ category_field(f.get('category') if f else None) }}</label>
   <label class="required-field"><span>Impact</span><select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('impact')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
   <label class="required-field"><span>Urgency<span class="info-tip" tabindex="0" data-tip="Priority is calculated automatically from impact and urgency.">i</span></span><select name="urgency" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('urgency')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
   <label class="wide required-field"><span>Description</span><textarea name="description" rows="8" required>{{ f.get('description','') if f else '' }}</textarea></label>

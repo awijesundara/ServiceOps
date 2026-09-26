@@ -1,0 +1,23 @@
+{# Shared category/subcategory field markup for ticket_form.html and incident_detail.html.
+   `ticket_categories` and `ticket_subcategories` are always passed into any template that
+   imports this (see app.py's tenant_ticket_categories()/tenant_ticket_subcategories()).
+   Selecting "Other" reveals a free-text input (static/ticket-category.js); the server
+   re-validates whatever was actually submitted regardless (app.py's
+   normalize_ticket_category()/normalize_ticket_subcategory()), so this degrades safely
+   without JavaScript -- every listed subcategory stays a valid, submittable option. #}
+{% macro category_field(current, disabled=False) %}
+<select name="category" {% if disabled %}disabled{% endif %}>{% for c in ticket_categories %}<option {% if (current and current==c.name) or (not current and c.name=='General') %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+{% endmacro %}
+
+{% macro subcategory_field(current, disabled=False) %}
+{% set known_names = ticket_subcategories|map(attribute='name')|list %}
+{% set is_other = current and current not in known_names %}
+<select name="subcategory" data-ticket-subcategory {% if disabled %}disabled{% endif %}>
+  <option value="">Not set</option>
+  {% for sc in ticket_subcategories %}
+  <option value="{{ sc.name }}" data-category-name="{{ sc.category.name }}" {% if current == sc.name %}selected{% endif %}>{{ sc.category.name }} / {{ sc.name }}</option>
+  {% endfor %}
+  <option value="__other__" {% if is_other %}selected{% endif %}>Other (describe below)</option>
+</select>
+<input type="text" name="subcategory_other" maxlength="80" placeholder="Describe the affected area" data-ticket-subcategory-other {% if not is_other %}hidden{% endif %} {% if disabled %}disabled{% endif %} value="{{ current if is_other else '' }}">
+{% endmacro %}
