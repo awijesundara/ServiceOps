@@ -90,6 +90,44 @@ uploads:
     accessModes: [ReadWriteMany]
     size: 20Gi
 
+backup:
+  # Daily automated PostgreSQL backup as a Kubernetes CronJob, connecting
+  # with the same DATABASE_URL already in existingSecret -- no separate
+  # database credential to provision. Off by default so a deployment that
+  # already has its own backup pipeline (a provider-managed snapshot, a
+  # hand-maintained CronJob, etc.) is never silently duplicated; enabling
+  # this and keeping another one pointed at the same schedule/storage will
+  # just waste cycles; nothing here is unsafe about running two, but it's
+  # never necessary.
+  enabled: false
+  schedule: "30 18 * * *"
+  # How many of the most recent daily dumps to keep on the backup volume.
+  # Older ones are removed only after a new dump lands successfully, never
+  # before, so a failed run can never empty the volume out.
+  retention: 14
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    digest: "sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777"
+  persistence:
+    existingClaim: ""
+    storageClass: ""
+    size: 20Gi
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: "1", memory: 512Mi}
+  # Optional: the name of a Secret (created out-of-band, same as
+  # existingSecret) holding SERVICEOPS_MONITORING_SOURCE_ID and
+  # SERVICEOPS_MONITORING_TOKEN from an admin-created "Monitoring source"
+  # (Admin > Connections & channels > Monitoring sources). When set, the
+  # backup job reports success to
+  # /api/v1/monitoring/<source_id>/backup-report -- keeping System Health's
+  # "Recovery set" widget accurate -- and reports failure the same way a
+  # real monitoring integration would (a tracked infrastructure event, not
+  # just a Job that quietly went red in `kubectl get jobs`). When unset,
+  # backups still run; only this reporting step is skipped.
+  alertingSecret: ""
+
 auth:
   localEnabled: true
   passkeys:

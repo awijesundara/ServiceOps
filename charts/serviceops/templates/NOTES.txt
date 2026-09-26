@@ -19,6 +19,30 @@ the referenced external database backup before every upgrade.
 3. Review security and workload status:
    kubectl get pods,pdb,networkpolicy,pvc -n {{ .Release.Namespace }}
 
+{{- if .Values.backup.enabled }}
+
+Automated backup: a CronJob (schedule "{{ .Values.backup.schedule }}") dumps
+the database to its own volume and prunes to the last {{ .Values.backup.retention }}.
+{{- if not .Values.backup.alertingSecret }}
+backup.alertingSecret is not set, so System Health's "Recovery set" widget
+will not reflect these runs, and a failed backup will not raise a tracked
+event -- only `kubectl get cronjob/jobs` will show it. Set backup.alertingSecret
+to a Secret holding SERVICEOPS_MONITORING_SOURCE_ID/SERVICEOPS_MONITORING_TOKEN
+(from an admin-created Monitoring source) to wire that up.
+{{- else }}
+Reporting to System Health via backup.alertingSecret is configured.
+{{- end }}
+Trigger one on demand: kubectl create job --from=cronjob/{{ include "serviceops.fullname" . }}-backup manual-backup-$(date +%s) -n {{ .Release.Namespace }}
+{{- else }}
+
+No backup CronJob is enabled (backup.enabled is false) -- ensure database
+backups are taken by some other means (a provider-managed snapshot, an
+external pipeline) and reported via
+tools/record_backup_status.py or POST /api/v1/monitoring/<source_id>/backup-report,
+or System Health's "Recovery set" widget will show no successful backup ever
+recorded.
+{{- end }}
+
 {{- if not .Values.ingress.enabled }}
 4. Access locally:
    kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "serviceops.fullname" . }} 8080:{{ .Values.service.port }}

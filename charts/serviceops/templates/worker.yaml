@@ -60,6 +60,16 @@ spec:
             - secretRef: {name: {{ include "serviceops.secretName" . }}}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import os,time; assert time.time()-os.path.getmtime('/tmp/serviceops-worker-heartbeat') < 150"]
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import os,time; assert time.time()-os.path.getmtime('/tmp/serviceops-worker-heartbeat') < 240"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
           resources: {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: tmp

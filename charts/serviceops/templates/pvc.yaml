@@ -13,3 +13,19 @@ spec:
     requests:
       storage: {{ .Values.uploads.persistence.size }}
 {{- end }}
+{{- if and .Values.backup.enabled (not .Values.backup.persistence.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "serviceops.fullname" . }}-backups
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.backup.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backup.persistence.size }}
+{{- end }}
