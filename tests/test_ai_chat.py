@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from app import AIConfiguration, AIConversation, AIMessage, AIRun, Audit, Comment, Ticket, User, db
+from app import AIConfiguration, AIConnection, AIConversation, AIMessage, AIRun, Audit, Comment, Ticket, User, db
 from serviceops_models import AIAction
 from serviceops_core.ai import provider, service
 from tests.test_ai_assistant import fake_stream
@@ -356,3 +356,44 @@ def test_admin_chat_exact_comment_and_non_admin_action_boundary(app, client, wor
     finish_all(app)
     route = client.get(f"/ai/runs/{created.get_json()['run_id']}/stream").get_json()["route"]
     assert "action" not in route
+
+
+def test_chat_connections_endpoint_is_tenant_isolated_and_admin_detail_free(app, client, world, monkeypatch):
+    with app.app_context():
+        db.session.add(AIConnection(id="mine", tenant_id=1, name="Office server", provider="self_hosted",
+                                    endpoint="http://192.168.1.1:8080", model="m", enabled=True))
+        db.session.add(AIConnection(id="disabled", tenant_id=1, name="Retired", provider="self_hosted",
+                                    endpoint="http://192.168.1.2:8080", model="m", enabled=False))
+        db.session.add(AIConnection(id="theirs", tenant_id=world.tenant2, name="Other org's server",
+                                    provider="self_hosted", endpoint="http://192.168.1.3:8080", model="m", enabled=True))
+        db.session.commit()
+    login(client, "employee", "Employee123!")
+    body = client.get("/ai/chat/connections").get_json()
+    ids = {row["id"] for row in body["connections"]}
+    assert "mine" in ids and "disabled" not in ids and "theirs" not in ids
+    row = next(r for r in body["connections"] if r["id"] == "mine")
+    assert set(row) == {"id", "name", "model", "external"} and row["external"] is False
+    assert "endpoint" not in row and "has_key" not in row  # no admin-only detail leaks here
+
+
+def test_a_valid_preferred_connection_is_stored_and_an_unknown_one_is_silently_dropped(app, client, world, monkeypatch):
+    # Reuses chat_config's own allowlisted endpoint (AI_SELF_HOSTED_ENDPOINTS) -- this
+    # test is about preferred_connection_id validation, not endpoint distinctness.
+    with app.app_context():
+        db.session.add(AIConnection(id="mine", tenant_id=1, name="Office server", provider="self_hosted",
+                                    endpoint="http://127.0.0.1:18099", model="m", enabled=True))
+        db.session.add(AIConnection(id="theirs", tenant_id=world.tenant2, name="Other org's server",
+                                    provider="self_hosted", endpoint="http://127.0.0.1:18099", model="m", enabled=True))
+        db.session.commit()
+    answer_with(monkeypatch, "Sure, here's the status [S1].")
+    login(client, "employee", "Employee123!")
+    valid = ask(client, "status of INC0100001", preferred_connection_id="mine")
+    with app.app_context():
+        assert db.session.get(AIRun, valid.get_json()["run_id"]).preferred_connection_id == "mine"
+    finish_all(app)
+
+    for bogus in ("does-not-exist", "theirs"):  # unknown id, and another tenant's real id
+        created = ask(client, "status of INC0100001", preferred_connection_id=bogus)
+        with app.app_context():
+            assert db.session.get(AIRun, created.get_json()["run_id"]).preferred_connection_id is None
+        finish_all(app)

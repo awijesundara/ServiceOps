@@ -2873,6 +2873,12 @@ class AIRun(db.Model):
     seq = db.Column(db.Integer, nullable=False, default=0)
     heartbeat_at = db.Column(db.DateTime(timezone=True))
     connection_id = db.Column(db.String(36))
+    # A chat message's requested connection (chat only; investigations don't set this).
+    # A soft preference only -- routing.plan() may reorder eligible candidates toward
+    # it, but never re-admits one the privacy/sensitivity gate already excluded. No FK,
+    # same as connection_id above: a since-renamed/deleted connection must never break
+    # this run's history.
+    preferred_connection_id = db.Column(db.String(36))
     route_json = db.Column(db.Text, nullable=False, default="{}")
     __table_args__ = (db.UniqueConstraint("tenant_id", "user_id", "request_key", name="uq_ai_run_request"),)
 
