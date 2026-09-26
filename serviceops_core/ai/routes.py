@@ -664,6 +664,7 @@ def register(app):
                 "ci": lambda: url_for("ci_edit", ci_id=record_id),
                 "enterprise": lambda: url_for("enterprise_detail", record_id=record_id),
                 "request": lambda: url_for("request_detail", request_id=record_id),
+                "work_task": lambda: url_for("operational_task_detail", task_id=record_id),
                 "client_ticket": lambda: url_for("client_ticket_detail", ticket_id=record_id),
                 "asset": lambda: url_for("assets", q=source.get("number", "")),
             }[kind]()

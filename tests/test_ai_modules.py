@@ -95,18 +95,56 @@ def test_exact_cross_module_records_supply_authorized_content_and_recheckable_so
         problem_evidence = access.collect_chat_evidence(scope_for(world.admin), "Tell me about PRB0000001")
         assert any(s["kind"] == "enterprise" and s["record_id"] == problem.id for s in problem_evidence.sources)
         assert "certificate rotation" in next(i["text"] for i in problem_evidence.items if i.get("reference") == problem.number)
+        # The regression this pins: collect_chat_evidence() used to compute
+        # evidence.unavailable from a Ticket-only lookup, unconditionally
+        # marking every non-Ticket number "not available to you" -- even
+        # when, as here, the very same evidence set goes on to fully
+        # describe that exact record a few lines above. Two contradictory
+        # signals in one prompt, and a model reasonably trusts the more
+        # alarming one; this is why the AI acted like it had no access to
+        # problems/requests/customer tickets despite already supporting
+        # them below.
+        assert problem.number not in problem_evidence.unavailable
         request_evidence = access.collect_chat_evidence(scope_for(world.admin), "Show REQ0000001 details")
         assert "Latitude 7450" in next(i["text"] for i in request_evidence.items if i.get("reference") == request.number)
         assert "service_request_content" in request_evidence.flags
+        assert request.number not in request_evidence.unavailable
         client_evidence = access.collect_chat_evidence(scope_for(world.admin), "Tell me about CXT0000042", lambda text, kind: None)
         client_item = next(i for i in client_evidence.items if i.get("reference") == client_ticket.number)
         assert "Mailbox is offline" in client_item["text"]
         assert "private@example.invalid" not in client_item["text"]
         assert "customer_content" in client_evidence.flags
+        assert client_ticket.number not in client_evidence.unavailable
         assert access.sources_still_accessible(scope_for(world.admin), client_evidence.sources)
 
         requester = access.collect_chat_evidence(scope_for(world.employee), "Tell me about CXT0000042")
         assert not any(s["kind"] == "client_ticket" for s in requester.sources)
+        # A requester genuinely cannot see this customer ticket -- unlike
+        # the admin case above, it correctly stays "not available".
+        assert client_ticket.number in requester.unavailable
+        # A number matching no record anywhere still correctly reports as
+        # unavailable -- the fix moved *where* this is computed, not
+        # whether it happens at all.
+        missing = access.collect_chat_evidence(scope_for(world.admin), "Tell me about PRB9999999")
+        assert "PRB9999999" in missing.unavailable
+
+
+def test_change_and_problem_tasks_are_readable_by_number_only_through_their_parents_authority(app, world):
+    with app.app_context():
+        seed(world)
+        task = OperationalTask.query.filter_by(number="CTASK0000001").one()
+
+        owner_evidence = access.collect_chat_evidence(scope_for(world.employee), "What's the status of CTASK0000001?")
+        assert any(s["kind"] == "work_task" and s["record_id"] == task.id for s in owner_evidence.sources)
+        assert "Implementation" in next(i["text"] for i in owner_evidence.items if i.get("reference") == task.number)
+        assert task.number not in owner_evidence.unavailable
+
+        # world.other has no relationship at all to world.tickets["own"] (the
+        # task's parent ticket) -- must not leak the task just because its
+        # number was typed, mirroring operational_task_detail()'s own check.
+        stranger_evidence = access.collect_chat_evidence(scope_for(world.other), "What's the status of CTASK0000001?")
+        assert not any(s["kind"] == "work_task" for s in stranger_evidence.sources)
+        assert task.number in stranger_evidence.unavailable
 
 
 def test_legacy_invalid_request_variables_do_not_break_ai_retrieval(app, world):

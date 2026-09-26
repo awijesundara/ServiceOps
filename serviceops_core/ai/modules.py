@@ -151,9 +151,29 @@ def _approvals(scope):
                         else "No approvals are waiting for your decision.")
 
 
-def _tasks(scope):
+def _tasks(scope, question, evidence):
+    from app import record_reference, user_can_view_enterprise_record, user_can_view_ticket
     mine = OperationalTask.query.filter(OperationalTask.assignee_id == scope.user_id, ~OperationalTask.state.in_(CLOSED)).count()
     fulfil = CatalogTask.query.filter(CatalogTask.assignee_id == scope.user_id, ~CatalogTask.state.in_(CLOSED)).count()
+    # CTASK/PTASK carry no tenant_id of their own -- visibility always
+    # follows the parent change/problem, exactly like operational_task_detail()
+    # checks it, never a query of this table on its own.
+    task_numbers = [n for n in access.record_numbers(question) if n.startswith(("CTASK", "PTASK"))]
+    for task in OperationalTask.query.filter(OperationalTask.number.in_(task_numbers)).limit(4):
+        parent = record_reference(task.parent_type, task.parent_id)
+        if not parent:
+            continue
+        can_view = (
+            user_can_view_ticket(scope.identity, parent) if task.parent_type == "ticket"
+            else user_can_view_enterprise_record(scope.identity, parent) if task.parent_type == "enterprise"
+            else False
+        )
+        if not can_view:
+            continue
+        body = (f"Kind: {task.task_kind}; Type: {task.task_type}; State: {task.state}; "
+                f"Assignment group: {task.assignment_group.name if task.assignment_group else 'unassigned'}; "
+                f"Parent record: {parent.number}\nWork notes: {(task.work_notes or 'none')[:1000]}")
+        evidence.add("work_task", task.id, task.number, f"{task.number} {task.title}", body)
     return "Your tasks", f"{mine} change or problem tasks and {fulfil} fulfilment tasks are assigned to you and still open."
 
 
@@ -349,7 +369,7 @@ def add_module_context(scope, question, evidence, base):
     if "approvals" in found:
         builders.append(lambda: _approvals(scope))
     if "tasks" in found:
-        builders.append(lambda: _tasks(scope))
+        builders.append(lambda: _tasks(scope, question, evidence))
     if "knowledge" in found:
         builders.append(lambda: _knowledge(scope))
     if "cmdb" in found:

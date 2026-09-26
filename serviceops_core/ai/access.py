@@ -315,8 +315,6 @@ def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
         found = base.filter(Ticket.number.in_(numbers)).all()
         for ticket in found:
             add_ticket(ticket)
-        # Never say whether a number exists: an unreadable record and a missing one look identical.
-        evidence.unavailable = [n for n in numbers if n not in {t.number for t in found}]
 
     recent_kind = _recent_ticket_kind(question)
     if recent_kind:
@@ -429,6 +427,18 @@ def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
                                      f"Status: {row.operational_status}")
     from serviceops_core.ai import context
     context.add_organization_context(scope, question, evidence, base)
+    # Computed last, against everything actually retrieved by now (tickets
+    # above, plus whatever add_organization_context's per-domain modules
+    # (problems/other enterprise records, service requests/RITMs/SCTASKs,
+    # customer tickets, knowledge, CMDB) found for this question) -- never
+    # only against Ticket, which used to mark every valid PRB/REQ/RITM/
+    # SCTASK/CXT number "not available to you" even in the same answer
+    # that went on to describe that exact record: two contradictory signals
+    # in one prompt, and the model reasonably trusted the more alarming
+    # one. Never say whether an untouched number exists at all: an
+    # unreadable record and a missing one still look identical.
+    if numbers:
+        evidence.unavailable = [n for n in numbers if n not in evidence.identifiers]
     return evidence
 
 
