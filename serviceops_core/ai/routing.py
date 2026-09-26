@@ -152,7 +152,8 @@ def external_allowed(config, sensitive, kinds):
     return True
 
 
-def plan(config, connections, reasons=(), kinds=(), counts=None, rng=None, at=None, headroom=None, prefer="economy"):
+def plan(config, connections, reasons=(), kinds=(), counts=None, rng=None, at=None, headroom=None, prefer="economy",
+        prefer_connection_id=None):
     """Order the services that may answer this request; `blocked` explains an empty list."""
     rng = rng or random
     counts = counts or {}
@@ -200,6 +201,12 @@ def plan(config, connections, reasons=(), kinds=(), counts=None, rng=None, at=No
                 groups[key], key=lambda c: counts.get(c.id, 0) / max(1, c.max_concurrency)))
         # Smart mode: a private service with room beats an external one with room; an external one with
         # room beats a busy private one. internal_first keeps private services ahead even when busy.
+    if prefer_connection_id:
+        # A pure reorder of `ordered`, itself already derived from `eligible` (the
+        # post-privacy-gate list) -- a preferred connection the sensitivity gate
+        # excluded simply isn't in `ordered` and this is a no-op for it. This must
+        # never become a second way into the candidate pool.
+        ordered = sorted(ordered, key=lambda c: c.id != prefer_connection_id)
     result.candidates = ordered
     if sensitive:
         listed = " and ".join(REASON_TEXT[r] for r in reasons)

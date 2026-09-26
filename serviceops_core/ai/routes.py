@@ -794,6 +794,19 @@ def register(app):
                          "show_reasoning": bool(config.show_reasoning), "conversations": [
             {"id": row.id, "title": row.title, "updated_at": row.updated_at.isoformat()} for row in rows]})
 
+    @blueprint.route("/ai/chat/connections")
+    @login_required
+    def chat_connections():
+        """Lets a person choose which configured AI service answers their next message --
+        a soft preference only (see routing.plan()'s prefer_connection_id), so this is
+        deliberately minimal: no endpoint, quota, or health detail, unlike /admin/ai's
+        service listing. External connections are included, flagged, for transparency;
+        the server still decides eligibility from the message's actual content."""
+        scope, config = chat_scope()
+        return no_store({"connections": [
+            {"id": c.id, "name": c.name, "model": c.model, "external": c.external}
+            for c in service.connections_for(config) if c.enabled]})
+
     @blueprint.route("/ai/chat/conversations/<conversation_id>")
     @login_required
     def chat_conversation(conversation_id):
@@ -907,10 +920,13 @@ def register(app):
                           role="assistant", status="pending")
         db.session.add(reply)
         db.session.flush()
+        preferred = str(data.get("preferred_connection_id", "") or "") or None
+        if preferred and not any(c.id == preferred and c.enabled for c in service.connections_for(config)):
+            preferred = None  # unknown/disabled/foreign-tenant id -- silently ignored, never blocks sending
         run = AIRun(tenant_id=scope.tenant_id, user_id=scope.user_id, actor_role=scope.role, kind="chat",
                     config_revision=config.revision, request_key=request_key, provider="auto", model="auto",
                     prompt_version="chat-v1", conversation_id=conversation.id, message_id=reply.id, question=text,
-                    usage_json="{}")
+                    usage_json="{}", preferred_connection_id=preferred)
         db.session.add(run)
         db.session.flush()
         audit("ai chat requested", run.id, f"role={scope.role}; length={len(text)}")

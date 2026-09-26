@@ -15,7 +15,7 @@
     send: $("send"), stop: $("stop"), error: $("error"), history: $("history"), list: root.querySelector("[data-chat-history-list]"),
     empty: $("history-empty"), toggle: $("history-toggle"), fresh: $("new"),
     userTurn: $("user-turn"), aiTurn: $("ai-turn"), memory: $("memory"), memoryList: root.querySelector("[data-chat-memory-list]"),
-    memoryEmpty: $("memory-empty"), memoryToggle: $("memory-toggle"), memoryClear: $("memory-clear")
+    memoryEmpty: $("memory-empty"), memoryToggle: $("memory-toggle"), memoryClear: $("memory-clear"), model: $("model")
   };
   const launcher = document.querySelector("[data-chat-launch]");
   const widget = root.classList.contains("is-widget");
@@ -27,6 +27,34 @@
 
   function remember(id) { try { if (id) sessionStorage.setItem("ai-chat-conversation", id); else sessionStorage.removeItem("ai-chat-conversation"); } catch (e) { /* storage may be blocked */ } }
   function recalled() { try { return sessionStorage.getItem("ai-chat-conversation"); } catch (e) { return null; } }
+
+  // Which AI service to ask for next time -- a lasting preference (unlike the
+  // conversation pointer above, which is per-tab session state), so this is
+  // localStorage, not sessionStorage. Purely a per-viewer convenience: the
+  // server never trusts it, re-validates the id on every send, and silently
+  // ignores one that no longer names an enabled connection.
+  function rememberModel(id) { try { if (id) localStorage.setItem("ai-chat-model", id); else localStorage.removeItem("ai-chat-model"); } catch (e) { /* storage may be blocked */ } }
+  function recalledModel() { try { return localStorage.getItem("ai-chat-model"); } catch (e) { return null; } }
+
+  function loadModels() {
+    if (!ui.model) return;
+    window.AIChat.get("/ai/chat/connections").then(function (data) {
+      const rows = data.connections || [];
+      ui.model.hidden = rows.length < 2;  // nothing to choose between "Automatic" and one service
+      if (!ui.model.hidden) {
+        const previous = recalledModel();
+        ui.model.textContent = "";
+        ui.model.appendChild(window.AIChat.element("option", "", "Automatic")).value = "";
+        rows.forEach(function (row) {
+          const option = window.AIChat.element("option", "", row.name + (row.external ? " (External)" : ""));
+          option.value = row.id;
+          ui.model.appendChild(option);
+        });
+        ui.model.value = rows.some(function (row) { return row.id === previous; }) ? previous : "";
+      }
+    }).catch(function () { /* the picker is a convenience; leave it hidden on failure */ });
+  }
+  if (ui.model) ui.model.addEventListener("change", function () { rememberModel(ui.model.value || null); });
 
   function showError(message) {
     ui.error.hidden = !message;
@@ -250,7 +278,8 @@
     showError("");
     setBusy(true);
     send("/ai/chat/messages", {
-      text: text, conversation_id: state.conversation, request_key: uuid()
+      text: text, conversation_id: state.conversation, request_key: uuid(),
+      preferred_connection_id: (ui.model && ui.model.value) || undefined
     }).then(function (data) {
       state.conversation = data.conversation_id;
       remember(state.conversation);
@@ -291,6 +320,7 @@
     if (state.loaded) return;
     state.loaded = true;
     refreshHistory();
+    loadModels();
     const previous = recalled();
     if (previous) {
       try {

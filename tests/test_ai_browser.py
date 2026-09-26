@@ -467,6 +467,62 @@ def test_chat_widget_streams_and_deletes_under_the_real_csp(ai_browser_server, m
         stop_worker.set()
 
 
+def test_chat_model_picker_lists_services_hides_with_one_and_remembers_the_choice(ai_browser_server, monkeypatch):
+    from playwright.sync_api import sync_playwright
+    app, base, _ = ai_browser_server
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", ENDPOINT)
+    enable_ai(app)
+    clear_chats(app)
+    with app.app_context():
+        from app import AIConnection
+        # enable_ai() clears ai_connection so its single legacy AIConfiguration-based service is
+        # used; add two real rows instead, so there are genuinely two choices, not one.
+        db.session.add(AIConnection(id="first-service", tenant_id=1, name="Primary server", provider="self_hosted",
+                                    endpoint=ENDPOINT, model="local-test", enabled=True))
+        db.session.add(AIConnection(id="second-service", tenant_id=1, name="Backup server", provider="self_hosted",
+                                    endpoint=ENDPOINT, model="local-test", enabled=True))
+        db.session.commit()
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_context(viewport={"width": 1440, "height": 1000}).new_page()
+        sign_in(page, base)
+        page.goto(base + "/", wait_until="networkidle")
+        page.locator("[data-chat-launch]").click()
+        wait_for(lambda: page.locator("[data-chat]").is_visible())
+        picker = page.locator("[data-chat-model]")
+        wait_for(lambda: picker.is_visible())
+        options = picker.locator("option").all_inner_texts()
+        assert options[0] == "Automatic" and any("Backup server" in o for o in options) and len(options) == 3
+        picker.select_option(label=[o for o in options if "Backup server" in o][0])
+        assert page.evaluate("localStorage.getItem('ai-chat-model')") == "second-service"
+        # Reloading (a fresh page load, not just re-opening the panel) must restore the choice.
+        # The widget reopens itself on load (sessionStorage "ai-chat-open") -- no launcher click here.
+        page.goto(base + "/", wait_until="networkidle")
+        wait_for(lambda: page.locator("[data-chat-model]").is_visible())
+        assert page.locator("[data-chat-model]").input_value() == "second-service"
+        browser.close()
+    with app.app_context():
+        db.session.query(AIConnection).filter_by(id="second-service").delete()
+        db.session.commit()
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_context(viewport={"width": 1440, "height": 1000}).new_page()
+        sign_in(page, base)
+        page.goto(base + "/", wait_until="networkidle")
+        page.locator("[data-chat-launch]").click()
+        wait_for(lambda: page.locator("[data-chat]").is_visible())
+        page.wait_for_timeout(300)  # let loadModels() run before asserting absence
+        # Back to a single configured service: nothing to pick between, so the picker stays hidden
+        # even though last session's now-deleted choice is still sitting in localStorage.
+        assert page.locator("[data-chat-model]").is_hidden()
+        browser.close()
+    with app.app_context():
+        # ai_browser_server is module-scoped (a shared app/database across every test in
+        # this file) -- leaving "first-service" behind would bleed into later tests.
+        db.session.query(AIConnection).filter_by(id="first-service").delete()
+        db.session.commit()
+
+
 def test_full_page_chat_and_stop(ai_browser_server, monkeypatch):
     from playwright.sync_api import sync_playwright
     app, base, _ = ai_browser_server
