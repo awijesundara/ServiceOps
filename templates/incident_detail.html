@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ticket_category_fields.html" import category_field, subcategory_field %}
 {% block title %}{{ ticket.number }} · Incident · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set primary_ci_link = (ci_links|selectattr('relationship_role','equalto','Primary CI')|first) %}
@@ -33,9 +34,9 @@
       <label><span>Contact type</span><select name="contact_type" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Self-service','Phone','Email','Chat','Monitoring'] %}<option {% if ticket.contact_type==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label class="required-field"><span>Caller</span><input value="{{ ticket.requester.name }} · {{ ticket.requester.email }}" title="{{ ticket.requester.name }} · {{ ticket.requester.email }}" disabled></label>
       <label><span>State</span><select name="state" {% if not can_manage_ticket %}disabled{% endif %}>{% for state in ticket_state_options %}<option {% if ticket.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
-      <label><span>Category</span><select name="category" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['General','Access','Hardware','Software','Network','Security'] %}<option {% if ticket.category==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label><span>Category</span>{{ category_field(ticket.category, disabled=not can_manage_ticket) }}</label>
       <label><span>Impact</span><select name="impact" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-      <label><span>Subcategory</span><input name="subcategory" maxlength="80" value="{{ ticket.subcategory }}" {% if not can_manage_ticket %}disabled{% endif %}></label>
+      <label><span>Subcategory</span>{{ subcategory_field(ticket.subcategory, disabled=not can_manage_ticket) }}</label>
       <label><span>Urgency</span><select name="urgency" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.urgency==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label><span>Service offering</span><select name="service_offering_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">Not selected</option>{% for offering in service_offerings %}<option value="{{ offering.id }}" {% if ticket.service_offering_id==offering.id %}selected{% endif %}>{{ offering.name }}</option>{% endfor %}</select></label>
       <label><span>Priority</span><select name="priority" {% if not can_manage_ticket %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>

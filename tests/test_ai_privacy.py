@@ -291,6 +291,23 @@ def test_module_content_code_still_cannot_reach_directory_audit_or_settings(app,
         assert not re.search(rf"\b{name}\b", imported), f"{name} must not be imported by the AI module-content layer"
 
 
+def test_ticket_evidence_states_the_service_offering_so_the_assistant_can_cite_it(app, world):
+    """B-388 follow-up: the assistant previously surfaced a ticket's category/subcategory
+    but not the ITIL service offering it belongs to. Same visibility rule as everything
+    else here -- this is read via the ticket's own record, never a separate directory
+    lookup, so it carries no access risk beyond what the ticket itself already grants."""
+    with app.app_context():
+        from serviceops_models import ServiceOffering, Ticket
+        offering = ServiceOffering(name="Email", owner_id=world.admin, tenant_id=1)
+        db.session.add(offering)
+        db.session.flush()
+        ticket = Ticket.query.filter_by(number="INC0100001").one()
+        assert "Service offering: Not set" in payload(world.employee, "INC0100001")[0]
+        ticket.service_offering_id = offering.id
+        db.session.commit()
+        assert "Service offering: Email" in payload(world.employee, "INC0100001")[0]
+
+
 def test_personal_contact_details_are_masked_but_dates_ids_and_ips_survive(app, world):
     with app.app_context():
         text, _ = payload(world.employee, "INC0100001")
