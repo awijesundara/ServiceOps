@@ -96,6 +96,37 @@ def test_external_needs_the_organizations_authorization():
     assert routing.plan(cfg(external_consent=False), [conn("cloud", True)], set(), {"ticket"}).blocked == "external_not_permitted"
 
 
+# ---- a person's preferred connection (a soft reorder, never a privacy override) ----
+
+def test_a_preferred_connection_is_promoted_among_eligible_candidates():
+    both = [conn("mac"), conn("cloud", True)]
+    # Smart mode would otherwise put "mac" first; the preference reorders it, not replaces the pool.
+    result = routing.plan(cfg(), both, set(), {"ticket"}, prefer_connection_id="cloud")
+    assert names(result) == ["cloud", "mac"]
+
+
+def test_an_external_preference_is_ignored_for_sensitive_content_not_promoted():
+    """The one test that matters most here: a message with a secret explicitly prefers the
+    external connection. It must still land on the private one -- the preference can only
+    reorder what the sensitivity gate already allowed through, never re-admit what it excluded."""
+    result = routing.plan(cfg(), [conn("mac"), conn("cloud", True)], {"credentials"}, {"ticket"},
+                          prefer_connection_id="cloud")
+    assert names(result) == ["mac"] and result.sensitive
+
+
+def test_a_preference_for_a_connection_excluded_by_sensitivity_leaves_the_pool_unchanged():
+    """Same as above but with only an external service configured at all: preferring it while
+    the message is sensitive must still block, not silently promote it back in."""
+    result = routing.plan(cfg(), [conn("cloud", True)], {"credentials"}, {"ticket"}, prefer_connection_id="cloud")
+    assert result.candidates == [] and result.blocked == "sensitive_no_private"
+
+
+def test_an_unknown_preferred_id_is_a_no_op():
+    both = [conn("mac"), conn("cloud", True)]
+    assert names(routing.plan(cfg(), both, set(), {"ticket"}, prefer_connection_id="not-a-real-id")) == names(
+        routing.plan(cfg(), both, set(), {"ticket"}))
+
+
 # ---- load and health ----
 
 def test_smart_prefers_private_and_overflows_to_external_only_when_private_is_busy():

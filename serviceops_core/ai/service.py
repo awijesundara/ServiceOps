@@ -514,7 +514,8 @@ def process_one():
         calls = quota.recent_calls(run.tenant_id)
         chosen = routing.plan(config, services, prepared.reasons, prepared.kinds, routing.running_counts(run.tenant_id),
                               headroom={c.id: quota.headroom(c, calls, estimate) for c in services},
-                              prefer="quality" if run.kind == "investigation" else "economy")
+                              prefer="quality" if run.kind == "investigation" else "economy",
+                              prefer_connection_id=run.preferred_connection_id)
         if not chosen.candidates:
             _block(run_id, steps, chosen.blocked, prepared, chosen.retry_after)
             return True

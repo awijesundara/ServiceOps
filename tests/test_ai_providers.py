@@ -164,6 +164,42 @@ def test_provider_proxy_policy_uses_default_custom_or_direct_and_ignores_process
         provider.proxy_url(config_for(proxy_mode="custom", proxy_url="socks5://bad:1080"))
 
 
+def test_a_connectivity_probe_fails_fast_instead_of_waiting_the_full_generation_timeout(monkeypatch):
+    """admin/ai/services/<id>/test (service_test) calls generate(probe=True) synchronously
+    from the browser's own request. A proxy or endpoint that accepts the TCP connection but
+    never answers (the common shape of a broken/unreachable proxy, as opposed to a fast
+    connection-refused) must not block that admin page for the full generation timeout --
+    confirmed here against a real socket that accepts and then never writes a byte."""
+    import socket
+    import threading
+    import time
+
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    port = server.getsockname()[1]
+
+    def accept_and_hang():
+        try:
+            conn, _ = server.accept()
+            time.sleep(30)  # longer than PROBE_TIMEOUT_SECONDS, shorter than the test would ever wait
+            conn.close()
+        except OSError:
+            pass
+
+    thread = threading.Thread(target=accept_and_hang, daemon=True)
+    thread.start()
+    monkeypatch.setattr(provider, "PROBE_TIMEOUT_SECONDS", 1)
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", f"http://127.0.0.1:{port}")
+    config = config_for(endpoint=f"http://127.0.0.1:{port}", proxy_mode="none")
+    started = time.monotonic()
+    with pytest.raises(provider.ProviderError):
+        provider.generate(config, [], probe=True)
+    elapsed = time.monotonic() - started
+    assert elapsed < 5, f"probe took {elapsed:.1f}s -- it must fail near PROBE_TIMEOUT_SECONDS, not hang"
+    server.close()
+
+
 # ---- model discovery ----
 
 def encrypted(key):
