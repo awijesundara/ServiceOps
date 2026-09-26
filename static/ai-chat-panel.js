@@ -253,10 +253,22 @@
     setBusy(false);
   }
 
+  function syncHistorySelection() {
+    // refreshHistory() only sets .is-current at the moment a row is built;
+    // clicking a different row later (open() -> render()) changes
+    // state.conversation without ever re-rendering the list, so the
+    // highlight silently went stale after the very first click. Fixed by
+    // re-syncing the already-rendered rows here instead of re-fetching.
+    ui.list.querySelectorAll(".ai-history-row").forEach(function (row) {
+      row.classList.toggle("is-current", row.dataset.conversationId === state.conversation);
+    });
+  }
+
   function render(conversation) {
     clearLog();
     state.conversation = conversation ? conversation.id : null;
     remember(state.conversation);
+    syncHistorySelection();
     ui.welcome.hidden = Boolean(conversation && conversation.messages.length);
     if (!conversation) return;
     const lastAssistant = conversation.messages.map(function (m) { return m.role; }).lastIndexOf("assistant");
@@ -296,6 +308,7 @@
       ui.empty.hidden = data.conversations.length > 0;
       data.conversations.forEach(function (item) {
         const row = window.AIChat.element("li", "ai-history-row" + (item.id === state.conversation ? " is-current" : ""));
+        row.dataset.conversationId = item.id;
         const slide = window.AIChat.element("div", "ai-history-slide");
         const openButton = window.AIChat.element("button", "ai-history-open", item.title);
         openButton.type = "button";
