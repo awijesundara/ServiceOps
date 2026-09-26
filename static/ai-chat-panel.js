@@ -22,6 +22,90 @@
   const MAX = 2000;
   const state = { conversation: null, active: null, loaded: false, busy: false };
 
+  // Swipe-to-delete for history/memory rows: a small trash icon is always
+  // visible (mouse/keyboard need no gesture at all); on touch, dragging a
+  // row left also reveals a full-size "Delete" panel underneath -- "swipe
+  // left, then press delete". Built as real SVG DOM nodes, matching this
+  // file's own rule that nothing here uses innerHTML.
+  function trashIcon() {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "1.9");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    [
+      ["path", { d: "M4 7h16" }],
+      ["path", { d: "M9 7V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V7" }],
+      ["path", { d: "M18.5 7 17.7 19.5a2 2 0 0 1-2 1.9H8.3a2 2 0 0 1-2-1.9L5.5 7" }],
+      ["line", { x1: "10", y1: "11", x2: "10", y2: "17" }],
+      ["line", { x1: "14", y1: "11", x2: "14", y2: "17" }],
+    ].forEach(function (part) {
+      const el = document.createElementNS(NS, part[0]);
+      Object.keys(part[1]).forEach(function (key) { el.setAttribute(key, part[1][key]); });
+      svg.appendChild(el);
+    });
+    return svg;
+  }
+
+  let openSwipeRow = null;
+  function closeSwipe(row) {
+    if (!row) return;
+    row.classList.remove("is-swiped");
+    row.querySelector(".ai-history-slide").style.transform = "";
+    if (openSwipeRow === row) openSwipeRow = null;
+  }
+  document.addEventListener("pointerdown", function (event) {
+    if (openSwipeRow && !openSwipeRow.contains(event.target)) closeSwipe(openSwipeRow);
+  });
+  function attachSwipe(row, slide) {
+    const SWIPE = 84;
+    let startX = 0, startY = 0, baseX = 0, dragging = false, active = false;
+    slide.addEventListener("pointerdown", function (event) {
+      if (event.pointerType === "mouse") return; // the always-visible icon covers mouse/keyboard
+      startX = event.clientX; startY = event.clientY; active = true; dragging = false;
+      baseX = row.classList.contains("is-swiped") ? -SWIPE : 0;
+    });
+    slide.addEventListener("pointermove", function (event) {
+      if (!active) return;
+      const dx = event.clientX - startX, dy = event.clientY - startY;
+      if (!dragging) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        if (Math.abs(dy) > Math.abs(dx)) { active = false; return; } // a vertical scroll, not a swipe
+        dragging = true;
+        if (openSwipeRow && openSwipeRow !== row) closeSwipe(openSwipeRow);
+        slide.style.transition = "none";
+      }
+      slide.style.transform = "translateX(" + Math.max(-SWIPE, Math.min(0, baseX + dx)) + "px)";
+      event.preventDefault();
+    });
+    const finish = function (event) {
+      active = false;
+      if (!dragging) return;
+      dragging = false;
+      slide.style.transition = "";
+      slide.style.transform = "";
+      const dx = event.clientX - startX;
+      if (Math.max(-SWIPE, Math.min(0, baseX + dx)) < -SWIPE / 2) {
+        row.classList.add("is-swiped"); openSwipeRow = row;
+      } else {
+        row.classList.remove("is-swiped"); if (openSwipeRow === row) openSwipeRow = null;
+      }
+      // Swallow the synthetic click a touch drag would otherwise fire on
+      // release, so ending a swipe never also "opens" the row underneath it.
+      row.dataset.justSwiped = "1";
+      setTimeout(function () { delete row.dataset.justSwiped; }, 50);
+    };
+    slide.addEventListener("pointerup", finish);
+    slide.addEventListener("pointercancel", function () {
+      active = false; dragging = false; slide.style.transition = ""; slide.style.transform = "";
+    });
+  }
+
   function keep(key, value) { try { if (value) sessionStorage.setItem(key, value); else sessionStorage.removeItem(key); } catch (e) { /* storage may be blocked */ } }
   function kept(key) { try { return sessionStorage.getItem(key); } catch (e) { return null; } }
 
@@ -211,30 +295,59 @@
       ui.list.textContent = "";
       ui.empty.hidden = data.conversations.length > 0;
       data.conversations.forEach(function (item) {
-        const row = window.AIChat.element("li", item.id === state.conversation ? "is-current" : "");
+        const row = window.AIChat.element("li", "ai-history-row" + (item.id === state.conversation ? " is-current" : ""));
+        const slide = window.AIChat.element("div", "ai-history-slide");
         const openButton = window.AIChat.element("button", "ai-history-open", item.title);
         openButton.type = "button";
-        openButton.addEventListener("click", function () { open(item.id); if (widget) toggleHistory(false); });
-        const remove = window.AIChat.element("button", "ai-history-delete", "Delete");
-        remove.type = "button";
-        remove.setAttribute("aria-label", "Delete conversation: " + item.title);
-        remove.addEventListener("click", function () {
-          if (!remove.dataset.armed) {
-            remove.dataset.armed = "1"; remove.textContent = "Confirm delete";
-            remove.setAttribute("aria-label", "Confirm deleting conversation: " + item.title);
-            setTimeout(function () {
-              delete remove.dataset.armed; remove.textContent = "Delete";
-              remove.setAttribute("aria-label", "Delete conversation: " + item.title);
-            }, 4000);
-            return;
-          }
+        openButton.addEventListener("click", function () {
+          if (row.dataset.justSwiped) return;
+          if (row.classList.contains("is-swiped")) { closeSwipe(row); return; }
+          open(item.id); if (widget) toggleHistory(false);
+        });
+        const deleteConversation = function () {
           send("/ai/chat/conversations/" + encodeURIComponent(item.id) + "/delete").then(function () {
             if (state.conversation === item.id) render(null);
             refreshHistory();
           }).catch(function (error) { showError(error.message); });
+        };
+        // Always-visible icon: a mouse/keyboard user can delete without ever
+        // discovering the swipe gesture. A second click within 4s confirms,
+        // matching how the same double-click-to-confirm safety already
+        // works elsewhere in this panel.
+        const icon = window.AIChat.element("button", "ai-history-delete-icon");
+        icon.type = "button";
+        icon.appendChild(trashIcon());
+        icon.setAttribute("aria-label", "Delete conversation: " + item.title);
+        icon.addEventListener("click", function (event) {
+          event.stopPropagation();
+          if (!icon.dataset.armed) {
+            icon.dataset.armed = "1"; icon.classList.add("is-armed");
+            icon.setAttribute("aria-label", "Confirm deleting conversation: " + item.title);
+            setTimeout(function () {
+              delete icon.dataset.armed; icon.classList.remove("is-armed");
+              icon.setAttribute("aria-label", "Delete conversation: " + item.title);
+            }, 4000);
+            return;
+          }
+          deleteConversation();
         });
-        row.appendChild(openButton);
-        row.appendChild(remove);
+        slide.appendChild(openButton);
+        slide.appendChild(icon);
+        // Revealed by swiping the row left; a deliberate two-step gesture
+        // (swipe, then a separate tap here), so this deletes immediately --
+        // no second confirmation on top of the swipe itself. Not a tab
+        // stop: the always-visible icon above already reaches every
+        // keyboard/screen-reader user, so this would only be a duplicate.
+        const reveal = window.AIChat.element("button", "ai-history-reveal");
+        reveal.type = "button";
+        reveal.tabIndex = -1;
+        reveal.setAttribute("aria-hidden", "true");
+        reveal.appendChild(trashIcon());
+        reveal.appendChild(window.AIChat.element("span", "", "Delete"));
+        reveal.addEventListener("click", function () { closeSwipe(row); deleteConversation(); });
+        row.appendChild(slide);
+        row.appendChild(reveal);
+        attachSwipe(row, slide);
         ui.list.appendChild(row);
       });
     }).catch(function (error) {

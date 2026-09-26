@@ -470,6 +470,59 @@ def test_chat_widget_streams_and_deletes_under_the_real_csp(ai_browser_server, m
         stop_worker.set()
 
 
+def test_history_swipe_left_reveals_delete_and_the_icon_stays_usable_without_it(ai_browser_server):
+    """"Swipe left, then press delete": on touch, dragging a history row left
+    must reveal a real, clickable Delete panel underneath -- and the
+    always-visible small delete icon (covered by the arm/confirm flow in
+    test_chat_widget_streams_and_deletes_under_the_real_csp) must keep
+    working for a mouse, which never swipes at all."""
+    from playwright.sync_api import sync_playwright
+    app, base, _ = ai_browser_server
+    enable_ai(app)
+    clear_chats(app)
+    with app.app_context():
+        from app import AIConversation, AIMessage, User
+        admin = User.query.filter_by(username="admin").one()
+        conversation = AIConversation(tenant_id=admin.tenant_id, user_id=admin.id,
+                                      actor_role=admin.effective_role, title="Swipe me")
+        db.session.add(conversation)
+        db.session.flush()
+        db.session.add(AIMessage(conversation_id=conversation.id, tenant_id=admin.tenant_id,
+                                 user_id=admin.id, role="user", content="hi"))
+        db.session.commit()
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True).new_page()
+        sign_in(page, base)
+        page.goto(base + "/", wait_until="networkidle")
+        page.locator("[data-chat-launch]").click()
+        wait_for(lambda: page.locator("[data-chat]").is_visible())
+        page.get_by_label("Chat options").click()
+        page.locator("[data-chat-history-toggle]").click()
+        wait_for(lambda: page.locator(".ai-history-open").count() == 1)
+        row = page.locator(".ai-history-row").first
+        assert "is-swiped" not in (row.get_attribute("class") or "")
+        # A swipe is a drag past a threshold, not a tap: dispatched as real
+        # touch-typed pointer events, the same input class the JS gates its
+        # gesture handling on (a mouse pointerdown is deliberately ignored).
+        slide = row.locator(".ai-history-slide")
+        box = slide.bounding_box()
+        cx, cy = box["x"] + box["width"] - 12, box["y"] + box["height"] / 2
+        for kind, x in (("pointerdown", cx), ("pointermove", cx - 60), ("pointerup", cx - 60)):
+            slide.dispatch_event(kind, {"pointerId": 1, "pointerType": "touch", "clientX": x, "clientY": cy, "bubbles": True})
+        wait_for(lambda: "is-swiped" in (row.get_attribute("class") or ""))
+        # The class flips synchronously, but the reveal is a CSS transition
+        # (180ms) -- wait for the slide to actually have finished sliding
+        # before treating the panel underneath as reachable.
+        wait_for(lambda: slide.bounding_box()["x"] <= box["x"] - 80)
+        # Revealed, not just present: the open button underneath must no
+        # longer be the thing a tap in that spot actually hits.
+        assert page.evaluate("([x, y]) => document.elementFromPoint(x, y).closest('.ai-history-reveal') !== null", [cx, cy])
+        row.locator(".ai-history-reveal").click()
+        wait_for(lambda: page.locator(".ai-history-open").count() == 0)
+        browser.close()
+
+
 def test_chat_model_picker_lists_services_hides_with_one_and_remembers_the_choice(ai_browser_server, monkeypatch):
     from playwright.sync_api import sync_playwright
     app, base, _ = ai_browser_server

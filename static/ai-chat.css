@@ -84,10 +84,28 @@ span.ai-cite-pending{border-bottom:1px dotted var(--muted);opacity:.85}
 .ai-chat.is-widget .ai-chat-history{position:absolute;inset:60px 0 0 0;width:auto;z-index:2;border:0;background:#fff}
 .ai-chat-history[hidden]{display:none}
 .ai-chat-history ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
-.ai-chat-history li{display:flex;align-items:center;gap:4px;border-radius:8px}
-.ai-chat-history li.is-current{background:var(--ai-soft)}
+/* Each row is two layers: .ai-history-slide (title + a small always-visible
+   delete icon, for mouse/keyboard) sits on top and slides left on a
+   touch swipe to reveal .ai-history-reveal (a big, unmissable "Delete"
+   panel) underneath -- "swipe left, then press delete". The small icon
+   means delete is never swipe-only: a mouse/keyboard user never needs to
+   discover the gesture at all. */
+.ai-history-row{position:relative;overflow:hidden;border-radius:8px}
+.ai-history-row.is-current{background:var(--ai-soft)}
+.ai-history-slide{display:flex;align-items:center;gap:2px;position:relative;z-index:1;background:inherit;border-radius:inherit;transition:transform .18s ease-out;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.ai-history-row.is-swiped .ai-history-slide{transform:translateX(-84px)}
 .ai-history-open{flex:1;min-width:0;text-align:left;border:0;background:transparent;padding:8px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .ai-history-delete{border:0;background:transparent;color:#9d2a22;font-size:12px;padding:6px 8px}
+/* The conversation list's always-visible per-row icon -- distinct from
+   .ai-history-delete above (a plain text button the memory-notes list
+   still uses) since this one is icon-only and fixed-size. */
+.ai-history-delete-icon{flex-shrink:0;display:inline-grid;place-items:center;width:30px;height:30px;margin-right:2px;border:0;border-radius:7px;background:transparent;color:#9d2a22;cursor:pointer}
+.ai-history-delete-icon:hover,.ai-history-delete-icon:focus-visible{background:#fdebea}
+.ai-history-delete-icon.is-armed{background:#9d2a22;color:#fff}
+.ai-history-delete-icon svg{width:15px;height:15px}
+.ai-history-reveal{position:absolute;inset:0 0 0 auto;width:84px;display:flex;align-items:center;justify-content:center;gap:5px;border:0;background:#9d2a22;color:#fff;font-size:12.5px;font-weight:650;cursor:pointer}
+.ai-history-reveal svg{width:14px;height:14px}
+@media(hover:none){.ai-history-reveal{width:88px}.ai-history-row.is-swiped .ai-history-slide{transform:translateX(-88px)}}
 .ai-chat-main{flex:1;min-width:0;display:flex;flex-direction:column}
 .ai-chat-log{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px;background:#f7f9f9}
 .ai-chat-welcome h3{margin:8px 0 4px;font-size:18px}
@@ -339,7 +357,7 @@ span.ai-cite-pending{border-bottom:1px dotted var(--muted);opacity:.85}
 @keyframes ai-pop{from{opacity:0;transform:translateY(10px) scale(.98)}}
 @keyframes ai-in{from{opacity:0;transform:translateY(6px)}}
 @keyframes ai-fade{from{opacity:0}}
-@media(prefers-reduced-motion:reduce){.ai-chat.is-widget:not([hidden]),.ai-chat.is-widget.is-closing,.ai-turn,.ai-chat-history,.ai-chat-memory{animation:none}.ai-chat-log{scroll-behavior:auto}}
+@media(prefers-reduced-motion:reduce){.ai-chat.is-widget:not([hidden]),.ai-chat.is-widget.is-closing,.ai-turn,.ai-chat-history,.ai-chat-memory{animation:none}.ai-chat-log{scroll-behavior:auto}.ai-history-slide{transition:none}}
 
 /* ===== Chat: friendlier header, nested-curve transition into the body, more compact spacing ===== */
 .ai-avatar{display:inline-grid;place-items:center;width:28px;height:28px;flex:0 0 auto;border-radius:50%;background:rgba(255,255,255,.18);color:#fff}
