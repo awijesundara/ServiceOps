@@ -426,6 +426,7 @@ def test_chat_widget_streams_and_deletes_under_the_real_csp(ai_browser_server, m
             wait_for(lambda: page.locator("[data-ai-status]").last.inner_text().strip() == "Complete")
             wait_for(lambda: page.locator("[data-ai-answer]").last.locator("a.ai-cite").count() >= 1)
             if shots:
+                page.get_by_label("Chat options").click()
                 page.locator("[data-chat-history-toggle]").click()
                 page.wait_for_timeout(300)
                 page.screenshot(path=os.path.join(shots, f"chat-history-{width}.png"))
@@ -451,11 +452,13 @@ def test_chat_widget_streams_and_deletes_under_the_real_csp(ai_browser_server, m
             assert "Renew the certificate" in page.locator("[data-ai-answer]").last.inner_text()
             page.locator("#ai-chat-input").fill("")
             # History lists the conversation; deleting it needs a confirming second press.
+            page.get_by_label("Chat options").click()
             page.locator("[data-chat-history-toggle]").click()
             wait_for(lambda: page.locator(".ai-history-open").count() == 1)
             page.get_by_role("button", name="Delete conversation", exact=False).click()
             page.get_by_role("button", name="Confirm deleting conversation", exact=False).click()
             wait_for(lambda: page.locator(".ai-history-open").count() == 0)
+            page.get_by_label("Chat options").click()
             page.locator("[data-chat-new]").click()
             assert page.locator(".ai-turn").count() == 0
             page.keyboard.press("Escape")
@@ -543,6 +546,15 @@ def test_chat_reappears_without_a_flash_or_replayed_entrance_across_a_page_navig
         page.locator("[data-chat-launch]").click()
         wait_for(lambda: page.locator("[data-chat]").is_visible())
         assert page.locator(".ai-avatar").count() == 1  # the redesigned header
+        # The floating surface follows the supplied compact-chat reference:
+        # narrow card, blue gradient header, presence strip and circular send control.
+        page.wait_for_timeout(250)  # measure after the 180 ms entrance animation settles
+        geometry = page.locator("[data-chat]").evaluate("e => { const r=e.getBoundingClientRect(), h=getComputedStyle(e.querySelector('.ai-chat-head')), s=e.querySelector('[data-chat-send]').getBoundingClientRect(); return {width:r.width,height:r.height,background:h.backgroundImage,send:[s.width,s.height]}; }")
+        assert 340 <= geometry["width"] <= 360 and geometry["height"] <= 590
+        assert "linear-gradient" in geometry["background"]
+        assert geometry["send"] == [46, 46]
+        assert page.locator(".ai-presence").is_visible()
+        assert page.get_by_label("Chat options").is_visible()
         assert "ai_chat_open=1" in page.evaluate("document.cookie")
         # A fresh navigation: the server must render it already open (no launcher
         # click here at all), and must not replay the entrance animation.
@@ -600,6 +612,15 @@ def test_full_page_chat_and_stop(ai_browser_server, monkeypatch):
             page.goto(base + "/ai/chat", wait_until="networkidle")
             assert page.locator("[data-chat-launch]").count() == 0
             assert page.get_by_role("heading", name="How can I help you today?").is_visible()
+            assert page.get_by_role("button", name="New conversation").is_visible()
+            geometry = page.locator("[data-chat].is-page").evaluate("e => { const r=e.getBoundingClientRect(), b=e.querySelector('.ai-chat-body'), m=e.querySelector('.ai-chat-main'), c=getComputedStyle(m); return {width:r.width,height:r.height,columns:getComputedStyle(b).gridTemplateColumns,background:c.backgroundImage,radius:getComputedStyle(e).borderRadius}; }")
+            assert geometry["width"] > 800
+            assert geometry["height"] > 600
+            assert geometry["columns"].split()[0] == "270px"
+            assert "linear-gradient" in geometry["background"]
+            assert geometry["radius"] == "28px"
+            if os.getenv("AI_SCREENSHOT_DIR"):
+                page.screenshot(path=os.path.join(os.getenv("AI_SCREENSHOT_DIR"), "ai-chat-expanded.png"), full_page=True)
             assert page.locator("[data-chat-suggest]").count() == 0
             assert not axe_violations(page)
             page.get_by_label("Your question").fill("I want to report a problem")
@@ -608,6 +629,15 @@ def test_full_page_chat_and_stop(ai_browser_server, monkeypatch):
             page.locator("[data-chat-stop]").click()
             wait_for(lambda: page.locator("[data-chat-send]").is_enabled(), timeout=20)
             assert "Stopped" in page.inner_text("[data-chat-log]")
+            mobile = browser.new_context(viewport={"width": 390, "height": 844}, reduced_motion="reduce").new_page()
+            sign_in(mobile, base)
+            mobile.goto(base + "/ai/chat", wait_until="networkidle")
+            assert mobile.locator("[data-chat-history]").is_hidden()
+            mobile.get_by_role("button", name="Conversations").click()
+            assert mobile.locator("[data-chat-history]").is_visible()
+            assert mobile.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
+            assert not axe_violations(mobile)
+            mobile.context.close()
             browser.close()
     finally:
         stop_worker.set()
