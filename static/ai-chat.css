@@ -92,7 +92,18 @@ span.ai-cite-pending{border-bottom:1px dotted var(--muted);opacity:.85}
    discover the gesture at all. */
 .ai-history-row{position:relative;overflow:hidden;border-radius:8px}
 .ai-history-row.is-current{background:var(--ai-soft)}
-.ai-history-slide{display:flex;align-items:center;gap:2px;position:relative;z-index:1;background:inherit;border-radius:inherit;transition:transform .18s ease-out;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+/* .ai-history-slide needs an opaque background of its own, not
+   background:inherit -- "inherit" copies the parent <li>'s own
+   background-*value* (transparent, since neither the <li> nor <ul> sets
+   one), not an opaque render of it, so a transparent slide let
+   .ai-history-reveal's solid red show straight through at rest, on every
+   row, well before any swipe. var(--bg) matches this panel's own default
+   surface in both the widget and the page (each already uses it for the
+   same panel); the .is-current rule below it still wins for the
+   highlighted row. */
+.ai-history-slide{display:flex;align-items:center;gap:2px;position:relative;z-index:1;background:var(--bg);border-radius:inherit;transition:transform .18s ease-out;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.ai-chat.is-widget .ai-history-slide{background:#fff}
+.ai-history-row.is-current .ai-history-slide{background:var(--ai-soft)}
 .ai-history-row.is-swiped .ai-history-slide{transform:translateX(-84px)}
 .ai-history-open{flex:1;min-width:0;text-align:left;border:0;background:transparent;padding:8px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .ai-history-delete{border:0;background:transparent;color:#9d2a22;font-size:12px;padding:6px 8px}
@@ -384,32 +395,42 @@ span.ai-cite-pending{border-bottom:1px dotted var(--muted);opacity:.85}
    colors, --ai-accent/--ai-amber/--ai-grad defined above from --brand-teal/
    --brand-amber) -- never a fixed hex -- so a differently-branded tenant sees
    its own colors here, not a hard-coded blue. */
-.ai-chat.is-widget{width:min(360px,calc(100vw - 32px));height:min(590px,calc(100dvh - 44px));border:0;border-radius:16px;box-shadow:0 18px 52px rgba(24,52,91,.25)}
-.ai-chat.is-widget .ai-chat-head{min-height:86px;padding:18px 18px 13px;border-radius:0;background:var(--ai-accent);background:var(--ai-grad);align-items:center}
+.ai-chat.is-widget{width:min(360px,calc(100vw - 32px));height:min(590px,calc(100dvh - 44px));border:1px solid rgba(255,255,255,.6);border-radius:22px;box-shadow:0 18px 52px rgba(24,52,91,.25);background:color-mix(in srgb,var(--ai-soft) 55%,rgba(255,255,255,.86));backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%)}
+.ai-chat.is-widget .ai-chat-head{position:relative;min-height:78px;padding:20px 56px 10px 18px;border-radius:0;background:transparent;align-items:center}
 .ai-chat.is-widget .ai-chat-titles{display:flex;align-items:center;gap:12px;min-width:0;flex:1}
-.ai-chat.is-widget .ai-avatar{width:42px;height:42px;border:2px solid rgba(255,255,255,.88);background:#fff;color:var(--ai-accent);box-shadow:0 2px 8px color-mix(in srgb,var(--ai-accent) 35%,transparent)}
+.ai-chat.is-widget .ai-avatar{width:42px;height:42px;border:0;background:var(--ai-accent);background:var(--ai-grad);color:#fff;box-shadow:0 4px 14px color-mix(in srgb,var(--ai-accent) 40%,transparent)}
 .ai-chat.is-widget .ai-avatar svg,.ai-chat.is-page .ai-avatar svg{width:19px;height:19px}
-.ai-chat.is-widget .ai-chat-titles h2{font-size:19px;font-weight:650;letter-spacing:-.01em;white-space:nowrap}
+.ai-chat.is-widget .ai-chat-titles h2{font-size:19px;font-weight:650;letter-spacing:-.01em;white-space:nowrap;color:var(--ink)}
 .ai-chat.is-widget .ai-chat-tools{gap:2px}
-.ai-chat.is-widget .ai-icon{width:30px;height:34px;border:0;background:transparent;color:#fff;border-radius:8px;padding:5px;display:grid;place-items:center}
-.ai-chat.is-widget .ai-icon:hover{background:rgba(255,255,255,.15)}
+.ai-chat.is-widget .ai-icon{width:30px;height:34px;border:0;background:transparent;color:var(--muted);border-radius:8px;padding:5px;display:grid;place-items:center}
+.ai-chat.is-widget .ai-icon:hover{background:color-mix(in srgb,var(--ai-accent) 10%,transparent);color:var(--ai-accent)}
 .ai-chat-menu{position:relative;margin:0}
 .ai-chat-menu>summary{list-style:none}
 .ai-chat-menu>summary::-webkit-details-marker{display:none}
 .ai-chat-menu-items{position:absolute;top:38px;right:0;z-index:8;display:flex;gap:2px;padding:5px;border-radius:10px;background:#fff;box-shadow:0 8px 24px rgba(24,52,91,.22)}
 .ai-chat-menu:not([open]) .ai-chat-menu-items{display:none}
-.ai-chat-menu[open]>summary{background:rgba(255,255,255,.18)}
+.ai-chat-menu[open]>summary{background:color-mix(in srgb,var(--ai-accent) 12%,transparent)}
 .ai-chat.is-widget .ai-chat-menu-items .ai-icon{display:grid;color:var(--ai-accent)}
 .ai-chat.is-widget .ai-chat-menu-items .ai-icon:hover{background:var(--ai-soft)}
 .ai-chat.is-page .ai-chat-menu>summary{display:none}
 .ai-chat.is-page .ai-chat-menu-items{position:static;display:flex;padding:0;background:transparent;box-shadow:none}
-.ai-presence{display:flex;align-items:center;gap:8px;min-height:46px;padding:9px 24px;background:var(--ai-accent);background:var(--ai-grad);color:#fff;font-size:12.5px}
-.ai-presence>span:first-child{width:8px;height:8px;flex:0 0 auto;border-radius:50%;background:#0d6e4a;box-shadow:0 0 0 2px rgba(13,110,74,.18)}
-.ai-presence strong{font-weight:600}
-.ai-presence .ai-scope{min-width:0;margin:0;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ai-chat.is-widget .ai-chat-body{position:relative;background:#fff}
-.ai-chat.is-widget .ai-chat-main{margin-top:0;border-radius:0;background:#fff}
-.ai-chat.is-widget .ai-chat-log{padding:15px 18px 12px;gap:9px;background:#fff}
+/* The close control floats as its own solid circle near the card's own
+   corner, rather than sitting inline as just another header icon -- the
+   one part of the reference layout worth keeping literal, since "how do I
+   get rid of this" benefits from being the most visually distinct control
+   on the whole card. Kept inside the card's own bounds (not overlapping
+   its edge): .ai-chat.is-widget keeps overflow:hidden for its rounded
+   corners and the history/memory panel overlays, which would clip
+   anything positioned outside it. */
+.ai-chat.is-widget .ai-chat-collapse{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;box-shadow:0 6px 16px rgba(20,30,40,.35);z-index:5}
+.ai-chat.is-widget .ai-chat-collapse:hover{background:var(--ai-accent)}
+.ai-presence{display:flex;align-items:center;gap:8px;min-height:0;padding:0 18px 12px;background:transparent;color:var(--muted);font-size:12px}
+.ai-presence>span:first-child{width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:#0d6e4a;box-shadow:0 0 0 2px rgba(13,110,74,.18)}
+.ai-presence strong{font-weight:600;color:var(--ink)}
+.ai-presence .ai-scope{min-width:0;margin:0;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ai-chat.is-widget .ai-chat-body{position:relative;background:transparent}
+.ai-chat.is-widget .ai-chat-main{margin-top:0;border-radius:0;background:transparent}
+.ai-chat.is-widget .ai-chat-log{padding:6px 18px 12px;gap:9px;background:transparent}
 .ai-chat.is-widget .ai-chat-welcome{align-self:flex-start;max-width:88%;padding:10px 14px;border-radius:18px 18px 18px 5px;background:var(--bg);color:var(--ink)}
 .ai-chat.is-widget .ai-chat-welcome h3{margin:0;font-size:14px;font-weight:500;line-height:1.4}
 .ai-chat.is-widget .ai-bubble{max-width:82%;padding:9px 13px;border-radius:18px 18px 5px 18px;background:var(--ai-accent);background:var(--ai-grad);font-size:13.5px;box-shadow:none}
@@ -418,16 +439,20 @@ span.ai-cite-pending{border-bottom:1px dotted var(--muted);opacity:.85}
 .ai-chat.is-widget .ai-actions{padding-left:4px;gap:6px}
 .ai-chat.is-widget .ai-route-chip{background:transparent;padding:1px 4px;color:var(--muted);font-weight:600}
 .ai-chat.is-widget .ai-route-chip::before{width:6px;height:6px}
-.ai-chat.is-widget .ai-composer{position:relative;display:flex;align-items:flex-end;gap:8px;margin:0 18px;padding:8px 52px 10px 0;border-top:1px solid var(--line);background:#fff}
-.ai-chat.is-widget .ai-composer textarea{width:100%;min-height:40px;max-height:112px;padding:10px 0;border:0!important;border-radius:0;background:transparent;box-shadow:none!important;font-size:13.5px;line-height:20px}
+/* A floating pill, not a bar pinned under a top border -- the send circle
+   sits a few pixels taller than the pill itself so it visually breaks out
+   past its top/bottom edge, echoing the reference's corner cutout without
+   needing an actual clip-path on the card. */
+.ai-chat.is-widget .ai-composer{position:relative;display:flex;align-items:center;gap:8px;margin:4px 16px 14px;padding:6px 54px 6px 16px;border:0;border-radius:999px;background:#fff;box-shadow:0 8px 20px rgba(24,52,91,.12)}
+.ai-chat.is-widget .ai-composer textarea{width:100%;min-height:24px;max-height:96px;padding:8px 0;border:0!important;border-radius:0;background:transparent;box-shadow:none!important;font-size:13.5px;line-height:20px}
 .ai-chat.is-widget .ai-composer textarea::placeholder{color:var(--muted)}
-.ai-chat.is-widget .ai-composer-row{position:absolute;right:0;bottom:7px;margin:0}
-.ai-chat.is-widget .ai-send{display:grid;place-items:center;width:46px;height:46px;min-width:46px;flex:0 0 46px;padding:0;border:0;border-radius:50%;background:var(--ai-accent);background:var(--ai-grad);color:#fff;box-shadow:0 7px 18px color-mix(in srgb,var(--ai-accent) 40%,transparent)}
+.ai-chat.is-widget .ai-composer-row{position:absolute;right:5px;top:50%;transform:translateY(-50%);margin:0}
+.ai-chat.is-widget .ai-send{display:grid;place-items:center;width:46px;height:46px;min-width:46px;flex:0 0 46px;padding:0;border:3px solid color-mix(in srgb,var(--ai-soft) 55%,rgba(255,255,255,.86));border-radius:50%;background:var(--ai-accent);background:var(--ai-grad);color:#fff;box-shadow:0 7px 18px color-mix(in srgb,var(--ai-accent) 40%,transparent)}
 .ai-chat.is-widget .ai-send:hover{filter:brightness(1.05);transform:translateY(-1px)}
 .ai-chat.is-widget .ai-send:active{transform:translateY(0)}
-.ai-chat.is-widget [data-chat-stop]{position:absolute;right:52px;bottom:4px;white-space:nowrap}
-.ai-chat.is-widget .ai-count{position:absolute;right:58px;bottom:9px;white-space:nowrap}
-.ai-chat.is-widget .ai-privacy{margin:0;padding:1px 18px 11px;text-align:left;color:var(--muted);font-size:10px}
+.ai-chat.is-widget [data-chat-stop]{position:absolute;right:52px;top:50%;transform:translateY(-50%);white-space:nowrap}
+.ai-chat.is-widget .ai-count{position:absolute;right:58px;bottom:calc(100% + 6px);white-space:nowrap}
+.ai-chat.is-widget .ai-privacy{margin:0;padding:1px 22px 12px;text-align:left;color:var(--muted);font-size:10px}
 .ai-chat.is-widget .ai-chat-history,.ai-chat.is-widget .ai-chat-memory{inset:0;border:0;padding:16px;background:#fff}
 .ai-chat.is-page>.ai-presence{min-height:0;padding:0;background:transparent}
 .ai-chat.is-page>.ai-presence>*{display:none}
@@ -467,10 +492,10 @@ span.ai-cite-pending{border-bottom:1px dotted var(--muted);opacity:.85}
 .ai-chat.is-page .ai-mini .ai-answer{width:max-content;max-width:720px;padding:15px 20px;border:0;border-radius:25px 25px 25px 6px;background:rgba(255,255,255,.9);box-shadow:0 10px 24px rgba(49,86,137,.09);font-size:15px;line-height:1.55}
 .ai-chat.is-page .ai-thinking-status{width:max-content;border-radius:20px;background:rgba(255,255,255,.88);color:var(--muted)}
 .ai-chat.is-page .ai-actions{padding-left:8px}
-.ai-chat.is-page .ai-composer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;margin:0 clamp(28px,4vw,66px) 0;padding:12px 13px 12px 22px;border:1px solid var(--line);border-radius:15px;background:rgba(255,255,255,.94);box-shadow:0 12px 30px rgba(43,76,124,.12);backdrop-filter:blur(10px)}
+.ai-chat.is-page .ai-composer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;margin:0 clamp(28px,4vw,66px) 0;padding:10px 10px 10px 24px;border:1px solid rgba(255,255,255,.7);border-radius:999px;background:rgba(255,255,255,.82);box-shadow:0 12px 30px rgba(43,76,124,.12);backdrop-filter:blur(14px) saturate(160%);-webkit-backdrop-filter:blur(14px) saturate(160%)}
 .ai-chat.is-page .ai-composer textarea{min-height:24px;max-height:120px;padding:8px 0;border:0!important;background:transparent;box-shadow:none!important;font-size:14px;line-height:22px}
 .ai-chat.is-page .ai-composer-row{margin:0}
-.ai-chat.is-page .ai-send{display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:13px;background:var(--ai-accent);background:var(--ai-grad);color:#fff;box-shadow:0 6px 15px color-mix(in srgb,var(--ai-accent) 30%,transparent)}
+.ai-chat.is-page .ai-send{display:grid;place-items:center;width:48px;height:48px;padding:0;border:0;border-radius:50%;background:var(--ai-accent);background:var(--ai-grad);color:#fff;box-shadow:0 6px 15px color-mix(in srgb,var(--ai-accent) 30%,transparent)}
 .ai-chat.is-page .ai-privacy{padding:7px 24px 12px;background:transparent;color:var(--muted);font-size:10.5px}
 .ai-chat.is-page .ai-chat-memory{left:270px;inset-block:0;padding:28px;background:rgba(255,255,255,.98)}
 @media(max-width:900px){.ai-chat-page-shell{height:calc(100dvh - 82px);min-height:520px}.ai-chat.is-page{border-radius:18px}.ai-chat.is-page .ai-chat-body{grid-template-columns:220px minmax(0,1fr)}.ai-chat.is-page .ai-chat-log{padding-inline:26px}.ai-chat.is-page .ai-turn-user{padding-left:10%}.ai-chat.is-page .ai-turn-ai{padding-right:10%}.ai-chat.is-page .ai-chat-memory{left:220px}}
