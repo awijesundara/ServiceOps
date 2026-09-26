@@ -2356,6 +2356,47 @@ def test_monitoring_ingestion_auth_deduplication_and_team_routing(client, app):
         assert verify_audit_chain(1)["valid"]
 
 
+def test_backup_report_updates_recovery_set_without_creating_a_ticket(app, client):
+    """A daily backup succeeding is routine, not an incident -- unlike
+    monitoring_ingest(), this sibling endpoint must never create an
+    EnterpriseRecord, only the PlatformSetting rows System Health's
+    "Recovery set" widget reads (see _recovery_set_status()). This is the
+    Kubernetes backup CronJob's path to the same effect
+    tools/record_backup_status.py already has on the Compose/RPM install
+    path."""
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        token, prefix, token_hash = create_api_token()
+        source = MonitoringSource(
+            name="Backup reporter", token_prefix=prefix,
+            token_hash=token_hash, assignment_group_id=unix.id,
+            created_by_id=admin.id,
+        )
+        db.session.add(source)
+        db.session.commit()
+        source_id = source.source_id
+        events_before = EnterpriseRecord.query.filter_by(domain="event").count()
+    endpoint = f"/api/v1/monitoring/{source_id}/backup-report"
+    payload = {"manifest": "/backups/serviceops-20260926T183000Z.dump", "offsite": "not-configured"}
+    assert client.post(endpoint, json=payload).status_code == 401
+    headers = {"Authorization": f"Bearer {token}"}
+    bad_offsite = client.post(endpoint, json={**payload, "offsite": "sometimes"}, headers=headers)
+    assert bad_offsite.status_code == 400
+    response = client.post(endpoint, json=payload, headers=headers)
+    assert response.status_code == 201
+    with app.app_context():
+        assert EnterpriseRecord.query.filter_by(domain="event").count() == events_before
+        assert db.session.get(PlatformSetting, "LAST_BACKUP_MANIFEST").value == payload["manifest"]
+        assert db.session.get(PlatformSetting, "LAST_BACKUP_OFFSITE_STATUS").value == "not-configured"
+        refreshed = MonitoringSource.query.filter_by(source_id=source_id).one()
+        assert refreshed.last_seen_at is not None
+        assert verify_audit_chain(1)["valid"]
+    login(client, "admin", "Admin123!")
+    health_page = client.get("/admin/system-health")
+    assert b"Current" in health_page.data
+
+
 def test_cloudflare_access_sso_verifies_signature_audience_and_expiry(app, client):
     from joserfc.jwk import RSAKey, KeySet
     from joserfc import jwt as joserfc_jwt

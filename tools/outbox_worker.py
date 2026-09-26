@@ -1,6 +1,7 @@
 """Durable integration outbox worker."""
 import signal
 import time
+from pathlib import Path
 
 from app import (
     PlatformSetting, create_app, db, now, process_client_email_inbox,
@@ -26,13 +27,17 @@ def record_heartbeat():
     """Backs System Health's worker-liveness signal (see app.py's
     /admin/system-health): a heartbeat older than a couple of loop
     intervals means the worker process is stuck or dead even though the
-    container itself may still show "running"."""
+    container itself may still show "running". Also touches a local file so
+    Kubernetes can probe liveness/readiness without hitting the database on
+    every probe tick -- the same pattern tools/ai_worker.py already uses for
+    its own heartbeat file, see charts/serviceops/templates/worker.yaml."""
     row = db.session.get(PlatformSetting, "WORKER_LAST_HEARTBEAT")
     if not row:
         row = PlatformSetting(key="WORKER_LAST_HEARTBEAT", tenant_id=1, encrypted=False)
         db.session.add(row)
     row.value = now().isoformat()
     db.session.commit()
+    Path("/tmp/serviceops-worker-heartbeat").touch()
 
 
 signal.signal(signal.SIGTERM, stop)

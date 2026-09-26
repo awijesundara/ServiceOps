@@ -50,9 +50,9 @@
 </div>
 
 <section class="panel" id="recovery-set" style="margin-top:20px">
-  <h2>Recovery set<span class="info-tip" tabindex="0" data-tip="Tracks the most recent verified backup, not backups themselves -- ServiceOps has no built-in backup pipeline. An external backup job (pg_dump, a managed snapshot, etc.) is expected to call tools/record_backup_status.py after each successful run.">i</span></h2>
+  <h2>Recovery set<span class="info-tip" tabindex="0" data-tip="Tracks the most recent verified backup, not backups themselves -- ServiceOps has no built-in backup pipeline unless the Helm chart's optional backup.enabled CronJob is turned on. Either way, an external backup job reports in by calling tools/record_backup_status.py (Compose/RPM) or POST /api/v1/monitoring/&lt;source_id&gt;/backup-report (Kubernetes) after each successful run.">i</span></h2>
   {% if not last_backup_at %}
-  <p class="muted">No successful backup has ever been recorded for this deployment. This isn't necessarily a live incident -- it usually just means the backup pipeline has never run <code>tools/record_backup_status.py --manifest &lt;path&gt; --offsite archived|not-configured</code> after a successful backup. Configure your backup job (cron, a managed snapshot schedule, etc.) to call that tool on success.</p>
+  <p class="muted">No successful backup has ever been recorded for this deployment. This isn't necessarily a live incident -- it usually just means nothing has reported a successful backup yet: run <code>tools/record_backup_status.py --manifest &lt;path&gt; --offsite archived|not-configured</code> (Compose/RPM), or have the Kubernetes backup CronJob's <code>backup.alertingSecret</code> configured so it can call <code>POST /api/v1/monitoring/&lt;source_id&gt;/backup-report</code> on success.</p>
   {% elif not backup_healthy %}
   <p class="muted">The most recent recorded backup was {{ last_backup_at|usertime('%Y-%m-%d %H:%M:%S') }}, which is older than the configured {{ backup_rpo_hours }}-hour RPO. Either the backup pipeline stopped running, or <code>tools/record_backup_status.py</code> stopped being called after a successful run -- check the external backup job's own logs/schedule first.</p>
   {% else %}

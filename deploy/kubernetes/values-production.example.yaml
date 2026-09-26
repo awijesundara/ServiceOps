@@ -35,6 +35,22 @@ database:
   # restore-tested provider snapshot or pg_dump archive.
   backupReference: ""
 
+# Daily automated pg_dump, kept on its own volume. Reuses existingSecret's
+# DATABASE_URL -- no separate database credential to provision. Skip this
+# (leave enabled: false) if the database provider already takes its own
+# managed snapshots; use backupReference above either way.
+backup:
+  enabled: true
+  persistence:
+    storageClass: enterprise-rwo
+    size: 50Gi
+  # Create this Secret out-of-band (SERVICEOPS_MONITORING_SOURCE_ID /
+  # SERVICEOPS_MONITORING_TOKEN from an admin-created "Monitoring source",
+  # Admin > Connections & channels > Monitoring sources) to keep System
+  # Health's "Recovery set" widget accurate and get a tracked incident on
+  # backup failure. Backups still run without it.
+  alertingSecret: ""
+
 uploads:
   persistence:
     enabled: true

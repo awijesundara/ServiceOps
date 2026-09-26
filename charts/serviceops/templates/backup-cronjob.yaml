@@ -1,0 +1,139 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "serviceops.fullname" . }}-backup
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "serviceops.serviceAccountName" . }}
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            fsGroup: 70
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: backup
+              {{- $bkDigest := required "backup.image.digest is required" .Values.backup.image.digest }}
+              {{- if eq (.Values.image.pinning | default "digest") "tag" }}
+              image: {{ printf "%s:%s" .Values.backup.image.repository (required "backup.image.tag is required" .Values.backup.image.tag) | quote }}
+              {{- else }}
+              image: {{ printf "%s@%s" .Values.backup.image.repository $bkDigest | quote }}
+              {{- end }}
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              env:
+                - {name: RETENTION_COUNT, value: {{ .Values.backup.retention | quote }}}
+                - {name: REPORT_URL, value: "http://{{ include "serviceops.fullname" . }}:{{ .Values.service.port }}"}
+                # Read via the Downward API, not the service account token
+                # (automountServiceAccountToken is false on every workload in
+                # this chart, backup included -- the token mount simply
+                # wouldn't exist here).
+                - name: POD_NAMESPACE
+                  valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+              envFrom:
+                - secretRef: {name: {{ include "serviceops.secretName" . }}}
+                {{- if .Values.backup.alertingSecret }}
+                - secretRef: {name: {{ .Values.backup.alertingSecret }}}
+                {{- end }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -u
+                  # DATABASE_URL is the app's own SQLAlchemy connection string
+                  # (e.g. postgresql+psycopg://...); pg_dump/libpq only
+                  # understand the plain postgresql:// scheme, so the
+                  # driver suffix is stripped before use. No separate
+                  # database credential is provisioned for this job.
+                  DB_URI=$(printf '%s' "$DATABASE_URL" | sed 's#^postgresql+psycopg://#postgresql://#')
+                  report() {
+                    # Both the failure and success paths post to this
+                    # deployment's own monitoring-ingestion API (see
+                    # /api/v1/monitoring/<source_id>/backup-report and
+                    # monitoring_ingest() in app.py) so either becomes
+                    # visible on System Health's "Recovery set" widget and,
+                    # on failure, a real tracked event -- not just a Job
+                    # that quietly went red in `kubectl get jobs`. Silently
+                    # skipped if backup.alertingSecret was never configured
+                    # (SERVICEOPS_MONITORING_SOURCE_ID unset): backups still
+                    # run either way, only this reporting step is optional.
+                    [ -n "${SERVICEOPS_MONITORING_SOURCE_ID:-}" ] || return 0
+                    wget -q -O- --header="Content-Type: application/json" --header="Authorization: Bearer ${SERVICEOPS_MONITORING_TOKEN:-}" \
+                      --post-data="$1" \
+                      "${REPORT_URL}/api/v1/monitoring/${SERVICEOPS_MONITORING_SOURCE_ID}/$2" >/dev/null 2>&1
+                  }
+                  STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+                  DEST="/backups/serviceops-${STAMP}.dump"
+                  echo "Starting pg_dump to ${DEST}"
+                  if ! pg_dump "$DB_URI" -Fc -f "$DEST"; then
+                    echo "pg_dump failed" >&2
+                    report "{\"external_id\":\"serviceops-backup-$(date -u +%Y%m%d)\",\"severity\":\"high\",\"resource\":\"serviceops-backup-cronjob\",\"summary\":\"ServiceOps database backup failed: pg_dump exited non-zero. Check kubectl logs job -n ${POD_NAMESPACE} -l app.kubernetes.io/component=backup.\"}" "events"
+                    exit 1
+                  fi
+                  SIZE=$(du -h "$DEST" | cut -f1)
+                  echo "Backup written: ${DEST} (${SIZE})"
+                  # Retention: keep the most recent N daily dumps. Older
+                  # ones are deleted only after a new one lands
+                  # successfully, never before, so a failed run can never
+                  # empty the volume out.
+                  cd /backups
+                  ls -1t serviceops-*.dump 2>/dev/null | tail -n +$((RETENTION_COUNT + 1)) | xargs -r rm -f --
+                  echo "Retained $(ls -1 serviceops-*.dump | wc -l) backup(s)"
+                  report "{\"manifest\":\"${DEST}\",\"offsite\":\"not-configured\"}" "backup-report"
+              volumeMounts:
+                - {name: backups, mountPath: /backups}
+                - {name: tmp, mountPath: /tmp}
+              resources: {{- toYaml .Values.backup.resources | nindent 16 }}
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: {{ default (printf "%s-backups" (include "serviceops.fullname" .)) .Values.backup.persistence.existingClaim }}
+            - name: tmp
+              emptyDir: {sizeLimit: 512Mi}
+          imagePullSecrets: {{- toYaml .Values.imagePullSecrets | nindent 12 }}
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "serviceops.fullname" . }}-backup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: backup
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    - ports:
+        - {port: 5432, protocol: TCP}
+    - to:
+        - podSelector:
+            matchLabels: {{- include "serviceops.webSelectorLabels" . | nindent 14 }}
+      ports:
+        - {port: 8080, protocol: TCP}
+{{- end }}
+{{- end }}
