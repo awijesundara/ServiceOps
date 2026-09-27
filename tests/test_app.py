@@ -7357,6 +7357,33 @@ def test_preferences_reject_open_redirect_start_page(client, app):
         assert pref.start_page == "/dashboard"
 
 
+def test_is_safe_internal_path_rejects_backslash_bypass():
+    # Browsers normalize a leading backslash to a forward slash for http(s)
+    # pages, so "/\evil.com" resolves as the scheme-relative "//evil.com"
+    # even though it doesn't literally start with "//" as a raw string.
+    assert not is_safe_internal_path("/\\evil.com")
+    assert not is_safe_internal_path("/\\/evil.com")
+    assert not is_safe_internal_path("//evil.example")
+    assert not is_safe_internal_path("https://evil.example")
+    assert not is_safe_internal_path("")
+    assert is_safe_internal_path("/dashboard")
+    assert is_safe_internal_path("/tickets/incident?filter=open")
+
+
+def test_preferences_reject_open_redirect_start_page_backslash_bypass(client, app):
+    login(client)
+    response = client.post("/preferences", data={
+        "density": "comfortable", "font_scale": "100",
+        "start_page": "/\\evil.example/phish",
+    })
+    assert response.status_code == 302
+    with app.app_context():
+        pref = UserPreference.query.filter_by(
+            user_id=User.query.filter_by(username="admin").one().id
+        ).one()
+        assert pref.start_page == "/"
+
+
 def test_webhook_rejects_hostname_that_resolves_to_private_address(monkeypatch, app):
     with app.app_context():
         assert integration_endpoint_valid("https://hooks.example.test/serviceops")
