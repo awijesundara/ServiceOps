@@ -38,6 +38,7 @@ from app import (
     find_and_merge_duplicate_groups,
     generate_mfa_backup_codes,
     hash_backup_code,
+    INSTALL_SETTINGS_ACTIONS,
     integration_endpoint_valid,
     latest_update_info,
     log_history,
@@ -49,6 +50,7 @@ from app import (
     queue_workflow_event,
     recompute_base_role,
     require_action,
+    require_install_settings_authority,
     roles,
     rotate_audit_integrity_key,
     setting_bool,
@@ -1367,6 +1369,7 @@ def register(app):
             abort(404)
         definitions = SETTING_DEFINITIONS.get(category, [])
         if request.method == "POST":
+            require_install_settings_authority()
             errors, restart_required, changed = [], False, []
             for definition in definitions:
                 key, field_type = definition["key"], definition["type"]
@@ -1964,6 +1967,8 @@ def register(app):
             return redirect(url_for("admin_section", section="service-configuration"), code=302)
         if request.method == "POST":
             action = request.form.get("action")
+            if action in INSTALL_SETTINGS_ACTIONS:
+                require_install_settings_authority()
             if action == "create_support_group":
                 name = request.form.get("name", "").strip()
                 group_type = request.form.get("group_type", "IT Fulfillment")

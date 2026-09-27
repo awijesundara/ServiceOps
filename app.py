@@ -545,6 +545,22 @@ def require_action(action):
     return decorator
 
 
+INSTALL_SETTINGS_ACTIONS = {"set_change_approval_policy", "set_ticket_defaults"}
+
+
+def require_install_settings_authority():
+    """PlatformSetting holds one install-wide row per key, shared by every
+    tenant. While the install has a single tenant its administrator owns
+    them; once there is a second tenant, one tenant's admin must not change
+    settings for the others, so only a platform administrator may."""
+    if Tenant.query.count() > 1 and not effective_role_has_action(
+            current_user.effective_role, "platform_administer"):
+        abort(403, description=(
+            "These settings apply to every organization on this installation. "
+            "Only a platform administrator can change them."
+        ))
+
+
 def audit_integrity_key(key_id="environment-v1", tenant_id=None):
     # Found via a real recovery/audit-verification rehearsal (B-009/B-004):
     # settings_cipher().decrypt() raises cryptography's InvalidToken when
