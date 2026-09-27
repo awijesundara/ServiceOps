@@ -135,6 +135,21 @@ def test_admin_page_and_ticket_forms_render_the_new_fields(client, app):
     assert b"Ticket categories" in admin_section_page.data
 
 
+def test_subcategory_other_field_is_wrapped_with_its_select(client, app):
+    # Regression test: .record-grid label is a 2-column CSS grid (label text |
+    # control), so the select and the free-text "describe below" input must
+    # share one wrapping element -- as two bare siblings, the input auto-wraps
+    # into a new grid row under column 1 instead of stacking under the select.
+    login(client)
+    page = client.get("/tickets/new/incident")
+    assert page.status_code == 200
+    body = page.data.decode()
+    wrapper_start = body.index('class="subcategory-field"')
+    wrapper_html = body[wrapper_start:body.index("</span>", wrapper_start)]
+    assert 'name="subcategory"' in wrapper_html
+    assert 'name="subcategory_other"' in wrapper_html
+
+
 def test_normalize_helpers_are_case_insensitive_and_never_raise(app):
     with app.app_context():
         assert normalize_ticket_category(1, "hardware") == "Hardware"
