@@ -12,6 +12,12 @@
 {% macro subcategory_field(current, disabled=False) %}
 {% set known_names = ticket_subcategories|map(attribute='name')|list %}
 {% set is_other = current and current not in known_names %}
+{#- Wrapped in one element so the label's 2-column grid (span | control) sees a
+   single child here too -- otherwise this select and the free-text input below
+   it are two siblings under a 2-column grid, so the input auto-wraps into a new
+   row under column 1 (the label-text column) instead of stacking under the
+   select in column 2. #}
+<span class="subcategory-field">
 <select name="subcategory" data-ticket-subcategory {% if disabled %}disabled{% endif %}>
   <option value="">Not set</option>
   {% for sc in ticket_subcategories %}
@@ -20,4 +26,5 @@
   <option value="__other__" {% if is_other %}selected{% endif %}>Other (describe below)</option>
 </select>
 <input type="text" name="subcategory_other" maxlength="80" placeholder="Describe the affected area" data-ticket-subcategory-other {% if not is_other %}hidden{% endif %} {% if disabled %}disabled{% endif %} value="{{ current if is_other else '' }}">
+</span>
 {% endmacro %}
