@@ -86,6 +86,8 @@ from serviceops_core.workflow import (
     package_digest, validate_workflow, workflow_matches,
 )
 from serviceops_core.projections import project_document, validate_projection_policy
+from serviceops_core import mcp as mcp_protocol
+from serviceops_core.mcp_tools import TOOLS as MCP_TOOLS
 from serviceops_core.ci_class_policy import (
     ci_class_action_allowed, ci_class_read_allowed, managed_ci_classes,
     restrict_ci_query_to_readable_classes, unreadable_ci_classes,
@@ -870,6 +872,12 @@ API_SCOPES = {
     "workflows:execute",
     "cmdb:write",
     "users:provision",
+    # Embedded MCP server (/api/v1/mcp): mcp:access to use the endpoint; each
+    # tool also needs its own read scope, and tools/list only shows those granted.
+    "mcp:access",
+    "cmdb:read",
+    "knowledge:read",
+    "approvals:read",
 }
 
 
@@ -5585,8 +5593,10 @@ def evaluate_client_triggers(event, ticket, agents):
 def visible_knowledge_query(user):
     """Never-published drafts (the AI assistant drafts these from incidents)
     are for agents and above to review and publish; requesters only ever see
-    published articles and archived versions."""
-    query = tenant_query(Knowledge)
+    published articles and archived versions. Scoped by the user's own tenant
+    so it's also correct for bearer-token callers, which have no logged-in
+    current_user for tenant_query() to resolve."""
+    query = Knowledge.query.filter(Knowledge.tenant_id == user.tenant_id)
     if role_at_least(user.effective_role, "agent"):
         return query
     return query.filter(db.or_(Knowledge.published.is_(True), Knowledge.archived.is_(True)))
@@ -8285,6 +8295,17 @@ def create_app(test_config=None):
                         "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}],
                     },
                 },
+                "/mcp": {
+                    "post": {
+                        "summary": "Model Context Protocol server (Streamable HTTP, JSON responses)",
+                        "description": (
+                            "One JSON-RPC 2.0 message per request: initialize, ping, tools/list, "
+                            "tools/call. Requires mcp:access; each read-only tool also needs its "
+                            "scope (tickets:read, cmdb:read, knowledge:read, approvals:read) and "
+                            "tools/list shows only those granted. Stateless: GET/DELETE return 405."
+                        ),
+                    },
+                },
                 "/tickets/{number}/attachments": {
                     "parameters": [{"name": "number", "in": "path", "required": True,
                                     "schema": {"type": "string"}}],
@@ -9013,6 +9034,42 @@ def create_app(test_config=None):
         )
         db.session.commit()
         return jsonify(document)
+
+    @app.route("/api/v1/mcp", methods=["GET", "POST", "DELETE"])
+    def api_mcp():
+        """Embedded MCP server, Streamable HTTP transport with JSON responses.
+        Stateless: no Mcp-Session-Id and no server-initiated SSE stream, so
+        GET and DELETE are 405 as the transport allows."""
+        require_api_scope("mcp:access")
+        if request.method != "POST":
+            return Response(status=405, headers={"Allow": "POST"})
+        origin = request.headers.get("Origin")
+        if origin and urlparse(origin).netloc.lower() != request.host.lower():
+            abort(403, description="Cross-origin MCP requests are not accepted.")
+        version = request.headers.get("MCP-Protocol-Version")
+        if version and version not in mcp_protocol.SUPPORTED_PROTOCOL_VERSIONS:
+            abort(400, description=f"Unsupported MCP-Protocol-Version: {version}.")
+        try:
+            message = json.loads(request.get_data(as_text=True) or "")
+        except ValueError:
+            return jsonify({"jsonrpc": "2.0", "id": None,
+                            "error": {"code": mcp_protocol.PARSE_ERROR, "message": "Invalid JSON."}}), 400
+        response = mcp_protocol.handle_message(
+            message, MCP_TOOLS, set(g.api_client.scopes), display_version(),
+        )
+        if isinstance(message, dict) and message.get("method") == "tools/call":
+            # What an AI client read, and as whom, belongs in the audit trail.
+            params = message.get("params") if isinstance(message.get("params"), dict) else {}
+            arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
+            audit(
+                "mcp tool call", str(params.get("name", ""))[:80],
+                f"client={g.api_client.name}; arguments={json.dumps(arguments, sort_keys=True)[:500]}",
+                user_id=g.api_user.id, tenant_id=g.api_client.tenant_id,
+            )
+        db.session.commit()
+        if response is None:
+            return Response(status=202)
+        return jsonify(response)
 
     @app.put("/api/v1/cmdb/configuration-items")
     def api_ci_upsert():
