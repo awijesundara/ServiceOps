@@ -119,6 +119,44 @@ def test_ticket_create_validates_category_and_lets_subcategory_fall_back_to_othe
         assert ticket.category == "General"  # falls back rather than rejecting
 
 
+def test_incident_forms_render_the_tenant_category_and_subcategory_options(client, app):
+    # Regression: the macros were imported without context, so both selects
+    # rendered with no modeled options and every save became "General".
+    login(client)
+    new_form = client.get("/tickets/new/incident").get_data(as_text=True)
+    assert ">Hardware</option>" in new_form and 'value="Printer"' in new_form
+    client.post("/tickets/new/incident", data={
+        "title": "Render check", "description": "d", "category": "Network", "impact": "Medium",
+        "urgency": "Medium", "contact_type": "Self-service", "notify": "Email",
+        "group_id": group_id(app, "Network"),
+    })
+    with app.app_context():
+        ticket_id = Ticket.query.filter_by(title="Render check").one().id
+    detail = client.get(f"/ticket/{ticket_id}").get_data(as_text=True)
+    assert ">Hardware</option>" in detail and 'value="Printer"' in detail
+
+
+def test_saving_an_incident_keeps_a_retired_category(client, app):
+    login(client)
+    client.post("/tickets/new/incident", data={
+        "title": "Legacy categorised", "description": "d", "category": "Network", "impact": "Medium",
+        "urgency": "Medium", "contact_type": "Self-service", "notify": "Email", "group_id": group_id(app, "Network"),
+    })
+    with app.app_context():
+        ticket = Ticket.query.filter_by(title="Legacy categorised").one()
+        ticket.category = "Retired Category"
+        db.session.commit()
+        ticket_id = ticket.id
+    page = client.get(f"/ticket/{ticket_id}").get_data(as_text=True)
+    assert '<option value="Retired Category" selected>Retired Category (retired)</option>' in page
+    client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "In Progress", "priority": "P3", "assignee_id": "",
+        "category": "Retired Category",
+    })
+    with app.app_context():
+        assert db.session.get(Ticket, ticket_id).category == "Retired Category"
+
+
 def test_admin_page_and_ticket_forms_render_the_new_fields(client, app):
     login(client)
     admin_page = client.get("/service-operations/settings/ticket-categories")

@@ -9983,14 +9983,11 @@ def create_app(test_config=None):
         sla_at_risk_hours = setting_int("SLA_AT_RISK_HOURS", 4)
         sla_breached, sla_at_risk, sla_tickets = [], [], {}
         if show_sla_widgets:
-            open_ticket_ids = [row[0] for row in open_ticket_query.with_entities(Ticket.id).all()]
-            sla_rows = []
-            if open_ticket_ids:
-                sla_rows = TaskSLA.query.filter(
-                    TaskSLA.target_type == "ticket",
-                    TaskSLA.target_id.in_(open_ticket_ids),
-                    TaskSLA.stage == "In Progress",
-                ).order_by(TaskSLA.breach_at).all()
+            sla_rows = TaskSLA.query.filter(
+                TaskSLA.target_type == "ticket",
+                TaskSLA.target_id.in_(open_ticket_query.with_entities(Ticket.id)),
+                TaskSLA.stage == "In Progress",
+            ).order_by(TaskSLA.breach_at).all()
             if sla_rows:
                 sla_tickets = {
                     ticket.id: ticket
@@ -10456,7 +10453,7 @@ def create_app(test_config=None):
         # reviews every field, picks the owning team and submits through the normal, fully validated path.
         ai_prefill = None
         if request.method == "GET" and request.args.get("ai") == "1":
-            limits = {"title": 180, "description": 1500, "impact": 10, "urgency": 10, "category": 20, "subcategory": 80}
+            limits = {"title": 180, "description": 1500, "impact": 10, "urgency": 10, "category": 80, "subcategory": 80}
             ai_prefill = {name: request.args.get(name, "")[:size] for name, size in limits.items() if request.args.get(name)}
 
         def render_form(error=None):
@@ -10903,9 +10900,12 @@ def create_app(test_config=None):
                     ticket.description = request.form.get(
                         "description", ticket.description
                     ).strip()
-                    ticket.category = normalize_ticket_category(
-                        current_user.tenant_id, request.form.get("category", ticket.category)
-                    )
+                    submitted_category = request.form.get("category", ticket.category)
+                    # An unchanged category is kept even if it's since been
+                    # retired from the active list -- otherwise merely saving
+                    # an older incident would re-categorise it to "General".
+                    if submitted_category != ticket.category:
+                        ticket.category = normalize_ticket_category(current_user.tenant_id, submitted_category)
                     ticket.subcategory = normalize_ticket_subcategory(
                         current_user.tenant_id, ticket.category, submitted_subcategory(request.form, ticket.subcategory)
                     )
@@ -10985,6 +10985,15 @@ def create_app(test_config=None):
                 ).first()
                 if not new_group:
                     abort(400, description="Select an active IT fulfillment team.")
+                if ticket.kind == "change":
+                    # Lock and re-read the owner so a double-submitted
+                    # reassignment stops at the "already owned" check below
+                    # instead of superseding the approval chain (and
+                    # notifying every approver) a second time. Refresh, not
+                    # a re-query: the session already holds these objects.
+                    db.session.refresh(ticket, with_for_update=True)
+                    if ticket.change_ownership:
+                        db.session.refresh(ticket.change_ownership)
                 current_group = ticket_owning_group(ticket)
                 if current_group and current_group.id == new_group.id:
                     abort(400, description="This record is already owned by that team.")
@@ -16547,7 +16556,10 @@ def create_app(test_config=None):
             ),
         )
         db.session.commit()
-        return redirect(request.referrer or url_for("approval_chains"))
+        destination = request.referrer
+        if destination and destination.startswith(request.host_url):
+            return redirect(destination)
+        return redirect(url_for("approval_chains"))
 
     @app.get("/approval-chains")
     @login_required
@@ -16959,7 +16971,10 @@ def create_app(test_config=None):
         except HTTPException as error:
             db.session.rollback()
             flash(error.description or "That change could not be made.", "error")
-            return redirect(request.referrer or url_for("request_detail", request_id=task.requested_item.request_id))
+            destination = request.referrer
+            if destination and destination.startswith(request.host_url):
+                return redirect(destination)
+            return redirect(url_for("request_detail", request_id=task.requested_item.request_id))
         task.work_notes = request.form.get("work_notes", "")
         task.assignee_id = current_user.id
         ritm = task.requested_item
@@ -18103,9 +18118,7 @@ def create_app(test_config=None):
     @app.get("/analytics/overdue")
     @roles("agent", "manager", "admin")
     def analytics_overdue():
-        record_ids = [
-            row.id for row in visible_enterprise_record_query(current_user).with_entities(EnterpriseRecord.id).all()
-        ]
+        record_ids = visible_enterprise_record_query(current_user).with_entities(EnterpriseRecord.id)
         overdue_records, overdue_truncated = overdue_enterprise_records(EnterpriseRecord, record_ids, now)
         return render_template(
             "analytics_overdue.html", overdue_records=overdue_records, modules=DOMAIN_CONFIG,

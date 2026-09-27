@@ -12,6 +12,10 @@ services:
     environment:
       INSTALLER_STATE_DIR: /config
       INSTALLER_SECRET: ${INSTALLER_SECRET}
+      # Hostnames the browser may use to reach the installer, beyond
+      # localhost/127.0.0.1/::1 (see installer/app.py). Defaults to the
+      # published bind address so the URL web.sh prints keeps working.
+      INSTALLER_ALLOWED_HOSTS: ${INSTALLER_ALLOWED_HOSTS:-${INSTALLER_BIND_ADDRESS:-127.0.0.1}}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     volumes:
       - ./.installer-state:/config
