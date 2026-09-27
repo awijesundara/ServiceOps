@@ -24,7 +24,7 @@
       <label><span>Contact type</span><select name="contact_type">{% for opt in ['Self-service','Phone','Email','Chat','Monitoring'] %}<option {% if (f and f.get('contact_type')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
       <label class="required-field"><span>Caller</span><input value="{{ current_user.name }} · {{ current_user.email }}" title="{{ current_user.name }} · {{ current_user.email }}" disabled></label>
       <label><span>State</span><input value="New" disabled></label>
-      <label><span>Category</span>{{ category_field(f.get('category') if f else None) }}</label>
+      <label class="required-field"><span>Category</span>{{ category_field(f.get('category') if f else None, required=True) }}</label>
       <label class="required-field"><span>Impact</span><select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('impact')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label><span>Subcategory</span>{{ subcategory_field(f.get('subcategory') if f else None) }}</label>
       <label class="required-field"><span>Urgency</span><select name="urgency" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('urgency')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
@@ -51,7 +51,6 @@
 {% endif %}
 <form method="post" class="panel form-grid" data-track-dirty>
   <label class="wide required-field"><span>Short description</span><input name="title" maxlength="180" required autofocus value="{{ f.get('title','') if f else '' }}"></label>
-  <label><span>Category</span>{{ category_field(f.get('category') if f else None) }}</label>
   <label class="required-field"><span>Impact</span><select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('impact')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
   <label class="required-field"><span>Urgency<span class="info-tip" tabindex="0" data-tip="Priority is calculated automatically from impact and urgency.">i</span></span><select name="urgency" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('urgency')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
   <label class="wide required-field"><span>Description</span><textarea name="description" rows="8" required>{{ f.get('description','') if f else '' }}</textarea></label>

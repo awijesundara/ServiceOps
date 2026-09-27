@@ -47,6 +47,16 @@
   </section>
 
   <section class="panel">
+    <h2>Incidents by closure category <small class="muted">· last 30 days</small></h2>
+    {% if closure_category_counts %}
+    <table><thead><tr><th>Category at closure</th><th>Incidents</th></tr></thead><tbody>
+      {% for category, count in closure_category_counts %}<tr><td>{{ category }}</td><td>{{ count }}</td></tr>{% endfor %}
+    </tbody></table>
+    <p class="muted">{% if recategorised_pct is not none %}{{ recategorised_pct }}% of incidents with a recorded closure category were closed under a different category than logged.{% else %}Closure categories are recorded on incidents resolved from now on; older incidents are counted by their logging category.{% endif %}</p>
+    {% else %}<p class="muted">No incidents resolved in the last 30 days.</p>{% endif %}
+  </section>
+
+  <section class="panel">
     <h2>Change success rate <small class="muted">· last 30 days</small></h2>
     {% if pir_success_pct is not none %}
     <div class="metric"><span>Reviewed as successful<span class="info-tip" tabindex="0" data-tip="Based on the recorded post-implementation review outcome, not just whether the ticket reached Closed.">i</span></span><div><i style="width:{{ pir_success_pct }}%"></i></div><strong>{{ pir_success_pct }}%</strong></div>

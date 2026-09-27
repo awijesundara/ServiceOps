@@ -317,7 +317,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if (response.ok) {
         lane.querySelector(".board-cards").appendChild(dragged);
       } else {
-        showToast("Could not move this card. Please try again.", "error");
+        let message = "Could not move this card. Please try again.";
+        try {
+          message = (await response.json()).error || message;
+        } catch (error) {
+          // Not a JSON refusal; keep the generic message.
+        }
+        showToast(message, "error");
       }
     });
   });

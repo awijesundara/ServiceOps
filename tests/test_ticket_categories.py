@@ -94,12 +94,12 @@ def test_ticket_create_validates_category_and_lets_subcategory_fall_back_to_othe
     base = {"impact": "Medium", "urgency": "Medium", "contact_type": "Self-service", "notify": "Email", "group_id": team_id}
 
     modeled = client.post("/tickets/new/incident", data={
-        **base, "title": "Printer offline", "description": "d", "category": "Hardware", "subcategory": "Printer",
+        **base, "title": "Printer offline", "description": "d", "category": "Hardware", "subcategory": "Laptop",
     }, follow_redirects=True)
     assert modeled.status_code == 200
     with app.app_context():
         ticket = Ticket.query.filter_by(title="Printer offline").one()
-        assert ticket.category == "Hardware" and ticket.subcategory == "Printer"
+        assert ticket.category == "Hardware" and ticket.subcategory == "Laptop"
 
     other_text = client.post("/tickets/new/incident", data={
         **base, "title": "Unusual request", "description": "d", "category": "Hardware",
@@ -124,7 +124,7 @@ def test_incident_forms_render_the_tenant_category_and_subcategory_options(clien
     # rendered with no modeled options and every save became "General".
     login(client)
     new_form = client.get("/tickets/new/incident").get_data(as_text=True)
-    assert ">Hardware</option>" in new_form and 'value="Printer"' in new_form
+    assert ">Hardware</option>" in new_form and 'value="Laptop"' in new_form
     client.post("/tickets/new/incident", data={
         "title": "Render check", "description": "d", "category": "Network", "impact": "Medium",
         "urgency": "Medium", "contact_type": "Self-service", "notify": "Email",
@@ -133,7 +133,7 @@ def test_incident_forms_render_the_tenant_category_and_subcategory_options(clien
     with app.app_context():
         ticket_id = Ticket.query.filter_by(title="Render check").one().id
     detail = client.get(f"/ticket/{ticket_id}").get_data(as_text=True)
-    assert ">Hardware</option>" in detail and 'value="Printer"' in detail
+    assert ">Hardware</option>" in detail and 'value="Laptop"' in detail
 
 
 def test_saving_an_incident_keeps_a_retired_category(client, app):
@@ -161,13 +161,14 @@ def test_admin_page_and_ticket_forms_render_the_new_fields(client, app):
     login(client)
     admin_page = client.get("/service-operations/settings/ticket-categories")
     assert admin_page.status_code == 200
-    assert b"Ticket categories" in admin_page.data and b"Hardware" in admin_page.data and b"Printer" in admin_page.data
+    assert b"Ticket categories" in admin_page.data and b"Hardware" in admin_page.data and b"Laptop" in admin_page.data
     new_incident = client.get("/tickets/new/incident")
     assert new_incident.status_code == 200
     assert b'name="category"' in new_incident.data and b'name="subcategory"' in new_incident.data
     new_change = client.get("/tickets/new/change")
     assert new_change.status_code == 200
-    assert b'name="category"' in new_change.data
+    # Changes are classified by change model plus affected CI/service, not the symptom tree.
+    assert b'name="category"' not in new_change.data and b'name="change_type"' in new_change.data
     admin_section_page = client.get("/admin/section/service-configuration")
     assert admin_section_page.status_code == 200
     assert b"Ticket categories" in admin_section_page.data
@@ -193,7 +194,7 @@ def test_normalize_helpers_are_case_insensitive_and_never_raise(app):
         assert normalize_ticket_category(1, "hardware") == "Hardware"
         assert normalize_ticket_category(1, "not a category") == "General"
         assert normalize_ticket_category(1, "") == "General"
-        assert normalize_ticket_subcategory(1, "Hardware", "printer") == "Printer"
+        assert normalize_ticket_subcategory(1, "Hardware", "laptop") == "Laptop"
         assert normalize_ticket_subcategory(1, "Hardware", "A totally custom description") == "A totally custom description"
         assert normalize_ticket_subcategory(1, "Hardware", "") == ""
 

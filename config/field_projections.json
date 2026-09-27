@@ -4,24 +4,29 @@
     "ticket": {
       "allowed_fields": [
         "id", "number", "type", "title", "description", "state", "priority",
-        "category", "opened_at", "updated_at", "attachments", "internal"
+        "category", "subcategory", "closure_category", "closure_subcategory",
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal"
       ],
       "audiences": {
         "requester": [
           "id", "number", "type", "title", "description", "state", "priority",
-          "category", "opened_at", "updated_at", "attachments"
+          "category", "subcategory", "closure_category", "closure_subcategory",
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments"
         ],
         "agent": [
           "id", "number", "type", "title", "description", "state", "priority",
-          "category", "opened_at", "updated_at", "attachments", "internal"
+          "category", "subcategory", "closure_category", "closure_subcategory",
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal"
         ],
         "manager": [
           "id", "number", "type", "title", "description", "state", "priority",
-          "category", "opened_at", "updated_at", "attachments", "internal"
+          "category", "subcategory", "closure_category", "closure_subcategory",
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal"
         ],
         "admin": [
           "id", "number", "type", "title", "description", "state", "priority",
-          "category", "opened_at", "updated_at", "attachments", "internal"
+          "category", "subcategory", "closure_category", "closure_subcategory",
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal"
         ]
       }
     },

@@ -157,9 +157,14 @@ Query parameters:
       "description": "Health checks are failing.",
       "state": "In Progress",
       "priority": "P1",
-      "category": "Application",
+      "category": "Software / Application",
+      "subcategory": "Business application",
+      "closure_category": null,
+      "closure_subcategory": null,
+      "resolution_notes": null,
       "opened_at": "2026-07-26T12:00:00+00:00",
       "updated_at": "2026-07-26T12:05:00+00:00",
+      "resolved_at": null,
       "internal": {
         "assignment_group": {"id": 1, "name": "CoreApps"},
         "assigned_to": {"id": 18, "name": "Application Engineer"}
@@ -303,9 +308,30 @@ Idempotency-Key: resolver-inc41-progress-1
 
 Required scope: `tickets:update`
 
-Allowed fields are `state`, `priority`, and `assigned_to_id`. Use `null` to
-clear the assignee. A non-null assignee must be active and belong to the owning
-team.
+Allowed fields are `state`, `priority`, `assigned_to_id`, `resolution_notes`,
+`closure_category`, and `closure_subcategory`. Use `null` to clear the
+assignee. A non-null assignee must be active and belong to the owning team.
+
+Incidents record their categorisation twice: `category`/`subcategory` as
+logged, and `closure_category`/`closure_subcategory` at closure, so reporting
+reflects the actual cause. Resolution fields are applied before a state change
+in the same request, so one call can document and resolve:
+
+```json
+{
+  "state": "Resolved",
+  "resolution_notes": "Renewed the expired VPN certificate.",
+  "closure_category": "Security",
+  "closure_subcategory": "Policy breach"
+}
+```
+
+`closure_category` applies to incidents only and is matched case-insensitively
+against the tenant's active categories. When an incident is resolved without
+one, the logging categorisation is recorded as the closure categorisation.
+`resolution_notes` is required when resolving from the web UI but optional
+here, so existing integrations keep working; `resolved_at` records the latest
+entry into Resolved and is cleared on reopen.
 
 The acting user must have update, assignment, and transition permissions and
 must be an active member or manager of the owning team, unless the user is an

@@ -5017,7 +5017,7 @@ def test_resolved_ticket_locks_edits_but_allows_comments_and_reopen(client, app)
         ticket_id = Ticket.query.filter_by(title="Lock after resolve test").one().id
 
     assert client.post(f"/ticket/{ticket_id}", data={
-        "action": "update", "state": "Resolved", "priority": "P3", "assignee_id": "",
+        "action": "update", "state": "Resolved", "priority": "P3", "assignee_id": "", "resolution_notes": "Restarted the service.",
     }).status_code == 302
     with app.app_context():
         assert db.session.get(Ticket, ticket_id).state == "Resolved"
@@ -5074,7 +5074,7 @@ def test_resolved_ticket_can_be_closed_via_close_action(client, app):
         ticket_id = Ticket.query.filter_by(title="Close after resolve test").one().id
 
     assert client.post(f"/ticket/{ticket_id}", data={
-        "action": "update", "state": "Resolved", "priority": "P3", "assignee_id": "",
+        "action": "update", "state": "Resolved", "priority": "P3", "assignee_id": "", "resolution_notes": "Restarted the service.",
     }).status_code == 302
     with app.app_context():
         assert db.session.get(Ticket, ticket_id).state == "Resolved"
@@ -8857,7 +8857,7 @@ def test_ticket_list_filters_by_priority_category_and_assignment_group(client, a
     })
     client.post("/tickets/new/incident", data={
         "title": "Windows login issue", "description": "Filter target B",
-        "category": "Access", "impact": "Medium", "urgency": "Medium",
+        "category": "Access / Identity", "impact": "Medium", "urgency": "Medium",
         "group_id": group_id(app, "Windows"),
     })
 
@@ -8869,7 +8869,7 @@ def test_ticket_list_filters_by_priority_category_and_assignment_group(client, a
     assert b"Windows login issue" not in by_priority.data
     assert b"Priority is P1" in by_priority.data
 
-    by_category = client.get(filter_url([{"field": "category", "op": "eq", "value": "Access"}]))
+    by_category = client.get(filter_url([{"field": "category", "op": "eq", "value": "Access / Identity"}]))
     assert b"Windows login issue" in by_category.data
     assert b"Unix disk cleanup" not in by_category.data
 

@@ -506,6 +506,12 @@ class Ticket(db.Model):
     priority_override_reason = db.Column(db.Text)
     category = db.Column(db.String(80), nullable=False, default="General")
     subcategory = db.Column(db.String(80), nullable=False, default="")
+    # category/subcategory above are the categorisation at logging; these hold
+    # the categorisation at closure, so reporting reflects the actual cause.
+    closure_category = db.Column(db.String(80))
+    closure_subcategory = db.Column(db.String(80))
+    resolution_notes = db.Column(db.Text)
+    resolved_at = db.Column(db.DateTime(timezone=True))
     contact_type = db.Column(db.String(40), nullable=False, default="Self-service")
     notify = db.Column(db.String(40), nullable=False, default="Email")
     service_offering_id = db.Column(db.Integer, db.ForeignKey("service_offering.id"))

@@ -349,6 +349,13 @@
 
 {% if section == 'ticket-categories' %}
 <section class="panel admin-section">
+  <div class="callout">
+    <strong>Category model</strong>
+    <p>Keep the tree to two levels with no more than about {{ category_option_limit }} options per level. Categorise by the affected service or configuration item, not by the fix. Incidents record a category at logging and a separate closure category when resolved; changes are classified by change model and affected CI or service instead of this tree. Renaming a category or subcategory relabels the tickets that use it.</p>
+    {% set active_categories = ticket_categories|selectattr('active')|list %}
+    {% if active_categories|length > category_option_limit %}<p class="error">{{ active_categories|length }} active categories; the model recommends no more than {{ category_option_limit }}.</p>{% endif %}
+    {% for category in active_categories %}{% set active_subs = category.subcategories|selectattr('active')|list %}{% if active_subs|length > category_option_limit %}<p class="error">{{ category.name }} has {{ active_subs|length }} active subcategories; the model recommends no more than {{ category_option_limit }}.</p>{% endif %}{% endfor %}
+  </div>
   <p class="muted">The category and subcategory choices offered on the ticket form. Deactivating a category or subcategory removes it from the form without changing tickets that already used it. Picking a subcategory on the ticket form only ever suggests its linked service offering — it never overwrites what the requester already chose.</p>
   <form method="post" action="{{ post_url }}" class="form-grid">
     <input type="hidden" name="action" value="create_ticket_category">

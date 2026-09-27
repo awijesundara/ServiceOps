@@ -646,7 +646,7 @@ def extract_extras(text, may_raise_change=False, tenant_id=None):
                 extras["draft"] = {"kind": kind, "title": redact(title), "description": redact(description),
                                    "impact": pick(data.get("impact"), _LEVELS, "Medium"),
                                    "urgency": pick(data.get("urgency"), _LEVELS, "Medium"),
-                                   "category": pick(data.get("category"), categories, "General")}
+                                   "category": pick(data.get("category"), categories, "")}
     note = re.search(r"\[\[\s*REMEMBER\s*\]\]\s*(.+?)\s*(?:\[\[|$)", text, re.I | re.S)
     if note:
         candidate = " ".join(note.group(1).split()).strip(" \"'")[:240]
