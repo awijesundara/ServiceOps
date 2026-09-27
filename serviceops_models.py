@@ -2761,6 +2761,8 @@ class AIConfiguration(db.Model):
     daily_limit = db.Column(db.Integer, nullable=False, default=100)
     max_output_tokens = db.Column(db.Integer, nullable=False, default=1500)
     retention_days = db.Column(db.Integer, nullable=False, default=7)
+    # Chat conversations are deleted this many days after their last message.
+    chat_retention_days = db.Column(db.Integer, nullable=False, default=30, server_default="30")
     capabilities_json = db.Column(db.Text, nullable=False, default="{}")
     # The chatbot is enabled separately from incident investigation; both need the master switch.
     chat_enabled = db.Column(db.Boolean, nullable=False, default=False)

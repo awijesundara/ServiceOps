@@ -59,7 +59,7 @@
             <label class="aiadm-choice"><input type="radio" name="external_scope" value="knowledge_only" {% if scope == 'knowledge_only' %}checked{% endif %} data-ai-live><span><strong>Only published knowledge</strong><small>Questions that use tickets or infrastructure records stay private.</small></span></label>
             <label class="aiadm-choice"><input type="radio" name="external_scope" value="not_sensitive" {% if scope == 'not_sensitive' %}checked{% endif %} data-ai-live><span><strong>Anything not sensitive</strong><small>Everything except requests marked sensitive.</small></span></label>
           </fieldset>
-          <label class="aiadm-switch"><input type="checkbox" name="external_consent" {% if config and config.external_consent %}checked{% endif %} data-ai-live><span><strong>My organization allows outside AI services</strong><small>Turn this off and hosted services are never used, whatever else is set.</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="external_consent" {% if config and config.external_consent %}checked{% endif %} data-ai-live><span><strong>My organization allows outside AI services</strong><small>Turn this off and hosted services are never used, whatever else is set. An outside service receives the question and the records needed to answer it, never the asker's name or email. Use a plan whose terms do not keep or train on what it receives: free tiers (Google AI Studio's, for example) may use it to improve the provider's products.</small></span></label>
         </div>
         <div>
           <h3>What counts as sensitive</h3>
@@ -93,6 +93,7 @@
           <label>Requests per day<input type="number" name="daily_limit" min="1" max="1000" value="{{ config.daily_limit if config else 100 }}" required></label>
           <label>Longest answer (tokens)<input type="number" name="max_output_tokens" min="128" max="4096" value="{{ config.max_output_tokens if config else 1500 }}" required></label>
           <label>Keep results for (days)<input type="number" name="retention_days" min="1" max="30" value="{{ config.retention_days if config else 7 }}" required></label>
+          <label>Delete chats after (days without a message)<input type="number" name="chat_retention_days" min="1" max="365" value="{{ config.chat_retention_days if config else 30 }}" required></label>
         </div>
       </div>
     </section>

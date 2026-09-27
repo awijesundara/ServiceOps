@@ -220,7 +220,7 @@ def describe(connection, plan_result, attempt=0):
     if where == "private":
         reason = plan_result.note or "Answered by your organization's own AI."
     else:
-        reason = "Answered by an external AI service. Nothing sensitive was included."
+        reason = "Answered by an external AI service. Nothing sensitive was included, and your name was not shared."
     if attempt:
         reason += " The first choice was unavailable."
     return {"name": connection.name, "model": connection.model, "location": where, "reason": reason,

@@ -15,7 +15,7 @@ from serviceops_models import (AICall, AIConfiguration, AIConnection, AIConversa
 from serviceops_core.ai import access, memory, quota, routing
 from serviceops_core.ai.provider import INSTRUCTIONS, ProviderError, StreamCancelled, generate_stream, provider_timeout
 from serviceops_core.ci_class_policy import ci_class_read_allowed
-from serviceops_core.security import redact
+from serviceops_core.security import mask_pii, redact
 from serviceops_core.storage import ipfs_enabled
 
 ALLOWED_ROLES = {"agent", "manager", "admin", "superadmin"}
@@ -56,6 +56,11 @@ def chat_available(user):
     return bool(config and config.enabled and config.chat_enabled)
 
 
+def chat_retention_days(user):
+    config = db.session.get(AIConfiguration, user.tenant_id) if getattr(user, "tenant_id", None) else None
+    return (config.chat_retention_days if config else None) or 30
+
+
 def available(user):
     if not user.is_authenticated or not user.active or user.effective_role not in ALLOWED_ROLES or ipfs_enabled():
         return False
@@ -73,8 +78,10 @@ def collect_evidence(identity, ticket_id, scanner=None):
         if scanner:
             scanner(f"{title}\n{body}", kind)
         source_id = f"S{len(sources) + 1}"
-        sources.append({"id": source_id, "kind": kind, "record_id": row.id, "title": redact(title)[:180]})
-        evidence.append({"source": source_id, "kind": kind, "title": redact(title)[:180], "text": redact(body)[:5000]})
+        # Judged on the original text above; other people's contact details are never needed for an answer.
+        title, body = mask_pii(redact(title))[:180], (redact(body) if kind == "knowledge" else mask_pii(redact(body)))[:5000]
+        sources.append({"id": source_id, "kind": kind, "record_id": row.id, "title": title})
+        evidence.append({"source": source_id, "kind": kind, "title": title, "text": body})
 
     comments = Comment.query.filter_by(tenant_id=identity.tenant_id, ticket_id=ticket.id).order_by(
         Comment.created_at.desc()).limit(5).all()
@@ -211,6 +218,34 @@ class Prepared:
     kinds: set = field(default_factory=set)
     reply: str = ""  # a fixed answer that needs no model (for example confirming a saved note)
     audit: tuple = ()
+    identity_terms: tuple = ()  # the asker's name, username and email: withheld from external services
+
+
+def identity_terms(user):
+    """Ways the asker is named in a prompt: full name, first name, a distinctive username, email."""
+    name = " ".join(str(getattr(user, "name", "") or "").split())
+    terms = {name} if len(name) >= 3 else set()
+    if " " in name and len(name.split()[0]) >= 3:
+        terms.add(name.split()[0])
+    username = str(getattr(user, "username", "") or "")
+    if len(username) >= 3 and re.search(r"[._\-\d]", username):
+        terms.add(username)  # "anna.lee", not a plain word like "admin" that also appears in ordinary text
+    email = str(getattr(user, "email", "") or "")
+    if "@" in email:
+        terms.add(email)
+    return tuple(sorted(terms, key=len, reverse=True))
+
+
+def withhold_identity(messages, terms):
+    """An external service needs the asker's role, not who they are: replace how they are named. Whole words only,
+    and names are matched with their capitalization so an ordinary word is left alone."""
+    if not terms:
+        return messages
+    pattern = re.compile("|".join(
+        rf"(?<![\w.@-]){re.escape(term)}(?![\w@-])" if "@" not in term else rf"(?i:{re.escape(term)})"
+        for term in terms))
+    return [{**message, "content": pattern.sub("the person asking", message["content"])}
+            if isinstance(message.get("content"), str) else message for message in messages]
 
 
 def _describe(counts):
@@ -240,7 +275,7 @@ def _prepare_investigation(run, user, config, steps):
         raise ProviderError("Evidence exceeds the request limit.")
     return Prepared([{"role": "system", "content": INSTRUCTIONS}, {"role": "user", "content": prompt}], sources,
                     access.identifiers_in(prompt), (), True, bool(config.show_reasoning), reasons=reasons,
-                    kinds={source["kind"] for source in sources})
+                    kinds={source["kind"] for source in sources}, identity_terms=identity_terms(user))
 
 
 def _prepare_chat(run, user, config, steps):
@@ -284,7 +319,7 @@ def _prepare_chat(run, user, config, steps):
     options = _run_options(run)
     # Chat replies are fast: the model is asked not to spend time on a long reasoning pass.
     return Prepared(messages, evidence.sources, grounded, tuple(access.record_numbers(question)), False, False,
-                    reasons=reasons, kinds=evidence.kinds)
+                    reasons=reasons, kinds=evidence.kinds, identity_terms=identity_terms(user))
 
 
 def _stable_prefix(text):
@@ -306,8 +341,10 @@ def _publish_progress(run_id, **values):
 def _stream(run, config, prepared, steps, connection):
     run_id, tenant_id, revision = run.id, run.tenant_id, run.config_revision
     snapshot = _snapshot(config, connection)
-    prepared = replace(prepared, messages=[dict(m) for m in prepared.messages], sources=list(prepared.sources),
-                       allowed=set(prepared.allowed))
+    messages = [dict(m) for m in prepared.messages]
+    if connection.external:
+        messages = withhold_identity(messages, prepared.identity_terms)
+    prepared = replace(prepared, messages=messages, sources=list(prepared.sources), allowed=set(prepared.allowed))
     if prepared.thinking:
         # A reasoning model spends part of the token cap on thinking before it writes the answer.
         snapshot.max_output_tokens = min(snapshot.max_output_tokens + REASONING_ALLOWANCE, 6000)
@@ -480,6 +517,7 @@ def process_one():
         for config in AIConfiguration.query.all():
             AIRun.query.filter(AIRun.tenant_id == config.tenant_id, AIRun.created_at < now() - timedelta(days=config.retention_days),
                                ~AIRun.status.in_(ACTIVE)).delete(synchronize_session=False)
+            purge_idle_conversations(config)
         AICall.query.filter(AICall.started_at < now() - timedelta(days=3)).delete(synchronize_session=False)
     db.session.commit()
     run = AIRun.query.filter_by(status="queued").order_by(AIRun.created_at).with_for_update(skip_locked=True).first()
@@ -575,6 +613,18 @@ def delete_conversation(conversation):
          "sources_json": "[]"}, synchronize_session=False)
     AIMessage.query.filter_by(conversation_id=conversation.id).delete(synchronize_session=False)
     db.session.delete(conversation)
+
+
+def purge_idle_conversations(config):
+    """Delete chats with no message for the configured number of days (never one with a run still in progress)."""
+    cutoff = now() - timedelta(days=config.chat_retention_days or 30)
+    recent = db.session.query(AIMessage.conversation_id).filter(AIMessage.created_at >= cutoff)
+    active = db.session.query(AIRun.conversation_id).filter(AIRun.status.in_(ACTIVE), AIRun.conversation_id.isnot(None))
+    idle = AIConversation.query.filter(AIConversation.tenant_id == config.tenant_id, AIConversation.updated_at < cutoff,
+                                       ~AIConversation.id.in_(recent), ~AIConversation.id.in_(active)).limit(500).all()
+    for conversation in idle:
+        delete_conversation(conversation)
+    return len(idle)
 
 
 def purge_user_conversations(user_id):

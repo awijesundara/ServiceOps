@@ -66,7 +66,7 @@
           <button type="submit" class="primary ai-send" data-chat-send aria-label="Send"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M4 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
       </form>
-      <p class="ai-privacy">AI can make mistakes. Please double-check important answers.</p>
+      <p class="ai-privacy">AI can make mistakes. Please double-check important answers. Your chats are private to you and are deleted after {{ ai_chat_retention_days(current_user) }} days without a message.</p>
     </div>
   </div>
   <template data-chat-user-turn>
