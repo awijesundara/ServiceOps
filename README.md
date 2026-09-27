@@ -33,6 +33,7 @@ infrastructure.
 - Analytics dashboard (MTTR, SLA compliance, CSAT, backlog aging) with CSV export
 - Public status page for major incidents and service uptime
 - Tamper-evident audit log, versioned REST API, installable PWA, native iOS app
+- Built-in read-only MCP server (`/api/v1/mcp`) for AI clients such as Claude Code, using the same scoped API tokens
 - AD/LDAP + Keycloak login, MFA, passkeys
 
 ## Quick start

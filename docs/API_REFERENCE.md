@@ -52,6 +52,10 @@ Available scopes:
 | `tickets:update` | Update an authorized owning-team ticket |
 | `workflows:execute` | Trigger configured API workflows for an authorized ticket |
 | `cmdb:write` | Idempotent upsert of Configuration Items (§9) |
+| `mcp:access` | Use the embedded MCP server (§13b) |
+| `cmdb:read` | MCP tool: search configuration items (agent role required) |
+| `knowledge:read` | MCP tool: search the knowledge base |
+| `approvals:read` | MCP tool: list the acting user's pending approvals |
 
 ## 3. Authentication and common headers
 
@@ -532,6 +536,48 @@ print(response.json()["data"]["number"])
 
 Always set connect/read timeouts, validate TLS, keep tokens in a secret
 manager, and log request IDs rather than credentials or full sensitive bodies.
+
+## 13b. MCP server for AI clients
+
+ServiceOps embeds a [Model Context Protocol](https://modelcontextprotocol.io)
+server at `POST /api/v1/mcp`, so AI clients such as Claude Code, Claude
+Desktop or agent frameworks can read ServiceOps data. It ships in the same
+image and release as the application; there is nothing separate to install.
+
+- Transport: Streamable HTTP with JSON responses, one JSON-RPC 2.0 message
+  per request. Stateless: no `Mcp-Session-Id`, and `GET`/`DELETE` return 405.
+- Protocol versions: `2025-11-25` (latest), `2025-06-18`, `2025-03-26`.
+- Authentication: the same `Authorization: Bearer sop_...` API client token as
+  the rest of the API. The client needs `mcp:access`, plus the scope of each
+  tool it should see; `tools/list` returns only those tools.
+- Cross-origin browser requests (a foreign `Origin` header) are refused.
+
+All tools are read-only and return only what the API client's acting user may
+see in their own tenant, including the CMDB class read policy and knowledge
+draft visibility.
+
+| Tool | Scope | Returns |
+|---|---|---|
+| `search_tickets` | `tickets:read` | Visible incidents and changes matching text, type, state |
+| `get_ticket` | `tickets:read` | One ticket with logging and closure categorisation, resolution notes, recent comments |
+| `search_configuration_items` | `cmdb:read` | Configuration items by name, IP, serial number, description |
+| `search_knowledge` | `knowledge:read` | Knowledge articles (body up to 4,000 characters) |
+| `list_my_approvals` | `approvals:read` | Approval votes waiting on the acting user |
+
+Invalid tool arguments come back as a tool result with `isError: true` so the
+model can correct itself; unknown tools and methods are JSON-RPC errors.
+
+Connect Claude Code:
+
+```bash
+claude mcp add --transport http serviceops https://serviceops.example.com/api/v1/mcp \
+  --header "Authorization: Bearer sop_REDACTED"
+```
+
+Create a dedicated API client for AI use with only the read scopes it needs,
+acting as a user whose visibility matches what the AI should see. Record text
+is written by people and integrations; the server tells clients to treat it as
+data, not instructions.
 
 ## 13a. Outbound webhook: change ticket state transitions
 
