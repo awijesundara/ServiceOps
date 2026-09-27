@@ -134,11 +134,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const pduList = document.getElementById("rack-pdu-list");
   if (pduList && (payload.pdus || []).length) {
-    pduList.innerHTML = payload.pdus.map((pdu) => `
-      <a href="/cmdb/${pdu.id}/edit" target="_top" class="rack-pdu-row${highlightId && pdu.id === highlightId ? " rack-pdu-row-highlight" : ""}">
-        <strong>${pdu.name}</strong>
-        <span>${pdu.power_watts != null ? pdu.power_watts + "W" : "power not tracked"}</span>
-      </a>`).join("");
+    pduList.replaceChildren(...payload.pdus.map((pdu) => {
+      const row = document.createElement("a");
+      row.href = `/cmdb/${encodeURIComponent(pdu.id)}/edit`;
+      row.target = "_top";
+      row.className = `rack-pdu-row${highlightId && pdu.id === highlightId ? " rack-pdu-row-highlight" : ""}`;
+      const name = document.createElement("strong");
+      name.textContent = pdu.name;
+      const power = document.createElement("span");
+      power.textContent = pdu.power_watts != null ? `${pdu.power_watts}W` : "power not tracked";
+      row.append(name, power);
+      return row;
+    }));
   }
 
   if (highlightedBlock) {

@@ -33,6 +33,7 @@ this importer only has dedicated model columns for the common fields.
 """
 import csv
 import io
+from datetime import datetime
 
 from app import parse_form_date
 
@@ -76,6 +77,23 @@ COLUMN_ALIASES = {
 }
 
 DATE_FIELDS = ("install_date", "warranty_expiry_date")
+DATE_FIELD_LABELS = {"install_date": "Install date", "warranty_expiry_date": "Warranty expiry"}
+
+
+def _parse_import_date(value):
+    """Year-first dates only: YYYY-MM-DD, YYYY/MM/DD, or an ISO datetime (date
+    part kept). Day/month-first values such as 4/5/2023 -- what a Google Sheets
+    CSV export writes by default -- mean different dates in different locales,
+    so they are never guessed; the caller keeps them as text instead."""
+    text = value.strip()
+    try:
+        return parse_form_date(text.replace("/", "-"))
+    except ValueError:
+        pass
+    try:
+        return datetime.fromisoformat(text).date()
+    except ValueError:
+        return None
 
 # Free-text state/status values (case-insensitive, punctuation-insensitive)
 # that mean "this asset has been decommissioned", seen across the various
@@ -153,7 +171,7 @@ def _resolve_owning_team(team_name, tenant_id, created):
     return group
 
 
-def _apply_row(row, ci, is_netbox_owned):
+def _apply_row(row, ci, is_netbox_owned, warnings=None):
     """Sets fields on `ci` from `row`, skipping NETBOX_OWNED_FIELDS when
     `is_netbox_owned` is True. Returns the count of fields that were skipped
     for that reason."""
@@ -167,10 +185,17 @@ def _apply_row(row, ci, is_netbox_owned):
             skipped += 1
             continue
         if field in DATE_FIELDS:
-            try:
-                setattr(ci, field, parse_form_date(value))
-            except ValueError:
-                pass
+            parsed = _parse_import_date(value)
+            if parsed:
+                setattr(ci, field, parsed)
+            else:
+                label = DATE_FIELD_LABELS[field]
+                ci.attributes = {**(ci.attributes or {}), label: value}
+                if warnings is not None:
+                    warnings.append(
+                        f"{ci.name}: {label.lower()} '{value}' is not a year-first date (YYYY-MM-DD); "
+                        "kept as text in the CI's attributes."
+                    )
             continue
         if field == "environment":
             value = core_app.normalize_environment(value)
@@ -208,6 +233,7 @@ def import_ci_rows(rows, tenant_id, dry_run=False):
         "teams_created": [],
         "teams_merged": 0,
         "errors": [],
+        "warnings": [],
     }
     teams_created = set()
 
@@ -232,7 +258,9 @@ def import_ci_rows(rows, tenant_id, dry_run=False):
 
             if ci:
                 is_netbox_owned = ci.external_source == "netbox"
-                summary["fields_skipped_netbox_owned"] += _apply_row(row, ci, is_netbox_owned)
+                summary["fields_skipped_netbox_owned"] += _apply_row(
+                    row, ci, is_netbox_owned, summary["warnings"],
+                )
                 if team:
                     ci.support_group_id = team.id
                 if ci.external_source is None:
@@ -243,7 +271,7 @@ def import_ci_rows(rows, tenant_id, dry_run=False):
                     name=name, ci_class=row.get("ci_class", "Server"),
                     tenant_id=tenant_id, external_source="csv", discovery_source="Import",
                 )
-                _apply_row(row, ci, is_netbox_owned=False)
+                _apply_row(row, ci, is_netbox_owned=False, warnings=summary["warnings"])
                 if team:
                     ci.support_group_id = team.id
                 db.session.add(ci)

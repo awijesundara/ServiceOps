@@ -10,8 +10,8 @@
     — line = relationship, "+N more" = collapsed connections, click a node (or search above) to expand and inspect its switch, neighbors, and ports
   </div>
   <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
-    <button type="button" id="cmdb-topology-zoom-in" class="button">+</button>
-    <button type="button" id="cmdb-topology-zoom-out" class="button">−</button>
+    <button type="button" id="cmdb-topology-zoom-in" class="button" aria-label="Zoom in">+</button>
+    <button type="button" id="cmdb-topology-zoom-out" class="button" aria-label="Zoom out">−</button>
     <button type="button" id="cmdb-topology-reset" class="button">Reset view</button>
     <div class="lookup" id="cmdb-topology-jump-to" data-lookup-url="{{ url_for('lookup_cis') }}" style="min-width:260px">
       <input type="text" class="lookup-search" placeholder="Jump to a configuration item…" autocomplete="off">
@@ -22,7 +22,7 @@
   <div style="display:flex;gap:12px;align-items:flex-start">
     <svg id="cmdb-topology-svg" width="100%" height="640" data-graph="{{ graph_json }}" data-backbone-classes="Switch,Router" style="flex:1;background:#f7f9fa;border:1px solid var(--line);border-radius:8px;cursor:grab"></svg>
     <aside id="cmdb-topology-detail" class="panel" hidden style="width:280px;flex-shrink:0">
-      <button type="button" id="cmdb-topology-detail-close" class="button" style="float:right">×</button>
+      <button type="button" id="cmdb-topology-detail-close" class="button" style="float:right" aria-label="Close details">×</button>
       <div id="cmdb-topology-detail-body"></div>
     </aside>
   </div>

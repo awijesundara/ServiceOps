@@ -1,6 +1,10 @@
 .git
 .env
-.env.backup.*
+.env.*
+!.env.example
+logs
+test-results
+.ruff_cache
 .serviceops-install
 .installer-state
 backups

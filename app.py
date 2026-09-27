@@ -52,7 +52,7 @@ from ldap3 import ALL, BASE, SUBTREE, Connection, Server, Tls
 from ldap3.utils.conv import escape_filter_chars
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 from sqlalchemy.pool import StaticPool
 # Not called directly in this file (ServiceOps hashes local passwords with
 # Argon2id via serviceops_core.security -- see hash_password/verify_password
@@ -88,7 +88,7 @@ from serviceops_core.workflow import (
 from serviceops_core.projections import project_document, validate_projection_policy
 from serviceops_core.ci_class_policy import (
     ci_class_action_allowed, ci_class_read_allowed, managed_ci_classes,
-    restrict_ci_query_to_readable_classes,
+    restrict_ci_query_to_readable_classes, unreadable_ci_classes,
 )
 from serviceops_core.dns_lookup import resolve_hostname, resolve_ip
 from serviceops_core.dns_pin import pin_resolved_addresses
@@ -1395,6 +1395,8 @@ DOMAIN_CONFIG = {
     "release": {"name": "Releases", "prefix": "REL", "types": ["Release", "Deployment", "Readiness review"]},
 }
 
+CMDB_RELATIONSHIP_DISPLAY_LIMIT = 200
+
 # One glyph per workspace on /modules, matching this app's existing
 # hand-authored feather-style icon set (viewBox 0 0 24 24, stroke-based --
 # see the topbar/nav icons in base.html). Hardcoded, developer-authored
@@ -1754,6 +1756,13 @@ def resolve_smtp_proxy_url():
     return proxy_url
 
 
+def single_line_header(value):
+    """EmailMessage raises instead of sending when a header contains CR/LF,
+    and ticket titles/subjects can arrive multi-line (API, integrations,
+    older ingested mail)."""
+    return " ".join(str(value).split())
+
+
 def deliver_smtp(event):
     """Returns True once actually sent, False if intentionally skipped
     because the recipient has disabled email notifications (B-130) --
@@ -1785,7 +1794,7 @@ def deliver_smtp(event):
     message = EmailMessage()
     message["From"] = formataddr((setting_value("SMTP_FROM_NAME", "ServiceOps"), sender))
     message["To"] = user.email
-    message["Subject"] = payload["title"]
+    message["Subject"] = single_line_header(payload["title"])
     reply_to = setting_value("SMTP_REPLY_TO", "")
     if reply_to:
         message["Reply-To"] = reply_to
@@ -4098,7 +4107,7 @@ def deliver_client_email_reply(ticket, message, mailbox):
     outbound["Message-ID"] = generated_message_id
     outbound["From"] = f"{mailbox.from_name} <{mailbox.from_address}>" if mailbox.from_name else mailbox.from_address
     outbound["To"] = ticket.contact.email
-    subject = ticket.subject
+    subject = single_line_header(ticket.subject)
     if f"[{ticket.number}]" not in subject:
         subject = f"Re: [{ticket.number}] {subject}"
     outbound["Subject"] = subject
@@ -5526,6 +5535,16 @@ def evaluate_client_triggers(event, ticket, agents):
             body=f"Automation triggered: {', '.join(fired)}.", visibility="internal", event_type="automation",
         ))
     return fired
+
+
+def visible_knowledge_query(user):
+    """Never-published drafts (the AI assistant drafts these from incidents)
+    are for agents and above to review and publish; requesters only ever see
+    published articles and archived versions."""
+    query = tenant_query(Knowledge)
+    if role_at_least(user.effective_role, "agent"):
+        return query
+    return query.filter(db.or_(Knowledge.published.is_(True), Knowledge.archived.is_(True)))
 
 
 def visible_catalog_request_query(user):
@@ -9204,7 +9223,10 @@ def create_app(test_config=None):
         if not role_at_least(g.api_user.effective_role, "agent"):
             abort(403, description="CMDB mobile access requires the agent role.")
         q = str(request.args.get("q", "")).strip()
-        query = ConfigurationItem.query.filter_by(tenant_id=g.api_user.tenant_id)
+        query = restrict_ci_query_to_readable_classes(
+            ConfigurationItem.query.filter_by(tenant_id=g.api_user.tenant_id),
+            g.api_user.tenant_id, g.api_user.effective_role,
+        )
         if q:
             pattern = f"%{escape_like(q)}%"
             query = query.filter(or_(ConfigurationItem.name.ilike(pattern, escape="\\"),
@@ -11757,8 +11779,8 @@ def create_app(test_config=None):
     def knowledge():
         q = request.args.get("q", "").strip()
         # Archived articles stay visible (labeled "Archived" in the template)
-        # rather than disappearing -- only a never-published draft is excluded.
-        query = tenant_query(Knowledge).filter(db.or_(Knowledge.published.is_(True), Knowledge.archived.is_(True)))
+        # rather than disappearing; drafts are labeled and shown to reviewers only.
+        query = visible_knowledge_query(current_user)
         if q:
             query = query.filter(db.or_(Knowledge.title.ilike(f"%{q}%"), Knowledge.body.ilike(f"%{q}%")))
         return render_template("knowledge.html", articles=query.order_by(Knowledge.created_at.desc()).all(), q=q)
@@ -11779,7 +11801,7 @@ def create_app(test_config=None):
     @app.get("/knowledge/<int:article_id>")
     @login_required
     def knowledge_detail(article_id):
-        article = tenant_query(Knowledge).filter_by(id=article_id).first_or_404()
+        article = visible_knowledge_query(current_user).filter_by(id=article_id).first_or_404()
         history = tenant_query(Knowledge).filter_by(superseded_by_id=article.id).order_by(Knowledge.created_at.desc()).all()
         return render_template("knowledge_detail.html", article=article, history=history)
 
@@ -11790,6 +11812,19 @@ def create_app(test_config=None):
         if article.archived:
             abort(409, description="This article is archived. Create a new article instead of editing an archived version.")
         if request.method == "POST":
+            if not article.published:
+                # A never-published draft has no reader-facing history to
+                # preserve, so it's published in place. Superseding it would
+                # archive the unreviewed draft text, and archived versions are
+                # readable by every role.
+                article.title = request.form["title"]
+                article.category = request.form["category"]
+                article.body = request.form["body"]
+                article.published = True
+                audit("publish", f"KB{article.id:06d}", article.title)
+                db.session.commit()
+                flash("Draft published.", "success")
+                return redirect(url_for("knowledge_detail", article_id=article.id))
             new_version = Knowledge(
                 title=request.form["title"], category=request.form["category"],
                 body=request.form["body"], author_id=current_user.id, published=True,
@@ -15348,13 +15383,24 @@ def create_app(test_config=None):
         operational_total = readable_ci_ids.filter(
             ConfigurationItem.operational_status == "Operational"
         ).count()
-        relationships = [
-            rel for rel in tenant_query(CIRelationship).options(
-                db.joinedload(CIRelationship.parent), db.joinedload(CIRelationship.child),
-            ).all()
-            if ci_class_read_allowed(current_user.tenant_id, rel.parent.ci_class, current_user.effective_role)
-            and ci_class_read_allowed(current_user.tenant_id, rel.child.ci_class, current_user.effective_role)
-        ]
+        # Filtered and capped in SQL: this panel previously loaded every
+        # relationship in the tenant and ran two permission queries per row,
+        # which grows without bound once NetBox/LLDP sync adds cabling.
+        denied_classes = unreadable_ci_classes(current_user.tenant_id, current_user.effective_role)
+        parent_ci = aliased(ConfigurationItem)
+        child_ci = aliased(ConfigurationItem)
+        relationship_query = tenant_query(CIRelationship).join(
+            parent_ci, CIRelationship.parent_id == parent_ci.id,
+        ).join(child_ci, CIRelationship.child_id == child_ci.id)
+        if denied_classes:
+            relationship_query = relationship_query.filter(
+                ~parent_ci.ci_class.in_(denied_classes), ~child_ci.ci_class.in_(denied_classes),
+            )
+        relationships_total = relationship_query.count()
+        relationships = relationship_query.options(
+            db.contains_eager(CIRelationship.parent.of_type(parent_ci)),
+            db.contains_eager(CIRelationship.child.of_type(child_ci)),
+        ).order_by(parent_ci.name, child_ci.name, CIRelationship.id).limit(CMDB_RELATIONSHIP_DISPLAY_LIMIT).all()
         # CIs pulled in from NetBox/CSV carry many more fields than the default
         # table shows (attributes is a free-form JSON bag); surface whatever keys
         # actually appear on this page so users can opt into columns beyond the
@@ -15374,7 +15420,8 @@ def create_app(test_config=None):
             for key, spec in field_spec.items()
         }
         return render_template(
-            "cmdb.html", visible_cis=visible_cis, relationships=relationships, status=status,
+            "cmdb.html", visible_cis=visible_cis, relationships=relationships,
+            relationships_total=relationships_total, status=status,
             q=q, raw_filter=raw_filter, breadcrumb_parts=breadcrumb_parts, filter_fields=client_fields,
             page=page, pages=pages, total=total, cis_total=cis_total, operational_total=operational_total,
             ci_relationship_types=CI_RELATIONSHIP_TYPES, extra_attribute_keys=extra_attribute_keys,
@@ -15624,13 +15671,12 @@ def create_app(test_config=None):
         connects_to_rels = tenant_query(CIRelationship).filter(
             CIRelationship.relationship_type == "Connects to",
             db.or_(CIRelationship.parent_id == ci.id, CIRelationship.child_id == ci.id),
-        ).all()
+        ).options(db.joinedload(CIRelationship.parent), db.joinedload(CIRelationship.child)).all()
+        denied_classes = unreadable_ci_classes(current_user.tenant_id, current_user.effective_role)
         network_connections = []
         for rel in connects_to_rels:
             other = rel.child if rel.parent_id == ci.id else rel.parent
-            if not other or not ci_class_read_allowed(
-                current_user.tenant_id, other.ci_class, current_user.effective_role,
-            ):
+            if not other or other.ci_class in denied_classes:
                 continue
             local_port, other_port = "", ""
             if rel.label and "<->" in rel.label:
@@ -15725,8 +15771,9 @@ def create_app(test_config=None):
                     )
                     flash(
                         f"CMDB import applied: {result['cis_created']} created, "
-                        f"{result['cis_updated']} updated, {len(result['errors'])} errors.",
-                        "success" if not result["errors"] else "warning",
+                        f"{result['cis_updated']} updated, {len(result['errors'])} errors, "
+                        f"{len(result['warnings'])} warnings.",
+                        "success" if not result["errors"] and not result["warnings"] else "warning",
                     )
                     return redirect(url_for("cmdb"))
             else:
@@ -17755,27 +17802,28 @@ def create_app(test_config=None):
         recomputing the same aggregates a second way -- same pattern
         already used by manager_portal_context()/manager_portal_export()."""
         ticket_query = visible_ticket_query(current_user)
-        ticket_ids = [row.id for row in ticket_query.with_entities(Ticket.id).all()]
-        record_ids = [row.id for row in visible_enterprise_record_query(current_user).with_entities(EnterpriseRecord.id).all()]
+        # Subqueries rather than Python ID lists: a literal IN list binds one
+        # parameter per ticket, and psycopg rejects statements over 65535.
+        ticket_ids = ticket_query.with_entities(Ticket.id)
+        record_ids = visible_enterprise_record_query(current_user).with_entities(EnterpriseRecord.id)
 
         ticket_states = dict(db.session.query(Ticket.state, func.count(Ticket.id)).filter(
             Ticket.id.in_(ticket_ids)
-        ).group_by(Ticket.state).all()) if ticket_ids else {}
+        ).group_by(Ticket.state).all())
         domain_counts = dict(db.session.query(EnterpriseRecord.domain, func.count(EnterpriseRecord.id)).filter(
             EnterpriseRecord.id.in_(record_ids)
-        ).group_by(EnterpriseRecord.domain).all()) if record_ids else {}
+        ).group_by(EnterpriseRecord.domain).all())
         priority_counts = dict(db.session.query(Ticket.priority, func.count(Ticket.id)).filter(
             Ticket.id.in_(ticket_ids), Ticket.state.notin_(TERMINAL_TICKET_STATES),
-        ).group_by(Ticket.priority).all()) if ticket_ids else {}
+        ).group_by(Ticket.priority).all())
         overdue_investigations = EnterpriseRecord.query.filter(
             EnterpriseRecord.id.in_(record_ids), EnterpriseRecord.due_at < now(),
             EnterpriseRecord.state.notin_(["Closed", "Resolved", "Completed"])
-        ).count() if record_ids else 0
+        ).count()
 
-        open_ticket_ids = [
-            row.id for row in ticket_query.filter(Ticket.state.notin_(TERMINAL_TICKET_STATES)).with_entities(Ticket.id).all()
-        ]
-        open_count = len(open_ticket_ids)
+        open_ticket_query = ticket_query.filter(Ticket.state.notin_(TERMINAL_TICKET_STATES))
+        open_ticket_ids = open_ticket_query.with_entities(Ticket.id)
+        open_count = open_ticket_query.count()
 
         # SLA exposure on currently open work, and 30-day compliance on resolved work,
         # both driven off TaskSLA the same way the dashboard's own SLA widgets are.
@@ -17786,7 +17834,7 @@ def create_app(test_config=None):
         # breach and notify (see attach_slas/process_sla_breaches) but shouldn't be
         # blended into what's reported as the business's own SLA performance.
         sla_breached_open = sla_at_risk_open = 0
-        if open_ticket_ids:
+        if open_count:
             for row in TaskSLA.query.join(SLADefinition, TaskSLA.definition_id == SLADefinition.id).filter(
                 TaskSLA.target_type == "ticket", TaskSLA.target_id.in_(open_ticket_ids),
                 TaskSLA.stage == "In Progress", SLADefinition.agreement_type == "SLA",
@@ -17875,9 +17923,9 @@ def create_app(test_config=None):
         # this reflects the actual reviewed outcome (see
         # ChangePostImplementationReview) -- "Closed" only tells you the
         # ticket reached a terminal state, not whether the change worked.
-        change_ticket_ids = ticket_query.filter(Ticket.kind == "change").with_entities(Ticket.id).all()
+        change_ticket_ids = ticket_query.filter(Ticket.kind == "change").with_entities(Ticket.id)
         pir_rows = ChangePostImplementationReview.query.filter(
-            ChangePostImplementationReview.ticket_id.in_([row.id for row in change_ticket_ids]),
+            ChangePostImplementationReview.ticket_id.in_(change_ticket_ids),
             ChangePostImplementationReview.reviewed_at >= thirty_days_ago,
         ).with_entities(ChangePostImplementationReview.outcome).all()
         pir_total = len(pir_rows)
@@ -18068,7 +18116,9 @@ def create_app(test_config=None):
     @login_required
     def lookup_cis():
         q = request.args.get("q", "").strip()
-        query = tenant_query(ConfigurationItem)
+        query = restrict_ci_query_to_readable_classes(
+            tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
+        )
         if q:
             pattern = f"%{q}%"
             query = query.filter(db.or_(
@@ -18089,7 +18139,10 @@ def create_app(test_config=None):
         q = request.args.get("q", "").strip()
         ci_class = request.args.get("ci_class", "").strip()
         environment = request.args.get("environment", "").strip()
-        query = tenant_query(ConfigurationItem)
+        readable = restrict_ci_query_to_readable_classes(
+            tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
+        )
+        query = readable
         if q:
             pattern = f"%{q}%"
             query = query.filter(db.or_(
@@ -18102,12 +18155,12 @@ def create_app(test_config=None):
             query = query.filter(ConfigurationItem.environment == environment)
         rows = query.order_by(ConfigurationItem.name).limit(200).all()
         classes = [
-            row[0] for row in tenant_query(ConfigurationItem).with_entities(
+            row[0] for row in readable.with_entities(
                 ConfigurationItem.ci_class
             ).distinct().order_by(ConfigurationItem.ci_class).all()
         ]
         environments = [
-            row[0] for row in tenant_query(ConfigurationItem).with_entities(
+            row[0] for row in readable.with_entities(
                 ConfigurationItem.environment
             ).distinct().order_by(ConfigurationItem.environment).all()
         ]
@@ -18129,7 +18182,8 @@ def create_app(test_config=None):
             return jsonify([])
         pattern = f"%{q}%"
         results = []
-        ticket_ids = {row.id for row in visible_ticket_query(current_user).all()}
+        # ID subqueries, not materialized ORM rows -- see global_search().
+        ticket_ids = visible_ticket_query(current_user).with_entities(Ticket.id)
         for row in Ticket.query.filter(
             Ticket.id.in_(ticket_ids),
             db.or_(Ticket.number.ilike(pattern), Ticket.title.ilike(pattern)),
@@ -18138,7 +18192,7 @@ def create_app(test_config=None):
                 "value": row.number, "label": f"{row.number} — {row.title}",
                 "description": f"{row.kind.title()} · {row.state}",
             })
-        enterprise_ids = {row.id for row in visible_enterprise_record_query(current_user).all()}
+        enterprise_ids = visible_enterprise_record_query(current_user).with_entities(EnterpriseRecord.id)
         for row in EnterpriseRecord.query.filter(
             EnterpriseRecord.id.in_(enterprise_ids),
             db.or_(EnterpriseRecord.number.ilike(pattern), EnterpriseRecord.title.ilike(pattern)),
@@ -18147,14 +18201,14 @@ def create_app(test_config=None):
                 "value": row.number, "label": f"{row.number} — {row.title}",
                 "description": f"{DOMAIN_CONFIG[row.domain]['name']} · {row.state}",
             })
-        for row in tenant_query(Knowledge).filter(
+        for row in visible_knowledge_query(current_user).filter(
             db.or_(Knowledge.title.ilike(pattern), Knowledge.body.ilike(pattern))
         ).limit(10):
             results.append({
                 "value": f"KB{row.id:07d}", "label": f"KB{row.id:07d} — {row.title}",
                 "description": f"Knowledge · {row.category}",
             })
-        request_ids = {row.id for row in visible_catalog_request_query(current_user).all()}
+        request_ids = visible_catalog_request_query(current_user).with_entities(CatalogRequest.id)
         for row in CatalogRequest.query.filter(
             CatalogRequest.id.in_(request_ids), CatalogRequest.number.ilike(pattern),
         ).limit(10):
@@ -18208,10 +18262,11 @@ def create_app(test_config=None):
                                                    Ticket.id.in_(commented_ticket_ids))).limit(20):
                 results.append({"type": row.kind.title(), "label": f"{row.number} · {row.title}",
                                 "url": url_for("ticket_detail", ticket_id=row.id), "meta": row.state})
-            for row in tenant_query(Knowledge).filter(all_terms(
+            for row in visible_knowledge_query(current_user).filter(all_terms(
                 [Knowledge.title, Knowledge.body, Knowledge.category]
             )).limit(20):
-                results.append({"type": "Knowledge", "label": row.title, "url": url_for("knowledge"),
+                results.append({"type": "Knowledge", "label": row.title,
+                                "url": url_for("knowledge_detail", article_id=row.id),
                                 "meta": row.category})
             for row in EnterpriseRecord.query.filter(EnterpriseRecord.id.in_(visible_enterprise_ids), db.or_(
                                                              EnterpriseRecord.number.ilike(pattern),
@@ -18219,7 +18274,9 @@ def create_app(test_config=None):
                                                              EnterpriseRecord.external_id.ilike(pattern))).limit(20):
                 results.append({"type": DOMAIN_CONFIG[row.domain]["name"], "label": f"{row.number} · {row.title}",
                                 "url": url_for("enterprise_detail", record_id=row.id), "meta": row.state})
-            for row in tenant_query(ConfigurationItem).filter(all_terms([
+            for row in restrict_ci_query_to_readable_classes(
+                tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
+            ).filter(all_terms([
                 ConfigurationItem.name, ConfigurationItem.serial_number, ConfigurationItem.ip_address,
                 ConfigurationItem.model, ConfigurationItem.vendor, ConfigurationItem.description,
                 ConfigurationItem.location, ConfigurationItem.ci_class, ConfigurationItem.environment,

@@ -42,6 +42,15 @@ def test_parse_inbound_email_extracts_core_fields():
     assert parsed["attachments"] == []
 
 
+def test_parse_inbound_email_collapses_line_breaks_in_encoded_subject():
+    raw = (
+        b"From: customer@example.test\r\n"
+        b"Subject: =?utf-8?q?Printer_broken=0AStill_down?=\r\n"
+        b"Message-ID: <multi@example.test>\r\n\r\nbody\r\n"
+    )
+    assert parse_inbound_email(raw)["subject"] == "Printer broken Still down"
+
+
 def test_parse_inbound_email_extracts_attachment():
     raw = _build_raw_email(
         "Screenshot attached", "See attached.",

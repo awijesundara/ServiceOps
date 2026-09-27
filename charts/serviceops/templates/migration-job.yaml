@@ -35,6 +35,7 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: ["ALL"]}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
           envFrom:
             - secretRef: {name: {{ include "serviceops.secretName" . }}}
       containers:
@@ -46,6 +47,7 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: ["ALL"]}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
           env:
             - {name: AUTO_MIGRATE, value: "true"}
             - {name: DEPLOYMENT_PROFILE, value: "production"}

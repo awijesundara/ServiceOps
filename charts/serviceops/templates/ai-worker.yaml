@@ -39,6 +39,7 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: ["ALL"]}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
           envFrom:
             - configMapRef: {name: {{ include "serviceops.fullname" . }}-config}
             - secretRef: {name: {{ include "serviceops.secretName" . }}}

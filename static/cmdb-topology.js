@@ -175,33 +175,53 @@ document.addEventListener("DOMContentLoaded", () => {
     const isSwitchLike = ["switch", "router"].includes((node.ci_class || "").toLowerCase());
     const heading = isSwitchLike ? "Ports" : "Connected switches/routers";
     const relevant = isSwitchLike ? rows : rows.filter((r) => ["switch", "router"].includes((r.neighbor.ci_class || "").toLowerCase()));
-    const tableRows = (relevant.length ? relevant : rows).map((r) => `
-      <tr>
-        <td>${r.localPort || "—"}</td>
-        <td>${r.neighbor.name}${r.neighbor.ci_class ? ` (${r.neighbor.ci_class})` : ""}</td>
-        <td>${r.neighborPort || "—"}</td>
-      </tr>`).join("");
-    detailBody.innerHTML = `
-      <h3>${node.name}</h3>
-      <p class="muted" style="font-size:12px">${node.ci_class || ""} · ${node.status || ""} · ${node.discovery_source || ""}</p>
-      <h4 style="margin-top:14px">${heading}</h4>
-      ${rows.length ? `<table class="ci-permissions-table"><thead><tr><th>Local port</th><th>Neighbor</th><th>Neighbor port</th></tr></thead><tbody>${tableRows}</tbody></table>` : '<p class="muted">No connections recorded.</p>'}
-      <h4 style="margin-top:14px">Hostname resolution</h4>
-      <div id="cmdb-topology-dns" class="muted">Looking up…</div>
-    `;
+    // CI names/classes and port labels can come from network discovery (names
+    // reported by the devices themselves) and PTR hostnames from whoever owns
+    // the reverse zone, so every value is set as text, never parsed as HTML.
+    const el = (tag, text, className) => {
+      const element = document.createElement(tag);
+      if (className) element.className = className;
+      if (text !== undefined) element.textContent = text;
+      return element;
+    };
+    const nameHeading = el("h3", node.name);
+    const meta = el("p", `${node.ci_class || ""} · ${node.status || ""} · ${node.discovery_source || ""}`, "muted");
+    meta.style.fontSize = "12px";
+    const connectionsHeading = el("h4", heading);
+    connectionsHeading.style.marginTop = "14px";
+    let connections;
+    if (rows.length) {
+      connections = el("table", undefined, "ci-permissions-table");
+      const headRow = connections.createTHead().insertRow();
+      ["Local port", "Neighbor", "Neighbor port"].forEach((label) => headRow.appendChild(el("th", label)));
+      const body = connections.createTBody();
+      (relevant.length ? relevant : rows).forEach((r) => {
+        const row = body.insertRow();
+        row.appendChild(el("td", r.localPort || "—"));
+        row.appendChild(el("td", `${r.neighbor.name}${r.neighbor.ci_class ? ` (${r.neighbor.ci_class})` : ""}`));
+        row.appendChild(el("td", r.neighborPort || "—"));
+      });
+    } else {
+      connections = el("p", "No connections recorded.", "muted");
+    }
+    const dnsHeading = el("h4", "Hostname resolution");
+    dnsHeading.style.marginTop = "14px";
+    const dnsEl = el("div", "Looking up…", "muted");
+    dnsEl.id = "cmdb-topology-dns";
+    detailBody.replaceChildren(nameHeading, meta, connectionsHeading, connections, dnsHeading, dnsEl);
     detailPanel.hidden = false;
-    const dnsEl = document.getElementById("cmdb-topology-dns");
     fetch(`/cmdb/${node.id}/network-info`, { headers: { Accept: "application/json" } })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((info) => {
-        const parts = [];
+        const lines = [];
         (info.addresses || []).forEach((entry) => {
-          parts.push(`<div>${entry.ip} → ${entry.hostname || "no PTR record"}</div>`);
+          lines.push(el("div", `${entry.ip} → ${entry.hostname || "no PTR record"}`));
         });
         (info.hostnames || []).forEach((entry) => {
-          parts.push(`<div>${entry.hostname} → ${(entry.ips || []).join(", ") || "no A/AAAA record"}</div>`);
+          lines.push(el("div", `${entry.hostname} → ${(entry.ips || []).join(", ") || "no A/AAAA record"}`));
         });
-        dnsEl.innerHTML = parts.length ? parts.join("") : "No IP or hostname to resolve.";
+        if (lines.length) dnsEl.replaceChildren(...lines);
+        else dnsEl.textContent = "No IP or hostname to resolve.";
       })
       .catch(() => { dnsEl.textContent = "Unable to resolve at this time."; });
   }

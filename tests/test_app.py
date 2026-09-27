@@ -6855,6 +6855,17 @@ def test_deliver_client_email_reply_sends_via_smtp_and_stores_message_id(app, cl
         ).one()
         assert message.message_id == outbound["Message-ID"]
 
+    # A subject stored with a line break (older ingested mail) must still
+    # reply: EmailMessage raises on CR/LF in headers instead of sending.
+    with app.app_context():
+        db.session.get(ClientTicket, ticket_id).subject = "Need help\nstill broken"
+        db.session.commit()
+    assert client.post(f"/client-management/tickets/{ticket_id}", data={
+        "action": "reply", "visibility": "public", "body": "Second reply.",
+    }).status_code == 302
+    assert len(sent_messages) == 2
+    assert sent_messages[1]["Subject"].endswith("Need help still broken")
+
 
 def test_admin_can_update_live_platform_branding(client, app):
     """B-320: Platform settings are decentralized into one isolated page
@@ -7434,6 +7445,49 @@ def test_knowledge_publish_updated_version_archives_previous(client, app):
     archived_detail = client.get(f"/knowledge/{article_id}")
     assert b"archived" in archived_detail.data.lower()
     assert client.get(f"/knowledge/{new_version_id}").status_code == 200
+
+
+def test_knowledge_draft_is_hidden_from_requesters_and_reviewable_by_agents(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        draft = Knowledge(title="Draft zq7 failover runbook", category="General",
+                          body="Internal-only draft text.", author_id=admin.id, published=False)
+        db.session.add(draft)
+        db.session.commit()
+        draft_id = draft.id
+
+    login(client, "employee", "Employee123!")
+    assert b"Draft zq7 failover runbook" not in client.get("/knowledge").data
+    assert client.get(f"/knowledge/{draft_id}").status_code == 404
+    assert b"Draft zq7 failover runbook" not in client.get("/ui/search?q=zq7").data
+    client.post("/logout")
+
+    login(client)
+    listing = client.get("/knowledge").get_data(as_text=True)
+    assert "Draft zq7 failover runbook" in listing and "Draft</span>" in listing
+    assert client.get(f"/knowledge/{draft_id}").status_code == 200
+    assert f"/knowledge/{draft_id}".encode() in client.get("/ui/search?q=zq7").data
+
+
+def test_publishing_a_draft_publishes_in_place_without_archiving_the_draft_text(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        draft = Knowledge(title="AI draft", category="General", body="Unreviewed text with db-prod-07.",
+                          author_id=admin.id, published=False)
+        db.session.add(draft)
+        db.session.commit()
+        draft_id = draft.id
+    login(client)
+    assert client.post(f"/knowledge/{draft_id}/edit", data={
+        "title": "Reviewed article", "category": "Database", "body": "Reviewed text.",
+    }).status_code == 302
+    with app.app_context():
+        assert Knowledge.query.count() == 1
+        article = db.session.get(Knowledge, draft_id)
+        assert (article.published, article.archived, article.body) == (True, False, "Reviewed text.")
+    client.post("/logout")
+    login(client, "employee", "Employee123!")
+    assert b"db-prod-07" not in client.get("/knowledge").data
 
 
 def test_knowledge_archive_without_new_version_stays_visible_labeled_archived(client, app):
@@ -8991,6 +9045,86 @@ def test_cmdb_topology_respects_class_read_filter(client, app):
     login(client)
     page = client.get("/cmdb/topology")
     assert b"topology-hidden-01" not in page.data
+
+
+def test_ci_lookups_search_and_mobile_cmdb_respect_class_read_filter(client, app):
+    with app.app_context():
+        db.session.add(ConfigurationItem(name="hidden-printer-zz9", ci_class="Printer"))
+        db.session.add(ConfigurationItem(name="visible-server-zz9", ci_class="Server"))
+        # Managing Printer for agents leaves managers without read access to it.
+        db.session.add(CiClassPermission(tenant_id=1, ci_class="Printer", role="agent", can_read=True))
+        db.session.commit()
+
+    login(client, "database.manager", "Manager123!")
+    lookup = client.get("/internal/lookup/cis?q=zz9").get_data(as_text=True)
+    assert "visible-server-zz9" in lookup and "hidden-printer-zz9" not in lookup
+    browse = client.get("/internal/lookup/cis/browse?q=zz9").json
+    assert [row["name"] for row in browse["results"]] == ["visible-server-zz9"]
+    assert "Printer" not in browse["classes"]
+    search = client.get("/ui/search?q=zz9").get_data(as_text=True)
+    assert "visible-server-zz9" in search and "hidden-printer-zz9" not in search
+
+    signed_in = client.post("/api/v1/auth/mobile/login", headers={
+        "X-ServiceOps-App-Version": "1.3.0", "X-ServiceOps-App-Build": "5",
+        "X-ServiceOps-Platform": "iOS", "X-ServiceOps-Device": "iPhone17,1",
+    }, json={"username": "database.manager", "password": "Manager123!", "provider": "local"})
+    assert signed_in.status_code == 200
+    mobile = client.get("/api/v1/mobile/cmdb?q=zz9", headers={
+        "Authorization": f"Bearer {signed_in.json['access_token']}",
+    })
+    assert [row["name"] for row in mobile.json["data"]] == ["visible-server-zz9"]
+
+
+def test_cmdb_relationship_panel_respects_class_read_filter_and_counts_visible_only(client, app):
+    with app.app_context():
+        web = ConfigurationItem(name="rel-web-01", ci_class="Server")
+        db_srv = ConfigurationItem(name="rel-db-01", ci_class="Server")
+        printer = ConfigurationItem(name="rel-printer-01", ci_class="Printer")
+        db.session.add_all([web, db_srv, printer])
+        db.session.flush()
+        db.session.add_all([
+            CIRelationship(parent_id=web.id, child_id=db_srv.id, relationship_type="Depends on"),
+            CIRelationship(parent_id=web.id, child_id=printer.id, relationship_type="Connects to"),
+        ])
+        # Managing Printer for agents leaves managers without read access to it.
+        db.session.add(CiClassPermission(tenant_id=1, ci_class="Printer", role="agent", can_read=True))
+        db.session.commit()
+    login(client, "database.manager", "Manager123!")
+    page = client.get("/cmdb").get_data(as_text=True)
+    assert "rel-db-01" in page
+    assert "rel-printer-01" not in page
+    assert "<span>Relationships</span><strong>1</strong>" in page
+
+
+def test_cmdb_list_query_count_does_not_grow_with_relationship_count(client, app):
+    from sqlalchemy import event
+
+    def add_relationships(count):
+        with app.app_context():
+            for index in range(count):
+                parent = ConfigurationItem(name=f"scale-parent-{count}-{index}", ci_class="Server")
+                child = ConfigurationItem(name=f"scale-child-{count}-{index}", ci_class="Database")
+                db.session.add_all([parent, child])
+                db.session.flush()
+                db.session.add(CIRelationship(parent_id=parent.id, child_id=child.id))
+            db.session.commit()
+
+    statements = []
+
+    def count_queries():
+        statements.clear()
+        assert client.get("/cmdb").status_code == 200
+        return len(statements)
+
+    login(client)
+    client.get("/cmdb")  # first visit creates the user's preference row
+    with app.app_context():
+        event.listen(db.engine, "before_cursor_execute", lambda *args: statements.append(args[2]))
+    add_relationships(3)
+    few = count_queries()
+    add_relationships(30)
+    many = count_queries()
+    assert many == few
 
 
 def test_cmdb_permissions_route_requires_admin(client, app):

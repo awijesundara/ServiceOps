@@ -4,14 +4,21 @@ document.addEventListener("DOMContentLoaded", () => {
   fetch(`/cmdb/${el.dataset.ciId}/network-info`, { headers: { Accept: "application/json" } })
     .then((response) => (response.ok ? response.json() : Promise.reject()))
     .then((info) => {
-      const parts = [];
+      // PTR hostnames are controlled by whoever owns the reverse zone: text only.
+      const line = (text) => {
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div;
+      };
+      const lines = [];
       (info.addresses || []).forEach((entry) => {
-        parts.push(`<div>${entry.ip} → ${entry.hostname || "no PTR record"}</div>`);
+        lines.push(line(`${entry.ip} → ${entry.hostname || "no PTR record"}`));
       });
       (info.hostnames || []).forEach((entry) => {
-        parts.push(`<div>${entry.hostname} → ${(entry.ips || []).join(", ") || "no A/AAAA record"}</div>`);
+        lines.push(line(`${entry.hostname} → ${(entry.ips || []).join(", ") || "no A/AAAA record"}`));
       });
-      el.innerHTML = parts.length ? parts.join("") : "No IP or hostname to resolve.";
+      if (lines.length) el.replaceChildren(...lines);
+      else el.textContent = "No IP or hostname to resolve.";
     })
     .catch(() => { el.textContent = "Unable to resolve at this time."; });
 });
