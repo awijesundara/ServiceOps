@@ -12,7 +12,10 @@ of logging, and not on the allowlist, fails CI.
 import ast
 from pathlib import Path
 
-APP_PY = Path(__file__).resolve().parent.parent / "app.py"
+ROOT = Path(__file__).resolve().parent.parent
+# Routes live in serviceops_core/web/ and the helpers they call mostly in
+# app.py, so both are parsed into one call graph.
+SOURCE_FILES = [ROOT / "app.py", *sorted((ROOT / "serviceops_core" / "web").glob("*.py"))]
 
 ALLOWLIST = {
     "notification_mark_read": "marks the caller's own notification read; no shared record changes",
@@ -71,10 +74,11 @@ def _direct_calls(func_node):
 
 
 def test_every_mutating_route_logs_to_audit_or_history_or_is_allowlisted():
-    tree = ast.parse(APP_PY.read_text())
     functions = {}
     mutating_routes = []
-    for node in ast.walk(tree):
+    nodes = [node for path in SOURCE_FILES for node in ast.walk(ast.parse(path.read_text()))]
+    assert len(SOURCE_FILES) > 2, "serviceops_core/web/ route modules not found"
+    for node in nodes:
         if isinstance(node, ast.FunctionDef):
             functions[node.name] = node
             methods = set()
