@@ -10956,3 +10956,26 @@ def test_major_incident_status_update_publish_toggle_unpublishes(client, app):
         profile = MajorIncidentProfile.query.filter_by(ticket_id=ticket_id).one()
         assert profile.public is False
         assert len(profile.updates) == 2
+
+
+def test_approval_chain_takes_the_tenant_of_the_record_not_the_request_context(app):
+    from app import create_approval_chain
+
+    with app.app_context():
+        db.session.add(Tenant(id=2, slug="chain-tenant", name="Chain tenant"))
+        approver = User(username="t2.approver", name="T2 Approver", email="t2a@test.invalid", role="manager",
+                        tenant_id=2, password_hash=generate_password_hash("Approver123!Approver"))
+        db.session.add(approver)
+        db.session.flush()
+        ticket = Ticket(number="CHG0090001", kind="change", title="Tenant 2 change", description="d",
+                        category="", priority="P3", state="New", requester_id=approver.id, tenant_id=2)
+        db.session.add(ticket)
+        db.session.flush()
+        # No logged-in user here, as for an API client or the worker: the old code
+        # stamped the chain, gates and votes with tenant_context_id(), i.e. tenant 1.
+        chain = create_approval_chain("Tenant 2 approval", "ticket", ticket.id,
+                                      [{"name": "Manager", "approver_ids": [approver.id]}])
+        db.session.flush()
+        assert chain.tenant_id == 2
+        assert {gate.tenant_id for gate in chain.gates} == {2}
+        assert {vote.tenant_id for gate in chain.gates for vote in gate.votes} == {2}
