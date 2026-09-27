@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_ticket_category_fields.html" import category_field, subcategory_field %}
+{% from "_ticket_category_fields.html" import category_field, subcategory_field with context %}
 {% block title %}New {{ kind }} · {{ instance_name }}{% endblock %}
 {% block content %}
 {% if form and form_error %}<div class="flash error">{{ form_error }}</div>{% endif %}

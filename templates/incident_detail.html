@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_ticket_category_fields.html" import category_field, subcategory_field %}
+{% from "_ticket_category_fields.html" import category_field, subcategory_field with context %}
 {% block title %}{{ ticket.number }} · Incident · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set primary_ci_link = (ci_links|selectattr('relationship_role','equalto','Primary CI')|first) %}

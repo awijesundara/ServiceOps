@@ -78,3 +78,37 @@ def test_production_requires_strong_admin_password(monkeypatch):
         "ldap_enabled": False, "keycloak_enabled": False,
     })
     assert not checks["security"]["ok"]
+
+
+def installer_client(tmp_path, monkeypatch, allowed_hosts=""):
+    from installer.app import create_app
+
+    monkeypatch.setattr("installer.app.STATE", tmp_path)
+    monkeypatch.setenv("INSTALLER_ALLOWED_HOSTS", allowed_hosts)
+    monkeypatch.setattr("installer.app.validate", lambda config: {"host": {"ok": True, "message": "ok"}})
+    return create_app().test_client()
+
+
+def test_installer_rejects_dns_rebinding_host(tmp_path, monkeypatch):
+    client = installer_client(tmp_path, monkeypatch)
+    assert client.get("/", headers={"Host": "attacker.example:8090"}).status_code == 403
+    assert client.post("/api/deploy", json={}, headers={"Host": "attacker.example:8090"}).status_code == 403
+    assert client.get("/health", headers={"Host": "127.0.0.1:8090"}).status_code == 200
+    assert client.get("/health", headers={"Host": "[::1]:8090"}).status_code == 200
+
+
+def test_installer_allows_configured_bind_host(tmp_path, monkeypatch):
+    client = installer_client(tmp_path, monkeypatch, allowed_hosts="10.0.0.5")
+    assert client.get("/health", headers={"Host": "10.0.0.5:8090"}).status_code == 200
+
+
+def test_installer_rejects_cross_site_posts(tmp_path, monkeypatch):
+    client = installer_client(tmp_path, monkeypatch)
+    # A cross-site page can send text/plain without a CORS preflight.
+    simple = client.post("/api/deploy", data='{"db_mode": "bundled"}', content_type="text/plain")
+    assert simple.status_code == 400
+    assert not (tmp_path / "serviceops.env").exists()
+    foreign = client.post("/api/validate", json={}, headers={"Origin": "https://attacker.example"})
+    assert foreign.status_code == 403
+    same_origin = client.post("/api/validate", json={}, headers={"Origin": "http://localhost"})
+    assert same_origin.status_code == 200

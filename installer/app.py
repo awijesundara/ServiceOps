@@ -4,11 +4,11 @@ import socket
 import ssl
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 import psycopg
 from cryptography.fernet import Fernet
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, abort, jsonify, render_template, request
 from ldap3 import ALL, Connection, Server, Tls
 
 STATE = Path(os.getenv("INSTALLER_STATE_DIR", "/config"))
@@ -258,6 +258,30 @@ def write_environment(config):
 def create_app():
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["SECRET_KEY"] = os.getenv("INSTALLER_SECRET", os.urandom(32).hex())
+    allowed_hosts = {"localhost", "127.0.0.1", "::1"} | {
+        host.strip().lower() for host in os.getenv("INSTALLER_ALLOWED_HOSTS", "").split(",") if host.strip()
+    }
+
+    @app.before_request
+    def reject_foreign_requests():
+        # The installer has no login and writes deployment secrets. Beyond
+        # being published on loopback only, refuse a foreign Host (DNS
+        # rebinding turns a web page into a same-origin client) and a
+        # foreign Origin (a cross-site page posting to 127.0.0.1).
+        hostname = (urlsplit(f"//{request.host}").hostname or "").lower()
+        if hostname not in allowed_hosts:
+            abort(403)
+        origin = request.headers.get("Origin")
+        if request.method != "GET" and origin and urlsplit(origin).netloc.lower() != request.host.lower():
+            abort(403)
+
+    def json_config():
+        # Deliberately not force=True: requiring application/json makes a
+        # cross-site browser request need a CORS preflight, which is refused.
+        config = request.get_json(silent=True)
+        if not isinstance(config, dict):
+            abort(400, description="A JSON object is required.")
+        return config
 
     @app.get("/")
     def index():
@@ -266,7 +290,7 @@ def create_app():
 
     @app.post("/api/validate")
     def api_validate():
-        config = request.get_json(force=True)
+        config = json_config()
         save_json("config.json", config)
         checks = validate(config)
         save_json("validation.json", checks)
@@ -274,7 +298,7 @@ def create_app():
 
     @app.post("/api/deploy")
     def api_deploy():
-        config = request.get_json(force=True)
+        config = json_config()
         checks = validate(config)
         if not all(item["ok"] for item in checks.values()):
             return jsonify(error="Every required check must pass before deployment.", checks=checks), 400

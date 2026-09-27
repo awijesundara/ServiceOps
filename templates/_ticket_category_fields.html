@@ -6,7 +6,13 @@
    normalize_ticket_category()/normalize_ticket_subcategory()), so this degrades safely
    without JavaScript -- every listed subcategory stays a valid, submittable option. #}
 {% macro category_field(current, disabled=False) %}
-<select name="category" {% if disabled %}disabled{% endif %}>{% for c in ticket_categories %}<option {% if (current and current==c.name) or (not current and c.name=='General') %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+{% set active_names = ticket_categories|map(attribute='name')|list %}
+<select name="category" {% if disabled %}disabled{% endif %}>
+  {% if not current %}<option value="" selected disabled>Select a category</option>{% endif %}
+  {#- A retired category stays selected so saving the record doesn't silently re-categorise it. #}
+  {% if current and current not in active_names %}<option value="{{ current }}" selected>{{ current }} (retired)</option>{% endif %}
+  {% for c in ticket_categories %}<option {% if current == c.name %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+</select>
 {% endmacro %}
 
 {% macro subcategory_field(current, disabled=False) %}
