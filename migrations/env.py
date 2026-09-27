@@ -52,6 +52,12 @@ def run_migrations_online():
     finally:
         connection.close()
         if lock_connection is not None:
+            # close() only returns the connection to the pool; the Postgres
+            # session -- and its session-level advisory lock -- would live on,
+            # blocking every later migration from this process.
+            lock_connection.execute(text(
+                "SELECT pg_advisory_unlock(hashtext('serviceops-alembic-migration'))"
+            ))
             lock_connection.close()
 
 

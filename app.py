@@ -152,24 +152,30 @@ def display_version():
     # which one they're looking at without checking STORAGE_MODE directly.
     return f"{APP_VERSION}-ipfs" if ipfs_enabled() else APP_VERSION
 
-TICKET_CATEGORY_OPTIONS = ["General", "Access", "Hardware", "Software", "Network", "Security"]
-# Historical hard-coded default. Migration 20260926_0103 seeds every tenant with
-# these same six names into TicketCategory, so this constant now only serves as
-# the last-resort fallback below if a tenant's table is ever unexpectedly empty.
-
-# Starter taxonomy used both by seed_itil() (fresh/bootstrapped databases) and
-# mirrored in migrations/versions/20260926_0103_ticket_category_taxonomy.py
-# (already-deployed databases) -- kept as two copies deliberately, since a
-# migration must never import from app.py (it has to keep working unchanged
-# regardless of how app.py evolves later).
+# The adopted ITIL category model (serviceops-notes docs/ITIL_V5_CATEGORISATION.md):
+# two levels, categorised by the affected service or CI rather than by the
+# fix, at most about ten options per level. Seeded for a tenant that has no
+# categories yet (seed_itil()); existing tenants were aligned by migration
+# 20260927_0106, which keeps its own copy because a migration must never
+# import app.py. Administrators may adapt the tree afterwards.
 TICKET_CATEGORY_TAXONOMY = {
-    "General": ["General Inquiry", "How-To Question"],
-    "Access": ["Account Lockout", "Password Reset", "Permission Request", "MFA / Authentication"],
-    "Hardware": ["Laptop", "Desktop", "Printer", "Mobile Device", "Peripheral", "Server"],
-    "Software": ["Application Issue", "Installation", "License", "Email & Collaboration", "Operating System"],
-    "Network": ["Connectivity", "VPN", "Wireless", "DNS / DHCP", "Firewall"],
-    "Security": ["Security Incident", "Vulnerability", "Policy Violation", "Phishing / Malware"],
+    "Hardware": ["Desktop", "Laptop", "Server", "Storage", "Peripheral"],
+    "Software / Application": ["Business application", "OS", "Licensing", "Patching"],
+    "Network": ["LAN", "WAN", "VPN", "DNS", "Firewall", "Wi-Fi"],
+    "Access / Identity": ["Account creation", "Password reset", "Permissions", "MFA"],
+    "Infrastructure / Platform": ["Compute", "Virtualisation", "Containers", "Cloud", "Backup"],
+    "Security": ["Malware", "Phishing", "Vulnerability", "Policy breach"],
+    "Data / Database": ["Availability", "Performance", "Corruption", "Restore"],
+    "Communication": ["Email", "Telephony", "Collaboration tools"],
+    "Facilities / Endpoint services": ["Printing", "Workplace equipment"],
 }
+# Last-resort fallback if a tenant's category table is ever empty.
+TICKET_CATEGORY_OPTIONS = list(TICKET_CATEGORY_TAXONOMY)
+# Stored when a submitted category matches nothing (older integrations); it is
+# not offered on the form, so these tickets show up as uncategorised.
+UNCATEGORISED = "General"
+# Guidance from the category model: no more than about ten options per level.
+CATEGORY_LEVEL_OPTION_LIMIT = 10
 
 
 def tenant_ticket_categories(tenant_id):
@@ -191,13 +197,13 @@ def normalize_ticket_category(tenant_id, submitted):
     """Canonicalizes a submitted category against the tenant's active list
     (case-insensitive). Never rejects outright -- an unrecognized value (e.g.
     from an older integration, or a tenant with a since-renamed category)
-    falls back to "General", matching this field's already-lenient historical
+    is stored as UNCATEGORISED, matching this field's already-lenient historical
     default rather than breaking ticket creation on a taxonomy mismatch."""
     submitted = (submitted or "").strip()
     for category in tenant_ticket_categories(tenant_id):
         if category.name.casefold() == submitted.casefold():
             return category.name
-    return "General"
+    return UNCATEGORISED
 
 
 def normalize_ticket_subcategory(tenant_id, category_name, submitted):
@@ -215,13 +221,13 @@ def normalize_ticket_subcategory(tenant_id, category_name, submitted):
     return submitted
 
 
-def submitted_subcategory(form, fallback=""):
+def submitted_subcategory(form, fallback="", name="subcategory"):
     """The ticket form's subcategory <select> posts the sentinel "__other__"
     when the person typed a value not in the modeled list (see
     _ticket_category_fields.html/static/ticket-category.js) -- resolve that
     back to the actual typed text before it reaches normalize_ticket_subcategory()."""
-    value = form.get("subcategory", fallback)
-    return form.get("subcategory_other", "") if value == "__other__" else value
+    value = form.get(name, fallback)
+    return form.get(f"{name}_other", "") if value == "__other__" else value
 
 # Generic ServiceNow-style list filtering: a list view declares which
 # columns are filterable (FilterField) and the client posts back a JSON
@@ -1193,8 +1199,13 @@ def api_ticket_document(ticket, user):
         "state": ticket.state,
         "priority": ticket.priority,
         "category": ticket.category,
+        "subcategory": ticket.subcategory,
+        "closure_category": ticket.closure_category,
+        "closure_subcategory": ticket.closure_subcategory,
+        "resolution_notes": ticket.resolution_notes,
         "opened_at": ticket.created_at.isoformat(),
         "updated_at": ticket.updated_at.isoformat(),
+        "resolved_at": ticket.resolved_at.isoformat() if ticket.resolved_at else None,
         "attachments": [api_attachment_document(row, ticket.number) for row in ticket.attachments],
     }
     group = ticket_owning_group(ticket)
@@ -2878,6 +2889,38 @@ def service_availability_pct(service_offering_id, days=30):
     return round(100 * (1 - downtime_seconds / total_seconds), 3) if total_seconds else 100.0
 
 
+def record_resolution_state(ticket, old_state, new_state):
+    """Keeps resolution data consistent on every path that changes a ticket's
+    state. resolved_at marks the latest entry into Resolved (or into Closed
+    without passing through Resolved) and is cleared on reopen; an incident
+    resolved without an explicit closure categorisation keeps its logging
+    categorisation as the closure one."""
+    if new_state == old_state:
+        return
+    if new_state == "Resolved" or (new_state == "Closed" and ticket.resolved_at is None):
+        ticket.resolved_at = now()
+        if ticket.kind == "incident" and not ticket.closure_category:
+            ticket.closure_category = ticket.category
+            ticket.closure_subcategory = ticket.subcategory or None
+    elif new_state not in ("Resolved", "Closed", "Cancelled"):
+        ticket.resolved_at = None
+
+
+def require_resolution_notes(ticket, new_state):
+    """Web resolution paths: an incident isn't resolved until how service was
+    restored is documented. The v1 API keeps resolution notes optional so
+    existing integrations don't break."""
+    if (
+        ticket.kind == "incident"
+        and new_state in ("Resolved", "Closed")
+        and ticket.state not in ("Resolved", "Closed")
+        and not (ticket.resolution_notes or "").strip()
+    ):
+        abort(409, description=(
+            f"Record resolution notes (in Resolution information) before resolving {ticket.number}."
+        ))
+
+
 def transition_ticket(ticket, new_state):
     if new_state not in allowed_ticket_states(ticket):
         abort(409, description=(
@@ -2905,6 +2948,7 @@ def transition_ticket(ticket, new_state):
         ))
     old_state = ticket.state
     ticket.state = new_state
+    record_resolution_state(ticket, old_state, new_state)
     sync_slas("ticket", ticket.id, new_state)
     if ticket.kind == "incident":
         sync_service_outages(ticket)
@@ -2945,6 +2989,7 @@ def transition_ticket(ticket, new_state):
             ):
                 old_state = child.state
                 child.state = new_state
+                record_resolution_state(child, old_state, new_state)
                 sync_slas("ticket", child.id, new_state)
                 log_history(
                     "ticket", child.id, "State synchronized from parent incident",
@@ -4534,7 +4579,7 @@ def capture_kpi_snapshots(tenant_id):
         Ticket, db.and_(TaskSLA.target_type == "ticket", TaskSLA.target_id == Ticket.id)
     ).join(SLADefinition, TaskSLA.definition_id == SLADefinition.id).filter(
         Ticket.tenant_id == tenant_id, Ticket.state.in_(terminal_states),
-        Ticket.updated_at >= thirty_days_ago, SLADefinition.agreement_type == "SLA",
+        func.coalesce(Ticket.resolved_at, Ticket.updated_at) >= thirty_days_ago, SLADefinition.agreement_type == "SLA",
     ).all()
     if resolved_slas:
         upsert("sla_compliance_pct", round(
@@ -4557,7 +4602,7 @@ def capture_kpi_snapshots(tenant_id):
     resolved_incident_ids = [
         row.id for row in Ticket.query.filter(
             Ticket.tenant_id == tenant_id, Ticket.kind == "incident",
-            Ticket.state.in_(terminal_states), Ticket.updated_at >= thirty_days_ago,
+            Ticket.state.in_(terminal_states), func.coalesce(Ticket.resolved_at, Ticket.updated_at) >= thirty_days_ago,
         ).with_entities(Ticket.id).all()
     ]
     if resolved_incident_ids:
@@ -5989,20 +6034,18 @@ def seed_itil(admin):
             SLADefinition(name="P3 incident resolution", target_type="ticket", priority="P3", duration_minutes=1440),
             SLADefinition(name="Catalog fulfillment", target_type="ritm", duration_minutes=4320),
         ])
-    # Starter ITIL v4/ServiceNow-style ticket category taxonomy. An already-running
-    # deployment gets these from migration 20260926_0103 instead; this mirrors the
-    # same starter set here so a freshly bootstrapped database (tests, a new
-    # tenant, `./serviceops install`, which build the schema from the current
-    # ORM metadata rather than replaying every migration) isn't left with an
-    # empty admin screen. Administrators can rename/add/deactivate every row.
-    for category_name, subcategory_names in TICKET_CATEGORY_TAXONOMY.items():
-        category = TicketCategory.query.filter_by(tenant_id=admin.tenant_id, name=category_name).first()
-        if not category:
+    # The ITIL category model, seeded only for a tenant with no categories yet
+    # (tests, a new tenant, `./serviceops install`, which build the schema from
+    # the ORM rather than replaying migrations). This runs on every startup, so
+    # seeding into a tenant that already has a tree would re-create entries an
+    # administrator renamed or removed. Deployed tenants were aligned by
+    # migration 20260927_0106 instead.
+    if not TicketCategory.query.filter_by(tenant_id=admin.tenant_id).first():
+        for category_name, subcategory_names in TICKET_CATEGORY_TAXONOMY.items():
             category = TicketCategory(name=category_name, active=True, tenant_id=admin.tenant_id)
             db.session.add(category)
             db.session.flush()
-        for subcategory_name in subcategory_names:
-            if not TicketSubcategory.query.filter_by(category_id=category.id, name=subcategory_name).first():
+            for subcategory_name in subcategory_names:
                 db.session.add(TicketSubcategory(
                     category_id=category.id, name=subcategory_name, active=True, tenant_id=admin.tenant_id,
                 ))
@@ -8232,7 +8275,12 @@ def create_app(test_config=None):
                         "summary": "Update an authorized owning-team ticket",
                         "description": (
                             "Requires tickets:update and an acting user with update, "
-                            "assign, transition, and owning-team authority."
+                            "assign, transition, and owning-team authority. Fields: state, "
+                            "priority, assigned_to_id, resolution_notes, closure_category and "
+                            "closure_subcategory (incidents; the categorisation at closure, "
+                            "kept separate from the logging category). Resolution fields are "
+                            "applied before the state change; when omitted on resolution the "
+                            "closure category defaults to the logging category."
                         ),
                         "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}],
                     },
@@ -8868,7 +8916,7 @@ def create_app(test_config=None):
         ticket = create_ticket_with_unique_number(
             "incident",
             title=title, description=description,
-            category=normalize_ticket_category(g.api_client.tenant_id, str(body.get("category", "General"))[:80]),
+            category=normalize_ticket_category(g.api_client.tenant_id, str(body.get("category", UNCATEGORISED))[:80]),
             priority=priority, requester_id=g.api_user.id,
             tenant_id=g.api_client.tenant_id,
         )
@@ -8906,14 +8954,32 @@ def create_app(test_config=None):
         body = request.get_json(silent=True)
         if not isinstance(body, dict) or not body:
             abort(400, description="A non-empty JSON object is required.")
-        allowed = {"state", "priority", "assigned_to_id"}
+        allowed = {"state", "priority", "assigned_to_id", "resolution_notes", "closure_category", "closure_subcategory"}
         unknown = set(body) - allowed
         if unknown:
             abort(400, description=f"Unknown fields: {', '.join(sorted(unknown))}.")
         before = {
             "state": ticket.state, "priority": ticket.priority,
             "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
+            "resolution notes": ticket.resolution_notes or "",
+            "closure category": ticket.closure_category or "",
+            "closure subcategory": ticket.closure_subcategory or "",
         }
+        # Applied before the state change so a resolving PATCH records them.
+        if "resolution_notes" in body:
+            ticket.resolution_notes = str(body["resolution_notes"] or "").strip()[:10000] or None
+        if "closure_category" in body:
+            if ticket.kind != "incident":
+                abort(400, description="closure_category applies to incidents only.")
+            ticket.closure_category = normalize_ticket_category(
+                g.api_user.tenant_id, str(body["closure_category"] or "")[:80],
+            )
+        if "closure_subcategory" in body:
+            if not ticket.closure_category:
+                abort(400, description="closure_subcategory requires a closure_category.")
+            ticket.closure_subcategory = normalize_ticket_subcategory(
+                g.api_user.tenant_id, ticket.closure_category, str(body["closure_subcategory"] or "")[:80],
+            ) or None
         if "state" in body:
             transition_ticket(ticket, str(body["state"]))
         if "priority" in body:
@@ -8935,6 +9001,9 @@ def create_app(test_config=None):
         log_field_changes("ticket", ticket.id, before, {
             "state": ticket.state, "priority": ticket.priority,
             "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
+            "resolution notes": ticket.resolution_notes or "",
+            "closure category": ticket.closure_category or "",
+            "closure subcategory": ticket.closure_subcategory or "",
         }, event="REST API update")
         document = {"data": api_ticket_document(ticket, g.api_user)}
         store_api_idempotency(key, request_hash, document, 200)
@@ -10185,7 +10254,7 @@ def create_app(test_config=None):
             ).filter(
                 Ticket.assignee_id.in_(member_ids),
                 Ticket.state.in_(TERMINAL_TICKET_STATES),
-                Ticket.updated_at >= thirty_days_ago,
+                func.coalesce(Ticket.resolved_at, Ticket.updated_at) >= thirty_days_ago,
             ).group_by(Ticket.assignee_id).all():
                 resolved_30d_by_member[assignee_id] = count
 
@@ -10618,13 +10687,19 @@ def create_app(test_config=None):
             impact = request.form.get("impact", "Medium")
             urgency = request.form.get("urgency", "Medium")
             priority = calculate_priority(impact, urgency)
-            category = normalize_ticket_category(current_user.tenant_id, request.form.get("category", "General"))
+            # Changes are classified by change model plus the affected CI/service,
+            # not by the incident/request symptom tree.
+            if kind == "change":
+                category, subcategory = "", ""
+            else:
+                category = normalize_ticket_category(current_user.tenant_id, request.form.get("category", UNCATEGORISED))
+                subcategory = normalize_ticket_subcategory(current_user.tenant_id, category, submitted_subcategory(request.form))
             ticket = create_ticket_with_unique_number(
                 kind,
                 title=title, description=description,
                 category=category, priority=priority,
                 impact=impact, urgency=urgency,
-                subcategory=normalize_ticket_subcategory(current_user.tenant_id, category, submitted_subcategory(request.form)),
+                subcategory=subcategory,
                 contact_type=contact_type, notify=notify,
                 service_offering_id=offering.id if offering else None,
                 requester_id=current_user.id)
@@ -10797,6 +10872,7 @@ def create_app(test_config=None):
                 require_ticket_team_access(ticket)
                 before_state = ticket.state
                 try:
+                    require_resolution_notes(ticket, "Resolved")
                     transition_ticket(ticket, "Resolved")
                 except HTTPException as error:
                     db.session.rollback()
@@ -10850,8 +10926,27 @@ def create_app(test_config=None):
                     ),
                     "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
                 }
+                target_state = "Resolved" if request.form.get("resolve") else request.form["state"]
+                if ticket.kind == "incident" and "resolution_notes" in request.form:
+                    before["resolution notes"] = ticket.resolution_notes or ""
+                    before["closure category"] = ticket.closure_category or ""
+                    before["closure subcategory"] = ticket.closure_subcategory or ""
+                    ticket.resolution_notes = request.form.get("resolution_notes", "").strip() or None
+                    # Closure categorisation is only taken when resolving (or on an already
+                    # resolved record); earlier, the prefilled value would go stale as
+                    # triage changes the logging category.
+                    closing = target_state in ("Resolved", "Closed") or ticket.state in ("Resolved", "Closed")
+                    submitted_closure = request.form.get("closure_category", "") if closing else ""
+                    if submitted_closure and submitted_closure != ticket.closure_category:
+                        ticket.closure_category = normalize_ticket_category(current_user.tenant_id, submitted_closure)
+                    if closing and ticket.closure_category:
+                        ticket.closure_subcategory = normalize_ticket_subcategory(
+                            current_user.tenant_id, ticket.closure_category,
+                            submitted_subcategory(request.form, ticket.closure_subcategory or "", name="closure_subcategory"),
+                        ) or None
                 try:
-                    transition_ticket(ticket, request.form["state"])
+                    require_resolution_notes(ticket, target_state)
+                    transition_ticket(ticket, target_state)
                 except HTTPException as error:
                     db.session.rollback()
                     flash(error.description or "That change could not be made.", "error")
@@ -10968,6 +11063,11 @@ def create_app(test_config=None):
                         if ticket.service_offering else "Not selected"
                     ),
                     "assigned to": assignee.name if assignee else "Unassigned",
+                    **({
+                        "resolution notes": ticket.resolution_notes or "",
+                        "closure category": ticket.closure_category or "",
+                        "closure subcategory": ticket.closure_subcategory or "",
+                    } if "resolution notes" in before else {}),
                 })
                 audit("update", ticket.number, f"{ticket.state}, {ticket.priority}")
             elif action == "reassign_team":
@@ -17087,9 +17187,18 @@ def create_app(test_config=None):
                 if duplicate:
                     abort(409, description="A category with that name already exists.")
                 before = f"{category.name}; active={category.active}"
+                relabelled = 0
+                if name != category.name:
+                    # A rename relabels the same category, so tickets follow it; otherwise
+                    # reporting splits across the old and new label.
+                    for column in (Ticket.category, Ticket.closure_category):
+                        relabelled += tenant_query(Ticket).filter(column == category.name).update(
+                            {column: name}, synchronize_session=False,
+                        )
                 category.name = name
                 category.active = bool(request.form.get("active"))
-                audit("update", f"Ticket category: {name}", f"{before} -> active={category.active}")
+                audit("update", f"Ticket category: {name}",
+                      f"{before} -> active={category.active}; tickets relabelled={relabelled}")
                 flash(f"Category {name} updated.", "success")
             elif action == "create_ticket_subcategory":
                 category = tenant_record_or_404(TicketCategory, int(request.form["category_id"]))
@@ -17125,6 +17234,15 @@ def create_app(test_config=None):
                 if offering_id:
                     tenant_record_or_404(ServiceOffering, int(offering_id))
                 before = f"{subcategory.name}; active={subcategory.active}"
+                if name != subcategory.name:
+                    category_name = subcategory.category.name
+                    for category_column, subcategory_column in (
+                        (Ticket.category, Ticket.subcategory),
+                        (Ticket.closure_category, Ticket.closure_subcategory),
+                    ):
+                        tenant_query(Ticket).filter(
+                            category_column == category_name, subcategory_column == subcategory.name,
+                        ).update({subcategory_column: name}, synchronize_session=False)
                 subcategory.name = name
                 subcategory.active = bool(request.form.get("active"))
                 subcategory.default_service_offering_id = offering_id
@@ -17694,6 +17812,7 @@ def create_app(test_config=None):
             ).all(),
             services=tenant_query(ServiceOffering).all(),
             ticket_categories=tenant_query(TicketCategory).order_by(TicketCategory.name).all(),
+            category_option_limit=CATEGORY_LEVEL_OPTION_LIMIT,
             sla_definitions=tenant_query(SLADefinition).all(),
             client_organizations=tenant_query(ClientOrganization).order_by(ClientOrganization.name).all(),
             business_schedules=tenant_query(BusinessSchedule).order_by(
@@ -17862,9 +17981,15 @@ def create_app(test_config=None):
                         sla_at_risk_open += 1
 
         thirty_days_ago = now() - timedelta(days=30)
+        # resolved_at is recorded on resolution; updated_at only stands in for
+        # tickets resolved before that column existed without ticket history.
+        resolved_time = func.coalesce(Ticket.resolved_at, Ticket.updated_at)
         resolved_30d = ticket_query.filter(
-            Ticket.state.in_(TERMINAL_TICKET_STATES), Ticket.updated_at >= thirty_days_ago,
-        ).with_entities(Ticket.id, Ticket.kind, Ticket.priority, Ticket.created_at, Ticket.updated_at).all()
+            Ticket.state.in_(TERMINAL_TICKET_STATES), resolved_time >= thirty_days_ago,
+        ).with_entities(
+            Ticket.id, Ticket.kind, Ticket.priority, Ticket.created_at, Ticket.updated_at, Ticket.resolved_at,
+            Ticket.category, Ticket.closure_category,
+        ).all()
         resolved_30d_ids = [row.id for row in resolved_30d]
         sla_by_ticket = defaultdict(bool)
         if resolved_30d_ids:
@@ -17879,17 +18004,27 @@ def create_app(test_config=None):
             if tickets_with_sla else None
         )
 
-        # MTTR proxy: created→updated_at span for incidents that reached a terminal
-        # state in the last 30 days. There is no dedicated resolved_at column, so
-        # this mirrors the same updated_at convention already used for the manager
-        # portal's "resolved in 30 days" metric.
+        # Mean time to resolve: created -> resolved_at for incidents resolved in
+        # the last 30 days (updated_at only where resolved_at predates the column).
         mttr_by_priority = {}
         for priority in ("P1", "P2", "P3", "P4"):
             spans = [
-                (row.updated_at - row.created_at).total_seconds() / 3600
+                (align_tz(row.resolved_at or row.updated_at, row.created_at) - row.created_at).total_seconds() / 3600
                 for row in resolved_30d if row.kind == "incident" and row.priority == priority
             ]
             mttr_by_priority[priority] = round(sum(spans) / len(spans), 1) if spans else None
+
+        # Categorisation at closure (falling back to the logging category where
+        # none was recorded), and how often closure differed from logging.
+        resolved_incidents_30d = [row for row in resolved_30d if row.kind == "incident"]
+        closure_category_counts = Counter(
+            row.closure_category or row.category or UNCATEGORISED for row in resolved_incidents_30d
+        ).most_common(10)
+        with_closure = [row for row in resolved_incidents_30d if row.closure_category]
+        recategorised_pct = (
+            round(100 * sum(1 for row in with_closure if row.closure_category != row.category) / len(with_closure))
+            if with_closure else None
+        )
 
         # 14-day created-vs-resolved volume trend.
         today = now().date()
@@ -17956,7 +18091,7 @@ def create_app(test_config=None):
         resolved_incident_ids = [
             row.id for row in ticket_query.filter(
                 Ticket.kind == "incident", Ticket.state.in_(TERMINAL_TICKET_STATES),
-                Ticket.updated_at >= thirty_days_ago,
+                func.coalesce(Ticket.resolved_at, Ticket.updated_at) >= thirty_days_ago,
             ).with_entities(Ticket.id).all()
         ]
         reopened_incident_ids = set()
@@ -18070,6 +18205,7 @@ def create_app(test_config=None):
             modules=DOMAIN_CONFIG, open_count=open_count,
             sla_breached_open=sla_breached_open, sla_at_risk_open=sla_at_risk_open,
             sla_compliance_pct=sla_compliance_pct, mttr_by_priority=mttr_by_priority,
+            closure_category_counts=closure_category_counts, recategorised_pct=recategorised_pct,
             volume_trend=volume_trend, trend_max=trend_max, aging_buckets=aging_buckets,
             change_success_pct=change_success_pct, change_total=change_total,
             pir_success_pct=pir_success_pct, pir_total=pir_total,
@@ -18673,7 +18809,12 @@ def create_app(test_config=None):
         if state not in ("New", "In Progress", "Pending", "Resolved", "Closed"):
             abort(400)
         previous_state = ticket.state
-        transition_ticket(ticket, state)
+        try:
+            require_resolution_notes(ticket, state)
+            transition_ticket(ticket, state)
+        except HTTPException as error:
+            db.session.rollback()
+            return jsonify({"error": error.description}), error.code
         if previous_state != ticket.state:
             log_history(
                 "ticket", ticket.id, "Board state changed",

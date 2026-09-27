@@ -17,7 +17,8 @@
       {% if can_manage_ticket %}
       <button class="button" type="submit" form="incident-record-form">Update</button>
       {% if 'Resolved' in ticket_state_options and ticket.state != 'Resolved' %}
-      <form method="post"><input type="hidden" name="action" value="quick_resolve"><button class="primary">Resolve</button></form>
+      {#- Submits the record form so resolution notes and closure categorisation are saved with it. #}
+      <button class="primary" type="submit" form="incident-record-form" name="resolve" value="1">Resolve</button>
       {% endif %}
       {% endif %}
       {% if can_close %}<form method="post"><input type="hidden" name="action" value="close"><button class="button">Close</button></form>{% endif %}
@@ -53,6 +54,17 @@
       <label class="required-field"><span>Description</span><textarea name="description" rows="7" required {% if not can_manage_ticket %}disabled{% endif %}>{{ ticket.description }}</textarea></label>
       {% if can_manage_ticket %}<label><span>Priority override reason</span><textarea name="priority_override_reason" rows="2" placeholder="Required when overriding calculated priority">{{ ticket.priority_override_reason or '' }}</textarea></label>{% endif %}
     </div>
+    {% if can_manage_ticket or ticket.resolution_notes or ticket.closure_category %}
+    {% set resolution_locked = not can_manage_ticket %}
+    <div class="record-long-fields" id="resolution-fields">
+      <h3>Resolution</h3>
+      <p class="muted">Categorise by the affected service or configuration item as found at closure. The category above stays as logged, so reporting can compare the two.</p>
+      <label><span>Closure category</span>{{ category_field(ticket.closure_category or ticket.category, disabled=resolution_locked, name="closure_category") }}</label>
+      <label><span>Closure subcategory</span>{{ subcategory_field(ticket.closure_subcategory if ticket.closure_category else ticket.subcategory, disabled=resolution_locked, name="closure_subcategory", category_name="closure_category") }}</label>
+      <label class="required-field"><span>Resolution notes</span><textarea name="resolution_notes" rows="4" placeholder="How service was restored; required to resolve" {% if resolution_locked %}disabled{% endif %}>{{ ticket.resolution_notes or '' }}</textarea></label>
+      {% if ticket.resolved_at %}<p class="muted">Resolved {{ ticket.resolved_at|usertime('%b %d, %Y %H:%M') }}</p>{% endif %}
+    </div>
+    {% endif %}
     {% if can_manage_ticket %}<footer class="record-footer-actions"><button class="primary">Update incident</button></footer>{% endif %}
   </form>
 </section>

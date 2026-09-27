@@ -228,7 +228,7 @@ def test_critical_incident_opens_and_resolving_closes_a_service_outage(client, a
         db.session.commit()
         assert service_availability_pct(service_id) < 100
 
-    resolved = client.post(f"/ticket/{ticket_id}", data={"action": "quick_resolve"})
+    resolved = client.post(f"/ticket/{ticket_id}", data={"action": "update", "state": "Resolved", "priority": "P1", "assignee_id": "", "resolution_notes": "Failed over to the standby node."})
     assert resolved.status_code == 302
     with app.app_context():
         outage = ServiceOutage.query.filter_by(service_offering_id=service_id, ticket_id=ticket_id).one()

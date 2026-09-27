@@ -138,7 +138,7 @@ def test_draft_category_validates_against_the_tenants_own_admin_managed_list(app
         assert access.extract_extras(drafted, tenant_id=1)["draft"]["category"] == "Facilities"
         # A category real for a *different* tenant must not leak in as valid here.
         unscoped = access.extract_extras(drafted, tenant_id=999)["draft"]["category"]
-        assert unscoped == "General"
+        assert unscoped == ""  # left for the person to choose, not a retired catch-all
         from app import User
         admin_id = User.query.filter_by(username="admin").one().id
         assert "Facilities" in access.chat_instructions(scope_for(admin_id))
