@@ -71,7 +71,10 @@ def parse_inbound_email(raw_bytes):
     the caller, not crash the whole inbox poll."""
     msg = message_from_bytes(raw_bytes, policy=policy.default)
     from_name, from_email = parseaddr(msg.get("From", ""))
-    subject = str(msg.get("Subject", "") or "")
+    # An encoded-word can decode to include a line break, which would then be
+    # copied into the Subject of every reply -- and EmailMessage refuses to
+    # send a header containing CR/LF.
+    subject = " ".join(str(msg.get("Subject", "") or "").split())
 
     body_text = ""
     attachments = []

@@ -62,14 +62,25 @@ def managed_ci_classes(tenant_id):
     }
 
 
+def unreadable_ci_classes(tenant_id, role):
+    """ci_class values `role` may not read for `tenant_id`, in one query --
+    the same answer as calling ci_class_read_allowed() per class, for callers
+    filtering many CIs/relationships at once."""
+    from serviceops_models import CiClassPermission
+
+    if role == "superadmin":
+        return set()
+    rows = CiClassPermission.query.filter_by(tenant_id=tenant_id).all()
+    managed = {row.ci_class for row in rows}
+    readable = {row.ci_class for row in rows if row.role == role and row.can_read}
+    return managed - readable
+
+
 def restrict_ci_query_to_readable_classes(query, tenant_id, role):
     """Applied to a ConfigurationItem query before pagination/aggregation.
     No-ops (returns the query unchanged) when nothing is managed -- the
     zero-behavior-change fast path for tenants that never configure this."""
     from serviceops_models import ConfigurationItem
 
-    managed = managed_ci_classes(tenant_id)
-    if not managed:
-        return query
-    denied = [c for c in managed if not ci_class_read_allowed(tenant_id, c, role)]
+    denied = unreadable_ci_classes(tenant_id, role)
     return query.filter(~ConfigurationItem.ci_class.in_(denied)) if denied else query

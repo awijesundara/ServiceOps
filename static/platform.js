@@ -648,9 +648,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderSuggestions(users, matchStart) {
       activeMatchStart = matchStart;
-      suggestionsList.innerHTML = users.map((user) =>
-        `<li role="option" data-username="${user.username}"><strong>${user.name}</strong><small>@${user.username}</small></li>`
-      ).join("");
+      // Display names come from LDAP/SCIM/profile edits: build as text, not HTML.
+      suggestionsList.replaceChildren(...users.map((user) => {
+        const item = document.createElement("li");
+        item.setAttribute("role", "option");
+        item.dataset.username = user.username;
+        const name = document.createElement("strong");
+        name.textContent = user.name;
+        const handle = document.createElement("small");
+        handle.textContent = `@${user.username}`;
+        item.append(name, handle);
+        return item;
+      }));
       suggestionsList.hidden = users.length === 0;
     }
 

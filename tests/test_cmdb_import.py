@@ -262,6 +262,32 @@ def test_unrecognized_columns_are_kept_as_attributes(app):
         assert ci.attributes == {"Builder": "William Yao", "CPUs": "16", "RAM (GB)": "128"}
 
 
+def test_year_first_dates_and_iso_datetimes_are_imported(app):
+    with app.app_context():
+        rows = parse_ci_rows(
+            "Host,Install Date,Warranty Expiry\n"
+            "srv-01.example.com,2023/04/15,2027-01-31 00:00:00\n"
+        )
+        result = import_ci_rows(rows, 1)
+        assert result["warnings"] == []
+        ci = ConfigurationItem.query.filter_by(name="srv-01.example.com").one()
+        assert ci.install_date.isoformat() == "2023-04-15"
+        assert ci.warranty_expiry_date.isoformat() == "2027-01-31"
+
+
+def test_ambiguous_date_is_kept_as_text_and_reported_not_dropped(app):
+    # 4/5/2023 is April 5 in the US and 4 May elsewhere -- a Google Sheets CSV
+    # export writes dates like this by default, so it must not vanish silently.
+    with app.app_context():
+        rows = parse_ci_rows("Host,Warranty Expiry\nsrv-01.example.com,4/5/2023\n")
+        result = import_ci_rows(rows, 1)
+        assert result["errors"] == []
+        assert len(result["warnings"]) == 1 and "4/5/2023" in result["warnings"][0]
+        ci = ConfigurationItem.query.filter_by(name="srv-01.example.com").one()
+        assert ci.warranty_expiry_date is None
+        assert ci.attributes == {"Warranty expiry": "4/5/2023"}
+
+
 def test_dry_run_does_not_commit(app):
     with app.app_context():
         rows = parse_ci_rows(SAMPLE_CSV)
