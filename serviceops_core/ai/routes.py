@@ -209,7 +209,7 @@ def register(app):
                     config.sensitive_terms = "\n".join(routing.custom_terms(SimpleNamespace(
                         sensitive_terms=request.form["sensitive_terms"])))[:4000]
                 for name, low, high, default in (("daily_limit", 1, 1000, 100), ("max_output_tokens", 128, 4096, 1500),
-                                                 ("retention_days", 1, 30, 7)):
+                                                 ("retention_days", 1, 30, 7), ("chat_retention_days", 1, 365, 30)):
                     value = int(request.form.get(name, getattr(config, name) or default))
                     if not low <= value <= high:
                         raise ProviderError(f"{name.replace('_', ' ').capitalize()} must be between {low} and {high}.")
@@ -938,3 +938,4 @@ def register(app):
     app.register_blueprint(blueprint)
     app.jinja_env.globals["ai_available"] = service.available
     app.jinja_env.globals["ai_chat_available"] = service.chat_available
+    app.jinja_env.globals["ai_chat_retention_days"] = service.chat_retention_days
