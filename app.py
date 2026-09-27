@@ -3767,16 +3767,20 @@ def create_approval_chain(name, target_type, target_id, stages, first_gate_title
     if not stages or any(not [item for item in stage["approver_ids"] if item]
                          for stage in stages):
         raise ValueError("Every approval stage must have at least one configured approver.")
-    chain = ApprovalChain(name=name, target_type=target_type, target_id=target_id)
+    # Tenant of the record being approved, not the request context: a caller
+    # without a logged-in user (API client, worker) would otherwise get tenant 1.
+    target = record_reference(target_type, target_id)
+    tenant_id = (record_tenant_id(target) if target else None) or tenant_context_id()
+    chain = ApprovalChain(name=name, target_type=target_type, target_id=target_id, tenant_id=tenant_id)
     db.session.add(chain)
     db.session.flush()
     for sequence, stage in enumerate(stages, 1):
         gate = ApprovalGate(chain_id=chain.id, sequence=sequence, name=stage["name"],
-                            mode=stage.get("mode", "all"))
+                            mode=stage.get("mode", "all"), tenant_id=tenant_id)
         db.session.add(gate)
         db.session.flush()
         for approver_id in sorted(set(stage["approver_ids"])):
-            db.session.add(ApprovalVote(gate_id=gate.id, approver_id=approver_id))
+            db.session.add(ApprovalVote(gate_id=gate.id, approver_id=approver_id, tenant_id=tenant_id))
     db.session.flush()
     first_gate = ApprovalGate.query.filter_by(chain_id=chain.id, sequence=1).one()
     activate_gate(first_gate, notify_title=first_gate_title, notify_body=first_gate_body)
@@ -6014,11 +6018,13 @@ def seed_itil(admin):
         # can change or deactivate them at any time via /admin/catalog.
         db.session.add_all([
             CatalogItem(
+                tenant_id=admin.tenant_id,
                 name="Laptop Request", category="Hardware",
                 description="Request a standard-issue laptop for a new or replacement device.",
                 delivery_days=5, approval_required=True,
             ),
             CatalogItem(
+                tenant_id=admin.tenant_id,
                 name="Software Request", category="Access",
                 description="Request installation or license access for approved software.",
                 delivery_days=2, approval_required=True,
@@ -6038,11 +6044,11 @@ def seed_itil(admin):
                 ))
     if not SLADefinition.query.first():
         db.session.add_all([
-            SLADefinition(name="P1 incident response", target_type="ticket", priority="P1", duration_minutes=15),
-            SLADefinition(name="P1 incident resolution", target_type="ticket", priority="P1", duration_minutes=240),
-            SLADefinition(name="P2 incident resolution", target_type="ticket", priority="P2", duration_minutes=480),
-            SLADefinition(name="P3 incident resolution", target_type="ticket", priority="P3", duration_minutes=1440),
-            SLADefinition(name="Catalog fulfillment", target_type="ritm", duration_minutes=4320),
+            SLADefinition(name="P1 incident response", target_type="ticket", priority="P1", duration_minutes=15, tenant_id=admin.tenant_id),
+            SLADefinition(name="P1 incident resolution", target_type="ticket", priority="P1", duration_minutes=240, tenant_id=admin.tenant_id),
+            SLADefinition(name="P2 incident resolution", target_type="ticket", priority="P2", duration_minutes=480, tenant_id=admin.tenant_id),
+            SLADefinition(name="P3 incident resolution", target_type="ticket", priority="P3", duration_minutes=1440, tenant_id=admin.tenant_id),
+            SLADefinition(name="Catalog fulfillment", target_type="ritm", duration_minutes=4320, tenant_id=admin.tenant_id),
         ])
     # The ITIL category model, seeded only for a tenant with no categories yet
     # (tests, a new tenant, `./serviceops install`, which build the schema from
