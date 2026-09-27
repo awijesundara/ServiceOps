@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app import AIConfiguration, AIRun, db
+from app import AIConfiguration, AIConnection, AIRun, db
 from serviceops_core.ai import provider, service
 from tests.test_ai_assistant import configure, fake_stream, submit  # noqa: F401
 from tests.test_app import app, client, login  # noqa: F401
@@ -34,13 +34,15 @@ def chunk(content=None, reasoning=None, finish=None, usage=None):
 class SSE:
     """A real local model server that streams the given events, with an optional pause between them."""
 
-    def __init__(self, events, pause=0.0, status=200):
+    def __init__(self, events, pause=0.0, status=200, silent_for=0.0):
         outer = self
         self.events, self.pause, self.status, self.disconnected = events, pause, status, False
+        self.silent_for = silent_for  # accept the request, then say nothing for this long
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
                 self.rfile.read(int(self.headers["Content-Length"]))
+                time.sleep(outer.silent_for)
                 if outer.status != 200:
                     self.send_response(outer.status)
                     self.end_headers()
@@ -157,6 +159,74 @@ def test_a_stream_that_outlasts_the_time_limit_fails_closed(app, sse, monkeypatc
     server, config = sse([chunk(content="slow ")] * 20, pause=0.2)
     with app.app_context(), pytest.raises(provider.ProviderError):
         provider.generate_stream(config, MESSAGES, lambda *_: True)
+
+
+def test_hosted_services_get_a_short_stall_limit_and_self_hosted_keep_the_whole_limit(monkeypatch):
+    hosted, local = SimpleNamespace(provider="openai_compatible"), SimpleNamespace(provider="self_hosted")
+    assert provider.stall_timeout(local, 270) == 270
+    assert provider.stall_timeout(hosted, 270) == provider.DEFAULT_HOSTED_STALL_SECONDS == 30
+    assert provider.stall_timeout(hosted, 20) == 20
+    monkeypatch.setenv("AI_HOSTED_STALL_SECONDS", "1")
+    assert provider.stall_timeout(hosted, 270) == 5
+    monkeypatch.setenv("AI_HOSTED_STALL_SECONDS", "not a number")
+    assert provider.stall_timeout(hosted, 270) == 30
+
+
+def test_a_service_that_accepts_the_request_then_goes_silent_fails_fast(app, sse, monkeypatch):
+    """The production failure: a hosted endpoint answered nothing, and the worker waited out the whole
+    provider timeout (270 s) before anyone else's question could be handled."""
+    monkeypatch.setenv("AI_PROVIDER_TIMEOUT_SECONDS", "270")
+    monkeypatch.setattr(provider, "stall_timeout", lambda config, limit: 1)
+    server, config = sse([chunk(content="late")], silent_for=4)
+    started = time.monotonic()
+    with app.app_context(), pytest.raises(provider.ProviderError):
+        provider.generate_stream(config, MESSAGES, lambda *_: True)
+    assert time.monotonic() - started < 3
+
+
+def test_hosted_streams_are_sent_with_the_stall_limit(app, monkeypatch):
+    seen = []
+
+    def post(self, url, **kwargs):
+        seen.append(kwargs["timeout"])
+        raise provider.requests.ReadTimeout()
+
+    monkeypatch.setenv("AI_PROVIDER_TIMEOUT_SECONDS", "270")
+    monkeypatch.setattr(provider.requests.Session, "post", post)
+    monkeypatch.setattr(provider, "resolve_destination", lambda url, local: (None, None))
+    with app.app_context():
+        config = SimpleNamespace(provider="openai_compatible", model="gemini-flash-lite-latest", external_consent=True,
+                                 endpoint="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                                 key_encrypted=provider.settings_cipher().encrypt(b"k").decode(), max_output_tokens=256)
+        with pytest.raises(provider.ProviderError):
+            provider.generate_stream(config, MESSAGES, lambda *_: True)
+    assert seen == [(5, 30)]
+
+
+def test_a_silent_service_hands_the_question_to_the_next_one(app, client, sse, monkeypatch):
+    from tests.test_ai_routing import chat, drain
+
+    monkeypatch.setattr(provider, "stall_timeout", lambda config, limit: 1)
+    silent, _ = sse([chunk(content="too late")], silent_for=4)
+    healthy, _ = sse([chunk(content="Recovered."), chunk(finish="stop")])
+    monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", f"{silent.url},{healthy.url}")
+    with app.app_context():
+        db.session.add(AIConfiguration(tenant_id=1, enabled=True, chat_enabled=True, routing_mode="priority"))
+        db.session.commit()
+        first = AIConnection(tenant_id=1, name="Silent", provider="self_hosted", model="m", endpoint=silent.url, priority=1)
+        db.session.add_all([first, AIConnection(tenant_id=1, name="Healthy", provider="self_hosted", model="m",
+                                                endpoint=healthy.url, priority=2)])
+        db.session.commit()
+        first = first.id
+    login(client, "employee", "Employee123!")
+    started = time.monotonic()
+    reply = chat(client, "hello there friend")
+    drain(app)
+    assert time.monotonic() - started < 10
+    messages = client.get(f"/ai/chat/conversations/{reply['conversation_id']}").get_json()["messages"]
+    assert messages[1]["content"] == "Recovered."
+    with app.app_context():
+        assert db.session.get(AIConnection, first).consecutive_failures == 1
 
 
 def test_output_cut_off_by_the_token_cap_is_flagged(app, sse):
