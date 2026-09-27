@@ -398,7 +398,14 @@ def env_bool(name, default=False):
 
 def is_safe_internal_path(url):
     """Reject anything but a same-app relative path, to keep stored favorite/history links from becoming stored javascript: or open-redirect XSS."""
-    return bool(url) and url.startswith("/") and not url.startswith("//")
+    if not url or not url.startswith("/") or url.startswith("//") or "\\" in url:
+        # Browsers normalize backslashes to forward slashes when resolving a
+        # relative reference for http(s) pages, so "/\evil.com" resolves as
+        # the scheme-relative "//evil.com" even though it doesn't literally
+        # start with "//" here. Reject any backslash outright.
+        return False
+    parsed = urlparse(url)
+    return not parsed.scheme and not parsed.netloc
 
 
 def secret_value(name):
@@ -415,11 +422,20 @@ def secret_value(name):
     return os.getenv(name, "")
 
 
-def tenant_record_or_404(model, record_id):
-    """Resolve a tenant-owned root without exposing another tenant's existence."""
-    return model.query.filter_by(
-        id=record_id, tenant_id=tenant_context_id()
-    ).first_or_404()
+def tenant_record_or_404(model, record_id, lock=False):
+    """Resolve a tenant-owned root without exposing another tenant's existence.
+
+    `lock=True` takes a row lock (SELECT ... FOR UPDATE) so a second
+    concurrent request against the same record blocks until the first
+    commits, instead of both reading the same pre-mutation state. Used
+    sparingly, only where a race would double-fire a side effect like a
+    reapproval notification -- not on every read, which would serialize
+    unrelated page views.
+    """
+    query = model.query.filter_by(id=record_id, tenant_id=tenant_context_id())
+    if lock:
+        query = query.with_for_update()
+    return query.first_or_404()
 
 
 def tenant_query(model):
@@ -592,10 +608,16 @@ def calculate_audit_hash(row):
     ).hexdigest()
 
 
-def verify_audit_chain(tenant_id):
+def verify_audit_chain(tenant_id, rows=None):
+    """Walk a tenant's audit chain in order, verifying each row's hash link.
+
+    Accepts a pre-fetched `rows` list so callers that also need the rows
+    materialized (e.g. an export) don't force a second full table scan.
+    """
     previous_hash = ""
     checked = 0
-    for row in Audit.query.filter_by(tenant_id=tenant_id).order_by(Audit.id):
+    query = rows if rows is not None else Audit.query.filter_by(tenant_id=tenant_id).order_by(Audit.id)
+    for row in query:
         checked += 1
         if row.previous_hash != previous_hash:
             return {
@@ -2486,6 +2508,17 @@ def attachment_file_response(attachment, inline=False):
     bearer-token API clients use different identities. This function keeps
     local disk, S3, and IPFS byte delivery identical once access is granted.
     """
+    if attachment.scan_status == "scan_error" and setting_bool("CLAMAV_ENABLED", False):
+        # Scanning is turned on and this specific file's scan genuinely
+        # failed (transient ClamAV error), so we don't know if it's safe.
+        # "not_scanned" is left servable: it's the honest, expected status
+        # for every attachment when scanning is disabled, and blocking it
+        # would make files uploaded before scanning was enabled permanently
+        # inaccessible.
+        current_app.logger.warning(
+            "Blocked download of unscanned attachment after scan error: attachment_id=%s", attachment.id,
+        )
+        abort(503, description="This attachment could not be verified as safe and is temporarily unavailable. Please contact an administrator.")
     render_inline = inline and attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES
     disposition = (
         f"inline; filename={json.dumps(attachment.original_name)}"
@@ -11057,7 +11090,12 @@ def create_app(test_config=None):
     @app.post("/change/<int:ticket_id>/plan")
     @roles("agent", "manager", "admin")
     def change_plan_update(ticket_id):
-        ticket = tenant_record_or_404(Ticket, ticket_id)
+        # Locked: a double-submitted revision must see the first
+        # submission's committed state before computing its own diff, or
+        # both requests compute the same non-empty changed_fields against
+        # the same pre-mutation "before" and each supersede the approval
+        # chain + notify approvers -- see supersede_change_approval.
+        ticket = tenant_record_or_404(Ticket, ticket_id, lock=True)
         if ticket.kind != "change" or not ticket.change_governance:
             abort(404)
         require_ticket_team_access(ticket)
@@ -11517,7 +11555,11 @@ def create_app(test_config=None):
     @app.post("/change/<int:ticket_id>/tasks")
     @roles("agent", "manager", "admin")
     def change_task_add(ticket_id):
-        ticket = tenant_record_or_404(Ticket, ticket_id)
+        # Locked for the same reason as change_plan_update: adding a task can
+        # supersede the approval chain, and a double-submit must serialize
+        # against the running approval chain check below rather than both
+        # requests reading it as not-yet-superseded and each notifying.
+        ticket = tenant_record_or_404(Ticket, ticket_id, lock=True)
         if ticket.kind != "change":
             abort(404)
         require_ticket_team_access(ticket)
@@ -14748,13 +14790,13 @@ def create_app(test_config=None):
     @roles("admin")
     @require_action("export")
     def audit_export():
-        integrity = verify_audit_chain(current_user.tenant_id)
+        rows = tenant_query(Audit).order_by(Audit.id).all()
+        integrity = verify_audit_chain(current_user.tenant_id, rows=rows)
         if not integrity["valid"]:
             abort(409, description=(
                 "Audit integrity verification failed; export is blocked pending "
                 "security investigation."
             ))
-        rows = tenant_query(Audit).order_by(Audit.id).all()
         document = {
             "schema": "serviceops.audit-export.v1",
             "exported_at": now().isoformat(),

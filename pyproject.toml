@@ -1,3 +1,10 @@
+[tool.pytest.ini_options]
+# Bare `pytest` (unlike `python -m pytest`) does not add the cwd to sys.path,
+# so tests importing app/serviceops_core/tools/installer at module level
+# failed collection silently under `make test`/`make check`. This makes the
+# fix invocation-independent (matches Dockerfile.test's PYTHONPATH=/app).
+pythonpath = ["."]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 120
