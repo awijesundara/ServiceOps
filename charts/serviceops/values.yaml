@@ -229,5 +229,8 @@ ai:
   # Wall-clock limit for one model call, in seconds (10-270; default 60). Hosted
   # models answer in seconds. A self-hosted model on CPU can take minutes.
   providerTimeoutSeconds: 60
+  # Longest silence tolerated from a hosted service while it streams (5 up to the limit
+  # above; default 30). A hosted service that goes quiet fails over to the next one.
+  hostedStallSeconds: 30
   # Narrow destination/port rules for private model endpoints (web probes + AI worker).
   extraEgress: []
