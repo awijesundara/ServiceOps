@@ -5132,9 +5132,11 @@ def process_integration_sync_jobs(limit=1):
                 job.phase = "Cancelled safely between batches"
                 job.error = None
             else:
+                from serviceops_core.netbox_sync import NetboxSyncError
                 job.status = "Failed"
                 job.phase = "Failed"
-                job.error = f"{type(error).__name__}: {str(error)[:800]}"
+                job.error = (str(error) if isinstance(error, NetboxSyncError)
+                             else f"{type(error).__name__}: {error}")[:800]
         else:
             db.session.expire_all()
             job = db.session.get(IntegrationSyncJob, job.id)

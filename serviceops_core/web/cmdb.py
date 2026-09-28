@@ -5,10 +5,11 @@ import csv
 import io
 import ipaddress
 import json
+from datetime import timedelta, timezone
 from urllib.parse import urljoin, urlparse
 
 import requests
-from flask import abort, current_app, flash, jsonify, redirect, render_template, request, Response, session, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, Response, url_for
 from flask_login import current_user
 from sqlalchemy import func
 from sqlalchemy.orm import aliased
@@ -70,6 +71,9 @@ from serviceops_models import (
     User,
 )
 
+
+# An import must follow a preview reviewed this recently.
+NETBOX_PREVIEW_VALID_HOURS = 24
 
 def register(app):
     @app.get("/assets")
@@ -455,9 +459,7 @@ def register(app):
                 elif sheet_url:
                     if "docs.google.com/spreadsheets/d/" not in sheet_url:
                         flash("Enter a valid Google Sheets URL.", "error")
-                        return render_template("cmdb_import.html", preview=None, csv_text="",
-                                                netbox_enabled=setting_bool("NETBOX_ENABLED"),
-                                                netbox_sync_result=session.pop("netbox_sync_result", None))
+                        return _cmdb_import_page()
                     sheet_id = sheet_url.split("/d/")[1].split("/")[0]
                     gid = "0"
                     if "gid=" in sheet_url:
@@ -465,16 +467,12 @@ def register(app):
                     export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
                     if not integration_endpoint_valid(export_url):
                         flash("That sheet URL could not be reached safely.", "error")
-                        return render_template("cmdb_import.html", preview=None, csv_text="",
-                                                netbox_enabled=setting_bool("NETBOX_ENABLED"),
-                                                netbox_sync_result=session.pop("netbox_sync_result", None))
+                        return _cmdb_import_page()
                     proxies = resolve_outbound_proxies(None)
                     ok, hostname, infos = (True, None, None) if proxies else resolve_endpoint_addresses_safely(export_url)
                     if not ok:
                         flash("That sheet URL could not be reached safely.", "error")
-                        return render_template("cmdb_import.html", preview=None, csv_text="",
-                                                netbox_enabled=setting_bool("NETBOX_ENABLED"),
-                                                netbox_sync_result=session.pop("netbox_sync_result", None))
+                        return _cmdb_import_page()
                     try:
                         # Pin the addresses just validated: requests' own
                         # internal DNS lookup would otherwise re-resolve
@@ -491,9 +489,7 @@ def register(app):
                         csv_text = response.text
                     except requests.RequestException as error:
                         flash(f"Could not fetch the sheet: {error}", "error")
-                        return render_template("cmdb_import.html", preview=None, csv_text="",
-                                                netbox_enabled=setting_bool("NETBOX_ENABLED"),
-                                                netbox_sync_result=session.pop("netbox_sync_result", None))
+                        return _cmdb_import_page()
                 else:
                     csv_text = pasted
                 try:
@@ -524,14 +520,56 @@ def register(app):
                     return redirect(url_for("cmdb"))
             else:
                 abort(400)
+        return _cmdb_import_page(preview=preview, csv_text=csv_text)
+
+    def _latest_netbox_job():
+        return tenant_query(IntegrationSyncJob).filter_by(integration="netbox").order_by(
+            IntegrationSyncJob.created_at.desc(), IntegrationSyncJob.id.desc()).first()
+
+    def _netbox_preview_for_import():
+        """The preview an import may proceed from: the tenant's most recent
+        NetBox job, a completed dry run finished within NETBOX_PREVIEW_VALID_HOURS
+        that saw records and hit no record errors. An import (or any later
+        preview) consumes it, so every import follows its own reviewed preview."""
+        job = _latest_netbox_job()
+        if not job or not job.dry_run or job.status != "Completed" or not job.finished_at:
+            return None
+        finished = job.finished_at if job.finished_at.tzinfo else job.finished_at.replace(tzinfo=timezone.utc)
+        if now() - finished > timedelta(hours=NETBOX_PREVIEW_VALID_HOURS):
+            return None
+        result = job.result or {}
+        if result.get("errors") or not (result.get("devices_seen") or result.get("virtual_machines_seen")
+                                        or result.get("racks_created") or result.get("racks_updated")):
+            return None
+        return job
+
+    def _cmdb_import_page(preview=None, csv_text="", netbox_probe=None, netbox_probe_error=None):
         return render_template(
             "cmdb_import.html", preview=preview, csv_text=csv_text,
             netbox_enabled=setting_bool("NETBOX_ENABLED"),
-            netbox_sync_result=session.pop("netbox_sync_result", None),
-            netbox_sync_job=tenant_query(IntegrationSyncJob).filter_by(
-                integration="netbox"
-            ).order_by(IntegrationSyncJob.created_at.desc()).first(),
+            netbox_sync_job=_latest_netbox_job(),
+            netbox_import_ready=_netbox_preview_for_import(),
+            netbox_preview_valid_hours=NETBOX_PREVIEW_VALID_HOURS,
+            netbox_probe=netbox_probe, netbox_probe_error=netbox_probe_error,
         )
+
+    @app.post("/cmdb/import/netbox/test")
+    @roles("admin")
+    @require_action("configure")
+    def cmdb_import_netbox_test():
+        from serviceops_core.netbox_sync import NetboxSyncError, probe_netbox
+
+        try:
+            probe = probe_netbox(core.tenant_context_id())
+        except NetboxSyncError as error:
+            audit("configure", "NetBox connection test failed", str(error)[:300])
+            db.session.commit()
+            return _cmdb_import_page(netbox_probe_error=str(error))
+        audit("configure", "NetBox connection test succeeded",
+              f"NetBox {probe.get('netbox_version')}; "
+              + ", ".join(f"{row['key']}={row['count']}" for row in probe["endpoints"] if row["readable"]))
+        db.session.commit()
+        return _cmdb_import_page(netbox_probe=probe)
 
     @app.post("/cmdb/import/netbox")
     @roles("admin")
@@ -555,6 +593,14 @@ def register(app):
         if active:
             flash("A NetBox synchronization is already queued or running.", "warning")
             return redirect(url_for("cmdb_import") + "#netbox-sync")
+        if not dry_run:
+            if not _netbox_preview_for_import():
+                flash("Run a preview first. An import starts only from a successful preview of the last "
+                      f"{NETBOX_PREVIEW_VALID_HOURS} hours.", "error")
+                return redirect(url_for("cmdb_import") + "#netbox-sync")
+            if not request.form.get("confirm_reviewed"):
+                flash("Confirm that you reviewed the preview before importing.", "error")
+                return redirect(url_for("cmdb_import") + "#netbox-sync")
         job = IntegrationSyncJob(
             tenant_id=tenant_id, actor_user_id=current_user.id,
             integration="netbox", dry_run=dry_run,
@@ -563,7 +609,8 @@ def register(app):
         db.session.flush()
         audit("configure", "NetBox CMDB sync queued", f"Job {job.id}; preview={dry_run}")
         db.session.commit()
-        flash("NetBox synchronization queued. It will run in controlled batches.", "success")
+        flash("NetBox preview queued. Nothing is saved until you review it and import."
+              if dry_run else "NetBox import queued. It runs in controlled batches.", "success")
         return redirect(url_for("cmdb_import"))
 
     @app.get("/cmdb/import/netbox/jobs/<int:job_id>")
@@ -721,12 +768,12 @@ def register(app):
             abort(404)
         if not setting_bool("NETBOX_ENABLED"):
             abort(404)
-        base_url = core.setting_value("NETBOX_BASE_URL", "").strip()
+        from serviceops_core.netbox_sync import _netbox_session, normalize_base_url
+
+        base_url = normalize_base_url(core.setting_value("NETBOX_BASE_URL", ""))
         token = core.setting_value("NETBOX_API_TOKEN", "").strip()
         if not base_url or not token or not integration_endpoint_valid(base_url, allow_private_network=True):
             abort(404)
-
-        from serviceops_core.netbox_sync import _netbox_session
 
         netbox_device_id = ci.external_id.split(":", 1)[1]
         client = _netbox_session(base_url, token)

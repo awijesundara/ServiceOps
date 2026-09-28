@@ -21,6 +21,8 @@
         stopped = true;
         if (cancel) cancel.hidden = true;
         if (job.error) status.textContent += ` · ${job.error}`;
+        // The finished page shows the full result and unlocks the import step.
+        window.location.reload();
         return;
       }
     } catch (_error) {

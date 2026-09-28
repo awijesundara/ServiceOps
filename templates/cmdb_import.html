@@ -20,36 +20,79 @@
     </div>
   </details>
   {% if netbox_enabled %}
-  <p class="muted">Configure the URL, read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration → Connections &amp; channels → NetBox connection</a>. See <a href="{{ url_for('rack_list') }}">Racks</a> for imported elevations.</p>
+  {% set busy = netbox_sync_job and netbox_sync_job.status in ('Pending', 'Running') %}
+  <p class="muted">Connection settings (URL, read-only API token, certificate trust) are under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration → Connections &amp; channels → NetBox connection</a>. Imported elevations appear under <a href="{{ url_for('rack_list') }}">Racks</a>.</p>
+  <ol class="netbox-steps">
+    <li class="netbox-step" id="netbox-test">
+      <h3>1. Test the connection</h3>
+      <p class="muted">Checks the URL, certificate and token, then shows what NetBox holds and what this token may read. Nothing is written.</p>
+      <form method="post" action="{{ url_for('cmdb_import_netbox_test') }}#netbox-test"><button class="button">Test connection</button></form>
+      {% if netbox_probe_error %}
+      <div class="netbox-result bad" role="alert"><strong>Connection failed.</strong> {{ netbox_probe_error }}</div>
+      {% elif netbox_probe %}
+      <div class="netbox-result {{ 'ok' if netbox_probe.ready and not netbox_probe.warnings else 'warn' }}" role="status">
+        <strong>Connected to NetBox {{ netbox_probe.netbox_version }}</strong> at <code>{{ netbox_probe.base_url }}</code> with a {{ netbox_probe.token_type }} token.
+        <table class="netbox-probe-table"><thead><tr><th>NetBox data</th><th>Records visible to this token</th></tr></thead><tbody>
+        {% for row in netbox_probe.endpoints %}<tr><td>{{ row.label }}{% if row.required %} <small class="muted">(imported)</small>{% endif %}</td><td>{% if row.readable %}{{ row.count }}{% else %}<span class="netbox-denied">{{ row.problem }}</span>{% endif %}</td></tr>{% endfor %}
+        </tbody></table>
+        {% if netbox_probe.roles %}<p><strong>Device roles → CI class:</strong> {% for role in netbox_probe.roles %}{{ role.name }}{% if role.devices is not none %} ({{ role.devices }}){% endif %} → {{ role.ci_class }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+        {% if netbox_probe.sample %}
+        <p><strong>Sample devices as they would appear in the CMDB:</strong></p>
+        <table class="netbox-probe-table"><thead><tr><th>Name</th><th>Class</th><th>Serial</th><th>Model</th><th>IP</th><th>Location</th><th>Rack</th><th>Status</th></tr></thead><tbody>
+        {% for d in netbox_probe.sample %}<tr><td>{{ d.name }}</td><td>{{ d.ci_class }}</td><td>{{ d.serial_number or '—' }}</td><td>{{ [d.vendor, d.model]|select|join(' ') or '—' }}</td><td>{{ d.ip_address or '—' }}</td><td>{{ d.location or '—' }}</td><td>{{ d.rack or '—' }}</td><td>{{ d.operational_status or 'kept' }}</td></tr>{% endfor %}
+        </tbody></table>
+        {% endif %}
+        <p class="muted">The CMDB currently holds {{ netbox_probe.cmdb_total }} configuration items, {{ netbox_probe.cmdb_from_netbox }} of them from NetBox.</p>
+        {% if netbox_probe.warnings %}<ul>{% for warning in netbox_probe.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      {% endif %}
+    </li>
+    <li class="netbox-step">
+      <h3>2. Preview the changes</h3>
+      <p class="muted">Reads everything from NetBox and works out what would be created or updated, then discards it. Nothing is saved.</p>
+      <form method="post" action="{{ url_for('cmdb_import_netbox') }}"><input type="hidden" name="dry_run" value="1"><button class="button"{% if busy %} disabled{% endif %}>Preview changes</button></form>
+    </li>
+    <li class="netbox-step">
+      <h3>3. Import into the CMDB</h3>
+      {% if netbox_import_ready %}
+      {% set r = netbox_import_ready.result %}
+      {% set vms = r.virtual_machines_seen|default(0) %}{% set racks = r.racks_created + r.racks_updated %}
+      <p>Preview {{ netbox_import_ready.id }} found <strong>{{ r.devices_seen }} device{{ '' if r.devices_seen == 1 else 's' }}, {{ vms }} virtual machine{{ '' if vms == 1 else 's' }} and {{ racks }} rack{{ '' if racks == 1 else 's' }}</strong>: {{ r.cis_created }} configuration item{{ '' if r.cis_created == 1 else 's' }} to create, {{ r.cis_updated }} to update{% if r.cis_matched_by_serial %} ({{ r.cis_matched_by_serial }} matched to existing items by serial number){% endif %}.</p>
+      <form method="post" action="{{ url_for('cmdb_import_netbox') }}" class="netbox-import-form">
+        <label><input type="checkbox" name="confirm_reviewed" value="1" required> I reviewed this preview. Import it, overwriting NetBox-owned hardware fields on matched items.</label>
+        <button class="primary"{% if busy %} disabled{% endif %}>Import into CMDB</button>
+      </form>
+      {% else %}
+      <p class="muted">Available after a successful preview that found records (valid for {{ netbox_preview_valid_hours }} hours). Each import needs its own preview.</p>
+      {% endif %}
+    </li>
+  </ol>
   {% if netbox_sync_job %}
-  <div class="callout" id="netbox-sync-progress" data-status-url="{{ url_for('cmdb_import_netbox_job', job_id=netbox_sync_job.id) }}" data-cancel-url="{{ url_for('cmdb_import_netbox_cancel', job_id=netbox_sync_job.id) }}">
-    <strong>Synchronization job {{ netbox_sync_job.id }}</strong>
-    <p id="netbox-sync-status" aria-live="polite">{{ netbox_sync_job.status }} · {{ netbox_sync_job.phase }}</p>
-    <progress id="netbox-sync-meter" max="100" value="{{ 100 if netbox_sync_job.status == 'Completed' else 0 }}" style="width:100%">0%</progress>
-    <p class="muted" id="netbox-sync-count">{{ netbox_sync_job.processed }} processed{% if netbox_sync_job.total %} of {{ netbox_sync_job.total }}{% endif %}</p>
-    {% if netbox_sync_job.status in ('Pending', 'Running') %}<button type="button" class="button danger" id="netbox-sync-cancel">Cancel safely</button>{% endif %}
+  {% set job = netbox_sync_job %}{% set result = job.result %}
+  <div class="netbox-result {{ 'bad' if job.status == 'Failed' else 'warn' if result and (result.errors or result.warnings) else 'ok' if job.status == 'Completed' else '' }}" id="netbox-sync-progress" data-status-url="{{ url_for('cmdb_import_netbox_job', job_id=job.id) }}" data-cancel-url="{{ url_for('cmdb_import_netbox_cancel', job_id=job.id) }}">
+    <strong>{{ 'Preview' if job.dry_run else 'Import' }} {{ job.id }}</strong>{% if job.finished_at %} <small class="muted">finished {{ job.finished_at|usertime('%b %d, %H:%M') }}</small>{% endif %}
+    <p id="netbox-sync-status" aria-live="polite">{{ job.status }}{% if job.phase != job.status %} · {{ job.phase }}{% endif %}{% if job.error %} · {{ job.error }}{% endif %}</p>
+    {% if busy %}
+    <progress id="netbox-sync-meter" max="100" value="0" style="width:100%">0%</progress>
+    <p class="muted" id="netbox-sync-count">{{ job.processed }} processed{% if job.total %} of {{ job.total }}{% endif %}</p>
+    <button type="button" class="button danger" id="netbox-sync-cancel">Cancel safely</button>
+    {% endif %}
+    {% if result %}
+    {% set vms = result.virtual_machines_seen|default(0) %}
+    <p>{{ result.devices_seen }} physical device{{ '' if result.devices_seen == 1 else 's' }} · {{ vms }} virtual machine{{ '' if vms == 1 else 's' }} ·
+      {{ result.cis_created }} {{ 'would be created' if job.dry_run else 'created' }} ·
+      {{ result.cis_updated }} {{ 'would be updated' if job.dry_run else 'updated' }} ·
+      {{ result.cis_matched_by_serial }} matched by serial number ·
+      {{ result.racks_created }} rack{{ '' if result.racks_created == 1 else 's' }} {{ 'to create' if job.dry_run else 'created' }} · {{ result.racks_updated }} rack{{ '' if result.racks_updated == 1 else 's' }} {{ 'to update' if job.dry_run else 'updated' }} ·
+      {{ result.errors|length }} error{{ '' if result.errors|length == 1 else 's' }}</p>
+    {% if job.dry_run %}<p class="muted">This was a preview: nothing was saved.</p>{% endif %}
+    {% if result.errors %}<p><strong>Errors</strong></p><ul>{% for error in result.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {% if result.warnings %}<p><strong>Warnings</strong></p><ul>{% for warning in result.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
+    {% endif %}
   </div>
   {% endif %}
-  {% if netbox_sync_result %}
-  <div class="callout"><strong>{{ 'Preview' if netbox_sync_result.dry_run else 'Applied' }}:</strong>
-    {{ netbox_sync_result.devices_seen }} physical devices ·
-    {{ netbox_sync_result.virtual_machines_seen|default(0) }} virtual machines ·
-    {{ netbox_sync_result.cis_created }} created ·
-    {{ netbox_sync_result.cis_updated }} updated ·
-    {{ netbox_sync_result.cis_matched_by_serial }} adopted by serial number ·
-    {{ netbox_sync_result.racks_created }} racks created ·
-    {{ netbox_sync_result.racks_updated }} racks updated ·
-    {{ netbox_sync_result.errors|length }} errors
-    {% if netbox_sync_result.errors %}<ul>{% for error in netbox_sync_result.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
-    {% if netbox_sync_result.warnings %}<ul>{% for warning in netbox_sync_result.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
-  </div>
-  {% endif %}
-  <form method="post" action="{{ url_for('cmdb_import_netbox') }}" class="actions">
-    <label><input type="checkbox" name="dry_run" value="1" checked> Preview only (dry run)</label>
-    <button class="primary"{% if netbox_sync_job and netbox_sync_job.status in ('Pending', 'Running') %} disabled{% endif %}>Queue NetBox sync</button>
-  </form>
   {% else %}
-  <div class="callout"><strong>NetBox sync is not enabled.</strong> Configure the URL, a read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration → Connections &amp; channels → NetBox connection</a>.</div>
+  <div class="netbox-result warn"><strong>NetBox sync is not enabled.</strong> Configure the URL, a read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration → Connections &amp; channels → NetBox connection</a>.</div>
   {% endif %}
 </section>
 {% if netbox_sync_job %}<script src="{{ url_for('static', filename='netbox-sync.js', v=app_version) }}" defer></script>{% endif %}

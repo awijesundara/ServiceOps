@@ -246,6 +246,38 @@ def _write_ca_bundle(pem_text):
     return path
 
 
+def normalize_base_url(url):
+    """Administrators often paste the API root (https://netbox/api/) or a
+    trailing slash; every request path already starts with /api/."""
+    url = (url or "").strip().rstrip("/")
+    return url[:-4] if url.casefold().endswith("/api") else url
+
+
+def describe_request_error(error):
+    """A plain-language cause for a failed NetBox request, without echoing
+    headers or the token."""
+    response = getattr(error, "response", None)
+    status = getattr(response, "status_code", None)
+    if isinstance(error, requests.exceptions.SSLError):
+        return ("NetBox's TLS certificate is not trusted. Paste the issuing CA certificate into the NetBox "
+                "connection settings.")
+    if isinstance(error, requests.exceptions.JSONDecodeError):
+        return ("The NetBox URL answered with something other than the NetBox API (for example a login or "
+                "proxy page). Check the base URL and any access proxy in front of NetBox.")
+    if status in (401, 403):
+        return (f"NetBox refused the API token (HTTP {status}). Check the token is valid, not expired, "
+                "and allowed to read.")
+    if status == 404:
+        return "No NetBox API was found at this URL (HTTP 404). Use the NetBox base address, e.g. https://netbox.example.com."
+    if status:
+        return f"NetBox answered HTTP {status}."
+    if isinstance(error, requests.exceptions.Timeout):
+        return "NetBox did not answer within 15 seconds."
+    if isinstance(error, requests.exceptions.ConnectionError):
+        return "NetBox could not be reached. Check the URL, DNS, firewall and outbound proxy settings."
+    return f"The NetBox request failed ({type(error).__name__})."
+
+
 def _get(session, base_url, path, params=None):
     url = base_url.rstrip("/") + path
     response = session.get(url, params=params, timeout=15, allow_redirects=False)
@@ -279,6 +311,19 @@ def _paginate(session, base_url, path, *, page_size=100, progress_callback=None,
         params["offset"] += len(results)
 
 
+def _component_warning(label, error):
+    """None when the endpoint does not exist on this NetBox version (404):
+    optional component types come and go between releases."""
+    status = getattr(getattr(error, "response", None), "status_code", None)
+    if status == 404:
+        return None
+    if status == 403:
+        return f"{label} were not imported: the token is not permitted to read them."
+    if isinstance(error, requests.RequestException):
+        return f"{label} were not imported: {describe_request_error(error)}"
+    return f"{label} were not imported: {error}"
+
+
 def _fetch_all_components(session, base_url, **pagination):
     """Fetches interfaces/console ports/power ports/inventory items for every
     device and groups the formatted summaries by device id. Each component
@@ -296,7 +341,8 @@ def _fetch_all_components(session, base_url, **pagination):
                     continue
                 by_device.setdefault(device_id, []).append(formatter(record))
         except (requests.RequestException, NetboxSyncError) as error:
-            warnings.append(f"{label} were not imported: {type(error).__name__}")
+            if warning := _component_warning(label, error):
+                warnings.append(warning)
             continue
         for device_id, items in by_device.items():
             grouped.setdefault(device_id, {})[f"NetBox: {label}"] = "; ".join(items)
@@ -314,7 +360,8 @@ def _fetch_vm_components(session, base_url, **pagination):
                 if vm_id:
                     by_vm.setdefault(vm_id, []).append(formatter(record))
         except (requests.RequestException, NetboxSyncError) as error:
-            warnings.append(f"VM {label} were not imported: {type(error).__name__}")
+            if warning := _component_warning(f"VM {label}", error):
+                warnings.append(warning)
             continue
         for vm_id, items in by_vm.items():
             grouped.setdefault(vm_id, {})[f"NetBox: {label}"] = "; ".join(items)
@@ -333,7 +380,8 @@ def _fetch_assigned_ip_addresses(session, base_url, **pagination):
             if target is not None:
                 target.setdefault(str(target_id), []).append(_format_ip(record))
     except (requests.RequestException, NetboxSyncError) as error:
-        warnings.append(f"Assigned IP addresses were not imported: {type(error).__name__}")
+        if warning := _component_warning("Assigned IP addresses", error):
+            warnings.append(warning)
     return (
         {key: {"NetBox: Assigned IP Addresses": "; ".join(values)} for key, values in devices.items()},
         {key: {"NetBox: Assigned IP Addresses": "; ".join(values)} for key, values in vms.items()},
@@ -676,23 +724,13 @@ def _upsert(mapped, tenant_id, summary):
         summary["cis_created"] += 1
 
 
-def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session,
-                     *, page_size=100, progress_callback=None, cancel_check=None):
-    """Pull devices and VMs from NetBox and upsert them into ConfigurationItem
-    for ``tenant_id``. Fails closed on missing tenant/configuration rather
-    than silently defaulting."""
+def _configured_connection():
+    """The validated NetBox base URL and token, or NetboxSyncError."""
     import app as core_app
-    from app import db
 
-    if not tenant_id or not isinstance(tenant_id, int):
-        raise NetboxSyncError("A valid integer tenant_id is required; refusing to sync.")
-    tenant = db.session.get(core_app.Tenant, tenant_id)
-    if not tenant or not tenant.active:
-        raise NetboxSyncError(f"Tenant {tenant_id} does not exist or is inactive; refusing to sync.")
     if not core_app.setting_bool("NETBOX_ENABLED"):
         raise NetboxSyncError("NetBox sync is not enabled; refusing to sync.")
-
-    base_url = core_app.setting_value("NETBOX_BASE_URL", "").strip()
+    base_url = normalize_base_url(core_app.setting_value("NETBOX_BASE_URL", ""))
     token = core_app.setting_value("NETBOX_API_TOKEN", "").strip()
     if not base_url or not token:
         raise NetboxSyncError("NetBox base URL and API token must both be configured.")
@@ -708,6 +746,133 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session,
     # every paginated request -- the target host doesn't change page-to-page.
     if not core_app.integration_endpoint_resolves_safely(base_url, allow_private_network=True):
         raise NetboxSyncError("NetBox base URL failed DNS safety validation.")
+    return base_url, token
+
+
+def _close(session):
+    session.close()
+    ca_bundle_path = getattr(session, "verify", None)
+    if isinstance(ca_bundle_path, str) and ca_bundle_path.startswith(tempfile.gettempdir()):
+        try:
+            os.unlink(ca_bundle_path)
+        except OSError:
+            pass
+
+
+# What a connection test counts, in the order an import reads it. `required`
+# endpoints are the ones an import cannot do without.
+PROBE_ENDPOINTS = (
+    ("sites", "Sites", "/api/dcim/sites/", False),
+    ("racks", "Racks", RACKS_PATH, True),
+    ("devices", "Physical devices", DEVICES_PATH, True),
+    ("virtual_machines", "Virtual machines", VMS_PATH, True),
+    ("ip_addresses", "IP addresses", "/api/ipam/ip-addresses/", False),
+    ("interfaces", "Device interfaces", "/api/dcim/interfaces/", False),
+    ("inventory_items", "Inventory items", "/api/dcim/inventory-items/", False),
+    ("vm_interfaces", "VM interfaces", "/api/virtualization/interfaces/", False),
+)
+
+
+def probe_netbox(tenant_id, session_factory=_netbox_session):
+    """Test the configured connection and describe what an import would see,
+    without writing anything: NetBox version, what the token may read and how
+    much, how device roles map to CI classes, a small device sample, and how
+    that compares with the tenant's CMDB. Raises NetboxSyncError when the
+    connection itself is unusable."""
+    import app as core_app
+
+    base_url, token = _configured_connection()
+    report = {"base_url": base_url, "token_type": "v2 (Bearer)" if token.startswith("nbt_") else "v1 (Token)",
+              "endpoints": [], "roles": [], "sample": [], "warnings": []}
+    session = session_factory(base_url, token)
+    try:
+        try:
+            status = _get(session, base_url, "/api/status/")
+        except requests.RequestException as error:
+            raise NetboxSyncError(describe_request_error(error)) from error
+        if not isinstance(status, dict) or "netbox-version" not in status:
+            raise NetboxSyncError("The URL answered, but not as a NetBox API (no NetBox version reported).")
+        report["netbox_version"] = status.get("netbox-version")
+        refusals = []
+        for key, label, path, required in PROBE_ENDPOINTS:
+            row = {"key": key, "label": label, "required": required, "count": None, "readable": False}
+            try:
+                payload = _get(session, base_url, path, params={"limit": 1, "brief": 1})
+                row["count"], row["readable"] = int(payload.get("count") or 0), True
+            except requests.RequestException as error:
+                code = getattr(getattr(error, "response", None), "status_code", None)
+                if code in (401, 403):
+                    refusals.append(error)
+                row["problem"] = ("not permitted for this token" if code == 403 else
+                                  "not available on this NetBox version" if code == 404 else
+                                  describe_request_error(error))
+            report["endpoints"].append(row)
+        # /api/status/ can be public (LOGIN_REQUIRED off), so this is either a
+        # bad token or a valid one whose user has no view permissions.
+        if len(refusals) == len(PROBE_ENDPOINTS):
+            raise NetboxSyncError(
+                f"NetBox answered but refused every inventory read (HTTP {refusals[0].response.status_code}). "
+                "Check the token is valid, and give its NetBox user view permission for DCIM, virtualization "
+                "and IPAM objects.")
+        counts = {row["key"]: row["count"] for row in report["endpoints"]}
+        denied = [row["label"] for row in report["endpoints"] if row["required"] and not row["readable"]]
+        if denied:
+            report["warnings"].append(f"The token cannot read: {', '.join(denied)}. Those records will not be imported.")
+        if not (counts.get("devices") or counts.get("virtual_machines") or counts.get("racks")):
+            report["warnings"].append(
+                "The token sees no racks, devices or virtual machines. Either NetBox is empty or the token's "
+                "object permissions hide them; an import would change nothing.")
+        try:
+            roles = _get(session, base_url, "/api/dcim/device-roles/", params={"limit": 200})
+            for role in roles.get("results", []):
+                report["roles"].append({
+                    "name": role.get("name") or role.get("slug"), "devices": role.get("device_count"),
+                    "ci_class": _device_class({"role": role}),
+                })
+        except requests.RequestException:
+            report["warnings"].append("Device roles could not be read, so CI classes cannot be previewed here.")
+        environment_field = False
+        if counts.get("devices"):
+            try:
+                devices = _get(session, base_url, DEVICES_PATH, params={"limit": 5})
+                for record in devices.get("results", []):
+                    mapped = _map_device(record)
+                    environment_field = environment_field or "environment" in (record.get("custom_fields") or {})
+                    report["sample"].append({key: mapped.get(key) for key in (
+                        "name", "ci_class", "serial_number", "vendor", "model", "ip_address", "location",
+                        "operational_status")} | {"rack": _first_attr(record, "rack", "name")})
+            except requests.RequestException as error:
+                report["warnings"].append(f"Sample devices could not be read: {describe_request_error(error)}")
+            if not environment_field:
+                report["warnings"].append(
+                    "Devices have no 'environment' custom field, so new CIs are created as Production. "
+                    "Adjust them after the import if that is wrong.")
+    finally:
+        _close(session)
+    cmdb = core_app.ConfigurationItem.query.filter_by(tenant_id=tenant_id)
+    report["cmdb_total"] = cmdb.count()
+    report["cmdb_from_netbox"] = cmdb.filter_by(external_source="netbox").count()
+    report["ready"] = bool(counts.get("devices") or counts.get("virtual_machines") or counts.get("racks"))
+    return report
+
+
+def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session,
+                     *, page_size=100, progress_callback=None, cancel_check=None):
+    """Pull devices and VMs from NetBox and upsert them into ConfigurationItem
+    for ``tenant_id``. Fails closed on missing tenant/configuration rather
+    than silently defaulting. A NetBox request that fails outright (token
+    refused, host unreachable, not an API) raises NetboxSyncError so the job
+    is reported as failed and nothing is written; only individual records and
+    optional component endpoints are isolated as errors/warnings."""
+    import app as core_app
+    from app import db
+
+    if not tenant_id or not isinstance(tenant_id, int):
+        raise NetboxSyncError("A valid integer tenant_id is required; refusing to sync.")
+    tenant = db.session.get(core_app.Tenant, tenant_id)
+    if not tenant or not tenant.active:
+        raise NetboxSyncError(f"Tenant {tenant_id} does not exist or is inactive; refusing to sync.")
+    base_url, token = _configured_connection()
 
     summary = {
         "tenant_id": tenant_id,
@@ -779,16 +944,16 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session,
                 summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"] = counts_before
                 summary["errors"].append(f"vm {record.get('name', record.get('id'))}: {type(error).__name__}")
     except requests.RequestException as error:
-        summary["errors"].append(f"NetBox request failed: {type(error).__name__}: {error}")
+        db.session.rollback()
+        raise NetboxSyncError(f"Nothing was imported. {describe_request_error(error)}") from error
     finally:
-        session.close()
-        ca_bundle_path = getattr(session, "verify", None)
-        if isinstance(ca_bundle_path, str) and ca_bundle_path.startswith(tempfile.gettempdir()):
-            try:
-                os.unlink(ca_bundle_path)
-            except OSError:
-                pass
+        _close(session)
 
+    if not (summary["devices_seen"] or summary["virtual_machines_seen"]
+            or summary["racks_created"] or summary["racks_updated"]):
+        summary["warnings"].append(
+            "NetBox returned no racks, devices or virtual machines to this token. Either NetBox is empty or "
+            "the token's object permissions hide them. Use Test connection to see what the token can read.")
     if dry_run:
         db.session.rollback()
     else:
