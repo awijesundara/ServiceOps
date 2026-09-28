@@ -148,6 +148,8 @@ def close_call(call_id, status, usage=None):
         return
     call.status = status
     if usage:
-        call.completion_tokens = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
         call.prompt_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or call.prompt_tokens)
+        # Hidden thinking is billed against the allowance but reported only in the total (Gemini).
+        call.completion_tokens = max(int(usage.get("completion_tokens") or usage.get("output_tokens") or 0),
+                                     int(usage.get("total_tokens") or 0) - call.prompt_tokens)
     db.session.commit()

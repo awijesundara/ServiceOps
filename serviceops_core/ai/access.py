@@ -6,9 +6,9 @@ could not already read in ServiceOps. The controls, in order of strength:
 1. The model has no tools and no database access. The *server* retrieves evidence,
    deterministically, under the asker's identity, and that is the only data the
    model ever sees.
-2. Retrieval goes through the application's own visibility helpers
-   (`visible_ticket_query`, `ci_class_read_allowed`, published-knowledge rules).
-   This module must never grow its own query for a record type those helpers cover.
+2. Tickets, knowledge and configuration items are read through `serviceops_core.read_access`,
+   shared with incident investigations and the MCP server and built on the application's own
+   visibility helpers. This module must never grow its own query for a record type it covers.
 3. User directory, audit log, attachments, settings and secrets are excluded by construction. Authorized customer
    support content, service request details and restricted operational records are explicitly private-only.
 4. Every turn is re-authorized against the *current* role. Earlier answers are only
@@ -23,7 +23,7 @@ from types import SimpleNamespace
 
 from sqlalchemy import or_
 
-from serviceops_core.ci_class_policy import ci_class_read_allowed
+from serviceops_core import read_access
 from serviceops_core.security import mask_pii, redact
 from serviceops_models import Asset, Comment, ConfigurationItem, Knowledge, RecordLink, TaskCI, Tenant, Ticket, db
 
@@ -221,6 +221,14 @@ def _ticket_text(ticket):
     return "\n".join(parts)
 
 
+def _ticket_summary(ticket):
+    """One line per ticket for list questions ("my open incidents"): the full narrative of every
+    listed ticket costs tokens without helping the answer. Asking about a number gets the details."""
+    return (f"{ticket.kind.capitalize()}; State: {ticket.state}; Priority: {ticket.priority}; "
+            f"Category: {ticket.category}; Updated: {ticket.updated_at.date().isoformat()}. "
+            "Summary only: ask about this number for its description and comments.")
+
+
 def _ci_text(row):
     """Useful CMDB specifications without owner/contact data or unrestricted JSON."""
     fields = (
@@ -299,17 +307,17 @@ def expanded_keywords(text, limit=14):
 
 def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
     """Everything the assistant may know for this question, under this identity."""
-    from app import visible_ticket_query
     evidence = Evidence(scanner=scanner)
     seen_tickets = set()
 
-    def add_ticket(ticket):
+    def add_ticket(ticket, brief=False):
         if ticket.id in seen_tickets:
             return
         seen_tickets.add(ticket.id)
-        evidence.add("ticket", ticket.id, ticket.number, f"{ticket.number} {ticket.title}", _ticket_text(ticket))
+        evidence.add("ticket", ticket.id, ticket.number, f"{ticket.number} {ticket.title}",
+                     _ticket_summary(ticket) if brief else _ticket_text(ticket))
 
-    base = visible_ticket_query(scope.identity).filter(Ticket.deleted_at.is_(None))
+    base = read_access.tickets(scope.identity)
     numbers = list(dict.fromkeys([*record_numbers(question), *context_numbers]))[:4]
     if numbers:
         found = base.filter(Ticket.number.in_(numbers)).all()
@@ -335,14 +343,14 @@ def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
         elif noun.startswith("change"):
             listed = listed.filter(Ticket.kind == "change")
         for ticket in listed.order_by(Ticket.updated_at.desc(), Ticket.id.desc()).limit(10):
-            add_ticket(ticket)
+            add_ticket(ticket, brief=True)
 
     if OWN_TICKETS.search(question):
         mine = Ticket.requester_id == scope.user_id
         if scope.is_staff:
             mine = or_(mine, Ticket.assignee_id == scope.user_id)
         for ticket in base.filter(mine).order_by(Ticket.updated_at.desc()).limit(5):
-            add_ticket(ticket)
+            add_ticket(ticket, brief=True)
 
     count_match = COUNT_TICKETS.search(question or "")
     if count_match:
@@ -363,31 +371,27 @@ def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
             for ticket in base.filter(title_match).order_by(Ticket.updated_at.desc()).limit(4):
                 add_ticket(ticket)
         article_match = or_(*[or_(Knowledge.title.ilike(f"%{w}%"), Knowledge.body.ilike(f"%{w}%")) for w in words])
-        articles = Knowledge.query.filter_by(tenant_id=scope.tenant_id, published=True, archived=False).filter(
+        articles = read_access.published_knowledge(scope.identity).filter(
             article_match).order_by(Knowledge.created_at.desc()).limit(5)
         for row in articles:
             evidence.add("knowledge", row.id, knowledge_number(row.id), row.title, row.body)
         if scope.can_read_cmdb and not KNOWLEDGE_ONLY.search(question or ""):
-            added = 0
-            for row in ConfigurationItem.query.filter(
-                    ConfigurationItem.tenant_id == scope.tenant_id,
+            for row in read_access.configuration_items(scope.identity).filter(
                     or_(*[
                         column.ilike(f"%{word}%")
                         for word in words
                         for column in (ConfigurationItem.name, ConfigurationItem.serial_number, ConfigurationItem.vendor,
                                        ConfigurationItem.model, ConfigurationItem.ip_address, ConfigurationItem.location,
                                        ConfigurationItem.external_id)
-                    ])).order_by(ConfigurationItem.id).limit(20):
-                if added < 8 and ci_class_read_allowed(scope.tenant_id, row.ci_class, scope.role):
-                    evidence.add("ci", row.id, row.serial_number, row.name, _ci_text(row))
-                    if re.search(r"\b(related|linked|associated)\b.{0,30}\b(tickets?|incidents?|changes?)\b|\b(tickets?|incidents?|changes?)\b.{0,30}\b(related|linked|associated)\b", question, re.I | re.S):
-                        linked_ids = TaskCI.query.filter_by(target_type="ticket", ci_id=row.id).with_entities(TaskCI.target_id)
-                        linked = base.filter(Ticket.id.in_(linked_ids)).order_by(Ticket.updated_at.desc()).limit(8).all()
-                        evidence.add_context("ci", f"Visible tickets related to {row.name}",
-                                             f"The signed-in user can currently access {len(linked)} tickets attached to this configuration item.")
-                        for ticket in linked:
-                            add_ticket(ticket)
-                    added += 1
+                    ])).order_by(ConfigurationItem.id).limit(8):
+                evidence.add("ci", row.id, row.serial_number, row.name, _ci_text(row))
+                if re.search(r"\b(related|linked|associated)\b.{0,30}\b(tickets?|incidents?|changes?)\b|\b(tickets?|incidents?|changes?)\b.{0,30}\b(related|linked|associated)\b", question, re.I | re.S):
+                    linked_ids = TaskCI.query.filter_by(target_type="ticket", ci_id=row.id).with_entities(TaskCI.target_id)
+                    linked = base.filter(Ticket.id.in_(linked_ids)).order_by(Ticket.updated_at.desc()).limit(8).all()
+                    evidence.add_context("ci", f"Visible tickets related to {row.name}",
+                                         f"The signed-in user can currently access {len(linked)} tickets attached to this configuration item.")
+                    for ticket in linked:
+                        add_ticket(ticket)
 
     if numbers and RELATED_CONTEXT.search(question or ""):
         focus_ids = [ticket.id for ticket in base.filter(Ticket.number.in_(numbers)).all()]
@@ -418,13 +422,11 @@ def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
             if scope.can_read_cmdb:
                 ci_ids = [row.ci_id for row in TaskCI.query.filter(
                     TaskCI.target_type == "ticket", TaskCI.target_id.in_(focus_ids)).limit(20)]
-                for row in ConfigurationItem.query.filter(
-                        ConfigurationItem.tenant_id == scope.tenant_id,
+                for row in read_access.configuration_items(scope.identity).filter(
                         ConfigurationItem.id.in_(ci_ids)).order_by(ConfigurationItem.id).limit(5):
-                    if ci_class_read_allowed(scope.tenant_id, row.ci_class, scope.role):
-                        evidence.add("ci", row.id, None, row.name,
-                                     f"Class: {row.ci_class}; Environment: {row.environment}; "
-                                     f"Status: {row.operational_status}")
+                    evidence.add("ci", row.id, None, row.name,
+                                 f"Class: {row.ci_class}; Environment: {row.environment}; "
+                                 f"Status: {row.operational_status}")
     from serviceops_core.ai import context
     context.add_organization_context(scope, question, evidence, base)
     # Computed last, against everything actually retrieved by now (tickets
@@ -444,18 +446,16 @@ def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
 
 def sources_still_accessible(scope, sources):
     """Re-check, right now, that every source an earlier answer used is still readable."""
-    from app import visible_ticket_query
     for source in sources:
         kind, record_id = source.get("kind"), source.get("record_id")
         if kind == "ticket":
-            if not visible_ticket_query(scope.identity).filter_by(id=record_id, deleted_at=None).first():
+            if not read_access.tickets(scope.identity).filter(Ticket.id == record_id).first():
                 return False
         elif kind == "knowledge":
-            if not Knowledge.query.filter_by(id=record_id, tenant_id=scope.tenant_id, published=True, archived=False).first():
+            if not read_access.published_knowledge(scope.identity).filter(Knowledge.id == record_id).first():
                 return False
         elif kind == "ci":
-            row = ConfigurationItem.query.filter_by(id=record_id, tenant_id=scope.tenant_id).first()
-            if not scope.can_read_cmdb or not row or not ci_class_read_allowed(scope.tenant_id, row.ci_class, scope.role):
+            if not read_access.configuration_items(scope.identity).filter(ConfigurationItem.id == record_id).first():
                 return False
         elif kind == "enterprise":
             from app import visible_enterprise_record_query

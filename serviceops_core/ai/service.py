@@ -14,7 +14,7 @@ from serviceops_models import (AICall, AIConfiguration, AIConnection, AIConversa
                               TaskCI, Tenant, Ticket, User, db, now, settings_cipher)
 from serviceops_core.ai import access, memory, quota, routing
 from serviceops_core.ai.provider import INSTRUCTIONS, ProviderError, StreamCancelled, generate_stream, provider_timeout
-from serviceops_core.ci_class_policy import ci_class_read_allowed
+from serviceops_core import read_access
 from serviceops_core.security import mask_pii, redact
 from serviceops_core.storage import ipfs_enabled
 
@@ -44,8 +44,7 @@ def enabled_config(tenant_id, *, lock=False, feature="incident"):
 
 
 def visible_incident(identity, ticket_id):
-    from app import visible_ticket_query
-    return visible_ticket_query(identity).filter_by(id=ticket_id, kind="incident", deleted_at=None).first_or_404()
+    return read_access.tickets(identity).filter_by(id=ticket_id, kind="incident").first_or_404()
 
 
 def chat_available(user):
@@ -69,7 +68,6 @@ def available(user):
 
 
 def collect_evidence(identity, ticket_id, scanner=None):
-    from app import visible_ticket_query
     ticket = visible_incident(identity, ticket_id)
     sources = []
     evidence = []
@@ -90,12 +88,12 @@ def collect_evidence(identity, ticket_id, scanner=None):
         "\n".join(redact(row.body)[:350] for row in comments))
     words = list(dict.fromkeys(re.findall(r"[A-Za-z0-9]{3,}", ticket.title.lower())))[:6]
     if words:
-        kb = Knowledge.query.filter_by(tenant_id=identity.tenant_id, published=True, archived=False).filter(
+        kb = read_access.published_knowledge(identity).filter(
             or_(*[Knowledge.title.ilike(f"%{word}%") for word in words])).order_by(Knowledge.created_at.desc()).limit(3)
         for row in kb:
             add("knowledge", row, row.title, row.body)
-        similar = visible_ticket_query(identity).filter(
-            Ticket.id != ticket.id, Ticket.kind == "incident", Ticket.deleted_at.is_(None),
+        similar = read_access.tickets(identity).filter(
+            Ticket.id != ticket.id, Ticket.kind == "incident",
             Ticket.state.in_(["Resolved", "Closed"]),
             or_(*[Ticket.title.ilike(f"%{word}%") for word in words]),
         ).order_by(Ticket.updated_at.desc()).limit(2)
@@ -103,26 +101,23 @@ def collect_evidence(identity, ticket_id, scanner=None):
             add("ticket", row, row.number + " " + row.title, row.description)
     ci_ids = [row.ci_id for row in TaskCI.query.filter_by(
         target_type="ticket", target_id=ticket.id).limit(20)]
-    for row in ConfigurationItem.query.filter(ConfigurationItem.tenant_id == identity.tenant_id,
-                                              ConfigurationItem.id.in_(ci_ids)).order_by(ConfigurationItem.id).limit(3):
-        if ci_class_read_allowed(identity.tenant_id, row.ci_class, identity.role):
-            add("ci", row, row.name, f"Class: {row.ci_class}; Environment: {row.environment}; Status: {row.operational_status}")
+    for row in read_access.configuration_items(identity).filter(
+            ConfigurationItem.id.in_(ci_ids)).order_by(ConfigurationItem.id).limit(3):
+        add("ci", row, row.name, f"Class: {row.ci_class}; Environment: {row.environment}; Status: {row.operational_status}")
     return evidence, sources
 
 
 def sources_accessible(identity, sources):
-    from app import visible_ticket_query
     for source in sources:
         kind, record_id = source["kind"], source["record_id"]
         if kind == "ticket":
-            if not visible_ticket_query(identity).filter_by(id=record_id, deleted_at=None).first():
+            if not read_access.tickets(identity).filter(Ticket.id == record_id).first():
                 return False
         elif kind == "knowledge":
-            if not Knowledge.query.filter_by(id=record_id, tenant_id=identity.tenant_id, published=True, archived=False).first():
+            if not read_access.published_knowledge(identity).filter(Knowledge.id == record_id).first():
                 return False
         elif kind == "ci":
-            row = ConfigurationItem.query.filter_by(id=record_id, tenant_id=identity.tenant_id).first()
-            if not row or not ci_class_read_allowed(identity.tenant_id, row.ci_class, identity.role):
+            if not read_access.configuration_items(identity).filter(ConfigurationItem.id == record_id).first():
                 return False
         else:
             return False

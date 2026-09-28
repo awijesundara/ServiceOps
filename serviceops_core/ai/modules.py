@@ -14,7 +14,7 @@ from datetime import timedelta
 from sqlalchemy import func
 
 from serviceops_core.ai import access
-from serviceops_core.ci_class_policy import ci_class_read_allowed
+from serviceops_core import read_access
 from serviceops_core.navigation import NAVIGATION_ENTRIES
 from serviceops_models import (ApprovalVote, Asset, CatalogRequest, CatalogTask, ClientTicket, ClientTicketMessage,
                                ConfigurationItem, EnterpriseRecord, Knowledge, OperationalTask, RequestedItem, SupportGroup,
@@ -178,7 +178,7 @@ def _tasks(scope, question, evidence):
 
 
 def _knowledge(scope):
-    rows = dict(Knowledge.query.filter_by(tenant_id=scope.tenant_id, published=True, archived=False).with_entities(
+    rows = dict(read_access.published_knowledge(scope.identity).with_entities(
         Knowledge.category, func.count()).group_by(Knowledge.category).all())
     total = sum(rows.values())
     return "Knowledge base", (f"{total} published articles" + (": " + ", ".join(f"{c or 'General'} {n}" for c, n in sorted(
@@ -189,11 +189,10 @@ def _cmdb(scope, question, evidence):
     if not scope.can_read_cmdb:
         return "Configuration items and assets", "Your access level does not include the configuration database or asset inventory."
     per = {}
-    for ci_class, environment, total in ConfigurationItem.query.filter_by(tenant_id=scope.tenant_id).with_entities(
+    for ci_class, environment, total in read_access.configuration_items(scope.identity).with_entities(
             ConfigurationItem.ci_class, ConfigurationItem.environment, func.count()).group_by(
             ConfigurationItem.ci_class, ConfigurationItem.environment).all():
-        if ci_class_read_allowed(scope.tenant_id, ci_class, scope.role):
-            per[ci_class] = per.get(ci_class, 0) + total
+        per[ci_class] = per.get(ci_class, 0) + total
     text = ("Configuration items you may read: " + (", ".join(f"{c} {n}" for c, n in sorted(per.items(), key=lambda x: -x[1])[:10])
                                                      or "none") + f" ({sum(per.values())} in total).")
     assets = dict(Asset.query.filter_by(tenant_id=scope.tenant_id).with_entities(Asset.status, func.count()).group_by(Asset.status).all())

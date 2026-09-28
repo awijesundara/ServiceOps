@@ -498,7 +498,9 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
         payload = {"model": config.model, "max_tokens": cap, "stream": True, "system": system,
                    "messages": [m for m in messages if m["role"] != "system"]}
     else:
-        payload = {"model": config.model, "messages": messages, "max_tokens": cap, "stream": True}
+        # Without this, OpenAI-compatible services (Gemini included) report no token usage on a stream.
+        payload = {"model": config.model, "messages": messages, "max_tokens": cap, "stream": True,
+                   "stream_options": {"include_usage": True}}
         _tuned_for_host(payload, config)
         if (thinking is not None and config.provider == "self_hosted"
                 and selected_profile(config).get("thinking_control") == "chat_template"):
@@ -516,8 +518,15 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
         pin = pin_resolved_addresses(hostname, infos) if hostname else nullcontext()
         with provider_session(config)[0] as client, pin:
             streamed = config.provider != "openai"
-            with client.post(url, json=payload, headers=headers, allow_redirects=False, stream=streamed,
-                             timeout=(5, stall_timeout(config, limit) if streamed else limit)) as response:
+
+            def send():
+                return client.post(url, json=payload, headers=headers, allow_redirects=False, stream=streamed,
+                                   timeout=(5, stall_timeout(config, limit) if streamed else limit))
+            response = send()
+            if response.status_code in (400, 422) and payload.pop("stream_options", None) is not None:
+                response.close()  # an older self-hosted server that does not know the usage option
+                response = send()
+            with response:
                 if response.status_code != 200:
                     raise rejection(response.status_code)
                 if config.provider == "openai":

@@ -14,6 +14,7 @@ from serviceops_models import (AIAction, AIConfiguration, AIConnection, AIConver
 from serviceops_core.ai import access, discovery_tokens, memory, quota, routing, service
 from serviceops_core.ai.provider import (PROVIDERS, ProviderError, decrypt_key, generate, list_models, normalize_endpoint,
                                          validate_configuration)
+from serviceops_core import read_access
 from serviceops_core.proxy_tunnel import parse_proxy_url
 from serviceops_core.storage import ipfs_enabled
 
@@ -504,7 +505,6 @@ def register(app):
         """Freeze a deterministic staff chat command, or a staff-requested generated draft, as an expiring proposal.
         Ticket state/priority/assignment stays administrator-only; comments, notes and knowledge drafts are open
         to any staff role, matching who may already post a comment or write a knowledge article by hand."""
-        from app import visible_ticket_query
         from serviceops_core.ai import actions
 
         scope, config = chat_scope()
@@ -522,8 +522,7 @@ def register(app):
             abort(409, description="This answer does not contain a supported action proposal.")
         if candidate["type"] == "update_ticket" and scope.role not in ("admin", "superadmin"):
             abort(403, description="Administrator access is required to change ticket state, priority or assignment.")
-        ticket = visible_ticket_query(scope.identity).filter_by(
-            number=candidate.get("ticket"), deleted_at=None).first_or_404()
+        ticket = read_access.tickets(scope.identity).filter_by(number=candidate.get("ticket")).first_or_404()
         existing = AIAction.query.filter_by(run_id=run.id, action_type=candidate["type"]).first()
         if existing:
             return no_store({"url": url_for("ai.action_review", action_id=existing.id)})
@@ -574,7 +573,6 @@ def register(app):
     @blueprint.route("/ai/actions/<action_id>", methods=["GET", "POST"])
     @login_required
     def action_review(action_id):
-        from app import visible_ticket_query
         from serviceops_core.ai import actions
 
         action = owned_action(action_id, lock=request.method == "POST")
@@ -592,8 +590,8 @@ def register(app):
         actor_id = getattr(identity, "id", getattr(identity, "user_id", None))
         if action.actor_role != identity.role:
             abort(403, description="Switch to the role used to prepare this action.")
-        ticket = visible_ticket_query(identity.identity if hasattr(identity, "identity") else identity).filter_by(
-            id=action.ticket_id, deleted_at=None).first_or_404()
+        ticket = read_access.tickets(identity.identity if hasattr(identity, "identity") else identity).filter_by(
+            id=action.ticket_id).first_or_404()
         payload = json.loads(action.payload_json)
         if request.method == "GET":
             return render_template("ai_action_review.html", action=action, ticket=ticket, payload=payload,

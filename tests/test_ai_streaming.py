@@ -34,15 +34,21 @@ def chunk(content=None, reasoning=None, finish=None, usage=None):
 class SSE:
     """A real local model server that streams the given events, with an optional pause between them."""
 
-    def __init__(self, events, pause=0.0, status=200, silent_for=0.0):
+    def __init__(self, events, pause=0.0, status=200, silent_for=0.0, reject_stream_options=False):
         outer = self
         self.events, self.pause, self.status, self.disconnected = events, pause, status, False
+        self.reject_stream_options, self.bodies = reject_stream_options, []
         self.silent_for = silent_for  # accept the request, then say nothing for this long
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
-                self.rfile.read(int(self.headers["Content-Length"]))
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])) or b"{}")
+                outer.bodies.append(body)
                 time.sleep(outer.silent_for)
+                if outer.reject_stream_options and "stream_options" in body:
+                    self.send_response(400)
+                    self.end_headers()
+                    return
                 if outer.status != 200:
                     self.send_response(outer.status)
                     self.end_headers()
@@ -227,6 +233,23 @@ def test_a_silent_service_hands_the_question_to_the_next_one(app, client, sse, m
     assert messages[1]["content"] == "Recovered."
     with app.app_context():
         assert db.session.get(AIConnection, first).consecutive_failures == 1
+
+
+def test_streams_ask_for_token_usage_and_record_it(app, sse):
+    server, config = sse([chunk(content="ok"), chunk(finish="stop"),
+                          chunk(usage={"prompt_tokens": 120, "completion_tokens": 4, "total_tokens": 150})])
+    with app.app_context():
+        _, _, usage = provider.generate_stream(config, MESSAGES, lambda *_: True)
+    assert server.bodies[0]["stream_options"] == {"include_usage": True}
+    assert (usage["prompt_tokens"], usage["completion_tokens"], usage["total_tokens"]) == (120, 4, 150)
+
+
+def test_a_server_that_rejects_the_usage_option_is_asked_again_without_it(app, sse):
+    server, config = sse([chunk(content="ok"), chunk(finish="stop")], reject_stream_options=True)
+    with app.app_context():
+        content, _, _ = provider.generate_stream(config, MESSAGES, lambda *_: True)
+    assert content == "ok"
+    assert ["stream_options" in body for body in server.bodies] == [True, False]
 
 
 def test_output_cut_off_by_the_token_cap_is_flagged(app, sse):
