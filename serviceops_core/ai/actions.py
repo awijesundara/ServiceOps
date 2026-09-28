@@ -9,6 +9,7 @@ import re
 from flask import abort
 
 from serviceops_core.ai.access import record_numbers  # noqa: F401 (re-exported for callers that import it from here)
+from serviceops_core import read_access
 from serviceops_core.security import redact
 from serviceops_models import Knowledge, Ticket, User, db
 
@@ -22,10 +23,7 @@ ACTION_VERB = re.compile(
 
 
 def _visible_ticket(scope, number):
-    from app import visible_ticket_query
-    return visible_ticket_query(scope.identity).filter(
-        db.func.upper(Ticket.number) == number.upper(), Ticket.deleted_at.is_(None)
-    ).first()
+    return read_access.tickets(scope.identity).filter(db.func.upper(Ticket.number) == number.upper()).first()
 
 
 def propose_from_question(scope, question, enabled):

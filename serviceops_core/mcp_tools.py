@@ -1,13 +1,15 @@
 """Read-only ServiceOps tools for the embedded MCP server (serviceops_core/mcp.py).
 
 Every query is scoped to the API client's acting user (g.api_user) and that
-user's tenant explicitly: bearer-token requests have no logged-in
-current_user, so tenant_query()/tenant_context_id() must not be used here.
+user's tenant explicitly, through serviceops_core.read_access (shared with the
+chat assistant): bearer-token requests have no logged-in current_user, so
+tenant_query()/tenant_context_id() must not be used here.
 """
 from __future__ import annotations
 
 from flask import g
 
+from serviceops_core import read_access
 from serviceops_core.mcp import Tool, ToolInputError
 
 MAX_LIMIT = 50
@@ -51,7 +53,7 @@ def search_tickets(arguments):
     limit = _limit(arguments)
     if kind and kind not in ("incident", "change"):
         raise ToolInputError("'type' must be 'incident' or 'change'.")
-    query = core.visible_ticket_query(g.api_user)
+    query = read_access.tickets(g.api_user)
     if kind:
         query = query.filter(core.Ticket.kind == kind)
     if state:
@@ -75,7 +77,7 @@ def get_ticket(arguments):
     import app as core
 
     number = _text(arguments, "number", required=True, max_length=24)
-    ticket = core.visible_ticket_query(g.api_user).filter(
+    ticket = read_access.tickets(g.api_user).filter(
         core.func.upper(core.Ticket.number) == number.upper()
     ).first()
     if not ticket:
@@ -91,15 +93,12 @@ def search_configuration_items(arguments):
     import app as core
 
     user = g.api_user
-    if not core.role_at_least(user.effective_role, "agent"):
+    if not read_access.may_read_cmdb(user):
         raise ToolInputError("Configuration item access requires the agent role.")
     query_text = _text(arguments, "query")
     ci_class = _text(arguments, "ci_class", max_length=80)
     limit = _limit(arguments)
-    query = core.restrict_ci_query_to_readable_classes(
-        core.ConfigurationItem.query.filter(core.ConfigurationItem.tenant_id == user.tenant_id),
-        user.tenant_id, user.effective_role,
-    )
+    query = read_access.configuration_items(user)
     if ci_class:
         query = query.filter(core.ConfigurationItem.ci_class == ci_class)
     if query_text:
@@ -124,7 +123,7 @@ def search_knowledge(arguments):
     query_text = _text(arguments, "query", required=True)
     limit = _limit(arguments, default=10)
     pattern = _pattern(query_text)
-    rows = core.visible_knowledge_query(g.api_user).filter(core.db.or_(
+    rows = read_access.reviewable_knowledge(g.api_user).filter(core.db.or_(
         core.Knowledge.title.ilike(pattern, escape="\\"),
         core.Knowledge.body.ilike(pattern, escape="\\"),
     )).order_by(core.Knowledge.created_at.desc()).limit(limit).all()

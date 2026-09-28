@@ -242,3 +242,14 @@ def test_several_models_can_be_added_at_once_and_share_the_key(app, client, monk
         keys = {settings_cipher().decrypt(c.key_encrypted.encode()).decode() for c in AIConnection.query.all()}
         assert keys == {"secret-key-1"}
     assert client.post("/admin/ai/services/bulk", json={"models": "nope"}).status_code == 400
+
+
+def test_hidden_thinking_tokens_count_against_the_allowance(app):
+    with app.app_context():
+        call_id = quota.open_call(1, "svc", 100)
+        quota.close_call(call_id, "ok", {"prompt_tokens": 100, "completion_tokens": 0, "total_tokens": 160})
+        call = db.session.get(AICall, call_id)
+        assert (call.prompt_tokens, call.completion_tokens) == (100, 60)
+        other = quota.open_call(1, "svc", 50)
+        quota.close_call(other, "ok", {"prompt_tokens": 50, "completion_tokens": 20})
+        assert db.session.get(AICall, other).completion_tokens == 20

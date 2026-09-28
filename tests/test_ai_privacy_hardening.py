@@ -54,7 +54,8 @@ def test_a_request_with_personal_details_never_goes_external(app, client, world,
     use_only(app, "openai_compatible", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
     monkeypatch.setattr(service, "generate_stream", lambda *_, **__: pytest.fail("sensitive request went external"))
     login(client, "employee", "Employee123!")
-    assert ask(client, "What is happening with my VPN ticket?").status_code == 201
+    # Asked by number, so the full record (with its email and phone number) is retrieved.
+    assert ask(client, "What is happening with INC0100001?").status_code == 201
     finish_all(app)
     with app.app_context():
         route = json.loads(AIRun.query.one().route_json)
