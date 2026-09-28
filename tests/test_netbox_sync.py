@@ -363,7 +363,9 @@ def test_component_permission_failure_is_reported_without_losing_devices(app, mo
         def get(self, url, params=None, timeout=None, allow_redirects=None):
             if url.endswith("/api/dcim/interfaces/"):
                 import requests
-                raise requests.HTTPError("403 Forbidden")
+                response = requests.Response()
+                response.status_code = 403
+                raise requests.HTTPError("403 Forbidden", response=response)
             return super().get(url, params=params, timeout=timeout, allow_redirects=allow_redirects)
 
     with app.app_context():
@@ -373,7 +375,8 @@ def test_component_permission_failure_is_reported_without_losing_devices(app, mo
         )
         result = sync_from_netbox(1, session_factory=factory)
         assert result["cis_created"] == 1
-        assert result["warnings"] == ["Interfaces were not imported: HTTPError"]
+        assert result["warnings"] == [
+            "Interfaces were not imported: the token is not permitted to read them."]
 
 
 def test_custom_status_preserves_existing_controlled_status(app, monkeypatch):
