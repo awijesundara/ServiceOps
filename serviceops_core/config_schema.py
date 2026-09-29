@@ -9,6 +9,32 @@ and the encryption cipher.
 import json
 
 
+PROXY_MODE_CHOICES = ["default", "none", "custom"]
+PROXY_MODE_LABELS = {
+    "default": "Use the system default proxy",
+    "none": "Connect directly (no proxy)",
+    "custom": "Use a custom proxy",
+}
+
+
+def proxy_policy_settings(prefix, subject):
+    """The mode/custom-URL pair that lets an administrator choose how one
+    outbound component leaves the network: inherit OUTBOUND_PROXY_URL,
+    connect directly, or use its own proxy. The custom URL is a secret
+    because proxy URLs often carry credentials. app.resolve_component_proxy_url()
+    reads the pair by the same prefix."""
+    return [
+        {
+            "key": f"{prefix}_PROXY_MODE", "label": f"{subject} proxy", "type": "choice",
+            "choices": PROXY_MODE_CHOICES, "choice_labels": PROXY_MODE_LABELS, "default": "default", "live": True,
+        },
+        {
+            "key": f"{prefix}_PROXY_URL", "type": "secret", "default": "", "live": True,
+            "label": f"Custom {subject} proxy (HTTP/HTTPS, used only when the mode above is custom)",
+        },
+    ]
+
+
 SETTING_DEFINITIONS = {
     "organization": [
         {"key": "INSTANCE_NAME", "label": "Instance name", "type": "text", "default": "ServiceOps", "live": True},
@@ -127,6 +153,7 @@ SETTING_DEFINITIONS = {
         {"key": "APNS_KEY_ID", "label": "APNs key ID", "type": "text", "default": "", "live": True},
         {"key": "APNS_BUNDLE_ID", "label": "iOS bundle identifier", "type": "text", "default": "wijesundara.com.ServiceOps", "live": True},
         {"key": "APNS_PRIVATE_KEY", "label": "APNs private key", "type": "secret", "default": "", "live": True},
+        *proxy_policy_settings("APNS", "iOS push notification"),
         {"key": "SMTP_PORT", "label": "SMTP port", "type": "int", "default": "587", "min": 1, "max": 65535, "live": True},
         {"key": "SMTP_SECURITY", "label": "SMTP transport security", "type": "choice", "choices": ["starttls", "tls", "none"], "default": "starttls", "live": True},
         {"key": "SMTP_STARTTLS", "label": "Require SMTP STARTTLS (legacy)", "type": "bool", "default": "true", "live": True},
@@ -154,6 +181,7 @@ SETTING_DEFINITIONS = {
             "key": "NETBOX_TLS_INSECURE", "type": "bool", "default": "false", "live": True,
             "label": "Skip NetBox TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
         },
+        *proxy_policy_settings("NETBOX", "NetBox"),
     ],
     "outbound_network": [
         {
@@ -166,12 +194,16 @@ SETTING_DEFINITIONS = {
         },
         {
             "key": "SMTP_PROXY_MODE", "label": "Email delivery proxy", "type": "choice",
-            "choices": ["default", "none", "custom"], "default": "default", "live": True,
+            "choices": PROXY_MODE_CHOICES, "choice_labels": PROXY_MODE_LABELS, "default": "default", "live": True,
         },
         {
             "key": "SMTP_PROXY_URL", "label": "Custom email delivery proxy (used only when the mode above is Custom)",
             "type": "text", "default": "", "live": True,
         },
+        *proxy_policy_settings("UPDATE_CHECK", "release update check"),
+        *proxy_policy_settings("OBJECT_STORAGE", "object storage"),
+        *proxy_policy_settings("CLOUDFLARE_ACCESS", "Cloudflare Access key download"),
+        *proxy_policy_settings("CMDB_IMPORT", "CMDB spreadsheet import"),
     ],
     "google_chat_app": [
         {
@@ -197,6 +229,7 @@ SETTING_DEFINITIONS = {
             "label": "Service account key (JSON) -- used to pull Pub/Sub events and post replies",
             "type": "secret", "default": "", "live": True,
         },
+        *proxy_policy_settings("GOOGLE_CHAT", "Google Chat bot"),
     ],
     "request_tracker_connection": [
         {"key": "RT_ENABLED", "label": "Enable Request Tracker (RT) import", "type": "bool", "default": "false", "live": True},
@@ -210,6 +243,7 @@ SETTING_DEFINITIONS = {
             "key": "RT_TLS_INSECURE", "type": "bool", "default": "false", "live": True,
             "label": "Skip RT TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
         },
+        *proxy_policy_settings("RT", "Request Tracker"),
     ],
 }
 
@@ -225,8 +259,9 @@ SETTING_GROUP_META = {
     "outbound_network": (
         "Outbound proxy & updates",
         "System egress proxy for AI models, notifications, email, integrations, object storage, mobile push, "
-        "identity verification, imports, and release checks. Each AI model and notification channel may inherit "
-        "this proxy, use its own proxy, or connect directly.",
+        "identity verification, imports, and release checks. Every outbound component (each AI model, notification "
+        "channel, email, NetBox, Request Tracker, Google Chat bot, iOS push, object storage, Cloudflare Access, "
+        "spreadsheet import and the update check) may inherit this proxy, use its own proxy, or connect directly.",
     ),
     "google_chat_app": (
         "Google Chat bot",

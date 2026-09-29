@@ -12,8 +12,11 @@
       <span>{{ setting.label }} <small class="apply-badge {{ 'live' if setting.live else 'restart' }}">{{ 'Live' if setting.live else 'Restart required' }}</small></span>
       {% if setting.type == 'bool' %}
         <span class="switch-row"><input type="checkbox" name="{{ setting.key }}" {% if rt_values[setting.key]|lower in ['true','1','yes','on'] %}checked{% endif %}> Enabled</span>
+      {% elif setting.type == 'choice' %}
+        <select name="{{ setting.key }}">{% for choice in setting.choices %}<option value="{{ choice }}" {% if rt_values[setting.key] == choice %}selected{% endif %}>{{ setting.choice_labels[choice] if setting.choice_labels else choice|title }}</option>{% endfor %}</select>
       {% elif setting.type == 'secret' %}
         <input type="password" name="{{ setting.key }}" value="" placeholder="{{ 'Configured — leave blank to retain' if setting.configured else 'Not configured' }}" autocomplete="new-password">
+        {% if setting.key.endswith('_PROXY_URL') and setting.configured %}<span class="switch-row"><input type="checkbox" name="{{ setting.key }}_CLEAR"> Remove this custom proxy</span>{% endif %}
       {% else %}
         <input type="{{ setting.type if setting.type in ['email','url','number'] else 'text' }}" name="{{ setting.key }}" value="{{ rt_values[setting.key] }}">
       {% endif %}

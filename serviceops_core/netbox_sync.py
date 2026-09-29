@@ -215,7 +215,7 @@ def _netbox_session(base_url, token):
     import app as core_app
 
     session = requests.Session()
-    proxies = core_app.resolve_outbound_proxies(None)
+    proxies = core_app.resolve_component_proxies("NETBOX")
     if proxies:
         session.proxies.update(proxies)
     session.trust_env = False
@@ -783,7 +783,8 @@ def probe_netbox(tenant_id, session_factory=_netbox_session):
 
     base_url, token = _configured_connection()
     report = {"base_url": base_url, "token_type": "v2 (Bearer)" if token.startswith("nbt_") else "v1 (Token)",
-              "endpoints": [], "roles": [], "sample": [], "warnings": []}
+              "endpoints": [], "roles": [], "sample": [], "warnings": [],
+              "egress": core_app.describe_component_egress("NETBOX")}
     session = session_factory(base_url, token)
     try:
         try:

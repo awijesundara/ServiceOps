@@ -30,7 +30,6 @@ from app import (
     parse_list_filter_param,
     require_action,
     resolve_endpoint_addresses_safely,
-    resolve_outbound_proxies,
     roles,
     setting_bool,
     tenant_query,
@@ -468,7 +467,7 @@ def register(app):
                     if not integration_endpoint_valid(export_url):
                         flash("That sheet URL could not be reached safely.", "error")
                         return _cmdb_import_page()
-                    proxies = resolve_outbound_proxies(None)
+                    proxies = core.resolve_component_proxies("CMDB_IMPORT")
                     ok, hostname, infos = (True, None, None) if proxies else resolve_endpoint_addresses_safely(export_url)
                     if not ok:
                         flash("That sheet URL could not be reached safely.", "error")

@@ -480,7 +480,7 @@ def ipfs_user_from_dict(fields):
 
 
 def object_storage_client():
-    proxies = resolve_outbound_proxies(None)
+    proxies = resolve_component_proxies("OBJECT_STORAGE")
     return boto3.client(
         "s3", endpoint_url=os.getenv("OBJECT_STORAGE_ENDPOINT") or None,
         region_name=os.getenv("OBJECT_STORAGE_REGION", "us-east-1"),
@@ -1616,7 +1616,7 @@ def deliver_mobile_push(event):
         raise RuntimeError("APNS_BUNDLE_ID is required.")
     authorization = _apns_authorization_token()
     delivered = 0
-    proxy_url = setting_value("OUTBOUND_PROXY_URL", "") or None
+    proxy_url = resolve_component_proxy_url("APNS")
     with httpx.Client(http2=True, timeout=10.0, proxy=proxy_url, trust_env=False) as client:
         for device in devices:
             token = settings_cipher().decrypt(device.token_encrypted.encode()).decode()
@@ -1771,17 +1771,19 @@ def resolve_outbound_proxies(configuration=None):
     return {"http": proxy_url, "https": proxy_url}
 
 
-def resolve_smtp_proxy_url():
-    """Same three-state precedence as resolve_outbound_proxies(), for the
-    single email relay configuration (SMTP_PROXY_MODE/SMTP_PROXY_URL) --
-    returns a plain URL string (not a requests proxies dict) since the
-    caller is serviceops_core.proxy_tunnel.tunnel_through_proxy(), not
-    requests. SMTP has no native HTTP-proxy support (it isn't HTTP), so
-    this tunnels through an HTTP(S) proxy's CONNECT method instead."""
-    mode = setting_value("SMTP_PROXY_MODE", "default")
+def resolve_component_proxy_url(prefix):
+    """Same three-state precedence as resolve_outbound_proxies(), for an
+    outbound component configured through platform settings instead of an
+    IntegrationConnection: <prefix>_PROXY_MODE picks "default" (inherit
+    OUTBOUND_PROXY_URL), "none" (connect directly) or "custom" (use
+    <prefix>_PROXY_URL). Returns a plain URL string or None. A malformed
+    URL falls back to a direct connection for the reason given in
+    resolve_outbound_proxies()."""
+    mode = setting_value(f"{prefix}_PROXY_MODE", "default")
     if mode == "none":
         return None
-    proxy_url = setting_value("SMTP_PROXY_URL", "") if mode == "custom" else setting_value("OUTBOUND_PROXY_URL", "")
+    proxy_url = (setting_value(f"{prefix}_PROXY_URL", "") if mode == "custom"
+                 else setting_value("OUTBOUND_PROXY_URL", ""))
     if not proxy_url:
         return None
     try:
@@ -1789,6 +1791,33 @@ def resolve_smtp_proxy_url():
     except ValueError:
         return None
     return proxy_url
+
+
+def resolve_component_proxies(prefix):
+    """resolve_component_proxy_url() as a requests-compatible proxies dict,
+    or None for a direct connection."""
+    proxy_url = resolve_component_proxy_url(prefix)
+    return {"http": proxy_url, "https": proxy_url} if proxy_url else None
+
+
+def describe_component_egress(prefix):
+    """A plain-language label for the route resolve_component_proxy_url()
+    picks, for connection-test results. Never includes the proxy URL,
+    which may carry credentials."""
+    if not resolve_component_proxy_url(prefix):
+        return "a direct connection"
+    if setting_value(f"{prefix}_PROXY_MODE", "default") == "custom":
+        return "its custom proxy"
+    return "the system default proxy"
+
+
+def resolve_smtp_proxy_url():
+    """The email relay's egress policy (SMTP_PROXY_MODE/SMTP_PROXY_URL) as
+    a plain URL string, since the caller is
+    serviceops_core.proxy_tunnel.tunnel_through_proxy(), not requests. SMTP
+    has no native HTTP-proxy support (it isn't HTTP), so it tunnels through
+    an HTTP(S) proxy's CONNECT method instead."""
+    return resolve_component_proxy_url("SMTP")
 
 
 def single_line_header(value):
@@ -1896,7 +1925,7 @@ _google_access_token_cache = {}
 _google_access_token_lock = threading.Lock()
 
 
-def _google_service_account_access_token(service_account_json, scopes):
+def _google_service_account_access_token(service_account_json, scopes, proxies=None):
     """Exchanges a Google service-account key for a short-lived OAuth2
     access token via the standard JWT-bearer grant (RFC 7523) -- the same
     flow Google's own client libraries use under the hood, implemented
@@ -1905,7 +1934,8 @@ def _google_service_account_access_token(service_account_json, scopes):
     one token exchange. Cached per (service account, scope set), guarded
     the same way as _cloudflare_access_key_set() so concurrent request/
     worker threads racing in at expiry don't each independently
-    re-exchange."""
+    re-exchange. `proxies` is the caller's own egress policy, so the token
+    exchange leaves the network the same way as the call it authorizes."""
     scope_string = " ".join(sorted(scopes))
     cache_key = hashlib.sha256((service_account_json + "|" + scope_string).encode()).hexdigest()
     with _google_access_token_lock:
@@ -1927,7 +1957,7 @@ def _google_service_account_access_token(service_account_json, scopes):
     response = requests.post(
         "https://oauth2.googleapis.com/token",
         data={"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": assertion},
-        proxies=resolve_outbound_proxies(None), timeout=10,
+        proxies=proxies, timeout=10,
     )
     response.raise_for_status()
     payload = response.json()
@@ -1953,8 +1983,9 @@ def google_chat_post_message(connection, text, thread_name=None, message_id=None
     own thread name either way, so the very first call (no thread_name
     yet) tells the caller what thread a later reply should be linked to.
     """
+    proxies = resolve_outbound_proxies(connection.configuration)
     access_token = _google_service_account_access_token(
-        connection.secret, {"https://www.googleapis.com/auth/chat.bot"},
+        connection.secret, {"https://www.googleapis.com/auth/chat.bot"}, proxies,
     )
     body = {"text": text}
     params = {}
@@ -1967,7 +1998,7 @@ def google_chat_post_message(connection, text, thread_name=None, message_id=None
         f"https://chat.googleapis.com/v1/{connection.delivery_endpoint}/messages",
         json=body, params=params,
         headers={"Authorization": f"Bearer {access_token}"},
-        proxies=resolve_outbound_proxies(connection.configuration), timeout=10,
+        proxies=proxies, timeout=10,
     )
     # A retried Pub/Sub command uses a deterministic client message ID.
     # Google's 409 means that exact reply was already created, so treating it
@@ -4734,7 +4765,7 @@ def process_update_check_schedule():
         response = requests.get(
             "https://api.github.com/repos/awijesundara/ServiceOps/releases/latest",
             headers={"Accept": "application/vnd.github+json", "User-Agent": "ServiceOps-update-check"},
-            proxies=resolve_outbound_proxies(None), timeout=10,
+            proxies=resolve_component_proxies("UPDATE_CHECK"), timeout=10,
         )
         response.raise_for_status()
         data = response.json()
@@ -4871,8 +4902,8 @@ def process_google_chat_pubsub_schedule(max_messages=20):
     subscription (Chat API -> Configuration -> Connection settings ->
     Cloud Pub/Sub topic -- chosen specifically so nothing needs to be
     reachable from the internet; ServiceOps only ever calls outward to
-    pubsub.googleapis.com, through the same OUTBOUND_PROXY_URL as every
-    other outbound integration), dispatches any /command found in a
+    pubsub.googleapis.com, through the GOOGLE_CHAT_PROXY_MODE egress
+    policy), dispatches any /command found in a
     threaded reply to the record its alert was sent about
     (ChatThreadLink), and acknowledges every pulled message either way --
     a message this deployment can't or won't act on (no matching thread,
@@ -4890,15 +4921,16 @@ def process_google_chat_pubsub_schedule(max_messages=20):
         return 0
     max_messages = max(1, min(int(max_messages), 20))
     subscription = f"projects/{project_id}/subscriptions/{subscription_id}"
+    proxies = resolve_component_proxies("GOOGLE_CHAT")
     try:
         access_token = _google_service_account_access_token(
-            service_account_json, {"https://www.googleapis.com/auth/pubsub"},
+            service_account_json, {"https://www.googleapis.com/auth/pubsub"}, proxies,
         )
         response = requests.post(
             f"https://pubsub.googleapis.com/v1/{subscription}:pull",
             json={"maxMessages": max_messages},
             headers={"Authorization": f"Bearer {access_token}"},
-            proxies=resolve_outbound_proxies(None), timeout=15,
+            proxies=proxies, timeout=15,
         )
         response.raise_for_status()
         received = response.json().get("receivedMessages", []) or []
@@ -4916,7 +4948,7 @@ def process_google_chat_pubsub_schedule(max_messages=20):
             f"https://pubsub.googleapis.com/v1/{subscription}:modifyAckDeadline",
             json={"ackIds": lease_ack_ids, "ackDeadlineSeconds": 300},
             headers={"Authorization": f"Bearer {access_token}"},
-            proxies=resolve_outbound_proxies(None), timeout=15,
+            proxies=proxies, timeout=15,
         )
         lease_response.raise_for_status()
     except Exception:
@@ -4992,7 +5024,7 @@ def process_google_chat_pubsub_schedule(max_messages=20):
                 f"https://pubsub.googleapis.com/v1/{subscription}:acknowledge",
                 json={"ackIds": ack_ids},
                 headers={"Authorization": f"Bearer {access_token}"},
-                proxies=resolve_outbound_proxies(None), timeout=15,
+                proxies=proxies, timeout=15,
             )
             ack_response.raise_for_status()
         except Exception:
@@ -6757,7 +6789,7 @@ def _cloudflare_access_key_set():
             return _cloudflare_access_jwks_cache["key_set"]
         team_domain = current_app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]
         response = requests.get(f"https://{team_domain}/cdn-cgi/access/certs", timeout=5,
-                                proxies=resolve_outbound_proxies(None))
+                                proxies=resolve_component_proxies("CLOUDFLARE_ACCESS"))
         response.raise_for_status()
         key_set = KeySet.import_key_set(response.json())
         _cloudflare_access_jwks_cache["key_set"] = key_set
