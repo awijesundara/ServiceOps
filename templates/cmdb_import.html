@@ -31,7 +31,7 @@
       <div class="netbox-result bad" role="alert"><strong>Connection failed.</strong> {{ netbox_probe_error }}</div>
       {% elif netbox_probe %}
       <div class="netbox-result {{ 'ok' if netbox_probe.ready and not netbox_probe.warnings else 'warn' }}" role="status">
-        <strong>Connected to NetBox {{ netbox_probe.netbox_version }}</strong> at <code>{{ netbox_probe.base_url }}</code> with a {{ netbox_probe.token_type }} token.
+        <strong>Connected to NetBox {{ netbox_probe.netbox_version }}</strong> at <code>{{ netbox_probe.base_url }}</code> with a {{ netbox_probe.token_type }} token{% if netbox_probe.egress %} through {{ netbox_probe.egress }}{% endif %}.
         <table class="netbox-probe-table"><thead><tr><th>NetBox data</th><th>Records visible to this token</th></tr></thead><tbody>
         {% for row in netbox_probe.endpoints %}<tr><td>{{ row.label }}{% if row.required %} <small class="muted">(imported)</small>{% endif %}</td><td>{% if row.readable %}{{ row.count }}{% else %}<span class="netbox-denied">{{ row.problem }}</span>{% endif %}</td></tr>{% endfor %}
         </tbody></table>

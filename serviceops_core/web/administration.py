@@ -1373,14 +1373,17 @@ def register(app):
             errors, restart_required, changed = [], False, []
             for definition in definitions:
                 key, field_type = definition["key"], definition["type"]
-                if (key not in request.form and field_type != "bool"
-                        and not (key == "OUTBOUND_PROXY_URL" and request.form.get("OUTBOUND_PROXY_URL_CLEAR"))):
+                # Every proxy URL (the system default and each component's
+                # custom proxy) is a secret that can also be removed.
+                is_proxy_url = key.endswith("_PROXY_URL")
+                clear_requested = is_proxy_url and bool(request.form.get(f"{key}_CLEAR"))
+                if key not in request.form and field_type != "bool" and not clear_requested:
                     continue
                 submitted = request.form.get(key)
                 if field_type == "bool":
                     submitted = "true" if submitted else "false"
                 elif field_type == "secret" and not submitted:
-                    if key == "OUTBOUND_PROXY_URL" and request.form.get("OUTBOUND_PROXY_URL_CLEAR"):
+                    if clear_requested:
                         submitted = ""
                     else:
                         continue
@@ -1411,7 +1414,7 @@ def register(app):
                 if field_type == "choice" and submitted not in definition["choices"]:
                     errors.append(f"{definition['label']} has an invalid value.")
                     continue
-                if key == "OUTBOUND_PROXY_URL" and submitted:
+                if is_proxy_url and submitted:
                     try:
                         parse_proxy_url(submitted)
                     except ValueError as error:
@@ -1429,6 +1432,15 @@ def register(app):
                 row.value, row.encrypted, row.updated_by_id = stored, encrypted, current_user.id
                 changed.append(key)
                 restart_required = restart_required or not definition["live"]
+            # A component set to use a custom proxy must have one to use,
+            # or its traffic would silently fall back to a direct connection.
+            for definition in definitions:
+                mode_key = definition["key"]
+                if not mode_key.endswith("_PROXY_MODE") or request.form.get(mode_key) != "custom":
+                    continue
+                url_key = mode_key[:-len("_MODE")] + "_URL"
+                if not core.setting_value(url_key, ""):
+                    errors.append(f"{definition['label']} is set to a custom proxy, but no custom proxy URL is saved.")
             if category == "branding":
                 logo = request.files.get("company_logo")
                 if logo and logo.filename:
