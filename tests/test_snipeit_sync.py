@@ -227,7 +227,7 @@ def test_netbox_items_keep_netbox_hardware_and_only_gain_asset_data(app, monkeyp
         assert (ci.external_source, ci.operational_status) == ("netbox", "Down")
         assert ci.install_date == date(2024, 2, 1) and ci.warranty_expiry_date == date(2027, 2, 1)
         assert ci.attributes["NetBox: Role"] == "Database" and ci.attributes["Manual note"] == "keep"
-        assert ci.attributes["Snipe-IT: Asset ID"] == "9"
+        assert ci.attributes["Snipe-IT: Asset Tag"] == "A-0009"
 
 
 def test_one_bad_record_is_isolated(app, monkeypatch):

@@ -45,13 +45,16 @@ from serviceops_core.ci_class_policy import (
 from serviceops_core.dns_lookup import resolve_hostname, resolve_ip
 from serviceops_core.dns_pin import pin_resolved_addresses
 from serviceops_core.feature_flags import feature_enabled
+from serviceops_core import ci_sources
 from serviceops_core.web.common import (
     _ci_attributes_from_form,
     _ci_duplicate_of,
     _rack_elevation_payload,
     CI_CLASS_PERMISSION_CRUD_ROLES,
     CI_CLASS_PERMISSION_ROLES,
+    CI_DISCOVERY_ATTRIBUTE_KEYS,
     cmdb_filter_field_spec,
+    form_text,
 )
 from serviceops_models import (
     Asset,
@@ -269,7 +272,7 @@ def register(app):
     def ci_new():
         if request.method == "POST":
             name = request.form["name"].strip()
-            serial_number = request.form.get("serial_number", "").strip() or None
+            serial_number = form_text("serial_number")
             ci_class = request.form["ci_class"].strip()
             if not ci_class_action_allowed(
                 current_user.tenant_id, ci_class, current_user.effective_role, "create",
@@ -291,16 +294,16 @@ def register(app):
             rack_id = request.form.get("rack_id") or None
             ci = ConfigurationItem(
                 name=request.form["name"].strip(), ci_class=ci_class,
-                description=request.form.get("description", "").strip() or None,
+                description=form_text("description"),
                 environment=environment, operational_status=request.form["operational_status"],
                 lifecycle_state=request.form.get("lifecycle_state", "In Use"),
                 business_criticality=business_criticality,
-                ip_address=request.form.get("ip_address", "").strip() or None,
-                serial_number=request.form.get("serial_number", "").strip() or None,
-                vendor=request.form.get("vendor", "").strip() or None,
-                model=request.form.get("model", "").strip() or None,
-                location=request.form.get("location", "").strip() or None,
-                cost_center=request.form.get("cost_center", "").strip() or None,
+                ip_address=form_text("ip_address"),
+                serial_number=form_text("serial_number"),
+                vendor=form_text("vendor"),
+                model=form_text("model"),
+                location=form_text("location"),
+                cost_center=form_text("cost_center"),
                 discovery_source=request.form.get("discovery_source", "Manual"),
                 install_date=parse_form_date(install_date),
                 warranty_expiry_date=parse_form_date(warranty_expiry_date),
@@ -316,6 +319,7 @@ def register(app):
                 rack_u_height=request.form.get("rack_u_height", type=int),
                 rack_face=request.form.get("rack_face", "").strip() or None,
             )
+            ci_sources.mark_changed(ci, {}, "manual")
             db.session.add(ci)
             audit("create", "CI", ci.name)
             db.session.commit()
@@ -335,7 +339,7 @@ def register(app):
             abort(403, description=f"You are not permitted to edit {ci.ci_class} configuration items.")
         if request.method == "POST":
             name = request.form["name"].strip()
-            serial_number = request.form.get("serial_number", "").strip() or None
+            serial_number = form_text("serial_number")
             duplicate = _ci_duplicate_of(name, serial_number, exclude_id=ci.id)
             if duplicate:
                 flash(
@@ -356,19 +360,20 @@ def register(app):
                 abort(403, description=f"You are not permitted to move this CI into {new_ci_class}.")
             before = {field: getattr(ci, field) or "" for field in tracked_fields}
             before["attributes"] = json.dumps(ci.attributes or {}, sort_keys=True)
+            sources_before = {field: getattr(ci, field, None) for field in ci_sources.FORM_FIELDS}
             ci.name = request.form["name"].strip()
             ci.ci_class = new_ci_class
-            ci.description = request.form.get("description", "").strip() or None
+            ci.description = form_text("description")
             ci.environment = normalize_environment(request.form["environment"])
             ci.operational_status = request.form["operational_status"]
             ci.lifecycle_state = request.form.get("lifecycle_state", "In Use")
             ci.business_criticality = request.form.get("business_criticality", "Medium")
-            ci.ip_address = request.form.get("ip_address", "").strip() or None
-            ci.serial_number = request.form.get("serial_number", "").strip() or None
-            ci.vendor = request.form.get("vendor", "").strip() or None
-            ci.model = request.form.get("model", "").strip() or None
-            ci.location = request.form.get("location", "").strip() or None
-            ci.cost_center = request.form.get("cost_center", "").strip() or None
+            ci.ip_address = form_text("ip_address")
+            ci.serial_number = form_text("serial_number")
+            ci.vendor = form_text("vendor")
+            ci.model = form_text("model")
+            ci.location = form_text("location")
+            ci.cost_center = form_text("cost_center")
             ci.discovery_source = request.form.get("discovery_source", ci.discovery_source)
             ci.install_date = parse_form_date(request.form.get("install_date") or None)
             ci.warranty_expiry_date = parse_form_date(request.form.get("warranty_expiry_date") or None)
@@ -386,6 +391,9 @@ def register(app):
             ci.rack_position = request.form.get("rack_position", type=float)
             ci.rack_u_height = request.form.get("rack_u_height", type=int)
             ci.rack_face = request.form.get("rack_face", "").strip() or None
+            # A value a person changed here is theirs until a sync that owns
+            # the field writes it again.
+            ci_sources.mark_changed(ci, sources_before, "manual")
             after = {field: getattr(ci, field) or "" for field in tracked_fields}
             after["attributes"] = json.dumps(ci.attributes or {}, sort_keys=True)
             log_field_changes("ci", ci.id, before, after)
@@ -434,8 +442,11 @@ def register(app):
             network_connections.append({
                 "ci": other, "local_port": local_port, "other_port": other_port,
             })
+        source_groups, editable_attributes = ci_sources.group_attributes(ci, CI_DISCOVERY_ATTRIBUTE_KEYS)
         return render_template(
             "ci_form.html", ci=ci, owners=owners, support_groups=support_groups, racks=racks, history=history,
+            source_groups=source_groups, editable_attributes=editable_attributes,
+            field_source=lambda field: ci_sources.label(ci, field),
             impacted_cis=impacted_cis, lldp_neighbor_cis=lldp_neighbor_cis,
             network_connections=network_connections,
         )

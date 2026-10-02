@@ -29,7 +29,7 @@ from datetime import date
 
 import requests
 
-from serviceops_core import import_changes
+from serviceops_core import ci_sources, import_changes
 from serviceops_core.netbox_sync import _close, _write_ca_bundle
 
 HARDWARE_PATH = "/api/v1/hardware"
@@ -244,6 +244,13 @@ def _rich_text(value):
     if value in (None, ""):
         return None
     text = html.unescape(str(value))
+
+    def link(match):
+        url, label = match.group(1).strip(), re.sub(r"<[^>]+>", "", match.group(2)).strip()
+        return url if not label or label == url else f"{label} ({url})"
+
+    # Keep where a link pointed: "ticket (https://…)" instead of "ticket".
+    text = re.sub(r"(?is)<a\b[^>]*\bhref=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", link, text)
     text = re.sub(r"(?i)<br\s*/?>|</p>|</li>|</div>", "\n", text)
     text = re.sub(r"<[^>]+>", "", text)
     lines = [" ".join(line.split()) for line in text.splitlines()]
@@ -288,6 +295,35 @@ def _datetime_text(value):
     if isinstance(value, dict):
         value = value.get("datetime") or value.get("date") or value.get("formatted")
     return _text(value)
+
+
+def _singular(text):
+    return (text or "").casefold().strip().removesuffix("s")
+
+
+def redundant_attribute(name, value, ci):
+    """True when a stored Snipe-IT attribute only repeats a CMDB field of
+    `ci`. Used when displaying attributes saved before duplicates were
+    dropped at import, and for values the CI already shows."""
+    text = str(value or "").strip()
+    if name in ("Asset ID", "Created"):
+        return True
+    if name == "Asset Name":
+        return text.casefold() == (ci.name or "").casefold()
+    if name == "Category":
+        return _singular(text) == _singular(ci.ci_class)
+    if name in ("Default Location", "Assigned To"):
+        return text == (ci.location or "")
+    if name == "Assigned To Type":
+        attributes = ci.attributes or {}
+        return text == "location" and attributes.get(f"{ATTRIBUTE_PREFIX}Assigned To", "") == (ci.location or "")
+    parsed = _placement(name, text)
+    if not parsed:
+        return False
+    field, parsed_value = parsed
+    if field == "rack":
+        return bool(ci.rack) and ci.rack.name.casefold() == str(parsed_value).casefold()
+    return getattr(ci, field, None) == parsed_value
 
 
 def category_class(category_name):
@@ -354,11 +390,19 @@ def map_asset(record, base_url=""):
         if value not in (None, "", []):
             attributes[f"{ATTRIBUTE_PREFIX}{label}"] = value
 
-    add("Asset ID", str(asset_id))
+    # Only data the CMDB fields do not already hold is kept as an attribute:
+    # the asset ID is part of the record link, and a category, default
+    # location or location assignee equal to the CI's class or location is
+    # dropped (see redundant_attribute()).
+    location = _text(_nested(record, "location", "name")) or _text(_nested(record, "rtd_location", "name"))
+    ci_class = category_class(category)
+    asset_name = _text(record.get("name"))
+    add("Asset Name", asset_name)
     add("Asset Tag", asset_tag)
     if base_url:
         add("Record", f"{base_url.rstrip('/')}/hardware/{asset_id}")
-    add("Category", category)
+    if category and _singular(category) != _singular(ci_class):
+        add("Category", category)
     add("Status", _text(_nested(record, "status_label", "name")))
     add("Model Number", _text(record.get("model_number")))
     add("Company", _text(_nested(record, "company", "name")))
@@ -368,8 +412,10 @@ def map_asset(record, base_url=""):
     add("Book Value", _text(record.get("book_value")))
     add("Warranty", _text(record.get("warranty_months")))
     add("End of Life", _datetime_text(record.get("asset_eol_date") or record.get("eol")))
-    add("Default Location", _text(_nested(record, "rtd_location", "name")))
-    if assignee:
+    default_location = _text(_nested(record, "rtd_location", "name"))
+    if default_location != location:
+        add("Default Location", default_location)
+    if assignee and not (assignee["type"] == "location" and assignee["name"] == location):
         add("Assigned To", assignee["name"])
         add("Assigned To Type", assignee["type"] or None)
         add("Assigned To Email", assignee["email"])
@@ -379,7 +425,6 @@ def map_asset(record, base_url=""):
     add("Next Audit", _datetime_text(record.get("next_audit_date")))
     add("BYOD", "Yes" if record.get("byod") else None)
     add("Notes", _rich_text(record.get("notes")))
-    add("Created", _datetime_text(record.get("created_at")))
     add("Last Updated", _datetime_text(record.get("updated_at")))
     placement = {}
     for label, (value, _) in custom_fields.items():
@@ -390,14 +435,14 @@ def map_asset(record, base_url=""):
             add(label, value)
 
     return {
-        "name": _text(record.get("name")) or asset_tag or f"asset-{asset_id}",
+        "name": asset_name or asset_tag or f"asset-{asset_id}",
         "asset_tag": asset_tag,
-        "ci_class": category_class(category),
+        "ci_class": ci_class,
         "serial_number": _text(record.get("serial")),
         "vendor": _text(_nested(record, "manufacturer", "name")),
         "model": _text(_nested(record, "model", "name")),
         "ip_address": _ip_from_custom_fields(custom_fields),
-        "location": _text(_nested(record, "location", "name")) or _text(_nested(record, "rtd_location", "name")),
+        "location": location,
         "install_date": _date(record.get("purchase_date")),
         "warranty_expiry_date": _date(record.get("warranty_expires")),
         **_status_fields(record),
@@ -460,23 +505,70 @@ def _rack_id(name, location, tenant_id, summary, rack_cache):
     return rack_cache[key]
 
 
-def _apply_placement(ci, mapped, tenant_id, summary, rack_cache, *, netbox_owned=False):
+def _model_u_height(ci, tenant_id):
+    """The U height other items of the same model already have (for example
+    a NetBox-synced device of that model), so an asset Snipe-IT gives no
+    height draws at its real size in the rack elevation."""
+    import app as core_app
+    from sqlalchemy import func
+
+    if not ci.model:
+        return None
+    CI = core_app.ConfigurationItem
+    conditions = [CI.tenant_id == tenant_id, func.lower(CI.model) == ci.model.casefold(),
+                  CI.rack_u_height.isnot(None)]
+    if ci.id:
+        conditions.append(CI.id != ci.id)
+    row = core_app.db.session.query(CI.rack_u_height, func.count(CI.id)).filter(
+        *conditions,
+    ).group_by(CI.rack_u_height).order_by(func.count(CI.id).desc()).first()
+    return row[0] if row else None
+
+
+def _set(ci, field, value, written, *, clear=False):
+    """Write a Snipe-IT value. An empty value clears the field only when
+    `clear` is set (Snipe-IT owns this item) and Snipe-IT set it before, so
+    adopting an item never blanks what another source filled in."""
+    if value not in (None, ""):
+        setattr(ci, field, value)
+        written.append(field)
+    elif clear and (ci.field_sources or {}).get(field) == "snipeit":
+        setattr(ci, field, None)
+        written.append(field)
+
+
+def _apply_placement(ci, mapped, tenant_id, summary, rack_cache, written, *, netbox_owned=False):
     """Fill rack placement, environment and cost center from recognised
     custom fields. Only values Snipe-IT actually holds are written; an
     organisation without such a custom field keeps whatever the CI has. On
     an item NetBox manages, rack placement and environment stay NetBox's."""
     placement = mapped.get("placement") or {}
-    if placement.get("cost_center"):
-        ci.cost_center = placement["cost_center"]
+    _set(ci, "cost_center", placement.get("cost_center"), written)
     if netbox_owned:
         return
-    if placement.get("environment"):
-        ci.environment = placement["environment"]
+    _set(ci, "environment", placement.get("environment"), written)
     if placement.get("rack"):
         ci.rack_id = _rack_id(placement["rack"], mapped["location"], tenant_id, summary, rack_cache)
+        written.append("rack_id")
     for field in ("rack_position", "rack_u_height", "rack_face"):
-        if placement.get(field) is not None:
-            setattr(ci, field, placement[field])
+        _set(ci, field, placement.get(field), written)
+    if ci.rack_id and ci.rack_u_height is None:
+        height = _model_u_height(ci, tenant_id)
+        if height:
+            ci.rack_u_height = height
+            ci_sources.mark(ci, ["rack_u_height"], "inferred")
+
+
+def _follows_snipeit_name(ci):
+    """Whether the CI still carries the name Snipe-IT gave it. A hostname
+    from NetBox, a spreadsheet or a person is never replaced by an asset
+    name."""
+    attributes = ci.attributes or {}
+    previous = attributes.get(f"{ATTRIBUTE_PREFIX}Asset Name") or attributes.get(f"{ATTRIBUTE_PREFIX}Asset Tag")
+    if not previous or (ci.field_sources or {}).get("name") not in (None, "snipeit"):
+        return False
+    name, previous = (ci.name or "").casefold(), previous.casefold()
+    return name == previous or name.startswith(previous + " (")
 
 
 def _upsert(mapped, tenant_id, summary, used_names, user_cache, rack_cache=None):
@@ -506,34 +598,32 @@ def _upsert(mapped, tenant_id, summary, used_names, user_cache, rack_cache=None)
     if ci:
         before = import_changes.snapshot(ci)
         netbox_owned = ci.external_source == "netbox"
+        written = []
         if netbox_owned:
             # NetBox stays the source of truth for hardware and status.
             for field in ("install_date", "warranty_expiry_date"):
-                if mapped[field]:
-                    setattr(ci, field, mapped[field])
+                _set(ci, field, mapped[field], written)
+            _set(ci, "owner_id", owner_id, written)
             summary["cis_enriched_netbox"] += 1
         else:
-            if ci.external_source == "snipeit" and ci.name != mapped["name"]:
+            if ci.external_source == "snipeit" and ci.name != mapped["name"] and _follows_snipeit_name(ci):
                 ci.name = _unique_name(mapped, tenant_id, used_names)
+                written.append("name")
             for field in SNIPEIT_OWNED_FIELDS:
                 if field != "name":
-                    setattr(ci, field, mapped[field])
-            if mapped["ip_address"]:
-                ci.ip_address = mapped["ip_address"]
-            if mapped["operational_status"]:
-                ci.operational_status = mapped["operational_status"]
-            if mapped["lifecycle_state"]:
-                ci.lifecycle_state = mapped["lifecycle_state"]
-            ci.ci_class = mapped["ci_class"]
+                    _set(ci, field, mapped[field], written, clear=True)
+            _set(ci, "ip_address", mapped["ip_address"], written)
+            _set(ci, "operational_status", mapped["operational_status"], written)
+            _set(ci, "lifecycle_state", mapped["lifecycle_state"], written)
+            _set(ci, "ci_class", mapped["ci_class"], written)
             ci.external_source = "snipeit"
             ci.external_id = mapped["external_id"]
             ci.discovery_source = "API"
             # Snipe-IT owns assignment for its own assets: a returned asset
             # no longer has an owner.
-            ci.owner_id = owner_id
-        if netbox_owned and owner_id:
-            ci.owner_id = owner_id
-        _apply_placement(ci, mapped, tenant_id, summary, rack_cache, netbox_owned=netbox_owned)
+            _set(ci, "owner_id", owner_id, written, clear=True)
+        _apply_placement(ci, mapped, tenant_id, summary, rack_cache, written, netbox_owned=netbox_owned)
+        ci_sources.mark(ci, written, "snipeit")
         preserved = {key: value for key, value in (ci.attributes or {}).items()
                      if not key.startswith(ATTRIBUTE_PREFIX)}
         ci.attributes = {**preserved, **mapped["attributes"]}
@@ -558,7 +648,11 @@ def _upsert(mapped, tenant_id, summary, used_names, user_cache, rack_cache=None)
         external_source="snipeit", external_id=mapped["external_id"],
         tenant_id=tenant_id, attributes=mapped["attributes"],
     )
-    _apply_placement(ci, mapped, tenant_id, summary, rack_cache)
+    written = []
+    _apply_placement(ci, mapped, tenant_id, summary, rack_cache, written)
+    ci_sources.mark(ci, ["name", "ci_class", "operational_status", "lifecycle_state", "serial_number", "vendor",
+                         "model", "ip_address", "location", "install_date", "warranty_expiry_date", "owner_id",
+                         *written], "snipeit")
     db.session.add(ci)
     summary["cis_created"] += 1
     import_changes.record_create(summary, ci)
@@ -715,6 +809,7 @@ def sync_from_snipeit(tenant_id, dry_run=False, session_factory=_snipeit_session
         "tenant_id": tenant_id, "dry_run": bool(dry_run), "assets_seen": 0,
         "cis_created": 0, "cis_updated": 0, "cis_matched_by_serial": 0, "cis_enriched_netbox": 0,
         "assignees_unmatched": 0, "racks_created": 0, "errors": [], "warnings": [],
+        "app_version": core_app.display_version(),
     }
     import_changes.start(summary)
     session = session_factory(base_url, token)

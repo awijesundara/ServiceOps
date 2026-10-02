@@ -35,7 +35,7 @@
 <div class="import-run {{ 'is-bad' if job.status == 'Failed' else 'is-warn' if result and (result.errors or result.warnings) else 'is-ok' if job.status == 'Completed' else '' }}" id="{{ prefix }}-sync-progress" data-sync-progress data-status-url="{{ url_for(status_endpoint, job_id=job.id) }}" data-cancel-url="{{ url_for(cancel_endpoint, job_id=job.id) }}">
   <div class="import-run-head">
     <div><strong>{{ 'Preview' if job.dry_run else 'Import' }} {{ job.id }}</strong>
-      <small class="muted">{% if job.actor %}by {{ job.actor.name }} · {% endif %}{% if job.finished_at %}finished {{ job.finished_at|usertime('%b %d, %H:%M') }}{% else %}queued {{ job.created_at|usertime('%b %d, %H:%M') }}{% endif %}</small></div>
+      <small class="muted">{% if job.actor %}by {{ job.actor.name }} · {% endif %}{% if job.finished_at %}finished {{ job.finished_at|usertime('%b %d, %H:%M') }}{% else %}queued {{ job.created_at|usertime('%b %d, %H:%M') }}{% endif %}{% if result and result.app_version %} · ran on ServiceOps {{ result.app_version }}{% endif %}</small></div>
     <span class="import-chip chip-{{ job.status|lower }}" data-sync-status aria-live="polite">{{ job.status }}{% if job.phase != job.status %} · {{ job.phase }}{% endif %}{% if job.error %} · {{ job.error }}{% endif %}</span>
   </div>
   {% if busy %}
@@ -217,8 +217,9 @@
       <p><strong>Always refreshed on Snipe-IT items:</strong> name, serial, manufacturer, model, location, purchase date, warranty expiry, status, lifecycle, class and owner. A returned (checked-in) asset loses its owner.</p>
       <p><strong>Custom fields:</strong> a field named Rack or Rack No. links the item to that rack (created if it does not exist), Position/Rack Unit sets the U, Orientation/Rack Face sets front or rear, Height sets the U height, Environment/Service Environment sets the environment when it names exactly one (Production, Staging, Development or Test), Cost Center fills the cost center and IP Address fills the IP. A value that cannot be read stays as an attribute. Every other custom field is kept as a Snipe-IT attribute.</p>
       <p><strong>Items NetBox already manages:</strong> NetBox stays the source of truth for hardware and status. Snipe-IT only adds purchase and warranty dates, the owner and its own attributes.</p>
-      <p><strong>Preserved as Snipe-IT attributes:</strong> asset ID and tag, a link to the Snipe-IT record, category, status label, company, supplier, order number, purchase cost, book value, warranty, end of life, default location, assignee, checkout and audit dates, notes and every custom field.</p>
-      <p><strong>Matching:</strong> Snipe-IT asset ID, then serial number, then exact name. Two Snipe-IT assets with the same name stay separate items; the second gets its asset tag added to its name.</p>
+      <p><strong>Kept as read-only Snipe-IT source data:</strong> asset name and tag, a link to the Snipe-IT record, status label, company, supplier, order number, purchase cost, book value, warranty, end of life, assignee, checkout and audit dates, notes (with links kept) and every other custom field. A category, default location or location assignee that only repeats the item's class or location is not stored twice.</p>
+      <p><strong>Matching and merging:</strong> Snipe-IT asset ID, then serial number, then exact name, so an item created by NetBox or a spreadsheet becomes one record rather than a duplicate. Snipe-IT never renames an item it adopted (the hostname stays; the asset name is kept as source data) and never blanks a field another source filled in. Every field on the item shows which source set it. Two Snipe-IT assets with the same name stay separate items; the second gets its asset tag added to its name.</p>
+      <p><strong>Rack drawing:</strong> a rack named in Snipe-IT is created if it does not exist, and the item is drawn at its position and face. When Snipe-IT gives no height, the height of another item of the same model is used.</p>
       <p><strong>Not imported:</strong> licenses, accessories, consumables and components. Assets deleted in Snipe-IT are not removed from the CMDB.</p>
     </div>
   </details>
