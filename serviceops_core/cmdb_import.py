@@ -9,8 +9,10 @@ NetBox (serviceops_core/netbox_sync.py) is the source of truth for hardware
 fields. To avoid the two importers fighting over the same columns, this
 module never overwrites NETBOX_OWNED_FIELDS on a CI whose external_source is
 "netbox" -- it only fills in the operational/business fields NetBox doesn't
-carry. CIs with no external_source (manual) or external_source == "csv" are
-fully writable by this importer.
+carry. Snipe-IT (serviceops_core/snipeit_sync.py) is treated the same way:
+SNIPEIT_OWNED_FIELDS are left alone on a CI whose external_source is
+"snipeit". CIs with no external_source (manual) or external_source == "csv"
+are fully writable by this importer.
 
 Ownership in these inventory spreadsheets is a team ("UNIX", "Core apps"),
 not a named person -- individual owners only make sense for
@@ -36,6 +38,7 @@ import io
 from datetime import datetime
 
 from app import parse_form_date
+from serviceops_core import import_changes
 
 # Columns NetBox owns; matches netbox_sync.HARDWARE_FIELDS (kept separate to
 # avoid a hard import-time dependency between the two sync modules).
@@ -43,6 +46,14 @@ NETBOX_OWNED_FIELDS = (
     "name", "serial_number", "vendor", "model", "ip_address", "location",
     "rack_id", "rack_position", "rack_u_height", "rack_face",
 )
+
+# Columns Snipe-IT owns on a CI it manages; matches
+# snipeit_sync.SNIPEIT_OWNED_FIELDS for the same reason.
+SNIPEIT_OWNED_FIELDS = (
+    "name", "serial_number", "vendor", "model", "location", "install_date", "warranty_expiry_date",
+)
+
+OWNED_FIELDS_BY_SOURCE = {"netbox": NETBOX_OWNED_FIELDS, "snipeit": SNIPEIT_OWNED_FIELDS}
 
 # Spreadsheet header -> ConfigurationItem field. Header matching is
 # case-insensitive and tolerant of the sheet having many unrecognized extra
@@ -171,17 +182,17 @@ def _resolve_owning_team(team_name, tenant_id, created):
     return group
 
 
-def _apply_row(row, ci, is_netbox_owned, warnings=None):
-    """Sets fields on `ci` from `row`, skipping NETBOX_OWNED_FIELDS when
-    `is_netbox_owned` is True. Returns the count of fields that were skipped
-    for that reason."""
+def _apply_row(row, ci, owned_fields=(), warnings=None):
+    """Sets fields on `ci` from `row`, skipping `owned_fields` (the columns an
+    inventory sync owns on this CI). Returns the count of fields skipped for
+    that reason."""
     import app as core_app
 
     skipped = 0
     for field, value in row.items():
         if field in ("owning_team_name", "state_raw", "extra_attributes"):
             continue
-        if is_netbox_owned and field in NETBOX_OWNED_FIELDS:
+        if field in owned_fields:
             skipped += 1
             continue
         if field in DATE_FIELDS:
@@ -230,11 +241,13 @@ def import_ci_rows(rows, tenant_id, dry_run=False):
         "cis_created": 0,
         "cis_updated": 0,
         "fields_skipped_netbox_owned": 0,
+        "fields_skipped_snipeit_owned": 0,
         "teams_created": [],
         "teams_merged": 0,
         "errors": [],
         "warnings": [],
     }
+    import_changes.start(summary)
     teams_created = set()
 
     for row in rows:
@@ -242,6 +255,7 @@ def import_ci_rows(rows, tenant_id, dry_run=False):
         if not name:
             summary["errors"].append("Row skipped: no hostname/name column value.")
             continue
+        changes_before = import_changes.checkpoint(summary)
         try:
             ci = None
             serial = row.get("serial_number")
@@ -257,26 +271,31 @@ def import_ci_rows(rows, tenant_id, dry_run=False):
             team = _resolve_owning_team(row.get("owning_team_name"), tenant_id, teams_created)
 
             if ci:
-                is_netbox_owned = ci.external_source == "netbox"
-                summary["fields_skipped_netbox_owned"] += _apply_row(
-                    row, ci, is_netbox_owned, summary["warnings"],
+                before = import_changes.snapshot(ci)
+                skipped = _apply_row(
+                    row, ci, OWNED_FIELDS_BY_SOURCE.get(ci.external_source, ()), summary["warnings"],
                 )
+                summary["fields_skipped_netbox_owned" if ci.external_source == "netbox"
+                        else "fields_skipped_snipeit_owned"] += skipped
                 if team:
                     ci.support_group_id = team.id
                 if ci.external_source is None:
                     ci.external_source = "csv"
                 summary["cis_updated"] += 1
+                import_changes.record_update(summary, before, ci)
             else:
                 ci = core_app.ConfigurationItem(
                     name=name, ci_class=row.get("ci_class", "Server"),
                     tenant_id=tenant_id, external_source="csv", discovery_source="Import",
                 )
-                _apply_row(row, ci, is_netbox_owned=False, warnings=summary["warnings"])
+                _apply_row(row, ci, warnings=summary["warnings"])
                 if team:
                     ci.support_group_id = team.id
                 db.session.add(ci)
                 summary["cis_created"] += 1
+                import_changes.record_create(summary, ci)
         except Exception as error:  # noqa: BLE001 - isolate one bad row from the whole import
+            import_changes.restore(summary, changes_before)
             summary["errors"].append(f"{name or '(unknown)'}: {type(error).__name__}")
 
     summary["teams_created"] = sorted(teams_created)

@@ -1519,7 +1519,7 @@ def register(app):
             )
         admin_section_key = (
             "connections-channels"
-            if category in {"email_delivery", "netbox_connection", "request_tracker_connection"}
+            if category in {"email_delivery", "netbox_connection", "snipeit_connection", "request_tracker_connection"}
             else "platform-security"
         )
         return render_template(
