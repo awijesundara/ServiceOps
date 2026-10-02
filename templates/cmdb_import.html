@@ -189,8 +189,8 @@
     {% if snipeit_probe.status_labels %}<p><strong>Status labels → lifecycle:</strong> {% for l in snipeit_probe.status_labels %}{{ l.name }} → {{ l.lifecycle_state or 'kept' }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
     {% if snipeit_probe.sample %}
     <p><strong>Sample assets as they would appear in the CMDB:</strong></p>
-    <div class="import-changes-scroll"><table class="import-changes-table"><thead><tr><th scope="col">Name</th><th scope="col">Asset tag</th><th scope="col">Class</th><th scope="col">Serial</th><th scope="col">Model</th><th scope="col">Location</th><th scope="col">Assigned to</th><th scope="col">Lifecycle</th></tr></thead><tbody>
-    {% for a in snipeit_probe.sample %}<tr><td>{{ a.name }}</td><td>{{ a.asset_tag or '—' }}</td><td>{{ a.ci_class }}</td><td>{{ a.serial_number or '—' }}</td><td>{{ [a.vendor, a.model]|select|join(' ') or '—' }}</td><td>{{ a.location or '—' }}</td><td>{% if a.assigned_to %}{{ a.assigned_to }}{% if not a.owner_matched %} <small class="muted">(no matching user)</small>{% endif %}{% else %}—{% endif %}</td><td>{{ a.lifecycle_state or 'kept' }}</td></tr>{% endfor %}
+    <div class="import-changes-scroll"><table class="import-changes-table"><thead><tr><th scope="col">Name</th><th scope="col">Asset tag</th><th scope="col">Class</th><th scope="col">Serial</th><th scope="col">Model</th><th scope="col">Location</th><th scope="col">Rack / U</th><th scope="col">Environment</th><th scope="col">Assigned to</th><th scope="col">Lifecycle</th></tr></thead><tbody>
+    {% for a in snipeit_probe.sample %}<tr><td>{{ a.name }}</td><td>{{ a.asset_tag or '—' }}</td><td>{{ a.ci_class }}</td><td>{{ a.serial_number or '—' }}</td><td>{{ [a.vendor, a.model]|select|join(' ') or '—' }}</td><td>{{ a.location or '—' }}</td><td>{{ a.rack or '—' }}</td><td>{{ a.environment or 'kept' }}</td><td>{% if a.assigned_to %}{{ a.assigned_to }}{% if not a.owner_matched %} <small class="muted">(no matching user)</small>{% endif %}{% else %}—{% endif %}</td><td>{{ a.lifecycle_state or 'kept' }}</td></tr>{% endfor %}
     </tbody></table></div>
     {% endif %}
     <p class="muted">The CMDB holds {{ snipeit_probe.cmdb_total }} configuration items, {{ snipeit_probe.cmdb_from_snipeit }} of them from Snipe-IT.</p>
@@ -208,13 +208,14 @@
 
   <details class="netbox-mapping-details import-mapping"><summary>How Snipe-IT fields map to the CMDB</summary>
     <div class="netbox-mapping-grid" aria-label="Snipe-IT to CMDB field mapping">
-      <article><strong>Identity &amp; hardware</strong><p>Asset name (or asset tag), serial, manufacturer, model and current location become structured CMDB fields. An IP address custom field fills the CI's IP.</p></article>
+      <article><strong>Identity &amp; placement</strong><p>Asset name (or asset tag), serial, manufacturer, model and current location become CMDB fields. Custom fields named Rack, Position, Orientation, Height, Environment, Cost Center or IP Address fill the matching CMDB fields.</p></article>
       <article><strong>Classification</strong><p>Recognized category terms (laptop, desktop, server, monitor, phone, printer, network gear) map to CI classes. Other categories use the neutral Hardware Asset class.</p></article>
       <article><strong>Status &amp; lifecycle</strong><p>Deployed is In Use, ready to deploy and pending are Planned, undeployable is Down, archived is Retired.</p></article>
       <article><strong>Assignment &amp; purchase</strong><p>The person an asset is checked out to becomes the CI owner when a ServiceOps user has the same email. Purchase and warranty dates fill the CI dates.</p></article>
     </div>
     <div class="netbox-rules">
       <p><strong>Always refreshed on Snipe-IT items:</strong> name, serial, manufacturer, model, location, purchase date, warranty expiry, status, lifecycle, class and owner. A returned (checked-in) asset loses its owner.</p>
+      <p><strong>Custom fields:</strong> a field named Rack or Rack No. links the item to that rack (created if it does not exist), Position/Rack Unit sets the U, Orientation/Rack Face sets front or rear, Height sets the U height, Environment/Service Environment sets the environment when it names exactly one (Production, Staging, Development or Test), Cost Center fills the cost center and IP Address fills the IP. A value that cannot be read stays as an attribute. Every other custom field is kept as a Snipe-IT attribute.</p>
       <p><strong>Items NetBox already manages:</strong> NetBox stays the source of truth for hardware and status. Snipe-IT only adds purchase and warranty dates, the owner and its own attributes.</p>
       <p><strong>Preserved as Snipe-IT attributes:</strong> asset ID and tag, a link to the Snipe-IT record, category, status label, company, supplier, order number, purchase cost, book value, warranty, end of life, default location, assignee, checkout and audit dates, notes and every custom field.</p>
       <p><strong>Matching:</strong> Snipe-IT asset ID, then serial number, then exact name. Two Snipe-IT assets with the same name stay separate items; the second gets its asset tag added to its name.</p>

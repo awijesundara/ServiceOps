@@ -71,6 +71,19 @@ CATEGORY_CLASS_TERMS = (
 
 IP_FIELD_LABELS = {"ip", "ip address", "ipv4", "ipv4 address", "management ip", "primary ip"}
 
+# Snipe-IT has no native rack, environment or cost-center fields, so
+# organisations keep them in custom fields. A custom field whose name
+# (lower-cased, punctuation ignored) is one of these fills the matching CMDB
+# field instead of staying an attribute.
+PLACEMENT_LABELS = {
+    "rack": {"rack", "rack no", "rack number", "rack name", "rack id"},
+    "rack_position": {"position", "rack position", "rack unit", "rack u", "u position", "start u", "starting u"},
+    "rack_face": {"orientation", "rack face", "face", "rack side", "mounting side"},
+    "rack_u_height": {"height", "u height", "rack height", "size u", "rack units", "units"},
+    "environment": {"environment", "service environment", "server environment", "env"},
+    "cost_center": {"cost center", "cost centre"},
+}
+
 
 class SnipeitSyncError(RuntimeError):
     """Raised for conditions that must abort the whole sync (e.g. not configured)."""
@@ -177,6 +190,64 @@ def _paginate(session, base_url, path, *, page_size=100, progress_callback=None,
         # Snipe-IT caps a page at its MAX_RESULTS; advance by what came back.
         if not rows or (isinstance(total, int) and params["offset"] >= total):
             return
+
+
+def _label_key(label):
+    return " ".join(re.findall(r"[a-z0-9]+", (label or "").casefold()))
+
+
+def _environment(value):
+    """A canonical environment from free text such as "JNX Internal - Dev",
+    using the app's own aliases; None when no single environment is named."""
+    import app as core_app
+
+    text = (value or "").casefold()
+    if "preprod" in text or "pre-prod" in text or "pre production" in text or "pre-production" in text:
+        return "Staging"
+    found = {core_app.ENVIRONMENT_ALIASES[word] for word in re.findall(r"[a-z]+", text)
+             if word in core_app.ENVIRONMENT_ALIASES}
+    return found.pop() if len(found) == 1 else None
+
+
+def _placement(label, value):
+    """(cmdb_field, parsed_value) for a recognised custom field, or None when
+    the label is not recognised or the value cannot be parsed."""
+    key = _label_key(label)
+    field = next((name for name, labels in PLACEMENT_LABELS.items() if key in labels), None)
+    if not field:
+        return None
+    if field == "rack_position":
+        try:
+            number = float(value.replace(",", "."))
+        except ValueError:
+            return None
+        return (field, number) if 0 < number <= 100 else None
+    if field == "rack_u_height":
+        try:
+            number = int(float(value))
+        except ValueError:
+            return None
+        return (field, number) if 0 < number <= 60 else None
+    if field == "rack_face":
+        face = value.casefold()
+        return (field, "front") if face.startswith("front") else (field, "rear") if face.startswith(
+            ("rear", "back")) else None
+    if field == "environment":
+        environment = _environment(value)
+        return (field, environment) if environment else None
+    return (field, value[:160] if field == "rack" else value[:80])
+
+
+def _rich_text(value):
+    """Notes arrive as escaped inline HTML; keep their line breaks and drop
+    the markup."""
+    if value in (None, ""):
+        return None
+    text = html.unescape(str(value))
+    text = re.sub(r"(?i)<br\s*/?>|</p>|</li>|</div>", "\n", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    lines = [" ".join(line.split()) for line in text.splitlines()]
+    return "\n".join(line for line in lines if line) or None
 
 
 def _text(value):
@@ -307,11 +378,16 @@ def map_asset(record, base_url=""):
     add("Last Audit", _datetime_text(record.get("last_audit_date")))
     add("Next Audit", _datetime_text(record.get("next_audit_date")))
     add("BYOD", "Yes" if record.get("byod") else None)
-    add("Notes", _text(record.get("notes")))
+    add("Notes", _rich_text(record.get("notes")))
     add("Created", _datetime_text(record.get("created_at")))
     add("Last Updated", _datetime_text(record.get("updated_at")))
+    placement = {}
     for label, (value, _) in custom_fields.items():
-        add(label, value)
+        parsed = _placement(label, value)
+        if parsed and parsed[0] not in placement:
+            placement[parsed[0]] = parsed[1]
+        else:
+            add(label, value)
 
     return {
         "name": _text(record.get("name")) or asset_tag or f"asset-{asset_id}",
@@ -326,6 +402,7 @@ def map_asset(record, base_url=""):
         "warranty_expiry_date": _date(record.get("warranty_expires")),
         **_status_fields(record),
         "assignee": assignee,
+        "placement": placement,
         "external_id": f"hardware:{asset_id}",
         "attributes": attributes,
     }
@@ -362,7 +439,48 @@ def _unique_name(mapped, tenant_id, used_names):
     return name
 
 
-def _upsert(mapped, tenant_id, summary, used_names, user_cache):
+def _rack_id(name, location, tenant_id, summary, rack_cache):
+    """The tenant rack with this name (case-insensitive), created on first
+    use so the item appears in the rack elevation."""
+    import app as core_app
+    from app import db
+    from sqlalchemy import func
+
+    key = name.casefold()
+    if key not in rack_cache:
+        Rack = core_app.Rack
+        rack = Rack.query.filter(Rack.tenant_id == tenant_id, func.lower(Rack.name) == key).first()
+        if not rack:
+            rack = Rack(tenant_id=tenant_id, name=name, site=(location or "")[:120], u_height=42,
+                        external_source="snipeit", external_id=f"rack:{name}"[:120])
+            db.session.add(rack)
+            db.session.flush()
+            summary["racks_created"] += 1
+        rack_cache[key] = rack.id
+    return rack_cache[key]
+
+
+def _apply_placement(ci, mapped, tenant_id, summary, rack_cache, *, netbox_owned=False):
+    """Fill rack placement, environment and cost center from recognised
+    custom fields. Only values Snipe-IT actually holds are written; an
+    organisation without such a custom field keeps whatever the CI has. On
+    an item NetBox manages, rack placement and environment stay NetBox's."""
+    placement = mapped.get("placement") or {}
+    if placement.get("cost_center"):
+        ci.cost_center = placement["cost_center"]
+    if netbox_owned:
+        return
+    if placement.get("environment"):
+        ci.environment = placement["environment"]
+    if placement.get("rack"):
+        ci.rack_id = _rack_id(placement["rack"], mapped["location"], tenant_id, summary, rack_cache)
+    for field in ("rack_position", "rack_u_height", "rack_face"):
+        if placement.get(field) is not None:
+            setattr(ci, field, placement[field])
+
+
+def _upsert(mapped, tenant_id, summary, used_names, user_cache, rack_cache=None):
+    rack_cache = {} if rack_cache is None else rack_cache
     import app as core_app
     from app import db
 
@@ -415,6 +533,7 @@ def _upsert(mapped, tenant_id, summary, used_names, user_cache):
             ci.owner_id = owner_id
         if netbox_owned and owner_id:
             ci.owner_id = owner_id
+        _apply_placement(ci, mapped, tenant_id, summary, rack_cache, netbox_owned=netbox_owned)
         preserved = {key: value for key, value in (ci.attributes or {}).items()
                      if not key.startswith(ATTRIBUTE_PREFIX)}
         ci.attributes = {**preserved, **mapped["attributes"]}
@@ -439,6 +558,7 @@ def _upsert(mapped, tenant_id, summary, used_names, user_cache):
         external_source="snipeit", external_id=mapped["external_id"],
         tenant_id=tenant_id, attributes=mapped["attributes"],
     )
+    _apply_placement(ci, mapped, tenant_id, summary, rack_cache)
     db.session.add(ci)
     summary["cis_created"] += 1
     import_changes.record_create(summary, ci)
@@ -553,6 +673,10 @@ def probe_snipeit(tenant_id, session_factory=_snipeit_session):
                     report["sample"].append({key: mapped.get(key) for key in (
                         "name", "asset_tag", "ci_class", "serial_number", "vendor", "model", "location",
                         "lifecycle_state")} | {
+                        "rack": " / ".join(str(part) for part in (
+                            mapped["placement"].get("rack"), mapped["placement"].get("rack_position"))
+                            if part not in (None, "")) or None,
+                        "environment": mapped["placement"].get("environment"),
                         "assigned_to": (mapped["assignee"] or {}).get("name"),
                         "owner_matched": bool(owner_id)})
             except (requests.RequestException, SnipeitSyncError) as error:
@@ -590,12 +714,12 @@ def sync_from_snipeit(tenant_id, dry_run=False, session_factory=_snipeit_session
     summary = {
         "tenant_id": tenant_id, "dry_run": bool(dry_run), "assets_seen": 0,
         "cis_created": 0, "cis_updated": 0, "cis_matched_by_serial": 0, "cis_enriched_netbox": 0,
-        "assignees_unmatched": 0, "errors": [], "warnings": [],
+        "assignees_unmatched": 0, "racks_created": 0, "errors": [], "warnings": [],
     }
     import_changes.start(summary)
     session = session_factory(base_url, token)
     record_transaction = nullcontext if dry_run else db.session.begin_nested
-    used_names, user_cache, seen_ids = set(), {}, set()
+    used_names, user_cache, seen_ids, rack_cache = set(), {}, set(), {}
     try:
         for record in _paginate(session, base_url, HARDWARE_PATH, page_size=page_size,
                                 progress_callback=progress_callback, cancel_check=cancel_check):
@@ -604,14 +728,20 @@ def sync_from_snipeit(tenant_id, dry_run=False, session_factory=_snipeit_session
             seen_ids.add(record.get("id"))
             summary["assets_seen"] += 1
             counts_before = (summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"],
-                             summary["cis_enriched_netbox"], summary["assignees_unmatched"])
+                             summary["cis_enriched_netbox"], summary["assignees_unmatched"],
+                             summary["racks_created"])
+            racks_before = dict(rack_cache)
             changes_before = import_changes.checkpoint(summary)
             try:
                 with record_transaction():
-                    _upsert(map_asset(record, base_url), tenant_id, summary, used_names, user_cache)
+                    _upsert(map_asset(record, base_url), tenant_id, summary, used_names, user_cache, rack_cache)
             except Exception as error:  # noqa: BLE001 - isolate one bad record from the whole sync
                 (summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"],
-                 summary["cis_enriched_netbox"], summary["assignees_unmatched"]) = counts_before
+                 summary["cis_enriched_netbox"], summary["assignees_unmatched"],
+                 summary["racks_created"]) = counts_before
+                # A rack created inside the failed record was rolled back too.
+                rack_cache.clear()
+                rack_cache.update(racks_before)
                 import_changes.restore(summary, changes_before)
                 label = _text(record.get("asset_tag")) or _text(record.get("name")) or record.get("id")
                 summary["errors"].append(f"asset {label}: {type(error).__name__}")

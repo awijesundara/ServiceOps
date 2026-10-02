@@ -411,3 +411,80 @@ def test_settings_page_offers_the_connection_and_proxy_choice(client):
     login(client)
     page = client.get("/admin/settings/snipeit_connection").get_data(as_text=True)
     assert "Snipe-IT base URL" in page and 'name="SNIPEIT_PROXY_MODE"' in page and "Test connection" in page
+
+
+def jnx_server(asset_id=6054, rack="9D04", position="2", orientation="front", environment="JNX Internal - Dev"):
+    """Shaped like a real data-centre asset: placement and environment live in
+    custom fields because Snipe-IT has no native fields for them."""
+    custom = {
+        "Finance Asset Code": {"field": "_snipeit_finance_1", "value": "F16036-008", "field_format": "ANY"},
+        "Rack No.": {"field": "_snipeit_rack_2", "value": rack, "field_format": "ANY"},
+        "Position": {"field": "_snipeit_position_3", "value": position, "field_format": "ANY"},
+        "Orientation": {"field": "_snipeit_orientation_4", "value": orientation, "field_format": "ANY"},
+        "Service Environment": {"field": "_snipeit_env_5", "value": environment, "field_format": "ANY"},
+        "Depreciation End Date": {"field": "_snipeit_dep_6", "value": "2022-09-01", "field_format": "DATE"},
+    }
+    asset = make_asset(asset_id, name="mmi2cloudctrl01", tag="569DC-0001717", serial="SRVJNX1",
+                       category="Server", location="CC1-9C-2b", custom_fields=custom)
+    asset["notes"] = "BITS-RT: #10581<br />JNX: DC3 management<br />Hostname: mmi2cloudctrl01"
+    return asset
+
+
+def test_placement_and_environment_custom_fields_fill_cmdb_fields(app, monkeypatch):
+    with app.app_context():
+        configure(monkeypatch)
+        result = sync_from_snipeit(1, session_factory=factory(FakeSnipeit(records={
+            "/api/v1/hardware": [jnx_server(), jnx_server(6055, position="4", orientation="rear")]})))
+        assert result["racks_created"] == 1 and not result["errors"]
+        ci = ConfigurationItem.query.filter_by(external_id="hardware:6054").one()
+        assert ci.rack.name == "9D04" and ci.rack.site == "CC1-9C-2b"
+        assert (ci.rack_position, ci.rack_face, ci.environment, ci.ci_class) == (2.0, "front", "Development", "Server")
+        other = ConfigurationItem.query.filter_by(external_id="hardware:6055").one()
+        assert other.rack_id == ci.rack_id and (other.rack_position, other.rack_face) == (4.0, "rear")
+        # Mapped custom fields are CMDB fields now, not duplicate attributes.
+        for mapped in ("Rack No.", "Position", "Orientation", "Service Environment"):
+            assert f"Snipe-IT: {mapped}" not in ci.attributes
+        assert ci.attributes["Snipe-IT: Finance Asset Code"] == "F16036-008"
+        assert ci.attributes["Snipe-IT: Notes"] == "BITS-RT: #10581\nJNX: DC3 management\nHostname: mmi2cloudctrl01"
+
+
+def test_existing_rack_is_reused_and_unreadable_values_stay_attributes(app, monkeypatch):
+    from app import Rack
+    with app.app_context():
+        configure(monkeypatch)
+        db.session.add(Rack(tenant_id=1, name="9d04", site="CC1", u_height=48))
+        db.session.commit()
+        result = sync_from_snipeit(1, session_factory=factory(FakeSnipeit(records={
+            "/api/v1/hardware": [jnx_server(position="top", orientation="sideways",
+                                            environment="Dev and Prod")]})))
+        assert result["racks_created"] == 0
+        ci = ConfigurationItem.query.filter_by(external_id="hardware:6054").one()
+        assert ci.rack.name == "9d04" and ci.rack_position is None and ci.environment == "Production"
+        assert ci.attributes["Snipe-IT: Position"] == "top"
+        assert ci.attributes["Snipe-IT: Orientation"] == "sideways"
+        assert ci.attributes["Snipe-IT: Service Environment"] == "Dev and Prod"
+
+
+def test_preview_reports_rack_and_environment_changes_without_creating_the_rack(app, monkeypatch):
+    from app import Rack
+    with app.app_context():
+        configure(monkeypatch)
+        result = sync_from_snipeit(1, dry_run=True, session_factory=factory(FakeSnipeit(records={
+            "/api/v1/hardware": [jnx_server()]})))
+        fields = {field["label"]: field["after"] for field in result["changes"][0]["fields"]}
+        assert fields["Rack"] == "9D04" and fields["Rack position"] == "2.0" and fields["Environment"] == "Development"
+        assert result["racks_created"] == 1 and Rack.query.count() == 0
+
+
+def test_netbox_items_keep_netbox_placement_but_gain_cost_center(app, monkeypatch):
+    with app.app_context():
+        configure(monkeypatch)
+        db.session.add(ConfigurationItem(name="mmi2cloudctrl01", ci_class="Server", serial_number="SRVJNX1",
+                                         environment="Production", rack_position=30, tenant_id=1,
+                                         external_source="netbox", external_id="dcim.device:1"))
+        db.session.commit()
+        server = jnx_server()
+        server["custom_fields"]["Cost Center"] = {"field": "_snipeit_cc", "value": "CC-500", "field_format": "ANY"}
+        sync_from_snipeit(1, session_factory=factory(FakeSnipeit(records={"/api/v1/hardware": [server]})))
+        ci = ConfigurationItem.query.filter_by(serial_number="SRVJNX1").one()
+        assert (ci.environment, ci.rack_position, ci.rack_id, ci.cost_center) == ("Production", 30, None, "CC-500")

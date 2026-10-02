@@ -590,6 +590,8 @@ def register(app):
             tiles.append(("Already up to date", result["cis_unchanged"], ""))
         if result.get("cis_matched_by_serial"):
             tiles.append(("Matched by serial", result["cis_matched_by_serial"], ""))
+        if integration == "snipeit" and result.get("racks_created"):
+            tiles.append(("Racks created" if not dry_run else "Racks to create", result["racks_created"], ""))
         if result.get("cis_enriched_netbox"):
             tiles.append(("NetBox items enriched", result["cis_enriched_netbox"], ""))
         tiles.append(("Errors", len(result.get("errors") or []), "is-bad" if result.get("errors") else ""))
