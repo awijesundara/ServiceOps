@@ -63,7 +63,6 @@
   {% if update_info %}
   <section class="settings-scope-banner"><span aria-hidden="true">⇪</span><div><strong>ServiceOps {{ update_info.version }} is available</strong><p>This instance is running {{ app_version }}. <a href="{{ update_info.url }}" target="_blank" rel="noopener">View the release on GitHub</a>.</p></div></section>
   {% endif %}
-  <section class="settings-scope-banner"><span aria-hidden="true">ⓘ</span><div><strong>Administration control center</strong><p>Select a major area first. Every individual tool is available on the next level and protected by your administrator role.</p></div></section>
   <section class="settings-section-list" aria-label="Administration categories">
     <header><div><h2>Administration areas</h2><p>All controls are grouped by responsibility, with no mixed configuration pages.</p></div></header>
     {% for key,title,description,icon,cards in sections %}
