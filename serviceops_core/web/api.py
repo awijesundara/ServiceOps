@@ -809,7 +809,7 @@ def register(app):
         body = request.get_json(silent=True)
         if not isinstance(body, dict) or not body:
             abort(400, description="A non-empty JSON object is required.")
-        allowed = {"state", "work_notes"}
+        allowed = {"state", "work_notes", "append_work_notes"}
         unknown = set(body) - allowed
         if unknown:
             abort(400, description=f"Unknown fields: {', '.join(sorted(unknown))}.")
@@ -818,6 +818,18 @@ def register(app):
             transition_operational_task(task, str(body["state"]))
         if "work_notes" in body:
             task.work_notes = str(body["work_notes"])[:2000]
+        if "append_work_notes" in body:
+            # Append-only evidence: an integration records what it did
+            # without overwriting notes the owning team wrote. The newest
+            # entries are kept when the 2000-character cap is reached.
+            note = str(body["append_work_notes"]).strip()
+            if not note:
+                abort(400, description="append_work_notes must not be empty.")
+            stamp = now().strftime("%Y-%m-%d %H:%M UTC")
+            entry = f"[{stamp} · {g.api_client.name}] {note}"
+            existing = (task.work_notes or "").rstrip()
+            combined = f"{existing}\n{entry}" if existing else entry
+            task.work_notes = combined[-2000:]
         log_field_changes(task.parent_type, task.parent_id, before, {
             "state": task.state, "work notes": task.work_notes,
         }, event=f"{task.number} updated via REST API")

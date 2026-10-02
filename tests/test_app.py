@@ -1,4 +1,6 @@
 import base64
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -59,7 +61,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  provision_external_user, secret_value, settings_cipher, user_is_local,
                  setting_bool,
                  rotate_audit_integrity_key, tenant_context_id, TenantResolutionError,
-                 transition_ticket,
+                 transition_operational_task, transition_ticket,
                  user_can_manage_ticket, user_in_group, user_can_manage_ritm,
                  verify_audit_chain)
 from werkzeug.security import generate_password_hash
@@ -788,8 +790,9 @@ def test_audit_key_rotation_retention_and_dedicated_siem_delivery(
         status_code = 202
         is_redirect = False
 
-    def fake_post(url, json, headers, timeout, allow_redirects=True):
-        deliveries.append((url, json, headers, timeout))
+    def fake_post(url, headers, timeout, allow_redirects=True, **body):
+        payload = body["json"] if "json" in body else json.loads(body["data"])
+        deliveries.append((url, payload, headers, timeout))
         return FakeResponse()
 
     monkeypatch.setattr("app.requests.post", fake_post)
@@ -1276,8 +1279,11 @@ def test_durable_smtp_signed_webhook_and_teams_delivery(monkeypatch, app):
         status_code = 202
         is_redirect = False
 
-    def fake_post(url, json, headers, timeout, allow_redirects=True):
-        webhook_calls.append((url, json, headers, timeout))
+    def fake_post(url, headers, timeout, allow_redirects=True, **body):
+        # Signed webhooks send the exact signed bytes (`data=`); chat
+        # providers still send a JSON document (`json=`).
+        payload = body["json"] if "json" in body else json.loads(body["data"])
+        webhook_calls.append((url, payload, headers, timeout))
         return FakeResponse()
 
     monkeypatch.setattr("app.smtplib.SMTP", FakeSMTP)
@@ -10755,6 +10761,175 @@ def test_change_state_transition_emits_change_state_changed_webhook_event(app):
         transition_ticket(incident, "In Progress")
         db.session.commit()
         assert OutboxEvent.query.filter_by(event_type="change.state_changed").count() == 1
+
+
+def test_change_task_state_transition_emits_change_task_state_changed_event(client, app):
+    """A CTASK closed in ServiceOps (UI or API) publishes
+    change_task.state_changed so FlowOps can follow it without polling."""
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        db.session.add(IntegrationConnection(
+            name="FlowOps events", kind="webhook",
+            endpoint="https://flowops.example.test/api/integrations/serviceops/events",
+            secret_encrypted=settings_cipher().encrypt(b"flowops-signing-secret").decode(),
+            event_types_json='["change_task.*"]', created_by_id=admin.id,
+        ))
+        change = Ticket(
+            kind="change", number="CHG0000985", title="Firewall rule rollout",
+            description="Roll out new firewall rules.", category="Software",
+            priority="P3", state="Approved", requester_id=admin.id,
+        )
+        db.session.add(change)
+        db.session.flush()
+        db.session.add(ChangeOwnership(ticket_id=change.id, group_id=unix.id))
+        db.session.add(OperationalTask(
+            number="CTASK0000085", task_kind="change", parent_type="ticket",
+            parent_id=change.id, title="Apply rules", task_type="Planning",
+            state="Open", required=True, sequence=1, assignment_group_id=unix.id,
+        ))
+        token, prefix, token_hash = create_api_token()
+        db.session.add(APIClient(
+            name="FlowOps", token_prefix=prefix, token_hash=token_hash,
+            scopes_json='["tickets:read","tickets:update"]', acting_user_id=admin.id, created_by_id=admin.id,
+        ))
+        db.session.commit()
+
+    headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "flowops-ctask-85-wip"}
+    res = client.patch("/api/v1/tickets/CHG0000985/ctasks/CTASK0000085", headers=headers,
+                       json={"state": "Work in Progress"})
+    assert res.status_code == 200
+    with app.app_context():
+        events = OutboxEvent.query.filter_by(event_type="change_task.state_changed").all()
+        assert len(events) == 1
+        payload = json.loads(events[0].payload_json)
+        assert payload["number"] == "CTASK0000085"
+        assert payload["ticket"] == "CHG0000985"
+        assert payload["state"] == "Work in Progress"
+        assert payload["previous_state"] == "Open"
+        assert payload["assignment_group"] == "Unix"
+
+    # A notes-only update is not a state change and emits nothing.
+    res = client.patch("/api/v1/tickets/CHG0000985/ctasks/CTASK0000085",
+                       headers={**headers, "Idempotency-Key": "flowops-ctask-85-note"},
+                       json={"append_work_notes": "Rules staged"})
+    assert res.status_code == 200
+    with app.app_context():
+        assert OutboxEvent.query.filter_by(event_type="change_task.state_changed").count() == 1
+
+
+def test_change_task_event_is_not_queued_without_a_subscribed_connection(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        db.session.add(IntegrationConnection(
+            name="Change-only webhook", kind="webhook",
+            endpoint="https://hooks.example.test/changes",
+            secret_encrypted=settings_cipher().encrypt(b"secret").decode(),
+            event_types_json='["change.state_changed"]', created_by_id=admin.id,
+        ))
+        change = Ticket(
+            kind="change", number="CHG0000986", title="Patch", description="x",
+            category="Software", priority="P3", state="Approved", requester_id=admin.id,
+        )
+        db.session.add(change)
+        db.session.flush()
+        task = OperationalTask(
+            number="CTASK0000086", task_kind="change", parent_type="ticket",
+            parent_id=change.id, title="Plan", task_type="Planning",
+            state="Open", required=True, sequence=1, assignment_group_id=unix.id,
+        )
+        db.session.add(task)
+        db.session.commit()
+        transition_operational_task(task, "Work in Progress")
+        db.session.commit()
+        assert OutboxEvent.query.filter_by(event_type="change_task.state_changed").count() == 0
+
+
+def test_api_ctask_append_work_notes_keeps_existing_notes(client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        change = Ticket(
+            kind="change", number="CHG0000987", title="Certificate renewal",
+            description="Renew certificates.", category="Software",
+            priority="P3", state="Approved", requester_id=admin.id,
+        )
+        db.session.add(change)
+        db.session.flush()
+        db.session.add(ChangeOwnership(ticket_id=change.id, group_id=unix.id))
+        db.session.add(OperationalTask(
+            number="CTASK0000087", task_kind="change", parent_type="ticket",
+            parent_id=change.id, title="Install certificate", task_type="Planning",
+            state="Open", required=True, sequence=1, assignment_group_id=unix.id,
+            work_notes="Team note: use the HSM-backed key.",
+        ))
+        token, prefix, token_hash = create_api_token()
+        db.session.add(APIClient(
+            name="FlowOps", token_prefix=prefix, token_hash=token_hash,
+            scopes_json='["tickets:read","tickets:update"]', acting_user_id=admin.id, created_by_id=admin.id,
+        ))
+        db.session.commit()
+
+    url = "/api/v1/tickets/CHG0000987/ctasks/CTASK0000087"
+    auth = {"Authorization": f"Bearer {token}"}
+    res = client.patch(url, headers={**auth, "Idempotency-Key": "ev-1"},
+                       json={"state": "Closed Complete", "append_work_notes": "Completed in FlowOps by Operator"})
+    assert res.status_code == 200
+    notes = res.json["data"]["workNotes"]
+    assert notes.startswith("Team note: use the HSM-backed key.\n[")
+    assert "· FlowOps] Completed in FlowOps by Operator" in notes
+
+    empty = client.patch(url, headers={**auth, "Idempotency-Key": "ev-2"}, json={"append_work_notes": "  "})
+    assert empty.status_code == 400
+
+    long_note = "x" * 1990
+    res = client.patch(url, headers={**auth, "Idempotency-Key": "ev-3"}, json={"append_work_notes": long_note})
+    assert res.status_code == 200
+    assert len(res.json["data"]["workNotes"]) == 2000
+    assert res.json["data"]["workNotes"].endswith(long_note)
+
+
+def test_signed_webhook_body_is_exactly_the_signed_bytes(monkeypatch, app):
+    """Receivers verify X-ServiceOps-Signature over the raw request body,
+    as the API reference documents, so the transmitted bytes must be the
+    bytes that were signed."""
+    sent = []
+
+    class FakeResponse:
+        status_code = 202
+        is_redirect = False
+
+    def fake_post(url, headers, timeout, allow_redirects=True, data=None, json=None, **_):
+        sent.append((url, headers, data, json))
+        return FakeResponse()
+
+    monkeypatch.setattr("app.requests.post", fake_post)
+    monkeypatch.setattr("app.socket.getaddrinfo", lambda host, port: [(2, 1, 6, "", ("93.184.216.34", 0))])
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        connection = IntegrationConnection(
+            name="FlowOps events", kind="webhook",
+            endpoint="https://flowops.example.test/api/integrations/serviceops/events",
+            secret_encrypted=settings_cipher().encrypt(b"flowops-signing-secret").decode(),
+            created_by_id=admin.id,
+        )
+        db.session.add(connection)
+        event = OutboxEvent(
+            event_type="change.state_changed",
+            payload_json=json.dumps({"number": "CHG0000988", "state": "Cancelled", "kind": "change"}),
+        )
+        db.session.add(event)
+        db.session.commit()
+        assert deliver_webhook(event, connection) == 202
+
+    url, headers, data, body_json = sent[0]
+    assert body_json is None and isinstance(data, bytes)
+    expected = hmac.new(
+        b"flowops-signing-secret", headers["X-ServiceOps-Timestamp"].encode() + b"." + data, hashlib.sha256,
+    ).hexdigest()
+    assert headers["X-ServiceOps-Signature"] == f"sha256={expected}"
+    assert json.loads(data)["data"]["number"] == "CHG0000988"
 
 
 def test_analytics_export_csv_returns_kpi_summary(client):
