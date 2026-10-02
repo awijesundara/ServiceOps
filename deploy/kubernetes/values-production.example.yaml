@@ -15,6 +15,7 @@ progressiveDelivery:
 
 featureFlags:
   netbox_sync: true
+  snipeit_sync: true
 
 observability:
   serviceMonitor:

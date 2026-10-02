@@ -1,132 +1,280 @@
 {% extends "base.html" %}
 {% block title %}Import CMDB data · {{ instance_name }}{% endblock %}
-{% block content %}
-<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>Import configuration items</h1><p>Pull hardware data from NetBox and operational data from a spreadsheet into the CMDB.</p></div><a class="button" href="{{ url_for('cmdb') }}">← Back to CMDB</a></header>
 
-<section class="panel" id="netbox-sync">
-  <div class="panel-head"><div><h2>Sync from NetBox</h2><p>Preview a controlled, read-only inventory reconciliation before applying it.</p></div><span class="source-badge">Inventory source of truth</span></div>
-  <div class="netbox-mapping-grid" aria-label="NetBox to CMDB field mapping">
-    <article><strong>Identity & hardware</strong><p>Name, serial, manufacturer/model, management IP, site/location and rack placement become structured CMDB fields.</p></article>
-    <article><strong>Classification</strong><p>Recognized role terms map to controlled CI classes. Custom NetBox roles stay visible as attributes and use the neutral Device class.</p></article>
-    <article><strong>Status & lifecycle</strong><p>Operational status and lifecycle are mapped separately. Offline is Down—not Retired; planned/staged records are Planned.</p></article>
-    <article><strong>Virtualization & IPAM</strong><p>VM platform, host, cluster, type, compute sizing, virtual disks, interfaces, primary and assigned IP details are retained without confusing logical groupings with physical locations.</p></article>
+{% macro plural(count, word, words=None) %}{{ count }} {{ word if count == 1 else (words or word ~ 's') }}{% endmacro %}
+
+{% macro step(number, title, state, label) %}
+<li class="import-step is-{{ state }}">
+  <div class="import-step-head"><span class="import-step-number" aria-hidden="true">{{ number }}</span><h3>{{ title }}</h3><span class="import-chip chip-{{ state }}">{{ label }}</span></div>
+  {{ caller() }}
+</li>
+{% endmacro %}
+
+{% macro changes_table(result, applied) %}
+{% if result.changes %}
+<details class="import-changes" {% if not applied %}open{% endif %}>
+  <summary>{{ 'Applied' if applied else 'Planned' }} changes <span class="muted">({% if result.changes_total > result.changes|length %}first {{ result.changes|length }} of {{ result.changes_total }}{% else %}{{ result.changes_total }}{% endif %})</span></summary>
+  <div class="import-changes-scroll">
+  <table class="import-changes-table is-changes">
+    <thead><tr><th scope="col">Action</th><th scope="col">Item</th><th scope="col">What changes</th></tr></thead>
+    <tbody>
+    {% for change in result.changes %}
+      <tr><td><span class="import-chip chip-{{ change.action }}">{{ 'Create' if change.action == 'create' else 'Update' }}</span></td>
+        <td class="import-change-name">{{ change.name }}</td>
+        <td><ul class="import-field-list">{% for field in change.fields %}<li><strong>{{ field.label }}</strong> {% if change.action == 'update' and field.before %}<del>{{ field.before }}</del> → {% endif %}<span>{{ field.after }}</span></li>{% endfor %}</ul></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
   </div>
-  <details class="netbox-mapping-details"><summary>View complete synchronization rules</summary>
-    <div class="netbox-rules">
-      <p><strong>Always refreshed:</strong> identity/hardware fields, status, lifecycle, recognized environment custom field, and rack placement. Values removed in NetBox are cleared in ServiceOps.</p>
-      <p><strong>Preserved as NetBox attributes:</strong> tenant hierarchy, ownership, functional role, platform, raw status, descriptions, timestamps, coordinates, configuration context, tags, custom fields, all assigned IPs/DNS/VRF context, interfaces/VLANs/cables, console, power and cooling connectivity, modules and bays, front/rear ports, inventory items, VM interfaces and virtual disks. Rack location/group/facility/status/role/type/dimensions/weight metadata is retained on the rack. Endpoints denied to the read-only token are reported as warnings.</p>
-      <p><strong>Never inferred:</strong> NetBox tenant is not an owning support team; role is not accepted verbatim as a CI class; cluster is not a physical location. Operational ownership and business data remain ServiceOps-controlled.</p>
-      <p><strong>Matching:</strong> typed NetBox object ID, then serial number for physical devices, then exact name. Typed IDs prevent a device and VM with the same NetBox numeric ID from overwriting each other.</p>
-    </div>
-  </details>
+</details>
+{% endif %}
+{% endmacro %}
+
+{% macro job_card(job, prefix, status_endpoint, cancel_endpoint) %}
+{% set result = job.result %}{% set busy = job.status in ('Pending', 'Running') %}
+<div class="import-run {{ 'is-bad' if job.status == 'Failed' else 'is-warn' if result and (result.errors or result.warnings) else 'is-ok' if job.status == 'Completed' else '' }}" id="{{ prefix }}-sync-progress" data-sync-progress data-status-url="{{ url_for(status_endpoint, job_id=job.id) }}" data-cancel-url="{{ url_for(cancel_endpoint, job_id=job.id) }}">
+  <div class="import-run-head">
+    <div><strong>{{ 'Preview' if job.dry_run else 'Import' }} {{ job.id }}</strong>
+      <small class="muted">{% if job.actor %}by {{ job.actor.name }} · {% endif %}{% if job.finished_at %}finished {{ job.finished_at|usertime('%b %d, %H:%M') }}{% else %}queued {{ job.created_at|usertime('%b %d, %H:%M') }}{% endif %}</small></div>
+    <span class="import-chip chip-{{ job.status|lower }}" data-sync-status aria-live="polite">{{ job.status }}{% if job.phase != job.status %} · {{ job.phase }}{% endif %}{% if job.error %} · {{ job.error }}{% endif %}</span>
+  </div>
+  {% if busy %}
+  <progress data-sync-meter max="100" value="0" aria-label="{{ 'Preview' if job.dry_run else 'Import' }} progress">0%</progress>
+  <div class="import-run-actions"><span class="muted" data-sync-count>{{ job.processed }} processed{% if job.total %} of {{ job.total }}{% endif %}</span><button type="button" class="button danger" data-sync-cancel>Cancel safely</button></div>
+  {% endif %}
+  {% if result %}
+  <dl class="import-metrics">
+    {% for label, value, tone in import_metrics(prefix, result, job.dry_run) %}<div class="{{ tone }}"><dt>{{ label }}</dt><dd>{{ value }}</dd></div>{% endfor %}
+  </dl>
+  {% if job.dry_run %}<p class="muted import-note">This was a preview: nothing was saved.</p>{% endif %}
+  {% if result.errors %}<div class="import-messages is-bad"><strong>Errors</strong><ul>{% for error in result.errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+  {% if result.warnings %}<div class="import-messages is-warn"><strong>Warnings</strong><ul>{% for warning in result.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
+  {{ changes_table(result, not job.dry_run) }}
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+{% set sources = [
+  ('netbox-sync', 'NetBox', netbox_enabled, netbox_sync_job),
+  ('snipeit-sync', 'Snipe-IT', snipeit_enabled, snipeit_sync_job),
+  ('spreadsheet-import', 'Spreadsheet', true, none),
+] %}
+<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>Import configuration items</h1><p>Hardware from NetBox, assets from Snipe-IT and operational data from a spreadsheet. Every import is previewed before anything is written.</p></div><a class="button" href="{{ url_for('cmdb') }}">← Back to CMDB</a></header>
+
+<nav class="record-section-tabs import-tabs" aria-label="Import sources">
+  {% for anchor, label, enabled, job in sources %}
+  <a href="#{{ anchor }}">{{ label }} <span class="import-chip {{ 'chip-running' if job and job.status in ('Pending', 'Running') else 'chip-ready' if enabled else 'chip-off' }}">{{ 'Running' if job and job.status in ('Pending', 'Running') else 'Ready' if enabled else 'Not set up' }}</span></a>
+  {% endfor %}
+</nav>
+
+{# ------------------------------------------------------------------ NetBox #}
+<section class="panel import-source" id="netbox-sync" aria-labelledby="netbox-title">
+  <header class="import-source-head">
+    <div><h2 id="netbox-title">Sync from NetBox</h2><p>Racks, devices and virtual machines. NetBox is the source of truth for hardware, placement and status.</p></div>
+    <a class="button" href="{{ url_for('system_settings_category', category='netbox_connection') }}">Connection settings</a>
+  </header>
   {% if netbox_enabled %}
   {% set busy = netbox_sync_job and netbox_sync_job.status in ('Pending', 'Running') %}
-  <p class="muted">Connection settings (URL, read-only API token, certificate trust) are under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration → Connections &amp; channels → NetBox connection</a>. Imported elevations appear under <a href="{{ url_for('rack_list') }}">Racks</a>.</p>
-  <ol class="netbox-steps">
-    <li class="netbox-step" id="netbox-test">
-      <h3>1. Test the connection</h3>
-      <p class="muted">Checks the URL, certificate and token, then shows what NetBox holds and what this token may read. Nothing is written.</p>
-      <form method="post" action="{{ url_for('cmdb_import_netbox_test') }}#netbox-test"><button class="button">Test connection</button></form>
-      {% if netbox_probe_error %}
-      <div class="netbox-result bad" role="alert"><strong>Connection failed.</strong> {{ netbox_probe_error }}</div>
-      {% elif netbox_probe %}
-      <div class="netbox-result {{ 'ok' if netbox_probe.ready and not netbox_probe.warnings else 'warn' }}" role="status">
-        <strong>Connected to NetBox {{ netbox_probe.netbox_version }}</strong> at <code>{{ netbox_probe.base_url }}</code> with a {{ netbox_probe.token_type }} token{% if netbox_probe.egress %} through {{ netbox_probe.egress }}{% endif %}.
-        <table class="netbox-probe-table"><thead><tr><th>NetBox data</th><th>Records visible to this token</th></tr></thead><tbody>
-        {% for row in netbox_probe.endpoints %}<tr><td>{{ row.label }}{% if row.required %} <small class="muted">(imported)</small>{% endif %}</td><td>{% if row.readable %}{{ row.count }}{% else %}<span class="netbox-denied">{{ row.problem }}</span>{% endif %}</td></tr>{% endfor %}
-        </tbody></table>
-        {% if netbox_probe.roles %}<p><strong>Device roles → CI class:</strong> {% for role in netbox_probe.roles %}{{ role.name }}{% if role.devices is not none %} ({{ role.devices }}){% endif %} → {{ role.ci_class }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
-        {% if netbox_probe.sample %}
-        <p><strong>Sample devices as they would appear in the CMDB:</strong></p>
-        <table class="netbox-probe-table"><thead><tr><th>Name</th><th>Class</th><th>Serial</th><th>Model</th><th>IP</th><th>Location</th><th>Rack</th><th>Status</th></tr></thead><tbody>
-        {% for d in netbox_probe.sample %}<tr><td>{{ d.name }}</td><td>{{ d.ci_class }}</td><td>{{ d.serial_number or '—' }}</td><td>{{ [d.vendor, d.model]|select|join(' ') or '—' }}</td><td>{{ d.ip_address or '—' }}</td><td>{{ d.location or '—' }}</td><td>{{ d.rack or '—' }}</td><td>{{ d.operational_status or 'kept' }}</td></tr>{% endfor %}
-        </tbody></table>
-        {% endif %}
-        <p class="muted">The CMDB currently holds {{ netbox_probe.cmdb_total }} configuration items, {{ netbox_probe.cmdb_from_netbox }} of them from NetBox.</p>
-        {% if netbox_probe.warnings %}<ul>{% for warning in netbox_probe.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
-      </div>
-      {% endif %}
-    </li>
-    <li class="netbox-step">
-      <h3>2. Preview the changes</h3>
-      <p class="muted">Reads everything from NetBox and works out what would be created or updated, then discards it. Nothing is saved.</p>
-      <form method="post" action="{{ url_for('cmdb_import_netbox') }}"><input type="hidden" name="dry_run" value="1"><button class="button"{% if busy %} disabled{% endif %}>Preview changes</button></form>
-    </li>
-    <li class="netbox-step">
-      <h3>3. Import into the CMDB</h3>
+  <ol class="import-steps">
+    {% call step(1, 'Test connection', 'done' if netbox_probe else 'bad' if netbox_probe_error else 'todo', 'Passed' if netbox_probe else 'Failed' if netbox_probe_error else 'Recommended') %}
+      <p class="muted">Checks the URL, certificate and token and shows what this token may read. Writes nothing.</p>
+      <form method="post" action="{{ url_for('cmdb_import_netbox_test') }}#netbox-sync" data-submit-once><button class="button">Test connection</button></form>
+    {% endcall %}
+    {% call step(2, 'Preview', 'running' if busy and netbox_sync_job.dry_run else 'done' if netbox_import_ready else 'todo', 'Running' if busy and netbox_sync_job.dry_run else 'Ready to review' if netbox_import_ready else 'Required') %}
+      <p class="muted">Works out every create and update, then discards it. Writes nothing.</p>
+      <form method="post" action="{{ url_for('cmdb_import_netbox') }}" data-submit-once><input type="hidden" name="dry_run" value="1"><button class="button"{% if busy %} disabled{% endif %}>Preview changes</button></form>
+    {% endcall %}
+    {% call step(3, 'Import', 'running' if busy and not netbox_sync_job.dry_run else 'ready' if netbox_import_ready else 'locked', 'Running' if busy and not netbox_sync_job.dry_run else 'Unlocked' if netbox_import_ready else 'Locked') %}
       {% if netbox_import_ready %}
       {% set r = netbox_import_ready.result %}
       {% set vms = r.virtual_machines_seen|default(0) %}{% set racks = r.racks_created + r.racks_updated %}
-      <p>Preview {{ netbox_import_ready.id }} found <strong>{{ r.devices_seen }} device{{ '' if r.devices_seen == 1 else 's' }}, {{ vms }} virtual machine{{ '' if vms == 1 else 's' }} and {{ racks }} rack{{ '' if racks == 1 else 's' }}</strong>: {{ r.cis_created }} configuration item{{ '' if r.cis_created == 1 else 's' }} to create, {{ r.cis_updated }} to update{% if r.cis_matched_by_serial %} ({{ r.cis_matched_by_serial }} matched to existing items by serial number){% endif %}.</p>
-      <form method="post" action="{{ url_for('cmdb_import_netbox') }}" class="netbox-import-form">
+      <p>Preview {{ netbox_import_ready.id }} found <strong>{{ plural(r.devices_seen, 'device') }}, {{ plural(vms, 'virtual machine') }} and {{ plural(racks, 'rack') }}</strong>: {{ plural(r.cis_created, 'configuration item') }} to create, {{ (r.changes_total - r.cis_created) if r.changes_total is defined else r.cis_updated }} to update{% if r.cis_unchanged is defined %}, {{ r.cis_unchanged }} already up to date{% endif %}{% if r.cis_matched_by_serial %} ({{ r.cis_matched_by_serial }} matched to existing items by serial number){% endif %}.</p>
+      <p class="muted">Preview valid until {{ netbox_import_expires|usertime('%b %d, %H:%M') }}.</p>
+      <form method="post" action="{{ url_for('cmdb_import_netbox') }}" class="import-confirm" data-submit-once>
         <label><input type="checkbox" name="confirm_reviewed" value="1" required> I reviewed this preview. Import it, overwriting NetBox-owned hardware fields on matched items.</label>
         <button class="primary"{% if busy %} disabled{% endif %}>Import into CMDB</button>
       </form>
       {% else %}
       <p class="muted">Available after a successful preview that found records (valid for {{ netbox_preview_valid_hours }} hours). Each import needs its own preview.</p>
       {% endif %}
-    </li>
+    {% endcall %}
   </ol>
+
+  {% if netbox_probe_error %}
+  <div class="import-run is-bad" role="alert"><strong>Connection failed.</strong> {{ netbox_probe_error }}</div>
+  {% elif netbox_probe %}
+  <div class="import-run {{ 'is-ok' if netbox_probe.ready and not netbox_probe.warnings else 'is-warn' }}" role="status">
+    <div class="import-run-head"><div><strong>Connected to NetBox {{ netbox_probe.netbox_version }}</strong> <small class="muted">at <code>{{ netbox_probe.base_url }}</code> with a {{ netbox_probe.token_type }} token{% if netbox_probe.egress %} through {{ netbox_probe.egress }}{% endif %}</small></div></div>
+    <div class="import-changes-scroll"><table class="import-changes-table"><thead><tr><th scope="col">NetBox data</th><th scope="col">Records visible to this token</th></tr></thead><tbody>
+    {% for row in netbox_probe.endpoints %}<tr><td>{{ row.label }}{% if row.required %} <small class="muted">(imported)</small>{% endif %}</td><td>{% if row.readable %}{{ row.count }}{% else %}<span class="import-denied">{{ row.problem }}</span>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if netbox_probe.roles %}<p><strong>Device roles → CI class:</strong> {% for role in netbox_probe.roles %}{{ role.name }}{% if role.devices is not none %} ({{ role.devices }}){% endif %} → {{ role.ci_class }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+    {% if netbox_probe.sample %}
+    <p><strong>Sample devices as they would appear in the CMDB:</strong></p>
+    <div class="import-changes-scroll"><table class="import-changes-table"><thead><tr><th scope="col">Name</th><th scope="col">Class</th><th scope="col">Serial</th><th scope="col">Model</th><th scope="col">IP</th><th scope="col">Location</th><th scope="col">Rack</th><th scope="col">Status</th></tr></thead><tbody>
+    {% for d in netbox_probe.sample %}<tr><td>{{ d.name }}</td><td>{{ d.ci_class }}</td><td>{{ d.serial_number or '—' }}</td><td>{{ [d.vendor, d.model]|select|join(' ') or '—' }}</td><td>{{ d.ip_address or '—' }}</td><td>{{ d.location or '—' }}</td><td>{{ d.rack or '—' }}</td><td>{{ d.operational_status or 'kept' }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% endif %}
+    <p class="muted">The CMDB holds {{ netbox_probe.cmdb_total }} configuration items, {{ netbox_probe.cmdb_from_netbox }} of them from NetBox.</p>
+    {% if netbox_probe.warnings %}<div class="import-messages is-warn"><ul>{% for warning in netbox_probe.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
+  </div>
+  {% endif %}
+
   {% if netbox_sync_job %}
-  {% set job = netbox_sync_job %}{% set result = job.result %}
-  <div class="netbox-result {{ 'bad' if job.status == 'Failed' else 'warn' if result and (result.errors or result.warnings) else 'ok' if job.status == 'Completed' else '' }}" id="netbox-sync-progress" data-status-url="{{ url_for('cmdb_import_netbox_job', job_id=job.id) }}" data-cancel-url="{{ url_for('cmdb_import_netbox_cancel', job_id=job.id) }}">
-    <strong>{{ 'Preview' if job.dry_run else 'Import' }} {{ job.id }}</strong>{% if job.finished_at %} <small class="muted">finished {{ job.finished_at|usertime('%b %d, %H:%M') }}</small>{% endif %}
-    <p id="netbox-sync-status" aria-live="polite">{{ job.status }}{% if job.phase != job.status %} · {{ job.phase }}{% endif %}{% if job.error %} · {{ job.error }}{% endif %}</p>
-    {% if busy %}
-    <progress id="netbox-sync-meter" max="100" value="0" style="width:100%">0%</progress>
-    <p class="muted" id="netbox-sync-count">{{ job.processed }} processed{% if job.total %} of {{ job.total }}{% endif %}</p>
-    <button type="button" class="button danger" id="netbox-sync-cancel">Cancel safely</button>
+  {{ job_card(netbox_sync_job, 'netbox', 'cmdb_import_netbox_job', 'cmdb_import_netbox_cancel') }}
+  {% endif %}
+  {% if netbox_last_import %}<p class="muted import-note">Last import: {{ netbox_last_import.id }} on {{ netbox_last_import.finished_at|usertime('%b %d, %H:%M') }}{% if netbox_last_import.actor %} by {{ netbox_last_import.actor.name }}{% endif %}. Every run is recorded in the audit log.</p>{% endif %}
+  {% else %}
+  <div class="import-run is-warn"><strong>NetBox sync is not enabled.</strong> Configure the URL, a read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration → Connections &amp; channels → NetBox connection</a>.</div>
+  {% endif %}
+
+  <details class="netbox-mapping-details import-mapping"><summary>How NetBox fields map to the CMDB</summary>
+    <div class="netbox-mapping-grid" aria-label="NetBox to CMDB field mapping">
+      <article><strong>Identity &amp; hardware</strong><p>Name, serial, manufacturer/model, management IP, site/location and rack placement become structured CMDB fields.</p></article>
+      <article><strong>Classification</strong><p>Recognized role terms map to controlled CI classes. Custom NetBox roles stay visible as attributes and use the neutral Device class.</p></article>
+      <article><strong>Status &amp; lifecycle</strong><p>Operational status and lifecycle are mapped separately. Offline is Down, not Retired. Planned and staged records are Planned.</p></article>
+      <article><strong>Virtualization &amp; IPAM</strong><p>VM platform, host, cluster, type, sizing, virtual disks, interfaces, primary and assigned IP details are kept as attributes.</p></article>
+    </div>
+    <div class="netbox-rules">
+      <p><strong>Always refreshed:</strong> identity/hardware fields, status, lifecycle, recognized environment custom field, and rack placement. Values removed in NetBox are cleared in ServiceOps.</p>
+      <p><strong>Preserved as NetBox attributes:</strong> tenant hierarchy, ownership, functional role, platform, raw status, descriptions, timestamps, coordinates, configuration context, tags, custom fields, all assigned IPs/DNS/VRF context, interfaces/VLANs/cables, console, power and cooling connectivity, modules and bays, front/rear ports, inventory items, VM interfaces and virtual disks. Rack metadata is retained on the rack. Endpoints denied to the read-only token are reported as warnings.</p>
+      <p><strong>Never inferred:</strong> NetBox tenant is not an owning support team, role is not accepted verbatim as a CI class, and cluster is not a physical location. Operational ownership and business data remain ServiceOps-controlled.</p>
+      <p><strong>Matching:</strong> typed NetBox object ID, then serial number for physical devices, then exact name. Imported elevations appear under <a href="{{ url_for('rack_list') }}">Racks</a>.</p>
+    </div>
+  </details>
+</section>
+
+{# ---------------------------------------------------------------- Snipe-IT #}
+<section class="panel import-source" id="snipeit-sync" aria-labelledby="snipeit-title">
+  <header class="import-source-head">
+    <div><h2 id="snipeit-title">Sync from Snipe-IT</h2><p>Hardware assets with their assignment, purchase and warranty data.</p></div>
+    <a class="button" href="{{ url_for('system_settings_category', category='snipeit_connection') }}">Connection settings</a>
+  </header>
+  {% if snipeit_enabled %}
+  {% set busy = snipeit_sync_job and snipeit_sync_job.status in ('Pending', 'Running') %}
+  <ol class="import-steps">
+    {% call step(1, 'Test connection', 'done' if snipeit_probe else 'bad' if snipeit_probe_error else 'todo', 'Passed' if snipeit_probe else 'Failed' if snipeit_probe_error else 'Recommended') %}
+      <p class="muted">Checks the URL, certificate and token and shows what this token may read. Writes nothing.</p>
+      <form method="post" action="{{ url_for('cmdb_import_snipeit_test') }}#snipeit-sync" data-submit-once><button class="button">Test connection</button></form>
+    {% endcall %}
+    {% call step(2, 'Preview', 'running' if busy and snipeit_sync_job.dry_run else 'done' if snipeit_import_ready else 'todo', 'Running' if busy and snipeit_sync_job.dry_run else 'Ready to review' if snipeit_import_ready else 'Required') %}
+      <p class="muted">Reads every hardware asset and works out each create and update, then discards it. Writes nothing.</p>
+      <form method="post" action="{{ url_for('cmdb_import_snipeit') }}" data-submit-once><input type="hidden" name="dry_run" value="1"><button class="button"{% if busy %} disabled{% endif %}>Preview changes</button></form>
+    {% endcall %}
+    {% call step(3, 'Import', 'running' if busy and not snipeit_sync_job.dry_run else 'ready' if snipeit_import_ready else 'locked', 'Running' if busy and not snipeit_sync_job.dry_run else 'Unlocked' if snipeit_import_ready else 'Locked') %}
+      {% if snipeit_import_ready %}
+      {% set r = snipeit_import_ready.result %}
+      <p>Preview {{ snipeit_import_ready.id }} found <strong>{{ plural(r.assets_seen, 'asset') }}</strong>: {{ plural(r.cis_created, 'configuration item') }} to create, {{ (r.changes_total - r.cis_created) if r.changes_total is defined else r.cis_updated }} to update{% if r.cis_unchanged is defined %}, {{ r.cis_unchanged }} already up to date{% endif %}{% if r.cis_matched_by_serial %} ({{ r.cis_matched_by_serial }} matched by serial number{% if r.cis_enriched_netbox %}, {{ r.cis_enriched_netbox }} NetBox items that only gain asset data{% endif %}){% endif %}.</p>
+      <p class="muted">Preview valid until {{ snipeit_import_expires|usertime('%b %d, %H:%M') }}.</p>
+      <form method="post" action="{{ url_for('cmdb_import_snipeit') }}" class="import-confirm" data-submit-once>
+        <label><input type="checkbox" name="confirm_reviewed" value="1" required> I reviewed this preview. Import it, overwriting Snipe-IT-owned asset fields on matched items.</label>
+        <button class="primary"{% if busy %} disabled{% endif %}>Import into CMDB</button>
+      </form>
+      {% else %}
+      <p class="muted">Available after a successful preview that found assets (valid for {{ netbox_preview_valid_hours }} hours). Each import needs its own preview.</p>
+      {% endif %}
+    {% endcall %}
+  </ol>
+
+  {% if snipeit_probe_error %}
+  <div class="import-run is-bad" role="alert"><strong>Connection failed.</strong> {{ snipeit_probe_error }}</div>
+  {% elif snipeit_probe %}
+  <div class="import-run {{ 'is-ok' if snipeit_probe.ready and not snipeit_probe.warnings else 'is-warn' }}" role="status">
+    <div class="import-run-head"><div><strong>Connected to Snipe-IT</strong> <small class="muted">at <code>{{ snipeit_probe.base_url }}</code>{% if snipeit_probe.token_user %} as {{ snipeit_probe.token_user }}{% endif %}{% if snipeit_probe.egress %} through {{ snipeit_probe.egress }}{% endif %}</small></div></div>
+    <div class="import-changes-scroll"><table class="import-changes-table"><thead><tr><th scope="col">Snipe-IT data</th><th scope="col">Records visible to this token</th></tr></thead><tbody>
+    {% for row in snipeit_probe.endpoints %}<tr><td>{{ row.label }}{% if row.required %} <small class="muted">(imported)</small>{% endif %}</td><td>{% if row.readable %}{{ row.count }}{% else %}<span class="import-denied">{{ row.problem }}</span>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if snipeit_probe.categories %}<p><strong>Categories → CI class:</strong> {% for c in snipeit_probe.categories %}{{ c.name }}{% if c.assets is not none %} ({{ c.assets }}){% endif %} → {{ c.ci_class }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+    {% if snipeit_probe.status_labels %}<p><strong>Status labels → lifecycle:</strong> {% for l in snipeit_probe.status_labels %}{{ l.name }} → {{ l.lifecycle_state or 'kept' }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+    {% if snipeit_probe.sample %}
+    <p><strong>Sample assets as they would appear in the CMDB:</strong></p>
+    <div class="import-changes-scroll"><table class="import-changes-table"><thead><tr><th scope="col">Name</th><th scope="col">Asset tag</th><th scope="col">Class</th><th scope="col">Serial</th><th scope="col">Model</th><th scope="col">Location</th><th scope="col">Assigned to</th><th scope="col">Lifecycle</th></tr></thead><tbody>
+    {% for a in snipeit_probe.sample %}<tr><td>{{ a.name }}</td><td>{{ a.asset_tag or '—' }}</td><td>{{ a.ci_class }}</td><td>{{ a.serial_number or '—' }}</td><td>{{ [a.vendor, a.model]|select|join(' ') or '—' }}</td><td>{{ a.location or '—' }}</td><td>{% if a.assigned_to %}{{ a.assigned_to }}{% if not a.owner_matched %} <small class="muted">(no matching user)</small>{% endif %}{% else %}—{% endif %}</td><td>{{ a.lifecycle_state or 'kept' }}</td></tr>{% endfor %}
+    </tbody></table></div>
     {% endif %}
-    {% if result %}
-    {% set vms = result.virtual_machines_seen|default(0) %}
-    <p>{{ result.devices_seen }} physical device{{ '' if result.devices_seen == 1 else 's' }} · {{ vms }} virtual machine{{ '' if vms == 1 else 's' }} ·
-      {{ result.cis_created }} {{ 'would be created' if job.dry_run else 'created' }} ·
-      {{ result.cis_updated }} {{ 'would be updated' if job.dry_run else 'updated' }} ·
-      {{ result.cis_matched_by_serial }} matched by serial number ·
-      {{ result.racks_created }} rack{{ '' if result.racks_created == 1 else 's' }} {{ 'to create' if job.dry_run else 'created' }} · {{ result.racks_updated }} rack{{ '' if result.racks_updated == 1 else 's' }} {{ 'to update' if job.dry_run else 'updated' }} ·
-      {{ result.errors|length }} error{{ '' if result.errors|length == 1 else 's' }}</p>
-    {% if job.dry_run %}<p class="muted">This was a preview: nothing was saved.</p>{% endif %}
-    {% if result.errors %}<p><strong>Errors</strong></p><ul>{% for error in result.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
-    {% if result.warnings %}<p><strong>Warnings</strong></p><ul>{% for warning in result.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
-    {% endif %}
+    <p class="muted">The CMDB holds {{ snipeit_probe.cmdb_total }} configuration items, {{ snipeit_probe.cmdb_from_snipeit }} of them from Snipe-IT.</p>
+    {% if snipeit_probe.warnings %}<div class="import-messages is-warn"><ul>{% for warning in snipeit_probe.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
   </div>
   {% endif %}
-  {% else %}
-  <div class="netbox-result warn"><strong>NetBox sync is not enabled.</strong> Configure the URL, a read-only API token and certificate trust under <a href="{{ url_for('system_settings_category', category='netbox_connection') }}">Administration → Connections &amp; channels → NetBox connection</a>.</div>
-  {% endif %}
-</section>
-{% if netbox_sync_job %}<script src="{{ url_for('static', filename='netbox-sync.js', v=app_version) }}" defer></script>{% endif %}
 
-<section class="panel" id="spreadsheet-import">
-  <h2>Import from spreadsheet</h2>
-  <p class="muted import-guidance">Upload a CSV, paste CSV text, or point at a published Google Sheet (File → Share → Publish to web, or a link shared as "Anyone with the link can view"). Recognized columns: Host/Name, Owner/System Owner (resolved to an owning support team, not an individual), Description, Environment, Serial Number, Vendor, Model, Location, Cost Center, Business Criticality, Lifecycle State, Install/Shipped Date, End of Support/Warranty Expiry, IP Address, State/Status (decommissioned rows are detected automatically). Any other column in the sheet (CPUs, RAM, Builder, iDRAC, DNS, …) is kept as-is on the CI's Additional imported fields. Fields on CIs synced from NetBox that NetBox already owns are left untouched.</p>
-
-  {% if not preview %}
-  <form method="post" enctype="multipart/form-data" class="form-grid import-source-form">
-    <input type="hidden" name="action" value="preview">
-    <label class="wide">Google Sheet URL<input type="url" name="sheet_url" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
-    <label class="wide">Upload CSV file<input type="file" name="file" accept=".csv,text/csv"></label>
-    <label class="wide">…or paste CSV text<textarea name="csv_text" rows="8" placeholder="Host,Owner,Description,...">{{ csv_text }}</textarea></label>
-    <div class="wide actions"><button class="primary">Preview import</button></div>
-  </form>
-  {% else %}
-  <div class="callout">
-    <strong>Preview (nothing has been saved yet):</strong>
-    {{ preview.rows_seen }} rows read ·
-    {{ preview.cis_created }} would be created ·
-    {{ preview.cis_updated }} would be updated ·
-    {{ preview.fields_skipped_netbox_owned }} NetBox-owned fields would be preserved ·
-    {{ preview.errors|length }} errors
-    {% if preview.teams_created %}<p>New owning teams created: {{ preview.teams_created|join(', ') }}</p>{% endif %}
-    {% if preview.errors %}<ul>{% for error in preview.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
-    {% if preview.warnings %}<p>{{ preview.warnings|length }} warning{{ '' if preview.warnings|length == 1 else 's' }}:</p><ul>{% for warning in preview.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
-  </div>
-  <form method="post" class="actions">
-    <input type="hidden" name="action" value="apply">
-    <textarea name="csv_text" hidden>{{ csv_text }}</textarea>
-    <a class="button" href="{{ url_for('cmdb_import') }}">Start over</a>
-    <button class="primary">Apply import</button>
-  </form>
+  {% if snipeit_sync_job %}
+  {{ job_card(snipeit_sync_job, 'snipeit', 'cmdb_import_snipeit_job', 'cmdb_import_snipeit_cancel') }}
   {% endif %}
+  {% if snipeit_last_import %}<p class="muted import-note">Last import: {{ snipeit_last_import.id }} on {{ snipeit_last_import.finished_at|usertime('%b %d, %H:%M') }}{% if snipeit_last_import.actor %} by {{ snipeit_last_import.actor.name }}{% endif %}. Every run is recorded in the audit log.</p>{% endif %}
+  {% else %}
+  <div class="import-run is-warn"><strong>Snipe-IT sync is not enabled.</strong> Configure the URL and an API token under <a href="{{ url_for('system_settings_category', category='snipeit_connection') }}">Administration → Connections &amp; channels → Snipe-IT connection</a>.</div>
+  {% endif %}
+
+  <details class="netbox-mapping-details import-mapping"><summary>How Snipe-IT fields map to the CMDB</summary>
+    <div class="netbox-mapping-grid" aria-label="Snipe-IT to CMDB field mapping">
+      <article><strong>Identity &amp; hardware</strong><p>Asset name (or asset tag), serial, manufacturer, model and current location become structured CMDB fields. An IP address custom field fills the CI's IP.</p></article>
+      <article><strong>Classification</strong><p>Recognized category terms (laptop, desktop, server, monitor, phone, printer, network gear) map to CI classes. Other categories use the neutral Hardware Asset class.</p></article>
+      <article><strong>Status &amp; lifecycle</strong><p>Deployed is In Use, ready to deploy and pending are Planned, undeployable is Down, archived is Retired.</p></article>
+      <article><strong>Assignment &amp; purchase</strong><p>The person an asset is checked out to becomes the CI owner when a ServiceOps user has the same email. Purchase and warranty dates fill the CI dates.</p></article>
+    </div>
+    <div class="netbox-rules">
+      <p><strong>Always refreshed on Snipe-IT items:</strong> name, serial, manufacturer, model, location, purchase date, warranty expiry, status, lifecycle, class and owner. A returned (checked-in) asset loses its owner.</p>
+      <p><strong>Items NetBox already manages:</strong> NetBox stays the source of truth for hardware and status. Snipe-IT only adds purchase and warranty dates, the owner and its own attributes.</p>
+      <p><strong>Preserved as Snipe-IT attributes:</strong> asset ID and tag, a link to the Snipe-IT record, category, status label, company, supplier, order number, purchase cost, book value, warranty, end of life, default location, assignee, checkout and audit dates, notes and every custom field.</p>
+      <p><strong>Matching:</strong> Snipe-IT asset ID, then serial number, then exact name. Two Snipe-IT assets with the same name stay separate items; the second gets its asset tag added to its name.</p>
+      <p><strong>Not imported:</strong> licenses, accessories, consumables and components. Assets deleted in Snipe-IT are not removed from the CMDB.</p>
+    </div>
+  </details>
 </section>
+
+{# ------------------------------------------------------------- Spreadsheet #}
+<section class="panel import-source" id="spreadsheet-import" aria-labelledby="spreadsheet-title">
+  <header class="import-source-head">
+    <div><h2 id="spreadsheet-title">Import from spreadsheet</h2><p>Operational and business data: owning team, description, environment, cost center, criticality and dates.</p></div>
+  </header>
+  <ol class="import-steps import-steps-two">
+    {% call step(1, 'Choose the data', 'done' if preview else 'todo', 'Loaded' if preview else 'Required') %}
+      {% if not preview %}
+      <form method="post" action="{{ url_for('cmdb_import') }}#spreadsheet-import" enctype="multipart/form-data" class="import-source-form" data-submit-once>
+        <input type="hidden" name="action" value="preview">
+        <label>Google Sheet URL<input type="url" name="sheet_url" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
+        <label>Upload CSV file<input type="file" name="file" accept=".csv,text/csv"></label>
+        <label>…or paste CSV text<textarea name="csv_text" rows="6" placeholder="Host,Owner,Description,...">{{ csv_text }}</textarea></label>
+        <div class="import-form-actions"><button class="primary">Preview import</button></div>
+      </form>
+      {% else %}
+      <p class="muted">{{ plural(preview.rows_seen, 'row') }} read. <a href="{{ url_for('cmdb_import') }}#spreadsheet-import">Start over</a> to choose different data.</p>
+      {% endif %}
+    {% endcall %}
+    {% call step(2, 'Review and apply', 'ready' if preview and not preview.errors else 'bad' if preview else 'locked', 'Ready to apply' if preview and not preview.errors else 'Has errors' if preview else 'Locked') %}
+      {% if preview %}
+      <dl class="import-metrics">
+        <div><dt>Rows</dt><dd>{{ preview.rows_seen }}</dd></div>
+        <div class="is-create"><dt>To create</dt><dd>{{ preview.cis_created }}</dd></div>
+        <div class="is-update"><dt>To update</dt><dd>{{ preview.changes_total - preview.cis_created if preview.changes_total is defined else preview.cis_updated }}</dd></div>
+        <div><dt>Up to date</dt><dd>{{ preview.cis_unchanged|default(0) }}</dd></div>
+        <div><dt>Fields kept</dt><dd>{{ preview.fields_skipped_netbox_owned + preview.fields_skipped_snipeit_owned|default(0) }}</dd></div>
+        <div class="{{ 'is-bad' if preview.errors else '' }}"><dt>Errors</dt><dd>{{ preview.errors|length }}</dd></div>
+      </dl>
+      <p class="muted import-note">Preview (nothing has been saved yet). {{ preview.fields_skipped_netbox_owned }} NetBox-owned and {{ preview.fields_skipped_snipeit_owned|default(0) }} Snipe-IT-owned fields would be preserved.</p>
+      {% if preview.teams_created %}<p>New owning teams to create: {{ preview.teams_created|join(', ') }}</p>{% endif %}
+      {% if preview.errors %}<div class="import-messages is-bad"><strong>Errors</strong><ul>{% for error in preview.errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+      {% if preview.warnings %}<div class="import-messages is-warn"><strong>{{ plural(preview.warnings|length, 'warning') }}</strong><ul>{% for warning in preview.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
+      {{ changes_table(preview, false) }}
+      <form method="post" action="{{ url_for('cmdb_import') }}#spreadsheet-import" class="import-confirm" data-submit-once>
+        <input type="hidden" name="action" value="apply">
+        <textarea name="csv_text" hidden>{{ csv_text }}</textarea>
+        <label><input type="checkbox" name="confirm_reviewed" value="1" required> I reviewed this preview. Apply it to the CMDB.</label>
+        <div class="import-form-actions"><a class="button" href="{{ url_for('cmdb_import') }}#spreadsheet-import">Start over</a><button class="primary">Apply import</button></div>
+      </form>
+      {% else %}
+      <p class="muted">Available after a preview. Nothing is written until you apply it.</p>
+      {% endif %}
+    {% endcall %}
+  </ol>
+  <details class="netbox-mapping-details import-mapping"><summary>Recognized spreadsheet columns</summary>
+    <div class="netbox-rules">
+      <p>Upload a CSV, paste CSV text, or point at a published Google Sheet (File → Share → Publish to web, or a link shared as "Anyone with the link can view").</p>
+      <p><strong>Recognized columns:</strong> Host/Name, Owner/System Owner (resolved to an owning support team, not an individual), Description, Environment, Serial Number, Vendor, Model, Location, Cost Center, Business Criticality, Lifecycle State, Install/Shipped Date, End of Support/Warranty Expiry, IP Address, State/Status (decommissioned rows are detected automatically).</p>
+      <p><strong>Other columns</strong> (CPUs, RAM, Builder, iDRAC, DNS, …) are kept as-is on the CI's additional imported fields. Fields on CIs synced from NetBox or Snipe-IT that the sync already owns are left untouched.</p>
+    </div>
+  </details>
+</section>
+<script src="{{ url_for('static', filename='netbox-sync.js', v=app_version) }}" defer></script>
 {% endblock %}

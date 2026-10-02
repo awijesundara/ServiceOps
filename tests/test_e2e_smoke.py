@@ -318,8 +318,18 @@ def test_critical_journey_is_responsive_error_free_and_accessible(authenticated_
             f"{journey} leaves unused horizontal space at 2560px: {main_box}"
         )
     if journey == "cmdb-import":
-        if not page.locator(".netbox-mapping-details").evaluate("element => element.open"):
-            page.locator(".netbox-mapping-details summary").click()
+        # One tab per source: switching shows exactly that source.
+        tabs = page.locator(".import-tabs a")
+        assert tabs.count() == 3
+        tabs.nth(1).click()
+        assert page.locator("#snipeit-sync").is_visible() and not page.locator("#netbox-sync").is_visible()
+        # Reveal every source and open every mapping panel so the
+        # accessibility scan covers all of them, not only the active tab.
+        page.evaluate("document.querySelectorAll('.import-source')"
+                      ".forEach(panel => panel.classList.remove('tab-panel-hidden'))")
+        for details in page.locator(".netbox-mapping-details").all():
+            if not details.evaluate("element => element.open"):
+                details.locator("summary").click()
         page.screenshot(path=ARTIFACT_DIR / f"cmdb-import-{viewport_name}.png", full_page=True)
     if journey in {"task-board", "user-profile", "directory-sync", "audit-evidence", "administration", "administration-connections", "administration-platform", "settings-security", "settings-notifications", "personal-notifications"}:
         page.screenshot(path=ARTIFACT_DIR / f"{journey}-{viewport_name}.png", full_page=True)

@@ -5135,7 +5135,7 @@ def process_integration_sync_jobs(limit=1):
             if isinstance(total, int):
                 path_totals[path] = total
             values = {
-                "phase": path.replace("/api/", "").strip("/").replace("/", " / "),
+                "phase": re.sub(r"^/api/(v1/)?", "", path).strip("/").replace("/", " / "),
                 "processed": sum(path_processed.values()),
                 "total": sum(path_totals.values()) if path_totals else None,
                 "updated_at": now(),
@@ -5147,13 +5147,20 @@ def process_integration_sync_jobs(limit=1):
                     IntegrationSyncJob.id == job.id
                 ).values(**values))
 
+        from serviceops_core.netbox_sync import NetboxSyncError, sync_from_netbox
+        from serviceops_core.snipeit_sync import SnipeitSyncError, sync_from_snipeit
+        runners = {
+            "netbox": ("NetBox", sync_from_netbox, "NETBOX_SYNC_BATCH_SIZE"),
+            "snipeit": ("Snipe-IT", sync_from_snipeit, "SNIPEIT_SYNC_BATCH_SIZE"),
+        }
+        label = runners.get(job.integration, (job.integration,))[0]
         try:
-            if job.integration != "netbox":
+            if job.integration not in runners:
                 raise RuntimeError("Unsupported integration job type")
-            from serviceops_core.netbox_sync import sync_from_netbox
-            result = sync_from_netbox(
+            _, run_sync, batch_setting = runners[job.integration]
+            result = run_sync(
                 job.tenant_id, dry_run=job.dry_run,
-                page_size=max(10, min(setting_int("NETBOX_SYNC_BATCH_SIZE", 100), 500)),
+                page_size=max(10, min(setting_int(batch_setting, 100), 500)),
                 progress_callback=progress, cancel_check=cancelled,
             )
         except Exception as error:  # noqa: BLE001 - isolate external integration failure
@@ -5164,10 +5171,9 @@ def process_integration_sync_jobs(limit=1):
                 job.phase = "Cancelled safely between batches"
                 job.error = None
             else:
-                from serviceops_core.netbox_sync import NetboxSyncError
                 job.status = "Failed"
                 job.phase = "Failed"
-                job.error = (str(error) if isinstance(error, NetboxSyncError)
+                job.error = (str(error) if isinstance(error, (NetboxSyncError, SnipeitSyncError))
                              else f"{type(error).__name__}: {error}")[:800]
         else:
             db.session.expire_all()
@@ -5178,7 +5184,7 @@ def process_integration_sync_jobs(limit=1):
         job.finished_at = now()
         job.updated_at = now()
         audit(
-            "configure", f"NetBox CMDB sync {job.status.casefold()}",
+            "configure", f"{label} CMDB sync {job.status.casefold()}",
             f"Job {job.id}; processed={job.processed}; phase={job.phase}",
             user_id=job.actor_user_id, tenant_id=job.tenant_id,
         )

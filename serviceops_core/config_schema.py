@@ -183,6 +183,23 @@ SETTING_DEFINITIONS = {
         },
         *proxy_policy_settings("NETBOX", "NetBox"),
     ],
+    "snipeit_connection": [
+        {"key": "SNIPEIT_ENABLED", "label": "Enable Snipe-IT sync", "type": "bool", "default": "false", "live": True},
+        {"key": "SNIPEIT_BASE_URL", "label": "Snipe-IT base URL", "type": "url", "default": "", "live": True},
+        {"key": "SNIPEIT_API_TOKEN", "label": "Snipe-IT API token (personal access token of a user who may view assets)",
+         "type": "secret", "default": "", "live": True},
+        {"key": "SNIPEIT_SYNC_BATCH_SIZE", "label": "Snipe-IT synchronization batch size", "type": "int", "default": "100",
+         "min": 10, "max": 500, "live": True},
+        {
+            "key": "SNIPEIT_CA_CERT", "type": "text", "default": "", "live": True,
+            "label": "Snipe-IT CA certificate (PEM, only needed if Snipe-IT uses an internal CA)",
+        },
+        {
+            "key": "SNIPEIT_TLS_INSECURE", "type": "bool", "default": "false", "live": True,
+            "label": "Skip Snipe-IT TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
+        },
+        *proxy_policy_settings("SNIPEIT", "Snipe-IT"),
+    ],
     "outbound_network": [
         {
             "key": "OUTBOUND_PROXY_URL", "label": "System default outbound proxy (HTTP/HTTPS)", "type": "secret", "default": "",
@@ -260,7 +277,7 @@ SETTING_GROUP_META = {
         "Outbound proxy & updates",
         "System egress proxy for AI models, notifications, email, integrations, object storage, mobile push, "
         "identity verification, imports, and release checks. Every outbound component (each AI model, notification "
-        "channel, email, NetBox, Request Tracker, Google Chat bot, iOS push, object storage, Cloudflare Access, "
+        "channel, email, NetBox, Snipe-IT, Request Tracker, Google Chat bot, iOS push, object storage, Cloudflare Access, "
         "spreadsheet import and the update check) may inherit this proxy, use its own proxy, or connect directly.",
     ),
     "google_chat_app": (
@@ -269,6 +286,7 @@ SETTING_GROUP_META = {
         "Pub/Sub -- no internet-facing endpoint required) and posts threaded replies back.",
     ),
     "netbox_connection": ("NetBox connection", "Connection used to synchronize configuration items from NetBox."),
+    "snipeit_connection": ("Snipe-IT connection", "Connection used to synchronize hardware assets from Snipe-IT into the CMDB."),
     "request_tracker_connection": ("Request Tracker connection", "Connection used to import records from Request Tracker."),
 }
 

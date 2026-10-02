@@ -49,6 +49,13 @@
 </section>
 {% endif %}
 
+{% if category == 'snipeit_connection' %}
+<section class="panel admin-section">
+  <div class="panel-head"><div><h2>Test and import</h2><p>Save first, then test the saved connection. The test shows what Snipe-IT holds and what the token may read, without writing anything.</p></div>
+  <form method="post" action="{{ url_for('cmdb_import_snipeit_test') }}#snipeit-test"><button class="button">Test connection</button></form></div>
+</section>
+{% endif %}
+
 {% if category == 'sign_in_and_directory' %}
 {% set post_url = url_for('itil_admin') %}
 <section class="panel admin-section">

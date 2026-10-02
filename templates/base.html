@@ -113,7 +113,7 @@
     {% elif request.endpoint == 'itil_admin_section' and request.view_args.get('section') in ['team-aliases','team-managers','executive-approval','governance-groups'] %}{% set admin_active_section = 'people-access' %}
     {% elif request.endpoint in ['itil_admin','itil_admin_section'] %}{% set admin_active_section = 'service-configuration' %}
     {% elif request.endpoint in ['integrations_admin','rt_import'] %}{% set admin_active_section = 'connections-channels' %}
-    {% elif request.endpoint == 'system_settings_category' and request.view_args.get('category') in ['email_delivery','netbox_connection','request_tracker_connection'] %}{% set admin_active_section = 'connections-channels' %}
+    {% elif request.endpoint == 'system_settings_category' and request.view_args.get('category') in ['email_delivery','netbox_connection','snipeit_connection','request_tracker_connection'] %}{% set admin_active_section = 'connections-channels' %}
     {% elif request.endpoint in ['workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin'] %}{% set admin_active_section = 'automation-content' %}
     {% elif request.endpoint in ['system_settings_category','data_governance_admin','platform_tenants','system_health','system_health_log_file','audit_log','api_clients_admin'] %}{% set admin_active_section = 'platform-security' %}
     {% endif %}

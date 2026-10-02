@@ -20,6 +20,8 @@ from contextlib import nullcontext
 
 import requests
 
+from serviceops_core import import_changes
+
 DEVICES_PATH = "/api/dcim/devices/"
 VMS_PATH = "/api/virtualization/virtual-machines/"
 RACKS_PATH = "/api/dcim/racks/"
@@ -690,6 +692,7 @@ def _upsert(mapped, tenant_id, summary):
     netbox_attributes = mapped.get("attributes") or {}
 
     if ci:
+        before = import_changes.snapshot(ci)
         for field in HARDWARE_FIELDS:
             setattr(ci, field, mapped.get(field))
         if mapped.get("operational_status"):
@@ -707,8 +710,9 @@ def _upsert(mapped, tenant_id, summary):
         summary["cis_updated"] += 1
         if matched_by_serial:
             summary["cis_matched_by_serial"] += 1
+        import_changes.record_update(summary, before, ci)
     else:
-        db.session.add(core_app.ConfigurationItem(
+        ci = core_app.ConfigurationItem(
             name=mapped["name"], ci_class=mapped["ci_class"],
             operational_status=mapped.get("operational_status") or "Degraded",
             lifecycle_state=mapped.get("lifecycle_state") or "In Use",
@@ -720,8 +724,10 @@ def _upsert(mapped, tenant_id, summary):
             tenant_id=tenant_id, attributes=netbox_attributes,
             rack_id=mapped.get("rack_id"), rack_position=mapped.get("rack_position"),
             rack_u_height=mapped.get("rack_u_height"), rack_face=mapped.get("rack_face"),
-        ))
+        )
+        db.session.add(ci)
         summary["cis_created"] += 1
+        import_changes.record_create(summary, ci)
 
 
 def _configured_connection():
@@ -888,6 +894,7 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session,
         "errors": [],
         "warnings": [],
     }
+    import_changes.start(summary)
 
     session = session_factory(base_url, token)
     pagination = {
@@ -921,6 +928,7 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session,
             counts_before = (
                 summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"],
             )
+            changes_before = import_changes.checkpoint(summary)
             try:
                 with record_transaction():
                     mapped = _map_device(record, rack_id_map=rack_id_map)
@@ -929,12 +937,14 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session,
                     _upsert(mapped, tenant_id, summary)
             except Exception as error:  # noqa: BLE001 - isolate one bad record from the whole sync
                 summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"] = counts_before
+                import_changes.restore(summary, changes_before)
                 summary["errors"].append(f"device {record.get('name', record.get('id'))}: {type(error).__name__}")
         for record in _paginate(session, base_url, VMS_PATH, **pagination):
             summary["virtual_machines_seen"] += 1
             counts_before = (
                 summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"],
             )
+            changes_before = import_changes.checkpoint(summary)
             try:
                 with record_transaction():
                     mapped = _map_vm(record)
@@ -943,6 +953,7 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session,
                     _upsert(mapped, tenant_id, summary)
             except Exception as error:  # noqa: BLE001
                 summary["cis_created"], summary["cis_updated"], summary["cis_matched_by_serial"] = counts_before
+                import_changes.restore(summary, changes_before)
                 summary["errors"].append(f"vm {record.get('name', record.get('id'))}: {type(error).__name__}")
     except requests.RequestException as error:
         db.session.rollback()

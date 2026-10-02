@@ -498,6 +498,13 @@ def register(app):
                     flash(str(error), "error")
             elif action == "apply":
                 csv_text = request.form.get("csv_text", "")
+                if not request.form.get("confirm_reviewed"):
+                    flash("Confirm that you reviewed the preview before applying it.", "error")
+                    try:
+                        preview = import_ci_rows(parse_ci_rows(csv_text), core.tenant_context_id(), dry_run=True)
+                    except CmdbImportError:
+                        preview = None
+                    return _cmdb_import_page(preview=preview, csv_text=csv_text)
                 try:
                     rows = parse_ci_rows(csv_text)
                     result = import_ci_rows(rows, core.tenant_context_id(), dry_run=False)
@@ -507,7 +514,8 @@ def register(app):
                     audit(
                         "configure", "CMDB import",
                         f"{result['cis_created']} created, {result['cis_updated']} updated, "
-                        f"{result['fields_skipped_netbox_owned']} NetBox-owned fields preserved, "
+                        f"{result['fields_skipped_netbox_owned']} NetBox-owned and "
+                        f"{result['fields_skipped_snipeit_owned']} Snipe-IT-owned fields preserved, "
                         f"{len(result['errors'])} errors",
                     )
                     flash(
@@ -521,36 +529,161 @@ def register(app):
                 abort(400)
         return _cmdb_import_page(preview=preview, csv_text=csv_text)
 
-    def _latest_netbox_job():
-        return tenant_query(IntegrationSyncJob).filter_by(integration="netbox").order_by(
+    # Inventory sources that run as previewed, cancellable background jobs:
+    # integration key -> (label, advisory lock offset, result keys that show
+    # the preview found something to import, feature flag).
+    inventory_syncs = {
+        "netbox": ("NetBox", 349, ("devices_seen", "virtual_machines_seen", "racks_created", "racks_updated"),
+                   "netbox_sync"),
+        "snipeit": ("Snipe-IT", 350, ("assets_seen",), "snipeit_sync"),
+    }
+
+    def _latest_sync_job(integration):
+        return tenant_query(IntegrationSyncJob).filter_by(integration=integration).order_by(
             IntegrationSyncJob.created_at.desc(), IntegrationSyncJob.id.desc()).first()
 
-    def _netbox_preview_for_import():
-        """The preview an import may proceed from: the tenant's most recent
-        NetBox job, a completed dry run finished within NETBOX_PREVIEW_VALID_HOURS
-        that saw records and hit no record errors. An import (or any later
-        preview) consumes it, so every import follows its own reviewed preview."""
-        job = _latest_netbox_job()
+    def _sync_preview_for_import(integration):
+        """The preview an import may proceed from: the tenant's most recent job
+        for this source, a completed dry run finished within
+        NETBOX_PREVIEW_VALID_HOURS that saw records and hit no record errors.
+        An import (or any later preview) consumes it, so every import follows
+        its own reviewed preview."""
+        job = _latest_sync_job(integration)
         if not job or not job.dry_run or job.status != "Completed" or not job.finished_at:
             return None
         finished = job.finished_at if job.finished_at.tzinfo else job.finished_at.replace(tzinfo=timezone.utc)
         if now() - finished > timedelta(hours=NETBOX_PREVIEW_VALID_HOURS):
             return None
         result = job.result or {}
-        if result.get("errors") or not (result.get("devices_seen") or result.get("virtual_machines_seen")
-                                        or result.get("racks_created") or result.get("racks_updated")):
+        if result.get("errors") or not any(result.get(key) for key in inventory_syncs[integration][2]):
             return None
         return job
 
-    def _cmdb_import_page(preview=None, csv_text="", netbox_probe=None, netbox_probe_error=None):
+    def _last_import(integration):
+        return tenant_query(IntegrationSyncJob).filter_by(
+            integration=integration, dry_run=False, status="Completed",
+        ).order_by(IntegrationSyncJob.finished_at.desc(), IntegrationSyncJob.id.desc()).first()
+
+    def _preview_expires(job):
+        if not job:
+            return None
+        finished = job.finished_at if job.finished_at.tzinfo else job.finished_at.replace(tzinfo=timezone.utc)
+        return finished + timedelta(hours=NETBOX_PREVIEW_VALID_HOURS)
+
+    def _import_metrics(integration, result, dry_run):
+        """(label, value, tone) tiles for one finished sync, in reading order."""
+        created = result.get("cis_created", 0)
+        # changes_total counts creates and real updates; older results (before
+        # change tracking) only know how many items were matched.
+        changed = (result["changes_total"] - created) if "changes_total" in result else result.get("cis_updated", 0)
+        if integration == "netbox":
+            seen = [("Devices", result.get("devices_seen", 0), ""),
+                    ("Virtual machines", result.get("virtual_machines_seen", 0), ""),
+                    ("Racks", result.get("racks_created", 0) + result.get("racks_updated", 0), "")]
+        else:
+            seen = [("Assets", result.get("assets_seen", 0), "")]
+        tiles = seen + [
+            ("Would be created" if dry_run else "Created", created, "is-create"),
+            ("Would be updated" if dry_run else "Updated", changed, "is-update"),
+        ]
+        if "cis_unchanged" in result:
+            tiles.append(("Already up to date", result["cis_unchanged"], ""))
+        if result.get("cis_matched_by_serial"):
+            tiles.append(("Matched by serial", result["cis_matched_by_serial"], ""))
+        if result.get("cis_enriched_netbox"):
+            tiles.append(("NetBox items enriched", result["cis_enriched_netbox"], ""))
+        tiles.append(("Errors", len(result.get("errors") or []), "is-bad" if result.get("errors") else ""))
+        return tiles
+
+    def _cmdb_import_page(preview=None, csv_text="", netbox_probe=None, netbox_probe_error=None,
+                          snipeit_probe=None, snipeit_probe_error=None):
+        netbox_ready = _sync_preview_for_import("netbox")
+        snipeit_ready = _sync_preview_for_import("snipeit")
         return render_template(
             "cmdb_import.html", preview=preview, csv_text=csv_text,
+            import_metrics=_import_metrics,
             netbox_enabled=setting_bool("NETBOX_ENABLED"),
-            netbox_sync_job=_latest_netbox_job(),
-            netbox_import_ready=_netbox_preview_for_import(),
+            netbox_sync_job=_latest_sync_job("netbox"),
+            netbox_import_ready=netbox_ready, netbox_import_expires=_preview_expires(netbox_ready),
+            netbox_last_import=_last_import("netbox"),
             netbox_preview_valid_hours=NETBOX_PREVIEW_VALID_HOURS,
             netbox_probe=netbox_probe, netbox_probe_error=netbox_probe_error,
+            snipeit_enabled=setting_bool("SNIPEIT_ENABLED"),
+            snipeit_sync_job=_latest_sync_job("snipeit"),
+            snipeit_import_ready=snipeit_ready, snipeit_import_expires=_preview_expires(snipeit_ready),
+            snipeit_last_import=_last_import("snipeit"),
+            snipeit_probe=snipeit_probe, snipeit_probe_error=snipeit_probe_error,
         )
+
+    def _queue_sync(integration, anchor):
+        label, lock_offset, _, flag = inventory_syncs[integration]
+        if not feature_enabled(flag, default=True):
+            abort(503, description=f"{label} synchronization is temporarily disabled by an operator feature flag.")
+        dry_run = bool(request.form.get("dry_run"))
+        tenant_id = core.tenant_context_id()
+        # Serialize enqueue decisions per tenant on PostgreSQL. Without this,
+        # simultaneous browser requests could both pass the active-job check.
+        if db.engine.dialect.name == "postgresql":
+            db.session.execute(
+                db.text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                {"lock_id": tenant_id * 1000 + lock_offset},
+            )
+        active = tenant_query(IntegrationSyncJob).filter(
+            IntegrationSyncJob.integration == integration,
+            IntegrationSyncJob.status.in_(("Pending", "Running")),
+        ).first()
+        if active:
+            flash(f"A {label} synchronization is already queued or running.", "warning")
+            return redirect(url_for("cmdb_import") + anchor)
+        if not dry_run:
+            if not _sync_preview_for_import(integration):
+                flash("Run a preview first. An import starts only from a successful preview of the last "
+                      f"{NETBOX_PREVIEW_VALID_HOURS} hours.", "error")
+                return redirect(url_for("cmdb_import") + anchor)
+            if not request.form.get("confirm_reviewed"):
+                flash("Confirm that you reviewed the preview before importing.", "error")
+                return redirect(url_for("cmdb_import") + anchor)
+        job = IntegrationSyncJob(
+            tenant_id=tenant_id, actor_user_id=current_user.id,
+            integration=integration, dry_run=dry_run,
+        )
+        db.session.add(job)
+        db.session.flush()
+        audit("configure", f"{label} CMDB sync queued", f"Job {job.id}; preview={dry_run}")
+        db.session.commit()
+        flash(f"{label} preview queued. Nothing is saved until you review it and import."
+              if dry_run else f"{label} import queued. It runs in controlled batches.", "success")
+        return redirect(url_for("cmdb_import") + anchor)
+
+    def _sync_job_status(integration, job_id):
+        job = tenant_record_or_404(IntegrationSyncJob, job_id)
+        if job.integration != integration:
+            abort(404)
+        total = job.total or 0
+        percent = min(99, int(job.processed * 100 / total)) if total else 0
+        if job.status == "Completed":
+            percent = 100
+        return jsonify({
+            "id": job.id, "status": job.status, "phase": job.phase,
+            "processed": job.processed, "total": job.total, "percent": percent,
+            "cancel_requested": job.cancel_requested, "result": job.result,
+            "error": job.error,
+        })
+
+    def _cancel_sync_job(integration, job_id):
+        job = tenant_record_or_404(IntegrationSyncJob, job_id)
+        if job.integration != integration:
+            abort(404)
+        if job.status in ("Pending", "Running"):
+            job.cancel_requested = True
+            if job.status == "Pending":
+                job.status = "Cancelled"
+                job.phase = "Cancelled before start"
+                job.finished_at = now()
+            audit("configure", f"{inventory_syncs[integration][0]} CMDB sync cancellation requested",
+                  f"Job {job.id}")
+            db.session.commit()
+        return jsonify({"status": job.status, "cancel_requested": job.cancel_requested})
 
     @app.post("/cmdb/import/netbox/test")
     @roles("admin")
@@ -574,78 +707,54 @@ def register(app):
     @roles("admin")
     @require_action("configure")
     def cmdb_import_netbox():
-        if not feature_enabled("netbox_sync", default=True):
-            abort(503, description="NetBox synchronization is temporarily disabled by an operator feature flag.")
-        dry_run = bool(request.form.get("dry_run"))
-        tenant_id = core.tenant_context_id()
-        # Serialize enqueue decisions per tenant on PostgreSQL. Without this,
-        # simultaneous browser requests could both pass the active-job check.
-        if db.engine.dialect.name == "postgresql":
-            db.session.execute(
-                db.text("SELECT pg_advisory_xact_lock(:lock_id)"),
-                {"lock_id": tenant_id * 1000 + 349},
-            )
-        active = tenant_query(IntegrationSyncJob).filter(
-            IntegrationSyncJob.integration == "netbox",
-            IntegrationSyncJob.status.in_(("Pending", "Running")),
-        ).first()
-        if active:
-            flash("A NetBox synchronization is already queued or running.", "warning")
-            return redirect(url_for("cmdb_import") + "#netbox-sync")
-        if not dry_run:
-            if not _netbox_preview_for_import():
-                flash("Run a preview first. An import starts only from a successful preview of the last "
-                      f"{NETBOX_PREVIEW_VALID_HOURS} hours.", "error")
-                return redirect(url_for("cmdb_import") + "#netbox-sync")
-            if not request.form.get("confirm_reviewed"):
-                flash("Confirm that you reviewed the preview before importing.", "error")
-                return redirect(url_for("cmdb_import") + "#netbox-sync")
-        job = IntegrationSyncJob(
-            tenant_id=tenant_id, actor_user_id=current_user.id,
-            integration="netbox", dry_run=dry_run,
-        )
-        db.session.add(job)
-        db.session.flush()
-        audit("configure", "NetBox CMDB sync queued", f"Job {job.id}; preview={dry_run}")
-        db.session.commit()
-        flash("NetBox preview queued. Nothing is saved until you review it and import."
-              if dry_run else "NetBox import queued. It runs in controlled batches.", "success")
-        return redirect(url_for("cmdb_import"))
+        return _queue_sync("netbox", "#netbox-sync")
 
     @app.get("/cmdb/import/netbox/jobs/<int:job_id>")
     @roles("admin")
     @require_action("configure")
     def cmdb_import_netbox_job(job_id):
-        job = tenant_record_or_404(IntegrationSyncJob, job_id)
-        if job.integration != "netbox":
-            abort(404)
-        total = job.total or 0
-        percent = min(99, int(job.processed * 100 / total)) if total else 0
-        if job.status == "Completed":
-            percent = 100
-        return jsonify({
-            "id": job.id, "status": job.status, "phase": job.phase,
-            "processed": job.processed, "total": job.total, "percent": percent,
-            "cancel_requested": job.cancel_requested, "result": job.result,
-            "error": job.error,
-        })
+        return _sync_job_status("netbox", job_id)
 
     @app.post("/cmdb/import/netbox/jobs/<int:job_id>/cancel")
     @roles("admin")
     @require_action("configure")
     def cmdb_import_netbox_cancel(job_id):
-        job = tenant_record_or_404(IntegrationSyncJob, job_id)
-        if job.integration != "netbox":
-            abort(404)
-        if job.status in ("Pending", "Running"):
-            job.cancel_requested = True
-            if job.status == "Pending":
-                job.status = "Cancelled"
-                job.phase = "Cancelled before start"
-                job.finished_at = now()
-            audit("configure", "NetBox CMDB sync cancellation requested", f"Job {job.id}")
+        return _cancel_sync_job("netbox", job_id)
+
+    @app.post("/cmdb/import/snipeit/test")
+    @roles("admin")
+    @require_action("configure")
+    def cmdb_import_snipeit_test():
+        from serviceops_core.snipeit_sync import SnipeitSyncError, probe_snipeit
+
+        try:
+            probe = probe_snipeit(core.tenant_context_id())
+        except SnipeitSyncError as error:
+            audit("configure", "Snipe-IT connection test failed", str(error)[:300])
             db.session.commit()
-        return jsonify({"status": job.status, "cancel_requested": job.cancel_requested})
+            return _cmdb_import_page(snipeit_probe_error=str(error))
+        audit("configure", "Snipe-IT connection test succeeded",
+              ", ".join(f"{row['key']}={row['count']}" for row in probe["endpoints"] if row["readable"]))
+        db.session.commit()
+        return _cmdb_import_page(snipeit_probe=probe)
+
+    @app.post("/cmdb/import/snipeit")
+    @roles("admin")
+    @require_action("configure")
+    def cmdb_import_snipeit():
+        return _queue_sync("snipeit", "#snipeit-sync")
+
+    @app.get("/cmdb/import/snipeit/jobs/<int:job_id>")
+    @roles("admin")
+    @require_action("configure")
+    def cmdb_import_snipeit_job(job_id):
+        return _sync_job_status("snipeit", job_id)
+
+    @app.post("/cmdb/import/snipeit/jobs/<int:job_id>/cancel")
+    @roles("admin")
+    @require_action("configure")
+    def cmdb_import_snipeit_cancel(job_id):
+        return _cancel_sync_job("snipeit", job_id)
 
     @app.route("/cmdb/racks", methods=["GET", "POST"])
     @roles("agent", "manager", "admin")

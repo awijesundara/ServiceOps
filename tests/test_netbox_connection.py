@@ -210,7 +210,7 @@ def test_page_shows_the_finished_jobs_counts_errors_and_warnings(client, app):
     with app.app_context():
         finished_job()
     page = client.get("/cmdb/import").get_data(as_text=True)
-    assert "3 physical devices" in page and "2 would be created" in page
+    assert "<dt>Devices</dt><dd>3</dd>" in page and "<dt>Would be created</dt><dd>2</dd>" in page
     assert "Inventory Items were not imported" in page
     assert "This was a preview: nothing was saved." in page
     assert "Import into CMDB" in page
