@@ -20,7 +20,7 @@ from contextlib import nullcontext
 
 import requests
 
-from serviceops_core import import_changes
+from serviceops_core import ci_sources, import_changes
 
 DEVICES_PATH = "/api/dcim/devices/"
 VMS_PATH = "/api/virtualization/virtual-machines/"
@@ -707,6 +707,9 @@ def _upsert(mapped, tenant_id, summary):
         ci.discovery_source = "API"
         preserved = {k: v for k, v in (ci.attributes or {}).items() if not k.startswith("NetBox: ")}
         ci.attributes = {**preserved, **netbox_attributes}
+        ci_sources.mark(ci, [*HARDWARE_FIELDS, "ci_class", *(
+            field for field in ("operational_status", "lifecycle_state", "environment") if mapped.get(field))],
+            "netbox")
         summary["cis_updated"] += 1
         if matched_by_serial:
             summary["cis_matched_by_serial"] += 1
@@ -725,6 +728,9 @@ def _upsert(mapped, tenant_id, summary):
             rack_id=mapped.get("rack_id"), rack_position=mapped.get("rack_position"),
             rack_u_height=mapped.get("rack_u_height"), rack_face=mapped.get("rack_face"),
         )
+        ci_sources.mark(ci, [*HARDWARE_FIELDS, "ci_class", *(
+            field for field in ("operational_status", "lifecycle_state", "environment") if mapped.get(field))],
+            "netbox")
         db.session.add(ci)
         summary["cis_created"] += 1
         import_changes.record_create(summary, ci)
@@ -893,6 +899,7 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session,
         "racks_updated": 0,
         "errors": [],
         "warnings": [],
+        "app_version": core_app.display_version(),
     }
     import_changes.start(summary)
 

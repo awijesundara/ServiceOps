@@ -1525,6 +1525,10 @@ class ConfigurationItem(db.Model):
     install_date = db.Column(db.Date)
     warranty_expiry_date = db.Column(db.Date)
     attributes = db.Column(db.JSON, nullable=False, default=dict)
+    # Which system last set each column ("netbox", "snipeit", "csv",
+    # "manual" or "inferred"), so one CI merged from several sources shows
+    # where every value came from. Maintained by serviceops_core.ci_sources.
+    field_sources = db.Column(db.JSON, nullable=False, default=dict)
     owner_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     support_group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"))
     owner = db.relationship("User")

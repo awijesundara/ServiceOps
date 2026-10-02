@@ -1,26 +1,27 @@
 {% extends "base.html" %}{% block title %}{{ 'Edit ' + ci.name if ci else 'New configuration item' }} · {{ instance_name }}{% endblock %}
+{% macro src(field) %}{% if ci and field_source is defined and field_source(field) %} <span class="field-source source-{{ (ci.field_sources or {}).get(field) }}" title="Last set by {{ field_source(field) }}"><span class="visually-hidden">from </span>{{ field_source(field) }}</span>{% endif %}{% endmacro %}
 {% block content %}<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>{{ 'Edit ' + ci.name if ci else 'New configuration item' }}</h1></div></header><form method="post" class="panel form-grid" data-track-dirty>
-<label>Name<input name="name" value="{{ ci.name if ci else '' }}" required></label>
-<label>Class<input name="ci_class" value="{{ ci.ci_class if ci else '' }}" placeholder="Server, Database, Business Application…" required></label>
-<label class="wide">Description<textarea name="description" rows="2">{{ ci.description if ci else '' }}</textarea></label>
-<label>Environment<select name="environment">{% for value in ['Production','Staging','Development','Test'] %}<option {% if ci and ci.environment==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-<label>Operational status<select name="operational_status">{% for value in ['Operational','Degraded','Down','Maintenance','Retired'] %}<option {% if ci and ci.operational_status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-<label>Lifecycle state<select name="lifecycle_state">{% for value in ['Planned','In Use','Maintenance','Retired','Disposed'] %}<option {% if (ci.lifecycle_state if ci else 'In Use')==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+<label><span class="field-label">Name{{ src('name') }}</span><input name="name" value="{{ (ci.name or '') if ci else '' }}" required></label>
+<label><span class="field-label">Class{{ src('ci_class') }}</span><input name="ci_class" value="{{ (ci.ci_class or '') if ci else '' }}" placeholder="Server, Database, Business Application…" required></label>
+<label class="wide">Description<textarea name="description" rows="2">{{ (ci.description or '') if ci else '' }}</textarea></label>
+<label><span class="field-label">Environment{{ src('environment') }}</span><select name="environment">{% for value in ['Production','Staging','Development','Test'] %}<option {% if ci and ci.environment==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+<label><span class="field-label">Operational status{{ src('operational_status') }}</span><select name="operational_status">{% for value in ['Operational','Degraded','Down','Maintenance','Retired'] %}<option {% if ci and ci.operational_status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+<label><span class="field-label">Lifecycle state{{ src('lifecycle_state') }}</span><select name="lifecycle_state">{% for value in ['Planned','In Use','Maintenance','Retired','Disposed'] %}<option {% if (ci.lifecycle_state if ci else 'In Use')==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
 <label>Business criticality<select name="business_criticality">{% for value in ['Critical','High','Medium','Low'] %}<option {% if (ci.business_criticality if ci else 'Medium')==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-<label>IP address<input name="ip_address" value="{{ ci.ip_address if ci else '' }}"></label>
-<label>Serial number<input name="serial_number" value="{{ ci.serial_number if ci else '' }}"></label>
-<label>Vendor<input name="vendor" value="{{ ci.vendor if ci else '' }}"></label>
-<label>Model<input name="model" value="{{ ci.model if ci else '' }}"></label>
-<label>Location<input name="location" value="{{ ci.location if ci else '' }}" placeholder="Site, rack, or region"></label>
-<label>Cost center<input name="cost_center" value="{{ ci.cost_center if ci else '' }}"></label>
-<label>Rack<select name="rack_id"><option value="">Not rack-mounted</option>{% for rack in racks %}<option value="{{ rack.id }}" {% if ci and ci.rack_id==rack.id %}selected{% endif %}>{{ rack.name }}{% if rack.site %} ({{ rack.site }}){% endif %}</option>{% endfor %}</select>{% if ci and ci.rack_id and ci.rack %}<small><a href="{{ url_for('rack_elevation', rack_id=ci.rack_id, highlight=ci.id) }}">View {{ ci.rack.name }} elevation{% if ci.rack_position is not none %} (U{{ ci.rack_position|int if ci.rack_position == ci.rack_position|int else ci.rack_position }}{% if ci.rack_face %}, {{ ci.rack_face }}{% endif %}){% endif %} →</a></small>{% endif %}</label>
-<label>Rack position (U)<input type="number" step="0.5" min="1" name="rack_position" value="{{ ci.rack_position if ci and ci.rack_position is not none else '' }}"></label>
-<label>Height (U)<input type="number" step="1" min="1" name="rack_u_height" value="{{ ci.rack_u_height if ci and ci.rack_u_height is not none else '' }}" placeholder="1"></label>
-<label>Rack face<select name="rack_face"><option value="">&mdash;</option><option value="front" {% if ci and ci.rack_face=='front' %}selected{% endif %}>Front</option><option value="rear" {% if ci and ci.rack_face=='rear' %}selected{% endif %}>Rear</option></select></label>
+<label><span class="field-label">IP address{{ src('ip_address') }}</span><input name="ip_address" value="{{ (ci.ip_address or '') if ci else '' }}"></label>
+<label><span class="field-label">Serial number{{ src('serial_number') }}</span><input name="serial_number" value="{{ (ci.serial_number or '') if ci else '' }}"></label>
+<label><span class="field-label">Vendor{{ src('vendor') }}</span><input name="vendor" value="{{ (ci.vendor or '') if ci else '' }}"></label>
+<label><span class="field-label">Model{{ src('model') }}</span><input name="model" value="{{ (ci.model or '') if ci else '' }}"></label>
+<label><span class="field-label">Location{{ src('location') }}</span><input name="location" value="{{ (ci.location or '') if ci else '' }}" placeholder="Site, rack, or region"></label>
+<label><span class="field-label">Cost center{{ src('cost_center') }}</span><input name="cost_center" value="{{ (ci.cost_center or '') if ci else '' }}"></label>
+<label><span class="field-label">Rack{{ src('rack_id') }}</span><select name="rack_id"><option value="">Not rack-mounted</option>{% for rack in racks %}<option value="{{ rack.id }}" {% if ci and ci.rack_id==rack.id %}selected{% endif %}>{{ rack.name }}{% if rack.site %} ({{ rack.site }}){% endif %}</option>{% endfor %}</select>{% if ci and ci.rack_id and ci.rack %}<small><a href="{{ url_for('rack_elevation', rack_id=ci.rack_id, highlight=ci.id) }}">View {{ ci.rack.name }} elevation{% if ci.rack_position is not none %} (U{{ ci.rack_position|int if ci.rack_position == ci.rack_position|int else ci.rack_position }}{% if ci.rack_face %}, {{ ci.rack_face }}{% endif %}){% endif %} →</a></small>{% endif %}</label>
+<label><span class="field-label">Rack position (U){{ src('rack_position') }}</span><input type="number" step="0.5" min="1" name="rack_position" value="{{ (ci.rack_position|int if ci.rack_position == ci.rack_position|int else ci.rack_position) if ci and ci.rack_position is not none else '' }}"></label>
+<label><span class="field-label">Height (U){{ src('rack_u_height') }}</span><input type="number" step="1" min="1" name="rack_u_height" value="{{ ci.rack_u_height if ci and ci.rack_u_height is not none else '' }}" placeholder="1"></label>
+<label><span class="field-label">Rack face{{ src('rack_face') }}</span><select name="rack_face"><option value="">&mdash;</option><option value="front" {% if ci and ci.rack_face=='front' %}selected{% endif %}>Front</option><option value="rear" {% if ci and ci.rack_face=='rear' %}selected{% endif %}>Rear</option></select></label>
 <label>Discovery source<select name="discovery_source">{% for value in ['Manual','Discovery scan','Import','API'] %}<option {% if (ci.discovery_source if ci else 'Manual')==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-<label>Install date<input type="date" name="install_date" value="{{ ci.install_date.isoformat() if ci and ci.install_date else '' }}"></label>
-<label>Warranty expiry<input type="date" name="warranty_expiry_date" value="{{ ci.warranty_expiry_date.isoformat() if ci and ci.warranty_expiry_date else '' }}"></label>
-<label class="wide">Owning support group<select name="support_group_id"><option value="">Unassigned</option>{% for group in support_groups %}<option value="{{ group.id }}" {% if ci and ci.support_group_id==group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
+<label><span class="field-label">Install date{{ src('install_date') }}</span><input type="date" name="install_date" value="{{ ci.install_date.isoformat() if ci and ci.install_date else '' }}"></label>
+<label><span class="field-label">Warranty expiry{{ src('warranty_expiry_date') }}</span><input type="date" name="warranty_expiry_date" value="{{ ci.warranty_expiry_date.isoformat() if ci and ci.warranty_expiry_date else '' }}"></label>
+<label class="wide"><span class="field-label">Owning support group{{ src('support_group_id') }}</span><select name="support_group_id"><option value="">Unassigned</option>{% for group in support_groups %}<option value="{{ group.id }}" {% if ci and ci.support_group_id==group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
 <label class="wide checkbox-field"><input type="checkbox" id="ci-require-ccb" name="require_ccb_approval" {% if ci and ci.require_ccb_approval %}checked{% endif %}> Always require CCB approval for changes against this CI</label>
 <p class="muted wide" id="ci-require-ccb-hint">Automatically required and locked on for Production, any Management-class CI, or Critical business criticality. For other CIs (Dev/UAT/Staging), check this box for custom cases that still need board sign-off.</p>
 {% set personal_asset_classes = ['laptop', 'desktop', 'workstation', 'phone', 'mobile device', 'tablet'] %}
@@ -28,8 +29,20 @@
 {% elif ci and ci.owner_id %}<label class="wide">Owner<select name="owner_id"><option value="">Unassigned</option>{% for user in owners %}<option value="{{ user.id }}" {% if ci.owner_id==user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>{% endfor %}</select></label><p class="muted wide">Owner is only meaningful for personally-assigned assets (laptops, phones). For servers, switches, and applications the owning support group above is what matters.</p>
 {% endif %}
 {% set discovery_keys = ['sys_descr', 'sys_object_id', 'sys_uptime', 'interfaces', 'lldp_neighbors', 'discovered_via', 'discovered_at'] %}
-<div class="wide"><strong>Additional imported fields</strong><p class="muted">Free-form fields captured from spreadsheet imports (CPUs, RAM, Builder, iDRAC, DNS, …). Edit or remove them, or add your own.</p>
-  <div class="ci-attr-rows">{% for key, value in (ci.attributes if ci else {}).items() if key not in discovery_keys %}<div class="ci-attr-row"><input name="attr_key" value="{{ key }}" placeholder="Field name"><input name="attr_value" value="{{ value }}" placeholder="Value"><button type="button" class="link-button ci-attr-remove" aria-label="Remove field">✕</button></div>{% endfor %}</div>
+{% if source_groups %}
+<div class="wide ci-source-data">
+  <strong>Source data</strong>
+  <p class="muted">Kept in step with each source on every sync, so it is read-only here. Change it in the source system.</p>
+  {% for group in source_groups %}
+  <section class="ci-source-group" aria-label="Data from {{ group.label }}">
+    <header><span class="field-source source-{{ group.source }}">{{ group.label }}</span>{% if group.link and group.link.startswith('https://') %}<a href="{{ group.link }}" target="_blank" rel="noopener noreferrer">Open in {{ group.label }} ↗</a>{% endif %}</header>
+    {% if group.rows %}<dl class="ci-source-grid">{% for name, value in group.rows %}<div><dt>{{ name }}</dt><dd>{{ value }}</dd></div>{% endfor %}</dl>{% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% endif %}
+<div class="wide"><strong>Additional fields</strong><p class="muted">Spreadsheet and manual fields (CPUs, RAM, Builder, iDRAC, DNS, …). Edit or remove them, or add your own.</p>
+  <div class="ci-attr-rows">{% for key, value in (editable_attributes if editable_attributes is defined else {}).items() %}<div class="ci-attr-row"><input name="attr_key" value="{{ key }}" placeholder="Field name" aria-label="Field name"><input name="attr_value" value="{{ value }}" placeholder="Value" aria-label="Value for {{ key }}"><button type="button" class="link-button ci-attr-remove" aria-label="Remove {{ key }}">✕</button></div>{% endfor %}</div>
   <button type="button" class="button" id="ci-attr-add">+ Add field</button>
 </div>
 <div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">Cancel</a><button class="primary">{{ 'Save changes' if ci else 'Create CI' }}</button></div></form>

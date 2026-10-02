@@ -502,18 +502,31 @@ def _ci_attributes_from_form(existing_attributes=None):
     already has -- those never appear as editable rows, so without this
     merge saving the form would silently wipe discovered interfaces/LLDP
     data every time an admin edits an unrelated field."""
+    from serviceops_core.ci_sources import is_synced_attribute
+
     keys = request.form.getlist("attr_key")
     values = request.form.getlist("attr_value")
+    # Attributes a sync owns ("NetBox: ", "Snipe-IT: ") are shown read-only
+    # and rewritten by the next sync, so they are kept as stored and never
+    # taken from the form.
     attributes = {
         key: value for key, value in (
             (k.strip(), v.strip()) for k, v in zip(keys, values)
-        ) if key and key not in CI_DISCOVERY_ATTRIBUTE_KEYS and value
+        ) if key and key not in CI_DISCOVERY_ATTRIBUTE_KEYS and value and not is_synced_attribute(key)
     }
     if existing_attributes:
-        for key in CI_DISCOVERY_ATTRIBUTE_KEYS:
-            if key in existing_attributes:
-                attributes[key] = existing_attributes[key]
+        for key, value in existing_attributes.items():
+            if key in CI_DISCOVERY_ATTRIBUTE_KEYS or is_synced_attribute(key):
+                attributes[key] = value
     return attributes
+
+
+def form_text(name):
+    """A trimmed text field from the submitted form, or None when empty. The
+    literal "None" counts as empty: older forms rendered a missing value as
+    that word, and saving them stored it."""
+    value = (request.form.get(name) or "").strip()
+    return None if value in ("", "None") else value
 
 
 def _ci_duplicate_of(name, serial_number, exclude_id=None):
