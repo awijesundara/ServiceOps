@@ -7,12 +7,14 @@ import json
 import os
 import re
 import secrets
+from contextlib import contextmanager
 from datetime import timedelta
 from urllib.parse import urlparse
 
 from flask import abort, g, jsonify, render_template, request, Response
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from webauthn.helpers import base64url_to_bytes
 
@@ -111,6 +113,92 @@ from serviceops_models import (
     UserSession,
     UserTourProgress,
 )
+
+
+def scim_error(status, detail, scim_type="invalidValue"):
+    abort(Response(json.dumps({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+        "status": str(status), "scimType": scim_type, "detail": detail,
+    }), status=status, mimetype="application/scim+json"))
+
+
+def scim_body():
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        scim_error(400, "A JSON object is required.")
+    return body
+
+
+def scim_attributes(body):
+    """Validate before mutating a user, including every operation in a PATCH."""
+    values = {}
+    if "active" in body:
+        if not isinstance(body["active"], bool):
+            scim_error(400, "active must be a JSON boolean.")
+        values["active"] = body["active"]
+    if "displayName" in body:
+        if not isinstance(body["displayName"], str) or not body["displayName"].strip():
+            scim_error(400, "displayName must be a nonempty string.")
+        values["name"] = body["displayName"].strip()[:120]
+    if "emails" in body:
+        emails = body["emails"]
+        if not isinstance(emails, list) or any(
+            not isinstance(item, dict) or not isinstance(item.get("value"), str)
+            or not item["value"].strip() for item in emails
+        ):
+            scim_error(400, "emails must be an array of objects with nonempty string values.")
+        if emails:
+            values["email"] = emails[0]["value"].strip()[:160]
+    return values
+
+
+def scim_patch_attributes(body):
+    operations = body.get("Operations")
+    if not isinstance(operations, list) or not operations:
+        scim_error(400, "Operations must be a nonempty array.")
+    values = {}
+    for operation in operations:
+        if not isinstance(operation, dict) or not isinstance(operation.get("op"), str):
+            scim_error(400, "Each operation must be an object with an op string.")
+        if operation["op"].lower() not in {"add", "replace"}:
+            scim_error(400, "Only add and replace operations are supported.")
+        if "value" not in operation:
+            scim_error(400, "Each operation requires a value.")
+        if "path" in operation:
+            path = operation["path"]
+            if not isinstance(path, str) or path not in {"active", "displayName", "emails"}:
+                scim_error(400, "Unsupported attribute path.", "invalidPath")
+            attributes = {path: operation["value"]}
+        else:
+            attributes = operation["value"]
+            if not isinstance(attributes, dict) or not attributes:
+                scim_error(400, "A pathless operation requires an attribute object.")
+            if attributes.keys() - {"active", "displayName", "emails"}:
+                scim_error(400, "Unsupported attribute in pathless operation.", "invalidPath")
+        values.update(scim_attributes(attributes))
+    return values
+
+
+def scim_check_email(email, user_id=None):
+    query = User.query.filter(func.lower(User.email) == email.lower())
+    if user_id is not None:
+        query = query.filter(User.id != user_id)
+    if query.first():
+        scim_error(409, "A user with that email already exists.", "uniqueness")
+
+
+@contextmanager
+def scim_transaction():
+    try:
+        yield
+        db.session.commit()
+    except IntegrityError as exc:
+        db.session.rollback()
+        # PostgreSQL and SQLite report unique violations differently. Do not
+        # disguise unrelated integrity failures as a provisioning conflict.
+        if getattr(exc.orig, "sqlstate", None) == "23505" or "UNIQUE constraint failed" in str(exc.orig):
+            scim_error(409, "A user with those unique attributes already exists.", "uniqueness")
+        raise
 
 
 def register(app):
@@ -1366,28 +1454,30 @@ def register(app):
             return jsonify(schemas=["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
                            totalResults=len(rows), startIndex=1,
                            itemsPerPage=len(rows), Resources=[scim_user_document(user) for user in rows])
-        body = request.get_json(silent=True) or {}
-        username = str(body.get("userName", "")).strip()[:80]
-        emails = body.get("emails") if isinstance(body.get("emails"), list) else []
-        email = str(next((item.get("value") for item in emails if isinstance(item, dict) and item.get("value")), "")).strip()[:160]
-        name = str(body.get("displayName") or username).strip()[:120]
+        body = scim_body()
+        values = scim_attributes(body)
+        if not isinstance(body.get("userName"), str):
+            scim_error(400, "userName must be a string.")
+        username = body["userName"].strip()[:80]
+        email = values.get("email", "")
+        name = values.get("name", username)
         if not username or not email:
-            abort(400, description="userName and an email value are required.")
+            scim_error(400, "userName and an email value are required.")
         if User.query.filter(db.or_(func.lower(User.username) == username.lower(), func.lower(User.email) == email.lower())).first():
-            abort(409, description="A user with that username or email already exists.")
+            scim_error(409, "A user with that username or email already exists.", "uniqueness")
         user = User(
-            username=username, email=email, name=name, active=bool(body.get("active", True)),
+            username=username, email=email, name=name, active=values.get("active", True),
             employee_id=str(body.get("externalId", ""))[:80] or None,
             role="requester", tenant_id=g.api_client.tenant_id,
             password_hash=hash_password(secrets.token_urlsafe(48)),
         )
-        db.session.add(user)
-        db.session.flush()
-        db.session.add(UserRoleGrant(user_id=user.id, role="requester"))
-        db.session.add(ExternalIdentity(provider="scim", subject=str(body.get("externalId") or username), user_id=user.id))
-        audit("scim create", user.username, f"client={g.api_client.client_id}",
-              user_id=g.api_user.id, tenant_id=user.tenant_id)
-        db.session.commit()
+        with scim_transaction():
+            db.session.add(user)
+            db.session.flush()
+            db.session.add(UserRoleGrant(user_id=user.id, role="requester"))
+            db.session.add(ExternalIdentity(provider="scim", subject=str(body.get("externalId") or username), user_id=user.id))
+            audit("scim create", user.username, f"client={g.api_client.client_id}",
+                  user_id=g.api_user.id, tenant_id=user.tenant_id)
         return jsonify(scim_user_document(user)), 201
 
     @app.route("/scim/v2/Users/<int:user_id>", methods=["GET", "PUT", "PATCH", "DELETE"])
@@ -1397,33 +1487,22 @@ def register(app):
         if request.method == "GET":
             return jsonify(scim_user_document(user))
         if request.method == "DELETE":
-            user.active = False
+            values = {"active": False}
         else:
-            body = request.get_json(silent=True) or {}
-            if request.method == "PATCH":
-                for operation in body.get("Operations", []):
-                    if str(operation.get("op", "")).lower() not in {"add", "replace"}:
-                        continue
-                    path, value = operation.get("path"), operation.get("value")
-                    if path == "active":
-                        user.active = bool(value)
-                    elif path == "displayName":
-                        user.name = str(value).strip()[:120]
-            else:
-                user.name = str(body.get("displayName") or user.name).strip()[:120]
-                user.active = bool(body.get("active", user.active))
-                emails = body.get("emails") if isinstance(body.get("emails"), list) else []
-                email = next((item.get("value") for item in emails if isinstance(item, dict) and item.get("value")), None)
-                if email:
-                    user.email = str(email).strip()[:160]
-        if not user.active:
-            user.auth_version += 1
-            UserSession.query.filter_by(user_id=user.id, revoked_at=None).update(
-                {"revoked_at": now(), "revoked_by_id": g.api_user.id}
-            )
-        audit("scim update", user.username, f"active={user.active}; client={g.api_client.client_id}",
-              user_id=g.api_user.id, tenant_id=user.tenant_id)
-        db.session.commit()
+            body = scim_body()
+            values = scim_patch_attributes(body) if request.method == "PATCH" else scim_attributes(body)
+        if "email" in values:
+            scim_check_email(values["email"], user.id)
+        with scim_transaction():
+            for field, value in values.items():
+                setattr(user, field, value)
+            if not user.active:
+                user.auth_version += 1
+                UserSession.query.filter_by(user_id=user.id, revoked_at=None).update(
+                    {"revoked_at": now(), "revoked_by_id": g.api_user.id}
+                )
+            audit("scim update", user.username, f"active={user.active}; client={g.api_client.client_id}",
+                  user_id=g.api_user.id, tenant_id=user.tenant_id)
         return ("", 204) if request.method == "DELETE" else jsonify(scim_user_document(user))
 
     @app.get("/api/guided-tours/active")
