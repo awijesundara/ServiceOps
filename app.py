@@ -2044,6 +2044,11 @@ def deliver_webhook(event, connection):
         "created_at": event.created_at.isoformat(),
         "data": event.payload,
     }
+    # Signed deliveries transmit exactly the bytes that were signed, so a
+    # receiver can verify the HMAC over the raw request body as documented.
+    # Passing `json=` to requests re-serialises with different separators
+    # and key order, which made raw-body verification impossible.
+    encoded = None
     if connection.kind in {"teams", "google_chat", "slack", "discord", "telegram"}:
         body = provider_payload(connection.kind, event.payload, connection.configuration)
         headers = {"Content-Type": "application/json"}
@@ -2082,13 +2087,14 @@ def deliver_webhook(event, connection):
     # deployment's Kubernetes chart -- ServiceOps is not the enforcement
     # point for what a trusted, admin-configured egress proxy is allowed to
     # reach.
+    request_body = {"data": encoded} if encoded is not None else {"json": body}
     proxies = resolve_outbound_proxies(connection.configuration)
     max_redirects = 3
     for _ in range(max_redirects + 1):
         if proxies:
             try:
                 response = requests.post(
-                    target, json=body, headers=headers, timeout=10,
+                    target, **request_body, headers=headers, timeout=10,
                     allow_redirects=False, proxies=proxies,
                 )
             except requests.RequestException as error:
@@ -2109,7 +2115,7 @@ def deliver_webhook(event, connection):
                 with pin_resolved_addresses(hostname, infos):
                     try:
                         response = requests.post(
-                            target, json=body, headers=headers, timeout=10,
+                            target, **request_body, headers=headers, timeout=10,
                             allow_redirects=False,
                         )
                     except requests.RequestException as error:
@@ -2117,7 +2123,7 @@ def deliver_webhook(event, connection):
             else:
                 try:
                     response = requests.post(
-                        target, json=body, headers=headers, timeout=10,
+                        target, **request_body, headers=headers, timeout=10,
                         allow_redirects=False,
                     )
                 except requests.RequestException as error:
@@ -3182,7 +3188,51 @@ def transition_operational_task(task, new_state):
     block = change_task_gate_block(task, new_state)
     if block:
         abort(409, description=block)
+    old_state = task.state
     task.state = new_state
+    if task.task_kind == "change" and new_state != old_state:
+        queue_change_task_state_event(task, old_state)
+
+
+def change_task_event_payload(task, previous_state):
+    ticket = db.session.get(Ticket, task.parent_id) if task.parent_type == "ticket" else None
+    return {
+        "number": task.number,
+        "ticket": ticket.number if ticket else None,
+        "title": task.title,
+        "task_type": task.task_type,
+        "state": task.state,
+        "previous_state": previous_state,
+        "required": bool(task.required),
+        "sequence": task.sequence,
+        "assignment_group": task.assignment_group.name if task.assignment_group else None,
+        "assignee": task.assignee.name if task.assignee else None,
+    }
+
+
+def queue_change_task_state_event(task, previous_state):
+    """Publishes change_task.state_changed for subscribed webhook
+    connections, so an orchestration tool (FlowOps) learns about a CTASK
+    closed directly in ServiceOps without polling. Mirrors the
+    change.state_changed emission in transition_ticket: the event is only
+    written when at least one active connection would receive it."""
+    ticket = db.session.get(Ticket, task.parent_id) if task.parent_type == "ticket" else None
+    if not ticket:
+        return
+    payload = change_task_event_payload(task, previous_state)
+    tenant_id = ticket.tenant_id
+    connections = IntegrationConnection.query.filter_by(
+        tenant_id=tenant_id, active=True,
+    ).filter(IntegrationConnection.kind != "siem").all()
+    if any(
+        event_matches(connection.event_types_json, "change_task.state_changed", payload)
+        for connection in connections
+    ):
+        db.session.add(OutboxEvent(
+            event_type="change_task.state_changed",
+            payload_json=json.dumps(payload, sort_keys=True),
+            tenant_id=tenant_id,
+        ))
 
 
 def ticket_owning_group(ticket):

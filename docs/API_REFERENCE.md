@@ -249,14 +249,20 @@ Idempotency-Key: <caller-generated>
 
 {
   "state": "Closed Complete",
-  "work_notes": "Verified by the linked runbook"
+  "append_work_notes": "Completed in FlowOps runbook 'DB cutover' by J. Tan"
 }
 ```
+
+`work_notes` replaces the task's notes. `append_work_notes` adds one
+timestamped, client-attributed line (`[2026-10-02 09:14 UTC · FlowOps] …`)
+below the existing notes without overwriting what the owning team wrote;
+when the 2000-character limit is reached the oldest text is trimmed. Use
+`append_work_notes` for execution evidence from an integration.
 
 Required scope: `tickets:update`. The caller must also be able to manage the
 parent change ticket (owning group membership/management, or `admin`) — the
 same authorization rule `PATCH /api/v1/tickets/{number}` already enforces.
-Both fields are optional but at least one field is required; `state` must be
+All fields are optional but at least one field is required; `state` must be
 a valid transition from the task's current state under the same change-task
 lifecycle listed above (an invalid transition returns `409`, matching the UI's
 own task-update behavior — including the change-task gating rules, e.g. a
@@ -606,13 +612,54 @@ receives everything.
 }
 ```
 
-Delivery is signed exactly like every other webhook event (`X-ServiceOps-
-Signature: sha256=<HMAC-SHA256 of the raw body using the connection's
-secret>`, plus `X-ServiceOps-Timestamp` and `X-ServiceOps-Event-ID`) and goes
+Delivery is signed exactly like every other webhook event and goes
 through the same SSRF-hardened delivery worker (DNS pinning, private-address
-rejection, bounded redirects) as every other outbound event. There is
-currently no equivalent event for CTASK state changes — poll `GET
-/api/v1/tickets/{number}/ctasks` (§5a) for that.
+rejection, bounded redirects) as every other outbound event.
+
+### Verifying a signed delivery
+
+Each signed delivery carries:
+
+| Header | Value |
+|---|---|
+| `X-ServiceOps-Event-ID` | The outbox event UUID; use it to discard duplicates |
+| `X-ServiceOps-Timestamp` | Unix seconds when the delivery was signed |
+| `X-ServiceOps-Signature` | `sha256=` + hex HMAC-SHA256 of `<timestamp>.<raw body>` |
+
+The body is transmitted exactly as signed (compact JSON with sorted keys),
+so compute the HMAC over the raw request bytes, compare in constant time,
+and reject timestamps more than five minutes old. Deliveries are retried,
+so the same event ID can arrive more than once.
+
+### `change_task.state_changed`
+
+Delivered whenever a change task (CTASK) changes state, from the web UI or
+from `PATCH /api/v1/tickets/{number}/ctasks/{ctask}`. Notes-only updates are
+not events. Subscribe with `"change_task.state_changed"` or `"change_task.*"`.
+
+```json
+{
+  "id": "1c0d…",
+  "type": "change_task.state_changed",
+  "created_at": "2026-10-02T03:14:00+00:00",
+  "data": {
+    "number": "CTASK0000041",
+    "ticket": "CHG0000961",
+    "title": "Snapshot database",
+    "task_type": "Implementation",
+    "state": "Closed Complete",
+    "previous_state": "Work in Progress",
+    "required": true,
+    "sequence": 1,
+    "assignment_group": "Unix",
+    "assignee": "J. Tan"
+  }
+}
+```
+
+FlowOps consumes both events at
+`POST /api/integrations/serviceops/events/{instance}`, so a runbook follows
+change approval and CTASK progress made directly in ServiceOps.
 
 ## 14. Current compatibility boundary
 
