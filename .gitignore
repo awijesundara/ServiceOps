@@ -65,3 +65,8 @@ docs/DOCUMENTATION_INDEX.md
 docs/archive/
 docs/screenshots/
 release-evidence/
+
+# AI assistant (Claude, Codex) development instructions stay local.
+AGENTS.md
+.claude/
+.codex/
