@@ -16,9 +16,14 @@ for the duration of a `with` block on the calling thread, so concurrent
 deliveries on other threads (gunicorn `--threads`) are unaffected.
 """
 import base64
+import logging
+import selectors
 import socket
+import ssl
 import threading
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 
 _local = threading.local()
@@ -54,15 +59,56 @@ def _read_connect_response(sock, timeout):
     return buffer
 
 
+def _proxy_tls_context():
+    """Certificate- and hostname-verifying TLS context for https:// proxies."""
+    return ssl.create_default_context()
+
+
+def _relay(inner, tls_sock):
+    """Copy bytes both ways between the local socket handed to the caller
+    (`inner`) and the TLS connection to the proxy until either side closes.
+    Runs on its own daemon thread; any error ends the tunnel and closes both
+    sockets, which the caller sees as an ordinary connection reset or EOF."""
+    selector = selectors.DefaultSelector()
+    try:
+        selector.register(inner, selectors.EVENT_READ, tls_sock)
+        selector.register(tls_sock, selectors.EVENT_READ, inner)
+        while True:
+            for key, _events in selector.select():
+                source, destination = key.fileobj, key.data
+                data = source.recv(65536)
+                if not data:
+                    return
+                # Decrypted bytes already buffered inside the TLS layer do not
+                # make the socket readable again, so drain them now.
+                while source is tls_sock and tls_sock.pending():
+                    data += tls_sock.recv(tls_sock.pending())
+                destination.sendall(data)
+    except (OSError, ValueError) as error:
+        logger.warning("HTTPS proxy tunnel closed after an error: %s", type(error).__name__)
+    finally:
+        selector.close()
+        for sock in (inner, tls_sock):
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+
 def _patched_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
     proxy = getattr(_local, "proxy", None)
     if not proxy:
         return _real_create_connection(address, timeout, source_address)
     host, port = address
-    proxy_host, proxy_port, username, password = proxy
+    proxy_host, proxy_port, username, password, use_tls = proxy
     effective_timeout = 30 if timeout is socket._GLOBAL_DEFAULT_TIMEOUT else timeout
     proxy_sock = _real_create_connection((proxy_host, proxy_port), effective_timeout, source_address)
     try:
+        if use_tls:
+            # An https:// proxy is reached over TLS, so the CONNECT request and
+            # its Proxy-Authorization credentials are never sent in clear.
+            # Certificate or handshake failures raise; there is no fallback.
+            proxy_sock = _proxy_tls_context().wrap_socket(proxy_sock, server_hostname=proxy_host)
         request_lines = [f"CONNECT {host}:{port} HTTP/1.1", f"Host: {host}:{port}"]
         if username:
             credentials = base64.b64encode(f"{username}:{password or ''}".encode()).decode()
@@ -77,8 +123,19 @@ def _patched_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, 
                 f"Proxy CONNECT to {host}:{port} was refused: "
                 f"{status_line.decode('latin-1', 'replace')}"
             )
-        proxy_sock.settimeout(None if timeout is socket._GLOBAL_DEFAULT_TIMEOUT else timeout)
-        return proxy_sock
+        if not use_tls:
+            proxy_sock.settimeout(None if timeout is socket._GLOBAL_DEFAULT_TIMEOUT else timeout)
+            return proxy_sock
+        # The caller (smtplib/imaplib) may start its own TLS on the returned
+        # socket, which cannot be layered directly on this TLS socket. Hand it
+        # one end of a local socket pair and relay the other end through the
+        # encrypted proxy connection.
+        inner, outer = socket.socketpair()
+        proxy_sock.settimeout(None)
+        threading.Thread(target=_relay, args=(outer, proxy_sock), daemon=True,
+                         name="https-proxy-relay").start()
+        inner.settimeout(None if timeout is socket._GLOBAL_DEFAULT_TIMEOUT else timeout)
+        return inner
     except Exception:
         proxy_sock.close()
         raise
@@ -96,7 +153,9 @@ class tunnel_through_proxy:
     branching on whether a proxy is configured."""
 
     def __init__(self, proxy_url):
-        self.parsed = parse_proxy_url(proxy_url) if proxy_url else None
+        self.parsed = (
+            (*parse_proxy_url(proxy_url), urlparse(proxy_url).scheme == "https") if proxy_url else None
+        )
 
     def __enter__(self):
         self._previous = getattr(_local, "proxy", None)

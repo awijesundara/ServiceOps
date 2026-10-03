@@ -77,6 +77,23 @@ from serviceops_models import (
 # An import must follow a preview reviewed this recently.
 NETBOX_PREVIEW_VALID_HOURS = 24
 
+
+def _tenant_reference_id(model, field, label):
+    """The id submitted in form `field`, accepted only if it names a `model`
+    row in the current tenant. Blank means "none". Anything else -- not a
+    number, or another tenant's (or a nonexistent) id -- is refused, so a
+    crafted form can never link a CI to another tenant's record."""
+    raw = (request.form.get(field) or "").strip()
+    if not raw:
+        return None
+    try:
+        record_id = int(raw)
+    except ValueError:
+        abort(400, description=f"Select a valid {label}.")
+    if not tenant_query(model).filter_by(id=record_id).first():
+        abort(400, description=f"Select a valid {label}.")
+    return record_id
+
 def register(app):
     @app.get("/assets")
     @roles("agent", "manager", "admin")
@@ -288,10 +305,10 @@ def register(app):
                 return redirect(url_for("ci_edit", ci_id=duplicate.id))
             install_date = request.form.get("install_date") or None
             warranty_expiry_date = request.form.get("warranty_expiry_date") or None
-            support_group_id = request.form.get("support_group_id") or None
+            support_group_id = _tenant_reference_id(SupportGroup, "support_group_id", "support group")
             environment = normalize_environment(request.form["environment"])
             business_criticality = request.form.get("business_criticality", "Medium")
-            rack_id = request.form.get("rack_id") or None
+            rack_id = _tenant_reference_id(Rack, "rack_id", "rack")
             ci = ConfigurationItem(
                 name=request.form["name"].strip(), ci_class=ci_class,
                 description=form_text("description"),
@@ -307,14 +324,14 @@ def register(app):
                 discovery_source=request.form.get("discovery_source", "Manual"),
                 install_date=parse_form_date(install_date),
                 warranty_expiry_date=parse_form_date(warranty_expiry_date),
-                support_group_id=int(support_group_id) if support_group_id else None,
+                support_group_id=support_group_id,
                 owner_id=current_user.id,
                 attributes=_ci_attributes_from_form(),
                 require_ccb_approval=(
                     ci_always_requires_ccb(ci_class, environment, business_criticality)
                     or request.form.get("require_ccb_approval") == "on"
                 ),
-                rack_id=int(rack_id) if rack_id else None,
+                rack_id=rack_id,
                 rack_position=request.form.get("rack_position", type=float),
                 rack_u_height=request.form.get("rack_u_height", type=int),
                 rack_face=request.form.get("rack_face", "").strip() or None,
@@ -377,17 +394,14 @@ def register(app):
             ci.discovery_source = request.form.get("discovery_source", ci.discovery_source)
             ci.install_date = parse_form_date(request.form.get("install_date") or None)
             ci.warranty_expiry_date = parse_form_date(request.form.get("warranty_expiry_date") or None)
-            support_group_id = request.form.get("support_group_id")
-            ci.support_group_id = int(support_group_id) if support_group_id else None
-            owner_id = request.form.get("owner_id")
-            ci.owner_id = int(owner_id) if owner_id else None
+            ci.support_group_id = _tenant_reference_id(SupportGroup, "support_group_id", "support group")
+            ci.owner_id = _tenant_reference_id(User, "owner_id", "owner")
             ci.attributes = _ci_attributes_from_form(ci.attributes)
             ci.require_ccb_approval = (
                 ci_always_requires_ccb(ci.ci_class, ci.environment, ci.business_criticality)
                 or request.form.get("require_ccb_approval") == "on"
             )
-            rack_id = request.form.get("rack_id") or None
-            ci.rack_id = int(rack_id) if rack_id else None
+            ci.rack_id = _tenant_reference_id(Rack, "rack_id", "rack")
             ci.rack_position = request.form.get("rack_position", type=float)
             ci.rack_u_height = request.form.get("rack_u_height", type=int)
             ci.rack_face = request.form.get("rack_face", "").strip() or None

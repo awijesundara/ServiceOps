@@ -799,6 +799,10 @@ class APIClient(db.Model):
     app_build = db.Column(db.String(40))
     platform = db.Column(db.String(40))
     device_model = db.Column(db.String(120))
+    # Mobile sessions only: the acting user's auth_version when the session was
+    # issued. A password change, reset or deactivation bumps User.auth_version,
+    # which ends every mobile session issued before it.
+    auth_version = db.Column(db.Integer)
     tenant_id = db.Column(
         db.Integer, db.ForeignKey("tenant.id"), nullable=False,
         default=tenant_context_id, index=True,

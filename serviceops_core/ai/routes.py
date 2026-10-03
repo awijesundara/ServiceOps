@@ -843,7 +843,9 @@ def register(app):
         scope, config = chat_scope()
         if not config.memory_enabled:
             abort(403, description="Your administrator has turned assistant memory off.")
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return no_store({"error": "Expected a JSON object."}, 400)
         note, message = memory.store(scope, str(data.get("text", "")), config, source="suggested")
         if not note:
             return no_store({"error": message}, 400)
@@ -874,7 +876,9 @@ def register(app):
     def chat_send():
         from app import route_rate_limit
         scope, _ = chat_scope()
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return no_store({"error": "Expected a JSON object."}, 400)
         text = data.get("text")
         if not isinstance(text, str) or not text.strip():
             abort(400, description="Type a question first.")

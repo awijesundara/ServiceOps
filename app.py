@@ -76,7 +76,7 @@ def escape_like(value):
     return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 from serviceops_core.security import (
-    hash_password, load_policy, RedactingFilter, role_has_action,
+    hash_password, load_policy, redact, RedactingFilter, role_has_action,
     validate_policy, verify_and_upgrade_password, verify_password,
 )
 from serviceops_core.priority import calculate_priority, validate_priority_policy
@@ -430,6 +430,16 @@ def tenant_record_or_404(model, record_id, lock=False):
 def tenant_query(model):
     """Start a query constrained to the authenticated/default tenant."""
     return model.query.filter(model.tenant_id == tenant_context_id())
+
+
+def account_usable(user):
+    """True only for an active user whose tenant is also active. A deactivated
+    tenant must lose access everywhere -- web sessions, every login path, API
+    tokens and mobile sessions -- not just its background jobs."""
+    if user is None or not user.active:
+        return False
+    tenant = db.session.get(Tenant, user.tenant_id)
+    return bool(tenant and tenant.active)
 
 
 def object_storage_enabled():
@@ -906,6 +916,8 @@ def issue_mobile_session(user, authentication_method, backup_used=False):
     app_build = _bounded_mobile_header("X-ServiceOps-App-Build", 40)
     platform = _bounded_mobile_header("X-ServiceOps-Platform", 40)
     device = _bounded_mobile_header("X-ServiceOps-Device", 120)
+    if not account_usable(user):
+        abort(403, description="This account or its organization is not active.")
     access = f"som_{secrets.token_urlsafe(32)}"
     refresh = f"sor_{secrets.token_urlsafe(48)}"
     row = APIClient(
@@ -915,6 +927,7 @@ def issue_mobile_session(user, authentication_method, backup_used=False):
         created_by_id=user.id, tenant_id=user.tenant_id, client_kind="mobile",
         access_expires_at=now() + timedelta(minutes=15), refresh_expires_at=now() + timedelta(days=30),
         app_version=app_version, app_build=app_build, platform=platform, device_model=device,
+        auth_version=user.auth_version,
     )
     db.session.add(row)
     db.session.flush()
@@ -1008,8 +1021,11 @@ def authenticate_api_request():
         abort(401, description="The API token is invalid or revoked.")
     if client.access_expires_at and align_tz(client.access_expires_at, now()) <= now():
         abort(401, description="The mobile session has expired.")
-    if not client.acting_user.active or client.acting_user.tenant_id != client.tenant_id:
+    if not account_usable(client.acting_user) or client.acting_user.tenant_id != client.tenant_id:
         abort(403, description="The API identity is inactive or invalid.")
+    if client.client_kind == "mobile" and client.auth_version != client.acting_user.auth_version:
+        end_stale_mobile_session(client)
+        abort(401, description="The mobile session ended because the account's credentials changed.")
     enforce_api_rate_limit(client)
     client.last_used_at = now()
     # Mirrors track_last_seen()'s throttled web-session update below --
@@ -1027,6 +1043,18 @@ def authenticate_api_request():
         acting_user.last_seen_at = now()
     g.api_client = client
     g.api_user = acting_user
+    db.session.commit()
+
+
+def end_stale_mobile_session(client):
+    """Revoke a mobile session whose credential version no longer matches its
+    user's, so neither its access nor its refresh token works again."""
+    client.active = False
+    client.revoked_at = now()
+    client.refresh_token_hash = None
+    audit("mobile session ended", client.acting_user.username,
+          "credentials changed since the session was issued",
+          user_id=client.acting_user_id, tenant_id=client.tenant_id)
     db.session.commit()
 
 
@@ -3958,7 +3986,18 @@ def attach_slas(target_type, target_id, priority, organization_id=None):
     caller passes no organization_id, and every row before this parameter
     existed has client_organization_id null, so this is a no-op everywhere
     else in the app."""
-    definitions = SLADefinition.query.filter_by(target_type=target_type, active=True).all()
+    # SLA definitions are tenant configuration: only the target record's own
+    # tenant's definitions may ever apply to it.
+    target_model = {"ticket": Ticket, "ritm": RequestedItem, "client_ticket": ClientTicket}.get(target_type)
+    target = db.session.get(target_model, target_id) if target_model else None
+    if target is None:
+        current_app.logger.warning(
+            "SLA attachment skipped: no %s record with id %s", target_type, target_id,
+        )
+        return
+    definitions = SLADefinition.query.filter_by(
+        target_type=target_type, active=True, tenant_id=target.tenant_id,
+    ).all()
     definitions = [d for d in definitions if d.client_organization_id in (None, organization_id)]
     if organization_id is not None:
         overridden_priorities = {
@@ -4116,13 +4155,17 @@ def _create_client_ticket_from_email(mailbox, parsed):
 
 
 def _process_one_inbound_email(mailbox, connection, msg_num):
-    status, msg_data = connection.fetch(msg_num, "(RFC822)")
+    # BODY.PEEK[] leaves the message unread (a plain RFC822/BODY[] fetch marks
+    # it \Seen on the server). It is marked read only once it has been saved,
+    # or deliberately dropped below, so a failure in between is retried on the
+    # next poll instead of being lost.
+    status, msg_data = connection.fetch(msg_num, "(BODY.PEEK[])")
     if status != "OK" or not msg_data or not isinstance(msg_data[0], tuple):
         return False
     raw_bytes = msg_data[0][1]
-    connection.store(msg_num, "+FLAGS", "\\Seen")
     parsed = parse_inbound_email(raw_bytes)
     if parsed["is_auto_generated"] or not parsed["from_email"]:
+        connection.store(msg_num, "+FLAGS", "\\Seen")
         return False
     # Last-resort loop/flood defense, on top of the Auto-Submitted check
     # above -- Zendesk documents an identical per-sender rate ceiling for
@@ -4130,6 +4173,8 @@ def _process_one_inbound_email(mailbox, connection, msg_num):
     # doesn't set Auto-Submitted correctly).
     if not route_rate_limit("inbound_email", parsed["from_email"], 20, window_seconds=3600):
         current_app.logger.warning("Inbound email rate limit exceeded for %s", parsed["from_email"])
+        db.session.commit()
+        connection.store(msg_num, "+FLAGS", "\\Seen")
         return False
 
     ticket = _match_existing_client_ticket(mailbox.tenant_id, parsed)
@@ -4168,6 +4213,7 @@ def _process_one_inbound_email(mailbox, connection, msg_num):
         evaluate_client_triggers("created", ticket, agents)
     audit("client email ingested", ticket.number, parsed["from_email"], tenant_id=ticket.tenant_id)
     db.session.commit()
+    connection.store(msg_num, "+FLAGS", "\\Seen")
     return True
 
 
@@ -7717,7 +7763,7 @@ def create_app(test_config=None):
             # administrator "deactivating" a user with a live session
             # (e.g. emergency access removal) has no actual effect until
             # that session happens to expire on its own.
-            or not current_user.active
+            or not account_usable(current_user)
         ):
             logout_user()
             session.clear()
@@ -7769,13 +7815,15 @@ def create_app(test_config=None):
         if started_at is not None:
             duration_ms = round((time_module.monotonic() - started_at) * 1000, 2)
             record_request_metric(request.method, response.status_code, duration_ms)
+        # Some paths carry a secret (a password-recovery token); never log it.
+        logged_path = redact(request.path)
         logging.getLogger("serviceops.request").info(
-            "%s %s -> %s", request.method, request.path, response.status_code,
+            "%s %s -> %s", request.method, logged_path, response.status_code,
             extra={
                 "request_id": g.get("request_id"),
                 "trace_id": g.get("trace_id"),
                 "method": request.method,
-                "path": request.path,
+                "path": logged_path,
                 "status_code": response.status_code,
                 "duration_ms": duration_ms,
                 "user_id": current_user.id if current_user.is_authenticated else None,
