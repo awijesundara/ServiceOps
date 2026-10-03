@@ -6,7 +6,6 @@ import threading
 
 import pytest
 from markupsafe import escape
-from playwright.sync_api import sync_playwright
 from werkzeug.serving import make_server
 
 from app import AIRun, Comment, UserPreference, db
@@ -89,8 +88,17 @@ def test_investigation_draft_and_posted_comment_resolve_reference_links(app, cli
     assert f'href="/ticket/{ticket_id}">{number}</a>' in page
 
 
+def _require_browser_tooling():
+    """Skip where the browser job's tooling is absent (e.g. the Docker test image)."""
+    pytest.importorskip("playwright.sync_api")
+    if not os.path.isfile(os.environ.get("AXE_CORE_PATH", "")):
+        pytest.skip("AXE_CORE_PATH must point to axe.min.js for browser accessibility checks")
+
+
 @pytest.mark.parametrize("language,width", [("ja", 1440), ("ar", 1440), ("ar", 390), ("si", 390)])
 def test_browser_language_selection_rtl_and_safe_ai_citations(app, client, language, width):
+    _require_browser_tooling()
+    from playwright.sync_api import sync_playwright
     login(client)
     server = make_server("127.0.0.1", 0, app, threaded=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)

@@ -68,8 +68,16 @@ def test_comment_requires_valid_user_reviewed_text(app, client, monkeypatch, bod
         assert Comment.query.filter_by(ticket_id=ticket_id).count() == 0
 
 
+def _require_browser_tooling():
+    """Skip where the browser job's tooling is absent (e.g. the Docker test image)."""
+    pytest.importorskip("playwright.sync_api")
+    if not os.path.isfile(os.environ.get("AXE_CORE_PATH", "")):
+        pytest.skip("AXE_CORE_PATH must point to axe.min.js for browser accessibility checks")
+
+
 @pytest.mark.parametrize("width", [1440, 390])
 def test_browser_edits_operator_response_before_posting(app, client, monkeypatch, width):
+    _require_browser_tooling()
     import threading
     from pathlib import Path
     from playwright.sync_api import sync_playwright
