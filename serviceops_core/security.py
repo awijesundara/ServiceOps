@@ -34,6 +34,11 @@ SECRET_FIELD_PATTERN = re.compile(
 
 AUTH_HEADER_PATTERN = re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)(\S+)")
 
+# URL paths that carry a secret as a path segment (a one-time password-recovery
+# token). Matches anywhere in a log line, so request lines and Referer headers
+# in access logs are covered too.
+PATH_SECRET_PATTERN = re.compile(r"(/reset-password/)[^\s/?#\"']+")
+
 REDACTED = "***REDACTED***"
 
 
@@ -62,6 +67,7 @@ def redact(text):
 
     text = SECRET_FIELD_PATTERN.sub(_replace, text)
     text = AUTH_HEADER_PATTERN.sub(lambda m: f"{m.group(1)}{REDACTED}", text)
+    text = PATH_SECRET_PATTERN.sub(lambda m: f"{m.group(1)}{REDACTED}", text)
     return text
 
 

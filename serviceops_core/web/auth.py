@@ -9,12 +9,13 @@ import secrets
 from datetime import timedelta
 
 import pyotp
-from flask import abort, current_app, flash, redirect, render_template, request, session, url_for
+from flask import abort, current_app, flash, make_response, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy import func
 
 import app as core
 from app import (
+    account_usable,
     align_tz,
     audit,
     create_notification,
@@ -68,12 +69,15 @@ def register(app):
                 # a locked account must not be silently let in, and an
                 # MFA-enrolled account must still complete MFA, exactly as
                 # the local/password path below requires.
+                if sso_user and not account_usable(sso_user):
+                    sso_user = None
                 if sso_user and sso_user.locked_until and align_tz(sso_user.locked_until, now()) > now():
                     audit("login_blocked", sso_user.username, "reason=locked; provider=cloudflare_access")
                     db.session.commit()
                     sso_user = None
                 if sso_user and sso_user.mfa_enabled:
                     session["_mfa_pending_user_id"] = sso_user.id
+                    session["_mfa_pending_auth_version"] = sso_user.auth_version
                     session["_mfa_pending_provider"] = "cloudflare_access"
                     return redirect(url_for("login_mfa"))
                 if sso_user:
@@ -153,7 +157,9 @@ def register(app):
                             # the next successful login, no bulk migration
                             # or forced reset required.
                             candidate.password_hash = upgraded_hash
-            if user and user.active and user.mfa_enabled:
+            if user and not account_usable(user):
+                user = None
+            if user and user.mfa_enabled:
                 # Password verified but MFA is required (ISO 27001 A.8.5):
                 # do not issue a session yet. Stash the authenticated-but-
                 # not-yet-MFA'd user id in a short-lived, server-signed
@@ -163,9 +169,10 @@ def register(app):
                 user.locked_until = None
                 db.session.commit()
                 session["_mfa_pending_user_id"] = user.id
+                session["_mfa_pending_auth_version"] = user.auth_version
                 session["_mfa_pending_provider"] = provider
                 return redirect(url_for("login_mfa"))
-            if user and user.active:
+            if user:
                 user.failed_login_count = 0
                 user.locked_until = None
                 login_user(user)
@@ -240,6 +247,13 @@ def register(app):
 
     @app.route("/reset-password/<token>", methods=["GET", "POST"])
     def reset_password(token):
+        # The URL holds the one-time token: keep it out of Referer headers
+        # sent with this page's own asset requests and any outbound link.
+        response = make_response(_reset_password(token))
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
+    def _reset_password(token):
         token_hash = hmac.new(
             current_app.config["SECRET_KEY"].encode(), token.encode(), hashlib.sha256,
         ).hexdigest()
@@ -275,8 +289,14 @@ def register(app):
         if not pending_user_id:
             return redirect(url_for("login"))
         user = db.session.get(User, pending_user_id)
-        if not user or not user.active or not user.mfa_enabled:
+        # A password change, reset or deactivation after the password step
+        # bumps auth_version and must void the half-finished login.
+        if (
+            not account_usable(user) or not user.mfa_enabled
+            or session.get("_mfa_pending_auth_version") != user.auth_version
+        ):
             session.pop("_mfa_pending_user_id", None)
+            session.pop("_mfa_pending_auth_version", None)
             session.pop("_mfa_pending_provider", None)
             return redirect(url_for("login"))
         if request.method == "POST":
@@ -308,6 +328,7 @@ def register(app):
                     backup_used = True
             if verified:
                 session.pop("_mfa_pending_user_id", None)
+                session.pop("_mfa_pending_auth_version", None)
                 provider = session.pop("_mfa_pending_provider", "local")
                 login_user(user)
                 session.permanent = True
@@ -369,6 +390,8 @@ def register(app):
             "keycloak", subject, claims.get("preferred_username", ""),
             claims.get("name", ""), claims.get("email", ""), matched_roles,
             profile_attrs=profile_attrs)
+        if not account_usable(user):
+            abort(403, description="This account or its organization is not active.")
         login_user(user)
         session.permanent = True
         session["_auth_version"] = user.auth_version

@@ -490,7 +490,7 @@ def register(app):
                 group_id = int(request.form.get("group_id", ""))
             except (TypeError, ValueError):
                 return render_form("Select a valid owning IT team.")
-            owning_group = db.session.get(SupportGroup, group_id)
+            owning_group = tenant_query(SupportGroup).filter_by(id=group_id).first()
             if (
                 not owning_group
                 or not owning_group.active

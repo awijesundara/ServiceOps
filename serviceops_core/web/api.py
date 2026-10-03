@@ -20,6 +20,8 @@ from webauthn.helpers import base64url_to_bytes
 
 import app as core
 from app import (
+    account_usable,
+    end_stale_mobile_session,
     active_approval_delegation,
     align_tz,
     api_attachment_document,
@@ -72,7 +74,7 @@ from app import (
     visible_ticket_query,
 )
 from serviceops_core import mcp as mcp_protocol
-from serviceops_core.ci_class_policy import restrict_ci_query_to_readable_classes
+from serviceops_core.ci_class_policy import ci_class_action_allowed, restrict_ci_query_to_readable_classes
 from serviceops_core.mcp_tools import TOOLS as MCP_TOOLS
 from serviceops_core.passkeys import (
     authentication_options as build_passkey_authentication_options,
@@ -496,7 +498,9 @@ def register(app):
     def api_passkey_registration_complete():
         if g.api_client.client_kind != "mobile":
             abort(403, description="A mobile user session is required.")
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            abort(400, description="A JSON object is required.")
         challenge = consume_passkey_challenge(
             str(body.get("challenge_id") or body.get("challengeId") or ""), "registration",
         )
@@ -573,7 +577,9 @@ def register(app):
     @app.post("/api/v1/auth/passkeys/authenticate/complete")
     def api_passkey_authentication_complete():
         enforce_passkey_attempt_limit()
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            abort(400, description="A JSON object is required.")
         challenge = consume_passkey_challenge(
             str(body.get("challenge_id") or body.get("challengeId") or ""), "authentication",
         )
@@ -612,12 +618,19 @@ def register(app):
 
     @app.post("/api/v1/auth/mobile/refresh")
     def api_mobile_refresh():
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            abort(400, description="A JSON object is required.")
         raw = str(body.get("refresh_token", ""))
         digest = api_token_hash(raw) if raw.startswith("sor_") else ""
         row = APIClient.query.filter_by(refresh_token_hash=digest, client_kind="mobile", active=True).first()
-        if not row or not hmac.compare_digest(row.refresh_token_hash or "", digest) or align_tz(row.refresh_expires_at, now()) <= now() or not row.acting_user.active:
+        if not row or not hmac.compare_digest(row.refresh_token_hash or "", digest) or align_tz(row.refresh_expires_at, now()) <= now() or not account_usable(row.acting_user):
             abort(401, description="The mobile refresh token is invalid, expired, or revoked.")
+        if row.auth_version != row.acting_user.auth_version:
+            end_stale_mobile_session(row)
+            abort(401, description="The mobile session ended because the account's credentials changed.")
         access = f"som_{secrets.token_urlsafe(32)}"
         refresh = f"sor_{secrets.token_urlsafe(48)}"
         row.token_hash = api_token_hash(access)
@@ -1134,6 +1147,17 @@ def register(app):
         ip_address = str(body.get("ip_address", "")).strip()[:60] or None
         ci = ConfigurationItem.query.filter_by(name=name, tenant_id=g.api_client.tenant_id).first()
         created = ci is None
+        # Same per-class policy the CMDB forms enforce, evaluated for the
+        # acting user: create for a new CI; update on its current class and,
+        # when the class changes, on the target class too.
+        role = g.api_user.effective_role
+        tenant_id = g.api_client.tenant_id
+        if created and not ci_class_action_allowed(tenant_id, ci_class, role, "create"):
+            abort(403, description=f"The acting user may not create {ci_class} configuration items.")
+        if not created and not ci_class_action_allowed(tenant_id, ci.ci_class, role, "update"):
+            abort(403, description=f"The acting user may not update {ci.ci_class} configuration items.")
+        if not created and ci_class != ci.ci_class and not ci_class_action_allowed(tenant_id, ci_class, role, "update"):
+            abort(403, description=f"The acting user may not move this configuration item into {ci_class}.")
         if created:
             ci = ConfigurationItem(name=name, tenant_id=g.api_client.tenant_id, owner_id=g.api_user.id)
             db.session.add(ci)
@@ -1227,7 +1251,9 @@ def register(app):
     @app.post("/api/v1/mobile/push-devices")
     def api_mobile_push_register():
         mobile_only()
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            abort(400, description="A JSON object is required.")
         token = str(body.get("token", "")).strip().lower()
         device_id = str(body.get("device_id", "")).strip()
         environment = str(body.get("environment", "sandbox"))
@@ -1338,7 +1364,9 @@ def register(app):
         key, request_hash, replay = api_idempotency_context(required=False)
         if replay:
             return replay
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            abort(400, description="A JSON object is required.")
         decision = body.get("decision")
         if decision not in ("Approved", "Rejected"):
             abort(400, description="decision must be Approved or Rejected.")
@@ -1420,7 +1448,9 @@ def register(app):
         key, request_hash, replay = api_idempotency_context(required=False)
         if replay:
             return replay
-        payload = request.get_json(silent=True) or {}
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            abort(400, description="A JSON object is required.")
         body = str(payload.get("body", "")).strip()
         if not body or len(body) > 10000:
             abort(400, description="A comment between 1 and 10000 characters is required.")
