@@ -41,7 +41,7 @@
     {% endfor %}
   </div>
   <div class="task-list-scroll">
-  <table class="task-list"><thead><tr><th>Time</th><th>Level</th><th>Method</th><th>Path</th><th>Status</th><th>Duration</th><th>User</th><th>Message</th></tr></thead><tbody>
+  <table class="task-list"><thead><tr><th>Time</th><th>Level</th><th>Method</th><th>Path</th><th>{{ t('Status') }}</th><th>Duration</th><th>User</th><th>Message</th></tr></thead><tbody>
     {% for entry in entries %}
     <tr>
       <td>{{ entry.get('timestamp', '')[:19] }}</td>

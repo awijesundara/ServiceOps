@@ -102,4 +102,7 @@ spec:
     {{- with .Values.ai.extraEgress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
+    {{- with .Values.syslog.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}

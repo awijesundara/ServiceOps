@@ -8,8 +8,8 @@
     <h2>{{ widget.label }}</h2>
     {% if widget.key == "ticket_stats" %}
       <div class="stats">
-        <a href="{{ url_for('tickets', kind='incident') }}"><span>Incidents</span><strong>{{ widget.context.counts.incident }}</strong></a>
-        <a href="{{ url_for('tickets', kind='change') }}"><span>Changes</span><strong>{{ widget.context.counts.change }}</strong></a>
+        <a href="{{ url_for('tickets', kind='incident') }}"><span>{{ t('Incidents') }}</span><strong>{{ widget.context.counts.incident }}</strong></a>
+        <a href="{{ url_for('tickets', kind='change') }}"><span>{{ t('Changes') }}</span><strong>{{ widget.context.counts.change }}</strong></a>
         <a href="{{ url_for('open_work') }}"><span>Open work</span><strong>{{ widget.context.counts.open }}</strong></a>
       </div>
     {% elif widget.key in ("my_open_tickets", "recent_tickets", "sla_at_risk") %}

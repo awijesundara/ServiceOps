@@ -1,6 +1,6 @@
 {% set chat_was_open = ai_chat_available(current_user) and request.endpoint != 'ai.chat_page' and request.cookies.get('ai_chat_open') == '1' %}
 <!doctype html>
-<html lang="en"{% if chat_was_open %} class="ai-chat-open"{% endif %} style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }}">
+<html lang="{{ ui_language }}" dir="{{ ui_direction }}"{% if chat_was_open %} class="ai-chat-open"{% endif %} style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }}">
 <head>
   <link rel="manifest" href="{{ url_for('pwa_manifest') }}">
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png', v=app_version) }}">
@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v=app_version) }}">
+  {% if ui_direction == 'rtl' %}<link rel="stylesheet" href="{{ url_for('static', filename='rtl.css', v=app_version) }}">{% endif %}
   {% if request.endpoint == 'task_board' %}<link rel="stylesheet" href="{{ url_for('static', filename='task-board.css', v=app_version) }}">{% endif %}
   {% if request.endpoint in ['status_page', 'status_page_default'] %}<link rel="stylesheet" href="{{ url_for('static', filename='status-page.css', v=app_version) }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v=app_version) }}">
@@ -68,9 +69,9 @@
       <div class="nav-group-items">
         <a href="{{ url_for('task_board') }}" {% if nav_active('task_board') %}class="active" aria-current="page"{% endif %}>Visual task board</a>
         {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}<a href="{{ url_for('my_work_tasks') }}" {% if nav_active('my_work_tasks') %}class="active" aria-current="page"{% endif %}>My tasks{% if my_open_tasks_count %}<span class="nav-badge">{{ my_open_tasks_count if my_open_tasks_count < 100 else '99+' }}</span>{% endif %}</a>{% endif %}
-        <a href="{{ url_for('tickets', kind='incident') }}" {% if nav_active('tickets', kind='incident') %}class="active" aria-current="page"{% endif %}>Incidents</a>
-        <a href="{{ url_for('requests_list') }}" {% if nav_active('requests_list') %}class="active" aria-current="page"{% endif %}>Service requests</a>
-        {% if current_user.effective_role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}" {% if nav_active('tickets', kind='change') %}class="active" aria-current="page"{% endif %}>Changes</a>{% endif %}
+        <a href="{{ url_for('tickets', kind='incident') }}" {% if nav_active('tickets', kind='incident') %}class="active" aria-current="page"{% endif %}>{{ t('Incidents') }}</a>
+        <a href="{{ url_for('requests_list') }}" {% if nav_active('requests_list') %}class="active" aria-current="page"{% endif %}>{{ t('Service requests') }}</a>
+        {% if current_user.effective_role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}" {% if nav_active('tickets', kind='change') %}class="active" aria-current="page"{% endif %}>{{ t('Changes') }}</a>{% endif %}
         <a href="{{ url_for('approval_chains') }}" {% if nav_active('approval_chains') %}class="active" aria-current="page"{% endif %}>My approvals{% if pending_approvals_count %}<span class="nav-badge">{{ pending_approvals_count if pending_approvals_count < 100 else '99+' }}</span>{% endif %}</a>
         <a href="{{ url_for('org_chart') }}" {% if nav_active('org_chart') %}class="active" aria-current="page"{% endif %}>Organization chart</a>
       </div>
@@ -80,7 +81,7 @@
       <summary><span class="nav-symbol" aria-hidden="true">◎</span><span>Self-service</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items">
         <a href="{{ url_for('catalog') }}" {% if nav_active('catalog') %}class="active" aria-current="page"{% endif %}>Service catalog</a>
-        <a href="{{ url_for('knowledge') }}" {% if nav_active('knowledge') %}class="active" aria-current="page"{% endif %}>Knowledge</a>
+        <a href="{{ url_for('knowledge') }}" {% if nav_active('knowledge') %}class="active" aria-current="page"{% endif %}>{{ t('Knowledge') }}</a>
         <a href="{{ url_for('modules') }}" {% if nav_active('modules') %}class="active" aria-current="page"{% endif %}>All workspaces</a>
         <a href="{{ url_for('mobile_app') }}" {% if nav_active('mobile_app') %}class="active" aria-current="page"{% endif %}>ServiceOps mobile</a>
       </div>
@@ -118,9 +119,9 @@
     {% elif request.endpoint in ['system_settings_category','data_governance_admin','platform_tenants','system_health','system_health_log_file','audit_log','api_clients_admin'] %}{% set admin_active_section = 'platform-security' %}
     {% endif %}
     <details class="nav-group nav-group-admin" {% if request.endpoint in admin_endpoints %}open{% endif %}>
-      <summary><span class="nav-symbol" aria-hidden="true">⚙</span><span>Administration</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+      <summary><span class="nav-symbol" aria-hidden="true">⚙</span><span>{{ t('Administration') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items admin-area-links">
-        <a class="admin-area-link{% if nav_active('admin_home') %} active{% endif %}" href="{{ url_for('admin_home') }}" {% if nav_active('admin_home') %}aria-current="page"{% endif %}><span class="admin-area-icon">{{ admin_icon('home') }}</span><span><strong>General</strong><small>Administration overview</small></span><span class="admin-area-chevron" aria-hidden="true"></span></a>
+        <a class="admin-area-link{% if nav_active('admin_home') %} active{% endif %}" href="{{ url_for('admin_home') }}" {% if nav_active('admin_home') %}aria-current="page"{% endif %}><span class="admin-area-icon">{{ admin_icon('home') }}</span><span><strong>{{ t('General') }}</strong><small>Administration overview</small></span><span class="admin-area-chevron" aria-hidden="true"></span></a>
         {% set admin_areas = [
           ('people-access','People & access','Users, teams and permissions','people'),
           ('service-configuration','Service configuration','Requests, changes and SLAs','service'),
@@ -193,12 +194,12 @@
               data-severity="{{ unread_notification_severity or '' }}"
               data-latest-id="{{ ui_notifications[0].id if ui_notifications else 0 }}"
               data-poll-url="{{ url_for('notifications_poll') }}">
-      <summary title="Notifications" aria-label="Notifications">
+      <summary title="{{ t('Notifications') }}" aria-label="{{ t('Notifications') }}">
         <svg class="icon notification-bell-icon" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         {% if unread_notifications %}<b class="notification-count severity-{{ unread_notification_severity or 'info' }}">{{ unread_notifications if unread_notifications < 100 else '99+' }}</b>{% endif %}
       </summary>
       <div class="nav-popover notification-popover">
-        <div class="notification-popover-head"><h3>Notifications</h3>{% if unread_notifications %}<span>{{ unread_notifications }} unread</span>{% endif %}</div>
+        <div class="notification-popover-head"><h3>{{ t('Notifications') }}</h3>{% if unread_notifications %}<span>{{ unread_notifications }} unread</span>{% endif %}</div>
         <div class="notification-preview-list">
           {% for notification in ui_notifications %}
           {% set target_url = ui_notification_urls.get(notification.id) %}
@@ -217,7 +218,7 @@
       </div>
     </details>
     <a class="nav-icon" href="{{ url_for('help_center') }}" title="Help" aria-label="Help"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.9.4-1.5 1-1.5 2.2"/><line x1="12" y1="17.3" x2="12" y2="17.31"/></svg></a>
-    <a class="nav-icon" href="{{ url_for('preferences') }}" title="Preferences" aria-label="Preferences"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1z"/></svg></a>
+    <a class="nav-icon" href="{{ url_for('preferences') }}" title="{{ t('Preferences') }}" aria-label="{{ t('Preferences') }}"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1z"/></svg></a>
   </div>
 </header>
 {% endif %}
@@ -231,7 +232,7 @@
 <dialog id="ci-browser-modal" class="ci-browser-modal" aria-modal="true" aria-labelledby="ci-browser-title">
   <div class="ci-browser-head">
     <h3 id="ci-browser-title">Select a configuration item</h3>
-    <button type="button" class="link-button" data-ci-browser-close aria-label="Close">✕</button>
+    <button type="button" class="link-button" data-ci-browser-close aria-label="{{ t('Close') }}">✕</button>
   </div>
   <div class="ci-browser-filters">
     <input type="text" class="ci-browser-q" placeholder="Search by name or IP address…">
@@ -240,7 +241,7 @@
   </div>
   <div class="ci-browser-table-wrap">
     <table class="ci-browser-table">
-      <thead><tr><th>Name</th><th>Class</th><th>Environment</th><th>IP address</th><th>Status</th></tr></thead>
+      <thead><tr><th>{{ t('Name') }}</th><th>Class</th><th>Environment</th><th>IP address</th><th>{{ t('Status') }}</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>

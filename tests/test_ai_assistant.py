@@ -162,9 +162,10 @@ def test_approved_ai_comment_is_exact_reauthorized_and_idempotent(app, client, m
     action_id = proposal.headers["Location"].rstrip("/").split("/")[-1]
     review = client.get(proposal.headers["Location"])
     assert review.status_code == 200
-    assert b"Check the VPN gateway and client logs [S1]." in review.data
+    assert b' name="body"' in review.data
+    assert b"Check the VPN gateway and client logs [S1]." not in review.data
 
-    approved = client.post(f"/ai/actions/{action_id}", data={"decision": "approve"})
+    approved = client.post(f"/ai/actions/{action_id}", data={"decision": "approve", "body": "I checked the gateway; service is restored."})
     assert approved.status_code == 302
     # A repeated submit returns the already-executed result and cannot add a second comment.
     assert client.post(f"/ai/actions/{action_id}", data={"decision": "approve"}).status_code == 302
@@ -172,7 +173,7 @@ def test_approved_ai_comment_is_exact_reauthorized_and_idempotent(app, client, m
         action = db.session.get(AIAction, action_id)
         comments = Comment.query.filter_by(ticket_id=ticket_id).all()
         assert action.status == "executed" and action.approved_by_id
-        assert [row.body for row in comments] == ["Check the VPN gateway and client logs [S1]."]
+        assert [row.body for row in comments] == ["I checked the gateway; service is restored."]
 
 
 def test_ai_action_switch_expiry_and_stale_ticket_fail_closed(app, client, monkeypatch):

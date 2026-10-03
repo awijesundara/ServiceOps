@@ -492,7 +492,8 @@ def register(app):
         if not service.sources_accessible(identity, sources):
             abort(403, description="You no longer have access to all evidence used by this investigation.")
         source_links(sources)
-        return render_template("ai_result.html", run=run, ticket=ticket, sources=sources, config=config)
+        return render_template("ai_result.html", run=run, ticket=ticket, sources=sources, config=config,
+                               fallback_answer=readable_references(run.result_text, sources))
 
     def owned_action(action_id, *, lock=False):
         query = AIAction.query.filter_by(id=action_id, tenant_id=current_user.tenant_id,
@@ -526,10 +527,16 @@ def register(app):
         existing = AIAction.query.filter_by(run_id=run.id, action_type=candidate["type"]).first()
         if existing:
             return no_store({"url": url_for("ai.action_review", action_id=existing.id)})
+        payload = candidate.get("payload", {}).copy()
+        if candidate["type"] in {"kb_article", *actions.DRAFT_COMMENT_PREFIX}:
+            sources = source_links(json.loads(run.sources_json or "[]"))
+            for key in ("body", "text"):
+                if isinstance(payload.get(key), str):
+                    payload[key] = readable_references(payload[key], sources)
         action = AIAction(
             tenant_id=scope.tenant_id, run_id=run.id, ticket_id=ticket.id,
             proposed_by_id=scope.user_id, actor_role=scope.role, action_type=candidate["type"],
-            payload_json=json.dumps(candidate.get("payload", {})), target_updated_at=ticket.updated_at,
+            payload_json=json.dumps(payload), target_updated_at=ticket.updated_at,
             expires_at=now() + timedelta(minutes=15),
         )
         db.session.add(action)
@@ -541,7 +548,8 @@ def register(app):
     @blueprint.post("/ai/runs/<run_id>/actions/comment")
     @login_required
     def propose_comment(run_id):
-        """Freeze the completed answer as an exact, expiring ticket-comment proposal."""
+        """Prepare an editable operator response with expiring approval controls."""
+        from serviceops_core.ai.actions import investigation_comment_draft
         identity = service.actor(current_user)
         config = service.enabled_config(identity.tenant_id)
         if not config.actions_enabled:
@@ -561,7 +569,7 @@ def register(app):
         action = AIAction(
             tenant_id=identity.tenant_id, run_id=run.id, ticket_id=ticket.id,
             proposed_by_id=identity.id, actor_role=identity.role, action_type="add_comment",
-            payload_json=json.dumps({"body": run.result_text[:10000]}),
+            payload_json=json.dumps({"body": readable_references(investigation_comment_draft(run.result_text), source_links(json.loads(run.sources_json or "[]")))}),
             target_updated_at=ticket.updated_at, expires_at=now() + timedelta(minutes=15),
         )
         db.session.add(action)
@@ -593,11 +601,13 @@ def register(app):
         ticket = read_access.tickets(identity.identity if hasattr(identity, "identity") else identity).filter_by(
             id=action.ticket_id).first_or_404()
         payload = json.loads(action.payload_json)
+        editable_comment = run.kind == "investigation" and action.action_type == "add_comment"
         if request.method == "GET":
             return render_template("ai_action_review.html", action=action, ticket=ticket, payload=payload,
                                    fields=actions.describe_payload(action.action_type, payload),
                                    action_label=actions.action_label(action.action_type), back_url=back_url,
-                                   expired=action.expires_at.replace(tzinfo=now().tzinfo) <= now())
+                                   expired=action.expires_at.replace(tzinfo=now().tzinfo) <= now(),
+                                   editable_comment=editable_comment)
         decision = request.form.get("decision")
         if decision == "reject" and action.status == "pending":
             action.status, action.approved_by_id, action.decided_at = "rejected", actor_id, now()
@@ -626,6 +636,14 @@ def register(app):
             audit("ai action stale", action.id, f"type={action.action_type}; ticket={ticket.number}")
             db.session.commit()
             abort(409, description="The ticket changed after this proposal was prepared. Run a new investigation first.")
+        if editable_comment:
+            body = request.form.get("body", "").strip()
+            if not body or len(body) > 10000:
+                abort(400, description="Enter a comment between 1 and 10,000 characters.")
+            body = readable_references(body, source_links(json.loads(run.sources_json or "[]")))
+            if not body.strip() or len(body) > 10000:
+                abort(400, description="Enter a comment between 1 and 10,000 characters after resolving references.")
+            action.payload_json = json.dumps({"body": body})
         actions.execute(action, locked_ticket, current_user)
         action.status, action.approved_by_id = "executed", actor_id
         action.decided_at = action.executed_at = now()
@@ -653,20 +671,7 @@ def register(app):
             abort(403, description="Switch to the role used to request this investigation.")
         return run, config, identity
 
-    def source_links(sources):
-        for source in sources:
-            kind, record_id = source["kind"], source["record_id"]
-            source["url"] = {
-                "ticket": lambda: url_for("ticket_detail", ticket_id=record_id),
-                "knowledge": lambda: url_for("knowledge_detail", article_id=record_id),
-                "ci": lambda: url_for("ci_edit", ci_id=record_id),
-                "enterprise": lambda: url_for("enterprise_detail", record_id=record_id),
-                "request": lambda: url_for("request_detail", request_id=record_id),
-                "work_task": lambda: url_for("operational_task_detail", task_id=record_id),
-                "client_ticket": lambda: url_for("client_ticket_detail", ticket_id=record_id),
-                "asset": lambda: url_for("assets", q=source.get("number", "")),
-            }[kind]()
-        return sources
+    from serviceops_core.ai.references import readable_references, source_links
 
     def with_draft_link(route, run_id=None):
         """Turn a validated ticket draft into a link that opens the normal ticket form pre-filled."""

@@ -7,7 +7,7 @@
     <form class="list-search">
       <input type="hidden" name="filter" value="{{ raw_filter }}">
       <input name="q" value="{{ q }}" placeholder="Tag, name, or serial" aria-label="Search assets">
-      <button>Search</button>
+      <button>{{ t('Search') }}</button>
       <div class="list-filter" data-filter-fields='{{ filter_fields|tojson }}' data-filter-value='{{ raw_filter or "[]" }}'>
         <button type="button" class="list-filter-toggle">▽ Filter</button>
         <div class="list-filter-builder" hidden>
@@ -28,7 +28,7 @@
   </header>
   <div class="list-breadcrumb"><span>▽</span> All{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
   <div class="task-list-scroll">
-  <table class="task-list"><thead><tr><th>Asset tag</th><th>Name</th><th>Type</th><th>Status</th><th>Owner</th><th>Serial</th></tr></thead><tbody>
+  <table class="task-list"><thead><tr><th>Asset tag</th><th>{{ t('Name') }}</th><th>Type</th><th>{{ t('Status') }}</th><th>Owner</th><th>Serial</th></tr></thead><tbody>
     {% for a in assets %}<tr><td><strong>{{ a.asset_tag }}</strong></td><td><span class="truncate" title="{{ a.name }}">{{ a.name }}</span></td><td>{{ a.asset_type }}</td><td><span class="badge">{{ a.status }}</span></td><td><span class="truncate" title="{{ a.owner.name if a.owner else 'Unassigned' }}">{{ a.owner.name if a.owner else 'Unassigned' }}</span></td><td>{{ a.serial_number or '—' }}</td></tr>
     {% else %}<tr><td colspan="6" class="empty">No matching assets.</td></tr>{% endfor %}
   </tbody></table>

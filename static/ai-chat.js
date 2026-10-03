@@ -91,8 +91,8 @@
     }
     (sources || []).forEach(function (source) {
       const item = element("li", "ai-source");
-      const link = element("a", "ai-cite", source.id);
-      link.href = source.url;
+      const link = element(source.url ? "a" : "span", "ai-cite", source.number || source.title || "Reference");
+      if (source.url) link.href = source.url;
       item.appendChild(link);
       item.appendChild(element("span", "ai-source-title", source.title));
       item.appendChild(element("span", "badge", source.kind === "ci" ? "CI" : source.kind));
@@ -341,7 +341,7 @@
   };
 
   RunView.prototype.copy = function () {
-    const text = window.AIRender.plainText(this.text);
+    const text = window.AIRender.plainText(this.text, this.sources);
     const button = this.ui.copy;
     const done = function () { if (button) { const label = button.textContent; button.textContent = "Copied"; setTimeout(function () { button.textContent = label; }, 1500); } };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done);

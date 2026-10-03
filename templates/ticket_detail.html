@@ -14,10 +14,10 @@
       <span class="record-updated">Updated {{ (ticket.updated_at|usertime('%b %d, %H:%M')) }}</span>
       <form method="post" class="follow-ticket-form"><input type="hidden" name="action" value="{{ 'unfollow' if is_following else 'follow' }}"><button type="submit" class="button follow-toggle{% if is_following %} following{% endif %}" title="{{ 'Stop getting notified about new comments on this ticket' if is_following else 'Get notified when there is a new comment on this ticket' }}">{{ '✓ Following' if is_following else '☆ Follow' }}</button></form>
       {% if can_manage_ticket %}<button class="button" type="submit" form="task-record-form">Update</button>{% endif %}
-      {% if can_close %}<button class="button" type="submit" form="ticket-close-form">Close</button>{% endif %}
+      {% if can_close %}<button class="button" type="submit" form="ticket-close-form">{{ t('Close') }}</button>{% endif %}
       {% if can_reopen %}<button class="button" type="submit" form="ticket-reopen-form">Reopen</button>{% endif %}
       {% if can_manage_ticket and ticket.kind == 'change' and not ticket.deleted_at and ticket.state in ('New', 'Awaiting Approval') %}
-      <button class="button" type="submit" form="change-delete-form">Delete</button>
+      <button class="button" type="submit" form="change-delete-form">{{ t('Delete') }}</button>
       {% endif %}
     </div>
   </header>
@@ -38,7 +38,7 @@
       <label><span>Impact</span><select name="impact" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label><span>Change model</span><input value="{{ ticket.change_governance.change_type if ticket.change_governance else 'Not set' }}" disabled></label>
       <label><span>Urgency</span><select name="urgency" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.urgency==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-      <label><span>Priority</span><select name="priority" {% if not can_manage_ticket %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
+      <label><span>{{ t('Priority') }}</span><select name="priority" {% if not can_manage_ticket %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
       <label><span>Configuration item</span><input value="{{ display_ci.name if display_ci else 'Not selected' }}" disabled></label>
       <label><span>CI owning team</span><input value="{{ display_ci.support_group.name if display_ci and display_ci.support_group else 'Unassigned' }}" disabled></label>
       <div class="record-grid-trio">
@@ -49,7 +49,7 @@
     </div>
     <div class="record-long-fields">
       <label class="required-field"><span>Short description</span><input value="{{ ticket.title }}" disabled></label>
-      <label class="required-field"><span>Description</span><textarea rows="6" disabled>{{ ticket.description }}</textarea></label>
+      <label class="required-field"><span>{{ t('Description') }}</span><textarea rows="6" disabled>{{ ticket.description }}</textarea></label>
       {% if can_manage_ticket %}<label><span>Priority override reason</span><textarea name="priority_override_reason" rows="2" placeholder="Required when overriding calculated priority">{{ ticket.priority_override_reason or '' }}</textarea></label>{% endif %}
     </div>
     {% if can_manage_ticket %}<footer class="record-footer-actions"><button class="primary">Save changes</button></footer>{% endif %}
@@ -113,7 +113,7 @@
       <input type="hidden" name="source_type" value="ticket"><input type="hidden" name="source_id" value="{{ ticket.id }}">
       <input type="hidden" name="redirect_to" value="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">
       <label class="wide required-field"><span>Title</span><input name="title" maxlength="200" required value="Improvement from {{ ticket.number }}: "></label>
-      <label class="wide"><span>Description</span><textarea name="description" rows="2"></textarea></label>
+      <label class="wide"><span>{{ t('Description') }}</span><textarea name="description" rows="2"></textarea></label>
       <div class="wide actions"><button>Raise improvement</button></div>
     </form>
   </details>
@@ -137,7 +137,7 @@
     <header class="section-heading"><div><h2>Activity and work notes</h2><p>Conversation and resolution evidence</p></div></header>
     {% from "_comment_thread.html" import comment_thread %}
     <div class="comment-thread">{{ comment_thread(ticket) }}</div>
-    <form method="post" class="comment-box" enctype="multipart/form-data" id="comment-form" data-ticket-id="{{ ticket.id }}"><input type="hidden" name="action" value="comment"><input type="hidden" name="parent_id" value="" id="comment-parent-id"><div class="comment-reply-banner" id="comment-reply-banner" hidden>Replying to <b id="comment-reply-author"></b> <button type="button" id="comment-reply-cancel">Cancel</button></div><div class="mention-input-wrap"><textarea name="body" rows="3" placeholder="Add a work note or comment… (type @ to mention someone)" required id="comment-body-input"></textarea><ul class="mention-suggestions" id="mention-suggestions" hidden></ul></div><label class="comment-attach"><span>Attach a file (optional)</span><input type="file" name="file"></label><button class="primary">Post comment</button></form>
+    <form method="post" class="comment-box" enctype="multipart/form-data" id="comment-form" data-ticket-id="{{ ticket.id }}"><input type="hidden" name="action" value="comment"><input type="hidden" name="parent_id" value="" id="comment-parent-id"><div class="comment-reply-banner" id="comment-reply-banner" hidden>Replying to <b id="comment-reply-author"></b> <button type="button" id="comment-reply-cancel">{{ t('Cancel') }}</button></div><div class="mention-input-wrap"><textarea name="body" rows="3" placeholder="Add a work note or comment… (type @ to mention someone)" required id="comment-body-input"></textarea><ul class="mention-suggestions" id="mention-suggestions" hidden></ul></div><label class="comment-attach"><span>Attach a file (optional)</span><input type="file" name="file"></label><button class="primary">Post comment</button></form>
   </section>
 
   <section class="panel">
@@ -210,8 +210,8 @@
 <section class="panel" id="major-incident">
   <header class="section-heading"><div><h2>Major incident coordination</h2></div></header>
   {% set major = ticket.major_incident_profile %}
-  {% if major %}<dl class="governance-grid"><dt>Status</dt><dd>{{ major.status }}</dd><dt>Coordinator</dt><dd>{{ major.coordinator.name if major.coordinator else 'Not assigned' }}</dd><dt>Business impact</dt><dd>{{ major.business_impact or 'Not documented' }}</dd><dt>Communications</dt><dd>{{ major.communications or 'Not documented' }}</dd></dl>{% else %}<p class="muted">This remains a standard INC. Major incident status has not been proposed.</p>{% endif %}
-  {% if can_manage_ticket %}<details><summary>{{ 'Update' if major else 'Propose' }} major incident</summary><form method="post" action="{{ url_for('major_incident_update', ticket_id=ticket.id) }}" class="form-grid"><label>Status<select name="status">{% for value in ['Proposed','Accepted','Rejected','Resolved'] %}<option {% if major and major.status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label><label class="wide">Business impact<textarea name="business_impact" rows="3">{{ major.business_impact if major else '' }}</textarea></label><label class="wide">Coordination and communications<textarea name="communications" rows="3">{{ major.communications if major else '' }}</textarea></label><div class="wide actions"><button>Save major incident status</button></div></form></details>{% endif %}
+  {% if major %}<dl class="governance-grid"><dt>{{ t('Status') }}</dt><dd>{{ major.status }}</dd><dt>Coordinator</dt><dd>{{ major.coordinator.name if major.coordinator else 'Not assigned' }}</dd><dt>Business impact</dt><dd>{{ major.business_impact or 'Not documented' }}</dd><dt>Communications</dt><dd>{{ major.communications or 'Not documented' }}</dd></dl>{% else %}<p class="muted">This remains a standard INC. Major incident status has not been proposed.</p>{% endif %}
+  {% if can_manage_ticket %}<details><summary>{{ 'Update' if major else 'Propose' }} major incident</summary><form method="post" action="{{ url_for('major_incident_update', ticket_id=ticket.id) }}" class="form-grid"><label>{{ t('Status') }}<select name="status">{% for value in ['Proposed','Accepted','Rejected','Resolved'] %}<option {% if major and major.status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label><label class="wide">Business impact<textarea name="business_impact" rows="3">{{ major.business_impact if major else '' }}</textarea></label><label class="wide">Coordination and communications<textarea name="communications" rows="3">{{ major.communications if major else '' }}</textarea></label><div class="wide actions"><button>Save major incident status</button></div></form></details>{% endif %}
 </section>
 {% endif %}
 
@@ -234,7 +234,7 @@
     <p class="muted">Changing purpose, risk, schedule, CI, implementation, testing, or backout information supersedes prior decisions and starts a new approval revision.</p>
     <form method="post" action="{{ url_for('change_plan_update', ticket_id=ticket.id) }}" class="form-grid">
       <label class="wide">Short description<input name="title" value="{{ ticket.title }}" required></label>
-      <label class="wide">Description<textarea name="description" rows="5" required>{{ ticket.description }}</textarea></label>
+      <label class="wide">{{ t('Description') }}<textarea name="description" rows="5" required>{{ ticket.description }}</textarea></label>
       <label>Change type<select name="change_type">{% for value in ['Standard','Normal','Emergency'] %}<option {% if ticket.change_governance.change_type==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label>Impact<select name="impact">{% for value in ['Low','Medium','High'] %}<option {% if ticket.change_governance.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label>Risk score<span class="info-tip" tabindex="0" data-tip="Change type/impact/CI edits above are used to auto-recalculate if you also clear this field — leave it as-is to keep the current score, or edit it directly to override.">i</span><input type="number" min="0" max="100" name="risk_score" value="{{ ticket.change_governance.risk_score }}"></label>

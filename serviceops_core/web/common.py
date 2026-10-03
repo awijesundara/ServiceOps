@@ -157,7 +157,7 @@ ITIL_ADMIN_SECTIONS = {
     "catalog": ("Catalog and fulfillment routing", "Service catalog items and which team fulfills each one by default."),
     "team-aliases": ("Team name aliases", "Historical/imported team name spellings that safely merge into one canonical team."),
     "team-managers": ("Team managers", "The named manager who holds change-approval authority for each team."),
-    "executive-approval": ("Executive approval (CEO)", "The named user required to approve every Normal/Emergency change."),
+    "executive-approval": ("Executive approval", "Choose executive approvers for Normal and Emergency changes."),
     "governance-groups": ("Governance groups", "Review accountable groups, their type, manager, and current membership."),
     "change-approval-policy": ("Change approval policy", "Which CMDB environment names require Change Control Board approval."),
     "ccb": ("Change Control Board approvers", "Users granted CCB voting authority for non-standard changes."),

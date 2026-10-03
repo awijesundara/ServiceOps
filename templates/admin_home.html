@@ -8,7 +8,7 @@
     ('Active sessions','Review and revoke browser sessions across the organization','admin_sessions',None,'◉','session logout device'),
     ('Team name aliases','Safely merge historical or imported team-name spellings','itil_admin_section','team-aliases','▤','alias duplicate merge'),
     ('Groups & team ownership','Manage support groups, team managers, and workspace access','itil_admin_section','team-managers','▤','support group owner manager'),
-    ('Executive approval (CEO)','Choose the executive approver for Normal and Emergency changes','itil_admin_section','executive-approval','♙','ceo executive approval'),
+    ('Executive approval','Choose executive approvers for Normal and Emergency changes','itil_admin_section','executive-approval','♙','ceo executive approval'),
     ('Governance groups','Review accountable groups, managers, and membership','itil_admin_section','governance-groups','▤','governance membership'),
   ]),
   ('service-configuration','Service configuration','How tickets, requests, changes, services, and commitments are governed','service',[
@@ -55,7 +55,7 @@
 ] %}
 {% set active = namespace(title='Administration', description='Every administrative capability, organized by responsibility.', icon='settings', cards=[]) %}
 {% for key,title,description,icon,cards in sections %}{% if active_section == key %}{% set active.title=title %}{% set active.description=description %}{% set active.icon=icon %}{% set active.cards=cards %}{% endif %}{% endfor %}
-{% set admin_page_title = active.title %}{% if active_section %}{% set admin_parent_title='Administration' %}{% set admin_parent_url=url_for('admin_home') %}{% include '_admin_context.html' %}{% else %}<nav class="admin-context" aria-label="Administration breadcrumb"><strong>Administration</strong></nav>{% endif %}
+{% set admin_page_title = active.title %}{% if active_section %}{% set admin_parent_title='Administration' %}{% set admin_parent_url=url_for('admin_home') %}{% include '_admin_context.html' %}{% else %}<nav class="admin-context" aria-label="Administration breadcrumb"><strong>{{ t('Administration') }}</strong></nav>{% endif %}
 <div class="settings-console admin-console admin-console-single">
 <section class="settings-console-main">
   <header class="settings-page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>{{ active.title }}</h1><p>{{ active.description }}</p></div><span class="settings-page-symbol">{{ admin_icon(active.icon) }}</span></header>
@@ -70,7 +70,7 @@
     {% endfor %}
   </section>
   {% else %}
-  <nav class="settings-breadcrumb" aria-label="Administration hierarchy"><a href="{{ url_for('admin_home') }}">General</a><span aria-hidden="true">›</span><strong>{{ active.title }}</strong></nav>
+  <nav class="settings-breadcrumb" aria-label="Administration hierarchy"><a href="{{ url_for('admin_home') }}">{{ t('General') }}</a><span aria-hidden="true">›</span><strong>{{ active.title }}</strong></nav>
   <label class="admin-quick-find"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search {{ active.title|lower }}" aria-label="Find an administration tool" data-admin-quick-find></label>
   <p class="muted admin-quick-find-empty" data-admin-quick-find-empty hidden>No matching administration tool.</p>
   <section class="admin-home-section" data-admin-home-section>

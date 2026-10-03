@@ -2,12 +2,14 @@
 
 ServiceOps AI writes notes as plain text in a predictable shape: a "Heading:"
 line per section, paragraphs, "1." and "-" lists, `code`, [S1] source
-citations and a quoted draft response. Everything is HTML-escaped first and
-only that limited structure is added back, so a note can never inject markup.
+markers (removed when no link is available) and a quoted draft response. Everything is HTML-escaped first and
+and verified local reference links are rendered safely; unsupported markup remains escaped.
 """
 import re
 
 from markupsafe import Markup, escape
+
+from serviceops_core.ai.references import LINK, safe_reference_url
 
 HEADING = re.compile(r"^(?:#{1,4}\s*)?(?P<text>[^.!?:]{2,80}?)\s*:\s*$")
 ORDERED = re.compile(r"^\s*(?P<num>\d{1,3})[.)]\s+(?P<text>.+)$")
@@ -30,9 +32,23 @@ def _inline(text, mentions_html):
 
 
 def _prose(text, mentions_html):
-    html = str(mentions_html(text))  # already escaped; * [ ] are not touched by escaping
+    pieces, position = [], 0
+    for match in LINK.finditer(text):
+        pieces.append(_plain_prose(text[position:match.start()], mentions_html))
+        if safe_reference_url(match.group(2)):
+            pieces.append(Markup('<a class="ai-note-reference" href="') + escape(match.group(2)) + Markup('">') + escape(match.group(1)) + Markup('</a>'))
+        else:
+            pieces.append(_plain_prose(match.group(1), mentions_html))
+        position = match.end()
+    pieces.append(_plain_prose(text[position:], mentions_html))
+    return Markup("").join(pieces)
+
+
+def _plain_prose(text, mentions_html):
+    html = str(mentions_html(text))
     html = BOLD.sub(r"<strong>\1</strong>", html)
-    html = CITATION.sub(r'<span class="ai-note-cite" title="Source \1">\1</span>', html)
+    html = CITATION.sub("", html)
+    html = re.sub(r"\bS\d{1,3}\b", "", html)
     return Markup(html)
 
 

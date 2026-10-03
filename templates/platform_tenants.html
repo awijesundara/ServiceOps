@@ -6,7 +6,7 @@
   <div class="panel-head"><div><h2>Create tenant</h2></div></div>
   <form method="post" class="form-grid">
     <input type="hidden" name="action" value="create_tenant">
-    <label>Name<input name="name" maxlength="160" required></label>
+    <label>{{ t('Name') }}<input name="name" maxlength="160" required></label>
     <label>Slug<input name="slug" maxlength="80" pattern="[a-z0-9][a-z0-9-]*" placeholder="acme-corp" required></label>
     <div class="wide actions"><button class="primary">Create tenant</button></div>
   </form>
@@ -14,7 +14,7 @@
 <section class="panel" style="margin-top:20px">
   <div class="panel-head"><div><h2>All tenants</h2></div></div>
   <table>
-    <thead><tr><th>Name</th><th>Slug</th><th>Users</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>{{ t('Name') }}</th><th>Slug</th><th>Users</th><th>{{ t('Status') }}</th><th></th></tr></thead>
     <tbody>
       {% for tenant in tenants %}
       <tr>

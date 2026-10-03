@@ -13,7 +13,7 @@
       <label>Body<textarea name="body_template" rows="4" required>{{ template.body_template if template else meta.default_body }}</textarea></label>
       <p class="muted">Available variables: {% for var in meta.variables %}<code>${{ '{' }}{{ var }}{{ '}' }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
       <div class="record-actions">
-        <button name="action" value="save" class="primary">Save</button>
+        <button name="action" value="save" class="primary">{{ t('Save') }}</button>
         {% if template %}<button name="action" value="reset" class="link-button" data-confirm="Revert to the default wording for this notification?">Revert to default</button>{% endif %}
       </div>
     </form>

@@ -13,7 +13,7 @@
 (function () {
   "use strict";
 
-  const INLINE = /(`[^`\n]+`)|(\*\*[^*\n]+?\*\*)|(\*[^*\s][^*\n]*?\*)|(\[S\d+\])/g;
+  const INLINE = /(`[^`\n]+`)|(\*\*[^*\n]+?\*\*)|(\*[^*\s][^*\n]*?\*)|(\[S\d+\]|\bS\d+\b)/g;
 
   function node(tag, className, text) {
     const element = document.createElement(tag);
@@ -26,7 +26,13 @@
   // last run of non-space characters (a ticket/CI number, or an ordinary word).
   const TRAILING_TOKEN = /("[^"\n]+"|\S+)(\s*)$/;
 
+  function safeSource(source) {
+    if (!source || typeof source.url !== "string" || !source.url.startsWith("/") || source.url.startsWith("//") || /[\\\u0000-\u001f]/.test(source.url)) return null;
+    return source;
+  }
+
   function linkCitation(parent, source) {
+    source = safeSource(source);
     // A space between the cited claim and "[S1]" (the model's usual style, e.g.
     // "**Printer offline** [S1]") lands as its own whitespace-only text node --
     // set it aside so the real token underneath it (plain word or bold/italic/
@@ -37,6 +43,23 @@
       pendingSpace = last;
       parent.removeChild(last);
       last = parent.lastChild;
+    }
+    if (source && source.url) {
+      const label = source.number || source.title || "Reference";
+      if (last && last.nodeType === Node.TEXT_NODE && last.textContent.trimEnd().endsWith(label)) {
+        const index = last.textContent.lastIndexOf(label);
+        last.textContent = last.textContent.slice(0, index);
+      } else if (last && last.nodeType === Node.ELEMENT_NODE && last.textContent === label) {
+        parent.removeChild(last);
+      } else if (last && /\S/.test(last.textContent || "")) {
+        parent.appendChild(document.createTextNode(" "));
+      }
+      const link = node("a", "ai-cite", label);
+      link.href = source.url;
+      link.title = source.title || label;
+      parent.appendChild(link);
+      if (pendingSpace) parent.appendChild(pendingSpace);
+      return;
     }
     const reattachSpace = function () { if (pendingSpace) parent.appendChild(pendingSpace); };
     if (last && last.nodeType === Node.TEXT_NODE) {
@@ -73,7 +96,7 @@
       if (code) parent.appendChild(node("code", "", code.slice(1, -1)));
       else if (bold) parent.appendChild(node("strong", "", bold.slice(2, -2)));
       else if (italic) parent.appendChild(node("em", "", italic.slice(1, -1)));
-      else if (cite) linkCitation(parent, sources && sources[cite.slice(1, -1)]);
+      else if (cite) linkCitation(parent, sources && sources[cite.replace(/[\[\]]/g, "")]);
       last = offset + match.length;
       return match;
     });
@@ -141,11 +164,48 @@
     });
     flushParagraph();
     if (fence !== null) out.appendChild(fence); // an unfinished code block is shown as it streams
+    linkRecordNumbers(out, sources || {});
     return out;
   }
 
-  function plainText(text) {
-    return String(text || "").replace(/\[S\d+\]/g, "").replace(/[*`#>]/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  function linkRecordNumbers(fragment, sources) {
+    const numbered = Object.values(sources).filter(function (source) { return source.number && safeSource(source); });
+    if (!numbered.length) return;
+    const escaped = numbered.map(function (source) { return source.number.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); });
+    const pattern = new RegExp("(?<![\\w-])(" + escaped.join("|") + ")(?![\\w-])", "g");
+    const byNumber = {};
+    numbered.forEach(function (source) { byNumber[source.number] = source; });
+    const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(function (textNode) {
+      if (textNode.parentElement && textNode.parentElement.closest("a,code,pre")) return;
+      const text = textNode.textContent;
+      const replacements = document.createDocumentFragment();
+      let offset = 0;
+      text.replace(pattern, function (match, number, position) {
+        replacements.appendChild(document.createTextNode(text.slice(offset, position)));
+        const link = node("a", "ai-cite", number);
+        link.href = byNumber[number].url;
+        replacements.appendChild(link);
+        offset = position + match.length;
+        return match;
+      });
+      if (offset) {
+        replacements.appendChild(document.createTextNode(text.slice(offset)));
+        textNode.replaceWith(replacements);
+      }
+    });
+  }
+
+  function plainText(text, sources) {
+    return String(text || "").replace(/\[S\d+\]/g, function (marker) {
+      const source = sources && sources[marker.slice(1, -1)];
+      if (!source) return "";
+      const linked = safeSource(source);
+      const label = source.number || source.title || "Reference";
+      return linked ? label + " (" + new URL(linked.url, window.location.origin).href + ")" : label;
+    }).replace(/[*`#>]/g, "").replace(/\n{3,}/g, "\n\n").trim();
   }
 
   window.AIRender = { render: render, plainText: plainText };

@@ -22,6 +22,29 @@ ACTION_VERB = re.compile(
     r"\b(set|change|update|move|mark|assign\w*|unassign\w*|add\w*|post\w*|cancel\w*|close\w*|resolve\w*|reopen\w*)\b", re.I)
 
 
+def investigation_comment_draft(answer):
+    """Select the operator response without copying investigation sections."""
+    lines = answer.replace("\r\n", "\n").splitlines()
+    response = []
+    collecting = False
+    for line in lines:
+        heading = re.fullmatch(r"\s*(?:#{1,6}\s*)?(?:\*\*)?([A-Za-z][A-Za-z ]{1,79}?)(?:\*\*)?\s*:?(?:\*\*)?\s*", line)
+        label = heading.group(1).strip().lower() if heading else ""
+        is_heading = heading and (line.strip().endswith((":", ":**")) or line.lstrip().startswith("#"))
+        if label == "draft operator response":
+            collecting = True
+            continue
+        if is_heading:
+            if collecting:
+                break
+        if collecting:
+            response.append(line)
+    body = "\n".join(response).strip() if collecting else ""
+    if len(body) >= 2 and (body[0], body[-1]) in (("\"", "\""), ("“", "”")):
+        body = body[1:-1].strip()
+    return body if len(body) <= 10000 else ""
+
+
 def _visible_ticket(scope, number):
     return read_access.tickets(scope.identity).filter(db.func.upper(Ticket.number) == number.upper()).first()
 

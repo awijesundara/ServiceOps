@@ -1005,6 +1005,11 @@ def register(app):
                 db.session.commit()
                 flash("Notification preferences saved.", "success")
                 return redirect(url_for("preferences"))
+            from serviceops_core.localization import valid_language
+            language = request.form.get("language", pref.language or "en")
+            if not valid_language(language):
+                abort(400, description="Select a supported interface language.")
+            pref.language = language
             pref.theme = "light"
             pref.density = request.form.get("density", "comfortable")
             pref.font_scale = max(80, min(140, int(request.form.get("font_scale", 100))))

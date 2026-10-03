@@ -3,7 +3,7 @@
 {% block content %}<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>{{ 'Edit ' + ci.name if ci else 'New configuration item' }}</h1></div></header><form method="post" class="panel form-grid" data-track-dirty>
 <label><span class="field-label">Name{{ src('name') }}</span><input name="name" value="{{ (ci.name or '') if ci else '' }}" required></label>
 <label><span class="field-label">Class{{ src('ci_class') }}</span><input name="ci_class" value="{{ (ci.ci_class or '') if ci else '' }}" placeholder="Server, Database, Business Application…" required></label>
-<label class="wide">Description<textarea name="description" rows="2">{{ (ci.description or '') if ci else '' }}</textarea></label>
+<label class="wide">{{ t('Description') }}<textarea name="description" rows="2">{{ (ci.description or '') if ci else '' }}</textarea></label>
 <label><span class="field-label">Environment{{ src('environment') }}</span><select name="environment">{% for value in ['Production','Staging','Development','Test'] %}<option {% if ci and ci.environment==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
 <label><span class="field-label">Operational status{{ src('operational_status') }}</span><select name="operational_status">{% for value in ['Operational','Degraded','Down','Maintenance','Retired'] %}<option {% if ci and ci.operational_status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
 <label><span class="field-label">Lifecycle state{{ src('lifecycle_state') }}</span><select name="lifecycle_state">{% for value in ['Planned','In Use','Maintenance','Retired','Disposed'] %}<option {% if (ci.lifecycle_state if ci else 'In Use')==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
@@ -45,7 +45,7 @@
   <div class="ci-attr-rows">{% for key, value in (editable_attributes if editable_attributes is defined else {}).items() %}<div class="ci-attr-row"><input name="attr_key" value="{{ key }}" placeholder="Field name" aria-label="Field name"><input name="attr_value" value="{{ value }}" placeholder="Value" aria-label="Value for {{ key }}"><button type="button" class="link-button ci-attr-remove" aria-label="Remove {{ key }}">✕</button></div>{% endfor %}</div>
   <button type="button" class="button" id="ci-attr-add">+ Add field</button>
 </div>
-<div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">Cancel</a><button class="primary">{{ 'Save changes' if ci else 'Create CI' }}</button></div></form>
+<div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">{{ t('Cancel') }}</a><button class="primary">{{ 'Save changes' if ci else 'Create CI' }}</button></div></form>
 {% if ci %}
 {% if (ci.rack_id and ci.rack) or network_connections %}
 <section class="panel">
@@ -89,7 +89,7 @@
   </dl>
   {% if discovered.interfaces %}
   <h3>Interfaces<span class="badge">{{ discovered.interfaces|length }}</span></h3>
-  <div class="task-list-scroll"><table><thead><tr><th>Index</th><th>Description</th><th>MAC address</th></tr></thead><tbody>
+  <div class="task-list-scroll"><table><thead><tr><th>Index</th><th>{{ t('Description') }}</th><th>MAC address</th></tr></thead><tbody>
     {% for iface in discovered.interfaces %}<tr><td>{{ iface.index }}</td><td>{{ iface.descr }}</td><td>{{ iface.mac_address or '—' }}</td></tr>{% endfor %}
   </tbody></table></div>
   {% endif %}

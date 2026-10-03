@@ -1,20 +1,22 @@
 {% extends "base.html" %}{% block title %}Preferences · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">PERSONALIZATION</p><h1>System preferences</h1><p>Accessible, light-only workspace preferences for your account.</p></div><div class="record-actions"><a class="button" href="{{ url_for('my_sessions') }}">Review sessions</a><a class="button" href="{{ url_for('profile') }}">Edit profile</a></div></header>
+<header class="page-head"><div><p class="eyebrow">PERSONALIZATION</p><h1>{{ t('System preferences') }}</h1><p>Accessible, light-only workspace preferences for your account.</p></div><div class="record-actions"><a class="button" href="{{ url_for('my_sessions') }}">Review sessions</a><a class="button" href="{{ url_for('profile') }}">Edit profile</a></div></header>
 <form method="post" class="preferences-workspace">
   <nav class="preferences-nav" aria-label="Preference categories">
-    <button type="button" class="active" data-pref-tab="general">General</button>
+    <button type="button" class="active" data-pref-tab="general">{{ t('General') }}</button>
     <button type="button" data-pref-tab="lists">Lists</button>
     <button type="button" data-pref-tab="forms">Forms</button>
-    <button type="button" data-pref-tab="notifications">Notifications</button>
+    <button type="button" data-pref-tab="notifications">{{ t('Notifications') }}</button>
   </nav>
   <div class="preferences-content">
-    <section data-pref-panel="general"><h2>General</h2>
+    <section data-pref-panel="general"><h2>{{ t('General') }}</h2>
+      <label for="preferred-language">{{ t('Language') }}<select id="preferred-language" name="language">{% for code, name in language_options %}<option value="{{ code }}" lang="{{ code }}" dir="auto"{% if pref.language == code %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+      <small class="muted">Bundled offline translations cover common labels. Other interface text remains in English. Record content is kept in its original language.</small>
       <div class="preference-row"><div><strong>High contrast</strong><small>Increase separation between controls and surfaces.</small></div><label class="switch"><input type="checkbox" name="high_contrast" aria-label="High contrast" {% if pref.high_contrast %}checked{% endif %}><span></span></label></div>
       <div class="preference-row"><div><strong>Accessible tooltips</strong><small>Show explanatory help for unfamiliar controls.</small></div><label class="switch"><input type="checkbox" name="accessible_tooltips" aria-label="Accessible tooltips" {% if pref.accessible_tooltips %}checked{% endif %}><span></span></label></div>
       <div class="preference-row"><div><strong>Reduce motion</strong><small>Minimize interface animation.</small></div><label class="switch"><input type="checkbox" name="reduced_motion" aria-label="Reduce motion" {% if pref.reduced_motion %}checked{% endif %}><span></span></label></div>
       <div class="preference-row"><div><strong>Keyboard shortcuts</strong><small>Enable supported navigation shortcuts.</small></div><label class="switch"><input type="checkbox" name="keyboard_shortcuts" aria-label="Keyboard shortcuts" {% if pref.keyboard_shortcuts %}checked{% endif %}><span></span></label></div>
-      <label>Start page<select name="start_page"><option value="/">Dashboard</option><option value="/task-board" {% if pref.start_page=='/task-board' %}selected{% endif %}>Visual task board</option><option value="/modules" {% if pref.start_page=='/modules' %}selected{% endif %}>All workspaces</option></select></label>
+      <label>Start page<select name="start_page"><option value="/">{{ t('Dashboard') }}</option><option value="/task-board" {% if pref.start_page=='/task-board' %}selected{% endif %}>Visual task board</option><option value="/modules" {% if pref.start_page=='/modules' %}selected{% endif %}>All workspaces</option></select></label>
     </section>
     <section data-pref-panel="lists" hidden><h2>Lists</h2>
       <div class="preference-row"><div><strong>Compact list date and time</strong><small>Use shorter timestamps in operational lists.</small></div><label class="switch"><input type="checkbox" name="compact_dates" aria-label="Compact list date and time" {% if pref.compact_dates %}checked{% endif %}><span></span></label></div>
@@ -37,14 +39,14 @@
       {% for row in personal_connections %}<article class="personal-channel"><div><strong>{{ row.name }}</strong><small>{{ provider_labels.get(row.kind,row.kind) }} · {{ row.event_types|length }} event types · {{ 'Active' if row.active else 'Paused' }}</small></div><div class="record-actions"><button name="action" value="test_personal_channel:{{ row.id }}">Send test</button><button name="action" value="toggle_personal_channel:{{ row.id }}">{{ 'Pause' if row.active else 'Enable' }}</button><button name="action" value="delete_personal_channel:{{ row.id }}" class="danger">Remove</button></div></article>{% else %}<p class="muted">You have no personal chat destination yet.</p>{% endfor %}
       </div>
       <details class="personal-channel-add"><summary>Add a personal chat destination</summary>
-        <div class="detail-grid"><label>Name<input name="name" maxlength="160" placeholder="My Telegram"></label><label>Provider<select name="kind"><option value="telegram">Telegram bot</option><option value="google_chat">Google Chat</option><option value="slack">Slack</option><option value="teams">Microsoft Teams</option><option value="discord">Discord</option></select></label></div>
+        <div class="detail-grid"><label>{{ t('Name') }}<input name="name" maxlength="160" placeholder="My Telegram"></label><label>Provider<select name="kind"><option value="telegram">Telegram bot</option><option value="google_chat">Google Chat</option><option value="slack">Slack</option><option value="teams">Microsoft Teams</option><option value="discord">Discord</option></select></label></div>
         <label>Webhook URL<input type="url" name="endpoint" placeholder="Required except for Telegram"></label>
         <div class="detail-grid"><label>Telegram bot token<input type="password" name="secret" autocomplete="new-password"></label><label>Telegram chat ID<input name="chat_id" maxlength="120"></label></div>
         <fieldset class="subscription-picker"><legend>Notify me for</legend><div class="subscription-grid">{% for pattern,label,description in personal_event_subscriptions %}<label class="subscription-option"><input type="checkbox" name="event_types" value="{{ pattern }}"><span><strong>{{ label }}</strong><small>{{ description }}</small></span></label>{% endfor %}</div></fieldset>
         <button type="submit" name="action" value="create_personal_channel" class="primary">Add my destination</button>
       </details>
     </section>
-    <footer><span>Theme is governed as light-only.</span><button class="primary">Save preferences</button></footer>
+    <footer><span>Theme is governed as light-only.</span><button class="primary">{{ t('Save preferences') }}</button></footer>
   </div>
 </form>
 {% endblock %}

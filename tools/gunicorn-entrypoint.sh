@@ -11,6 +11,7 @@ else
 fi
 
 exec gunicorn \
+  --config /app/gunicorn.conf.py \
   ${PRELOAD_FLAG} \
   --bind "0.0.0.0:8080" \
   --workers "${GUNICORN_WORKERS:-2}" \

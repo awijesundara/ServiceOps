@@ -4,9 +4,9 @@
 <header class="page-head"><div><p class="eyebrow">SERVICE OPERATIONS</p><h1>Good day, {{ current_user.name.split()[0] }}</h1><p>Here’s what’s happening across your service desk.</p></div>
 <a class="primary button" href="{{ url_for('ticket_new', kind='incident') }}">+ Report an incident</a></header>
 <section class="stats" data-tour="dashboard-stats">
-  <a href="{{ url_for('tickets', kind='incident') }}" class="{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}stat-alert{% endif %}"><span>Incidents</span><strong>{{ counts.incident }}</strong>{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}<small class="stat-alert-text">P1: {{ incident_priority_counts.p1 }} · P2: {{ incident_priority_counts.p2 }}</small>{% else %}<small>View queue →</small>{% endif %}</a>
+  <a href="{{ url_for('tickets', kind='incident') }}" class="{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}stat-alert{% endif %}"><span>{{ t('Incidents') }}</span><strong>{{ counts.incident }}</strong>{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}<small class="stat-alert-text">P1: {{ incident_priority_counts.p1 }} · P2: {{ incident_priority_counts.p2 }}</small>{% else %}<small>View queue →</small>{% endif %}</a>
   <a href="{{ url_for('requests_list') }}"><span>Requests</span><strong>{{ counts.request }}</strong><small>View REQ / RITM →</small></a>
-  <a href="{{ url_for('tickets', kind='change') }}"><span>Changes</span><strong>{{ counts.change }}</strong><small>View schedule →</small></a>
+  <a href="{{ url_for('tickets', kind='change') }}"><span>{{ t('Changes') }}</span><strong>{{ counts.change }}</strong><small>View schedule →</small></a>
   <a href="{{ url_for('open_work') }}"><span>Open work</span><strong>{{ open_count }}</strong><small>Needs attention →</small></a>
 </section>
 
@@ -14,7 +14,7 @@
 <section class="panel">
   <div class="panel-head"><div><h2>Assigned to me</h2><p>Open tickets where you are the assignee</p></div></div>
   {% if my_assigned %}
-  <table><thead><tr><th>Number</th><th>Summary</th><th>State</th><th>Priority</th></tr></thead>
+  <table><thead><tr><th>Number</th><th>Summary</th><th>State</th><th>{{ t('Priority') }}</th></tr></thead>
   <tbody>{% for t in my_assigned %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td><span class="badge">{{ t.state }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td></tr>{% endfor %}</tbody></table>
   {% else %}<p class="muted">Nothing is currently assigned to you.</p>{% endif %}
 </section>
@@ -44,7 +44,7 @@
 <section class="panel">
   <div class="panel-head"><div><h2>Recently updated</h2><p>Your latest service activity</p></div></div>
   {% if recent %}
-  <table><thead><tr><th>Number</th><th>Summary</th><th>State</th><th>Priority</th><th>Updated</th></tr></thead>
+  <table><thead><tr><th>Number</th><th>Summary</th><th>State</th><th>{{ t('Priority') }}</th><th>Updated</th></tr></thead>
   <tbody>{% for t in recent %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td><span class="badge">{{ t.state }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td><td>{{ (t.updated_at|usertime('%b %d, %H:%M')) }}</td></tr>{% endfor %}</tbody></table>
   {% else %}<div class="empty"><h3>No activity yet</h3><p>Create an incident or service request to get started.</p></div>{% endif %}
 </section>

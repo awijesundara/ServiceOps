@@ -27,7 +27,7 @@
       <input type="hidden" name="action" value="create_catalog_item">
       <label>Item name<input name="name" maxlength="160" required></label>
       <label>Category<input name="category" maxlength="80" placeholder="Hardware, Software, Access…" required></label>
-      <label class="wide">Description<textarea name="description" rows="3" required></textarea></label>
+      <label class="wide">{{ t('Description') }}<textarea name="description" rows="3" required></textarea></label>
       <label>Delivery target (days)<input name="delivery_days" type="number" min="1" max="365" value="3" required></label>
       <label>Fulfillment team<select name="group_id" required>{% for group in fulfillment_groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></label>
       <label class="check"><input type="checkbox" name="approval_required" value="1"> Approval required</label>
@@ -45,13 +45,13 @@
         <td>{{ item.delivery_days }} days · {{ "Approval required" if item.approval_required else "No approval" }} · {{ "Active" if item.active else "Inactive" }}</td>
         <td>{{ item.fulfillment_route.support_group.name if item.fulfillment_route and item.fulfillment_route.active else "Service Desk fallback" }}</td>
         <td>
-          <details><summary>Edit</summary>
+          <details><summary>Rename / settings</summary>
             <form method="post" action="{{ post_url }}" class="form-grid">
               <input type="hidden" name="action" value="update_catalog_item">
               <input type="hidden" name="catalog_item_id" value="{{ item.id }}">
-              <label>Name<input name="name" maxlength="160" value="{{ item.name }}" required></label>
+              <label>{{ t('Name') }}<input name="name" maxlength="160" value="{{ item.name }}" required></label>
               <label>Category<input name="category" maxlength="80" value="{{ item.category }}" required></label>
-              <label class="wide">Description<textarea name="description" rows="3" required>{{ item.description }}</textarea></label>
+              <label class="wide">{{ t('Description') }}<textarea name="description" rows="3" required>{{ item.description }}</textarea></label>
               <label>Delivery days<input name="delivery_days" type="number" min="1" max="365" value="{{ item.delivery_days }}" required></label>
               <label>Fulfillment team<select name="group_id" required>{% for group in fulfillment_groups %}<option value="{{ group.id }}" {% if item.fulfillment_route and item.fulfillment_route.support_group_id == group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
               <label class="check"><input type="checkbox" name="approval_required" value="1" {% if item.approval_required %}checked{% endif %}> Approval required</label>
@@ -130,7 +130,7 @@
     <tbody>
       {% for team in teams %}
       <tr>
-        <td><strong>{{ team.name }}</strong></td>
+        <td><form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="rename_support_group"><input type="hidden" name="group_id" value="{{ team.id }}"><input name="name" value="{{ team.name }}" required maxlength="120" aria-label="Team name for {{ team.name }}"><button class="button">Rename</button></form></td>
         <td>{{ team.manager.name if team.manager else "Unassigned" }}</td>
         <td>
           <form method="post" action="{{ post_url }}" class="inline-form">
@@ -142,16 +142,16 @@
               <option value="{{ user.id }}" {% if team.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
               {% endfor %}
             </select>
-            <button class="button">Save</button>
+            <button class="button">{{ t('Save') }}</button>
           </form>
         </td>
         <td>{{ team.members|length }}</td>
         <td>
-          <details><summary>Edit</summary>
+          <details><summary>Rename / settings</summary>
             <form method="post" action="{{ post_url }}" class="stack compact-form">
               <input type="hidden" name="action" value="update_support_group">
               <input type="hidden" name="group_id" value="{{ team.id }}">
-              <label><span>Name</span><input name="name" value="{{ team.name }}" required maxlength="120"></label>
+              <label><span>{{ t('Name') }}</span><input name="name" value="{{ team.name }}" required maxlength="120"></label>
               <label><span>Type</span><select name="group_type">{% for kind in ['IT Fulfillment','Fulfillment','Executive'] %}<option {% if team.group_type == kind %}selected{% endif %}>{{ kind }}</option>{% endfor %}</select></label>
               <label class="check"><input type="checkbox" name="active" {% if team.active %}checked{% endif %}> Active</label>
               <button class="button">Update</button>
@@ -162,44 +162,33 @@
       {% endfor %}
     </tbody>
   </table>
+  {% if team_rename_history %}<small class="muted">{% for entry in team_rename_history %}{{ entry.created_at|usertime('%b %d, %H:%M') }} · {{ entry.details }}{% if not loop.last %}<br>{% endif %}{% endfor %}</small>{% endif %}
 </section>
 {% endif %}
 
 {% if section == 'executive-approval' %}
 <section class="panel admin-section">
-  <p class="muted">The named user here is required to approve every Normal/Emergency change alongside CCB authorization and the owning/CI-owner team managers.</p>
-  <table>
-    <thead><tr><th>Current executive approver</th><th>Assignment</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>{{ executive_office.manager.name if executive_office.manager else "Unassigned" }}</td>
-        <td>
-          <form method="post" action="{{ post_url }}" class="inline-form">
-            <input type="hidden" name="action" value="set_manager">
-            <input type="hidden" name="group_id" value="{{ executive_office.id }}">
-            <select name="manager_id" aria-label="Executive approver">
-              <option value="">Unassigned</option>
-              {% for user in manager_candidates %}
-              <option value="{{ user.id }}" {% if executive_office.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
-              {% endfor %}
-            </select>
-            <button class="button">Save</button>
-          </form>
-        </td>
-      </tr>
-    </tbody>
-  </table>
+  <p class="muted">Choose the executives who can approve Normal and Emergency changes.</p>
+  <form method="post" action="{{ post_url }}" class="stack">
+    <input type="hidden" name="action" value="set_executive_approvers">
+    <fieldset><legend>Executive approvers</legend>
+      {% for user in manager_candidates %}<label class="check"><input type="checkbox" name="user_ids" value="{{ user.id }}" {% if user.id in executive_approver_ids %}checked{% endif %}> {{ user.name }} <small class="muted">{{ user.username }}</small></label>{% endfor %}
+    </fieldset>
+    <label>Approval rule<select name="approval_mode"><option value="all" {% if executive_office.approval_mode == 'all' %}selected{% endif %}>Every selected executive</option><option value="any" {% if executive_office.approval_mode == 'any' %}selected{% endif %}>Any one selected executive</option></select></label>
+    <div><button class="primary">Save executive approvers</button></div>
+  </form>
 </section>
 {% endif %}
 
 {% if section == 'governance-groups' %}
 <section class="panel admin-section">
-  <p class="muted">Review accountable groups, their type, manager, and current membership -- see who's actually in each group by name, and add or remove members manually here at any time. AD-managed memberships (added by directory sync from an AD group mapping) are labeled; manually-added members are independent of AD and won't be removed by a future sync.</p>
+  <p class="muted">Manage team members. Directory-managed memberships are marked.</p>
   {% for group in groups %}
   <details class="panel admin-section" style="margin-bottom:14px">
     <summary><strong>{{ group.name }}</strong> <span class="muted">{{ group.group_type }} · manager {{ group.manager.name if group.manager else "Unassigned" }} · {{ group.members|length }} member(s)</span></summary>
+    {% if group.name not in ['Change Control Board', 'Executive Office'] %}<form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="rename_support_group"><input type="hidden" name="group_id" value="{{ group.id }}"><label>Group name<input name="name" value="{{ group.name }}" maxlength="120" required></label><button class="button">Rename</button></form>{% endif %}
     <table>
-      <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Source</th><th></th></tr></thead>
+      <thead><tr><th>{{ t('Name') }}</th><th>Username</th><th>Role</th><th>Source</th><th></th></tr></thead>
       <tbody>
         {% for member in group.members %}
         <tr>
@@ -208,7 +197,7 @@
           <td>{{ member.role }}</td>
           <td>{% if (group.id, member.user_id) in directory_managed_member_keys %}<span class="badge">AD-managed</span>{% else %}<span class="muted">Manual</span>{% endif %}</td>
           <td>
-            {% if member.role not in ('manager', 'CCB approver') %}
+            {% if member.role not in ('manager', 'CCB approver', 'executive approver') %}
             <form method="post" action="{{ post_url }}">
               <input type="hidden" name="action" value="remove_group_member">
               <input type="hidden" name="member_id" value="{{ member.id }}">
@@ -225,7 +214,7 @@
     <form method="post" action="{{ post_url }}" class="inline-form">
       <input type="hidden" name="action" value="add_group_member">
       <input type="hidden" name="group_id" value="{{ group.id }}">
-      <select name="user_id" required>
+      <select name="user_id" aria-label="Add member to {{ group.name }}" required>
         <option value="" disabled selected>Add a member manually…</option>
         {% for user in manager_candidates %}<option value="{{ user.id }}">{{ user.name }} ({{ user.username }})</option>{% endfor %}
       </select>
@@ -233,6 +222,7 @@
     </form>
   </details>
   {% endfor %}
+  {% if team_rename_history %}<small class="muted">{% for entry in team_rename_history %}{{ entry.created_at|usertime('%b %d, %H:%M') }} · {{ entry.details }}{% if not loop.last %}<br>{% endif %}{% endfor %}</small>{% endif %}
 </section>
 {% endif %}
 
@@ -366,11 +356,11 @@
   <article class="config-row" style="flex-direction:column;align-items:stretch;gap:8px">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div><strong>{{ category.name }}</strong>{% if not category.active %}<small class="muted"> · inactive</small>{% endif %}</div>
-      <details><summary>Edit</summary>
+      <details><summary>Rename / settings</summary>
         <form method="post" action="{{ post_url }}" class="stack compact-form">
           <input type="hidden" name="action" value="update_ticket_category">
           <input type="hidden" name="category_id" value="{{ category.id }}">
-          <label><span>Name</span><input name="name" value="{{ category.name }}" required maxlength="80"></label>
+          <label><span>{{ t('Name') }}</span><input name="name" value="{{ category.name }}" required maxlength="80"></label>
           <label class="check"><input type="checkbox" name="active" {% if category.active %}checked{% endif %}> Active</label>
           <button class="button">Update</button>
         </form>
@@ -383,11 +373,11 @@
           <td>{{ subcategory.name }}{% if not subcategory.active %} <small class="muted">(inactive)</small>{% endif %}</td>
           <td>{{ subcategory.default_service_offering.name if subcategory.default_service_offering else "—" }}</td>
           <td>
-            <details><summary>Edit</summary>
+            <details><summary>Rename / settings</summary>
               <form method="post" action="{{ post_url }}" class="stack compact-form">
                 <input type="hidden" name="action" value="update_ticket_subcategory">
                 <input type="hidden" name="subcategory_id" value="{{ subcategory.id }}">
-                <label><span>Name</span><input name="name" value="{{ subcategory.name }}" required maxlength="80"></label>
+                <label><span>{{ t('Name') }}</span><input name="name" value="{{ subcategory.name }}" required maxlength="80"></label>
                 <label><span>Suggests service offering</span><select name="default_service_offering_id"><option value="">None</option>{% for service in services %}<option value="{{ service.id }}" {% if subcategory.default_service_offering_id == service.id %}selected{% endif %}>{{ service.name }}</option>{% endfor %}</select></label>
                 <label class="check"><input type="checkbox" name="active" {% if subcategory.active %}checked{% endif %}> Active</label>
                 <button class="button">Update</button>
@@ -416,7 +406,7 @@
   <details><summary>Add business schedule</summary>
     <form method="post" action="{{ post_url }}" class="form-grid">
       <input type="hidden" name="action" value="create_business_schedule">
-      <label>Name<input name="name" maxlength="160" required></label>
+      <label>{{ t('Name') }}<input name="name" maxlength="160" required></label>
       <label>IANA timezone<input name="timezone_name" value="Asia/Tokyo" placeholder="Australia/Sydney" required></label>
       <label>Start time<input type="time" name="start_time" value="09:00" required></label>
       <label>End time<input type="time" name="end_time" value="17:00" required></label>
@@ -432,11 +422,11 @@
   <details><summary>Add SLA definition</summary>
     <form method="post" action="{{ post_url }}" class="form-grid">
       <input type="hidden" name="action" value="create_sla_definition">
-      <label>Name<input name="name" maxlength="160" required></label>
+      <label>{{ t('Name') }}<input name="name" maxlength="160" required></label>
       <label>Agreement type<span class="info-tip" tabindex="0" data-tip="SLA: customer-facing commitment. OLA: internal agreement between two support teams. UC: underpinning contract with an external vendor.">i</span><select name="agreement_type">{% for value in ['SLA','OLA','UC'] %}<option>{{ value }}</option>{% endfor %}</select></label>
       <label>Counterparty (OLA/UC only)<input name="counterparty" placeholder="Team name or vendor"></label>
       <label>Target<select name="target_type" id="sla-target-type"><option value="ticket">Ticket</option><option value="ritm">Requested item</option><option value="client_ticket">Customer ticket (Client Management)</option></select></label>
-      <label>Priority<select name="priority"><option value="">All</option><optgroup label="Incidents/changes">{% for value in ['P1','P2','P3','P4'] %}<option>{{ value }}</option>{% endfor %}</optgroup><optgroup label="Customer tickets">{% for value in ['Low','Normal','High','Urgent'] %}<option>{{ value }}</option>{% endfor %}</optgroup></select></label>
+      <label>{{ t('Priority') }}<select name="priority"><option value="">All</option><optgroup label="Incidents/changes">{% for value in ['P1','P2','P3','P4'] %}<option>{{ value }}</option>{% endfor %}</optgroup><optgroup label="Customer tickets">{% for value in ['Low','Normal','High','Urgent'] %}<option>{{ value }}</option>{% endfor %}</optgroup></select></label>
       <label id="sla-client-org-field" class="wide" hidden>Organization override<span class="info-tip" tabindex="0" data-tip="Only used for customer tickets. Leave unselected for the tenant-wide default; select an organization to override it for that organization's tickets specifically, for this same priority.">i</span><select name="client_organization_id"><option value="">Tenant-wide default</option>{% for org in client_organizations %}<option value="{{ org.id }}">{{ org.name }}</option>{% endfor %}</select></label>
       <label>Duration (business minutes)<input type="number" name="duration_minutes" min="1" max="525600" required></label>
       <label>Calendar<select name="schedule_id"><option value="">24x7 wall clock</option>{% for schedule in business_schedules %}<option value="{{ schedule.id }}">{{ schedule.name }}</option>{% endfor %}</select></label>
@@ -444,7 +434,7 @@
       <div class="wide actions"><button class="primary">Create agreement</button></div>
     </form>
   </details>
-  <table><thead><tr><th>Name</th><th>Type</th><th>Target</th><th>Priority</th><th>Duration</th><th>Calendar</th><th>Pause states</th></tr></thead>
+  <table><thead><tr><th>{{ t('Name') }}</th><th>Type</th><th>Target</th><th>{{ t('Priority') }}</th><th>Duration</th><th>Calendar</th><th>Pause states</th></tr></thead>
     <tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td><span class="badge">{{ sla.agreement_type }}</span>{% if sla.counterparty %} {{ sla.counterparty }}{% endif %}</td><td>{{ sla.target_type }}{% if sla.client_organization %} · {{ sla.client_organization.name }}{% endif %}</td><td>{{ sla.priority or "All" }}</td><td>{{ sla.duration_minutes }} minutes</td><td>{{ sla.schedule.name if sla.schedule else "24x7" }}</td><td>{{ sla.pause_states }}</td></tr>{% endfor %}</tbody>
   </table>
 </section>

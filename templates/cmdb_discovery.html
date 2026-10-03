@@ -6,7 +6,7 @@
 <section class="panel">
   <h2>Add a discovery target</h2>
   <form method="post" action="{{ url_for('cmdb_discovery_add') }}" class="form-grid">
-    <label><span>Name</span><input name="name" required maxlength="160" placeholder="Core switch stack"></label>
+    <label><span>{{ t('Name') }}</span><input name="name" required maxlength="160" placeholder="Core switch stack"></label>
     <label><span>Target type</span><select name="target_type" id="discovery-target-type"><option value="host">Single host</option><option value="subnet">Subnet (CIDR)</option></select></label>
     <label><span>Address</span><input name="address" required placeholder="10.0.1.1 or 10.0.1.0/24"></label>
     <label><span>SNMP version</span><select name="snmp_version"><option value="2c">v2c</option><option value="3">v3</option></select></label>

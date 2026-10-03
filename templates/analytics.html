@@ -39,7 +39,7 @@
 
   <section class="panel">
     <h2>Mean time to resolve <small class="muted">· incidents, last 30 days</small></h2>
-    <table><thead><tr><th>Priority</th><th>Avg. hours to resolve</th></tr></thead><tbody>
+    <table><thead><tr><th>{{ t('Priority') }}</th><th>Avg. hours to resolve</th></tr></thead><tbody>
       {% for priority, hours in mttr_by_priority.items() %}
       <tr><td><span class="priority {{ priority|lower }}">{{ priority }}</span></td><td>{% if hours is not none %}{{ hours }}h{% else %}<span class="muted">No resolved {{ priority }} incidents</span>{% endif %}</td></tr>
       {% endfor %}
@@ -49,7 +49,7 @@
   <section class="panel">
     <h2>Incidents by closure category <small class="muted">· last 30 days</small></h2>
     {% if closure_category_counts %}
-    <table><thead><tr><th>Category at closure</th><th>Incidents</th></tr></thead><tbody>
+    <table><thead><tr><th>Category at closure</th><th>{{ t('Incidents') }}</th></tr></thead><tbody>
       {% for category, count in closure_category_counts %}<tr><td>{{ category }}</td><td>{{ count }}</td></tr>{% endfor %}
     </tbody></table>
     <p class="muted">{% if recategorised_pct is not none %}{{ recategorised_pct }}% of incidents with a recorded closure category were closed under a different category than logged.{% else %}Closure categories are recorded on incidents resolved from now on; older incidents are counted by their logging category.{% endif %}</p>
@@ -110,7 +110,7 @@
   <section class="panel table-panel">
     <h2>Service availability<span class="info-tip" tabindex="0" data-tip="Uptime over the trailing 30 days, computed from outage windows auto-derived from High/Critical impact incidents on each service's linked CIs. A service with no CI links or no incidents shows 100%.">i</span> <small class="muted">· trailing 30 days</small></h2>
     {% if service_availability %}
-    <table><thead><tr><th>Service</th><th>Uptime</th><th>Status</th><th>Last outage</th></tr></thead><tbody>
+    <table><thead><tr><th>Service</th><th>Uptime</th><th>{{ t('Status') }}</th><th>Last outage</th></tr></thead><tbody>
       {% for row in service_availability %}
       <tr>
         <td><strong>{{ row.service.name }}</strong><small>{{ row.service.criticality }} criticality</small></td>

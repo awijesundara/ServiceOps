@@ -78,7 +78,8 @@ def collect_evidence(identity, ticket_id, scanner=None):
         source_id = f"S{len(sources) + 1}"
         # Judged on the original text above; other people's contact details are never needed for an answer.
         title, body = mask_pii(redact(title))[:180], (redact(body) if kind == "knowledge" else mask_pii(redact(body)))[:5000]
-        sources.append({"id": source_id, "kind": kind, "record_id": row.id, "title": title})
+        sources.append({"id": source_id, "kind": kind, "record_id": row.id, "title": title,
+                        "number": row.number if kind == "ticket" else ""})
         evidence.append({"source": source_id, "kind": kind, "title": title, "text": body})
 
     comments = Comment.query.filter_by(tenant_id=identity.tenant_id, ticket_id=ticket.id).order_by(

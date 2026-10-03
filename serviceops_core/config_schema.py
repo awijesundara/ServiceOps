@@ -106,6 +106,11 @@ SETTING_DEFINITIONS = {
         {"key": "KEYCLOAK_ROLE_MAPPINGS", "label": "Keycloak realm-role mappings", "type": "json", "default": "{}", "live": True},
     ],
     "security": [
+        {"key": "SYSLOG_ENABLED", "label": "Forward application logs to syslog", "type": "bool", "default": "false", "live": False},
+        {"key": "SYSLOG_HOST", "label": "Syslog server", "type": "text", "default": "", "live": False},
+        {"key": "SYSLOG_PORT", "label": "Syslog port", "type": "int", "default": "514", "min": 1, "max": 65535, "live": False},
+        {"key": "SYSLOG_TRANSPORT", "label": "Syslog transport", "type": "choice", "choices": ["udp", "tcp", "tls"], "default": "udp", "live": False},
+        {"key": "SYSLOG_LEVEL", "label": "Forward logs at or above", "type": "choice", "choices": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], "default": "WARNING", "live": False},
         {"key": "ENABLE_HSTS", "label": "Enable HSTS", "type": "bool", "default": "false", "live": True},
         {"key": "SESSION_HOURS", "label": "Session lifetime in hours", "type": "int", "default": "8", "min": 1, "max": 168, "live": False},
         {"key": "PASSWORD_MIN_LENGTH", "label": "Minimum local password length", "type": "int", "default": "14", "min": 8, "max": 64, "live": True},
