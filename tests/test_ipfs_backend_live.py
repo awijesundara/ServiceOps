@@ -18,6 +18,7 @@ this suite guards against a regression reintroducing either.
 """
 import os
 import time
+import uuid
 
 import pytest
 from cryptography.fernet import Fernet
@@ -29,6 +30,12 @@ API_URL = os.environ.get("IPFS_LIVE_TEST_API_URL", "")
 pytestmark = pytest.mark.skipif(
     not API_URL, reason="set IPFS_LIVE_TEST_API_URL to a real Kubo node to run this suite"
 )
+
+
+@pytest.fixture(autouse=True)
+def isolated_checkpoint_name(monkeypatch):
+    monkeypatch.setattr("serviceops_core.storage.ipfs_backend.CHECKPOINT_KEY_NAME",
+                        "serviceops-test-" + uuid.uuid4().hex)
 
 
 def wait_for_checkpoint_publication(backend, timeout=30):
@@ -77,3 +84,21 @@ def test_publish_does_not_hang_on_a_node_with_no_swarm_peers():
     backend = IPFSStorageBackend(api_url=API_URL, checkpoint_encryption_key=key)
     backend.load_checkpoint()
     backend.attach_file("timing.txt", b"data", "text/plain")
+
+
+def test_wrong_key_cannot_replace_existing_live_checkpoint():
+    key = Fernet.generate_key()
+    backend = IPFSStorageBackend(api_url=API_URL, checkpoint_encryption_key=key)
+    backend.load_checkpoint()
+    cid = backend.attach_file("preserved.txt", b"existing evidence", "text/plain")
+    wait_for_checkpoint_publication(backend)
+    pointer = backend.client.name_resolve(backend._checkpoint_name)
+    wrong = IPFSStorageBackend(api_url=API_URL, checkpoint_encryption_key=Fernet.generate_key())
+    with pytest.raises(RuntimeError, match="recovery is required"):
+        wrong.load_checkpoint()
+    with pytest.raises(RuntimeError, match="writes are blocked"):
+        wrong.save_checkpoint()
+    assert backend.client.name_resolve(backend._checkpoint_name) == pointer
+    restored = IPFSStorageBackend(api_url=API_URL, checkpoint_encryption_key=key)
+    restored.load_checkpoint()
+    assert restored.read_file("preserved.txt", cid)[0] == b"existing evidence"

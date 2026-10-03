@@ -68,7 +68,10 @@ client with `X-ServiceOps-App-Version`, `X-ServiceOps-App-Build`,
 `som_` access token and rotating 30-day `sor_` refresh token. Store both only in
 the platform secure credential store. Refresh through `POST
 /api/v1/auth/mobile/refresh` and revoke through `POST
-/api/v1/auth/mobile/logout`. Mobile activity is authorized as the signed-in
+/api/v1/auth/mobile/logout`. Password changes revoke previously issued mobile
+access and refresh tokens. Deactivating the account or its organization also
+blocks authentication. Existing mobile sessions retain their current credential
+version during migration. Mobile activity is authorized as the signed-in
 user and audited with authoritative user and app/device attribution.
 
 Ticket attachment access uses the same bearer identity and `tickets:read`
@@ -403,7 +406,10 @@ agent run (cron, Puppet, systemd timer). The Configuration Item is matched by
 `name` within the acting API client's tenant: the first call creates it
 (`201`), every later call updates the same row (`200`). Only `name`,
 `ci_class`, `environment`, `operational_status`, and `ip_address` are
-accepted; unknown fields are rejected with `400`.
+accepted; unknown fields are rejected with `400`. Input values must be strings;
+`name`, `ci_class` and `ip_address` are limited to 160, 80 and 60 characters
+respectively. Overlong names are rejected rather than truncated, preserving
+the exact tenant-scoped matching key.
 
 A ready-to-use POSIX shell agent lives at `tools/cmdb_sync_agent.sh` (curl and
 standard Linux tools only — no facter, no Puppet module dependency), with an

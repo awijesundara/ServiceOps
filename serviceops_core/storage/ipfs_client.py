@@ -66,18 +66,13 @@ class IPFSClient:
         return response.json()["Id"]
 
     def name_publish(self, cid, key_name):
-        # allow-offline=true is required: found via real testing -- without
-        # it, Kubo's default IPNS publish tries to provide the record to
-        # the public DHT and can hang for 30s+ (our request timeout) on a
-        # node with few/no swarm peers, which every "bundled" (single,
-        # private, self-hosted) IPFS node is by design. The checkpoint
-        # pointer only ever needs to be resolved by this same app talking
-        # to this same local node, not discovered by the wider public
-        # network, so skipping DHT provide is the correct choice here, not
-        # just a workaround.
+        # Checkpoint names are resolved on this node. Kubo's documented
+        # offline option saves the signed record locally without broadcasting;
+        # allow-offline permits that operation. Both are required: merely
+        # allowing offline mode does not disable online DHT publication.
         self._post(
             "/api/v0/name/publish",
-            params={"arg": f"/ipfs/{cid}", "key": key_name, "allow-offline": "true"},
+            params={"arg": f"/ipfs/{cid}", "key": key_name, "allow-offline": "true", "offline": "true"},
             timeout=120.0,
         )
 
@@ -104,8 +99,15 @@ class IPFSClient:
                     "dht-timeout": "2s",
                 },
             )
-        except httpx.HTTPStatusError:
-            return None
+        except httpx.HTTPStatusError as error:
+            try:
+                payload = error.response.json()
+            except ValueError:
+                raise error
+            if (error.response.status_code == 500 and isinstance(payload, dict)
+                    and payload.get("Message") in ("could not resolve name", "record was not found")):
+                return None
+            raise
         path = response.json().get("Path", "")
         return path.removeprefix("/ipfs/") if path.startswith("/ipfs/") else None
 

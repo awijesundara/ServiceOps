@@ -128,3 +128,89 @@ def test_tunnel_is_cleared_even_when_the_block_raises():
         pass
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", 1), timeout=1)
+
+
+def test_https_proxy_never_sends_connect_or_credentials_to_plaintext_peer():
+    captured = []
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    listener.listen(1)
+    def receive():
+        conn, _ = listener.accept()
+        with conn:
+            captured.append(conn.recv(4096))
+    thread = threading.Thread(target=receive, daemon=True)
+    thread.start()
+    try:
+        with tunnel_through_proxy(f'https://synthetic:password@127.0.0.1:{listener.getsockname()[1]}'):
+            with pytest.raises(OSError):
+                socket.create_connection(('smtp.example.test', 587), timeout=2)
+        thread.join(timeout=3)
+        assert captured and captured[0][0] == 0x16
+        assert b'CONNECT' not in captured[0] and b'Proxy-Authorization' not in captured[0]
+    finally:
+        listener.close()
+
+
+def test_https_proxy_supports_verified_outer_and_destination_tls(tmp_path, monkeypatch):
+    import datetime
+    import ipaddress
+    import ssl
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+    from urllib3.util.ssltransport import SSLTransport
+    import serviceops_core.proxy_tunnel as tunnel
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'localhost')])
+    current = datetime.datetime.now(datetime.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(subject).issuer_name(subject).public_key(key.public_key())
+            .serial_number(x509.random_serial_number()).not_valid_before(current - datetime.timedelta(minutes=1))
+            .not_valid_after(current + datetime.timedelta(hours=1))
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName('smtp.example.test'),
+                                                       x509.IPAddress(ipaddress.ip_address('127.0.0.1'))]), critical=False)
+            .sign(key, hashes.SHA256()))
+    cert_file, key_file = tmp_path / 'cert.pem', tmp_path / 'key.pem'
+    cert_file.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_file.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                           serialization.NoEncryption()))
+    server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_context.load_cert_chain(cert_file, key_file)
+    client_context = ssl.create_default_context(cafile=str(cert_file))
+    monkeypatch.setattr(tunnel.ssl, 'create_default_context', lambda: client_context)
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    listener.listen(1)
+    errors = []
+    class ServerBIOContext:
+        def wrap_bio(self, incoming, outgoing, **options):
+            return server_context.wrap_bio(incoming, outgoing, server_side=True)
+    def serve():
+        try:
+            raw, _ = listener.accept()
+            with server_context.wrap_socket(raw, server_side=True) as outer:
+                request = b''
+                while b'\r\n\r\n' not in request:
+                    request += outer.recv(1)
+                assert b'CONNECT smtp.example.test:465' in request
+                assert b'Proxy-Authorization: Basic' in request
+                outer.sendall(b'HTTP/1.1 200 Connection Established\r\n\r\n')
+                with SSLTransport(outer, ServerBIOContext()) as inner:
+                    inner.sendall(b'220 nested TLS SMTP\r\n')
+                    assert inner.recv(4) == b'QUIT'
+        except Exception as error:
+            errors.append(error)
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        with tunnel_through_proxy(f'https://synthetic:password@127.0.0.1:{listener.getsockname()[1]}'):
+            outer = socket.create_connection(('smtp.example.test', 465), timeout=3)
+            with client_context.wrap_socket(outer, server_hostname='smtp.example.test') as inner:
+                assert inner.recv(100) == b'220 nested TLS SMTP\r\n'
+                inner.sendall(b'QUIT')
+        thread.join(timeout=4)
+        assert not thread.is_alive() and not errors
+    finally:
+        listener.close()

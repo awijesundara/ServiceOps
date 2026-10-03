@@ -5,6 +5,7 @@ import csv
 import io
 import ipaddress
 import json
+import time
 from datetime import timedelta, timezone
 from urllib.parse import urljoin, urlparse
 
@@ -93,6 +94,33 @@ def _tenant_reference_id(model, field, label):
     if not tenant_query(model).filter_by(id=record_id).first():
         abort(400, description=f"Select a valid {label}.")
     return record_id
+
+def _bounded_netbox_body(response, ceiling, deadline):
+    try:
+        if response.is_redirect:
+            abort(502)
+        response.raise_for_status()
+        length = response.headers.get("Content-Length")
+        if length is not None and (int(length) < 0 or int(length) > ceiling):
+            abort(415)
+        body = bytearray()
+        for chunk in response.iter_content(chunk_size=16384):
+            if time.monotonic() > deadline:
+                raise TimeoutError("NetBox response deadline exceeded")
+            if len(body) + len(chunk) > ceiling:
+                abort(415)
+            body.extend(chunk)
+        return bytes(body)
+    finally:
+        response.close()
+
+
+def _netbox_object(response, deadline):
+    payload = json.loads(_bounded_netbox_body(response, 1024 * 1024, deadline))
+    if not isinstance(payload, dict):
+        raise ValueError("NetBox metadata must be an object")
+    return payload
+
 
 def register(app):
     @app.get("/assets")
@@ -375,6 +403,9 @@ def register(app):
                 current_user.tenant_id, new_ci_class, current_user.effective_role, "update",
             ):
                 abort(403, description=f"You are not permitted to move this CI into {new_ci_class}.")
+            support_group_id = _tenant_reference_id(SupportGroup, "support_group_id", "support group")
+            owner_id = _tenant_reference_id(User, "owner_id", "owner")
+            rack_id = _tenant_reference_id(Rack, "rack_id", "rack")
             before = {field: getattr(ci, field) or "" for field in tracked_fields}
             before["attributes"] = json.dumps(ci.attributes or {}, sort_keys=True)
             sources_before = {field: getattr(ci, field, None) for field in ci_sources.FORM_FIELDS}
@@ -394,14 +425,14 @@ def register(app):
             ci.discovery_source = request.form.get("discovery_source", ci.discovery_source)
             ci.install_date = parse_form_date(request.form.get("install_date") or None)
             ci.warranty_expiry_date = parse_form_date(request.form.get("warranty_expiry_date") or None)
-            ci.support_group_id = _tenant_reference_id(SupportGroup, "support_group_id", "support group")
-            ci.owner_id = _tenant_reference_id(User, "owner_id", "owner")
+            ci.support_group_id = support_group_id
+            ci.owner_id = owner_id
             ci.attributes = _ci_attributes_from_form(ci.attributes)
             ci.require_ccb_approval = (
                 ci_always_requires_ccb(ci.ci_class, ci.environment, ci.business_criticality)
                 or request.form.get("require_ccb_approval") == "on"
             )
-            ci.rack_id = _tenant_reference_id(Rack, "rack_id", "rack")
+            ci.rack_id = rack_id
             ci.rack_position = request.form.get("rack_position", type=float)
             ci.rack_u_height = request.form.get("rack_u_height", type=int)
             ci.rack_face = request.form.get("rack_face", "").strip() or None
@@ -911,30 +942,34 @@ def register(app):
             abort(404)
 
         netbox_device_id = ci.external_id.split(":", 1)[1]
+        # Validated before it is placed in any request path.
+        if not netbox_device_id.isdecimal():
+            abort(404)
         client = _netbox_session(base_url, token)
+        deadline = time.monotonic() + 30
         try:
             device_response = client.get(
                 f"{base_url.rstrip('/')}/api/dcim/devices/{netbox_device_id}/",
-                timeout=10, allow_redirects=False,
+                timeout=(5, 5), allow_redirects=False, stream=True,
             )
-            if getattr(device_response, "is_redirect", False):
-                abort(502)
-            device_response.raise_for_status()
-            device_type = (device_response.json() or {}).get("device_type") or {}
-            device_type_id = device_type.get("id")
-            if not device_type_id:
+            device_type = _netbox_object(device_response, deadline).get("device_type")
+            if device_type is None:
                 abort(404)
+            if not isinstance(device_type, dict):
+                raise ValueError("Invalid NetBox device type")
+            device_type_id = device_type.get("id")
+            if type(device_type_id) is not int or device_type_id <= 0:
+                raise ValueError("Invalid NetBox device type identifier")
             type_response = client.get(
                 f"{base_url.rstrip('/')}/api/dcim/device-types/{device_type_id}/",
-                timeout=10, allow_redirects=False,
+                timeout=(5, 5), allow_redirects=False, stream=True,
             )
-            if getattr(type_response, "is_redirect", False):
-                abort(502)
-            type_response.raise_for_status()
-            image_url = (type_response.json() or {}).get(f"{face}_image")
+            image_url = _netbox_object(type_response, deadline).get(f"{face}_image")
             if not image_url:
                 abort(404)
-            image_url = urljoin(f"{base_url.rstrip('/')}/", str(image_url))
+            if not isinstance(image_url, str):
+                raise ValueError("Invalid NetBox artwork URL")
+            image_url = urljoin(f"{base_url.rstrip('/')}/", image_url)
             base = urlparse(base_url)
             image = urlparse(image_url)
             def effective_port(parsed):
@@ -943,12 +978,9 @@ def register(app):
                 base.scheme, base.hostname, effective_port(base),
             ):
                 abort(502)
-            image_response = client.get(image_url, timeout=15, allow_redirects=False)
-            if getattr(image_response, "is_redirect", False):
-                abort(502)
-            image_response.raise_for_status()
-            body = image_response.content
+            image_response = client.get(image_url, timeout=(5, 5), allow_redirects=False, stream=True)
             content_type = str(image_response.headers.get("Content-Type", "")).split(";", 1)[0].lower()
+            body = _bounded_netbox_body(image_response, 5 * 1024 * 1024, deadline)
             allowed_types = {"image/png", "image/jpeg", "image/webp", "image/gif"}
             if content_type not in allowed_types or not body or len(body) > 5 * 1024 * 1024:
                 abort(415)
@@ -956,8 +988,8 @@ def register(app):
             response.headers["Cache-Control"] = "private, max-age=3600"
             response.headers["X-Content-Type-Options"] = "nosniff"
             return response
-        except requests.RequestException:
-            current_app.logger.warning("NetBox device artwork retrieval failed", exc_info=True)
+        except (requests.RequestException, ValueError, TypeError, TimeoutError):
+            current_app.logger.warning("NetBox device artwork retrieval failed: invalid or unavailable upstream response")
             abort(502)
         finally:
             client.close()

@@ -78,6 +78,7 @@ def register(app):
                 if sso_user and sso_user.mfa_enabled:
                     session["_mfa_pending_user_id"] = sso_user.id
                     session["_mfa_pending_auth_version"] = sso_user.auth_version
+                    session["_mfa_pending_started_at"] = now().timestamp()
                     session["_mfa_pending_provider"] = "cloudflare_access"
                     return redirect(url_for("login_mfa"))
                 if sso_user:
@@ -170,6 +171,7 @@ def register(app):
                 db.session.commit()
                 session["_mfa_pending_user_id"] = user.id
                 session["_mfa_pending_auth_version"] = user.auth_version
+                session["_mfa_pending_started_at"] = now().timestamp()
                 session["_mfa_pending_provider"] = provider
                 return redirect(url_for("login_mfa"))
             if user:
@@ -289,6 +291,7 @@ def register(app):
         if not pending_user_id:
             return redirect(url_for("login"))
         user = db.session.get(User, pending_user_id)
+        started_at = session.get("_mfa_pending_started_at")
         # A password change, reset or deactivation after the password step
         # bumps auth_version and must void the half-finished login.
         if (
@@ -298,6 +301,13 @@ def register(app):
             session.pop("_mfa_pending_user_id", None)
             session.pop("_mfa_pending_auth_version", None)
             session.pop("_mfa_pending_provider", None)
+            session.pop("_mfa_pending_started_at", None)
+            return redirect(url_for("login"))
+        if not isinstance(started_at, (int, float)) or not 0 <= now().timestamp() - started_at <= 300:
+            session.pop("_mfa_pending_user_id", None)
+            session.pop("_mfa_pending_auth_version", None)
+            session.pop("_mfa_pending_provider", None)
+            session.pop("_mfa_pending_started_at", None)
             return redirect(url_for("login"))
         if request.method == "POST":
             client_ip = request.remote_addr or "unknown"
@@ -329,6 +339,7 @@ def register(app):
             if verified:
                 session.pop("_mfa_pending_user_id", None)
                 session.pop("_mfa_pending_auth_version", None)
+                session.pop("_mfa_pending_started_at", None)
                 provider = session.pop("_mfa_pending_provider", "local")
                 login_user(user)
                 session.permanent = True

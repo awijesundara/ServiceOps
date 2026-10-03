@@ -106,6 +106,8 @@ class RedactingFilter(logging.Filter):
                 record.msg = record.getMessage()
                 record.args = ()
             record.msg = redact(record.msg)
+            if hasattr(record, "path"):
+                record.path = redact(record.path)
         except Exception:
             # Redaction must never break logging, but it must also fail closed:
             # if the message cannot be inspected it cannot be proven free of

@@ -973,6 +973,9 @@ def sync_from_netbox(tenant_id, dry_run=False, session_factory=_netbox_session,
         summary["warnings"].append(
             "NetBox returned no racks, devices or virtual machines to this token. Either NetBox is empty or "
             "the token's object permissions hide them. Use Test connection to see what the token can read.")
+    if cancel_check and cancel_check():
+        db.session.rollback()
+        raise NetboxSyncError("Synchronization cancelled before commit.")
     if dry_run:
         db.session.rollback()
     else:

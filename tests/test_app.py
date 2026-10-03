@@ -9847,8 +9847,11 @@ def test_rack_device_artwork_proxies_netbox_image_without_exposing_token(client,
         def raise_for_status(self):
             return None
 
-        def json(self):
-            return self._payload
+        def iter_content(self, chunk_size):
+            yield json.dumps(self._payload).encode() if self._payload is not None else self.content
+
+        def close(self):
+            return None
 
     class ArtworkSession:
         verify = True
