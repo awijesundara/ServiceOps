@@ -1,5 +1,7 @@
 import json
 import os
+import logging
+import tempfile
 import socket
 import ssl
 import urllib.request
@@ -11,6 +13,13 @@ from cryptography.fernet import Fernet
 from flask import Flask, abort, jsonify, render_template, request
 from ldap3 import ALL, Connection, Server, Tls
 
+logger = logging.getLogger(__name__)
+
+
+class InstallerStateError(RuntimeError):
+    """Existing configuration could not be read or safely written."""
+
+
 STATE = Path(os.getenv("INSTALLER_STATE_DIR", "/config"))
 
 
@@ -20,16 +29,41 @@ def clean(value):
 
 def load_json(name, default):
     try:
-        return json.loads((STATE / name).read_text())
-    except (OSError, json.JSONDecodeError):
+        payload = json.loads((STATE / name).read_text())
+        if not isinstance(payload, dict):
+            raise ValueError("State must be an object")
+        return payload
+    except FileNotFoundError:
         return default
+    except (OSError, ValueError) as error:
+        logger.error("Installer state read failed: %s", name)
+        raise InstallerStateError("Existing installer state requires recovery.") from error
 
 
 def save_json(name, value):
-    STATE.mkdir(parents=True, exist_ok=True)
-    target = STATE / name
-    target.write_text(json.dumps(value, indent=2))
-    target.chmod(0o600)
+    _atomic_state_write(name, json.dumps(value, indent=2))
+
+
+def _atomic_state_write(name, content):
+    temporary = None
+    try:
+        STATE.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(prefix=".installer-", dir=STATE)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            os.fchmod(handle.fileno(), 0o600)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, STATE / name)
+    except (OSError, ValueError) as error:
+        logger.error("Installer state write failed: %s", name)
+        raise InstallerStateError("Installer state could not be saved safely.") from error
+    finally:
+        if temporary and os.path.exists(temporary):
+            try:
+                os.unlink(temporary)
+            except OSError:
+                logger.error("Installer temporary state cleanup failed")
 
 
 def result(ok, message, details=""):
@@ -148,15 +182,23 @@ def test_ipfs(config):
 
 
 def test_network(config):
-    port = int(config.get("app_port", 8080))
-    sock = socket.socket()
+    sock = None
     try:
+        raw_port = config.get("app_port", 8080)
+        if isinstance(raw_port, bool) or not isinstance(raw_port, (str, int)):
+            raise ValueError("Application port must be an integer")
+        port = int(raw_port)
+        if not 0 <= port <= 65535:
+            raise ValueError("Application port must be between 0 and 65535")
+        sock = socket.socket()
         sock.bind((clean(config.get("bind_address")) or "127.0.0.1", port))
         return result(True, f"Application port {port} is available")
-    except OSError as exc:
-        return result(False, f"Application port {port} is unavailable", str(exc))
+    except (OSError, ValueError, TypeError, OverflowError):
+        logger.warning("Installer network validation failed")
+        return result(False, "Application port is invalid or unavailable")
     finally:
-        sock.close()
+        if sock is not None:
+            sock.close()
 
 
 def validate(config):
@@ -250,9 +292,7 @@ def write_environment(config):
         env_line("KEYCLOAK_CLIENT_SECRET", config.get("keycloak_client_secret", "")),
         env_line("KEYCLOAK_ROLE_MAPPINGS", config.get("keycloak_role_mappings", "{}")),
     ]
-    target = STATE / "serviceops.env"
-    target.write_text("\n".join(lines) + "\n")
-    target.chmod(0o600)
+    _atomic_state_write("serviceops.env", "\n".join(lines) + "\n")
 
 
 def create_app():
@@ -281,7 +321,33 @@ def create_app():
         config = request.get_json(silent=True)
         if not isinstance(config, dict):
             abort(400, description="A JSON object is required.")
+        flags = {"ldap_enabled", "ldap_start_tls", "ldap_validate_cert", "keycloak_enabled"}
+        for key, value in config.items():
+            if key in flags:
+                if type(value) is not bool:
+                    abort(400, description=f"{key} must be a boolean.")
+            elif key == "app_port":
+                if isinstance(value, bool) or not isinstance(value, (str, int)):
+                    abort(400, description="app_port must be an integer.")
+                try:
+                    port = int(value)
+                except ValueError:
+                    abort(400, description="app_port must be an integer.")
+                if not 1 <= port <= 65535:
+                    abort(400, description="app_port must be between 1 and 65535.")
+            elif not isinstance(value, str):
+                abort(400, description=f"{key} must be a string.")
         return config
+
+    @app.errorhandler(OSError)
+    @app.errorhandler(InstallerStateError)
+    def state_error(_error):
+        logger.error("Installer state operation failed; recovery is required")
+        return jsonify(error="Installer state requires recovery; existing configuration was preserved."), 503
+
+    @app.errorhandler(400)
+    def bad_request(error):
+        return jsonify(error=error.description), 400
 
     @app.get("/")
     def index():
@@ -291,14 +357,17 @@ def create_app():
     @app.post("/api/validate")
     def api_validate():
         config = json_config()
-        save_json("config.json", config)
+        load_json("config.json", {})
         checks = validate(config)
         save_json("validation.json", checks)
+        if all(item["ok"] for item in checks.values()):
+            save_json("config.json", config)
         return jsonify(checks=checks, ready=all(item["ok"] for item in checks.values()))
 
     @app.post("/api/deploy")
     def api_deploy():
         config = json_config()
+        load_json("config.json", {})
         checks = validate(config)
         if not all(item["ok"] for item in checks.values()):
             return jsonify(error="Every required check must pass before deployment.", checks=checks), 400

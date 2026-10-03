@@ -519,7 +519,11 @@ def register(app):
         if PasskeyCredential.query.filter_by(credential_id=verified.credential_id).first():
             abort(409, description="This passkey is already registered.")
         name = str(body.get("name") or "iPhone passkey").strip()[:120] or "iPhone passkey"
-        transports = ((body.get("credential") or {}).get("response") or {}).get("transports") or []
+        credential = body.get("credential")
+        response = credential.get("response") if isinstance(credential, dict) else None
+        transports = response.get("transports", []) if isinstance(response, dict) else None
+        if not isinstance(transports, list) or not all(isinstance(value, str) for value in transports):
+            abort(400, description="Passkey transports must be a list of strings.")
         row = PasskeyCredential(
             credential_id=verified.credential_id, public_key=verified.credential_public_key,
             sign_count=verified.sign_count, name=name, transports_json=json.dumps(transports),
@@ -583,7 +587,9 @@ def register(app):
         challenge = consume_passkey_challenge(
             str(body.get("challenge_id") or body.get("challengeId") or ""), "authentication",
         )
-        credential = body.get("credential") or {}
+        credential = body.get("credential")
+        if not isinstance(credential, dict) or not isinstance(credential.get("response"), dict):
+            abort(400, description="A passkey credential object with a response object is required.")
         try:
             credential_id = base64url_to_bytes(str(credential.get("rawId") or credential.get("id") or ""))
         except Exception:
@@ -619,8 +625,6 @@ def register(app):
     @app.post("/api/v1/auth/mobile/refresh")
     def api_mobile_refresh():
         body = request.get_json(silent=True)
-        if body is None:
-            body = {}
         if not isinstance(body, dict):
             abort(400, description="A JSON object is required.")
         raw = str(body.get("refresh_token", ""))
@@ -910,6 +914,12 @@ def register(app):
         body = request.get_json(silent=True)
         if not isinstance(body, dict) or not body:
             abort(400, description="A non-empty JSON object is required.")
+        if not effective_role_has_action(g.api_user.effective_role, "update", tenant_id=g.api_user.tenant_id):
+            abort(403, description="The acting user cannot update tasks.")
+        if "state" in body and not effective_role_has_action(
+            g.api_user.effective_role, "transition", tenant_id=g.api_user.tenant_id,
+        ):
+            abort(403, description="The acting user cannot transition tasks.")
         allowed = {"state", "work_notes", "append_work_notes"}
         unknown = set(body) - allowed
         if unknown:
@@ -970,13 +980,18 @@ def register(app):
         unknown = set(body) - allowed
         if unknown:
             abort(400, description=f"Unknown fields: {', '.join(sorted(unknown))}.")
-        title = str(body.get("title", "")).strip()
+        for field in ("title", "description", "category", "priority"):
+            if field in body and not isinstance(body[field], str):
+                abort(400, description=f"{field} must be a string.")
+        title = body.get("title", "").strip()
         description = str(body.get("description", "")).strip()
         priority = str(body.get("priority", "P3"))
         if not title or len(title) > 180 or not description:
             abort(400, description="title and description are required.")
         if priority not in ("P1", "P2", "P3", "P4"):
             abort(400, description="priority must be P1, P2, P3 or P4.")
+        if isinstance(body.get("assignment_group_id"), (bool, float)):
+            abort(400, description="assignment_group_id must be an integer.")
         try:
             group_id = int(body.get("assignment_group_id"))
         except (TypeError, ValueError):
@@ -1134,7 +1149,13 @@ def register(app):
         unknown = set(body) - allowed
         if unknown:
             abort(400, description=f"Unknown fields: {', '.join(sorted(unknown))}.")
-        name = str(body.get("name", "")).strip()[:160]
+        for field in allowed:
+            if field in body and not isinstance(body[field], str):
+                abort(400, description=f"{field} must be a string.")
+        for field, maximum in (("name", 160), ("ci_class", 80), ("ip_address", 60)):
+            if len(body.get(field, "").strip()) > maximum:
+                abort(400, description=f"{field} must not exceed {maximum} characters.")
+        name = body.get("name", "").strip()
         if not name:
             abort(400, description="name is required.")
         environment = normalize_environment(str(body.get("environment", "Production")))
@@ -1143,8 +1164,8 @@ def register(app):
         operational_status = str(body.get("operational_status", "Operational"))
         if operational_status not in ("Operational", "Degraded", "Down", "Maintenance", "Retired"):
             abort(400, description="operational_status must be a recognized CI status.")
-        ci_class = str(body.get("ci_class", "Server")).strip()[:80] or "Server"
-        ip_address = str(body.get("ip_address", "")).strip()[:60] or None
+        ci_class = body.get("ci_class", "Server").strip() or "Server"
+        ip_address = body.get("ip_address", "").strip() or None
         ci = ConfigurationItem.query.filter_by(name=name, tenant_id=g.api_client.tenant_id).first()
         created = ci is None
         # Same per-class policy the CMDB forms enforce, evaluated for the

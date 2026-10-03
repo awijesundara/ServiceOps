@@ -54,6 +54,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased, selectinload
 from sqlalchemy.pool import StaticPool
+from serviceops_core.log_storage import DatabaseLogHandler, report_diagnostic_failure
 # Not called directly in this file (ServiceOps hashes local passwords with
 # Argon2id via serviceops_core.security -- see hash_password/verify_password
 # above). Kept because serviceops_core/rt_import.py's _resolve_or_create_user()
@@ -4165,7 +4166,16 @@ def _process_one_inbound_email(mailbox, connection, msg_num):
     raw_bytes = msg_data[0][1]
     parsed = parse_inbound_email(raw_bytes)
     if parsed["is_auto_generated"] or not parsed["from_email"]:
-        connection.store(msg_num, "+FLAGS", "\\Seen")
+        _acknowledge_inbound_email(connection, msg_num)
+        return False
+    fingerprint = "serviceops-sha256:" + hashlib.sha256(raw_bytes).hexdigest()
+    existing = ClientTicketMessage.query.join(ClientTicket).filter(
+        ClientTicketMessage.tenant_id == mailbox.tenant_id,
+        ClientTicket.mailbox_id == mailbox.id,
+        ClientTicketMessage.message_id == (parsed["message_id"] or fingerprint),
+    ).first()
+    if existing:
+        _acknowledge_inbound_email(connection, msg_num)
         return False
     # Last-resort loop/flood defense, on top of the Auto-Submitted check
     # above -- Zendesk documents an identical per-sender rate ceiling for
@@ -4173,8 +4183,10 @@ def _process_one_inbound_email(mailbox, connection, msg_num):
     # doesn't set Auto-Submitted correctly).
     if not route_rate_limit("inbound_email", parsed["from_email"], 20, window_seconds=3600):
         current_app.logger.warning("Inbound email rate limit exceeded for %s", parsed["from_email"])
+        # A deliberate drop: left unread, a mail loop would refill the first
+        # `limit` UNSEEN slots on every poll and starve legitimate mail.
         db.session.commit()
-        connection.store(msg_num, "+FLAGS", "\\Seen")
+        _acknowledge_inbound_email(connection, msg_num)
         return False
 
     ticket = _match_existing_client_ticket(mailbox.tenant_id, parsed)
@@ -4190,7 +4202,7 @@ def _process_one_inbound_email(mailbox, connection, msg_num):
         tenant_id=ticket.tenant_id, client_ticket_id=ticket.id, author_id=None,
         body=parsed["body_text"] or "(no message body)", visibility="public",
         event_type="opened" if is_new_ticket else "inbound_email",
-        message_id=parsed["message_id"] or None, in_reply_to=parsed["in_reply_to"] or None,
+        message_id=parsed["message_id"] or fingerprint, in_reply_to=parsed["in_reply_to"] or None,
     ))
     ticket.updated_at = now()
 
@@ -4213,8 +4225,14 @@ def _process_one_inbound_email(mailbox, connection, msg_num):
         evaluate_client_triggers("created", ticket, agents)
     audit("client email ingested", ticket.number, parsed["from_email"], tenant_id=ticket.tenant_id)
     db.session.commit()
-    connection.store(msg_num, "+FLAGS", "\\Seen")
+    _acknowledge_inbound_email(connection, msg_num)
     return True
+
+
+def _acknowledge_inbound_email(connection, msg_num):
+    status, _ = connection.store(msg_num, "+FLAGS", "\\Seen")
+    if status != "OK":
+        raise RuntimeError("IMAP acknowledgement failed; the committed message will be deduplicated on retry.")
 
 
 def _poll_client_mailbox(mailbox, limit=50):
@@ -5177,98 +5195,122 @@ def process_rt_import_jobs(limit=1):
 
 
 def process_integration_sync_jobs(limit=1):
-    """Run bounded external reconciliations outside HTTP request workers."""
-    jobs = IntegrationSyncJob.query.filter_by(status="Pending").order_by(
-        IntegrationSyncJob.created_at, IntegrationSyncJob.id
-    ).with_for_update(skip_locked=True).limit(limit).all()
-    processed_jobs = 0
-    for job in jobs:
-        # Only one job for an integration and tenant may run at once. The UI
-        # prevents duplicates; this worker-side check is the authoritative lock.
-        running_job = IntegrationSyncJob.query.filter(
-            IntegrationSyncJob.tenant_id == job.tenant_id,
-            IntegrationSyncJob.integration == job.integration,
-            IntegrationSyncJob.status == "Running",
-            IntegrationSyncJob.id != job.id,
-        ).first()
-        if running_job:
-            continue
-        job.status = "Running"
-        job.phase = "Connecting"
-        job.started_at = now()
-        db.session.commit()
-        path_processed = {}
-        path_totals = {}
-
-        def cancelled():
-            with db.engine.connect() as connection:
-                return bool(connection.execute(
-                    select(IntegrationSyncJob.cancel_requested).where(
-                        IntegrationSyncJob.id == job.id
-                    )
-                ).scalar())
-
-        def progress(path, count, total):
-            path_processed[path] = path_processed.get(path, 0) + count
-            if isinstance(total, int):
-                path_totals[path] = total
-            values = {
-                "phase": re.sub(r"^/api/(v1/)?", "", path).strip("/").replace("/", " / "),
-                "processed": sum(path_processed.values()),
-                "total": sum(path_totals.values()) if path_totals else None,
-                "updated_at": now(),
-            }
-            # Separate transaction keeps progress observable without committing
-            # a dry-run's in-memory reconciliation changes.
-            with db.engine.begin() as connection:
-                connection.execute(update(IntegrationSyncJob).where(
-                    IntegrationSyncJob.id == job.id
-                ).values(**values))
-
-        from serviceops_core.netbox_sync import NetboxSyncError, sync_from_netbox
-        from serviceops_core.snipeit_sync import SnipeitSyncError, sync_from_snipeit
-        runners = {
-            "netbox": ("NetBox", sync_from_netbox, "NETBOX_SYNC_BATCH_SIZE"),
-            "snipeit": ("Snipe-IT", sync_from_snipeit, "SNIPEIT_SYNC_BATCH_SIZE"),
-        }
-        label = runners.get(job.integration, (job.integration,))[0]
-        try:
-            if job.integration not in runners:
-                raise RuntimeError("Unsupported integration job type")
-            _, run_sync, batch_setting = runners[job.integration]
-            result = run_sync(
-                job.tenant_id, dry_run=job.dry_run,
-                page_size=max(10, min(setting_int(batch_setting, 100), 500)),
-                progress_callback=progress, cancel_check=cancelled,
-            )
-        except Exception as error:  # noqa: BLE001 - isolate external integration failure
-            db.session.rollback()
-            job = db.session.get(IntegrationSyncJob, job.id)
-            if job.cancel_requested or "cancelled" in str(error).casefold():
-                job.status = "Cancelled"
-                job.phase = "Cancelled safely between batches"
-                job.error = None
-            else:
-                job.status = "Failed"
-                job.phase = "Failed"
-                job.error = (str(error) if isinstance(error, (NetboxSyncError, SnipeitSyncError))
-                             else f"{type(error).__name__}: {error}")[:800]
-        else:
+    """Recover ownerless jobs and run reconciliations under exclusive ownership."""
+    from serviceops_core.integration_job_lock import integration_job_lock
+    if type(limit) is not int or not 1 <= limit <= 100:
+        raise ValueError("The synchronization job limit must be between 1 and 100.")
+    candidates = db.session.query(IntegrationSyncJob.id, IntegrationSyncJob.tenant_id,
+                                  IntegrationSyncJob.integration).filter(
+        IntegrationSyncJob.status.in_(["Running", "Pending"])
+    ).order_by(IntegrationSyncJob.created_at, IntegrationSyncJob.id).limit(100).all()
+    processed = 0
+    for job_id, tenant_id, integration in candidates:
+        if processed >= limit:
+            break
+        with integration_job_lock(db.engine, tenant_id, integration) as acquired:
+            if not acquired:
+                continue
             db.session.expire_all()
-            job = db.session.get(IntegrationSyncJob, job.id)
-            job.status = "Completed"
-            job.phase = "Completed"
-            job.result_json = json.dumps(result)
-        job.finished_at = now()
-        job.updated_at = now()
-        audit(
-            "configure", f"{label} CMDB sync {job.status.casefold()}",
-            f"Job {job.id}; processed={job.processed}; phase={job.phase}",
-            user_id=job.actor_user_id, tenant_id=job.tenant_id,
+            job = db.session.get(IntegrationSyncJob, job_id)
+            if not job or job.status not in ("Running", "Pending"):
+                continue
+            if job.status == "Running":
+                job.status = "Cancelled" if job.cancel_requested else "Failed"
+                job.phase = "Recovered after worker interruption"
+                job.error = None if job.cancel_requested else "Worker ownership was lost; review and enqueue reconciliation again."
+                job.finished_at = job.updated_at = now()
+                current_app.logger.warning("Recovered abandoned integration job id=%s", job.id)
+                audit("configure", "CMDB sync recovered", f"Job {job.id}; status={job.status}",
+                      user_id=job.actor_user_id, tenant_id=job.tenant_id)
+                db.session.commit()
+            elif job.cancel_requested or not Tenant.query.filter_by(id=job.tenant_id, active=True).first():
+                job.status = "Cancelled"
+                job.phase = "Cancelled before execution"
+                job.finished_at = job.updated_at = now()
+                db.session.commit()
+            else:
+                _run_integration_sync_job(job, acquired)
+            processed += 1
+    return processed
+
+
+def _run_integration_sync_job(job, assert_owned):
+    job.status = "Running"
+    job.phase = "Connecting"
+    job.started_at = now()
+    db.session.commit()
+    path_processed = {}
+    path_totals = {}
+
+    def cancelled():
+        assert_owned()
+        with db.engine.connect() as connection:
+            return bool(connection.execute(
+                select(IntegrationSyncJob.cancel_requested).where(
+                    IntegrationSyncJob.id == job.id
+                )
+            ).scalar())
+
+    def progress(path, count, total):
+        assert_owned()
+        path_processed[path] = path_processed.get(path, 0) + count
+        if isinstance(total, int):
+            path_totals[path] = total
+        values = {
+            "phase": re.sub(r"^/api/(v1/)?", "", path).strip("/").replace("/", " / "),
+            "processed": sum(path_processed.values()),
+            "total": sum(path_totals.values()) if path_totals else None,
+            "updated_at": now(),
+        }
+        # Separate transaction keeps progress observable without committing
+        # a dry-run's in-memory reconciliation changes.
+        with db.engine.begin() as connection:
+            connection.execute(update(IntegrationSyncJob).where(
+                IntegrationSyncJob.id == job.id
+            ).values(**values))
+
+    from serviceops_core.netbox_sync import NetboxSyncError, sync_from_netbox
+    from serviceops_core.snipeit_sync import SnipeitSyncError, sync_from_snipeit
+    runners = {
+        "netbox": ("NetBox", sync_from_netbox, "NETBOX_SYNC_BATCH_SIZE"),
+        "snipeit": ("Snipe-IT", sync_from_snipeit, "SNIPEIT_SYNC_BATCH_SIZE"),
+    }
+    label = runners.get(job.integration, (job.integration,))[0]
+    try:
+        if job.integration not in runners:
+            raise RuntimeError("Unsupported integration job type")
+        _, run_sync, batch_setting = runners[job.integration]
+        result = run_sync(
+            job.tenant_id, dry_run=job.dry_run,
+            page_size=max(10, min(setting_int(batch_setting, 100), 500)),
+            progress_callback=progress, cancel_check=cancelled,
         )
-        db.session.commit()
-        processed_jobs += 1
-    return processed_jobs
+    except Exception as error:  # noqa: BLE001 - isolate external integration failure
+        db.session.rollback()
+        job = db.session.get(IntegrationSyncJob, job.id)
+        if job.cancel_requested or "cancelled" in str(error).casefold():
+            job.status = "Cancelled"
+            job.phase = "Cancelled safely between batches"
+            job.error = None
+        else:
+            job.status = "Failed"
+            job.phase = "Failed"
+            job.error = (str(error) if isinstance(error, (NetboxSyncError, SnipeitSyncError))
+                         else f"{type(error).__name__}: {error}")[:800]
+    else:
+        db.session.expire_all()
+        job = db.session.get(IntegrationSyncJob, job.id)
+        job.status = "Completed"
+        job.phase = "Completed"
+        job.result_json = json.dumps(result)
+    job.finished_at = now()
+    job.updated_at = now()
+    audit(
+        "configure", f"{label} CMDB sync {job.status.casefold()}",
+        f"Job {job.id}; processed={job.processed}; phase={job.phase}",
+        user_id=job.actor_user_id, tenant_id=job.tenant_id,
+    )
+    db.session.commit()
 
 
 def process_ldap_sync_schedule(limit=50):
@@ -7027,48 +7069,8 @@ class JsonLogFormatter(logging.Formatter):
             if value is not None:
                 payload[attr] = value
         if record.exc_info:
-            payload["exception"] = "".join(traceback_module.format_exception(*record.exc_info))
+            payload["exception"] = redact("".join(traceback_module.format_exception(*record.exc_info)))
         return json.dumps(payload, default=str)
-
-
-class DatabaseLogHandler(logging.Handler):
-    """Persists WARNING+ records to ApplicationLog so they survive a
-    container restart/crash and are readable from the admin System Health
-    page without shell/`docker logs` access (the stated goal: "every error
-    must be recorded" and readable "from the admin menu"). Silently drops
-    the record (never raises) if there's no request/app context or the DB
-    write itself fails -- a logging failure must never crash the request
-    that triggered the log in the first place."""
-
-    def emit(self, record):
-        if not has_app_context():
-            return
-        try:
-            db.session.add(ApplicationLog(
-                level=record.levelname,
-                logger_name=record.name,
-                message=self.format(record) if not record.exc_info else record.getMessage(),
-                traceback=(
-                    "".join(traceback_module.format_exception(*record.exc_info))
-                    if record.exc_info else None
-                ),
-                path=request.path if has_request_context() else getattr(record, "path", None),
-                method=request.method if has_request_context() else getattr(record, "method", None),
-                request_id=(
-                    g.get("request_id") if has_request_context() else getattr(record, "request_id", None)
-                ),
-                user_id=(
-                    current_user.id
-                    if has_request_context() and current_user.is_authenticated else None
-                ),
-                tenant_id=(
-                    current_user.tenant_id
-                    if has_request_context() and current_user.is_authenticated else None
-                ),
-            ))
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
 
 
 def configure_detailed_logging(app):
@@ -7833,8 +7835,19 @@ def create_app(test_config=None):
         )
         return response
 
+    def rollback_failed_request():
+        try:
+            db.session.rollback()
+        except Exception:
+            report_diagnostic_failure("ServiceOps failed-request rollback failed; discarding session.")
+            try:
+                db.session.remove()
+            except Exception:
+                report_diagnostic_failure("ServiceOps failed-request session cleanup failed.")
+
     @app.errorhandler(RequestEntityTooLarge)
     def request_entity_too_large(error):
+        rollback_failed_request()
         max_mb = app.config.get("MAX_CONTENT_LENGTH", 20 * 1024 * 1024) // (1024 * 1024)
         message = f"That file is too large. The maximum upload size is {max_mb} MB."
         if request.path.startswith("/api/"):
@@ -7854,6 +7867,7 @@ def create_app(test_config=None):
 
     @app.errorhandler(HTTPException)
     def http_error(error):
+        rollback_failed_request()
         if request.path.startswith("/api/"):
             return jsonify({
                 "error": {
@@ -7869,6 +7883,7 @@ def create_app(test_config=None):
 
     @app.errorhandler(TenantResolutionError)
     def tenant_resolution_error(error):
+        rollback_failed_request()
         logout_user()
         if request.path.startswith("/api/"):
             return jsonify({
@@ -7885,6 +7900,7 @@ def create_app(test_config=None):
 
     @app.errorhandler(Exception)
     def unhandled_exception(error):
+        rollback_failed_request()
         # Flask/Werkzeug route error lookups by MRO specificity, so
         # HTTPException (including RequestEntityTooLarge/TenantResolutionError
         # above) is always dispatched to its own more-specific handler first
@@ -7897,10 +7913,6 @@ def create_app(test_config=None):
         app.logger.error(
             "Unhandled exception on %s %s", request.method, request.path, exc_info=error,
         )
-        try:
-            db.session.rollback()
-        except Exception:  # noqa: BLE001 - never let cleanup mask the original error
-            pass
         if request.path.startswith("/api/"):
             return jsonify({
                 "error": {
@@ -8092,6 +8104,7 @@ def create_app(test_config=None):
 
     @app.errorhandler(403)
     def forbidden(error):
+        rollback_failed_request()
         if request.path.startswith("/api/"):
             return http_error(error)
         return render_template(
@@ -8101,12 +8114,14 @@ def create_app(test_config=None):
 
     @app.errorhandler(404)
     def not_found(error):
+        rollback_failed_request()
         if request.path.startswith("/api/"):
             return http_error(error)
         return render_template("error.html", code=404, message="The requested record was not found."), 404
 
     @app.errorhandler(409)
     def workflow_conflict(error):
+        rollback_failed_request()
         if request.path.startswith("/api/"):
             return http_error(error)
         return render_template(

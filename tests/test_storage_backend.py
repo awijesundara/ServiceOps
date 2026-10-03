@@ -27,7 +27,7 @@ def test_storage_backend_cannot_be_instantiated_directly():
         StorageBackend()
 
 
-def test_postgres_and_ipfs_backends_implement_the_full_interface():
+def test_postgres_and_ipfs_backends_implement_the_attachment_interface():
     # Both concrete classes must actually satisfy every abstract method --
     # a missing override would raise TypeError at instantiation.
     PostgresStorageBackend(upload_folder="/tmp")
@@ -245,7 +245,7 @@ def test_ipfs_backend_checkpoint_survives_a_reload(ipfs_backend):
     assert data == b"aaa"
 
 
-def test_ipfs_backend_reload_with_wrong_key_starts_empty_not_crashes(ipfs_backend):
+def test_ipfs_backend_reload_with_wrong_key_blocks_startup_and_pointer_changes(ipfs_backend):
     # A misconfigured SETTINGS_ENCRYPTION_KEY on a fresh instance must fail
     # safe (empty index, logged) rather than crash app boot.
     ipfs_backend.load_checkpoint()
@@ -255,8 +255,12 @@ def test_ipfs_backend_reload_with_wrong_key_starts_empty_not_crashes(ipfs_backen
         api_url="http://unused", checkpoint_encryption_key=Fernet.generate_key(),
         client=ipfs_backend.client,
     )
-    reloaded.load_checkpoint()
-    assert reloaded._file_index == {}
+    before = dict(ipfs_backend.client._ipns)
+    with pytest.raises(RuntimeError, match="recovery is required"):
+        reloaded.load_checkpoint()
+    with pytest.raises(RuntimeError, match="writes are blocked"):
+        reloaded.save_checkpoint()
+    assert ipfs_backend.client._ipns == before
 
 
 def test_ipfs_backend_write_survives_a_checkpoint_publish_failure():
@@ -309,7 +313,7 @@ def test_ipfs_backend_query_filters_by_tenant_and_field(ipfs_backend):
 
 
 def test_ipfs_backend_unimplemented_entity_type_raises(ipfs_backend):
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError, match="Legacy identity storage"):
         ipfs_backend.get("ticket", 1)
 
 
@@ -352,3 +356,17 @@ def test_ipfs_backend_relational_state_returns_a_defensive_copy(ipfs_backend):
     exported = ipfs_backend.get_relational_state()
     exported["ticket"][0]["id"] = 999
     assert ipfs_backend.get_relational_state()["ticket"][0]["id"] == 1
+
+
+@pytest.mark.parametrize('failure', ['client', 'delete'])
+def test_object_storage_delete_failure_is_logged_without_blocking_cleanup(caplog, failure):
+    class UnavailableClient:
+        def delete_object(self, **options):
+            raise OSError('synthetic object storage outage')
+    def factory():
+        if failure == 'client':
+            raise OSError('synthetic client initialization failure')
+        return UnavailableClient()
+    backend = PostgresStorageBackend('/unused', factory, 'synthetic-bucket')
+    backend.delete_file('attachment', 'attachment')
+    assert 'attachment deletion failed' in caplog.text

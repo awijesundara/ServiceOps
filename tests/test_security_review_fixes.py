@@ -27,7 +27,7 @@ from app import (
 )
 from serviceops_core import proxy_tunnel
 from serviceops_core.security import redact
-from serviceops_models import CiClassPermission
+from serviceops_models import CiClassPermission, ClientTicket, PlatformSetting
 from tests.test_app import _FakeIMAPConnection, app, client, group_id, login  # noqa: F401
 
 MOBILE_HEADERS = {
@@ -420,6 +420,46 @@ def test_saved_inbound_email_is_marked_read(app, client, monkeypatch):
         assert app_module._poll_client_mailbox(db.session.get(ClientMailbox, mailbox_id)) == 1
     assert connection.stored_flags[b"1"] == "\\Seen"
 
+
+
+def test_rate_limited_inbound_email_is_dropped_and_marked_read(app, client, monkeypatch):
+    # Left unread, a mail loop would refill the first `limit` UNSEEN slots on
+    # every poll and starve legitimate mail behind it.
+    mailbox_id = _mailbox(app)
+    connection = _RecordingIMAP([_raw_email()])
+    monkeypatch.setattr(app_module.imaplib, "IMAP4_SSL", lambda host, port: connection)
+    monkeypatch.setattr(app_module, "route_rate_limit", lambda *args, **kwargs: False)
+    with app.app_context():
+        assert app_module._poll_client_mailbox(db.session.get(ClientMailbox, mailbox_id)) == 0
+        assert ClientTicket.query.count() == 0
+    assert connection.stored_flags[b"1"] == "\\Seen"
+
+
+def test_device_artwork_rejects_non_numeric_netbox_id_before_any_request(app, client, monkeypatch):
+    requested = []
+
+    class Session:
+        def get(self, url, **options):
+            requested.append(url)
+            raise AssertionError("no NetBox request may be made")
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("serviceops_core.netbox_sync._netbox_session", lambda *args: Session())
+    with app.app_context():
+        for key, value in [("NETBOX_ENABLED", "true"), ("NETBOX_BASE_URL", "https://netbox.example.test"),
+                           ("NETBOX_API_TOKEN", "synthetic-token")]:
+            db.session.add(PlatformSetting(key=key, value=value, tenant_id=1))
+        ci = ConfigurationItem(tenant_id=1, name="artwork-path", ci_class="Server",
+                               external_source="netbox", external_id="dcim.device:41/../../users")
+        db.session.add(ci)
+        db.session.commit()
+        ci_id = ci.id
+    login(client)
+    response = client.get(f"/cmdb/device-artwork/{ci_id}/front")
+    assert response.status_code == 404
+    assert requested == []
 
 # 9. A pending MFA login dies with a credential change ------------------------
 

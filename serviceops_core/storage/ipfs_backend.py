@@ -52,38 +52,49 @@ class IPFSStorageBackend(StorageBackend):
         self._pending_checkpoint_cid = None
         self._last_published_checkpoint_cid = None
         self._publisher_started = False
+        self._checkpoint_load_failed = False
 
     # -- Checkpoint boot/save --------------------------------------------
     def load_checkpoint(self):
         """Resolve the instance's IPNS pointer and load the latest
         checkpoint into memory. Safe to call on a fresh node with no
         checkpoint published yet -- starts with an empty index."""
-        self._checkpoint_name = self.client.key_gen(CHECKPOINT_KEY_NAME)
-        cid = self.client.name_resolve(self._checkpoint_name)
-        if not cid:
-            logger.info("No existing IPFS checkpoint found; starting with an empty index.")
-            return
+        self._checkpoint_load_failed = True
         try:
-            encrypted = self.client.cat(cid)
-            state = decrypt_checkpoint(encrypted, self._checkpoint_key)
-        except Exception:
-            logger.exception("Failed to load IPFS checkpoint %s; starting with an empty index.", cid)
-            return
-        self._file_index = state.get("file_index", {})
-        # JSON round-trips dict keys as strings; entity ids and the
-        # per-type next-id counters need to come back as ints.
-        self._entities = {
-            entity_type: {int(record_id): fields for record_id, fields in rows.items()}
-            for entity_type, rows in state.get("entities", {}).items()
-        }
-        self._next_id = {
-            entity_type: next_id for entity_type, next_id in state.get("next_id", {}).items()
-        }
-        self._relational_state = state.get("relational_state", {})
-        logger.info(
-            "Loaded IPFS checkpoint %s: %d file(s), %d entity type(s) indexed.",
-            cid, len(self._file_index), len(self._entities),
-        )
+            self._checkpoint_name = self.client.key_gen(CHECKPOINT_KEY_NAME)
+            cid = self.client.name_resolve(self._checkpoint_name)
+            if not cid:
+                logger.info("No existing IPFS checkpoint found; starting with an empty index.")
+                self._checkpoint_load_failed = False
+                return
+            state = decrypt_checkpoint(self.client.cat(cid), self._checkpoint_key)
+            if not isinstance(state, dict) or any(not isinstance(state.get(key, {}), dict)
+                    for key in ("file_index", "entities", "next_id", "relational_state")):
+                raise ValueError("Invalid checkpoint structure")
+            files = state.get("file_index", {})
+            if not all(isinstance(key, str) and isinstance(value, str) for key, value in files.items()):
+                raise ValueError("Invalid file index")
+            entities = {
+                entity_type: {int(record_id): fields for record_id, fields in rows.items()}
+                for entity_type, rows in state.get("entities", {}).items()
+            }
+            counters = state.get("next_id", {})
+            if not all(type(value) is int and value >= 0 for value in counters.values()):
+                raise ValueError("Invalid entity counters")
+            relational = state.get("relational_state", {})
+            if not all(isinstance(rows, list) and all(isinstance(row, dict) for row in rows)
+                       for rows in relational.values()):
+                raise ValueError("Invalid relational state")
+            with self._state_lock:
+                self._file_index = files
+                self._entities = entities
+                self._next_id = counters
+                self._relational_state = relational
+                self._checkpoint_load_failed = False
+            logger.info("Loaded IPFS checkpoint: %d files, %d entity types", len(files), len(entities))
+        except Exception as error:
+            logger.error("Existing IPFS checkpoint could not be restored; startup and writes are blocked")
+            raise RuntimeError("IPFS checkpoint recovery is required; the existing pointer is preserved.") from error
 
     def save_checkpoint(self):
         """Add and pin a full encrypted snapshot, then coalesce publication.
@@ -92,6 +103,9 @@ class IPFSStorageBackend(StorageBackend):
         therefore published by one retrying background thread; newer commits
         replace the pending CID, keeping request latency independent of IPNS.
         Readiness exposes whether publication is pending."""
+        if self._checkpoint_load_failed:
+            logger.error("Checkpoint save rejected after failed restoration")
+            raise RuntimeError("Checkpoint writes are blocked until restoration succeeds.")
         if self._checkpoint_name is None:
             self._checkpoint_name = self.client.key_gen(CHECKPOINT_KEY_NAME)
         state = {
@@ -181,10 +195,7 @@ class IPFSStorageBackend(StorageBackend):
 
     def _require_implemented(self, entity_type):
         if entity_type not in self._IMPLEMENTED_ENTITY_TYPES:
-            raise NotImplementedError(
-                f"IPFSStorageBackend does not implement {entity_type!r} yet -- "
-                "only file attachments, users, and tenants are implemented so far."
-            )
+            raise ValueError("Legacy identity storage supports only user and tenant records.")
 
     def get(self, entity_type, record_id):
         self._require_implemented(entity_type)
@@ -229,7 +240,7 @@ class IPFSStorageBackend(StorageBackend):
             elif op == "in":
                 rows = [row for row in rows if row.get(field) in value]
             else:
-                raise NotImplementedError(f"IPFSStorageBackend.query() filter op {op!r} not implemented.")
+                raise ValueError("Legacy identity filters support only eq and in predicates.")
         if order_by:
             field, _, direction = order_by.partition(" ")
             rows.sort(key=lambda row: row.get(field), reverse=direction.strip().lower() == "desc")
@@ -238,19 +249,6 @@ class IPFSStorageBackend(StorageBackend):
         if limit is not None:
             rows = rows[:limit]
         return [dict(row) for row in rows]
-
-    def relate(self, entity_type, record_id, relation_name):
-        raise NotImplementedError(f"IPFSStorageBackend.relate({entity_type!r}) not implemented yet.")
-
-    def unit_of_work(self):
-        raise NotImplementedError("IPFSStorageBackend.unit_of_work() not implemented yet.")
-
-    def enforce_unique(self, entity_type, fields):
-        # No caller needs this yet for user/tenant (login checks username
-        # uniqueness itself via query()); file attachments don't need it
-        # either (uuid4-prefixed names). A real per-entity check lands
-        # with each entity's own rollout wave if/when it's needed.
-        return None
 
     # -- File attachments: real, implemented in this slice. --------------
     def attach_file(self, path, data_bytes, content_type):

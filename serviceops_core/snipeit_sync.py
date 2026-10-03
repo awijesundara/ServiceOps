@@ -853,6 +853,9 @@ def sync_from_snipeit(tenant_id, dry_run=False, session_factory=_snipeit_session
         summary["warnings"].append(
             f"{summary['assignees_unmatched']} asset(s) are checked out to people with no ServiceOps account "
             "of the same email; they have no CI owner and keep the assignee as an attribute.")
+    if cancel_check and cancel_check():
+        db.session.rollback()
+        raise SnipeitSyncError("Synchronization cancelled before commit.")
     if dry_run:
         db.session.rollback()
     else:

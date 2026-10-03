@@ -2191,8 +2191,13 @@ def register(app):
                 if group.group_type not in ("IT Fulfillment", "Fulfillment", "Executive"):
                     abort(400)
                 old_manager_id = group.manager_id
-                manager_id = int(request.form["manager_id"]) if request.form.get("manager_id") else None
-                manager = db.session.get(User, manager_id) if manager_id else None
+                try:
+                    manager_id = int(request.form["manager_id"]) if request.form.get("manager_id") else None
+                except ValueError:
+                    abort(400, description="The manager identifier must be an integer.")
+                manager = tenant_query(User).filter_by(id=manager_id, active=True).first() if manager_id else None
+                if manager_id and not manager:
+                    abort(400, description="Select an active manager in this organization.")
                 if manager and not manager.active:
                     abort(400)
                 if old_manager_id and old_manager_id != manager_id:
