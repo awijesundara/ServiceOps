@@ -545,6 +545,7 @@ def _ci_duplicate_of(name, serial_number, exclude_id=None):
 
 
 def _rack_elevation_payload(rack, compact=False):
+    from serviceops_core.equipment_artwork import identify_equipment
     cis = restrict_ci_query_to_readable_classes(
         tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
     ).filter_by(rack_id=rack.id).all()
@@ -554,44 +555,53 @@ def _rack_elevation_payload(rack, compact=False):
             ci.external_source == "netbox"
             and bool(ci.external_id and ci.external_id.startswith("dcim.device:"))
         )
-        artwork_url = None
+        face = "rear" if ci.rack_face == "rear" else "front"
+        identification = identify_equipment(ci.ci_class, ci.vendor, ci.model, ci.name, ci.attributes)
+        fallback = url_for("static", filename=f"device-artwork/generic-{identification['kind']}.{face}.svg", v=APP_VERSION)
         local_artwork = local_device_artwork(ci.vendor, ci.model)
-        if has_device_artwork:
-            artwork_url = url_for("rack_device_artwork", ci_id=ci.id, face=(ci.rack_face or "front"))
-        elif local_artwork:
-            artwork_url = url_for(
-                "static", filename=f"device-artwork/{local_artwork}.{ci.rack_face or 'front'}.png",
-                v=APP_VERSION,
-            )
+        local_url = url_for("static", filename=f"device-artwork/{local_artwork}.{face}.png", v=APP_VERSION) if local_artwork else None
+        artwork_url = url_for("rack_device_artwork", ci_id=ci.id, face=face) if has_device_artwork else local_url
+        height = ci.rack_u_height if ci.rack_u_height is not None else 1
+        position = ci.rack_position
+        if height == 0:
+            placement = "0U equipment"
+        elif position is None:
+            placement = "U position not recorded"
+        elif position < 1 or height < 0 or position + height - 1 > rack.u_height:
+            placement = "Placement outside rack bounds"
+        else:
+            placement = None
         return {
             "id": ci.id, "name": ci.name, "ci_class": ci.ci_class,
-            "status": ci.operational_status,
-            "vendor": ci.vendor, "model": ci.model,
-            "position": ci.rack_position if ci.rack_position is not None else 1,
-            "u_height": ci.rack_u_height if ci.rack_u_height else 1,
-            # The browser only talks to ServiceOps. This authenticated
-            # endpoint retrieves artwork with the server-side NetBox
-            # credential, so the API token and private NetBox URL are
-            # never disclosed in page JSON or browser network requests.
-            "artwork_url": artwork_url,
+            "status": ci.operational_status, "vendor": ci.vendor, "model": ci.model,
+            "position": position, "u_height": height, "face": face,
+            "power_watts": (ci.attributes or {}).get("power_watts"),
+            "placement_note": placement, "identification": identification,
+            # Only same-origin URLs; private integration URLs/tokens stay server-side.
+            "artwork_url": artwork_url or fallback,
+            "artwork_fallbacks": list(dict.fromkeys(url for url in (local_url, fallback) if url and url != (artwork_url or fallback))),
+            "artwork_source": "NetBox model image" if has_device_artwork else "Exact model image" if local_artwork else "Type illustration",
         }
 
-    front = [ci_dict(ci) for ci in cis if ci.rack_face != "rear" and (ci.ci_class or "").lower() != "pdu"]
-    rear = [ci_dict(ci) for ci in cis if ci.rack_face == "rear" and (ci.ci_class or "").lower() != "pdu"]
-    pdus = [
-        {
-            "id": ci.id, "name": ci.name,
-            "power_watts": (ci.attributes or {}).get("power_watts"),
-        }
-        for ci in cis if (ci.ci_class or "").lower() == "pdu"
-    ]
-    space_used = sum((ci.rack_u_height or 1) for ci in cis if ci.rack_position is not None)
+    devices = [ci_dict(ci) for ci in cis]
+    mounted = [device for device in devices if device["placement_note"] is None]
+    front = [device for device in mounted if device["face"] == "front"]
+    rear = [device for device in mounted if device["face"] == "rear"]
+    pdus = [device for device in devices if device["identification"]["kind"] == "pdu" and device["placement_note"] is not None]
+    unplaced = [device for device in devices if device["placement_note"] is not None and device not in pdus]
+    # Union of physical U intervals: don't double-count overlapping/front-
+    # rear devices, and preserve fractional positions/heights from NetBox.
+    intervals = sorted((device["position"], device["position"] + device["u_height"]) for device in mounted)
+    space_used, covered_until = 0, 0
+    for start, end in intervals:
+        space_used += max(0, end - max(start, covered_until))
+        covered_until = max(covered_until, end)
     weights = [(ci.attributes or {}).get("weight_kg") for ci in cis if (ci.attributes or {}).get("weight_kg")]
     powers = [(ci.attributes or {}).get("power_watts") for ci in cis if (ci.attributes or {}).get("power_watts")]
     highlight_ci_id = request.args.get("highlight", type=int)
     return {
         "rack": {"id": rack.id, "name": rack.name, "site": rack.site, "u_height": rack.u_height},
-        "front": front, "rear": rear, "pdus": pdus,
+        "front": front, "rear": rear, "pdus": pdus, "unplaced": unplaced,
         "highlight_ci_id": highlight_ci_id,
         "compact": compact,
         "stats": {

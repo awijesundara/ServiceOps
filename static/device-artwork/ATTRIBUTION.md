@@ -8,3 +8,5 @@ They are clean, orthogonal front and rear equipment views used as resilient
 local samples and fallbacks. NetBox-managed configuration items continue to
 use their authoritative device-type artwork through the authenticated
 ServiceOps proxy.
+
+Generic front/rear SVG equipment illustrations are original ServiceOps artwork. They represent equipment categories, not manufacturer-specific models; no external image service is used.
