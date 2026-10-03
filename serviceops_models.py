@@ -550,6 +550,8 @@ class Comment(db.Model):
     # the schema level, since a cross-ticket FK check needs a query).
     parent_id = db.Column(db.Integer, db.ForeignKey("comment.id"), nullable=True, index=True)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    # True when ServiceOps AI drafted the text and the author approved and posted it.
+    ai_assisted = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     author = db.relationship("User")
     replies = db.relationship(
         "Comment", backref=db.backref("parent", remote_side=[id]),

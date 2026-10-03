@@ -3375,7 +3375,7 @@ def ticket_mentionable_users(ticket):
     return User.query.filter(User.id.in_(ids), User.active.is_(True)).order_by(User.name).all()
 
 
-def post_ticket_comment(ticket, author, body, parent_id=None):
+def post_ticket_comment(ticket, author, body, parent_id=None, ai_assisted=False):
     """Single source of truth for creating a ticket comment, shared by the
     web UI and the mobile REST API, so threading/follow/mention behavior
     can't drift between the two entry points."""
@@ -3387,7 +3387,8 @@ def post_ticket_comment(ticket, author, body, parent_id=None):
         # reply therefore joins the same top-level thread instead of creating
         # a hidden/deceptive deeper hierarchy through the API.
         parent_id = parent.parent_id or parent.id
-    comment = Comment(ticket_id=ticket.id, user_id=author.id, body=body, tenant_id=ticket.tenant_id, parent_id=parent_id)
+    comment = Comment(ticket_id=ticket.id, user_id=author.id, body=body, tenant_id=ticket.tenant_id,
+                      parent_id=parent_id, ai_assisted=ai_assisted)
     db.session.add(comment)
     db.session.flush()
     follow_ticket(ticket, author)
@@ -7926,6 +7927,12 @@ def create_app(test_config=None):
         return Markup("").join(pieces)
 
     app.jinja_env.globals["mentions_html"] = mentions_html
+
+    def ai_note_html(body):
+        from serviceops_core.ai_note import render_ai_note
+        return render_ai_note(body, mentions_html)
+
+    app.jinja_env.globals["ai_note_html"] = ai_note_html
     app.jinja_env.globals["user_avatar"] = user_avatar_html
     app.jinja_env.globals["PREVIEWABLE_ATTACHMENT_TYPES"] = PREVIEWABLE_ATTACHMENT_TYPES
     app.jinja_env.globals["IMAGE_ATTACHMENT_TYPES"] = IMAGE_ATTACHMENT_TYPES

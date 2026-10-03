@@ -155,7 +155,7 @@ def execute(action, ticket, actor):
         body = str(payload.get("body", "")).strip()
         if not body or len(body) > 10000:
             abort(400, description="The proposed comment is no longer valid.")
-        comment = post_ticket_comment(ticket, actor, body)
+        comment = post_ticket_comment(ticket, actor, body, ai_assisted=True)
         log_history("ticket", ticket.id, "AI-assisted comment added", details=body[:500])
         audit("ai action execute", ticket.number, f"type=add_comment; comment={comment.id}")
         return
@@ -168,7 +168,7 @@ def execute(action, ticket, actor):
         if not body or len(body) > 10000:
             abort(400, description="The proposed note is no longer valid.")
         text = f"{DRAFT_COMMENT_PREFIX[action.action_type]}: {body}"
-        comment = post_ticket_comment(ticket, actor, text)
+        comment = post_ticket_comment(ticket, actor, text, ai_assisted=True)
         log_history("ticket", ticket.id, f"AI-assisted {action.action_type.replace('_', ' ')} added", details=body[:500])
         audit("ai action execute", ticket.number, f"type={action.action_type}; comment={comment.id}")
         return
