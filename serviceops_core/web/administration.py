@@ -146,6 +146,7 @@ from serviceops_models import (
     WorkflowJob,
     WorkflowSchedule,
 )
+from serviceops_core.localization import tr, tr_value
 
 
 def register(app):
@@ -166,9 +167,9 @@ def register(app):
             action = request.form.get("action", "enable")
             if action == "disable":
                 if not verify_password(current_user.password_hash, request.form.get("password", "")):
-                    abort(400, description="Your current password is required to disable MFA.")
+                    abort(400, description=tr("Your current password is required to disable MFA."))
                 if user_requires_mfa_by_policy(current_user):
-                    abort(400, description="MFA is required for your role by administrator policy and cannot be disabled.")
+                    abort(400, description=tr("MFA is required for your role by administrator policy and cannot be disabled."))
                 current_user.mfa_enabled = False
                 current_user.mfa_secret_encrypted = None
                 current_user.mfa_backup_codes_json = None
@@ -176,23 +177,23 @@ def register(app):
                 audit("mfa disable", current_user.username)
                 db.session.commit()
                 session.pop("_mfa_pending_secret", None)
-                flash("MFA has been disabled for your account.", "success")
+                flash(tr("MFA has been disabled for your account."), "success")
                 return redirect(url_for("settings_mfa"))
             if action == "regenerate_backup_codes":
                 if not current_user.mfa_enabled:
-                    abort(400, description="Enable MFA before generating backup codes.")
+                    abort(400, description=tr("Enable MFA before generating backup codes."))
                 codes = generate_mfa_backup_codes()
                 current_user.mfa_backup_codes_json = json.dumps([hash_backup_code(c) for c in codes])
                 audit("mfa backup codes regenerate", current_user.username)
                 db.session.commit()
-                flash("New backup codes generated. Save them now -- they will not be shown again.", "success")
+                flash(tr("New backup codes generated. Save them now -- they will not be shown again."), "success")
                 return render_template("settings_mfa.html", enrolled=True, backup_codes=codes,
                                        mfa_required=user_requires_mfa_by_policy(current_user))
             # action == "enable": confirm possession of the pending secret.
             pending_secret = session.get("_mfa_pending_secret")
             code = request.form.get("code", "").strip()
             if not pending_secret or not code or not pyotp.TOTP(pending_secret).verify(code, valid_window=1):
-                flash("Invalid verification code. Scan the QR code again and try once more.", "error")
+                flash(tr("Invalid verification code. Scan the QR code again and try once more."), "error")
                 return redirect(url_for("settings_mfa"))
             current_user.mfa_secret_encrypted = settings_cipher().encrypt(pending_secret.encode()).decode()
             current_user.mfa_enabled = True
@@ -204,7 +205,7 @@ def register(app):
             audit("mfa enroll", current_user.username)
             db.session.commit()
             session.pop("_mfa_pending_secret", None)
-            flash("MFA is now enabled. Save your backup codes -- they will not be shown again.", "success")
+            flash(tr("MFA is now enabled. Save your backup codes -- they will not be shown again."), "success")
             return render_template("settings_mfa.html", enrolled=True, backup_codes=backup_codes,
                                    mfa_required=user_requires_mfa_by_policy(current_user))
         if current_user.mfa_enabled:
@@ -273,7 +274,8 @@ def register(app):
         )
         breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec)
         client_fields = {
-            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            key: {"label": tr_value(spec["label"]), "type": spec["type"],
+                  "options": [(value, tr_value(label)) for value, label in spec.get("options", [])]}
             for key, spec in field_spec.items()
         }
         return render_template(
@@ -291,13 +293,13 @@ def register(app):
             min_length = setting_int("PASSWORD_MIN_LENGTH", 14)
             password = request.form["password"]
             if len(password) < min_length:
-                flash(f"Password must contain at least {min_length} characters.", "error")
+                flash(tr("Password must contain at least {min_length} characters.", min_length=min_length), "error")
                 return render_template("user_form.html", user=None, self_service=False)
             initial_role = request.form["role"]
             if initial_role not in ALL_ROLES:
-                abort(400, description="Select a valid role.")
+                abort(400, description=tr("Select a valid role."))
             if initial_role == "superadmin" and current_user.effective_role != "superadmin":
-                flash("Only a superadmin can grant the superadmin role.", "error")
+                flash(tr("Only a superadmin can grant the superadmin role."), "error")
                 return render_template("user_form.html", user=None, self_service=False)
             user = User(username=request.form["username"], name=request.form["name"], email=request.form["email"],
                         password_hash=hash_password(password), role=initial_role,
@@ -331,7 +333,7 @@ def register(app):
             user.email = request.form["email"].strip()[:160]
             requested_roles = set(request.form.getlist("granted_roles")) & set(ALL_ROLES)
             if not requested_roles:
-                flash("A user must hold at least one role.", "error")
+                flash(tr("A user must hold at least one role."), "error")
                 return redirect(url_for("user_edit", user_id=user.id))
             current_roles = set(user.granted_roles)
             # Only an acting superadmin may grant or revoke the superadmin
@@ -339,7 +341,7 @@ def register(app):
             # themselves (or a peer) cross-tenant platform authority.
             if ("superadmin" in requested_roles) != ("superadmin" in current_roles):
                 if current_user.effective_role != "superadmin":
-                    flash("Only a superadmin can grant or revoke the superadmin role.", "error")
+                    flash(tr("Only a superadmin can grant or revoke the superadmin role."), "error")
                     return redirect(url_for("user_edit", user_id=user.id))
             existing_grant_roles = {
                 g.role for g in UserRoleGrant.query.filter_by(user_id=user.id).all()
@@ -396,19 +398,18 @@ def register(app):
             if manager_raw:
                 manager_id = int(manager_raw)
                 if manager_id == user.id:
-                    flash("A user cannot be their own manager.", "error")
+                    flash(tr("A user cannot be their own manager."), "error")
                     return redirect(url_for("user_edit", user_id=user.id))
                 manager = tenant_query(User).filter_by(id=manager_id).first()
                 if not manager:
-                    flash("Select a valid manager.", "error")
+                    flash(tr("Select a valid manager."), "error")
                     return redirect(url_for("user_edit", user_id=user.id))
                 walker = manager
                 seen = set()
                 while walker and walker.id not in seen:
                     if walker.id == user.id:
                         flash(
-                            f"Cannot set {manager.name} as manager: that would create a "
-                            "reporting-line loop.", "error",
+                            tr("Cannot set {name} as manager: that would create a reporting-line loop.", name=manager.name), "error",
                         )
                         return redirect(url_for("user_edit", user_id=user.id))
                     seen.add(walker.id)
@@ -433,7 +434,7 @@ def register(app):
                 )
             audit("update", user.username, json.dumps({"before": before, "role": user.role, "active": user.active}))
             db.session.commit()
-            flash("User record updated.", "success")
+            flash(tr("User record updated."), "success")
             return redirect(url_for("user_edit", user_id=user.id))
         manager_choices = tenant_query(User).filter(
             User.active.is_(True), User.id != user.id,
@@ -484,11 +485,11 @@ def register(app):
         content -- logging the old name/email defeats the purpose."""
         user = tenant_query(User).filter_by(id=user_id).first_or_404()
         if user.id == current_user.id:
-            abort(400, description="You cannot erase your own account.")
+            abort(400, description=tr("You cannot erase your own account."))
         if user.active:
-            abort(400, description="Deactivate this account before erasing its personal data.")
+            abort(400, description=tr("Deactivate this account before erasing its personal data."))
         if user.erased_at:
-            abort(400, description="This account's personal data has already been erased.")
+            abort(400, description=tr("This account's personal data has already been erased."))
         placeholder = f"erased-user-{user.id}"
         user.name = f"Erased user #{user.id}"
         user.username = placeholder
@@ -511,7 +512,7 @@ def register(app):
         ai_service.purge_user_conversations(user.id)
         audit("erase", placeholder, "Personal data erased (GDPR Art. 17)")
         db.session.commit()
-        flash(f"{placeholder}'s personal data has been erased.", "success")
+        flash(tr("{placeholder}'s personal data has been erased.", placeholder=placeholder), "success")
         return redirect(url_for("users"))
 
     @app.route("/admin/guided-tours", methods=["GET", "POST"])
@@ -528,9 +529,9 @@ def register(app):
                 key = request.form.get("key", "").strip().lower().replace(" ", "-")
                 title = request.form.get("title", "").strip()
                 if not key or not title:
-                    flash("A key and title are required.", "error")
+                    flash(tr("A key and title are required."), "error")
                 elif tenant_query(GuidedTour).filter_by(key=key).first():
-                    flash("A tour with that key already exists.", "error")
+                    flash(tr("A tour with that key already exists."), "error")
                 else:
                     roles_selected = [r for r in request.form.getlist("target_roles") if r in GUIDED_TOUR_ROLES]
                     tour = GuidedTour(
@@ -543,12 +544,12 @@ def register(app):
                     db.session.add(tour)
                     audit("guided tour created", key, title)
                     db.session.commit()
-                    flash(f"{title} created. Add steps below.", "success")
+                    flash(tr("{title} created. Add steps below.", title=title), "success")
             elif action == "update_tour":
                 tour = tenant_record_or_404(GuidedTour, request.form.get("tour_id", type=int))
                 title = request.form.get("title", "").strip()
                 if not title:
-                    flash("Title is required.", "error")
+                    flash(tr("Title is required."), "error")
                 else:
                     roles_selected = [r for r in request.form.getlist("target_roles") if r in GUIDED_TOUR_ROLES]
                     tour.title = title
@@ -561,13 +562,13 @@ def register(app):
                     tour.version += 1
                     audit("guided tour updated", tour.key, f"version={tour.version}")
                     db.session.commit()
-                    flash(f"{tour.title} updated (now version {tour.version}).", "success")
+                    flash(tr("{title} updated (now version {version}).", title=tour.title, version=tour.version), "success")
             elif action == "toggle_active":
                 tour = tenant_record_or_404(GuidedTour, request.form.get("tour_id", type=int))
                 tour.active = not tour.active
                 audit("guided tour toggled", tour.key, "Active" if tour.active else "Inactive")
                 db.session.commit()
-                flash(f"{tour.title} is now {'active' if tour.active else 'inactive'}.", "success")
+                flash(tr("{title} is now {value}.", title=tour.title, value='active' if tour.active else 'inactive'), "success")
             elif action == "delete":
                 tour = tenant_record_or_404(GuidedTour, request.form.get("tour_id", type=int))
                 title = tour.title
@@ -579,13 +580,13 @@ def register(app):
                 db.session.delete(tour)
                 audit("guided tour deleted", title, "")
                 db.session.commit()
-                flash(f"{title} deleted.", "success")
+                flash(tr("{title} deleted.", title=title), "success")
             elif action == "add_step":
                 tour = tenant_record_or_404(GuidedTour, request.form.get("tour_id", type=int))
                 title = request.form.get("step_title", "").strip()
                 body = request.form.get("step_body", "").strip()
                 if not title or not body:
-                    flash("Step title and body are required.", "error")
+                    flash(tr("Step title and body are required."), "error")
                 else:
                     next_order = (
                         db.session.query(db.func.max(GuidedTourStep.step_order))
@@ -601,7 +602,7 @@ def register(app):
                     tour.version += 1
                     audit("guided tour step added", tour.key, title)
                     db.session.commit()
-                    flash("Step added.", "success")
+                    flash(tr("Step added."), "success")
             elif action == "delete_step":
                 step = GuidedTourStep.query.join(GuidedTour).filter(
                     GuidedTourStep.id == request.form.get("step_id", type=int),
@@ -612,7 +613,7 @@ def register(app):
                 tour.version += 1
                 audit("guided tour step deleted", tour.key, step.title)
                 db.session.commit()
-                flash("Step removed.", "success")
+                flash(tr("Step removed."), "success")
             return redirect(url_for("guided_tours_admin"))
         tours = tenant_query(GuidedTour).options(selectinload(GuidedTour.steps)).order_by(GuidedTour.title).all()
         return render_template("guided_tours_admin.html", tours=tours, roles=GUIDED_TOUR_ROLES)
@@ -630,7 +631,7 @@ def register(app):
         if request.method == "POST":
             event_type = request.form.get("event_type", "")
             if event_type not in NOTIFICATION_EVENT_TYPES:
-                abort(400, description="Unknown notification event type.")
+                abort(400, description=tr("Unknown notification event type."))
             action = request.form.get("action", "save")
             template = NotificationTemplate.query.filter_by(
                 tenant_id=current_user.tenant_id, event_type=event_type,
@@ -640,12 +641,12 @@ def register(app):
                     db.session.delete(template)
                     audit("notification template reset", event_type, "")
                     db.session.commit()
-                    flash("Reverted to the default wording.", "success")
+                    flash(tr("Reverted to the default wording."), "success")
             else:
                 subject = request.form.get("subject_template", "").strip()
                 body = request.form.get("body_template", "").strip()
                 if not subject or not body:
-                    flash("Subject and body are both required.", "error")
+                    flash(tr("Subject and body are both required."), "error")
                 else:
                     if template:
                         template.subject_template = subject[:255]
@@ -658,7 +659,7 @@ def register(app):
                         ))
                     audit("notification template saved", event_type, "")
                     db.session.commit()
-                    flash("Notification template saved.", "success")
+                    flash(tr("Notification template saved."), "success")
             return redirect(url_for("notification_templates_admin"))
         templates_by_event = {
             row.event_type: row
@@ -714,7 +715,7 @@ def register(app):
                 removed = RolePolicyOverride.query.filter_by(tenant_id=tenant_id, role=role).delete()
                 audit("configure", "Role policy reset", f"{role} reset to recommended ({removed} override(s) removed)")
                 db.session.commit()
-                flash(f"{role.capitalize()}'s permissions were reset to the ITIL-recommended baseline.", "success")
+                flash(tr("{role}'s permissions were reset to the ITIL-recommended baseline.", role=role.capitalize()), "success")
             else:
                 existing = {
                     (row.role, row.action): row
@@ -757,9 +758,9 @@ def register(app):
                 if changed:
                     audit("configure", "Role policy", f"{changed} role/action override(s) changed")
                     db.session.commit()
-                    flash(f"Saved {changed} permission change(s).", "success")
+                    flash(tr("Saved {changed} permission change(s).", changed=changed), "success")
                 else:
-                    flash("No changes to save.", "success")
+                    flash(tr("No changes to save."), "success")
             return redirect(url_for("admin_roles"))
 
         overrides = {
@@ -813,23 +814,23 @@ def register(app):
                 slug = request.form.get("slug", "").strip().lower()[:80]
                 name = request.form.get("name", "").strip()[:160]
                 if not slug or not name or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
-                    flash("Enter a name and a lowercase, hyphen-safe slug.", "error")
+                    flash(tr("Enter a name and a lowercase, hyphen-safe slug."), "error")
                     return redirect(url_for("platform_tenants"))
                 if Tenant.query.filter_by(slug=slug).first():
-                    flash(f"A tenant with slug \"{slug}\" already exists.", "error")
+                    flash(tr("A tenant with slug \"{slug}\" already exists.", slug=slug), "error")
                     return redirect(url_for("platform_tenants"))
                 tenant = Tenant(slug=slug, name=name)
                 db.session.add(tenant)
                 audit("create", f"Tenant {slug}", name)
-                flash(f"Tenant \"{name}\" created.", "success")
+                flash(tr("Tenant \"{name}\" created.", name=name), "success")
             elif action == "set_tenant_active":
                 tenant = Tenant.query.filter_by(id=int(request.form["tenant_id"])).first_or_404()
                 if tenant.id == current_user.tenant_id and not request.form.get("active"):
-                    flash("You cannot deactivate the tenant your own account belongs to.", "error")
+                    flash(tr("You cannot deactivate the tenant your own account belongs to."), "error")
                     return redirect(url_for("platform_tenants"))
                 tenant.active = bool(request.form.get("active"))
                 audit("configure", f"Tenant {tenant.slug}", f"active={tenant.active}")
-                flash(f"Tenant \"{tenant.name}\" {'activated' if tenant.active else 'deactivated'}.", "success")
+                flash(tr("Tenant \"{name}\" {value}.", name=tenant.name, value='activated' if tenant.active else 'deactivated'), "success")
             else:
                 abort(400)
             db.session.commit()
@@ -849,17 +850,17 @@ def register(app):
             try:
                 acting_user_id = int(request.form.get("acting_user_id", ""))
             except (TypeError, ValueError):
-                abort(400, description="Select a valid acting user.")
+                abort(400, description=tr("Select a valid acting user."))
             acting_user = tenant_query(User).filter_by(
                 id=acting_user_id, active=True
             ).first()
             scopes = sorted(set(request.form.getlist("scopes")))
             if not name or len(name) > 160:
-                abort(400, description="Client name must contain 1-160 characters.")
+                abort(400, description=tr("Client name must contain 1-160 characters."))
             if not acting_user:
-                abort(400, description="The acting user must be active in this tenant.")
+                abort(400, description=tr("The acting user must be active in this tenant."))
             if not scopes or not set(scopes).issubset(API_SCOPES):
-                abort(400, description="Select one or more valid API scopes.")
+                abort(400, description=tr("Select one or more valid API scopes."))
             token, prefix, token_hash = create_api_token()
             client = APIClient(
                 name=name, token_prefix=prefix, token_hash=token_hash,
@@ -936,9 +937,9 @@ def register(app):
                     chat_id = request.form.get("chat_id", "").strip()
                     thread_id = request.form.get("message_thread_id", "").strip()
                     if not chat_id or len(chat_id) > 120:
-                        abort(400, description="A Telegram chat ID is required.")
+                        abort(400, description=tr("A Telegram chat ID is required."))
                     if thread_id and (not thread_id.isdigit() or len(thread_id) > 20):
-                        abort(400, description="Telegram topic ID must be numeric.")
+                        abort(400, description=tr("Telegram topic ID must be numeric."))
                     configuration = {
                         "chat_id": chat_id,
                         "protect_content": request.form.get("protect_content") == "on",
@@ -956,7 +957,7 @@ def register(app):
                     # account key rather than a webhook signing secret.
                     endpoint = request.form.get("space_id", "").strip()
                     if not re.fullmatch(r"spaces/[\w-]+", endpoint):
-                        abort(400, description='Space ID must look like "spaces/AAAAxxxxx".')
+                        abort(400, description=tr("Space ID must look like \"spaces/AAAAxxxxx\"."))
                     configuration["interactive"] = True
                 # Outbound proxy override, applicable to every provider kind
                 # (not just Telegram): lets an administrator choose per
@@ -965,7 +966,7 @@ def register(app):
                 # one destination -- see resolve_outbound_proxies().
                 proxy_mode = request.form.get("proxy_mode", "default")
                 if proxy_mode not in ("default", "none", "custom"):
-                    abort(400, description="Invalid outbound proxy mode.")
+                    abort(400, description=tr("Invalid outbound proxy mode."))
                 if proxy_mode != "default":
                     configuration["proxy_mode"] = proxy_mode
                 if proxy_mode == "custom":
@@ -973,7 +974,7 @@ def register(app):
                     try:
                         parse_proxy_url(proxy_url)
                     except ValueError:
-                        abort(400, description="Custom outbound proxy must be a valid http:// or https:// URL.")
+                        abort(400, description=tr("Custom outbound proxy must be a valid http:// or https:// URL."))
                     configuration["proxy_url"] = proxy_url
                 if (
                     not name or len(name) > 160
@@ -984,7 +985,7 @@ def register(app):
                     ))
                 ):
                     abort(400, description=(
-                        "A name, supported kind and public HTTPS endpoint are required."
+                        tr("A name, supported kind and public HTTPS endpoint are required.")
                     ))
                 secret = request.form.get("secret", "").strip() if kind in {
                     "webhook", "siem", "telegram",
@@ -997,11 +998,10 @@ def register(app):
                             raise ValueError
                     except (TypeError, ValueError):
                         abort(400, description=(
-                            "A valid Google service-account JSON key (with private_key and "
-                            "client_email) is required for the interactive app."
+                            tr("A valid Google service-account JSON key (with private_key and client_email) is required for the interactive app.")
                         ))
                 if kind == "telegram" and not secret:
-                    abort(400, description="A Telegram bot token is required.")
+                    abort(400, description=tr("A Telegram bot token is required."))
                 if kind in {"webhook", "siem"} and not secret:
                     secret = secrets.token_urlsafe(32)
                     revealed_secret = secret
@@ -1027,12 +1027,12 @@ def register(app):
                     )
                     allowed_patterns = GROUP_EVENT_SUBSCRIPTION_PATTERNS
                 elif scope_type != "tenant":
-                    abort(400, description="Administrators can create organization or team channels here.")
+                    abort(400, description=tr("Administrators can create organization or team channels here."))
                 patterns = list(dict.fromkeys(request.form.getlist("event_types")))
                 if not patterns or any(
                     pattern not in allowed_patterns for pattern in patterns
                 ):
-                    abort(400, description="Select at least one event supported by this audience.")
+                    abort(400, description=tr("Select at least one event supported by this audience."))
                 db.session.add(IntegrationConnection(
                     name=name, kind=kind, endpoint=display_endpoint,
                     endpoint_encrypted=encrypted_endpoint,
@@ -1064,11 +1064,11 @@ def register(app):
                 except Exception as error:
                     audit("integration test failed", connection.name, type(error).__name__)
                     db.session.commit()
-                    flash(f"Test failed: {error}", "error")
+                    flash(tr("Test failed: {error}", error=error), "error")
                 else:
                     audit("integration test", connection.name, f"HTTP {status}")
                     db.session.commit()
-                    flash("Test notification delivered successfully.", "success")
+                    flash(tr("Test notification delivered successfully."), "success")
                 return redirect(url_for("integrations_admin"))
             elif action == "toggle_connection":
                 connection = IntegrationConnection.query.filter_by(
@@ -1088,13 +1088,13 @@ def register(app):
                     if connection.scope_type == "group" else SYSTEM_EVENT_SUBSCRIPTION_PATTERNS
                 )
                 if any(pattern not in allowed_patterns for pattern in patterns):
-                    abort(400, description="Select only supported notification events.")
+                    abort(400, description=tr("Select only supported notification events."))
                 connection.event_types_json = json.dumps(patterns or ["__none__"])
                 audit(
                     "integration subscriptions updated", connection.name,
                     ", ".join(patterns) if patterns else "No events selected",
                 )
-                flash("Notification event subscriptions updated.", "success")
+                flash(tr("Notification event subscriptions updated."), "success")
             elif action == "update_connection_proxy":
                 connection = IntegrationConnection.query.filter_by(
                     id=request.form.get("connection_id", type=int),
@@ -1102,7 +1102,7 @@ def register(app):
                 ).first_or_404()
                 proxy_mode = request.form.get("proxy_mode", "default")
                 if proxy_mode not in ("default", "none", "custom"):
-                    abort(400, description="Invalid outbound proxy mode.")
+                    abort(400, description=tr("Invalid outbound proxy mode."))
                 # Merge into the existing configuration rather than replacing
                 # it outright -- other provider-specific fields (Telegram's
                 # chat_id/message_thread_id/protect_content) live in this
@@ -1117,14 +1117,14 @@ def register(app):
                     try:
                         parse_proxy_url(proxy_url)
                     except ValueError:
-                        abort(400, description="Custom outbound proxy must be a valid http:// or https:// URL.")
+                        abort(400, description=tr("Custom outbound proxy must be a valid http:// or https:// URL."))
                     configuration["proxy_url"] = proxy_url
                 connection.configuration_encrypted = (
                     settings_cipher().encrypt(json.dumps(configuration).encode()).decode()
                     if configuration else None
                 )
                 audit("integration proxy updated", connection.name, proxy_mode)
-                flash("Outbound proxy setting updated.", "success")
+                flash(tr("Outbound proxy setting updated."), "success")
             elif action == "create_monitoring_source":
                 name = request.form.get("name", "").strip()
                 group = tenant_record_or_404(
@@ -1135,7 +1135,7 @@ def register(app):
                     or group.group_type != "IT Fulfillment"
                 ):
                     abort(400, description=(
-                        "A name and active IT fulfillment team are required."
+                        tr("A name and active IT fulfillment team are required.")
                     ))
                 token, prefix, token_hash = create_api_token()
                 source = MonitoringSource(
@@ -1191,7 +1191,7 @@ def register(app):
         count = process_outbox(limit=5)
         audit("integration process", "Outbox", f"{count} event(s)")
         db.session.commit()
-        flash(f"Processed {count} outbox event(s).", "success")
+        flash(tr("Processed {count} outbox event(s).", count=count), "success")
         return redirect(url_for("integrations_admin"))
 
     @app.route("/admin/workflows", methods=["GET", "POST"])
@@ -1209,7 +1209,7 @@ def register(app):
                 )
                 db.session.commit()
                 flash(
-                    f"Automation rules validated; {result['published']} new version(s) published.",
+                    tr("Automation rules validated; {result} new version(s) published.", result=result['published']),
                     "success",
                 )
                 return redirect(url_for("workflows_admin"))
@@ -1223,7 +1223,7 @@ def register(app):
                         current_user.tenant_id,
                     )
                 except (json.JSONDecodeError, ValueError, KeyError) as error:
-                    abort(400, description=f"Simulation input is invalid: {error}")
+                    abort(400, description=tr("Simulation input is invalid: {error}", error=error))
                 audit("workflow simulate", request.form.get("event_type", ""),
                       f"{len(simulation)} match(es)")
                 db.session.commit()
@@ -1239,31 +1239,31 @@ def register(app):
                 )
                 audit("workflow manual trigger", ticket.number, job.event_id)
                 db.session.commit()
-                flash(f"Manual workflow event queued for {ticket.number}.", "success")
+                flash(tr("Manual workflow event queued for {number}.", number=ticket.number), "success")
                 return redirect(url_for("workflows_admin"))
             elif action == "replay_dead":
                 job = tenant_record_or_404(
                     WorkflowJob, int(request.form.get("job_id", ""))
                 )
                 if job.state != "Dead":
-                    abort(409, description="Only dead workflow jobs can be replayed.")
+                    abort(409, description=tr("Only dead workflow jobs can be replayed."))
                 job.state = "Retry"
                 job.attempts = 0
                 job.available_at = now()
                 job.last_error = None
                 audit("workflow replay", job.event_id, f"{job.target_type}:{job.target_id}")
                 db.session.commit()
-                flash("Dead workflow job queued for controlled replay.", "success")
+                flash(tr("Dead workflow job queued for controlled replay."), "success")
                 return redirect(url_for("workflows_admin"))
             elif action == "create_schedule":
                 key = request.form.get("schedule_key", "").strip()
                 name = request.form.get("name", "").strip()
                 if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,119}", key):
                     abort(400, description=(
-                        "Schedule key must be 3-120 lowercase letters, numbers or hyphens."
+                        tr("Schedule key must be 3-120 lowercase letters, numbers or hyphens.")
                     ))
                 if not name or len(name) > 160:
-                    abort(400, description="Schedule name must contain 1-160 characters.")
+                    abort(400, description=tr("Schedule name must contain 1-160 characters."))
                 try:
                     ticket = tenant_record_or_404(
                         Ticket, int(request.form.get("ticket_id", ""))
@@ -1274,11 +1274,11 @@ def register(app):
                     if next_run.tzinfo is None:
                         next_run = next_run.replace(tzinfo=timezone.utc)
                 except (TypeError, ValueError):
-                    abort(400, description="Schedule target, interval, or start time is invalid.")
+                    abort(400, description=tr("Schedule target, interval, or start time is invalid."))
                 if interval < 1 or interval > 525600:
-                    abort(400, description="Schedule interval must be 1-525600 minutes.")
+                    abort(400, description=tr("Schedule interval must be 1-525600 minutes."))
                 if tenant_query(WorkflowSchedule).filter_by(schedule_key=key).first():
-                    abort(409, description="A schedule with that key already exists.")
+                    abort(409, description=tr("A schedule with that key already exists."))
                 db.session.add(WorkflowSchedule(
                     schedule_key=key, name=name, ticket_id=ticket.id,
                     interval_minutes=interval, next_run_at=next_run,
@@ -1287,7 +1287,7 @@ def register(app):
                 audit("workflow schedule create", key,
                       f"{ticket.number}; every {interval} minute(s)")
                 db.session.commit()
-                flash(f"Workflow schedule {name} created.", "success")
+                flash(tr("Workflow schedule {name} created.", name=name), "success")
                 return _admin_referrer_redirect("workflows_admin")
             elif action == "toggle_schedule":
                 schedule = tenant_record_or_404(
@@ -1301,7 +1301,7 @@ def register(app):
                     "active" if schedule.active else "disabled",
                 )
                 db.session.commit()
-                flash("Workflow schedule status updated.", "success")
+                flash(tr("Workflow schedule status updated."), "success")
                 return _admin_referrer_redirect("workflows_admin")
             else:
                 abort(400)
@@ -1492,9 +1492,8 @@ def register(app):
             else:
                 audit("update", "Administration settings", ", ".join(changed) or "No value changes")
                 db.session.commit()
-                flash("Administration settings saved." + (
-                    " Restart or roll out all application instances to apply marked settings."
-                    if restart_required else ""), "success")
+                flash(tr("Administration settings saved. Restart or roll out all application instances to apply marked settings.")
+                    if restart_required else tr("Administration settings saved."), "success")
             return _admin_referrer_redirect("system_settings_category", category=category)
         values = {}
         for definition in definitions:
@@ -1568,7 +1567,8 @@ def register(app):
         ).limit(per_page).all()
         value_labels = {("user_id", key): label for key, label in field_spec["user_id"]["options"]}
         client_fields = {
-            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            key: {"label": tr_value(spec["label"]), "type": spec["type"],
+                  "options": [(value, tr_value(label)) for value, label in spec.get("options", [])]}
             for key, spec in field_spec.items()
         }
         return render_template(
@@ -1741,7 +1741,7 @@ def register(app):
         ).delete(synchronize_session=False)
         audit("purge", "Application error log", f"{deleted} entries cleared")
         db.session.commit()
-        flash(f"Cleared {deleted} error log entries.", "success")
+        flash(tr("Cleared {deleted} error log entries.", deleted=deleted), "success")
         return redirect(url_for("system_health"))
 
     @app.get("/admin/system-health/logs")
@@ -1782,7 +1782,7 @@ def register(app):
     @require_action("security_administer")
     def audit_rotate_key():
         if request.form.get("confirmation") != "ROTATE":
-            abort(400, description="Type ROTATE to confirm audit-key rotation.")
+            abort(400, description=tr("Type ROTATE to confirm audit-key rotation."))
         try:
             key = rotate_audit_integrity_key(
                 current_user.tenant_id, current_user.id
@@ -1791,7 +1791,7 @@ def register(app):
         except RuntimeError as error:
             db.session.rollback()
             abort(409, description=str(error))
-        flash(f"Audit signing key rotated to {key.key_id}.", "success")
+        flash(tr("Audit signing key rotated to {key_id}.", key_id=key.key_id), "success")
         return redirect(url_for("audit_log"))
 
     @app.route("/admin/data-governance", methods=["GET", "POST"])
@@ -1807,13 +1807,13 @@ def register(app):
             if action == "save_retention_policy":
                 record_type = request.form.get("record_type", "").strip()
                 if record_type not in DATA_CLASSIFICATION_REGISTRY:
-                    abort(400, description="Unknown record type.")
+                    abort(400, description=tr("Unknown record type."))
                 try:
                     retention_days = int(request.form.get("retention_days", "0"))
                 except ValueError:
-                    abort(400, description="Retention must be an integer number of days.")
+                    abort(400, description=tr("Retention must be an integer number of days."))
                 if retention_days < 30 or retention_days > 36500:
-                    abort(400, description="Retention must be between 30 and 36500 days.")
+                    abort(400, description=tr("Retention must be between 30 and 36500 days."))
                 policy = DataRetentionPolicy.query.filter_by(
                     tenant_id=current_user.tenant_id, record_type=record_type,
                 ).one_or_none()
@@ -1833,16 +1833,16 @@ def register(app):
                     f"days={retention_days}; legal_hold={policy.legal_hold}; active={policy.active}",
                 )
                 db.session.commit()
-                flash(f"Retention policy for {DATA_CLASSIFICATION_REGISTRY[record_type]['label']} saved.", "success")
+                flash(tr("Retention policy for {data_classification_registry} saved.", data_classification_registry=DATA_CLASSIFICATION_REGISTRY[record_type]['label']), "success")
             elif action == "run_purge_now":
                 count = process_data_retention_purge()
-                flash(f"Retention purge complete: {count} record(s) erased.", "success")
+                flash(tr("Retention purge complete: {count} record(s) erased.", count=count), "success")
             elif action == "add_legal_hold":
                 record_type = request.form.get("record_type", "").strip()
                 record_id = request.form.get("record_id", type=int)
                 reason = request.form.get("reason", "").strip()[:500]
                 if record_type not in DATA_CLASSIFICATION_REGISTRY or not record_id or not reason:
-                    flash("Record type, record ID, and a reason are all required for a legal hold.", "error")
+                    flash(tr("Record type, record ID, and a reason are all required for a legal hold."), "error")
                 else:
                     db.session.add(RecordLegalHold(
                         tenant_id=current_user.tenant_id, record_type=record_type,
@@ -1850,14 +1850,14 @@ def register(app):
                     ))
                     audit("legal hold applied", f"{record_type}:{record_id}", reason)
                     db.session.commit()
-                    flash("Legal hold applied.", "success")
+                    flash(tr("Legal hold applied."), "success")
             elif action == "release_legal_hold":
                 hold = tenant_record_or_404(RecordLegalHold, request.form.get("hold_id", type=int))
                 hold.released_at = now()
                 hold.released_by_id = current_user.id
                 audit("legal hold released", f"{hold.record_type}:{hold.record_id}", hold.reason)
                 db.session.commit()
-                flash("Legal hold released.", "success")
+                flash(tr("Legal hold released."), "success")
             elif action == "save_data_region":
                 region = request.form.get("data_region", "").strip()[:200]
                 setting = PlatformSetting.query.filter_by(
@@ -1869,7 +1869,7 @@ def register(app):
                 setting.value = region
                 audit("data region update", "DATA_REGION", region)
                 db.session.commit()
-                flash("Data region note saved.", "success")
+                flash(tr("Data region note saved."), "success")
             return redirect(url_for("data_governance_admin"))
         policies = {
             policy.record_type: policy
@@ -1895,10 +1895,10 @@ def register(app):
         try:
             retention_days = int(request.form.get("retention_days", "0"))
         except ValueError:
-            abort(400, description="Retention must be an integer number of days.")
+            abort(400, description=tr("Retention must be an integer number of days."))
         if retention_days < 2555 or retention_days > 36500:
             abort(400, description=(
-                "Audit retention must be between 2555 and 36500 days."
+                tr("Audit retention must be between 2555 and 36500 days.")
             ))
         policy = AuditRetentionPolicy.query.filter_by(
             tenant_id=current_user.tenant_id
@@ -1922,7 +1922,7 @@ def register(app):
             f"external_export_required={policy.external_export_required}",
         )
         db.session.commit()
-        flash("Audit retention policy saved.", "success")
+        flash(tr("Audit retention policy saved."), "success")
         return redirect(url_for("audit_log"))
 
     @app.get("/admin/audit/export")
@@ -1933,8 +1933,7 @@ def register(app):
         integrity = verify_audit_chain(current_user.tenant_id, rows=rows)
         if not integrity["valid"]:
             abort(409, description=(
-                "Audit integrity verification failed; export is blocked pending "
-                "security investigation."
+                tr("Audit integrity verification failed; export is blocked pending security investigation.")
             ))
         document = {
             "schema": "serviceops.audit-export.v1",
@@ -1991,13 +1990,13 @@ def register(app):
                 name = request.form.get("name", "").strip()
                 group_type = request.form.get("group_type", "IT Fulfillment")
                 if not name or len(name) > 120:
-                    abort(400, description="Team name must contain 1 to 120 characters.")
+                    abort(400, description=tr("Team name must contain 1 to 120 characters."))
                 if group_type not in ("IT Fulfillment", "Fulfillment", "Executive"):
-                    abort(400, description="Select a supported team type.")
+                    abort(400, description=tr("Select a supported team type."))
                 if tenant_query(SupportGroup).filter(
                     func.lower(SupportGroup.name) == name.casefold()
                 ).first():
-                    abort(409, description="A team with that name already exists.")
+                    abort(409, description=tr("A team with that name already exists."))
                 group = SupportGroup(
                     name=name, group_type=group_type, active=True,
                     tenant_id=current_user.tenant_id,
@@ -2005,26 +2004,26 @@ def register(app):
                 db.session.add(group)
                 db.session.flush()
                 audit("create", f"Support group: {name}", group_type)
-                flash(f"Team {name} created. Assign its manager and members below.", "success")
+                flash(tr("Team {name} created. Assign its manager and members below.", name=name), "success")
             elif action in {"update_support_group", "rename_support_group"}:
                 group_id = request.form.get("group_id", type=int)
                 if group_id is None:
-                    abort(400, description="Select a valid team.")
+                    abort(400, description=tr("Select a valid team."))
                 group = tenant_record_or_404(SupportGroup, group_id)
                 if group.name in ("Change Control Board", "Executive Office"):
-                    abort(400, description="Use the dedicated governance controls for this group.")
+                    abort(400, description=tr("Use the dedicated governance controls for this group."))
                 name = request.form.get("name", "").strip()
                 group_type = group.group_type if action == "rename_support_group" else request.form.get("group_type", "IT Fulfillment")
                 if not name or len(name) > 120:
-                    abort(400, description="Team name must contain 1 to 120 characters.")
+                    abort(400, description=tr("Team name must contain 1 to 120 characters."))
                 if group_type not in ("IT Fulfillment", "Fulfillment", "Executive") and not (action == "rename_support_group" and group_type == "Client Support"):
-                    abort(400, description="Select a supported team type.")
+                    abort(400, description=tr("Select a supported team type."))
                 duplicate = tenant_query(SupportGroup).filter(
                     SupportGroup.id != group.id,
                     func.lower(SupportGroup.name) == name.casefold(),
                 ).first()
                 if duplicate:
-                    abort(409, description="A team with that name already exists.")
+                    abort(409, description=tr("A team with that name already exists."))
                 before = f"{group.name}; {group.group_type}; active={group.active}"
                 old_name = group.name
                 affected_users = [member.user for member in group.members]
@@ -2040,32 +2039,32 @@ def register(app):
                 if old_name != name:
                     alias = tenant_query(SupportGroupAlias).filter(func.lower(SupportGroupAlias.alias) == old_name.casefold()).first()
                     if alias and alias.group_id != group.id:
-                        abort(409, description="The old group name is already an alias of another team.")
+                        abort(409, description=tr("The old group name is already an alias of another team."))
                     if not alias:
                         db.session.add(SupportGroupAlias(alias=old_name, group_id=group.id, tenant_id=group.tenant_id))
                     audit("team renamed", f"support_group:{group.id}", f"{old_name} → {name}")
-                flash(f"Team {name} updated.", "success")
+                flash(tr("Team {name} updated.", name=name), "success")
             elif action == "create_ticket_category":
                 name = request.form.get("name", "").strip()
                 if not name or len(name) > 80:
-                    abort(400, description="Category name must contain 1 to 80 characters.")
+                    abort(400, description=tr("Category name must contain 1 to 80 characters."))
                 if tenant_query(TicketCategory).filter(func.lower(TicketCategory.name) == name.casefold()).first():
-                    abort(409, description="A category with that name already exists.")
+                    abort(409, description=tr("A category with that name already exists."))
                 category = TicketCategory(name=name, active=True, tenant_id=current_user.tenant_id)
                 db.session.add(category)
                 db.session.flush()
                 audit("create", f"Ticket category: {name}", "")
-                flash(f"Category {name} created.", "success")
+                flash(tr("Category {name} created.", name=name), "success")
             elif action == "update_ticket_category":
                 category = tenant_record_or_404(TicketCategory, int(request.form["category_id"]))
                 name = request.form.get("name", "").strip()
                 if not name or len(name) > 80:
-                    abort(400, description="Category name must contain 1 to 80 characters.")
+                    abort(400, description=tr("Category name must contain 1 to 80 characters."))
                 duplicate = tenant_query(TicketCategory).filter(
                     TicketCategory.id != category.id, func.lower(TicketCategory.name) == name.casefold(),
                 ).first()
                 if duplicate:
-                    abort(409, description="A category with that name already exists.")
+                    abort(409, description=tr("A category with that name already exists."))
                 before = f"{category.name}; active={category.active}"
                 relabelled = 0
                 if name != category.name:
@@ -2079,17 +2078,17 @@ def register(app):
                 category.active = bool(request.form.get("active"))
                 audit("update", f"Ticket category: {name}",
                       f"{before} -> active={category.active}; tickets relabelled={relabelled}")
-                flash(f"Category {name} updated.", "success")
+                flash(tr("Category {name} updated.", name=name), "success")
             elif action == "create_ticket_subcategory":
                 category = tenant_record_or_404(TicketCategory, int(request.form["category_id"]))
                 name = request.form.get("name", "").strip()
                 if not name or len(name) > 80:
-                    abort(400, description="Subcategory name must contain 1 to 80 characters.")
+                    abort(400, description=tr("Subcategory name must contain 1 to 80 characters."))
                 if TicketSubcategory.query.filter(
                     TicketSubcategory.category_id == category.id,
                     func.lower(TicketSubcategory.name) == name.casefold(),
                 ).first():
-                    abort(409, description="That category already has a subcategory with this name.")
+                    abort(409, description=tr("That category already has a subcategory with this name."))
                 offering_id = request.form.get("default_service_offering_id") or None
                 if offering_id:
                     tenant_record_or_404(ServiceOffering, int(offering_id))
@@ -2098,18 +2097,18 @@ def register(app):
                 db.session.add(subcategory)
                 db.session.flush()
                 audit("create", f"Ticket subcategory: {category.name} / {name}", "")
-                flash(f"Subcategory {name} created under {category.name}.", "success")
+                flash(tr("Subcategory {name} created under {name2}.", name=name, name2=category.name), "success")
             elif action == "update_ticket_subcategory":
                 subcategory = tenant_record_or_404(TicketSubcategory, int(request.form["subcategory_id"]))
                 name = request.form.get("name", "").strip()
                 if not name or len(name) > 80:
-                    abort(400, description="Subcategory name must contain 1 to 80 characters.")
+                    abort(400, description=tr("Subcategory name must contain 1 to 80 characters."))
                 duplicate = TicketSubcategory.query.filter(
                     TicketSubcategory.category_id == subcategory.category_id, TicketSubcategory.id != subcategory.id,
                     func.lower(TicketSubcategory.name) == name.casefold(),
                 ).first()
                 if duplicate:
-                    abort(409, description="That category already has a subcategory with this name.")
+                    abort(409, description=tr("That category already has a subcategory with this name."))
                 offering_id = request.form.get("default_service_offering_id") or None
                 if offering_id:
                     tenant_record_or_404(ServiceOffering, int(offering_id))
@@ -2127,7 +2126,7 @@ def register(app):
                 subcategory.active = bool(request.form.get("active"))
                 subcategory.default_service_offering_id = offering_id
                 audit("update", f"Ticket subcategory: {name}", f"{before} -> active={subcategory.active}")
-                flash(f"Subcategory {name} updated.", "success")
+                flash(tr("Subcategory {name} updated.", name=name), "success")
             elif action == "add_directory_mapping":
                 directory_group = request.form.get("directory_group", "").strip()
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
@@ -2147,7 +2146,7 @@ def register(app):
                         tenant_id=group.tenant_id,
                     ))
                 audit("configure", "AD team mapping", f"{directory_group} -> {group.name}")
-                flash("AD group mapping saved. It applies at each user's next login.", "success")
+                flash(tr("AD group mapping saved. It applies at each user's next login."), "success")
             elif action == "delete_directory_mapping":
                 mapping = DirectoryGroupMapping.query.join(SupportGroup).filter(
                     DirectoryGroupMapping.id == int(request.form["mapping_id"]),
@@ -2155,7 +2154,7 @@ def register(app):
                 ).first_or_404()
                 mapping.active = False
                 audit("disable", "AD team mapping", mapping.directory_group)
-                flash("AD group mapping disabled. Memberships reconcile at next login.", "success")
+                flash(tr("AD group mapping disabled. Memberships reconcile at next login."), "success")
             elif action == "add_support_group_alias":
                 alias = request.form.get("alias", "").strip()
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
@@ -2186,23 +2185,21 @@ def register(app):
                     audit("merge", "Support group",
                           f"{duplicate_group.name} -> {group.name} ({moved} records)")
                     flash(
-                        f'"{alias}" now resolves to {group.name}. It also found an existing '
-                        f'"{duplicate_group.name}" team and merged it into {group.name} '
-                        f"({moved} records reassigned).", "success",
+                        tr("\"{alias}\" now resolves to {name}. It also found an existing \"{name2}\" team and merged it into {name3} ({moved} records reassigned).", alias=alias, name=group.name, name2=duplicate_group.name, name3=group.name, moved=moved), "success",
                     )
                 else:
-                    flash(f'"{alias}" now resolves to {group.name}.', "success")
+                    flash(tr("\"{alias}\" now resolves to {name}.", alias=alias, name=group.name), "success")
             elif action == "delete_support_group_alias":
                 group_alias = tenant_record_or_404(SupportGroupAlias, int(request.form["alias_id"]))
                 audit("delete", "Team name alias", group_alias.alias)
                 db.session.delete(group_alias)
-                flash("Team name alias removed.", "success")
+                flash(tr("Team name alias removed."), "success")
             elif action == "merge_duplicate_teams":
                 merged = find_and_merge_duplicate_groups(current_user.tenant_id)
                 audit("merge", "Support groups", f"{merged} duplicate teams merged")
                 flash(
-                    f"Merged {merged} duplicate team name(s)." if merged
-                    else "No duplicate team names found.", "success",
+                    tr("Merged {count} duplicate team name(s).", count=merged) if merged
+                    else tr("No duplicate team names found."), "success",
                 )
             elif action == "set_executive_approvers":
                 executive = tenant_query(SupportGroup).filter_by(name="Executive Office", group_type="Executive").with_for_update().first_or_404()
@@ -2210,12 +2207,12 @@ def register(app):
                 try:
                     selected_ids = sorted({int(value) for value in request.form.getlist("user_ids")})
                 except (TypeError, ValueError):
-                    abort(400, description="Select valid executive users.")
+                    abort(400, description=tr("Select valid executive users."))
                 if mode not in {"all", "any"} or len(selected_ids) > 100:
-                    abort(400, description="Select a valid approval rule and at most 100 executives.")
+                    abort(400, description=tr("Select a valid approval rule and at most 100 executives."))
                 selected = tenant_query(User).filter(User.id.in_(selected_ids), User.active.is_(True)).all()
                 if len(selected) != len(selected_ids):
-                    abort(400, description="Select active users in this organization.")
+                    abort(400, description=tr("Select active users in this organization."))
                 for member in executive.members:
                     if member.role in {"executive approver", "manager"}:
                         member.role = "member"
@@ -2233,7 +2230,7 @@ def register(app):
                 for user in selected + ([old_manager] if old_manager else []):
                     sync_implied_role_grants(user)
                 audit("configure", "Executive approval", f"mode={mode}; users={','.join(map(str, selected_ids))}")
-                flash("Executive approvers updated.", "success")
+                flash(tr("Executive approvers updated."), "success")
             elif action == "set_manager":
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
                 if group.group_type not in ("IT Fulfillment", "Fulfillment", "Executive"):
@@ -2242,10 +2239,10 @@ def register(app):
                 try:
                     manager_id = int(request.form["manager_id"]) if request.form.get("manager_id") else None
                 except ValueError:
-                    abort(400, description="The manager identifier must be an integer.")
+                    abort(400, description=tr("The manager identifier must be an integer."))
                 manager = tenant_query(User).filter_by(id=manager_id, active=True).first() if manager_id else None
                 if manager_id and not manager:
-                    abort(400, description="Select an active manager in this organization.")
+                    abort(400, description=tr("Select an active manager in this organization."))
                 if manager and not manager.active:
                     abort(400)
                 if old_manager_id and old_manager_id != manager_id:
@@ -2277,7 +2274,7 @@ def register(app):
                     sync_implied_role_grants(old_manager)
                 audit("configure", f"{group.name} manager",
                       manager.username if manager else "Unassigned")
-                flash(f"{group.name} manager updated.", "success")
+                flash(tr("{name} manager updated.", name=group.name), "success")
             elif action == "set_ccb_authority":
                 user = tenant_record_or_404(User, int(request.form["user_id"]))
                 ccb = tenant_query(SupportGroup).filter_by(name="Change Control Board").one()
@@ -2298,7 +2295,7 @@ def register(app):
                     db.session.delete(membership)
                 audit("configure", "CCB approval authority",
                       f"{user.username}: {'granted' if enabled else 'revoked'}")
-                flash("CCB approval authority updated.", "success")
+                flash(tr("CCB approval authority updated."), "success")
             elif action == "add_group_member":
                 # B-322: governance groups previously showed only a member
                 # *count* with no way to see who was in a group or add
@@ -2309,7 +2306,7 @@ def register(app):
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
                 user = tenant_record_or_404(User, int(request.form["user_id"]))
                 if not user.active:
-                    abort(400, description="Only active users can be added to a group.")
+                    abort(400, description=tr("Only active users can be added to a group."))
                 existing = GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first()
                 if not existing:
                     db.session.add(GroupMember(
@@ -2317,23 +2314,22 @@ def register(app):
                     ))
                     sync_implied_role_grants(user)
                     audit("configure", f"{group.name} membership", f"added {user.username}")
-                    flash(f"{user.name} added to {group.name}.", "success")
+                    flash(tr("{name} added to {name2}.", name=user.name, name2=group.name), "success")
                 else:
-                    flash(f"{user.name} is already a member of {group.name}.", "error")
+                    flash(tr("{name} is already a member of {name2}.", name=user.name, name2=group.name), "error")
             elif action == "remove_group_member":
                 membership = tenant_record_or_404(GroupMember, int(request.form["member_id"]))
                 group = db.session.get(SupportGroup, membership.group_id)
                 user = membership.user
                 if membership.role in ("manager", "CCB approver", "executive approver"):
                     abort(400, description=(
-                        "Remove this person's manager/CCB authority first, from Team managers "
-                        "or Approval authority, before removing their membership."
+                        tr("Remove this person's manager/CCB authority first, from Team managers or Approval authority, before removing their membership.")
                     ))
                 db.session.delete(membership)
                 db.session.flush()
                 sync_implied_role_grants(user)
                 audit("configure", f"{group.name} membership", f"removed {user.username}")
-                flash(f"{user.name} removed from {group.name}.", "success")
+                flash(tr("{name} removed from {name2}.", name=user.name, name2=group.name), "success")
             elif action == "set_change_approval_policy":
                 submitted = request.form.get("ccb_required_environments", "")
                 environments = []
@@ -2345,7 +2341,7 @@ def register(app):
                         seen.add(normalized)
                         environments.append(environment)
                 if not environments or len(environments) > 20 or any(len(value) > 80 for value in environments):
-                    abort(400, description="Enter 1 to 20 environment names, separated by commas.")
+                    abort(400, description=tr("Enter 1 to 20 environment names, separated by commas."))
                 policy_value = ", ".join(environments)
                 row = db.session.get(PlatformSetting, "CCB_REQUIRED_ENVIRONMENTS")
                 if not row:
@@ -2356,11 +2352,11 @@ def register(app):
                 row.updated_by_id = current_user.id
                 audit("configure", "Change approval policy",
                       f"CCB required for: {policy_value}")
-                flash("Change approval policy updated.", "success")
+                flash(tr("Change approval policy updated."), "success")
             elif action == "set_ticket_defaults":
                 priority = request.form.get("default_ticket_priority", "")
                 if priority not in ("P1", "P2", "P3", "P4"):
-                    abort(400, description="Select a valid default ticket priority.")
+                    abort(400, description=tr("Select a valid default ticket priority."))
                 values = {
                     "DEFAULT_TICKET_PRIORITY": priority,
                     "SYNC_CHILD_INCIDENT_STATES": (
@@ -2377,7 +2373,7 @@ def register(app):
                     row.updated_by_id = current_user.id
                 audit("configure", "Ticket defaults",
                       f"priority={priority}; synchronize child incidents={values['SYNC_CHILD_INCIDENT_STATES']}")
-                flash("Ticket defaults updated.", "success")
+                flash(tr("Ticket defaults updated."), "success")
             elif action == "set_catalog_route":
                 item = tenant_record_or_404(CatalogItem, int(request.form["catalog_item_id"]))
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
@@ -2386,7 +2382,7 @@ def register(app):
                     or group.group_type not in ("Fulfillment", "IT Fulfillment")
                 ):
                     abort(400, description=(
-                        "Catalog items can route only to an active fulfillment team."
+                        tr("Catalog items can route only to an active fulfillment team.")
                     ))
                 route = item.fulfillment_route
                 if not route:
@@ -2400,7 +2396,7 @@ def register(app):
                     f"Default fulfillment team: {group.name}",
                 )
                 flash(
-                    f"{item.name} will create fulfillment tasks for {group.name}.",
+                    tr("{name} will create fulfillment tasks for {name2}.", name=item.name, name2=group.name),
                     "success",
                 )
             elif action in ("create_catalog_item", "update_catalog_item"):
@@ -2411,22 +2407,22 @@ def register(app):
                     delivery_days = int(request.form.get("delivery_days", ""))
                     group_id = int(request.form.get("group_id", ""))
                 except (TypeError, ValueError):
-                    abort(400, description="Delivery target and fulfillment team are required.")
+                    abort(400, description=tr("Delivery target and fulfillment team are required."))
                 if not name or len(name) > 160:
-                    abort(400, description="Catalog item name must contain 1 to 160 characters.")
+                    abort(400, description=tr("Catalog item name must contain 1 to 160 characters."))
                 if not category or len(category) > 80:
-                    abort(400, description="Category must contain 1 to 80 characters.")
+                    abort(400, description=tr("Category must contain 1 to 80 characters."))
                 if not description:
-                    abort(400, description="Catalog item description is required.")
+                    abort(400, description=tr("Catalog item description is required."))
                 if delivery_days < 1 or delivery_days > 365:
-                    abort(400, description="Delivery target must be between 1 and 365 days.")
+                    abort(400, description=tr("Delivery target must be between 1 and 365 days."))
                 group = tenant_record_or_404(SupportGroup, group_id)
                 if (
                     not group.active
                     or group.group_type not in ("Fulfillment", "IT Fulfillment")
                 ):
                     abort(400, description=(
-                        "Catalog items can route only to an active fulfillment team."
+                        tr("Catalog items can route only to an active fulfillment team.")
                     ))
                 item_id = (
                     int(request.form["catalog_item_id"])
@@ -2438,7 +2434,7 @@ def register(app):
                 if item_id:
                     duplicate = duplicate.filter(CatalogItem.id != item_id)
                 if duplicate.first():
-                    abort(409, description="A catalog item with that name already exists.")
+                    abort(409, description=tr("A catalog item with that name already exists."))
                 if item_id:
                     item = tenant_record_or_404(CatalogItem, item_id)
                     previous_name = item.name
@@ -2471,9 +2467,9 @@ def register(app):
                 )
                 flash(
                     (
-                        f"{item.name} created and routed to {group.name}."
+                        tr("{name} created and routed to {group}.", name=item.name, group=group.name)
                         if previous_name is None else
-                        f"{previous_name} updated as {item.name}."
+                        tr("{previous} updated as {name}.", previous=previous_name, name=item.name)
                     ),
                     "success",
                 )
@@ -2486,7 +2482,7 @@ def register(app):
                 start_text = request.form.get("start_time", "")
                 end_text = request.form.get("end_time", "")
                 if not name or len(name) > 160:
-                    abort(400, description="Schedule name must contain 1 to 160 characters.")
+                    abort(400, description=tr("Schedule name must contain 1 to 160 characters."))
                 try:
                     start_time = dt_time.fromisoformat(start_text)
                     end_time = dt_time.fromisoformat(end_text)
@@ -2497,14 +2493,14 @@ def register(app):
                     func.lower(BusinessSchedule.name) == name.casefold()
                 ).first()
                 if duplicate:
-                    abort(409, description="A business schedule with that name already exists.")
+                    abort(409, description=tr("A business schedule with that name already exists."))
                 db.session.add(BusinessSchedule(
                     name=name, timezone_name=timezone_name,
                     weekdays_json=json.dumps(weekdays),
                     start_time_text=start_text, end_time_text=end_text,
                 ))
                 audit("create", f"Business schedule: {name}", timezone_name)
-                flash(f"Business schedule {name} created.", "success")
+                flash(tr("Business schedule {name} created.", name=name), "success")
             elif action == "add_schedule_holiday":
                 schedule = tenant_record_or_404(
                     BusinessSchedule, int(request.form["schedule_id"])
@@ -2513,19 +2509,19 @@ def register(app):
                 try:
                     holiday_date = date.fromisoformat(request.form.get("holiday_date", ""))
                 except ValueError:
-                    abort(400, description="Enter a valid holiday date.")
+                    abort(400, description=tr("Enter a valid holiday date."))
                 if not holiday_name:
-                    abort(400, description="Holiday name is required.")
+                    abort(400, description=tr("Holiday name is required."))
                 if ScheduleHoliday.query.filter_by(
                     schedule_id=schedule.id, holiday_date=holiday_date
                 ).first():
-                    abort(409, description="That date is already excluded.")
+                    abort(409, description=tr("That date is already excluded."))
                 db.session.add(ScheduleHoliday(
                     schedule_id=schedule.id, holiday_date=holiday_date, name=holiday_name
                 ))
                 audit("create", f"Schedule holiday: {schedule.name}",
                       f"{holiday_date.isoformat()} {holiday_name}")
-                flash("Schedule holiday added.", "success")
+                flash(tr("Schedule holiday added."), "success")
             elif action == "create_sla_definition":
                 name = request.form.get("name", "").strip()
                 target_type = request.form.get("target_type", "")
@@ -2535,11 +2531,11 @@ def register(app):
                     duration = int(request.form.get("duration_minutes", ""))
                     schedule_id = int(request.form["schedule_id"]) if request.form.get("schedule_id") else None
                 except (TypeError, ValueError):
-                    abort(400, description="SLA duration and schedule are invalid.")
+                    abort(400, description=tr("SLA duration and schedule are invalid."))
                 if not name or target_type not in ("ticket", "ritm", "client_ticket") or priority not in (None, "P1", "P2", "P3", "P4", "Low", "Normal", "High", "Urgent"):
-                    abort(400, description="SLA name, target and priority are invalid.")
+                    abort(400, description=tr("SLA name, target and priority are invalid."))
                 if duration < 1 or duration > 525600:
-                    abort(400, description="SLA duration must be between 1 and 525600 minutes.")
+                    abort(400, description=tr("SLA duration must be between 1 and 525600 minutes."))
                 schedule = tenant_record_or_404(BusinessSchedule, schedule_id) if schedule_id else None
                 # Only meaningful (and only ever accepted) for a client_ticket
                 # SLA -- an org-specific row overrides the tenant-wide default
@@ -2552,10 +2548,10 @@ def register(app):
                 if tenant_query(SLADefinition).filter(
                     func.lower(SLADefinition.name) == name.casefold()
                 ).first():
-                    abort(409, description="An SLA definition with that name already exists.")
+                    abort(409, description=tr("An SLA definition with that name already exists."))
                 agreement_type = request.form.get("agreement_type", "SLA")
                 if agreement_type not in SLA_AGREEMENT_TYPES:
-                    abort(400, description="Select a valid agreement type.")
+                    abort(400, description=tr("Select a valid agreement type."))
                 counterparty = request.form.get("counterparty", "").strip()
                 db.session.add(SLADefinition(
                     name=name, target_type=target_type, priority=priority,
@@ -2568,26 +2564,26 @@ def register(app):
                 audit("create", f"SLA definition: {name}",
                       f"{agreement_type}; {duration} minutes; {schedule.name if schedule else '24x7'}"
                       + (f"; org override for {client_organization.name}" if client_organization else ""))
-                flash(f"{agreement_type} definition {name} created.", "success")
+                flash(tr("{agreement_type} definition {name} created.", agreement_type=agreement_type, name=name), "success")
             elif action == "create_change_freeze":
                 title = request.form.get("title", "").strip()
                 starts_at = parse_form_datetime(request.form.get("starts_at", ""))
                 ends_at = parse_form_datetime(request.form.get("ends_at", ""))
                 if not title or not starts_at or not ends_at:
-                    abort(400, description="Freeze title, start and end are required.")
+                    abort(400, description=tr("Freeze title, start and end are required."))
                 if ends_at <= starts_at:
-                    abort(400, description="Freeze end must be later than its start.")
+                    abort(400, description=tr("Freeze end must be later than its start."))
                 db.session.add(ChangeFreezeWindow(
                     title=title, starts_at=starts_at, ends_at=ends_at,
                     reason=request.form.get("reason", "").strip(), created_by_id=current_user.id,
                 ))
                 audit("create", f"Change freeze: {title}", f"{starts_at.isoformat()} – {ends_at.isoformat()}")
-                flash(f"Change freeze \"{title}\" created. Standard/Normal changes cannot be scheduled inside it.", "success")
+                flash(tr("Change freeze \"{title}\" created. Standard/Normal changes cannot be scheduled inside it.", title=title), "success")
             elif action == "delete_change_freeze":
                 window = tenant_record_or_404(ChangeFreezeWindow, int(request.form["window_id"]))
                 audit("delete", f"Change freeze: {window.title}")
                 db.session.delete(window)
-                flash("Change freeze removed.", "success")
+                flash(tr("Change freeze removed."), "success")
             elif action == "link_service_ci":
                 service = tenant_record_or_404(ServiceOffering, int(request.form["service_offering_id"]))
                 role = request.form.get("relationship_role", "Supporting")
@@ -2598,7 +2594,7 @@ def register(app):
                 except ValueError:
                     abort(400)
                 if not ci_ids:
-                    abort(400, description="Select at least one configuration item.")
+                    abort(400, description=tr("Select at least one configuration item."))
                 linked_names = []
                 for link_ci_id in dict.fromkeys(ci_ids):
                     ci = tenant_record_or_404(ConfigurationItem, link_ci_id)
@@ -2614,7 +2610,7 @@ def register(app):
                     linked_names.append(ci.name)
                 audit("configure", f"{service.name} service mapping",
                       f"{role}: {', '.join(linked_names)}")
-                flash(f"{', '.join(linked_names)} linked to {service.name}.", "success")
+                flash(tr("{linked_names} linked to {name}.", linked_names=', '.join(linked_names), name=service.name), "success")
             elif action == "unlink_service_ci":
                 link = db.get_or_404(ServiceOfferingCI, int(request.form["link_id"]))
                 if link.tenant_id != current_user.tenant_id:
@@ -2622,15 +2618,14 @@ def register(app):
                 audit("configure", f"{link.service_offering.name} service mapping",
                       f"removed {link.ci.name}")
                 db.session.delete(link)
-                flash(f"{link.ci.name} unlinked from {link.service_offering.name}.", "success")
+                flash(tr("{name} unlinked from {name2}.", name=link.ci.name, name2=link.service_offering.name), "success")
             elif action == "toggle_service_status_page_visibility":
                 service = tenant_record_or_404(ServiceOffering, int(request.form["service_offering_id"]))
                 service.status_page_visible = not service.status_page_visible
                 audit("configure", f"{service.name} status page visibility",
                       "visible" if service.status_page_visible else "hidden")
                 flash(
-                    f"{service.name} is now {'visible on' if service.status_page_visible else 'hidden from'} "
-                    "the public status page.", "success",
+                    tr("{name} is now {value} the public status page.", name=service.name, value='visible on' if service.status_page_visible else 'hidden from'), "success",
                 )
             else:
                 abort(400)

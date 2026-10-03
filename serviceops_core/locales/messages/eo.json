@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "lundo",
+   "mardo",
+   "merkredo",
+   "ĵaŭdo",
+   "vendredo",
+   "sabato",
+   "dimanĉo"
+  ],
+  "days_abbr": [
+   "lu",
+   "ma",
+   "me",
+   "ĵa",
+   "ve",
+   "sa",
+   "di"
+  ],
+  "months": [
+   "Januaro",
+   "Februaro",
+   "Marto",
+   "Aprilo",
+   "Majo",
+   "Junio",
+   "Julio",
+   "Aŭgusto",
+   "Septembro",
+   "Oktobro",
+   "Novembro",
+   "Decembro"
+  ],
+  "months_abbr": [
+   "Jan",
+   "Feb",
+   "Mar",
+   "Apr",
+   "Maj",
+   "Jun",
+   "Jul",
+   "Aŭg",
+   "Sep",
+   "Okt",
+   "Nov",
+   "Dec"
+  ]
+ },
+ "language": "eo",
+ "messages": {
+  "Administration": "Administrado",
+  "Back": "Reen",
+  "Cancel": "Nuligi",
+  "Changes": "Ŝanĝoj",
+  "Close": "Fermi",
+  "Create": "Krei",
+  "Dashboard": "Panelo",
+  "Delete": "Forigi",
+  "Description": "Priskribo",
+  "Edit": "Redakti",
+  "General": "Ĝenerala",
+  "Incidents": "Incidentoj",
+  "Knowledge": "Scio",
+  "Language": "Lingvo",
+  "Name": "Nomo",
+  "Notifications": "Sciigoj",
+  "Preferences": "Preferoj",
+  "Priority": "Prioritato",
+  "Save": "Konservi",
+  "Save preferences": "Konservi preferojn",
+  "Search": "Serĉi",
+  "Service requests": "Servopetoj",
+  "Status": "Stato",
+  "System preferences": "Sistemaj preferoj"
+ }
+}

@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "esmaspäev",
+   "teisipäev",
+   "kolmapäev",
+   "neljapäev",
+   "reede",
+   "laupäev",
+   "pühapäev"
+  ],
+  "days_abbr": [
+   "E",
+   "T",
+   "K",
+   "N",
+   "R",
+   "L",
+   "P"
+  ],
+  "months": [
+   "jaanuar",
+   "veebruar",
+   "märts",
+   "aprill",
+   "mai",
+   "juuni",
+   "juuli",
+   "august",
+   "september",
+   "oktoober",
+   "november",
+   "detsember"
+  ],
+  "months_abbr": [
+   "jaan",
+   "veebr",
+   "märts",
+   "apr",
+   "mai",
+   "juuni",
+   "juuli",
+   "aug",
+   "sept",
+   "okt",
+   "nov",
+   "dets"
+  ]
+ },
+ "language": "et",
+ "messages": {
+  "Administration": "Haldus",
+  "Back": "Tagasi",
+  "Cancel": "Tühista",
+  "Changes": "Muudatused",
+  "Close": "Sulge",
+  "Create": "Loo",
+  "Dashboard": "Juhtpaneel",
+  "Delete": "Kustuta",
+  "Description": "Kirjeldus",
+  "Edit": "Muuda",
+  "General": "Üldine",
+  "Incidents": "Intsidendid",
+  "Knowledge": "Teadmised",
+  "Language": "Keel",
+  "Name": "Nimi",
+  "Notifications": "Teavitused",
+  "Preferences": "Eelistused",
+  "Priority": "Prioriteet",
+  "Save": "Salvesta",
+  "Save preferences": "Salvesta eelistused",
+  "Search": "Otsi",
+  "Service requests": "Teenusepäringud",
+  "Status": "Olek",
+  "System preferences": "Süsteemi eelistused"
+ }
+}

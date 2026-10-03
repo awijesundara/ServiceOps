@@ -30,6 +30,7 @@ from cryptography.fernet import Fernet
 from .checkpoint import decrypt_checkpoint, encrypt_checkpoint
 from .interface import StorageBackend
 from .ipfs_client import IPFSClient
+from serviceops_core.localization import tr
 
 logger = logging.getLogger("serviceops.storage.ipfs")
 
@@ -70,21 +71,21 @@ class IPFSStorageBackend(StorageBackend):
             state = decrypt_checkpoint(self.client.cat(cid), self._checkpoint_key)
             if not isinstance(state, dict) or any(not isinstance(state.get(key, {}), dict)
                     for key in ("file_index", "entities", "next_id", "relational_state")):
-                raise ValueError("Invalid checkpoint structure")
+                raise ValueError(tr("Invalid checkpoint structure"))
             files = state.get("file_index", {})
             if not all(isinstance(key, str) and isinstance(value, str) for key, value in files.items()):
-                raise ValueError("Invalid file index")
+                raise ValueError(tr("Invalid file index"))
             entities = {
                 entity_type: {int(record_id): fields for record_id, fields in rows.items()}
                 for entity_type, rows in state.get("entities", {}).items()
             }
             counters = state.get("next_id", {})
             if not all(type(value) is int and value >= 0 for value in counters.values()):
-                raise ValueError("Invalid entity counters")
+                raise ValueError(tr("Invalid entity counters"))
             relational = state.get("relational_state", {})
             if not all(isinstance(rows, list) and all(isinstance(row, dict) for row in rows)
                        for rows in relational.values()):
-                raise ValueError("Invalid relational state")
+                raise ValueError(tr("Invalid relational state"))
             with self._state_lock:
                 self._file_index = files
                 self._entities = entities
@@ -195,7 +196,7 @@ class IPFSStorageBackend(StorageBackend):
 
     def _require_implemented(self, entity_type):
         if entity_type not in self._IMPLEMENTED_ENTITY_TYPES:
-            raise ValueError("Legacy identity storage supports only user and tenant records.")
+            raise ValueError(tr("Legacy identity storage supports only user and tenant records."))
 
     def get(self, entity_type, record_id):
         self._require_implemented(entity_type)
@@ -240,7 +241,7 @@ class IPFSStorageBackend(StorageBackend):
             elif op == "in":
                 rows = [row for row in rows if row.get(field) in value]
             else:
-                raise ValueError("Legacy identity filters support only eq and in predicates.")
+                raise ValueError(tr("Legacy identity filters support only eq and in predicates."))
         if order_by:
             field, _, direction = order_by.partition(" ")
             rows.sort(key=lambda row: row.get(field), reverse=direction.strip().lower() == "desc")

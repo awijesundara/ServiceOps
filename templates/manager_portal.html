@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Manager portal · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Manager portal · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">LEADERSHIP</p><h1>Manager portal</h1><p>Team workload, SLA exposure and performance across the IT fulfillment teams you manage.</p></div></header>
+<header class="page-head"><div><p class="eyebrow">{{ tr('LEADERSHIP') }}</p><h1>{{ tr('Manager portal') }}</h1><p>{{ tr('Team workload, SLA exposure and performance across the IT fulfillment teams you manage.') }}</p></div></header>
 {% set csv_url = url_for('manager_portal_export') %}
 {% include "_export_toolbar.html" %}
 {% if team_rows %}
 <div class="list-search" style="margin-bottom:16px">
-  <input type="search" id="manager-portal-filter" placeholder="Filter by name, title, or team" aria-label="Filter team members">
+  <input type="search" id="manager-portal-filter" placeholder="{{ tr('Filter by name, title, or team') }}" aria-label="{{ tr('Filter team members') }}">
 </div>
 {% endif %}
 
 {% if not team_rows %}
-<section class="panel"><p class="empty">No IT fulfillment teams under your management.</p></section>
+<section class="panel"><p class="empty">{{ tr('No IT fulfillment teams under your management.') }}</p></section>
 {% endif %}
 
 {% for row in team_rows %}
@@ -19,25 +19,23 @@
   <header class="section-heading">
     <div>
       <h2>{{ row.group.name }}</h2>
-      <p>Manager: {{ row.group.manager.name if row.group.manager else "Unassigned" }} · {{ row.member_count }} member{{ 's' if row.member_count != 1 }}</p>
+      <p>{{ tr('Manager: {name} · {members}', name=(row.group.manager.name if row.group.manager else tr('Unassigned')), members=trn(row.member_count, '{count} member', '{count} members')) }}</p>
     </div>
     <span>
-      {{ row.open_incidents }} open incident{{ 's' if row.open_incidents != 1 }} ·
-      {{ row.open_changes }} open change{{ 's' if row.open_changes != 1 }} ·
-      {{ row.open_tasks }} open task{{ 's' if row.open_tasks != 1 }}
-      {% if row.sla_breached %}· <span class="sla-breached-cell">{{ row.sla_breached }} SLA breached</span>{% endif %}
+      {{ trn(row.open_incidents, '{count} open incident', '{count} open incidents') ~ ' · ' ~ trn(row.open_changes, '{count} open change', '{count} open changes') ~ ' · ' ~ trn(row.open_tasks, '{count} open task', '{count} open tasks') }}
+      {% if row.sla_breached %}· <span class="sla-breached-cell">{{ tr('{sla_breached} SLA breached', sla_breached=(row.sla_breached)) }}</span>{% endif %}
     </span>
   </header>
   <table>
     <thead><tr>
-      <th>Member</th><th>{{ t('Status') }}</th><th>Open incidents</th><th>Open changes</th>
-      <th>Open tasks</th><th>Resolved (30d)</th><th>SLA breached</th><th>SLA at risk</th>
+      <th>{{ tr('Member') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Open incidents') }}</th><th>{{ tr('Open changes') }}</th>
+      <th>{{ tr('Open tasks') }}</th><th>{{ tr('Resolved (30d)') }}</th><th>{{ tr('SLA breached') }}</th><th>{{ tr('SLA at risk') }}</th>
     </tr></thead>
     <tbody>
       {% for member in member_rows_by_group.get(row.group.id, []) %}
       <tr class="mp-member-row" data-search-text="{{ (member.user.name ~ ' ' ~ (member.user.title or member.role_in_group))|lower }}">
         <td><a href="{{ url_for('user_edit', user_id=member.user.id) }}">{{ member.user.name }}</a><br><small class="muted">{{ member.user.title or member.role_in_group|capitalize }}</small></td>
-        <td><span class="badge {% if member.status == 'Inactive' %}priority p4{% endif %}">{{ member.status }}</span></td>
+        <td><span class="badge {% if member.status == 'Inactive' %}priority p4{% endif %}">{{ tr_value(member.status) }}</span></td>
         <td>{{ member.open_incidents }}</td>
         <td>{{ member.open_changes }}</td>
         <td>{{ member.open_tasks }}</td>
@@ -46,7 +44,7 @@
         <td>{% if member.sla_at_risk %}<span class="sla-at-risk-cell">{{ member.sla_at_risk }}</span>{% else %}0{% endif %}</td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="empty">No members assigned to this team yet.</td></tr>
+      <tr><td colspan="8" class="empty">{{ tr('No members assigned to this team yet.') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

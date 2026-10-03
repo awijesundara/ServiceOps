@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "lunedì",
+   "martedì",
+   "mercoledì",
+   "giovedì",
+   "venerdì",
+   "sabato",
+   "domenica"
+  ],
+  "days_abbr": [
+   "lun",
+   "mar",
+   "mer",
+   "gio",
+   "ven",
+   "sab",
+   "dom"
+  ],
+  "months": [
+   "gennaio",
+   "febbraio",
+   "marzo",
+   "aprile",
+   "maggio",
+   "giugno",
+   "luglio",
+   "agosto",
+   "settembre",
+   "ottobre",
+   "novembre",
+   "dicembre"
+  ],
+  "months_abbr": [
+   "gen",
+   "feb",
+   "mar",
+   "apr",
+   "mag",
+   "giu",
+   "lug",
+   "ago",
+   "set",
+   "ott",
+   "nov",
+   "dic"
+  ]
+ },
+ "language": "it",
+ "messages": {
+  "Administration": "Amministrazione",
+  "Back": "Indietro",
+  "Cancel": "Annulla",
+  "Changes": "Modifiche",
+  "Close": "Chiudi",
+  "Create": "Crea",
+  "Dashboard": "Dashboard",
+  "Delete": "Elimina",
+  "Description": "Descrizione",
+  "Edit": "Modifica",
+  "General": "Generale",
+  "Incidents": "Incidenti",
+  "Knowledge": "Conoscenza",
+  "Language": "Lingua",
+  "Name": "Nome",
+  "Notifications": "Notifiche",
+  "Preferences": "Preferenze",
+  "Priority": "Priorità",
+  "Save": "Salva",
+  "Save preferences": "Salva preferenze",
+  "Search": "Cerca",
+  "Service requests": "Richieste di servizio",
+  "Status": "Stato",
+  "System preferences": "Preferenze di sistema"
+ }
+}

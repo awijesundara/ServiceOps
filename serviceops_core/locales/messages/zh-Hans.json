@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "星期一",
+   "星期二",
+   "星期三",
+   "星期四",
+   "星期五",
+   "星期六",
+   "星期日"
+  ],
+  "days_abbr": [
+   "周一",
+   "周二",
+   "周三",
+   "周四",
+   "周五",
+   "周六",
+   "周日"
+  ],
+  "months": [
+   "一月",
+   "二月",
+   "三月",
+   "四月",
+   "五月",
+   "六月",
+   "七月",
+   "八月",
+   "九月",
+   "十月",
+   "十一月",
+   "十二月"
+  ],
+  "months_abbr": [
+   "1月",
+   "2月",
+   "3月",
+   "4月",
+   "5月",
+   "6月",
+   "7月",
+   "8月",
+   "9月",
+   "10月",
+   "11月",
+   "12月"
+  ]
+ },
+ "language": "zh-Hans",
+ "messages": {
+  "Administration": "管理",
+  "Back": "返回",
+  "Cancel": "取消",
+  "Changes": "变更",
+  "Close": "关闭",
+  "Create": "创建",
+  "Dashboard": "仪表板",
+  "Delete": "删除",
+  "Description": "描述",
+  "Edit": "编辑",
+  "General": "常规",
+  "Incidents": "事件",
+  "Knowledge": "知识",
+  "Language": "语言",
+  "Name": "名称",
+  "Notifications": "通知",
+  "Preferences": "偏好设置",
+  "Priority": "优先级",
+  "Save": "保存",
+  "Save preferences": "保存偏好设置",
+  "Search": "搜索",
+  "Service requests": "服务请求",
+  "Status": "状态",
+  "System preferences": "系统偏好设置"
+ }
+}

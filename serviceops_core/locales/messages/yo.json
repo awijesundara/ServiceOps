@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Ọjọ́ Ajé",
+   "Ọjọ́ Ìsẹ́gun",
+   "Ọjọ́rú",
+   "Ọjọ́bọ",
+   "Ọjọ́ Ẹtì",
+   "Ọjọ́ Àbámẹ́ta",
+   "Ọjọ́ Àìkú"
+  ],
+  "days_abbr": [
+   "Ajé",
+   "Ìsẹ́gun",
+   "Ọjọ́rú",
+   "Ọjọ́bọ",
+   "Ẹtì",
+   "Àbámẹ́ta",
+   "Àìkú"
+  ],
+  "months": [
+   "Oṣù Ṣẹ́rẹ́",
+   "Oṣù Èrèlè",
+   "Oṣù Ẹrẹ̀nà",
+   "Oṣù Ìgbé",
+   "Oṣù Ẹ̀bibi",
+   "Oṣù Òkúdu",
+   "Oṣù Agẹmọ",
+   "Oṣù Ògún",
+   "Oṣù Owewe",
+   "Oṣù Ọ̀wàrà",
+   "Oṣù Bélú",
+   "Oṣù Ọ̀pẹ̀"
+  ],
+  "months_abbr": [
+   "Oṣù Ṣẹ́rẹ́",
+   "Oṣù Èrèlè",
+   "Oṣù Ẹrẹ̀nà",
+   "Oṣù Ìgbé",
+   "Oṣù Ẹ̀bibi",
+   "Oṣù Òkúdu",
+   "Oṣù Agẹmọ",
+   "Oṣù Ògún",
+   "Oṣù Owewe",
+   "Oṣù Ọ̀wàrà",
+   "Oṣù Bélú",
+   "Oṣù Ọ̀pẹ̀"
+  ]
+ },
+ "language": "yo",
+ "messages": {
+  "Administration": "Ìṣàkóso",
+  "Back": "Padà",
+  "Cancel": "Fagilé",
+  "Changes": "Àwọn àyípadà",
+  "Close": "Pa dé",
+  "Create": "Ṣẹ̀dá",
+  "Dashboard": "Pátákó ìṣàkóso",
+  "Delete": "Parẹ́",
+  "Description": "Àpèjúwe",
+  "Edit": "Ṣàtúnṣe",
+  "General": "Gbogbogbò",
+  "Incidents": "Àwọn ìṣẹ̀lẹ̀",
+  "Knowledge": "Ìmọ̀",
+  "Language": "Èdè",
+  "Name": "Orúkọ",
+  "Notifications": "Àwọn ìfitónilétí",
+  "Preferences": "Àwọn àṣàyàn",
+  "Priority": "Àkọ́kọ́",
+  "Save": "Fipamọ́",
+  "Save preferences": "Fi àwọn àṣàyàn pamọ́",
+  "Search": "Ṣàwárí",
+  "Service requests": "Àwọn ìbéèrè iṣẹ́",
+  "Status": "Ipò",
+  "System preferences": "Àwọn àṣàyàn ètò"
+ }
+}

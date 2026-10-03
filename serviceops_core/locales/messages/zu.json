@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "UMsombuluko",
+   "ULwesibili",
+   "ULwesithathu",
+   "ULwesine",
+   "ULwesihlanu",
+   "UMgqibelo",
+   "ISonto"
+  ],
+  "days_abbr": [
+   "Mso",
+   "Bil",
+   "Tha",
+   "Sin",
+   "Hla",
+   "Mgq",
+   "Son"
+  ],
+  "months": [
+   "Januwari",
+   "Februwari",
+   "Mashi",
+   "Ephreli",
+   "Meyi",
+   "Juni",
+   "Julayi",
+   "Agasti",
+   "Septhemba",
+   "Okthoba",
+   "Novemba",
+   "Disemba"
+  ],
+  "months_abbr": [
+   "Jan",
+   "Feb",
+   "Mas",
+   "Eph",
+   "Mey",
+   "Jun",
+   "Jul",
+   "Aga",
+   "Sep",
+   "Okt",
+   "Nov",
+   "Dis"
+  ]
+ },
+ "language": "zu",
+ "messages": {
+  "Administration": "Ukuphatha",
+  "Back": "Emuva",
+  "Cancel": "Khansela",
+  "Changes": "Izinguquko",
+  "Close": "Vala",
+  "Create": "Dala",
+  "Dashboard": "Ideshibhodi",
+  "Delete": "Susa",
+  "Description": "Incazelo",
+  "Edit": "Hlela",
+  "General": "Okuvamile",
+  "Incidents": "Izigameko",
+  "Knowledge": "Ulwazi",
+  "Language": "Ulimi",
+  "Name": "Igama",
+  "Notifications": "Izaziso",
+  "Preferences": "Okuncanyelwayo",
+  "Priority": "Okubalulekile",
+  "Save": "Londoloza",
+  "Save preferences": "Londoloza okuncanyelwayo",
+  "Search": "Sesha",
+  "Service requests": "Izicelo zesevisi",
+  "Status": "Isimo",
+  "System preferences": "Okuncanyelwayo kwesistimu"
+ }
+}

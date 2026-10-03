@@ -20,6 +20,7 @@ deliberately asymmetric between read and create/update/delete:
   every check -- this table only ever grants agent/manager capability
   they didn't have, never restricts admin's pre-existing full access.
 """
+from serviceops_core.localization import tr
 
 _CRUD_COLUMNS = {"create": "can_create", "update": "can_update", "delete": "can_delete"}
 
@@ -47,7 +48,7 @@ def ci_class_action_allowed(tenant_id, ci_class, role, action):
         return True
     column = _CRUD_COLUMNS.get(action)
     if column is None:
-        raise ValueError(f"Unknown CI class action: {action}")
+        raise ValueError(tr("Unknown CI class action: {action}", action=action))
     row = CiClassPermission.query.filter_by(tenant_id=tenant_id, ci_class=ci_class, role=role).first()
     return bool(row and getattr(row, column))
 

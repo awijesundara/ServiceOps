@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "måndag",
+   "tisdag",
+   "onsdag",
+   "torsdag",
+   "fredag",
+   "lördag",
+   "söndag"
+  ],
+  "days_abbr": [
+   "mån",
+   "tis",
+   "ons",
+   "tors",
+   "fre",
+   "lör",
+   "sön"
+  ],
+  "months": [
+   "januari",
+   "februari",
+   "mars",
+   "april",
+   "maj",
+   "juni",
+   "juli",
+   "augusti",
+   "september",
+   "oktober",
+   "november",
+   "december"
+  ],
+  "months_abbr": [
+   "jan.",
+   "feb.",
+   "mars",
+   "apr.",
+   "maj",
+   "juni",
+   "juli",
+   "aug.",
+   "sep.",
+   "okt.",
+   "nov.",
+   "dec."
+  ]
+ },
+ "language": "sv",
+ "messages": {
+  "Administration": "Administration",
+  "Back": "Tillbaka",
+  "Cancel": "Avbryt",
+  "Changes": "Ändringar",
+  "Close": "Stäng",
+  "Create": "Skapa",
+  "Dashboard": "Översikt",
+  "Delete": "Ta bort",
+  "Description": "Beskrivning",
+  "Edit": "Redigera",
+  "General": "Allmänt",
+  "Incidents": "Incidenter",
+  "Knowledge": "Kunskap",
+  "Language": "Språk",
+  "Name": "Namn",
+  "Notifications": "Aviseringar",
+  "Preferences": "Inställningar",
+  "Priority": "Prioritet",
+  "Save": "Spara",
+  "Save preferences": "Spara inställningar",
+  "Search": "Sök",
+  "Service requests": "Serviceförfrågningar",
+  "Status": "Status",
+  "System preferences": "Systeminställningar"
+ }
+}

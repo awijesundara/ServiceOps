@@ -11,6 +11,8 @@ from urllib.parse import urlparse, urlsplit
 import psycopg
 from cryptography.fernet import Fernet
 from flask import Flask, abort, jsonify, render_template, request
+
+from serviceops_core.localization import init_app as init_localization, tr
 from ldap3 import ALL, Connection, Server, Tls
 
 logger = logging.getLogger(__name__)
@@ -72,19 +74,19 @@ def result(ok, message, details=""):
 
 def test_database(config):
     if config.get("db_mode") == "bundled":
-        return result(True, "Bundled PostgreSQL is selected",
+        return result(True, tr("Bundled PostgreSQL is selected"),
                       "The database image and persistent volume will be verified during deployment.")
     url = clean(config.get("database_url")).replace("postgresql+psycopg://", "postgresql://", 1)
     if not url:
-        return result(False, "Database URL is required")
+        return result(False, tr("Database URL is required"))
     try:
         with psycopg.connect(url, connect_timeout=8) as conn:
             row = conn.execute(
                 "select current_database(), current_user, version()"
             ).fetchone()
-        return result(True, "PostgreSQL connection succeeded", " · ".join(row))
+        return result(True, tr("PostgreSQL connection succeeded"), " · ".join(row))
     except Exception as exc:
-        return result(False, "PostgreSQL connection failed", str(exc))
+        return result(False, tr("PostgreSQL connection failed"), str(exc))
 
 
 def ldap_server(config):
@@ -99,7 +101,7 @@ def ldap_server(config):
 
 def test_ldap(config):
     if not config.get("ldap_enabled"):
-        return result(True, "AD/LDAP is disabled")
+        return result(True, tr("AD/LDAP is disabled"))
     try:
         server, use_ssl = ldap_server(config)
         connection = Connection(server, user=clean(config.get("ldap_bind_dn")) or None,
@@ -107,22 +109,22 @@ def test_ldap(config):
                                 auto_bind=False, receive_timeout=8)
         connection.open()
         if not use_ssl and config.get("ldap_start_tls", True) and not connection.start_tls():
-            return result(False, "LDAP StartTLS failed", str(connection.result))
+            return result(False, tr("LDAP StartTLS failed"), str(connection.result))
         if not connection.bind():
-            return result(False, "LDAP bind failed", str(connection.result))
+            return result(False, tr("LDAP bind failed"), str(connection.result))
         if not connection.search(clean(config.get("ldap_base_dn")), "(objectClass=*)",
                                  attributes=["distinguishedName"], size_limit=1):
-            return result(False, "LDAP base search failed", str(connection.result))
+            return result(False, tr("LDAP base search failed"), str(connection.result))
         connection.unbind()
-        return result(True, "LDAP bind and directory search succeeded",
+        return result(True, tr("LDAP bind and directory search succeeded"),
                       f"Server: {server.host}; TLS: {'LDAPS' if use_ssl else 'StartTLS'}")
     except Exception as exc:
-        return result(False, "LDAP validation failed", str(exc))
+        return result(False, tr("LDAP validation failed"), str(exc))
 
 
 def test_keycloak(config):
     if not config.get("keycloak_enabled"):
-        return result(True, "Keycloak is disabled")
+        return result(True, tr("Keycloak is disabled"))
     discovery = clean(config.get("keycloak_discovery_url"))
     try:
         context = ssl.create_default_context()
@@ -131,25 +133,25 @@ def test_keycloak(config):
         required = ["issuer", "authorization_endpoint", "token_endpoint", "jwks_uri"]
         missing = [key for key in required if not metadata.get(key)]
         if missing:
-            return result(False, "Keycloak discovery is incomplete", ", ".join(missing))
+            return result(False, tr("Keycloak discovery is incomplete"), ", ".join(missing))
         if not clean(config.get("keycloak_client_id")):
-            return result(False, "Keycloak client ID is required")
-        return result(True, "Keycloak OIDC discovery succeeded", metadata["issuer"])
+            return result(False, tr("Keycloak client ID is required"))
+        return result(True, tr("Keycloak OIDC discovery succeeded"), metadata["issuer"])
     except Exception as exc:
-        return result(False, "Keycloak discovery failed", str(exc))
+        return result(False, tr("Keycloak discovery failed"), str(exc))
 
 
 def test_ipfs(config):
     if config.get("storage_mode", "postgres") != "ipfs":
-        return result(True, "PostgreSQL storage mode is selected (default)")
+        return result(True, tr("PostgreSQL storage mode is selected (default)"))
     if config.get("ipfs_provider", "kubo") == "pinata":
         jwt = clean(config.get("pinata_jwt"))
         if not jwt:
-            return result(False, "A Pinata JWT is required (get one free at pinata.cloud)")
+            return result(False, tr("A Pinata JWT is required (get one free at pinata.cloud)"))
         if not clean(config.get("pinata_gateway_url")):
             return result(
                 False,
-                "A dedicated Pinata gateway URL is required",
+                tr("A dedicated Pinata gateway URL is required"),
                 "Pinata's shared public gateway is unreliable -- use your account's "
                 "free dedicated gateway (Pinata dashboard -> Gateways), e.g. "
                 "https://<your-name>.mypinata.cloud",
@@ -162,23 +164,23 @@ def test_ipfs(config):
             context = ssl.create_default_context()
             with urllib.request.urlopen(request_obj, timeout=8, context=context) as response:
                 payload = json.load(response)
-            return result(True, "Pinata JWT authenticated", payload.get("message", ""))
+            return result(True, tr("Pinata JWT authenticated"), payload.get("message", ""))
         except Exception as exc:
-            return result(False, "Pinata authentication failed", str(exc))
+            return result(False, tr("Pinata authentication failed"), str(exc))
     if config.get("ipfs_mode", "bundled") == "bundled":
-        return result(True, "Bundled IPFS node is selected",
+        return result(True, tr("Bundled IPFS node is selected"),
                       "The IPFS node container will be verified during deployment.")
     api_url = clean(config.get("ipfs_api_url"))
     if not api_url:
-        return result(False, "IPFS API URL is required for an external node")
+        return result(False, tr("IPFS API URL is required for an external node"))
     try:
         request_obj = urllib.request.Request(api_url.rstrip("/") + "/api/v0/id", method="POST")
         context = ssl.create_default_context()
         with urllib.request.urlopen(request_obj, timeout=8, context=context) as response:
             payload = json.load(response)
-        return result(True, "IPFS node reachable", payload.get("ID", ""))
+        return result(True, tr("IPFS node reachable"), payload.get("ID", ""))
     except Exception as exc:
-        return result(False, "IPFS node connection failed", str(exc))
+        return result(False, tr("IPFS node connection failed"), str(exc))
 
 
 def test_network(config):
@@ -192,10 +194,10 @@ def test_network(config):
             raise ValueError("Application port must be between 0 and 65535")
         sock = socket.socket()
         sock.bind((clean(config.get("bind_address")) or "127.0.0.1", port))
-        return result(True, f"Application port {port} is available")
+        return result(True, tr("Application port {port} is available", port=port))
     except (OSError, ValueError, TypeError, OverflowError):
         logger.warning("Installer network validation failed")
-        return result(False, "Application port is invalid or unavailable")
+        return result(False, tr("Application port is invalid or unavailable"))
     finally:
         if sock is not None:
             sock.close()
@@ -203,7 +205,7 @@ def test_network(config):
 
 def validate(config):
     checks = {
-        "host": load_json("host-preflight.json", result(False, "Host preflight has not run")),
+        "host": load_json("host-preflight.json", result(False, tr("Host preflight has not run"))),
         "network": test_network(config),
         "database": test_database(config),
         "ipfs": test_ipfs(config),
@@ -211,17 +213,17 @@ def validate(config):
         "keycloak": test_keycloak(config),
     }
     if len(config.get("admin_password", "")) < 14:
-        checks["security"] = result(False, "Administrator password must be at least 14 characters")
+        checks["security"] = result(False, tr("Administrator password must be at least 14 characters"))
     elif config.get("ldap_enabled") and not (
             clean(config.get("ldap_uri")).startswith("ldaps://") or config.get("ldap_start_tls")
         ):
-        checks["security"] = result(False, "LDAP must use LDAPS or StartTLS")
+        checks["security"] = result(False, tr("LDAP must use LDAPS or StartTLS"))
     elif config.get("keycloak_enabled") and not clean(
             config.get("keycloak_discovery_url")
         ).startswith("https://"):
-        checks["security"] = result(False, "Keycloak discovery must use HTTPS")
+        checks["security"] = result(False, tr("Keycloak discovery must use HTTPS"))
     else:
-        checks["security"] = result(True, "Production security policy passed")
+        checks["security"] = result(True, tr("Production security policy passed"))
     return checks
 
 
@@ -298,6 +300,9 @@ def write_environment(config):
 def create_app():
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["SECRET_KEY"] = os.getenv("INSTALLER_SECRET", os.urandom(32).hex())
+    # No accounts or settings yet: follow the browser language; the installer's
+    # /api/ endpoints serve only its own page, so they are localized too.
+    init_localization(app, default_language=lambda: "auto", api_prefix=None)
     allowed_hosts = {"localhost", "127.0.0.1", "::1"} | {
         host.strip().lower() for host in os.getenv("INSTALLER_ALLOWED_HOSTS", "").split(",") if host.strip()
     }
@@ -320,30 +325,30 @@ def create_app():
         # cross-site browser request need a CORS preflight, which is refused.
         config = request.get_json(silent=True)
         if not isinstance(config, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         flags = {"ldap_enabled", "ldap_start_tls", "ldap_validate_cert", "keycloak_enabled"}
         for key, value in config.items():
             if key in flags:
                 if type(value) is not bool:
-                    abort(400, description=f"{key} must be a boolean.")
+                    abort(400, description=tr("{key} must be a boolean.", key=key))
             elif key == "app_port":
                 if isinstance(value, bool) or not isinstance(value, (str, int)):
-                    abort(400, description="app_port must be an integer.")
+                    abort(400, description=tr("app_port must be an integer."))
                 try:
                     port = int(value)
                 except ValueError:
-                    abort(400, description="app_port must be an integer.")
+                    abort(400, description=tr("app_port must be an integer."))
                 if not 1 <= port <= 65535:
-                    abort(400, description="app_port must be between 1 and 65535.")
+                    abort(400, description=tr("app_port must be between 1 and 65535."))
             elif not isinstance(value, str):
-                abort(400, description=f"{key} must be a string.")
+                abort(400, description=tr("{key} must be a string.", key=key))
         return config
 
     @app.errorhandler(OSError)
     @app.errorhandler(InstallerStateError)
     def state_error(_error):
         logger.error("Installer state operation failed; recovery is required")
-        return jsonify(error="Installer state requires recovery; existing configuration was preserved."), 503
+        return jsonify(error=tr("Installer state requires recovery; existing configuration was preserved.")), 503
 
     @app.errorhandler(400)
     def bad_request(error):
@@ -370,7 +375,7 @@ def create_app():
         load_json("config.json", {})
         checks = validate(config)
         if not all(item["ok"] for item in checks.values()):
-            return jsonify(error="Every required check must pass before deployment.", checks=checks), 400
+            return jsonify(error=tr("Every required check must pass before deployment."), checks=checks), 400
         write_environment(config)
         save_json("deploy-request.json", {"requested": True})
         return jsonify(status="requested")
@@ -383,7 +388,7 @@ def create_app():
         header = logo.stream.read(8)
         logo.stream.seek(0)
         if header != b"\x89PNG\r\n\x1a\n":
-            return jsonify(error="Company logo must be a valid PNG file."), 400
+            return jsonify(error=tr("Company logo must be a valid PNG file.")), 400
         target = STATE / "company-logo.png"
         logo.save(target)
         target.chmod(0o600)

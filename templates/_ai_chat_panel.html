@@ -3,70 +3,70 @@
 {% if not full_page %}
 <button type="button" class="ai-launcher" data-chat-launch aria-haspopup="dialog" aria-expanded="false" aria-controls="ai-chat-panel">
   <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-8l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
-  <span>Ask AI</span>
+  <span>{{ tr('Ask AI') }}</span>
 </button>
 {% endif %}
 <section class="ai-chat{% if full_page %} is-page{% else %} is-widget{% endif %}" id="ai-chat-panel" data-chat{% if not full_page %} role="dialog" aria-modal="false" aria-labelledby="ai-chat-title" hidden{% endif %}>
   <header class="ai-chat-head">
     <div class="ai-chat-titles">
       <span class="ai-avatar" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" focusable="false"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-8l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
-      <h2 id="ai-chat-title">{% if full_page %}ServiceOps AI{% else %}Hi there <span aria-hidden="true">👋</span>{% endif %}</h2>
-      <select class="ai-model-pick" data-chat-model aria-label="AI model" title="Choose which AI service answers your next message" hidden>
-        <option value="">Automatic</option>
+      <h2 id="ai-chat-title">{% if full_page %}{{ tr('ServiceOps AI') }}{% else %}{{ tr('Hi there') }} <span aria-hidden="true">👋</span>{% endif %}</h2>
+      <select class="ai-model-pick" data-chat-model aria-label="{{ tr('AI model') }}" title="{{ tr('Choose which AI service answers your next message') }}" hidden>
+        <option value="">{{ tr('Automatic') }}</option>
       </select>
     </div>
-    <div class="ai-chat-tools"{% if full_page %} aria-label="Assistant status"{% endif %}>
-      {% if full_page %}<button type="button" class="ai-icon ai-page-history-toggle" data-chat-history-toggle aria-expanded="true" aria-controls="ai-chat-history" aria-label="Conversations" title="Conversations"><svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button><span class="ai-page-status"><span aria-hidden="true"></span>Online</span>{% endif %}
+    <div class="ai-chat-tools"{% if full_page %} aria-label="{{ tr('Assistant status') }}"{% endif %}>
+      {% if full_page %}<button type="button" class="ai-icon ai-page-history-toggle" data-chat-history-toggle aria-expanded="true" aria-controls="ai-chat-history" aria-label="{{ tr('Conversations') }}" title="{{ tr('Conversations') }}"><svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button><span class="ai-page-status"><span aria-hidden="true"></span>{{ tr('Online') }}</span>{% endif %}
       {% if not full_page %}
       <details class="ai-chat-menu">
-        <summary class="ai-icon" aria-label="Chat options" title="Chat options"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg></summary>
+        <summary class="ai-icon" aria-label="{{ tr('Chat options') }}" title="{{ tr('Chat options') }}"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg></summary>
         <div class="ai-chat-menu-items">
-          <button type="button" class="ai-icon" data-chat-new aria-label="New chat" title="New chat"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
-          <button type="button" class="ai-icon" data-chat-history-toggle aria-expanded="false" aria-controls="ai-chat-history" aria-label="History" title="History"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></button>
-          <button type="button" class="ai-icon" data-chat-memory-toggle aria-expanded="false" aria-controls="ai-chat-memory" aria-label="Memory" title="What I remember about you" hidden><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12v16l-6-4-6 4z"/></svg></button>
-          {% if not full_page %}<a class="ai-icon" href="{{ url_for('ai.chat_page') }}" aria-label="Open full page" title="Open full page"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg></a>{% endif %}
+          <button type="button" class="ai-icon" data-chat-new aria-label="{{ tr('New chat') }}" title="{{ tr('New chat') }}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button type="button" class="ai-icon" data-chat-history-toggle aria-expanded="false" aria-controls="ai-chat-history" aria-label="{{ tr('History') }}" title="{{ tr('History') }}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></button>
+          <button type="button" class="ai-icon" data-chat-memory-toggle aria-expanded="false" aria-controls="ai-chat-memory" aria-label="{{ tr('Memory') }}" title="{{ tr('What I remember about you') }}" hidden><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12v16l-6-4-6 4z"/></svg></button>
+          {% if not full_page %}<a class="ai-icon" href="{{ url_for('ai.chat_page') }}" aria-label="{{ tr('Open full page') }}" title="{{ tr('Open full page') }}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg></a>{% endif %}
         </div>
       </details>
-      <button type="button" class="ai-icon ai-chat-collapse" data-chat-close aria-label="Close chat" title="{{ t('Close') }}"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>{% endif %}
+      <button type="button" class="ai-icon ai-chat-collapse" data-chat-close aria-label="{{ tr('Close chat') }}" title="{{ tr('Close') }}"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>{% endif %}
     </div>
   </header>
-  <div class="ai-presence"><span aria-hidden="true"></span><strong>ServiceOps AI</strong><span class="ai-scope" data-chat-scope>Checking access…</span></div>
+  <div class="ai-presence"><span aria-hidden="true"></span><strong>{{ tr('ServiceOps AI') }}</strong><span class="ai-scope" data-chat-scope>{{ tr('Checking access…') }}</span></div>
   <div class="ai-chat-body">
-    <nav class="ai-chat-history" id="ai-chat-history" aria-label="Your conversations" data-chat-history{% if not full_page %} hidden{% endif %}>
+    <nav class="ai-chat-history" id="ai-chat-history" aria-label="{{ tr('Your conversations') }}" data-chat-history{% if not full_page %} hidden{% endif %}>
       {% if full_page %}
       <div class="ai-page-nav">
-        <button type="button" class="ai-page-nav-action is-primary" data-chat-new><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>New conversation</span></button>
-        <button type="button" class="ai-page-nav-action" data-chat-memory-toggle aria-expanded="false" aria-controls="ai-chat-memory"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M6 4h12v16l-6-4-6 4z"/></svg><span>Memory</span></button>
+        <button type="button" class="ai-page-nav-action is-primary" data-chat-new><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>{{ tr('New conversation') }}</span></button>
+        <button type="button" class="ai-page-nav-action" data-chat-memory-toggle aria-expanded="false" aria-controls="ai-chat-memory"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M6 4h12v16l-6-4-6 4z"/></svg><span>{{ tr('Memory') }}</span></button>
       </div>
-      <p class="ai-page-nav-label">Recent conversations</p>
+      <p class="ai-page-nav-label">{{ tr('Recent conversations') }}</p>
       {% endif %}
       <ul data-chat-history-list></ul>
-      <p class="muted" data-chat-history-empty>No saved conversations yet.</p>
+      <p class="muted" data-chat-history-empty>{{ tr('No saved conversations yet.') }}</p>
     </nav>
-    <section class="ai-chat-memory" id="ai-chat-memory" aria-label="What I remember about you" data-chat-memory hidden>
-      <h3>What I remember about you</h3>
-      <p class="muted">Notes you asked me to keep. Only you can see them.</p>
+    <section class="ai-chat-memory" id="ai-chat-memory" aria-label="{{ tr('What I remember about you') }}" data-chat-memory hidden>
+      <h3>{{ tr('What I remember about you') }}</h3>
+      <p class="muted">{{ tr('Notes you asked me to keep. Only you can see them.') }}</p>
       <ul data-chat-memory-list></ul>
-      <p class="muted" data-chat-memory-empty>Nothing yet. Say “remember that I prefer short answers” to add one.</p>
-      <button type="button" class="ai-forget" data-chat-memory-clear hidden>Forget everything</button>
+      <p class="muted" data-chat-memory-empty>{{ tr('Nothing yet. Say “remember that I prefer short answers” to add one.') }}</p>
+      <button type="button" class="ai-forget" data-chat-memory-clear hidden>{{ tr('Forget everything') }}</button>
     </section>
     <div class="ai-chat-main">
-      <div class="ai-chat-log" data-chat-log role="log" aria-live="polite" aria-label="Conversation" tabindex="0">
+      <div class="ai-chat-log" data-chat-log role="log" aria-live="polite" aria-label="{{ tr('Conversation') }}" tabindex="0">
         <div class="ai-chat-welcome" data-chat-welcome>
-          <h3>How can I help you today?</h3>
+          <h3>{{ tr('How can I help you today?') }}</h3>
         </div>
       </div>
       <p class="ai-banner" data-chat-error role="alert" hidden></p>
       <form class="ai-composer" data-chat-form autocomplete="off">
-        <label class="ai-sr" for="ai-chat-input">Your question</label>
-        <textarea id="ai-chat-input" name="text" rows="1" maxlength="2000" placeholder="Type your message…" data-chat-input required></textarea>
+        <label class="ai-sr" for="ai-chat-input">{{ tr('Your question') }}</label>
+        <textarea id="ai-chat-input" name="text" rows="1" maxlength="2000" placeholder="{{ tr('Type your message…') }}" data-chat-input required></textarea>
         <div class="ai-composer-row">
           <span class="ai-count" data-chat-count hidden></span>
-          <button type="button" class="button" data-chat-stop hidden>Stop</button>
-          <button type="submit" class="primary ai-send" data-chat-send aria-label="Send"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M4 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button type="button" class="button" data-chat-stop hidden>{{ tr('Stop') }}</button>
+          <button type="submit" class="primary ai-send" data-chat-send aria-label="{{ tr('Send') }}"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M4 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
       </form>
-      <p class="ai-privacy">AI can make mistakes. Please double-check important answers. Your chats are private to you and are deleted after {{ ai_chat_retention_days(current_user) }} days without a message.</p>
+      <p class="ai-privacy">{{ tr('AI can make mistakes. Please double-check important answers. Your chats are private to you and are deleted after {ai_chat_retention_days} days without a message.', ai_chat_retention_days=(ai_chat_retention_days(current_user))) }}</p>
     </div>
   </div>
   <template data-chat-user-turn>
@@ -77,16 +77,16 @@
       <div class="ai-run ai-mini" data-ai-run-slot>
         <div class="ai-thinking-status" data-ai-thinking role="status" aria-live="polite">
           <span class="ai-thinking-dot" aria-hidden="true"></span>
-          <span data-ai-thinking-label>Getting ready</span>
+          <span data-ai-thinking-label>{{ tr('Getting ready') }}</span>
           <span data-ai-elapsed></span>
         </div>
         <article class="ai-answer" data-ai-answer aria-busy="true" hidden></article>
         <p class="ai-banner" data-ai-notice hidden></p>
         <div class="ai-extras" data-ai-extras hidden></div>
-        <details class="ai-src" data-ai-sources-box hidden><summary>Sources</summary><ul class="ai-sources ai-sources-inline" data-ai-sources></ul></details>
+        <details class="ai-src" data-ai-sources-box hidden><summary>{{ tr('Sources') }}</summary><ul class="ai-sources ai-sources-inline" data-ai-sources></ul></details>
         <div class="ai-actions">
-          <span class="ai-pill" data-ai-status data-state="queued" hidden>Waiting for the assistant</span>
-          <button type="button" class="ai-tool" data-ai-copy hidden>Copy</button>
+          <span class="ai-pill" data-ai-status data-state="queued" hidden>{{ tr('Waiting for the assistant') }}</span>
+          <button type="button" class="ai-tool" data-ai-copy hidden>{{ tr('Copy') }}</button>
           <span class="ai-route" data-ai-route hidden></span>
           <span class="muted" data-ai-stats></span>
         </div>

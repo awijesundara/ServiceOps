@@ -12,6 +12,7 @@ from serviceops_core.ai.access import record_numbers  # noqa: F401 (re-exported 
 from serviceops_core import read_access
 from serviceops_core.security import redact
 from serviceops_models import Knowledge, Ticket, User, db
+from serviceops_core.localization import tr
 
 ADMIN_ROLES = frozenset({"admin", "superadmin"})
 PRIORITIES = ("P1", "P2", "P3", "P4")
@@ -177,7 +178,7 @@ def execute(action, ticket, actor):
             abort(403)
         body = str(payload.get("body", "")).strip()
         if not body or len(body) > 10000:
-            abort(400, description="The proposed comment is no longer valid.")
+            abort(400, description=tr("The proposed comment is no longer valid."))
         comment = post_ticket_comment(ticket, actor, body, ai_assisted=True)
         log_history("ticket", ticket.id, "AI-assisted comment added", details=body[:500])
         audit("ai action execute", ticket.number, f"type=add_comment; comment={comment.id}")
@@ -189,7 +190,7 @@ def execute(action, ticket, actor):
             abort(403)
         body = str(payload.get("body", "")).strip()
         if not body or len(body) > 10000:
-            abort(400, description="The proposed note is no longer valid.")
+            abort(400, description=tr("The proposed note is no longer valid."))
         text = f"{DRAFT_COMMENT_PREFIX[action.action_type]}: {body}"
         comment = post_ticket_comment(ticket, actor, text, ai_assisted=True)
         log_history("ticket", ticket.id, f"AI-assisted {action.action_type.replace('_', ' ')} added", details=body[:500])
@@ -203,7 +204,7 @@ def execute(action, ticket, actor):
         title = str(payload.get("title", "")).strip()[:180]
         body = str(payload.get("body", "")).strip()
         if not title or not body:
-            abort(400, description="The proposed article is no longer valid.")
+            abort(400, description=tr("The proposed article is no longer valid."))
         article = Knowledge(title=title, category="General", body=body, author_id=actor.id,
                             tenant_id=actor.tenant_id, published=False)
         db.session.add(article)
@@ -212,7 +213,7 @@ def execute(action, ticket, actor):
         audit("ai action execute", ticket.number, f"type=kb_article; article=KB{article.id:07d}")
         return
     if action.action_type != "update_ticket":
-        abort(400, description="This AI action type is not supported.")
+        abort(400, description=tr("This AI action type is not supported."))
     if actor.effective_role not in ADMIN_ROLES or not user_can_manage_ticket(actor, ticket):
         abort(403)
     for required in ("update", "assign", "transition"):
@@ -220,7 +221,7 @@ def execute(action, ticket, actor):
             abort(403)
     unknown = set(payload) - {"state", "priority", "assigned_to_id"}
     if unknown or not payload:
-        abort(400, description="The proposed ticket update is not valid.")
+        abort(400, description=tr("The proposed ticket update is not valid."))
     before = {"state": ticket.state, "priority": ticket.priority,
               "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned"}
     if "state" in payload:
@@ -228,7 +229,7 @@ def execute(action, ticket, actor):
     if "priority" in payload:
         priority = str(payload["priority"])
         if priority not in PRIORITIES:
-            abort(400, description="The proposed priority is not valid.")
+            abort(400, description=tr("The proposed priority is not valid."))
         ticket.priority = priority
     if "assigned_to_id" in payload:
         assignee_id = payload["assigned_to_id"]
@@ -236,10 +237,10 @@ def execute(action, ticket, actor):
             try:
                 assignee_id = int(assignee_id)
             except (TypeError, ValueError):
-                abort(400, description="The proposed assignee is not valid.")
+                abort(400, description=tr("The proposed assignee is not valid."))
             eligible = {user.id for user in ticket_team_agents(ticket)}
             if assignee_id not in eligible:
-                abort(409, description="The proposed assignee is no longer eligible for this ticket.")
+                abort(409, description=tr("The proposed assignee is no longer eligible for this ticket."))
         ticket.assignee_id = assignee_id
         if assignee_id:
             follow_ticket(ticket, db.session.get(User, assignee_id))

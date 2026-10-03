@@ -32,6 +32,7 @@ import asyncio
 import errno
 import ipaddress
 import socket
+from serviceops_core.localization import tr
 
 # Standard MIB-II / IF-MIB / IP-MIB / LLDP-MIB OIDs used for discovery.
 OID_SYS_DESCR = "1.3.6.1.2.1.1.1.0"
@@ -375,7 +376,7 @@ def discover_subnet(cidr, community, port=161, version="2c", timeout=0.6, max_ho
     if (type(max_hosts) is not int or not 1 <= max_hosts <= 1024
             or type(max_workers) is not int or not 1 <= max_workers <= 40
             or not isinstance(timeout, (int, float)) or not 0 < timeout <= 5):
-        raise ValueError("Discovery requires 1–1024 hosts, 1–40 workers, and a timeout of 0–5 seconds.")
+        raise ValueError(tr("Discovery requires 1–1024 hosts, 1–40 workers, and a timeout of 0–5 seconds."))
     addresses = list(islice(network.hosts(), max_hosts))
     # Best-effort reverse-DNS nameserver for bare hits: the subnet's own
     # gateway (conventionally .1) -- see reverse_dns_lookup's docstring for

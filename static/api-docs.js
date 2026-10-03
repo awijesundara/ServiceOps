@@ -32,7 +32,7 @@ fetch("/api/v1/openapi.json").then(r => r.json()).then(spec => {
       if (params.length) {
         const p = document.createElement("p");
         p.className = "desc";
-        p.textContent = "Parameters: " + params.map(function (param) {
+        p.textContent = tr("Parameters: ") + params.map(function (param) {
           return (param.name || (param["$ref"] || "").split("/").pop());
         }).join(", ");
         wrap.appendChild(p);
@@ -41,5 +41,5 @@ fetch("/api/v1/openapi.json").then(r => r.json()).then(spec => {
     });
   });
 }).catch(err => {
-  document.getElementById("error").textContent = "Could not load the live API contract: " + err;
+  document.getElementById("error").textContent = tr("Could not load the live API contract: ") + err;
 });

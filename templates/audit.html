@@ -1,63 +1,63 @@
-{% extends "base.html" %}{% block title %}Audit log · {{ instance_name }}{% endblock %}
+{% extends "base.html" %}{% block title %}{{ tr('Audit log · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-{% set admin_page_title = 'Audit and evidence' %}{% include '_admin_context.html' %}
-<header class="page-head"><div><h1>Audit and evidence</h1><p>Append-only, request-correlated security and record activity.</p></div><a class="button" href="{{ url_for('audit_export') }}">Export verified evidence</a></header>
+{% set admin_page_title = tr('Audit and evidence') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>{{ tr('Audit and evidence') }}</h1><p>{{ tr('Append-only, request-correlated security and record activity.') }}</p></div><a class="button" href="{{ url_for('audit_export') }}">{{ tr('Export verified evidence') }}</a></header>
 <div class="detail-grid">
 <section class="panel">
-  <h2>Integrity keys</h2>
-  <p>Historical keys remain encrypted for verification. Rotation never rewrites an audit event.</p>
-  <table><thead><tr><th>Key ID</th><th>{{ t('Status') }}</th><th>Activated</th><th>Retired</th></tr></thead><tbody>{% for key in keys %}<tr><td><code>{{ key.key_id }}</code></td><td>{{ 'Active' if key.active else 'Historical' }}</td><td>{{ (key.activated_at|usertime('%Y-%m-%d %H:%M')) }}</td><td>{{ (key.retired_at|usertime('%Y-%m-%d %H:%M')) if key.retired_at else '—' }}</td></tr>{% else %}<tr><td colspan="4">Environment key is active. Rotate once to place versioned verification keys under governed storage.</td></tr>{% endfor %}</tbody></table>
-  <form method="post" action="{{ url_for('audit_rotate_key') }}" class="stack"><label>Confirmation<input name="confirmation" required placeholder="Type ROTATE"></label><button>Rotate audit key</button></form>
+  <h2>{{ tr('Integrity keys') }}</h2>
+  <p>{{ tr('Historical keys remain encrypted for verification. Rotation never rewrites an audit event.') }}</p>
+  <table><thead><tr><th>{{ tr('Key ID') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Activated') }}</th><th>{{ tr('Retired') }}</th></tr></thead><tbody>{% for key in keys %}<tr><td><code>{{ key.key_id }}</code></td><td>{{ tr('Active') if key.active else tr('Historical') }}</td><td>{{ (key.activated_at|usertime('%Y-%m-%d %H:%M')) }}</td><td>{{ (key.retired_at|usertime('%Y-%m-%d %H:%M')) if key.retired_at else '—' }}</td></tr>{% else %}<tr><td colspan="4">{{ tr('Environment key is active. Rotate once to place versioned verification keys under governed storage.') }}</td></tr>{% endfor %}</tbody></table>
+  <form method="post" action="{{ url_for('audit_rotate_key') }}" class="stack"><label>{{ tr('Confirmation') }}<input name="confirmation" required placeholder="{{ tr('Type ROTATE') }}"></label><button>{{ tr('Rotate audit key') }}</button></form>
 </section>
 <aside class="panel">
-  <h2>Retention and external evidence</h2>
-  <p>Primary audit records are append-only and are never automatically purged. Dedicated active SIEM connections: <strong>{{ siem_connections }}</strong>.</p>
+  <h2>{{ tr('Retention and external evidence') }}</h2>
+  <p>{{ tr('Primary audit records are append-only and are never automatically purged. Dedicated active SIEM connections:') }} <strong>{{ siem_connections }}</strong>.</p>
   <form method="post" action="{{ url_for('audit_retention') }}" class="stack">
-    <label>Minimum retention days<input name="retention_days" type="number" min="2555" max="36500" value="{{ retention.retention_days if retention else 2555 }}" required></label>
-    <label class="check"><input name="legal_hold" type="checkbox" {% if retention and retention.legal_hold %}checked{% endif %}> Legal hold</label>
-    <label class="check"><input name="external_export_required" type="checkbox" {% if not retention or retention.external_export_required %}checked{% endif %}> Require external immutable export</label>
-    <button>Save retention policy</button>
+    <label>{{ tr('Minimum retention days') }}<input name="retention_days" type="number" min="2555" max="36500" value="{{ retention.retention_days if retention else 2555 }}" required></label>
+    <label class="check"><input name="legal_hold" type="checkbox" {% if retention and retention.legal_hold %}checked{% endif %}> {{ tr('Legal hold') }}</label>
+    <label class="check"><input name="external_export_required" type="checkbox" {% if not retention or retention.external_export_required %}checked{% endif %}> {{ tr('Require external immutable export') }}</label>
+    <button>{{ tr('Save retention policy') }}</button>
   </form>
 </aside>
 </div>
 <section class="list-workspace">
   <header class="list-toolbar">
-    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Audit events</strong><small>{{ total }} records</small></div></div>
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Audit events') }}</strong><small>{{ tr('{total} records', total=(total)) }}</small></div></div>
     <form class="list-search">
       <input type="hidden" name="filter" value="{{ raw_filter }}">
-      <input name="q" value="{{ q }}" placeholder="Action or target" aria-label="Search audit events">
-      <button>{{ t('Search') }}</button>
+      <input name="q" value="{{ q }}" placeholder="{{ tr('Action or target') }}" aria-label="{{ tr('Search audit events') }}">
+      <button>{{ tr('Search') }}</button>
       <div class="list-filter" data-filter-fields='{{ filter_fields|tojson }}' data-filter-value='{{ raw_filter or "[]" }}'>
-        <button type="button" class="list-filter-toggle">▽ Filter</button>
+        <button type="button" class="list-filter-toggle">▽ {{ tr('Filter') }}</button>
         <div class="list-filter-builder" hidden>
           <div class="list-filter-rows"></div>
           <div class="list-filter-actions">
-            <button type="button" class="list-filter-add">+ Add condition</button>
-            <button type="submit" class="primary">Run</button>
-            <button type="button" class="list-filter-clear">Clear filter</button>
+            <button type="button" class="list-filter-add">+ {{ tr('Add condition') }}</button>
+            <button type="submit" class="primary">{{ tr('Run') }}</button>
+            <button type="button" class="list-filter-clear">{{ tr('Clear filter') }}</button>
           </div>
         </div>
       </div>
     </form>
-    <nav class="list-pagination" aria-label="Pagination">
+    <nav class="list-pagination" aria-label="{{ tr('Pagination') }}">
       <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('audit_log', q=q, filter=raw_filter, page=page-1) }}">‹</a>
-      <span>Page {{ page }} of {{ pages }}</span>
+      <span>{{ tr('Page {page} of {pages}', page=(page), pages=(pages)) }}</span>
       <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('audit_log', q=q, filter=raw_filter, page=page+1) }}">›</a>
     </nav>
   </header>
-  <div class="list-breadcrumb"><span>▽</span> All{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
+  <div class="list-breadcrumb"><span>▽</span> {{ tr('All') }}{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › {{ tr('Search contains “{q}”', q=(q)) }}{% endif %}</div>
   <p style="padding:12px 16px 0">
-    <strong>Integrity:</strong>
+    <strong>{{ tr('Integrity:') }}</strong>
     {% if integrity is none %}
-      Not checked this view — verification hashes every event in the tenant's history and is only run on request.
-      <a href="{{ url_for('audit_log', q=q, filter=raw_filter, page=page, verify=1) }}">Verify integrity now</a>
+      {{ tr("Not checked this view — verification hashes every event in the tenant's history and is only run on request.") }}
+      <a href="{{ url_for('audit_log', q=q, filter=raw_filter, page=page, verify=1) }}">{{ tr('Verify integrity now') }}</a>
     {% elif integrity.valid %}
-      Verified · {{ integrity.checked }} events · head {{ integrity.head[:12] if integrity.head else 'empty chain' }}
+      {{ tr('Verified · {checked} events · head {head}', checked=(integrity.checked), head=(integrity.head[:12] if integrity.head else tr('empty chain'))) }}
     {% else %}
-      FAILED at {{ integrity.event_id }} · {{ integrity.reason }}
+      {{ tr('FAILED at {event_id} · {reason}', event_id=(integrity.event_id), reason=(integrity.reason)) }}
     {% endif %}
   </p>
   <div class="task-list-scroll">
-  <table class="task-list"><thead><tr><th>Time</th><th>Request</th><th>User</th><th>Action</th><th>Target</th><th>Network and security evidence</th><th>Details</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ (r.created_at|usertime('%Y-%m-%d %H:%M')) }}</td><td><code>{{ r.request_id[:8] }}</code></td><td>{% if r.user %}{{ r.user.name }}<br><small class="muted">{{ r.user.username }}{% if r.user.email %} · {{ r.user.email }}{% endif %}{% if r.user.role %} · {{ r.user.role|capitalize }}{% endif %}</small>{% else %}system{% endif %}</td><td>{{ r.action }}</td><td><strong>{{ r.target }}</strong></td><td><strong>{{ r.source_ip or 'system' }}</strong>{% set security = r.security_context_json|from_json %}{% if security.client_hostname %}<br>{{ security.client_hostname }}{% endif %}{% if security.device %}<br>{{ security.device }}{% endif %}{% if security.authentication_provider %}<br>Auth: {{ security.authentication_provider }}{% endif %}{% if security.http_method %}<br><code>{{ security.http_method }} {{ security.request_path }}</code>{% endif %}{% if security.session_reference %}<br>Session: <code>{{ security.session_reference }}</code>{% endif %}<details><summary>Client details</summary><small>{{ r.user_agent or 'No user agent' }}{% if security.client_language %}<br>Language: {{ security.client_language }}{% endif %}{% if security.trace_id %}<br>Trace: <code>{{ security.trace_id }}</code>{% endif %}{% if security.referrer %}<br>Referrer: {{ security.referrer }}{% endif %}{% if security.request_host %}<br>Host: {{ security.request_host }}{% endif %}{% if security.content_type %}<br>Content-Type: {{ security.content_type }}{% endif %}{% if security.api_client_id %}<br>API client: <code>{{ security.api_client_id }}</code>{% endif %}</small></details></td><td>{{ r.details }}</td></tr>{% else %}<tr><td colspan="7" class="empty">No matching audit events.</td></tr>{% endfor %}</tbody></table>
+  <table class="task-list"><thead><tr><th>{{ tr('Time') }}</th><th>{{ tr('Request') }}</th><th>{{ tr('User') }}</th><th>{{ tr('Action') }}</th><th>{{ tr('Target') }}</th><th>{{ tr('Network and security evidence') }}</th><th>{{ tr('Details') }}</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ (r.created_at|usertime('%Y-%m-%d %H:%M')) }}</td><td><code>{{ r.request_id[:8] }}</code></td><td>{% if r.user %}{{ r.user.name }}<br><small class="muted">{{ r.user.username }}{% if r.user.email %} · {{ r.user.email }}{% endif %}{% if r.user.role %} · {{ tr_value(r.user.role|capitalize) }}{% endif %}</small>{% else %}{{ tr('system') }}{% endif %}</td><td>{{ r.action }}</td><td><strong>{{ r.target }}</strong></td><td><strong>{{ r.source_ip or 'system' }}</strong>{% set security = r.security_context_json|from_json %}{% if security.client_hostname %}<br>{{ security.client_hostname }}{% endif %}{% if security.device %}<br>{{ security.device }}{% endif %}{% if security.authentication_provider %}<br>{{ tr('Auth: {authentication_provider}', authentication_provider=(security.authentication_provider)) }}{% endif %}{% if security.http_method %}<br><code>{{ security.http_method }} {{ security.request_path }}</code>{% endif %}{% if security.session_reference %}<br>{{ tr('Session:') }} <code>{{ security.session_reference }}</code>{% endif %}<details><summary>{{ tr('Client details') }}</summary><small>{{ r.user_agent or tr('No user agent') }}{% if security.client_language %}<br>{{ tr('Language: {client_language}', client_language=(security.client_language)) }}{% endif %}{% if security.trace_id %}<br>{{ tr('Trace:') }} <code>{{ security.trace_id }}</code>{% endif %}{% if security.referrer %}<br>{{ tr('Referrer: {referrer}', referrer=(security.referrer)) }}{% endif %}{% if security.request_host %}<br>{{ tr('Host: {request_host}', request_host=(security.request_host)) }}{% endif %}{% if security.content_type %}<br>{{ tr('Content-Type: {content_type}', content_type=(security.content_type)) }}{% endif %}{% if security.api_client_id %}<br>{{ tr('API client:') }} <code>{{ security.api_client_id }}</code>{% endif %}</small></details></td><td>{{ r.details }}</td></tr>{% else %}<tr><td colspan="7" class="empty">{{ tr('No matching audit events.') }}</td></tr>{% endfor %}</tbody></table>
   </div>
 </section>{% endblock %}

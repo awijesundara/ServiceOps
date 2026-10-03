@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "hétfő",
+   "kedd",
+   "szerda",
+   "csütörtök",
+   "péntek",
+   "szombat",
+   "vasárnap"
+  ],
+  "days_abbr": [
+   "H",
+   "K",
+   "Sze",
+   "Cs",
+   "P",
+   "Szo",
+   "V"
+  ],
+  "months": [
+   "január",
+   "február",
+   "március",
+   "április",
+   "május",
+   "június",
+   "július",
+   "augusztus",
+   "szeptember",
+   "október",
+   "november",
+   "december"
+  ],
+  "months_abbr": [
+   "jan.",
+   "febr.",
+   "márc.",
+   "ápr.",
+   "máj.",
+   "jún.",
+   "júl.",
+   "aug.",
+   "szept.",
+   "okt.",
+   "nov.",
+   "dec."
+  ]
+ },
+ "language": "hu",
+ "messages": {
+  "Administration": "Adminisztráció",
+  "Back": "Vissza",
+  "Cancel": "Mégse",
+  "Changes": "Változások",
+  "Close": "Bezárás",
+  "Create": "Létrehozás",
+  "Dashboard": "Áttekintés",
+  "Delete": "Törlés",
+  "Description": "Leírás",
+  "Edit": "Szerkesztés",
+  "General": "Általános",
+  "Incidents": "Incidensek",
+  "Knowledge": "Tudás",
+  "Language": "Nyelv",
+  "Name": "Név",
+  "Notifications": "Értesítések",
+  "Preferences": "Beállítások",
+  "Priority": "Prioritás",
+  "Save": "Mentés",
+  "Save preferences": "Beállítások mentése",
+  "Search": "Keresés",
+  "Service requests": "Szolgáltatási kérelmek",
+  "Status": "Állapot",
+  "System preferences": "Rendszerbeállítások"
+ }
+}

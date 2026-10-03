@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Isniin",
+   "Talaado",
+   "Arbaco",
+   "Khamiis",
+   "Jimco",
+   "Sabti",
+   "Axad"
+  ],
+  "days_abbr": [
+   "Isn",
+   "Tldo",
+   "Arbc",
+   "Khms",
+   "Jmc",
+   "Sbti",
+   "Axd"
+  ],
+  "months": [
+   "Janaayo",
+   "Febraayo",
+   "Maarso",
+   "Abriil",
+   "Maayo",
+   "Juun",
+   "Luulyo",
+   "Agosto",
+   "Sebtembar",
+   "Oktoobar",
+   "Noofeembar",
+   "Diseembar"
+  ],
+  "months_abbr": [
+   "Jan",
+   "Feb",
+   "Mar",
+   "Abr",
+   "May",
+   "Jun",
+   "Lul",
+   "Ogs",
+   "Seb",
+   "Okt",
+   "Nof",
+   "Dis"
+  ]
+ },
+ "language": "so",
+ "messages": {
+  "Administration": "Maamulka",
+  "Back": "Dib u noqo",
+  "Cancel": "Jooji",
+  "Changes": "Isbeddellada",
+  "Close": "Xir",
+  "Create": "Abuur",
+  "Dashboard": "Shaashadda guud",
+  "Delete": "Tirtir",
+  "Description": "Sharaxaad",
+  "Edit": "Wax ka beddel",
+  "General": "Guud",
+  "Incidents": "Dhacdooyinka",
+  "Knowledge": "Aqoonta",
+  "Language": "Luqad",
+  "Name": "Magac",
+  "Notifications": "Ogeysiisyada",
+  "Preferences": "Dookhyada",
+  "Priority": "Mudnaan",
+  "Save": "Kaydi",
+  "Save preferences": "Kaydi dookhyada",
+  "Search": "Raadi",
+  "Service requests": "Codsiyada adeegga",
+  "Status": "Xaalad",
+  "System preferences": "Dookhyada nidaamka"
+ }
+}

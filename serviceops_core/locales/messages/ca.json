@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "dilluns",
+   "dimarts",
+   "dimecres",
+   "dijous",
+   "divendres",
+   "dissabte",
+   "diumenge"
+  ],
+  "days_abbr": [
+   "dl.",
+   "dt.",
+   "dc.",
+   "dj.",
+   "dv.",
+   "ds.",
+   "dg."
+  ],
+  "months": [
+   "de gener",
+   "de febrer",
+   "de març",
+   "d’abril",
+   "de maig",
+   "de juny",
+   "de juliol",
+   "d’agost",
+   "de setembre",
+   "d’octubre",
+   "de novembre",
+   "de desembre"
+  ],
+  "months_abbr": [
+   "de gen.",
+   "de febr.",
+   "de març",
+   "d’abr.",
+   "de maig",
+   "de juny",
+   "de jul.",
+   "d’ag.",
+   "de set.",
+   "d’oct.",
+   "de nov.",
+   "de des."
+  ]
+ },
+ "language": "ca",
+ "messages": {
+  "Administration": "Administració",
+  "Back": "Torna",
+  "Cancel": "Cancel·la",
+  "Changes": "Canvis",
+  "Close": "Tanca",
+  "Create": "Crea",
+  "Dashboard": "Tauler de control",
+  "Delete": "Suprimeix",
+  "Description": "Descripció",
+  "Edit": "Edita",
+  "General": "General",
+  "Incidents": "Incidents",
+  "Knowledge": "Coneixement",
+  "Language": "Idioma",
+  "Name": "Nom",
+  "Notifications": "Notificacions",
+  "Preferences": "Preferències",
+  "Priority": "Prioritat",
+  "Save": "Desa",
+  "Save preferences": "Desa les preferències",
+  "Search": "Cerca",
+  "Service requests": "Sol·licituds de servei",
+  "Status": "Estat",
+  "System preferences": "Preferències del sistema"
+ }
+}

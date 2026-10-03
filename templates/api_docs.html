@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ ui_language }}" dir="{{ ui_direction }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ServiceOps REST API reference</title>
+<title>{{ tr('ServiceOps REST API reference') }}</title>
 <style>
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:920px;margin:2rem auto;padding:0 1rem;color:#1b2733;line-height:1.5}
   h1{color:#003e4c}
@@ -15,14 +15,15 @@
   .desc{color:#4a5760;font-size:.92rem;margin:.25rem 0 0}
   #error{color:#a30000}
 </style>
+<script type="application/json" id="serviceops-i18n">{{ ui_javascript_catalog|tojson }}</script>
+<script src="{{ url_for('static', filename='i18n.js', v=app_version) }}"></script>
 </head>
 <body>
-<h1>ServiceOps REST API reference</h1>
-<p>Generated live from the running instance's contract at
+<h1>{{ tr('ServiceOps REST API reference') }}</h1>
+<p>{{ tr("Generated live from the running instance's contract at") }}
 <a href="/api/v1/openapi.json"><code>/api/v1/openapi.json</code></a>.
-Requests are made with a <code>sop_</code> API-client bearer token unless a
-path's security is explicitly overridden below.</p>
-<div id="paths">Loading…</div>
+{{ tr('Requests are made with a') }} <code>sop_</code> {{ tr("API-client bearer token unless a path's security is explicitly overridden below.") }}</p>
+<div id="paths">{{ tr('Loading…') }}</div>
 <p id="error"></p>
 <script src="{{ url_for('static', filename='api-docs.js', v=app_version) }}"></script>
 </body>

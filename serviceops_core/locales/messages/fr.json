@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "lundi",
+   "mardi",
+   "mercredi",
+   "jeudi",
+   "vendredi",
+   "samedi",
+   "dimanche"
+  ],
+  "days_abbr": [
+   "lun.",
+   "mar.",
+   "mer.",
+   "jeu.",
+   "ven.",
+   "sam.",
+   "dim."
+  ],
+  "months": [
+   "janvier",
+   "février",
+   "mars",
+   "avril",
+   "mai",
+   "juin",
+   "juillet",
+   "août",
+   "septembre",
+   "octobre",
+   "novembre",
+   "décembre"
+  ],
+  "months_abbr": [
+   "janv.",
+   "févr.",
+   "mars",
+   "avr.",
+   "mai",
+   "juin",
+   "juil.",
+   "août",
+   "sept.",
+   "oct.",
+   "nov.",
+   "déc."
+  ]
+ },
+ "language": "fr",
+ "messages": {
+  "Administration": "Administration",
+  "Back": "Retour",
+  "Cancel": "Annuler",
+  "Changes": "Changements",
+  "Close": "Fermer",
+  "Create": "Créer",
+  "Dashboard": "Tableau de bord",
+  "Delete": "Supprimer",
+  "Description": "Description",
+  "Edit": "Modifier",
+  "General": "Général",
+  "Incidents": "Incidents",
+  "Knowledge": "Connaissances",
+  "Language": "Langue",
+  "Name": "Nom",
+  "Notifications": "Notifications",
+  "Preferences": "Préférences",
+  "Priority": "Priorité",
+  "Save": "Enregistrer",
+  "Save preferences": "Enregistrer les préférences",
+  "Search": "Rechercher",
+  "Service requests": "Demandes de service",
+  "Status": "État",
+  "System preferences": "Préférences du système"
+ }
+}

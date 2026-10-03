@@ -14,6 +14,7 @@ single-condition/single-action deliberately, not a multi-row rule builder,
 to keep the admin UI and this module small; a trigger needing more than one
 condition can be expressed as two triggers on the same event.
 """
+from serviceops_core.localization import tr
 
 CLIENT_TRIGGER_EVENTS = ("created", "status_changed", "updated")
 CLIENT_TRIGGER_FIELDS = ("status", "priority", "ticket_type", "channel", "tags", "subject")
@@ -34,21 +35,21 @@ def validate_trigger(event, condition_field, condition_op, action_type, action_v
     """Raises ClientTriggerConfigurationError with a user-facing message on
     the first invalid piece; returns None when everything is valid."""
     if event not in CLIENT_TRIGGER_EVENTS:
-        raise ClientTriggerConfigurationError("Select a valid trigger event.")
+        raise ClientTriggerConfigurationError(tr("Select a valid trigger event."))
     if condition_field not in CLIENT_TRIGGER_FIELDS:
-        raise ClientTriggerConfigurationError("Select a valid condition field.")
+        raise ClientTriggerConfigurationError(tr("Select a valid condition field."))
     if condition_op not in CLIENT_TRIGGER_OPERATORS:
-        raise ClientTriggerConfigurationError("Select a valid condition operator.")
+        raise ClientTriggerConfigurationError(tr("Select a valid condition operator."))
     if action_type not in CLIENT_TRIGGER_ACTION_TYPES:
-        raise ClientTriggerConfigurationError("Select a valid action.")
+        raise ClientTriggerConfigurationError(tr("Select a valid action."))
     if action_type == "set_status" and action_value not in CLIENT_TICKET_STATUSES:
-        raise ClientTriggerConfigurationError("Select a valid status for the action.")
+        raise ClientTriggerConfigurationError(tr("Select a valid status for the action."))
     if action_type == "set_priority" and action_value not in CLIENT_TICKET_PRIORITIES:
-        raise ClientTriggerConfigurationError("Select a valid priority for the action.")
+        raise ClientTriggerConfigurationError(tr("Select a valid priority for the action."))
     if action_type in ("assign_to_group", "assign_to_user") and not action_value:
-        raise ClientTriggerConfigurationError("Select who or which team to assign to.")
+        raise ClientTriggerConfigurationError(tr("Select who or which team to assign to."))
     if action_type in ("add_tag", "notify_assignee", "notify_org_contact") and not action_value.strip():
-        raise ClientTriggerConfigurationError("This action needs a value.")
+        raise ClientTriggerConfigurationError(tr("This action needs a value."))
 
 
 def condition_matches(field, op, value, context):

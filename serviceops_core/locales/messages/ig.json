@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Mọnde",
+   "Tiuzdee",
+   "Wenezdee",
+   "Tọọzdee",
+   "Fraịdee",
+   "Satọdee",
+   "Sọndee"
+  ],
+  "days_abbr": [
+   "Mọn",
+   "Tiu",
+   "Wen",
+   "Tọọ",
+   "Fraị",
+   "Sat",
+   "Sọn"
+  ],
+  "months": [
+   "Jenụwarị",
+   "Febrụwarị",
+   "Maachị",
+   "Epreel",
+   "Mee",
+   "Jun",
+   "Julaị",
+   "Ọgọọst",
+   "Septemba",
+   "Ọktoba",
+   "Novemba",
+   "Disemba"
+  ],
+  "months_abbr": [
+   "Jen",
+   "Feb",
+   "Maa",
+   "Epr",
+   "Mee",
+   "Juu",
+   "Jul",
+   "Ọgọ",
+   "Sep",
+   "Ọkt",
+   "Nov",
+   "Dis"
+  ]
+ },
+ "language": "ig",
+ "messages": {
+  "Administration": "Nchịkwa",
+  "Back": "Laghachi",
+  "Cancel": "Kagbuo",
+  "Changes": "Mgbanwe",
+  "Close": "Mechie",
+  "Create": "Mepụta",
+  "Dashboard": "Bọọdụ nchịkwa",
+  "Delete": "Hichapụ",
+  "Description": "Nkọwa",
+  "Edit": "Dezie",
+  "General": "Izugbe",
+  "Incidents": "Ihe omume",
+  "Knowledge": "Ihe ọmụma",
+  "Language": "Asụsụ",
+  "Name": "Aha",
+  "Notifications": "Ọkwa",
+  "Preferences": "Nhọrọ",
+  "Priority": "Ihe mbụ",
+  "Save": "Chekwaa",
+  "Save preferences": "Chekwaa nhọrọ",
+  "Search": "Chọọ",
+  "Service requests": "Arịrịọ ọrụ",
+  "Status": "Ọnọdụ",
+  "System preferences": "Nhọrọ sistemụ"
+ }
+}

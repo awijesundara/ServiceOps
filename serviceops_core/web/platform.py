@@ -39,6 +39,7 @@ from serviceops_models import (
     Ticket,
     User,
 )
+from serviceops_core.localization import tr
 
 
 def register(app):
@@ -51,7 +52,7 @@ def register(app):
         active_tenants = Tenant.query.filter_by(active=True).limit(2).all()
         if len(active_tenants) == 1:
             return redirect(url_for("status_page", slug=active_tenants[0].slug))
-        abort(404, description="Specify an organization: /status/<organization-slug>.")
+        abort(404, description=tr("Specify an organization: /status/<organization-slug>."))
 
     @app.get("/status/<slug>")
     def status_page(slug):

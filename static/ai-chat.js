@@ -9,8 +9,8 @@
   const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
   const TERMINAL = ["completed", "failed", "cancelled"];
   const PILL = {
-    queued: "Waiting for the assistant", running: "Working", completed: "Complete",
-    failed: "Could not finish", cancelled: "Stopped"
+    queued: tr("Waiting for the assistant"), running: tr("Working"), completed: tr("Complete"),
+    failed: tr("Could not finish"), cancelled: tr("Stopped")
   };
 
   function get(url) {
@@ -29,7 +29,7 @@
     return fetch(url, { method: "POST", headers: { "X-CSRF-Token": csrf, "Content-Type": "application/json", Accept: "application/json" },
       credentials: "same-origin", body: JSON.stringify(body || {}) }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (json) {
-        if (!response.ok) throw new Error(json.error || "That did not work. Please try again.");
+        if (!response.ok) throw new Error(json.error || tr("That did not work. Please try again."));
         return json;
       });
     });
@@ -54,32 +54,44 @@
       const item = element("li", "ai-step is-" + step.state);
       item.appendChild(element("span", "ai-step-mark"));
       const body = element("span", "ai-step-body");
-      body.appendChild(element("strong", "", step.label));
-      if (step.detail) body.appendChild(element("small", "", step.detail));
+      body.appendChild(element("strong", "", tr(step.label)));
+      if (step.detail) body.appendChild(element("small", "", tr(step.detail)));
       item.appendChild(body);
       item.appendChild(element("time", "ai-step-time", step.t + "s"));
       list.appendChild(item);
     });
   }
 
+  // Keys are the server's step labels (English); values are shown.
   const THINKING_LABELS = {
-    "Verified your access": "Checking access",
-    "Confirmed who is asking": "Checking access",
-    "Collected evidence": "Reviewing evidence",
-    "Looked up records you can access": "Reviewing records",
-    "Adapted to model context": "Preparing context",
-    "Sending to the model": "Preparing answer",
-    "The model is reasoning": "Thinking",
-    "Writing the answer": "Writing answer",
-    "Checked your access again": "Finishing"
+    [trNoop("Verified your access")]: tr("Checking access"),
+    [trNoop("Confirmed who is asking")]: tr("Checking access"),
+    [trNoop("Collected evidence")]: tr("Reviewing evidence"),
+    [trNoop("Looked up records you can access")]: tr("Reviewing records"),
+    [trNoop("Adapted to model context")]: tr("Preparing context"),
+    [trNoop("Sending to the model")]: tr("Preparing answer"),
+    [trNoop("The model is reasoning")]: tr("Thinking"),
+    [trNoop("Writing the answer")]: tr("Writing answer"),
+    [trNoop("Checked your access again")]: tr("Finishing")
   };
+  // Other fixed step labels and details the server sends; shown through tr().
+  trNoop("Declined");
+  trNoop("This asks for something the assistant never has access to");
+  trNoop("Cleared what I remembered");
+  trNoop("Saved a note");
+  trNoop("Did not save");
+  trNoop("Shortened evidence or older turns; kept your question and access rules");
+  trNoop("Every source is still readable by you");
+  // Draft ticket fields the server proposes, translated where shown.
+  trNoop("incident"); trNoop("request"); trNoop("change"); trNoop("problem");
+  trNoop("Low"); trNoop("Medium"); trNoop("High"); trNoop("Critical");
 
   function thinkingLabel(data) {
-    if (data.text) return "Writing answer";
-    if (data.reasoning) return "Thinking";
+    if (data.text) return tr("Writing answer");
+    if (data.reasoning) return tr("Thinking");
     const steps = data.steps || [];
     const current = steps.slice().reverse().find(function (step) { return step.state === "active"; }) || steps[steps.length - 1];
-    return current ? (THINKING_LABELS[current.label] || "Working") : (data.status === "queued" ? "Getting ready" : "Working");
+    return current ? (THINKING_LABELS[current.label] || tr("Working")) : (data.status === "queued" ? tr("Getting ready") : tr("Working"));
   }
 
   function renderSources(list, sources) {
@@ -87,11 +99,11 @@
     const box = list.closest("details");
     if (box) {
       box.hidden = !(sources && sources.length);
-      box.querySelector("summary").textContent = "Sources (" + (sources ? sources.length : 0) + ")";
+      box.querySelector("summary").textContent = tr("Sources ({count})", { count: sources ? sources.length : 0 });
     }
     (sources || []).forEach(function (source) {
       const item = element("li", "ai-source");
-      const link = element(source.url ? "a" : "span", "ai-cite", source.number || source.title || "Reference");
+      const link = element(source.url ? "a" : "span", "ai-cite", source.number || source.title || tr("Reference"));
       if (source.url) link.href = source.url;
       item.appendChild(link);
       item.appendChild(element("span", "ai-source-title", source.title));
@@ -107,7 +119,10 @@
     holder.hidden = !(route && (route.location === "private" || route.location === "external"));
     if (holder.hidden) return;
     // The exact model that wrote the answer, so nobody has to guess which AI they are reading.
-    const label = (route.location === "private" ? "Private" : "External") + (route.model ? " · " + route.model : " AI");
+    const isPrivate = route.location === "private";
+    const label = route.model
+      ? (isPrivate ? tr("Private · {model}", { model: route.model }) : tr("External · {model}", { model: route.model }))
+      : (isPrivate ? tr("Private AI") : tr("External AI"));
     const chip = element("span", "ai-route-chip is-" + route.location, label);
     chip.title = (route.name ? route.name + ": " : "") + (route.reason || "");
     holder.appendChild(chip);
@@ -122,44 +137,45 @@
     const draft = route && route.draft;
     if (draft && draft.url) {
       const card = element("div", "ai-draft");
-      card.appendChild(element("p", "ai-draft-label", "Draft " + draft.kind + " ready for you"));
+      card.appendChild(element("p", "ai-draft-label", tr("Draft {kind} ready for you", { kind: tr(draft.kind) })));
       card.appendChild(element("strong", "", draft.title));
       card.appendChild(element("p", "ai-draft-body", draft.description));
-      card.appendChild(element("p", "ai-draft-meta", "Impact " + draft.impact + " · Urgency " + draft.urgency + " · " + draft.category));
-      const open = element("a", "primary ai-draft-open", "Review and create");
+      card.appendChild(element("p", "ai-draft-meta", tr("Impact {impact} · Urgency {urgency} · {category}",
+        { impact: tr(draft.impact), urgency: tr(draft.urgency), category: draft.category })));
+      const open = element("a", "primary ai-draft-open", tr("Review and create"));
       open.href = draft.url;
       card.appendChild(open);
-      card.appendChild(element("small", "", "Nothing is created until you submit the form."));
+      card.appendChild(element("small", "", tr("Nothing is created until you submit the form.")));
       holder.appendChild(card);
     }
     const action = route && route.action;
     if (action && action.prepare_url) {
       const card = element("div", "ai-draft ai-action-draft");
       const isUpdate = action.type === "update_ticket";
-      card.appendChild(element("p", "ai-draft-label", isUpdate ? "Administrator action ready for review" : "Ready for your review"));
+      card.appendChild(element("p", "ai-draft-label", isUpdate ? tr("Administrator action ready for review") : tr("Ready for your review")));
       card.appendChild(element("strong", "", action.ticket));
       card.appendChild(element("p", "ai-draft-body", action.summary));
-      const review = element("button", "primary ai-draft-open", "Review exact change");
+      const review = element("button", "primary ai-draft-open", tr("Review exact change"));
       review.type = "button";
       review.addEventListener("click", function () {
         review.disabled = true;
-        review.textContent = "Preparing…";
+        review.textContent = tr("Preparing…");
         postJson(action.prepare_url, {}).then(function (result) { window.location.assign(result.url); })
-          .catch(function (error) { review.disabled = false; review.textContent = "Review exact change"; card.appendChild(element("small", "ai-error", error.message)); });
+          .catch(function (error) { review.disabled = false; review.textContent = tr("Review exact change"); card.appendChild(element("small", "ai-error", error.message)); });
       });
       card.appendChild(review);
-      card.appendChild(element("small", "", "Nothing changes until you approve the exact action."));
+      card.appendChild(element("small", "", tr("Nothing changes until you approve the exact action.")));
       holder.appendChild(card);
     }
     if (withSuggestions && route && route.remember) {
       const card = element("div", "ai-remember");
-      card.appendChild(element("span", "", "Remember this? “" + route.remember + "”"));
-      const yes = element("button", "ai-remember-yes", "Remember");
-      const no = element("button", "ai-remember-no", "No thanks");
+      card.appendChild(element("span", "", tr("Remember this? “{note}”", { note: route.remember })));
+      const yes = element("button", "ai-remember-yes", tr("Remember"));
+      const no = element("button", "ai-remember-no", tr("No thanks"));
       yes.type = no.type = "button";
       yes.addEventListener("click", function () {
         yes.disabled = no.disabled = true;
-        postJson("/ai/chat/memories", { text: route.remember }).then(function () { card.textContent = "Saved. You can review it under Memory."; })
+        postJson("/ai/chat/memories", { text: route.remember }).then(function () { card.textContent = tr("Saved. You can review it under Memory."); })
           .catch(function (e) { card.textContent = e.message; });
       });
       no.addEventListener("click", function () { card.remove(); holder.hidden = !holder.childNodes.length; });
@@ -170,7 +186,7 @@
     if (route && route.pages && route.pages.length) {
       const row = element("div", "ai-suggest ai-pages");
       route.pages.forEach(function (page) {
-        const link = element("a", "ai-suggest-chip ai-page-chip", "Open " + page.label + " →");
+        const link = element("a", "ai-suggest-chip ai-page-chip", tr("Open {page}", { page: tr(page.label) }) + " →");
         link.href = page.url;
         row.appendChild(link);
       });
@@ -191,10 +207,10 @@
 
   function summarize(usage) {
     const parts = [];
-    if (usage.duration_ms) parts.push("Answered in " + (usage.duration_ms / 1000).toFixed(1) + "s");
-    if (usage.first_token_ms) parts.push("first words after " + (usage.first_token_ms / 1000).toFixed(1) + "s");
+    if (usage.duration_ms) parts.push(tr("Answered in {seconds}s", { seconds: (usage.duration_ms / 1000).toFixed(1) }));
+    if (usage.first_token_ms) parts.push(tr("first words after {seconds}s", { seconds: (usage.first_token_ms / 1000).toFixed(1) }));
     const tokens = usage.completion_tokens || usage.output_tokens;
-    if (tokens) parts.push(tokens + " tokens written");
+    if (tokens) parts.push(tr("{count} tokens written", { count: tokens }));
     return parts.join(" · ");
   }
 
@@ -236,7 +252,7 @@
       self.delay = 600;
       self.apply(data);
     }).catch(function (error) {
-      if (error.status === 403 || error.status === 404) { self.fail("You no longer have access to this answer."); return; }
+      if (error.status === 403 || error.status === 404) { self.fail(tr("You no longer have access to this answer.")); return; }
       self.delay = Math.min(self.delay * 2, 5000);
     }).then(function () {
       if (!self.finished) setTimeout(function () { self.poll(); }, self.delay);
@@ -246,7 +262,7 @@
   RunView.prototype.apply = function (data) {
     const ui = this.ui;
     if (ui.status) {
-      ui.status.textContent = PILL[data.status] || data.status;
+      ui.status.textContent = PILL[data.status] || tr(data.status);
       ui.status.dataset.state = data.status;
     }
     if (!data.changed) return;
@@ -320,7 +336,7 @@
     if (ui.thinking) ui.thinking.hidden = true;
     if (ui.notice) {
       const hint = data.error || (data.usage && data.usage.truncated
-        ? "The answer was cut off at the length limit. An administrator can raise the maximum output length in Admin → AI." : "");
+        ? tr("The answer was cut off at the length limit. An administrator can raise the maximum output length in Admin → AI.") : "");
       ui.notice.hidden = !hint;
       ui.notice.textContent = hint;
     }
@@ -343,7 +359,7 @@
   RunView.prototype.copy = function () {
     const text = window.AIRender.plainText(this.text, this.sources);
     const button = this.ui.copy;
-    const done = function () { if (button) { const label = button.textContent; button.textContent = "Copied"; setTimeout(function () { button.textContent = label; }, 1500); } };
+    const done = function () { if (button) { const label = button.textContent; button.textContent = tr("Copied"); setTimeout(function () { button.textContent = label; }, 1500); } };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done);
   };
 

@@ -1,22 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Dashboard · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Dashboard · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">SERVICE OPERATIONS</p><h1>Good day, {{ current_user.name.split()[0] }}</h1><p>Here’s what’s happening across your service desk.</p></div>
-<a class="primary button" href="{{ url_for('ticket_new', kind='incident') }}">+ Report an incident</a></header>
+<header class="page-head"><div><p class="eyebrow">{{ tr('SERVICE OPERATIONS') }}</p><h1>{{ tr('Good day, {split}', split=(current_user.name.split()[0])) }}</h1><p>{{ tr('Here’s what’s happening across your service desk.') }}</p></div>
+<a class="primary button" href="{{ url_for('ticket_new', kind='incident') }}">+ {{ tr('Report an incident') }}</a></header>
 <section class="stats" data-tour="dashboard-stats">
-  <a href="{{ url_for('tickets', kind='incident') }}" class="{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}stat-alert{% endif %}"><span>{{ t('Incidents') }}</span><strong>{{ counts.incident }}</strong>{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}<small class="stat-alert-text">P1: {{ incident_priority_counts.p1 }} · P2: {{ incident_priority_counts.p2 }}</small>{% else %}<small>View queue →</small>{% endif %}</a>
-  <a href="{{ url_for('requests_list') }}"><span>Requests</span><strong>{{ counts.request }}</strong><small>View REQ / RITM →</small></a>
-  <a href="{{ url_for('tickets', kind='change') }}"><span>{{ t('Changes') }}</span><strong>{{ counts.change }}</strong><small>View schedule →</small></a>
-  <a href="{{ url_for('open_work') }}"><span>Open work</span><strong>{{ open_count }}</strong><small>Needs attention →</small></a>
+  <a href="{{ url_for('tickets', kind='incident') }}" class="{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}stat-alert{% endif %}"><span>{{ tr('Incidents') }}</span><strong>{{ counts.incident }}</strong>{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}<small class="stat-alert-text">P1: {{ incident_priority_counts.p1 }} · P2: {{ incident_priority_counts.p2 }}</small>{% else %}<small>{{ tr('View queue') }} →</small>{% endif %}</a>
+  <a href="{{ url_for('requests_list') }}"><span>{{ tr('Requests') }}</span><strong>{{ counts.request }}</strong><small>{{ tr('View REQ / RITM') }} →</small></a>
+  <a href="{{ url_for('tickets', kind='change') }}"><span>{{ tr('Changes') }}</span><strong>{{ counts.change }}</strong><small>{{ tr('View schedule') }} →</small></a>
+  <a href="{{ url_for('open_work') }}"><span>{{ tr('Open work') }}</span><strong>{{ open_count }}</strong><small>{{ tr('Needs attention') }} →</small></a>
 </section>
 
 {% if show_my_assigned %}
 <section class="panel">
-  <div class="panel-head"><div><h2>Assigned to me</h2><p>Open tickets where you are the assignee</p></div></div>
+  <div class="panel-head"><div><h2>{{ tr('Assigned to me') }}</h2><p>{{ tr('Open tickets where you are the assignee') }}</p></div></div>
   {% if my_assigned %}
-  <table><thead><tr><th>Number</th><th>Summary</th><th>State</th><th>{{ t('Priority') }}</th></tr></thead>
-  <tbody>{% for t in my_assigned %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td><span class="badge">{{ t.state }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td></tr>{% endfor %}</tbody></table>
-  {% else %}<p class="muted">Nothing is currently assigned to you.</p>{% endif %}
+  <table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Priority') }}</th></tr></thead>
+  <tbody>{% for t in my_assigned %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td><span class="badge">{{ tr_value(t.state) }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ tr_value(t.priority) }}</span></td></tr>{% endfor %}</tbody></table>
+  {% else %}<p class="muted">{{ tr('Nothing is currently assigned to you.') }}</p>{% endif %}
 </section>
 {% endif %}
 
@@ -24,16 +24,16 @@
 <div class="dashboard-columns">
 {% if sla_breached %}
 <section class="panel">
-  <div class="panel-head"><div><h2 class="sla-breached-heading">SLA breached<span class="info-tip" tabindex="0" data-tip="SLA = Service Level Agreement: the committed time limit for responding to or resolving this ticket. These have passed their commitment and need escalation.">i</span></h2><p>These need escalation now</p></div></div>
-  <table><thead><tr><th>Number</th><th>Summary</th><th>Breached at</th></tr></thead>
+  <div class="panel-head"><div><h2 class="sla-breached-heading">{{ tr('SLA breached') }}<span class="info-tip" tabindex="0" data-tip="SLA = Service Level Agreement: the committed time limit for responding to or resolving this ticket. These have passed their commitment and need escalation.">i</span></h2><p>{{ tr('These need escalation now') }}</p></div></div>
+  <table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('Breached at') }}</th></tr></thead>
   <tbody>{% for row in sla_breached %}{% set t = sla_tickets.get(row.target_id) %}{% if t %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td class="sla-breached-cell">{{ (row.breach_at|usertime('%b %d, %H:%M')) }}</td></tr>{% endif %}{% endfor %}</tbody></table>
 </section>
 {% endif %}
 
 {% if sla_at_risk %}
 <section class="panel">
-  <div class="panel-head"><div><h2>SLA at risk<span class="info-tip" tabindex="0" data-tip="SLA = Service Level Agreement: the committed time limit for responding to or resolving this ticket. These are approaching that limit but have not breached it yet.">i</span></h2><p>Breaching within {{ sla_at_risk_hours }} hour{{ 's' if sla_at_risk_hours != 1 }}</p></div></div>
-  <table><thead><tr><th>Number</th><th>Summary</th><th>Breaches at</th></tr></thead>
+  <div class="panel-head"><div><h2>{{ tr('SLA at risk') }}<span class="info-tip" tabindex="0" data-tip="SLA = Service Level Agreement: the committed time limit for responding to or resolving this ticket. These are approaching that limit but have not breached it yet.">i</span></h2><p>{{ trn(sla_at_risk_hours, 'Breaching within {count} hour', 'Breaching within {count} hours') }}</p></div></div>
+  <table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('Breaches at') }}</th></tr></thead>
   <tbody>{% for row in sla_at_risk %}{% set t = sla_tickets.get(row.target_id) %}{% if t %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td class="sla-at-risk-cell">{{ (row.breach_at|usertime('%b %d, %H:%M')) }}</td></tr>{% endif %}{% endfor %}</tbody></table>
 </section>
 {% endif %}
@@ -42,11 +42,11 @@
 
 {% if show_recent %}
 <section class="panel">
-  <div class="panel-head"><div><h2>Recently updated</h2><p>Your latest service activity</p></div></div>
+  <div class="panel-head"><div><h2>{{ tr('Recently updated') }}</h2><p>{{ tr('Your latest service activity') }}</p></div></div>
   {% if recent %}
-  <table><thead><tr><th>Number</th><th>Summary</th><th>State</th><th>{{ t('Priority') }}</th><th>Updated</th></tr></thead>
-  <tbody>{% for t in recent %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td><span class="badge">{{ t.state }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td><td>{{ (t.updated_at|usertime('%b %d, %H:%M')) }}</td></tr>{% endfor %}</tbody></table>
-  {% else %}<div class="empty"><h3>No activity yet</h3><p>Create an incident or service request to get started.</p></div>{% endif %}
+  <table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Priority') }}</th><th>{{ tr('Updated') }}</th></tr></thead>
+  <tbody>{% for t in recent %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td><span class="badge">{{ tr_value(t.state) }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ tr_value(t.priority) }}</span></td><td>{{ (t.updated_at|usertime('%b %d, %H:%M')) }}</td></tr>{% endfor %}</tbody></table>
+  {% else %}<div class="empty"><h3>{{ tr('No activity yet') }}</h3><p>{{ tr('Create an incident or service request to get started.') }}</p></div>{% endif %}
 </section>
 {% endif %}
 {% endblock %}

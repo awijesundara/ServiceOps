@@ -55,12 +55,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (svg) loader.addEventListener("load", () => image.setAttribute("href", urls[index]));
     const setUrl = () => {
       loader.setAttribute("src", urls[index]);
-      const source = urls[index].includes("/generic-") ? "Type illustration"
-        : urls[index].includes("/device-artwork/") && !urls[index].startsWith("/cmdb/") ? "Exact model image" : "NetBox model image";
+      // English key kept in the dataset; translated only where it is shown.
+      const source = urls[index].includes("/generic-") ? trNoop("Type illustration")
+        : urls[index].includes("/device-artwork/") && !urls[index].startsWith("/cmdb/") ? trNoop("Exact model image") : trNoop("NetBox model image");
       image.dataset.artworkSource = source;
       if (image.parentElement) {
         const sourceLabel = image.parentElement.querySelector(".rack-image-source");
-        if (sourceLabel) sourceLabel.textContent = `${source} · ${device.identification?.basis || ""}`;
+        if (sourceLabel) sourceLabel.textContent = `${tr(source)} · ${tr(device.identification?.basis || "")}`;
       }
     };
     loader.addEventListener("error", () => {
@@ -177,7 +178,7 @@ document.addEventListener("DOMContentLoaded", () => {
         device.placement_note, device.power_watts != null ? `${device.power_watts}W` : null].filter(Boolean).join(" · ");
       const source = document.createElement("small");
       source.className = "rack-image-source";
-      source.textContent = `${image.dataset.artworkSource || device.artwork_source} · ${device.identification?.basis || ""}`;
+      source.textContent = `${tr(image.dataset.artworkSource || device.artwork_source)} · ${tr(device.identification?.basis || "")}`;
       row.append(image, name, detail, source);
       return row;
     }));
@@ -198,7 +199,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const label = document.getElementById(labelId);
     if (!fill || !label) return;
     if (used == null || !total) {
-      label.textContent = "Not tracked";
+      label.textContent = tr("Not tracked");
       fill.style.width = "0%";
       return;
     }
@@ -221,7 +222,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // visible from the screenshot alone).
     if (!fill || !label) return;
     if (value == null) {
-      label.textContent = "Not tracked";
+      label.textContent = tr("Not tracked");
       fill.style.width = "0%";
       return;
     }
@@ -231,3 +232,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setTrackedStat("rack-stat-weight", "rack-stat-weight-label", stats.weight_kg, "kg");
   setTrackedStat("rack-stat-power", "rack-stat-power-label", stats.power_watts, "W");
 });
+
+// Identification bases the server sends (serviceops_core/equipment_artwork.py),
+// listed for catalog extraction; they are translated where shown.
+trNoop("Exact model"); trNoop("Model family"); trNoop("Name hint"); trNoop("No recognized equipment metadata");

@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "bazar ertəsi",
+   "çərşənbə axşamı",
+   "çərşənbə",
+   "cümə axşamı",
+   "cümə",
+   "şənbə",
+   "bazar"
+  ],
+  "days_abbr": [
+   "B.e.",
+   "Ç.a.",
+   "Ç.",
+   "C.a.",
+   "C.",
+   "Ş.",
+   "B."
+  ],
+  "months": [
+   "yanvar",
+   "fevral",
+   "mart",
+   "aprel",
+   "may",
+   "iyun",
+   "iyul",
+   "avqust",
+   "sentyabr",
+   "oktyabr",
+   "noyabr",
+   "dekabr"
+  ],
+  "months_abbr": [
+   "yan",
+   "fev",
+   "mar",
+   "apr",
+   "may",
+   "iyn",
+   "iyl",
+   "avq",
+   "sen",
+   "okt",
+   "noy",
+   "dek"
+  ]
+ },
+ "language": "az",
+ "messages": {
+  "Administration": "İdarəetmə",
+  "Back": "Geri",
+  "Cancel": "Ləğv et",
+  "Changes": "Dəyişikliklər",
+  "Close": "Bağla",
+  "Create": "Yarat",
+  "Dashboard": "İdarə paneli",
+  "Delete": "Sil",
+  "Description": "Təsvir",
+  "Edit": "Redaktə et",
+  "General": "Ümumi",
+  "Incidents": "İnsidentlər",
+  "Knowledge": "Bilik",
+  "Language": "Dil",
+  "Name": "Ad",
+  "Notifications": "Bildirişlər",
+  "Preferences": "Tərcihlər",
+  "Priority": "Prioritet",
+  "Save": "Saxla",
+  "Save preferences": "Tərcihləri saxla",
+  "Search": "Axtar",
+  "Service requests": "Xidmət sorğuları",
+  "Status": "Status",
+  "System preferences": "Sistem tərcihləri"
+ }
+}

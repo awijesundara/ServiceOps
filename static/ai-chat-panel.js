@@ -222,8 +222,8 @@
       copy.hidden = false;
       copy.addEventListener("click", function () {
         if (navigator.clipboard) navigator.clipboard.writeText(window.AIRender.plainText(message.content, window.AIChat.sourceMap(message.sources)));
-        copy.textContent = "Copied";
-        setTimeout(function () { copy.textContent = "Copy"; }, 1500);
+        copy.textContent = tr("Copied");
+        setTimeout(function () { copy.textContent = tr("Copy"); }, 1500);
       });
     }
   }
@@ -330,15 +330,15 @@
         const icon = window.AIChat.element("button", "ai-history-delete-icon");
         icon.type = "button";
         icon.appendChild(trashIcon());
-        icon.setAttribute("aria-label", "Delete conversation: " + item.title);
+        icon.setAttribute("aria-label", tr("Delete conversation: ") + item.title);
         icon.addEventListener("click", function (event) {
           event.stopPropagation();
           if (!icon.dataset.armed) {
             icon.dataset.armed = "1"; icon.classList.add("is-armed");
-            icon.setAttribute("aria-label", "Confirm deleting conversation: " + item.title);
+            icon.setAttribute("aria-label", tr("Confirm deleting conversation: ") + item.title);
             setTimeout(function () {
               delete icon.dataset.armed; icon.classList.remove("is-armed");
-              icon.setAttribute("aria-label", "Delete conversation: " + item.title);
+              icon.setAttribute("aria-label", tr("Delete conversation: ") + item.title);
             }, 4000);
             return;
           }
@@ -378,7 +378,7 @@
         row.appendChild(window.AIChat.element("span", "ai-memory-text", note.text));
         const remove = window.AIChat.element("button", "ai-history-delete", "Remove");
         remove.type = "button";
-        remove.setAttribute("aria-label", "Remove note: " + note.text);
+        remove.setAttribute("aria-label", tr("Remove note: ") + note.text);
         remove.addEventListener("click", function () {
           send("/ai/chat/memories/" + encodeURIComponent(note.id) + "/delete").then(refreshMemory).catch(function (e) { showError(e.message); });
         });
@@ -396,11 +396,11 @@
   });
   ui.memoryClear.addEventListener("click", function () {
     if (!ui.memoryClear.dataset.armed) {
-      ui.memoryClear.dataset.armed = "1"; ui.memoryClear.textContent = "Confirm: forget everything";
-      setTimeout(function () { delete ui.memoryClear.dataset.armed; ui.memoryClear.textContent = "Forget everything"; }, 4000);
+      ui.memoryClear.dataset.armed = "1"; ui.memoryClear.textContent = tr("Confirm: forget everything");
+      setTimeout(function () { delete ui.memoryClear.dataset.armed; ui.memoryClear.textContent = tr("Forget everything"); }, 4000);
       return;
     }
-    delete ui.memoryClear.dataset.armed; ui.memoryClear.textContent = "Forget everything";
+    delete ui.memoryClear.dataset.armed; ui.memoryClear.textContent = tr("Forget everything");
     send("/ai/chat/memories/clear").then(refreshMemory).catch(function (e) { showError(e.message); });
   });
 
@@ -431,7 +431,7 @@
     }).catch(function (error) {
       setBusy(false);
       showError(error.message);
-      if (error.status === 403) ui.scope.textContent = "The assistant is not available for your account right now.";
+      if (error.status === 403) ui.scope.textContent = tr("The assistant is not available for your account right now.");
     });
   }
 

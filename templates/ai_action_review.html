@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Review AI action · {{ ticket.number }} · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Review AI action · {number} · {instance_name}', number=(ticket.number), instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <section class="ai-run">
-  <div class="ai-run-head"><div><p class="eyebrow">HUMAN APPROVAL REQUIRED</p><h1>{{ action_label }} for {{ ticket.number }}</h1><p class="muted"><a href="{{ back_url }}">Back to AI assistance</a> · Expires {{ action.expires_at|usertime }}</p></div><span class="ai-pill" data-state="{{ 'completed' if action.status == 'executed' else 'cancelled' if action.status != 'pending' else 'queued' }}">{{ action.status|capitalize }}</span></div>
+  <div class="ai-run-head"><div><p class="eyebrow">{{ tr('HUMAN APPROVAL REQUIRED') }}</p><h1>{{ tr('{action_label} for {number}', action_label=(action_label), number=(ticket.number)) }}</h1><p class="muted"><a href="{{ back_url }}">{{ tr('Back to AI assistance') }}</a> · {{ tr('Expires {expires_at}', expires_at=(action.expires_at|usertime)) }}</p></div><span class="ai-pill" data-state="{{ 'completed' if action.status == 'executed' else 'cancelled' if action.status != 'pending' else 'queued' }}">{{ tr_value(action.status|capitalize) }}</span></div>
   <div class="panel">
-    <h2>{{ 'Review your comment' if editable_comment else 'Exact proposed change' }}</h2>
-    <p>This will update <a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a> only:</p>
-    {% if not editable_comment or action.status != 'pending' or expired %}<dl class="detail-list">{% for label, value in fields %}<dt>{{ label }}</dt><dd{% if label == 'Comment' %} class="pre"{% endif %}>{{ value }}</dd>{% endfor %}</dl>{% endif %}
+    <h2>{{ tr('Review your comment') if editable_comment else tr('Exact proposed change') }}</h2>
+    <p>{{ tr('This will update') }} <a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a> {{ tr('only:') }}</p>
+    {% if not editable_comment or action.status != 'pending' or expired %}<dl class="detail-list">{% for label, value in fields %}<dt>{{ tr_value(label) }}</dt><dd{% if label == 'Comment' %} class="pre"{% endif %}>{{ value }}</dd>{% endfor %}</dl>{% endif %}
     {% if action.status == 'pending' and not expired %}
-    <p class="muted">Approving rechecks your access and the ticket version. If the ticket changed, ServiceOps will reject this proposal.</p>
+    <p class="muted">{{ tr('Approving rechecks your access and the ticket version. If the ticket changed, ServiceOps will reject this proposal.') }}</p>
     <form method="post">
-      {% if editable_comment %}<label for="ai-comment-body">Comment</label><textarea id="ai-comment-body" name="body" rows="8" maxlength="10000" required>{{ payload.body }}</textarea>{% endif %}
-      <div class="ai-actions"><button name="decision" value="reject" class="button" formnovalidate>{{ 'Discard' if editable_comment else 'Reject' }}</button><button name="decision" value="approve" class="primary">{{ 'Post comment' if editable_comment else 'Approve and apply' }}</button></div>
+      {% if editable_comment %}<label for="ai-comment-body">{{ tr('Comment') }}</label><textarea id="ai-comment-body" name="body" rows="8" maxlength="10000" required>{{ payload.body }}</textarea>{% endif %}
+      <div class="ai-actions"><button name="decision" value="reject" class="button" formnovalidate>{{ tr('Discard') if editable_comment else tr('Reject') }}</button><button name="decision" value="approve" class="primary">{{ tr('Post comment') if editable_comment else tr('Approve and apply') }}</button></div>
     </form>
-    {% elif expired and action.status == 'pending' %}<p class="ai-banner">This proposal expired. Prepare a new one from a current investigation.</p>
-    {% elif action.status == 'executed' %}<p class="ai-banner">Approved and applied to the ticket.</p>
-    {% else %}<p class="ai-banner">This proposal cannot be executed.</p>{% endif %}
+    {% elif expired and action.status == 'pending' %}<p class="ai-banner">{{ tr('This proposal expired. Prepare a new one from a current investigation.') }}</p>
+    {% elif action.status == 'executed' %}<p class="ai-banner">{{ tr('Approved and applied to the ticket.') }}</p>
+    {% else %}<p class="ai-banner">{{ tr('This proposal cannot be executed.') }}</p>{% endif %}
   </div>
 </section>
 {% endblock %}

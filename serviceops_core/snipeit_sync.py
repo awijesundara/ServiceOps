@@ -31,6 +31,7 @@ import requests
 
 from serviceops_core import ci_sources, import_changes
 from serviceops_core.netbox_sync import _close, _write_ca_bundle
+from serviceops_core.localization import tr
 
 HARDWARE_PATH = "/api/v1/hardware"
 ATTRIBUTE_PREFIX = "Snipe-IT: "
@@ -379,7 +380,7 @@ def _assignee(record):
 def map_asset(record, base_url=""):
     asset_id = record.get("id")
     if not isinstance(asset_id, int) or isinstance(asset_id, bool):
-        raise ValueError("Snipe-IT asset has no numeric id")
+        raise ValueError(tr("Snipe-IT asset has no numeric id"))
     asset_tag = _text(record.get("asset_tag"))
     custom_fields = _custom_fields(record)
     assignee = _assignee(record)

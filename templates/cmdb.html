@@ -1,77 +1,77 @@
 {% extends "base.html" %}
-{% block title %}CMDB & service map · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('CMDB & service map · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">IT OPERATIONS</p><h1>CMDB & service map<span class="info-tip" tabindex="0" data-tip="CMDB = Configuration Management Database: the system of record for every CI (Configuration Item) — a server, application, or service — and how they depend on one another.">i</span></h1><p>Configuration items and the dependencies that connect business services.</p></div>{% if current_user.effective_role in ['admin','superadmin'] %}<a class="button" href="{{ url_for('cmdb_discovery') }}">⌕ Discovery</a> <a class="button" href="{{ url_for('cmdb_topology') }}">◈ Topology</a> <a class="button" href="{{ url_for('rack_list') }}">▤ Racks</a> <a class="button" href="{{ url_for('cmdb_import') }}">⇪ Import</a> <a class="button" href="{{ url_for('cmdb_permissions') }}">⛊ Permissions</a> <a class="primary button" href="{{ url_for('ci_new') }}">+ New CI</a>{% else %}<a class="button" href="{{ url_for('cmdb_topology') }}">◈ Topology</a> <a class="button" href="{{ url_for('rack_list') }}">▤ Racks</a>{% endif %}</header>
+<header class="page-head"><div><p class="eyebrow">{{ tr('IT OPERATIONS') }}</p><h1>{{ tr('CMDB & service map') }}<span class="info-tip" tabindex="0" data-tip="CMDB = Configuration Management Database: the system of record for every CI (Configuration Item) — a server, application, or service — and how they depend on one another.">i</span></h1><p>{{ tr('Configuration items and the dependencies that connect business services.') }}</p></div>{% if current_user.effective_role in ['admin','superadmin'] %}<a class="button" href="{{ url_for('cmdb_discovery') }}">⌕ {{ tr('Discovery') }}</a> <a class="button" href="{{ url_for('cmdb_topology') }}">◈ {{ tr('Topology') }}</a> <a class="button" href="{{ url_for('rack_list') }}">▤ {{ tr('Racks') }}</a> <a class="button" href="{{ url_for('cmdb_import') }}">⇪ {{ tr('Import') }}</a> <a class="button" href="{{ url_for('cmdb_permissions') }}">⛊ {{ tr('Permissions') }}</a> <a class="primary button" href="{{ url_for('ci_new') }}">+ {{ tr('New CI') }}</a>{% else %}<a class="button" href="{{ url_for('cmdb_topology') }}">◈ {{ tr('Topology') }}</a> <a class="button" href="{{ url_for('rack_list') }}">▤ {{ tr('Racks') }}</a>{% endif %}</header>
 {% set csv_url = url_for('cmdb_export', status=status, filter=raw_filter) %}
 {% include "_export_toolbar.html" %}
-<section class="stats"><a href="#configuration-items"><span>Configuration items</span><strong>{{ cis_total }}</strong><small>Across all classes →</small></a><a href="#service-relationships"><span>Relationships</span><strong>{{ relationships_total }}</strong><small>Mapped dependencies →</small></a><a href="{{ url_for('cmdb', status='Operational') }}"><span>Operational</span><strong>{{ operational_total }}</strong><small>View healthy CIs →</small></a></section>
+<section class="stats"><a href="#configuration-items"><span>{{ tr('Configuration items') }}</span><strong>{{ cis_total }}</strong><small>{{ tr('Across all classes') }} →</small></a><a href="#service-relationships"><span>{{ tr('Relationships') }}</span><strong>{{ relationships_total }}</strong><small>{{ tr('Mapped dependencies') }} →</small></a><a href="{{ url_for('cmdb', status='Operational') }}"><span>{{ tr('Operational') }}</span><strong>{{ operational_total }}</strong><small>{{ tr('View healthy CIs') }} →</small></a></section>
 <section class="list-workspace" id="configuration-items">
   <header class="list-toolbar">
-    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Configuration items</strong><small>{{ total }} records{% if status %} · filtered to {{ status }} <a href="{{ url_for('cmdb', q=q) }}">(clear)</a>{% endif %}</small></div></div>
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Configuration items') }}</strong><small>{{ tr('{total} records', total=(total)) }}{% if status %} · {{ tr('filtered to {status}', status=(tr_value(status))) }} <a href="{{ url_for('cmdb', q=q) }}">{{ tr('(clear)') }}</a>{% endif %}</small></div></div>
     <form class="list-search">
       {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
       <input type="hidden" name="filter" value="{{ raw_filter }}">
-      <input name="q" value="{{ q }}" placeholder="Name, serial, IP, model, vendor, location" aria-label="Search configuration items">
-      <button>{{ t('Search') }}</button>
+      <input name="q" value="{{ q }}" placeholder="{{ tr('Name, serial, IP, model, vendor, location') }}" aria-label="{{ tr('Search configuration items') }}">
+      <button>{{ tr('Search') }}</button>
       <div class="list-filter" data-filter-fields='{{ filter_fields|tojson }}' data-filter-value='{{ raw_filter or "[]" }}'>
-        <button type="button" class="list-filter-toggle">▽ Filter</button>
+        <button type="button" class="list-filter-toggle">▽ {{ tr('Filter') }}</button>
         <div class="list-filter-builder" hidden>
           <div class="list-filter-rows"></div>
           <div class="list-filter-actions">
-            <button type="button" class="list-filter-add">+ Add condition</button>
-            <button type="submit" class="primary">Run</button>
-            <button type="button" class="list-filter-clear">Clear filter</button>
+            <button type="button" class="list-filter-add">+ {{ tr('Add condition') }}</button>
+            <button type="submit" class="primary">{{ tr('Run') }}</button>
+            <button type="button" class="list-filter-clear">{{ tr('Clear filter') }}</button>
           </div>
         </div>
       </div>
     </form>
-    <nav class="list-pagination" aria-label="Pagination">
+    <nav class="list-pagination" aria-label="{{ tr('Pagination') }}">
       <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('cmdb', q=q, status=status, filter=raw_filter, page=page-1) }}">‹</a>
-      <span>Page {{ page }} of {{ pages }}</span>
+      <span>{{ tr('Page {page} of {pages}', page=(page), pages=(pages)) }}</span>
       <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('cmdb', q=q, status=status, filter=raw_filter, page=page+1) }}">›</a>
     </nav>
     <div class="columns-picker" data-columns-key="cmdb" data-columns-target="#cmdb-table" data-columns-default-hidden='{{ default_hidden_columns|tojson }}'>
-      <button type="button" class="columns-picker-toggle">☰ Columns</button>
+      <button type="button" class="columns-picker-toggle">☰ {{ tr('Columns') }}</button>
       <div class="columns-picker-panel" hidden>
-        <p class="muted" style="margin:0 0 4px">Choose what shows in the table — CIs pulled from NetBox/CSV carry more fields than fit by default.</p>
-        <label><input type="checkbox" value="ci_class"> Class</label>
-        <label><input type="checkbox" value="environment"> Environment</label>
-        <label><input type="checkbox" value="operational_status"> Status</label>
-        <label><input type="checkbox" value="lifecycle_state"> Lifecycle</label>
-        <label><input type="checkbox" value="business_criticality"> Criticality</label>
-        <label><input type="checkbox" value="location"> Location</label>
-        <label><input type="checkbox" value="support_group"> Owning team</label>
-        <label><input type="checkbox" value="ip_address"> IP address</label>
-        <label><input type="checkbox" value="vendor"> Vendor</label>
-        <label><input type="checkbox" value="model"> Model</label>
-        <label><input type="checkbox" value="cost_center"> Cost center</label>
-        <label><input type="checkbox" value="discovery_source"> Discovery source</label>
-        <label><input type="checkbox" value="owner"> Owner</label>
-        <label><input type="checkbox" value="install_date"> Install date</label>
-        <label><input type="checkbox" value="warranty_expiry_date"> Warranty expiry</label>
+        <p class="muted" style="margin:0 0 4px">{{ tr('Choose what shows in the table — CIs pulled from NetBox/CSV carry more fields than fit by default.') }}</p>
+        <label><input type="checkbox" value="ci_class"> {{ tr('Class') }}</label>
+        <label><input type="checkbox" value="environment"> {{ tr('Environment') }}</label>
+        <label><input type="checkbox" value="operational_status"> {{ tr('Status') }}</label>
+        <label><input type="checkbox" value="lifecycle_state"> {{ tr('Lifecycle') }}</label>
+        <label><input type="checkbox" value="business_criticality"> {{ tr('Criticality') }}</label>
+        <label><input type="checkbox" value="location"> {{ tr('Location') }}</label>
+        <label><input type="checkbox" value="support_group"> {{ tr('Owning team') }}</label>
+        <label><input type="checkbox" value="ip_address"> {{ tr('IP address') }}</label>
+        <label><input type="checkbox" value="vendor"> {{ tr('Vendor') }}</label>
+        <label><input type="checkbox" value="model"> {{ tr('Model') }}</label>
+        <label><input type="checkbox" value="cost_center"> {{ tr('Cost center') }}</label>
+        <label><input type="checkbox" value="discovery_source"> {{ tr('Discovery source') }}</label>
+        <label><input type="checkbox" value="owner"> {{ tr('Owner') }}</label>
+        <label><input type="checkbox" value="install_date"> {{ tr('Install date') }}</label>
+        <label><input type="checkbox" value="warranty_expiry_date"> {{ tr('Warranty expiry') }}</label>
         {% for key in extra_attribute_keys %}<label><input type="checkbox" value="attr:{{ key }}"> {{ key }}</label>{% endfor %}
       </div>
     </div>
   </header>
-  <div class="list-breadcrumb"><span>▽</span> All{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
+  <div class="list-breadcrumb"><span>▽</span> {{ tr('All') }}{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › {{ tr('Search contains “{q}”', q=(q)) }}{% endif %}</div>
   <div class="task-list-scroll">
   <table class="task-list" id="cmdb-table"><thead><tr>
-    <th>{{ t('Name') }}</th>
-    <th data-col="ci_class">Class</th>
-    <th data-col="environment">Environment</th>
-    <th data-col="operational_status">{{ t('Status') }}</th>
-    <th data-col="lifecycle_state">Lifecycle</th>
-    <th data-col="business_criticality">Criticality</th>
-    <th data-col="location">Location</th>
-    <th data-col="support_group">Owning team</th>
-    <th data-col="ip_address">IP address</th>
-    <th data-col="vendor">Vendor</th>
-    <th data-col="model">Model</th>
-    <th data-col="cost_center">Cost center</th>
-    <th data-col="discovery_source">Discovery source</th>
-    <th data-col="owner">Owner</th>
-    <th data-col="install_date">Install date</th>
-    <th data-col="warranty_expiry_date">Warranty expiry</th>
+    <th>{{ tr('Name') }}</th>
+    <th data-col="ci_class">{{ tr('Class') }}</th>
+    <th data-col="environment">{{ tr('Environment') }}</th>
+    <th data-col="operational_status">{{ tr('Status') }}</th>
+    <th data-col="lifecycle_state">{{ tr('Lifecycle') }}</th>
+    <th data-col="business_criticality">{{ tr('Criticality') }}</th>
+    <th data-col="location">{{ tr('Location') }}</th>
+    <th data-col="support_group">{{ tr('Owning team') }}</th>
+    <th data-col="ip_address">{{ tr('IP address') }}</th>
+    <th data-col="vendor">{{ tr('Vendor') }}</th>
+    <th data-col="model">{{ tr('Model') }}</th>
+    <th data-col="cost_center">{{ tr('Cost center') }}</th>
+    <th data-col="discovery_source">{{ tr('Discovery source') }}</th>
+    <th data-col="owner">{{ tr('Owner') }}</th>
+    <th data-col="install_date">{{ tr('Install date') }}</th>
+    <th data-col="warranty_expiry_date">{{ tr('Warranty expiry') }}</th>
     {% for key in extra_attribute_keys %}<th data-col="attr:{{ key }}">{{ key }}</th>{% endfor %}
     {% if current_user.effective_role in ['admin','superadmin'] %}<th></th>{% endif %}
   </tr></thead><tbody>
@@ -79,11 +79,11 @@
       <td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}"><strong class="truncate" title="{{ ci.name }}">{{ ci.name }}</strong></a>{% if ci.serial_number %}<br><small class="muted">S/N {{ ci.serial_number }}</small>{% endif %}</td>
       <td data-col="ci_class">{{ ci.ci_class }}</td>
       <td data-col="environment">{{ ci.environment }}</td>
-      <td data-col="operational_status"><span class="badge">{{ ci.operational_status }}</span></td>
-      <td data-col="lifecycle_state">{{ ci.lifecycle_state }}</td>
+      <td data-col="operational_status"><span class="badge">{{ tr_value(ci.operational_status) }}</span></td>
+      <td data-col="lifecycle_state">{{ tr_value(ci.lifecycle_state) }}</td>
       <td data-col="business_criticality">{{ ci.business_criticality }}</td>
       <td data-col="location"><span class="truncate" title="{{ ci.location or '' }}">{{ ci.location or '—' }}</span></td>
-      <td data-col="support_group"><span class="truncate" title="{{ ci.support_group.name if ci.support_group else 'Unassigned' }}">{{ ci.support_group.name if ci.support_group else 'Unassigned' }}</span></td>
+      <td data-col="support_group"><span class="truncate" title="{{ ci.support_group.name if ci.support_group else tr('Unassigned') }}">{{ ci.support_group.name if ci.support_group else tr('Unassigned') }}</span></td>
       <td data-col="ip_address">{{ ci.ip_address or '—' }}</td>
       <td data-col="vendor"><span class="truncate" title="{{ ci.vendor or '' }}">{{ ci.vendor or '—' }}</span></td>
       <td data-col="model"><span class="truncate" title="{{ ci.model or '' }}">{{ ci.model or '—' }}</span></td>
@@ -93,23 +93,23 @@
       <td data-col="install_date">{{ ci.install_date.strftime('%Y-%m-%d') if ci.install_date else '—' }}</td>
       <td data-col="warranty_expiry_date">{{ ci.warranty_expiry_date.strftime('%Y-%m-%d') if ci.warranty_expiry_date else '—' }}</td>
       {% for key in extra_attribute_keys %}<td data-col="attr:{{ key }}">{{ (ci.attributes or {}).get(key) or '—' }}</td>{% endfor %}
-      {% if current_user.effective_role in ['admin','superadmin'] %}<td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}">{{ t('Edit') }}</a></td>{% endif %}
+      {% if current_user.effective_role in ['admin','superadmin'] %}<td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}">{{ tr('Edit') }}</a></td>{% endif %}
     </tr>
-    {% else %}<tr><td colspan="{{ 17 + extra_attribute_keys|length }}" class="empty">No matching configuration items{% if status %} with this status{% endif %}.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="{{ 17 + extra_attribute_keys|length }}" class="empty">{{ tr('No matching configuration items') }}{% if status %} {{ tr('with this status') }}{% endif %}.</td></tr>{% endfor %}
   </tbody></table>
   </div>
 </section>
 <section class="panel" id="service-relationships">
-<h2>Service relationships</h2>
-{% for rel in relationships %}<div class="relation"><strong>{{ rel.parent.name }}</strong><span>— {{ rel.relationship_type }} →</span><strong>{{ rel.child.name }}</strong>{% if current_user.effective_role in ['admin','superadmin'] %}<form method="post" action="{{ url_for('ci_relationship_delete', relationship_id=rel.id) }}"><button class="link-button" aria-label="Remove relationship">✕</button></form>{% endif %}</div>{% else %}<p class="muted">No relationships mapped yet.</p>{% endfor %}
-{% if relationships_total > relationships|length %}<p class="muted">Showing the first {{ relationships|length }} of {{ relationships_total }} relationships. Open a configuration item or the <a href="{{ url_for('cmdb_topology') }}">topology map</a> to see the rest.</p>{% endif %}
+<h2>{{ tr('Service relationships') }}</h2>
+{% for rel in relationships %}<div class="relation"><strong>{{ rel.parent.name }}</strong><span>— {{ rel.relationship_type }} →</span><strong>{{ rel.child.name }}</strong>{% if current_user.effective_role in ['admin','superadmin'] %}<form method="post" action="{{ url_for('ci_relationship_delete', relationship_id=rel.id) }}"><button class="link-button" aria-label="{{ tr('Remove relationship') }}">✕</button></form>{% endif %}</div>{% else %}<p class="muted">{{ tr('No relationships mapped yet.') }}</p>{% endfor %}
+{% if relationships_total > relationships|length %}<p class="muted">{{ tr('Showing the first {relationships} of {relationships_total} relationships. Open a configuration item or the', relationships=(relationships|length), relationships_total=(relationships_total)) }} <a href="{{ url_for('cmdb_topology') }}">{{ tr('topology map') }}</a> {{ tr('to see the rest.') }}</p>{% endif %}
 {% if current_user.effective_role in ['admin','superadmin'] %}
-<details><summary>Add relationship</summary>
+<details><summary>{{ tr('Add relationship') }}</summary>
   <form method="post" action="{{ url_for('ci_relationship_add') }}" class="form-grid">
-    <label>Parent CI<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" required><input type="hidden" name="parent_id"><div class="lookup-results" hidden></div></div></label>
-    <label>Relationship<select name="relationship_type">{% for value in ci_relationship_types %}<option {% if value=='Depends on' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-    <label>Child CIs<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="child_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="Pick one or more configuration items…" autocomplete="off" required><div class="lookup-results" hidden></div></div></label>
-    <div class="wide actions"><button class="primary">Link CIs</button></div>
+    <label>{{ tr('Parent CI') }}<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="{{ tr('Search configuration items…') }}" autocomplete="off" required><input type="hidden" name="parent_id"><div class="lookup-results" hidden></div></div></label>
+    <label>{{ tr('Relationship') }}<select name="relationship_type">{% for value in ci_relationship_types %}<option {% if value=='Depends on' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+    <label>{{ tr('Child CIs') }}<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="child_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick one or more configuration items…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div></label>
+    <div class="wide actions"><button class="primary">{{ tr('Link CIs') }}</button></div>
   </form>
 </details>
 {% endif %}

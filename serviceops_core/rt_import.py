@@ -56,6 +56,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
+from serviceops_core.localization import tr
 
 # RT's own web UI does one round trip per transaction and per attachment
 # too, but it's rendering one ticket a human is looking at -- a bulk import
@@ -757,21 +758,21 @@ def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
     from app import db
 
     if not tenant_id or not isinstance(tenant_id, int):
-        raise RTImportError("A valid integer tenant_id is required; refusing to import.")
+        raise RTImportError(tr("A valid integer tenant_id is required; refusing to import."))
     tenant = db.session.get(core_app.Tenant, tenant_id)
     if not tenant or not tenant.active:
-        raise RTImportError(f"Tenant {tenant_id} does not exist or is inactive; refusing to import.")
+        raise RTImportError(tr("Tenant {tenant_id} does not exist or is inactive; refusing to import.", tenant_id=tenant_id))
     if not core_app.setting_bool("RT_ENABLED"):
-        raise RTImportError("RT import is not enabled; refusing to import.")
+        raise RTImportError(tr("RT import is not enabled; refusing to import."))
 
     base_url = core_app.setting_value("RT_BASE_URL", "")
     token = core_app.setting_value("RT_API_TOKEN", "")
     if not base_url or not token:
-        raise RTImportError("RT base URL and API token must both be configured.")
+        raise RTImportError(tr("RT base URL and API token must both be configured."))
     if not core_app.integration_endpoint_valid(base_url, allow_private_network=True):
-        raise RTImportError("RT base URL failed safety validation (must be an https host).")
+        raise RTImportError(tr("RT base URL failed safety validation (must be an https host)."))
     if not core_app.integration_endpoint_resolves_safely(base_url, allow_private_network=True):
-        raise RTImportError("RT base URL failed DNS safety validation.")
+        raise RTImportError(tr("RT base URL failed DNS safety validation."))
 
     summary = {
         "tenant_id": tenant_id, "dry_run": bool(dry_run),

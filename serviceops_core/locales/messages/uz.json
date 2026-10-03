@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "dushanba",
+   "seshanba",
+   "chorshanba",
+   "payshanba",
+   "juma",
+   "shanba",
+   "yakshanba"
+  ],
+  "days_abbr": [
+   "Dush",
+   "Sesh",
+   "Chor",
+   "Pay",
+   "Jum",
+   "Shan",
+   "Yak"
+  ],
+  "months": [
+   "yanvar",
+   "fevral",
+   "mart",
+   "aprel",
+   "may",
+   "iyun",
+   "iyul",
+   "avgust",
+   "sentabr",
+   "oktabr",
+   "noyabr",
+   "dekabr"
+  ],
+  "months_abbr": [
+   "yan",
+   "fev",
+   "mar",
+   "apr",
+   "may",
+   "iyn",
+   "iyl",
+   "avg",
+   "sen",
+   "okt",
+   "noy",
+   "dek"
+  ]
+ },
+ "language": "uz",
+ "messages": {
+  "Administration": "Boshqaruv",
+  "Back": "Orqaga",
+  "Cancel": "Bekor qilish",
+  "Changes": "Oʻzgarishlar",
+  "Close": "Yopish",
+  "Create": "Yaratish",
+  "Dashboard": "Boshqaruv paneli",
+  "Delete": "Oʻchirish",
+  "Description": "Tavsif",
+  "Edit": "Tahrirlash",
+  "General": "Umumiy",
+  "Incidents": "Hodisalar",
+  "Knowledge": "Bilim",
+  "Language": "Til",
+  "Name": "Nomi",
+  "Notifications": "Bildirishnomalar",
+  "Preferences": "Sozlamalar",
+  "Priority": "Ustuvorlik",
+  "Save": "Saqlash",
+  "Save preferences": "Sozlamalarni saqlash",
+  "Search": "Qidirish",
+  "Service requests": "Xizmat soʻrovlari",
+  "Status": "Holat",
+  "System preferences": "Tizim sozlamalari"
+ }
+}

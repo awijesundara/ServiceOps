@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "mandag",
+   "tirsdag",
+   "onsdag",
+   "torsdag",
+   "fredag",
+   "lørdag",
+   "søndag"
+  ],
+  "days_abbr": [
+   "man.",
+   "tirs.",
+   "ons.",
+   "tors.",
+   "fre.",
+   "lør.",
+   "søn."
+  ],
+  "months": [
+   "januar",
+   "februar",
+   "marts",
+   "april",
+   "maj",
+   "juni",
+   "juli",
+   "august",
+   "september",
+   "oktober",
+   "november",
+   "december"
+  ],
+  "months_abbr": [
+   "jan.",
+   "feb.",
+   "mar.",
+   "apr.",
+   "maj",
+   "jun.",
+   "jul.",
+   "aug.",
+   "sep.",
+   "okt.",
+   "nov.",
+   "dec."
+  ]
+ },
+ "language": "da",
+ "messages": {
+  "Administration": "Administration",
+  "Back": "Tilbage",
+  "Cancel": "Annuller",
+  "Changes": "Ændringer",
+  "Close": "Luk",
+  "Create": "Opret",
+  "Dashboard": "Oversigt",
+  "Delete": "Slet",
+  "Description": "Beskrivelse",
+  "Edit": "Rediger",
+  "General": "Generelt",
+  "Incidents": "Hændelser",
+  "Knowledge": "Viden",
+  "Language": "Sprog",
+  "Name": "Navn",
+  "Notifications": "Notifikationer",
+  "Preferences": "Indstillinger",
+  "Priority": "Prioritet",
+  "Save": "Gem",
+  "Save preferences": "Gem indstillinger",
+  "Search": "Søg",
+  "Service requests": "Serviceanmodninger",
+  "Status": "Status",
+  "System preferences": "Systemindstillinger"
+ }
+}

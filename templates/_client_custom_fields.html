@@ -1,9 +1,9 @@
 {% macro render_custom_fields(fields, values={}) %}
 {% for field in fields %}
-<label class="wide{% if field.required %} required-field{% endif %}"><span>{{ field.definition.label }}</span>
+<label class="wide{% if field.required %} required-field{% endif %}"><span>{{ tr_value(field.definition.label) }}</span>
   {% if field.definition.field_type == 'select' %}
   <select name="custom__{{ field.definition.key }}" {% if field.required %}required{% endif %}>
-    <option value="">Select…</option>
+    <option value="">{{ tr('Select…') }}</option>
     {% for option in field.options %}<option value="{{ option }}" {% if values.get(field.definition.key) == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
   </select>
   {% elif field.definition.field_type == 'date' %}

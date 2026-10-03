@@ -1,26 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Open work · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Open work · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">NEEDS ATTENTION</p><h1>Open work</h1><p>{% if priority %}Open incidents and changes at priority {{ priority }}.{% else %}Every incident, change, and service request that isn't resolved or closed yet.{% endif %}</p></div>{% if priority %}<a class="button" href="{{ url_for('open_work') }}">Clear filter</a>{% endif %}</header>
+<header class="page-head"><div><p class="eyebrow">{{ tr('NEEDS ATTENTION') }}</p><h1>{{ tr('Open work') }}</h1><p>{% if priority %}{{ tr('Open incidents and changes at priority {priority}.', priority=(tr_value(priority))) }}{% else %}{{ tr("Every incident, change, and service request that isn't resolved or closed yet.") }}{% endif %}</p></div>{% if priority %}<a class="button" href="{{ url_for('open_work') }}">{{ tr('Clear filter') }}</a>{% endif %}</header>
 {% set csv_url = url_for('open_work_export', priority=priority) %}
 {% include "_export_toolbar.html" %}
 
 <section class="panel table-panel">
-<h2>Open incidents & changes{% if priority %} <small>· {{ priority }}</small>{% endif %}</h2>
-{% if open_tickets_truncated %}<p class="muted">Showing the first {{ open_tickets|length }} — use <a href="{{ url_for('tickets', kind='incident') }}">{{ t('Incidents') }}</a> or <a href="{{ url_for('tickets', kind='change') }}">{{ t('Changes') }}</a> with filters to see the rest.</p>{% endif %}
+<h2>{{ tr('Open incidents & changes') }}{% if priority %} <small>· {{ tr_value(priority) }}</small>{% endif %}</h2>
+{% if open_tickets_truncated %}<p class="muted">{{ tr('Showing the first {open_tickets} — use', open_tickets=(open_tickets|length)) }} <a href="{{ url_for('tickets', kind='incident') }}">{{ tr('Incidents') }}</a> {{ tr('or') }} <a href="{{ url_for('tickets', kind='change') }}">{{ tr('Changes') }}</a> {{ tr('with filters to see the rest.') }}</p>{% endif %}
 <table>
-  <thead><tr><th>Number</th><th>Summary</th><th>State</th><th>{{ t('Priority') }}</th><th>Updated</th></tr></thead>
+  <thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Priority') }}</th><th>{{ tr('Updated') }}</th></tr></thead>
   <tbody>
     {% for t in open_tickets %}
     <tr>
       <td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td>
       <td>{{ t.title }}</td>
-      <td><span class="badge">{{ t.state }}</span></td>
-      <td><span class="priority {{ t.priority|lower }}">{{ t.priority }}</span></td>
+      <td><span class="badge">{{ tr_value(t.state) }}</span></td>
+      <td><span class="priority {{ t.priority|lower }}">{{ tr_value(t.priority) }}</span></td>
       <td>{{ (t.updated_at|usertime('%b %d, %H:%M')) }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="5" class="empty">No open incidents or changes.</td></tr>
+    <tr><td colspan="5" class="empty">{{ tr('No open incidents or changes.') }}</td></tr>
     {% endfor %}
   </tbody>
 </table>
@@ -28,20 +28,20 @@
 
 {% if not priority %}
 <section class="panel table-panel">
-<h2>Open service requests</h2>
-{% if open_requests_truncated %}<p class="muted">Showing the first {{ open_requests|length }} open requests.</p>{% endif %}
+<h2>{{ tr('Open service requests') }}</h2>
+{% if open_requests_truncated %}<p class="muted">{{ tr('Showing the first {open_requests} open requests.', open_requests=(open_requests|length)) }}</p>{% endif %}
 <table>
-  <thead><tr><th>Request</th><th>Requested for</th><th>State</th><th>Opened</th></tr></thead>
+  <thead><tr><th>{{ tr('Request') }}</th><th>{{ tr('Requested for') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Opened') }}</th></tr></thead>
   <tbody>
     {% for req in open_requests %}
     <tr>
       <td><a href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></td>
       <td>{{ req.requested_for.name }}</td>
-      <td><span class="badge">{{ req.state }}</span></td>
+      <td><span class="badge">{{ tr_value(req.state) }}</span></td>
       <td>{{ (req.opened_at|usertime('%b %d, %H:%M')) }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="4" class="empty">No open service requests.</td></tr>
+    <tr><td colspan="4" class="empty">{{ tr('No open service requests.') }}</td></tr>
     {% endfor %}
   </tbody>
 </table>

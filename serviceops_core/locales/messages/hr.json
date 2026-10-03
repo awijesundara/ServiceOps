@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "ponedjeljak",
+   "utorak",
+   "srijeda",
+   "četvrtak",
+   "petak",
+   "subota",
+   "nedjelja"
+  ],
+  "days_abbr": [
+   "pon",
+   "uto",
+   "sri",
+   "čet",
+   "pet",
+   "sub",
+   "ned"
+  ],
+  "months": [
+   "siječnja",
+   "veljače",
+   "ožujka",
+   "travnja",
+   "svibnja",
+   "lipnja",
+   "srpnja",
+   "kolovoza",
+   "rujna",
+   "listopada",
+   "studenoga",
+   "prosinca"
+  ],
+  "months_abbr": [
+   "sij",
+   "velj",
+   "ožu",
+   "tra",
+   "svi",
+   "lip",
+   "srp",
+   "kol",
+   "ruj",
+   "lis",
+   "stu",
+   "pro"
+  ]
+ },
+ "language": "hr",
+ "messages": {
+  "Administration": "Administracija",
+  "Back": "Natrag",
+  "Cancel": "Odustani",
+  "Changes": "Promjene",
+  "Close": "Zatvori",
+  "Create": "Stvori",
+  "Dashboard": "Nadzorna ploča",
+  "Delete": "Izbriši",
+  "Description": "Opis",
+  "Edit": "Uredi",
+  "General": "Općenito",
+  "Incidents": "Incidenti",
+  "Knowledge": "Znanje",
+  "Language": "Jezik",
+  "Name": "Naziv",
+  "Notifications": "Obavijesti",
+  "Preferences": "Postavke",
+  "Priority": "Prioritet",
+  "Save": "Spremi",
+  "Save preferences": "Spremi postavke",
+  "Search": "Pretraži",
+  "Service requests": "Zahtjevi za usluge",
+  "Status": "Status",
+  "System preferences": "Postavke sustava"
+ }
+}

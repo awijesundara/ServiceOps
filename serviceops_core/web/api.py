@@ -115,6 +115,7 @@ from serviceops_models import (
     UserSession,
     UserTourProgress,
 )
+from serviceops_core.localization import tr
 
 
 def scim_error(status, detail, scim_type="invalidValue"):
@@ -415,25 +416,25 @@ def register(app):
     def api_mobile_login():
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         username = str(body.get("username", "")).strip()
         password = str(body.get("password", ""))
         provider = str(body.get("provider", "local"))
         if provider not in {"local", "ldap"}:
-            abort(400, description="provider must be local or ldap.")
+            abort(400, description=tr("provider must be local or ldap."))
         ip = request.remote_addr or "unknown"
         allowed = route_rate_limit("mobile_login", f"ip:{ip}", setting_int("LOGIN_RATE_LIMIT_PER_IP_PER_MINUTE", 20))
         if username:
             allowed = route_rate_limit("mobile_login", f"user:{username.lower()}", setting_int("LOGIN_RATE_LIMIT_PER_ACCOUNT_PER_MINUTE", 10)) and allowed
         db.session.commit()
         if not allowed:
-            abort(429, description="Too many sign-in attempts. Try again later.")
+            abort(429, description=tr("Too many sign-in attempts. Try again later."))
         user = None
         candidate = User.query.filter_by(username=username).first()
         if candidate and candidate.locked_until and align_tz(candidate.locked_until, now()) > now():
             audit("login_blocked", candidate.username, "provider=mobile; reason=locked", user_id=candidate.id, tenant_id=candidate.tenant_id)
             db.session.commit()
-            abort(423, description="This account is temporarily locked.")
+            abort(423, description=tr("This account is temporarily locked."))
         if provider == "ldap" and setting_bool("LDAP_ENABLED"):
             try:
                 user = ldap_authenticate(username, password)
@@ -457,12 +458,12 @@ def register(app):
                 else:
                     audit("login_failed", candidate.username, f"provider=mobile; attempts={candidate.failed_login_count}", user_id=candidate.id, tenant_id=candidate.tenant_id)
                 db.session.commit()
-            abort(401, description="Invalid username or password.")
+            abort(401, description=tr("Invalid username or password."))
         verified, backup_used = verify_mfa_code(user, body.get("mfa_code"))
         if not verified:
             audit("login_failed", user.username, "provider=mobile; reason=mfa_required_or_invalid", user_id=user.id, tenant_id=user.tenant_id)
             db.session.commit()
-            abort(401, description="A valid MFA or backup code is required.")
+            abort(401, description=tr("A valid MFA or backup code is required."))
         user.failed_login_count = 0
         user.locked_until = None
         access, refresh = issue_mobile_session(user, "password", backup_used)
@@ -473,7 +474,7 @@ def register(app):
     @app.post("/api/v1/auth/passkeys/register/options")
     def api_passkey_registration_options():
         if g.api_client.client_kind != "mobile":
-            abort(403, description="A mobile user session is required.")
+            abort(403, description=tr("A mobile user session is required."))
         rp_id, _ = passkey_configuration()
         PasskeyChallenge.query.filter(
             PasskeyChallenge.expires_at <= now(),
@@ -497,15 +498,15 @@ def register(app):
     @app.post("/api/v1/auth/passkeys/register/complete")
     def api_passkey_registration_complete():
         if g.api_client.client_kind != "mobile":
-            abort(403, description="A mobile user session is required.")
+            abort(403, description=tr("A mobile user session is required."))
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         challenge = consume_passkey_challenge(
             str(body.get("challenge_id") or body.get("challengeId") or ""), "registration",
         )
         if challenge.user_id != g.api_user.id or challenge.tenant_id != g.api_user.tenant_id:
-            abort(403, description="The passkey challenge belongs to another identity.")
+            abort(403, description=tr("The passkey challenge belongs to another identity."))
         challenge_bytes = challenge.challenge
         db.session.commit()  # Consume before cryptographic verification to prevent replay.
         rp_id, origin = passkey_configuration()
@@ -515,15 +516,15 @@ def register(app):
                 rp_id=rp_id, origin=origin,
             )
         except Exception:
-            abort(400, description="Passkey registration verification failed.")
+            abort(400, description=tr("Passkey registration verification failed."))
         if PasskeyCredential.query.filter_by(credential_id=verified.credential_id).first():
-            abort(409, description="This passkey is already registered.")
+            abort(409, description=tr("This passkey is already registered."))
         name = str(body.get("name") or "iPhone passkey").strip()[:120] or "iPhone passkey"
         credential = body.get("credential")
         response = credential.get("response") if isinstance(credential, dict) else None
         transports = response.get("transports", []) if isinstance(response, dict) else None
         if not isinstance(transports, list) or not all(isinstance(value, str) for value in transports):
-            abort(400, description="Passkey transports must be a list of strings.")
+            abort(400, description=tr("Passkey transports must be a list of strings."))
         row = PasskeyCredential(
             credential_id=verified.credential_id, public_key=verified.credential_public_key,
             sign_count=verified.sign_count, name=name, transports_json=json.dumps(transports),
@@ -538,7 +539,7 @@ def register(app):
     @app.get("/api/v1/auth/passkeys")
     def api_passkeys_list():
         if g.api_client.client_kind != "mobile":
-            abort(403, description="A mobile user session is required.")
+            abort(403, description=tr("A mobile user session is required."))
         rows = PasskeyCredential.query.filter_by(
             tenant_id=g.api_user.tenant_id, user_id=g.api_user.id,
         ).order_by(PasskeyCredential.created_at.desc()).all()
@@ -551,7 +552,7 @@ def register(app):
     @app.delete("/api/v1/auth/passkeys/<int:credential_id>")
     def api_passkey_delete(credential_id):
         if g.api_client.client_kind != "mobile":
-            abort(403, description="A mobile user session is required.")
+            abort(403, description=tr("A mobile user session is required."))
         row = PasskeyCredential.query.filter_by(
             id=credential_id, tenant_id=g.api_user.tenant_id, user_id=g.api_user.id,
         ).first_or_404()
@@ -583,20 +584,20 @@ def register(app):
         enforce_passkey_attempt_limit()
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         challenge = consume_passkey_challenge(
             str(body.get("challenge_id") or body.get("challengeId") or ""), "authentication",
         )
         credential = body.get("credential")
         if not isinstance(credential, dict) or not isinstance(credential.get("response"), dict):
-            abort(400, description="A passkey credential object with a response object is required.")
+            abort(400, description=tr("A passkey credential object with a response object is required."))
         try:
             credential_id = base64url_to_bytes(str(credential.get("rawId") or credential.get("id") or ""))
         except Exception:
-            abort(400, description="The passkey credential identifier is invalid.")
+            abort(400, description=tr("The passkey credential identifier is invalid."))
         stored = PasskeyCredential.query.filter_by(credential_id=credential_id).first()
         if not stored or not stored.user.active or stored.user.tenant_id != stored.tenant_id:
-            abort(401, description="The passkey is not registered or its user is inactive.")
+            abort(401, description=tr("The passkey is not registered or its user is inactive."))
         challenge_bytes = challenge.challenge
         db.session.commit()  # Consume before cryptographic verification to prevent replay.
         rp_id, origin = passkey_configuration()
@@ -606,7 +607,7 @@ def register(app):
                 origin=origin, stored=stored,
             )
         except Exception:
-            abort(401, description="Passkey authentication failed.")
+            abort(401, description=tr("Passkey authentication failed."))
         stored.sign_count = verified.new_sign_count
         stored.last_used_at = now()
         access, refresh = issue_mobile_session(stored.user, "passkey")
@@ -626,15 +627,15 @@ def register(app):
     def api_mobile_refresh():
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         raw = str(body.get("refresh_token", ""))
         digest = api_token_hash(raw) if raw.startswith("sor_") else ""
         row = APIClient.query.filter_by(refresh_token_hash=digest, client_kind="mobile", active=True).first()
         if not row or not hmac.compare_digest(row.refresh_token_hash or "", digest) or align_tz(row.refresh_expires_at, now()) <= now() or not account_usable(row.acting_user):
-            abort(401, description="The mobile refresh token is invalid, expired, or revoked.")
+            abort(401, description=tr("The mobile refresh token is invalid, expired, or revoked."))
         if row.auth_version != row.acting_user.auth_version:
             end_stale_mobile_session(row)
-            abort(401, description="The mobile session ended because the account's credentials changed.")
+            abort(401, description=tr("The mobile session ended because the account's credentials changed."))
         access = f"som_{secrets.token_urlsafe(32)}"
         refresh = f"sor_{secrets.token_urlsafe(48)}"
         row.token_hash = api_token_hash(access)
@@ -649,7 +650,7 @@ def register(app):
     @app.post("/api/v1/auth/mobile/logout")
     def api_mobile_logout():
         if g.api_client.client_kind != "mobile":
-            abort(403, description="A mobile user session is required.")
+            abort(403, description=tr("A mobile user session is required."))
         g.api_client.active = False
         g.api_client.revoked_at = now()
         g.api_client.refresh_token_hash = None
@@ -671,7 +672,7 @@ def register(app):
     def monitoring_ingest(source_id):
         authorization = request.headers.get("Authorization", "")
         if not authorization.startswith("Bearer "):
-            abort(401, description="A monitoring bearer token is required.")
+            abort(401, description=tr("A monitoring bearer token is required."))
         token = authorization[7:].strip()
         source = MonitoringSource.query.filter_by(
             source_id=source_id, active=True
@@ -681,14 +682,14 @@ def register(app):
             not source or not token_hash
             or not hmac.compare_digest(source.token_hash, token_hash)
         ):
-            abort(401, description="The monitoring token is invalid or revoked.")
+            abort(401, description=tr("The monitoring token is invalid or revoked."))
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         required = {"external_id", "severity", "resource", "summary"}
         if not required.issubset(body):
             abort(400, description=(
-                "external_id, severity, resource and summary are required."
+                tr("external_id, severity, resource and summary are required.")
             ))
         external_id = str(body["external_id"]).strip()
         severity = str(body["severity"]).strip().lower()
@@ -700,7 +701,7 @@ def register(app):
             or not resource or len(resource) > 255
             or not summary or len(summary) > 500
         ):
-            abort(400, description="Monitoring event fields are invalid.")
+            abort(400, description=tr("Monitoring event fields are invalid."))
         existing = MonitoringEvent.query.filter_by(
             monitoring_source_id=source.id, external_id=external_id
         ).first()
@@ -779,7 +780,7 @@ def register(app):
         # type to manage.
         authorization = request.headers.get("Authorization", "")
         if not authorization.startswith("Bearer "):
-            abort(401, description="A monitoring bearer token is required.")
+            abort(401, description=tr("A monitoring bearer token is required."))
         token = authorization[7:].strip()
         source = MonitoringSource.query.filter_by(
             source_id=source_id, active=True
@@ -789,16 +790,15 @@ def register(app):
             not source or not token_hash
             or not hmac.compare_digest(source.token_hash, token_hash)
         ):
-            abort(401, description="The monitoring token is invalid or revoked.")
+            abort(401, description=tr("The monitoring token is invalid or revoked."))
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         manifest = str(body.get("manifest", "")).strip()
         offsite = str(body.get("offsite", "")).strip()
         if not manifest or len(manifest) > 500 or offsite not in ("archived", "not-configured"):
             abort(400, description=(
-                "manifest (non-empty, max 500 chars) and offsite "
-                "(archived or not-configured) are required."
+                tr("manifest (non-empty, max 500 chars) and offsite (archived or not-configured) are required.")
             ))
         values = {
             "LAST_BACKUP_AT": now().isoformat(),
@@ -832,7 +832,7 @@ def register(app):
         state = request.args.get("state", "").strip()
         if kind:
             if kind not in ("incident", "change"):
-                abort(400, description="type must be incident or change.")
+                abort(400, description=tr("type must be incident or change."))
             query = query.filter(Ticket.kind == kind)
         if state:
             query = query.filter(Ticket.state == state)
@@ -840,7 +840,7 @@ def register(app):
             limit = min(max(int(request.args.get("limit", "50")), 1), 100)
             cursor = int(request.args.get("cursor", "0"))
         except ValueError:
-            abort(400, description="limit and cursor must be integers.")
+            abort(400, description=tr("limit and cursor must be integers."))
         rows = query.filter(Ticket.id > cursor).order_by(Ticket.id).limit(
             limit + 1
         ).all()
@@ -861,7 +861,7 @@ def register(app):
             func.upper(Ticket.number) == number.upper()
         ).first()
         if not ticket:
-            abort(404, description="The requested ticket was not found.")
+            abort(404, description=tr("The requested ticket was not found."))
         return jsonify({"data": api_ticket_document(ticket, g.api_user)})
 
     @app.get("/api/v1/mobile/tickets/<number>/attachments")
@@ -886,7 +886,7 @@ def register(app):
             func.upper(Ticket.number) == number.upper()
         ).first_or_404()
         if ticket.kind != "change":
-            abort(400, description="CTASKs are only available for change tickets.")
+            abort(400, description=tr("CTASKs are only available for change tickets."))
         rows = OperationalTask.query.filter_by(
             parent_type="ticket", parent_id=ticket.id, task_kind="change",
         ).order_by(OperationalTask.sequence, OperationalTask.id).all()
@@ -902,9 +902,9 @@ def register(app):
             func.upper(Ticket.number) == number.upper()
         ).first_or_404()
         if ticket.kind != "change":
-            abort(400, description="CTASKs are only available for change tickets.")
+            abort(400, description=tr("CTASKs are only available for change tickets."))
         if not user_can_manage_ticket(g.api_user, ticket):
-            abort(403, description="The acting user cannot manage this ticket.")
+            abort(403, description=tr("The acting user cannot manage this ticket."))
         task = OperationalTask.query.filter_by(
             parent_type="ticket", parent_id=ticket.id, task_kind="change",
         ).filter(func.upper(OperationalTask.number) == ctask_number.upper()).first_or_404()
@@ -913,17 +913,17 @@ def register(app):
             return replay
         body = request.get_json(silent=True)
         if not isinstance(body, dict) or not body:
-            abort(400, description="A non-empty JSON object is required.")
+            abort(400, description=tr("A non-empty JSON object is required."))
         if not effective_role_has_action(g.api_user.effective_role, "update", tenant_id=g.api_user.tenant_id):
-            abort(403, description="The acting user cannot update tasks.")
+            abort(403, description=tr("The acting user cannot update tasks."))
         if "state" in body and not effective_role_has_action(
             g.api_user.effective_role, "transition", tenant_id=g.api_user.tenant_id,
         ):
-            abort(403, description="The acting user cannot transition tasks.")
+            abort(403, description=tr("The acting user cannot transition tasks."))
         allowed = {"state", "work_notes", "append_work_notes"}
         unknown = set(body) - allowed
         if unknown:
-            abort(400, description=f"Unknown fields: {', '.join(sorted(unknown))}.")
+            abort(400, description=tr("Unknown fields: {unknown}.", unknown=', '.join(sorted(unknown))))
         before = {"state": task.state, "work notes": task.work_notes}
         if "state" in body:
             transition_operational_task(task, str(body["state"]))
@@ -935,7 +935,7 @@ def register(app):
             # entries are kept when the 2000-character cap is reached.
             note = str(body["append_work_notes"]).strip()
             if not note:
-                abort(400, description="append_work_notes must not be empty.")
+                abort(400, description=tr("append_work_notes must not be empty."))
             stamp = now().strftime("%Y-%m-%d %H:%M UTC")
             entry = f"[{stamp} · {g.api_client.name}] {note}"
             existing = (task.work_notes or "").rstrip()
@@ -969,39 +969,39 @@ def register(app):
     def api_incident_create():
         require_api_scope("incidents:create")
         if not effective_role_has_action(g.api_user.role, "create", tenant_id=g.api_user.tenant_id):
-            abort(403, description="The acting user cannot create records.")
+            abort(403, description=tr("The acting user cannot create records."))
         key, request_hash, replay = api_idempotency_context()
         if replay:
             return replay
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         allowed = {"title", "description", "category", "priority", "assignment_group_id"}
         unknown = set(body) - allowed
         if unknown:
-            abort(400, description=f"Unknown fields: {', '.join(sorted(unknown))}.")
+            abort(400, description=tr("Unknown fields: {unknown}.", unknown=', '.join(sorted(unknown))))
         for field in ("title", "description", "category", "priority"):
             if field in body and not isinstance(body[field], str):
-                abort(400, description=f"{field} must be a string.")
+                abort(400, description=tr("{field} must be a string.", field=field))
         title = body.get("title", "").strip()
         description = str(body.get("description", "")).strip()
         priority = str(body.get("priority", "P3"))
         if not title or len(title) > 180 or not description:
-            abort(400, description="title and description are required.")
+            abort(400, description=tr("title and description are required."))
         if priority not in ("P1", "P2", "P3", "P4"):
-            abort(400, description="priority must be P1, P2, P3 or P4.")
+            abort(400, description=tr("priority must be P1, P2, P3 or P4."))
         if isinstance(body.get("assignment_group_id"), (bool, float)):
-            abort(400, description="assignment_group_id must be an integer.")
+            abort(400, description=tr("assignment_group_id must be an integer."))
         try:
             group_id = int(body.get("assignment_group_id"))
         except (TypeError, ValueError):
-            abort(400, description="assignment_group_id is required.")
+            abort(400, description=tr("assignment_group_id is required."))
         group = SupportGroup.query.filter_by(
             id=group_id, tenant_id=g.api_client.tenant_id,
             active=True, group_type="IT Fulfillment",
         ).first()
         if not group:
-            abort(400, description="Select an active tenant IT fulfillment team.")
+            abort(400, description=tr("Select an active tenant IT fulfillment team."))
         ticket = create_ticket_with_unique_number(
             "incident",
             title=title, description=description,
@@ -1029,24 +1029,24 @@ def register(app):
         require_api_scope("tickets:update")
         for action in ("update", "assign", "transition"):
             if not effective_role_has_action(g.api_user.role, action, tenant_id=g.api_user.tenant_id):
-                abort(403, description=f"The acting user cannot perform {action}.")
+                abort(403, description=tr("The acting user cannot perform {action}.", action=action))
         ticket = visible_ticket_query(g.api_user).filter(
             func.upper(Ticket.number) == number.upper()
         ).first()
         if not ticket:
-            abort(404, description="The requested ticket was not found.")
+            abort(404, description=tr("The requested ticket was not found."))
         if not user_can_manage_ticket(g.api_user, ticket):
-            abort(403, description="The acting user cannot manage this ticket.")
+            abort(403, description=tr("The acting user cannot manage this ticket."))
         key, request_hash, replay = api_idempotency_context()
         if replay:
             return replay
         body = request.get_json(silent=True)
         if not isinstance(body, dict) or not body:
-            abort(400, description="A non-empty JSON object is required.")
+            abort(400, description=tr("A non-empty JSON object is required."))
         allowed = {"state", "priority", "assigned_to_id", "resolution_notes", "closure_category", "closure_subcategory"}
         unknown = set(body) - allowed
         if unknown:
-            abort(400, description=f"Unknown fields: {', '.join(sorted(unknown))}.")
+            abort(400, description=tr("Unknown fields: {unknown}.", unknown=', '.join(sorted(unknown))))
         before = {
             "state": ticket.state, "priority": ticket.priority,
             "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
@@ -1059,13 +1059,13 @@ def register(app):
             ticket.resolution_notes = str(body["resolution_notes"] or "").strip()[:10000] or None
         if "closure_category" in body:
             if ticket.kind != "incident":
-                abort(400, description="closure_category applies to incidents only.")
+                abort(400, description=tr("closure_category applies to incidents only."))
             ticket.closure_category = normalize_ticket_category(
                 g.api_user.tenant_id, str(body["closure_category"] or "")[:80],
             )
         if "closure_subcategory" in body:
             if not ticket.closure_category:
-                abort(400, description="closure_subcategory requires a closure_category.")
+                abort(400, description=tr("closure_subcategory requires a closure_category."))
             ticket.closure_subcategory = normalize_ticket_subcategory(
                 g.api_user.tenant_id, ticket.closure_category, str(body["closure_subcategory"] or "")[:80],
             ) or None
@@ -1074,7 +1074,7 @@ def register(app):
         if "priority" in body:
             priority = str(body["priority"])
             if priority not in ("P1", "P2", "P3", "P4"):
-                abort(400, description="priority must be P1, P2, P3 or P4.")
+                abort(400, description=tr("priority must be P1, P2, P3 or P4."))
             ticket.priority = priority
         if "assigned_to_id" in body:
             assignee_id = body["assigned_to_id"]
@@ -1082,10 +1082,10 @@ def register(app):
                 try:
                     assignee_id = int(assignee_id)
                 except (TypeError, ValueError):
-                    abort(400, description="assigned_to_id must be an integer or null.")
+                    abort(400, description=tr("assigned_to_id must be an integer or null."))
                 eligible_ids = {agent.id for agent in ticket_team_agents(ticket)}
                 if assignee_id not in eligible_ids:
-                    abort(400, description="The assignee must belong to the owning team.")
+                    abort(400, description=tr("The assignee must belong to the owning team."))
             ticket.assignee_id = assignee_id
         log_field_changes("ticket", ticket.id, before, {
             "state": ticket.state, "priority": ticket.priority,
@@ -1113,10 +1113,10 @@ def register(app):
             return Response(status=405, headers={"Allow": "POST"})
         origin = request.headers.get("Origin")
         if origin and urlparse(origin).netloc.lower() != request.host.lower():
-            abort(403, description="Cross-origin MCP requests are not accepted.")
+            abort(403, description=tr("Cross-origin MCP requests are not accepted."))
         version = request.headers.get("MCP-Protocol-Version")
         if version and version not in mcp_protocol.SUPPORTED_PROTOCOL_VERSIONS:
-            abort(400, description=f"Unsupported MCP-Protocol-Version: {version}.")
+            abort(400, description=tr("Unsupported MCP-Protocol-Version: {version}.", version=version))
         try:
             message = json.loads(request.get_data(as_text=True) or "")
         except ValueError:
@@ -1144,26 +1144,26 @@ def register(app):
         require_api_scope("cmdb:write")
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         allowed = {"name", "ci_class", "environment", "operational_status", "ip_address"}
         unknown = set(body) - allowed
         if unknown:
-            abort(400, description=f"Unknown fields: {', '.join(sorted(unknown))}.")
+            abort(400, description=tr("Unknown fields: {unknown}.", unknown=', '.join(sorted(unknown))))
         for field in allowed:
             if field in body and not isinstance(body[field], str):
-                abort(400, description=f"{field} must be a string.")
+                abort(400, description=tr("{field} must be a string.", field=field))
         for field, maximum in (("name", 160), ("ci_class", 80), ("ip_address", 60)):
             if len(body.get(field, "").strip()) > maximum:
-                abort(400, description=f"{field} must not exceed {maximum} characters.")
+                abort(400, description=tr("{field} must not exceed {maximum} characters.", field=field, maximum=maximum))
         name = body.get("name", "").strip()
         if not name:
-            abort(400, description="name is required.")
+            abort(400, description=tr("name is required."))
         environment = normalize_environment(str(body.get("environment", "Production")))
         if environment not in CANONICAL_ENVIRONMENTS:
-            abort(400, description="environment must be Production, Staging, Development or Test.")
+            abort(400, description=tr("environment must be Production, Staging, Development or Test."))
         operational_status = str(body.get("operational_status", "Operational"))
         if operational_status not in ("Operational", "Degraded", "Down", "Maintenance", "Retired"):
-            abort(400, description="operational_status must be a recognized CI status.")
+            abort(400, description=tr("operational_status must be a recognized CI status."))
         ci_class = body.get("ci_class", "Server").strip() or "Server"
         ip_address = body.get("ip_address", "").strip() or None
         ci = ConfigurationItem.query.filter_by(name=name, tenant_id=g.api_client.tenant_id).first()
@@ -1174,11 +1174,11 @@ def register(app):
         role = g.api_user.effective_role
         tenant_id = g.api_client.tenant_id
         if created and not ci_class_action_allowed(tenant_id, ci_class, role, "create"):
-            abort(403, description=f"The acting user may not create {ci_class} configuration items.")
+            abort(403, description=tr("The acting user may not create {ci_class} configuration items.", ci_class=ci_class))
         if not created and not ci_class_action_allowed(tenant_id, ci.ci_class, role, "update"):
-            abort(403, description=f"The acting user may not update {ci.ci_class} configuration items.")
+            abort(403, description=tr("The acting user may not update {ci_class} configuration items.", ci_class=ci.ci_class))
         if not created and ci_class != ci.ci_class and not ci_class_action_allowed(tenant_id, ci_class, role, "update"):
-            abort(403, description=f"The acting user may not move this configuration item into {ci_class}.")
+            abort(403, description=tr("The acting user may not move this configuration item into {ci_class}.", ci_class=ci_class))
         if created:
             ci = ConfigurationItem(name=name, tenant_id=g.api_client.tenant_id, owner_id=g.api_user.id)
             db.session.add(ci)
@@ -1203,20 +1203,20 @@ def register(app):
     def api_workflow_event(number):
         require_api_scope("workflows:execute")
         if not effective_role_has_action(g.api_user.role, "transition", tenant_id=g.api_user.tenant_id):
-            abort(403, description="The acting user cannot execute workflows.")
+            abort(403, description=tr("The acting user cannot execute workflows."))
         ticket = visible_ticket_query(g.api_user).filter(
             func.upper(Ticket.number) == number.upper()
         ).first()
         if not ticket:
-            abort(404, description="The requested ticket was not found.")
+            abort(404, description=tr("The requested ticket was not found."))
         if not user_can_manage_ticket(g.api_user, ticket):
-            abort(403, description="The acting user cannot manage this ticket.")
+            abort(403, description=tr("The acting user cannot manage this ticket."))
         key, request_hash, replay = api_idempotency_context()
         if replay:
             return replay
         body = request.get_json(silent=True)
         if body not in ({}, None) and not isinstance(body, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         context = ticket_workflow_context(ticket)
         context["triggered_by"] = g.api_user.username
         job = queue_workflow_event(
@@ -1274,14 +1274,14 @@ def register(app):
         mobile_only()
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         token = str(body.get("token", "")).strip().lower()
         device_id = str(body.get("device_id", "")).strip()
         environment = str(body.get("environment", "sandbox"))
         if not re.fullmatch(r"[0-9a-f]{64,200}", token):
-            abort(400, description="A valid APNs device token is required.")
+            abort(400, description=tr("A valid APNs device token is required."))
         if not device_id or len(device_id) > 64 or environment not in {"sandbox", "production"}:
-            abort(400, description="A valid device_id and APNs environment are required.")
+            abort(400, description=tr("A valid device_id and APNs environment are required."))
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         row = MobilePushDevice.query.filter_by(token_hash=token_hash).first()
         if row and (row.user_id != g.api_user.id or row.tenant_id != g.api_user.tenant_id):
@@ -1387,10 +1387,10 @@ def register(app):
             return replay
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         decision = body.get("decision")
         if decision not in ("Approved", "Rejected"):
-            abort(400, description="decision must be Approved or Rejected.")
+            abort(400, description=tr("decision must be Approved or Rejected."))
         vote = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
             ApprovalVote.id == vote_id,
             ApprovalChain.tenant_id == g.api_user.tenant_id,
@@ -1432,7 +1432,7 @@ def register(app):
     def api_mobile_cmdb():
         mobile_only()
         if not role_at_least(g.api_user.effective_role, "agent"):
-            abort(403, description="CMDB mobile access requires the agent role.")
+            abort(403, description=tr("CMDB mobile access requires the agent role."))
         q = str(request.args.get("q", "")).strip()
         query = restrict_ci_query_to_readable_classes(
             ConfigurationItem.query.filter_by(tenant_id=g.api_user.tenant_id),
@@ -1461,7 +1461,7 @@ def register(app):
         require_api_scope("tickets:update")
         ticket = visible_ticket_query(g.api_user).filter(func.upper(Ticket.number) == number.upper()).first_or_404()
         if not user_can_manage_ticket(g.api_user, ticket):
-            abort(403, description="The acting user cannot comment on this ticket.")
+            abort(403, description=tr("The acting user cannot comment on this ticket."))
         # Optional, not required: unlike the mutating endpoints below whose
         # OpenAPI contract already documents Idempotency-Key as required,
         # this endpoint's contract never has, so an already-shipped client
@@ -1471,15 +1471,15 @@ def register(app):
             return replay
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
-            abort(400, description="A JSON object is required.")
+            abort(400, description=tr("A JSON object is required."))
         body = str(payload.get("body", "")).strip()
         if not body or len(body) > 10000:
-            abort(400, description="A comment between 1 and 10000 characters is required.")
+            abort(400, description=tr("A comment between 1 and 10000 characters is required."))
         parent_id = payload.get("parent_id")
         try:
             parent_id = int(parent_id) if parent_id not in (None, "") else None
         except (TypeError, ValueError):
-            abort(400, description="parent_id must be an integer comment identifier.")
+            abort(400, description=tr("parent_id must be an integer comment identifier."))
         row = post_ticket_comment(ticket, g.api_user, body, parent_id=parent_id)
         log_history("ticket", ticket.id, "Comment added", details=f"Mobile app · {g.api_user.name}")
         document = {"data": {"id": row.id, "body": row.body, "author": g.api_user.name,
@@ -1498,7 +1498,7 @@ def register(app):
             filter_value = request.args.get("filter", "")
             match = re.fullmatch(r'userName\s+eq\s+"([^"]+)"', filter_value, re.IGNORECASE)
             if filter_value and not match:
-                abort(400, description="Only the SCIM filter userName eq \"value\" is supported.")
+                abort(400, description=tr("Only the SCIM filter userName eq \"value\" is supported."))
             if match:
                 query = query.filter(func.lower(User.username) == match.group(1).lower())
             rows = query.order_by(User.id).all()

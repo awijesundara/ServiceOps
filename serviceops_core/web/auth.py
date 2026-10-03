@@ -35,6 +35,7 @@ from app import (
 )
 from serviceops_core.security import hash_password, verify_and_upgrade_password
 from serviceops_models import db, now, PasswordResetToken, settings_cipher, User, UserPreference, UserSession
+from serviceops_core.localization import tr
 
 
 def register(app):
@@ -126,13 +127,13 @@ def register(app):
                     keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
                     local_enabled=setting_bool("LOCAL_AUTH_ENABLED", True),
                     deployment_profile=app.config["DEPLOYMENT_PROFILE"])
-                flash("Too many sign-in attempts. Please wait a moment and try again.", "error")
+                flash(tr("Too many sign-in attempts. Please wait a moment and try again."), "error")
                 return response, 429
             lockout_record = User.query.filter_by(username=username).first()
             if lockout_record and lockout_record.locked_until and align_tz(lockout_record.locked_until, now()) > now():
                 audit("login_blocked", username, "reason=locked")
                 db.session.commit()
-                flash("This account is temporarily locked due to repeated failed sign-ins. Try again later.", "error")
+                flash(tr("This account is temporarily locked due to repeated failed sign-ins. Try again later."), "error")
                 return render_template(
                     "login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
                     keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
@@ -199,7 +200,7 @@ def register(app):
                 else:
                     audit("login_failed", username, f"attempts={lockout_record.failed_login_count}")
                 db.session.commit()
-            flash("Invalid username or password.", "error")
+            flash(tr("Invalid username or password."), "error")
         return render_template("login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
                                keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
                                local_enabled=setting_bool("LOCAL_AUTH_ENABLED", True),
@@ -215,7 +216,7 @@ def register(app):
             )
             db.session.commit()
             if not allowed:
-                flash("Too many recovery requests. Please try again later.", "error")
+                flash(tr("Too many recovery requests. Please try again later."), "error")
                 return render_template("forgot_password.html"), 429
             user = User.query.filter(
                 db.or_(func.lower(User.username) == identity, func.lower(User.email) == identity),
@@ -243,7 +244,7 @@ def register(app):
                 audit("password reset request", user.username, "recovery link issued",
                       user_id=user.id, tenant_id=user.tenant_id)
                 db.session.commit()
-            flash("If that active local account exists, recovery instructions have been sent.", "success")
+            flash(tr("If that active local account exists, recovery instructions have been sent."), "success")
             return redirect(url_for("login"))
         return render_template("forgot_password.html")
 
@@ -268,7 +269,7 @@ def register(app):
             confirmation = request.form.get("confirmation", "")
             min_length = setting_int("PASSWORD_MIN_LENGTH", 14)
             if len(password) < min_length or password != confirmation:
-                flash(f"Use matching passwords containing at least {min_length} characters.", "error")
+                flash(tr("Use matching passwords containing at least {min_length} characters.", min_length=min_length), "error")
                 return render_template("reset_password.html", token=token)
             row.user.password_hash = hash_password(password)
             row.user.auth_version += 1
@@ -281,7 +282,7 @@ def register(app):
             audit("password reset", row.user.username, "self-service recovery completed",
                   user_id=row.user.id, tenant_id=row.tenant_id)
             db.session.commit()
-            flash("Password reset. Sign in with your new password.", "success")
+            flash(tr("Password reset. Sign in with your new password."), "success")
             return redirect(url_for("login"))
         return render_template("reset_password.html", token=token)
 
@@ -319,7 +320,7 @@ def register(app):
             mfa_user_ok = route_rate_limit("mfa_verify", f"user:{user.username.lower()}", mfa_limit)
             db.session.commit()
             if not (mfa_ip_ok and mfa_user_ok):
-                flash("Too many verification attempts. Please wait a moment and try again.", "error")
+                flash(tr("Too many verification attempts. Please wait a moment and try again."), "error")
                 return render_template("login_mfa.html"), 429
             code = request.form.get("code", "").strip()
             verified = False
@@ -352,7 +353,7 @@ def register(app):
                 )
                 db.session.commit()
                 if backup_used:
-                    flash("Signed in with a backup code. Consider regenerating your backup codes.", "warning")
+                    flash(tr("Signed in with a backup code. Consider regenerating your backup codes."), "warning")
                 preference = UserPreference.query.filter_by(user_id=user.id).first()
                 start_page = preference.start_page if preference else None
                 if not is_safe_internal_path(start_page):
@@ -360,7 +361,7 @@ def register(app):
                 return redirect(start_page)
             audit("login_failed", user.username, "reason=invalid_mfa_code")
             db.session.commit()
-            flash("Invalid verification code.", "error")
+            flash(tr("Invalid verification code."), "error")
         return render_template("login_mfa.html")
 
     @app.get("/auth/keycloak/login")
@@ -383,7 +384,7 @@ def register(app):
             audit("login_blocked", str(claims.get("preferred_username", subject)),
                   f"provider=keycloak; required_acr={required_acr}")
             db.session.commit()
-            abort(403, description="Your identity provider did not confirm the required MFA assurance level.")
+            abort(403, description=tr("Your identity provider did not confirm the required MFA assurance level."))
         realm_roles = claims.get("realm_access", {}).get("roles", [])
         matched_roles = mapped_roles(realm_roles, "KEYCLOAK_ROLE_MAPPINGS")
         try:
@@ -402,7 +403,7 @@ def register(app):
             claims.get("name", ""), claims.get("email", ""), matched_roles,
             profile_attrs=profile_attrs)
         if not account_usable(user):
-            abort(403, description="This account or its organization is not active.")
+            abort(403, description=tr("This account or its organization is not active."))
         login_user(user)
         session.permanent = True
         session["_auth_version"] = user.auth_version
@@ -446,7 +447,7 @@ def register(app):
             session.pop("_acting_role", None)
             return redirect(safe_target)
         if requested not in current_user.granted_roles:
-            abort(403, description="You do not currently hold that role.")
+            abort(403, description=tr("You do not currently hold that role."))
         session["_acting_role"] = requested
         return redirect(safe_target)
 
@@ -466,5 +467,5 @@ def register(app):
             logout_user()
             session.clear()
             return redirect(url_for("login"))
-        flash("Session revoked.", "success")
+        flash(tr("Session revoked."), "success")
         return redirect(url_for("admin_sessions" if administering and request.form.get("admin_view") else "my_sessions"))

@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "pirmdiena",
+   "otrdiena",
+   "trešdiena",
+   "ceturtdiena",
+   "piektdiena",
+   "sestdiena",
+   "svētdiena"
+  ],
+  "days_abbr": [
+   "pirmd.",
+   "otrd.",
+   "trešd.",
+   "ceturtd.",
+   "piektd.",
+   "sestd.",
+   "svētd."
+  ],
+  "months": [
+   "janvāris",
+   "februāris",
+   "marts",
+   "aprīlis",
+   "maijs",
+   "jūnijs",
+   "jūlijs",
+   "augusts",
+   "septembris",
+   "oktobris",
+   "novembris",
+   "decembris"
+  ],
+  "months_abbr": [
+   "janv.",
+   "febr.",
+   "marts",
+   "apr.",
+   "maijs",
+   "jūn.",
+   "jūl.",
+   "aug.",
+   "sept.",
+   "okt.",
+   "nov.",
+   "dec."
+  ]
+ },
+ "language": "lv",
+ "messages": {
+  "Administration": "Administrēšana",
+  "Back": "Atpakaļ",
+  "Cancel": "Atcelt",
+  "Changes": "Izmaiņas",
+  "Close": "Aizvērt",
+  "Create": "Izveidot",
+  "Dashboard": "Informācijas panelis",
+  "Delete": "Dzēst",
+  "Description": "Apraksts",
+  "Edit": "Rediģēt",
+  "General": "Vispārīgi",
+  "Incidents": "Incidenti",
+  "Knowledge": "Zināšanas",
+  "Language": "Valoda",
+  "Name": "Nosaukums",
+  "Notifications": "Paziņojumi",
+  "Preferences": "Iestatījumi",
+  "Priority": "Prioritāte",
+  "Save": "Saglabāt",
+  "Save preferences": "Saglabāt iestatījumus",
+  "Search": "Meklēt",
+  "Service requests": "Pakalpojumu pieprasījumi",
+  "Status": "Statuss",
+  "System preferences": "Sistēmas iestatījumi"
+ }
+}

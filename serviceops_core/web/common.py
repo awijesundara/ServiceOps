@@ -66,6 +66,7 @@ from serviceops_models import (
     TicketAssignmentGroup,
     User,
 )
+from serviceops_core.localization import tr
 
 
 TICKET_STATE_OPTIONS = ["New", "In Progress", "Pending", "Resolved", "Closed", "Cancelled"]
@@ -178,7 +179,8 @@ def usertime_filter(value, fmt="%b %d, %H:%M"):
         tz = ZoneInfo("UTC")
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(tz).strftime(fmt)
+    from serviceops_core.localization import localized_strftime, request_language
+    return localized_strftime(value.astimezone(tz), fmt, request_language())
 
 
 def _recovery_set_status():
@@ -204,7 +206,7 @@ def _recovery_set_status():
 
 def mobile_only():
     if g.api_client.client_kind != "mobile":
-        abort(403, description="A mobile user session is required.")
+        abort(403, description=tr("A mobile user session is required."))
 
 
 def scim_user_document(user):
@@ -222,7 +224,7 @@ def scim_user_document(user):
 def require_scim_admin():
     require_api_scope("users:provision")
     if not effective_role_has_action(g.api_user.role, "security_administer", tenant_id=g.api_user.tenant_id):
-        abort(403, description="The SCIM client must act as a security administrator.")
+        abort(403, description=tr("The SCIM client must act as a security administrator."))
 
 
 def visible_tickets():
@@ -926,7 +928,7 @@ def save_ticket_attachment(ticket, upload, comment_id=None):
         return None, "Choose a file to upload."
     original = secure_filename(upload.filename)
     if not original:
-        abort(400, description="The attachment filename is invalid.")
+        abort(400, description=tr("The attachment filename is invalid."))
     validated = validate_attachment_upload(upload)
     if not validated:
         return None, (

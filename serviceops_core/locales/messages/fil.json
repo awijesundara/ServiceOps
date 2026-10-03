@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Lunes",
+   "Martes",
+   "Miyerkules",
+   "Huwebes",
+   "Biyernes",
+   "Sabado",
+   "Linggo"
+  ],
+  "days_abbr": [
+   "Lun",
+   "Mar",
+   "Miy",
+   "Huw",
+   "Biy",
+   "Sab",
+   "Lin"
+  ],
+  "months": [
+   "Enero",
+   "Pebrero",
+   "Marso",
+   "Abril",
+   "Mayo",
+   "Hunyo",
+   "Hulyo",
+   "Agosto",
+   "Setyembre",
+   "Oktubre",
+   "Nobyembre",
+   "Disyembre"
+  ],
+  "months_abbr": [
+   "Ene",
+   "Peb",
+   "Mar",
+   "Abr",
+   "May",
+   "Hun",
+   "Hul",
+   "Ago",
+   "Set",
+   "Okt",
+   "Nob",
+   "Dis"
+  ]
+ },
+ "language": "fil",
+ "messages": {
+  "Administration": "Administrasyon",
+  "Back": "Bumalik",
+  "Cancel": "Kanselahin",
+  "Changes": "Mga pagbabago",
+  "Close": "Isara",
+  "Create": "Gumawa",
+  "Dashboard": "Dashboard",
+  "Delete": "Tanggalin",
+  "Description": "Paglalarawan",
+  "Edit": "I-edit",
+  "General": "Pangkalahatan",
+  "Incidents": "Mga insidente",
+  "Knowledge": "Kaalaman",
+  "Language": "Wika",
+  "Name": "Pangalan",
+  "Notifications": "Mga abiso",
+  "Preferences": "Mga kagustuhan",
+  "Priority": "Prayoridad",
+  "Save": "I-save",
+  "Save preferences": "I-save ang mga kagustuhan",
+  "Search": "Maghanap",
+  "Service requests": "Mga kahilingan sa serbisyo",
+  "Status": "Katayuan",
+  "System preferences": "Mga kagustuhan sa sistema"
+ }
+}

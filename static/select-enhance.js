@@ -66,7 +66,7 @@ function enhanceSelect(select) {
     if (!matches.length) {
       const empty = document.createElement("div");
       empty.className = "lookup-empty";
-      empty.textContent = "No matches found.";
+      empty.textContent = tr("No matches found.");
       panel.appendChild(empty);
     } else {
       matches.slice(0, 300).forEach((option) => {

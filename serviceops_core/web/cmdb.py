@@ -73,6 +73,7 @@ from serviceops_models import (
     TaskHistory,
     User,
 )
+from serviceops_core.localization import tr, tr_value
 
 
 # An import must follow a preview reviewed this recently.
@@ -90,9 +91,9 @@ def _tenant_reference_id(model, field, label):
     try:
         record_id = int(raw)
     except ValueError:
-        abort(400, description=f"Select a valid {label}.")
+        abort(400, description=tr("Select a valid {label}.", label=label))
     if not tenant_query(model).filter_by(id=record_id).first():
-        abort(400, description=f"Select a valid {label}.")
+        abort(400, description=tr("Select a valid {label}.", label=label))
     return record_id
 
 def _bounded_netbox_body(response, ceiling, deadline):
@@ -118,7 +119,7 @@ def _bounded_netbox_body(response, ceiling, deadline):
 def _netbox_object(response, deadline):
     payload = json.loads(_bounded_netbox_body(response, 1024 * 1024, deadline))
     if not isinstance(payload, dict):
-        raise ValueError("NetBox metadata must be an object")
+        raise ValueError(tr("NetBox metadata must be an object"))
     return payload
 
 
@@ -157,7 +158,8 @@ def register(app):
         ).limit(per_page).all()
         breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec)
         client_fields = {
-            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            key: {"label": tr_value(spec["label"]), "type": spec["type"],
+                  "options": [(value, tr_value(label)) for value, label in spec.get("options", [])]}
             for key, spec in field_spec.items()
         }
         return render_template(
@@ -257,7 +259,8 @@ def register(app):
                         for key, label in field_spec["support_group_id"]["options"]}
         breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec, value_labels)
         client_fields = {
-            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            key: {"label": tr_value(spec["label"]), "type": spec["type"],
+                  "options": [(value, tr_value(label)) for value, label in spec.get("options", [])]}
             for key, spec in field_spec.items()
         }
         return render_template(
@@ -322,13 +325,11 @@ def register(app):
             if not ci_class_action_allowed(
                 current_user.tenant_id, ci_class, current_user.effective_role, "create",
             ):
-                abort(403, description=f"You are not permitted to create {ci_class} configuration items.")
+                abort(403, description=tr("You are not permitted to create {ci_class} configuration items.", ci_class=ci_class))
             duplicate = _ci_duplicate_of(name, serial_number)
             if duplicate:
                 flash(
-                    f"{duplicate.name} already exists in the CMDB (matched by "
-                    f"{'serial number' if duplicate.serial_number == serial_number else 'name'}) "
-                    "— edit that record instead of creating a duplicate.", "error",
+                    tr("{name} already exists in the CMDB (matched by {value}) — edit that record instead of creating a duplicate.", name=duplicate.name, value='serial number' if duplicate.serial_number == serial_number else 'name'), "error",
                 )
                 return redirect(url_for("ci_edit", ci_id=duplicate.id))
             install_date = request.form.get("install_date") or None
@@ -368,7 +369,7 @@ def register(app):
             db.session.add(ci)
             audit("create", "CI", ci.name)
             db.session.commit()
-            flash(f"{ci.name} created.", "success")
+            flash(tr("{name} created.", name=ci.name), "success")
             return redirect(url_for("cmdb"))
         support_groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
         racks = tenant_query(Rack).filter_by(active=True).order_by(Rack.name).all()
@@ -381,16 +382,14 @@ def register(app):
         if not ci_class_action_allowed(
             current_user.tenant_id, ci.ci_class, current_user.effective_role, "update",
         ):
-            abort(403, description=f"You are not permitted to edit {ci.ci_class} configuration items.")
+            abort(403, description=tr("You are not permitted to edit {ci_class} configuration items.", ci_class=ci.ci_class))
         if request.method == "POST":
             name = request.form["name"].strip()
             serial_number = form_text("serial_number")
             duplicate = _ci_duplicate_of(name, serial_number, exclude_id=ci.id)
             if duplicate:
                 flash(
-                    f"{duplicate.name} already has this "
-                    f"{'serial number' if duplicate.serial_number == serial_number else 'name'} "
-                    "— resolve the conflict before saving.", "error",
+                    tr("{name} already has this {value} — resolve the conflict before saving.", name=duplicate.name, value='serial number' if duplicate.serial_number == serial_number else 'name'), "error",
                 )
                 return redirect(url_for("ci_edit", ci_id=ci.id))
             tracked_fields = [
@@ -402,7 +401,7 @@ def register(app):
             if new_ci_class != ci.ci_class and not ci_class_action_allowed(
                 current_user.tenant_id, new_ci_class, current_user.effective_role, "update",
             ):
-                abort(403, description=f"You are not permitted to move this CI into {new_ci_class}.")
+                abort(403, description=tr("You are not permitted to move this CI into {new_ci_class}.", new_ci_class=new_ci_class))
             support_group_id = _tenant_reference_id(SupportGroup, "support_group_id", "support group")
             owner_id = _tenant_reference_id(User, "owner_id", "owner")
             rack_id = _tenant_reference_id(Rack, "rack_id", "rack")
@@ -444,7 +443,7 @@ def register(app):
             log_field_changes("ci", ci.id, before, after)
             audit("update", "CI", ci.name)
             db.session.commit()
-            flash(f"{ci.name} updated.", "success")
+            flash(tr("{name} updated.", name=ci.name), "success")
             return redirect(url_for("cmdb"))
         owners = tenant_query(User).filter_by(active=True).order_by(User.name).all()
         support_groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
@@ -513,7 +512,7 @@ def register(app):
                     csv_text = upload.read().decode("utf-8-sig", errors="replace")
                 elif sheet_url:
                     if "docs.google.com/spreadsheets/d/" not in sheet_url:
-                        flash("Enter a valid Google Sheets URL.", "error")
+                        flash(tr("Enter a valid Google Sheets URL."), "error")
                         return _cmdb_import_page()
                     sheet_id = sheet_url.split("/d/")[1].split("/")[0]
                     gid = "0"
@@ -521,12 +520,12 @@ def register(app):
                         gid = sheet_url.split("gid=")[1].split("&")[0].split("#")[0] or "0"
                     export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
                     if not integration_endpoint_valid(export_url):
-                        flash("That sheet URL could not be reached safely.", "error")
+                        flash(tr("That sheet URL could not be reached safely."), "error")
                         return _cmdb_import_page()
                     proxies = core.resolve_component_proxies("CMDB_IMPORT")
                     ok, hostname, infos = (True, None, None) if proxies else resolve_endpoint_addresses_safely(export_url)
                     if not ok:
-                        flash("That sheet URL could not be reached safely.", "error")
+                        flash(tr("That sheet URL could not be reached safely."), "error")
                         return _cmdb_import_page()
                     try:
                         # Pin the addresses just validated: requests' own
@@ -543,7 +542,7 @@ def register(app):
                         response.raise_for_status()
                         csv_text = response.text
                     except requests.RequestException as error:
-                        flash(f"Could not fetch the sheet: {error}", "error")
+                        flash(tr("Could not fetch the sheet: {error}", error=error), "error")
                         return _cmdb_import_page()
                 else:
                     csv_text = pasted
@@ -555,7 +554,7 @@ def register(app):
             elif action == "apply":
                 csv_text = request.form.get("csv_text", "")
                 if not request.form.get("confirm_reviewed"):
-                    flash("Confirm that you reviewed the preview before applying it.", "error")
+                    flash(tr("Confirm that you reviewed the preview before applying it."), "error")
                     try:
                         preview = import_ci_rows(parse_ci_rows(csv_text), core.tenant_context_id(), dry_run=True)
                     except CmdbImportError:
@@ -575,9 +574,7 @@ def register(app):
                         f"{len(result['errors'])} errors",
                     )
                     flash(
-                        f"CMDB import applied: {result['cis_created']} created, "
-                        f"{result['cis_updated']} updated, {len(result['errors'])} errors, "
-                        f"{len(result['warnings'])} warnings.",
+                        tr("CMDB import applied: {result} created, {result2} updated, {count} errors, {count2} warnings.", result=result['cis_created'], result2=result['cis_updated'], count=len(result['errors']), count2=len(result['warnings'])),
                         "success" if not result["errors"] and not result["warnings"] else "warning",
                     )
                     return redirect(url_for("cmdb"))
@@ -676,7 +673,7 @@ def register(app):
     def _queue_sync(integration, anchor):
         label, lock_offset, _, flag = inventory_syncs[integration]
         if not feature_enabled(flag, default=True):
-            abort(503, description=f"{label} synchronization is temporarily disabled by an operator feature flag.")
+            abort(503, description=tr("{label} synchronization is temporarily disabled by an operator feature flag.", label=label))
         dry_run = bool(request.form.get("dry_run"))
         tenant_id = core.tenant_context_id()
         # Serialize enqueue decisions per tenant on PostgreSQL. Without this,
@@ -691,15 +688,14 @@ def register(app):
             IntegrationSyncJob.status.in_(("Pending", "Running")),
         ).first()
         if active:
-            flash(f"A {label} synchronization is already queued or running.", "warning")
+            flash(tr("A {label} synchronization is already queued or running.", label=label), "warning")
             return redirect(url_for("cmdb_import") + anchor)
         if not dry_run:
             if not _sync_preview_for_import(integration):
-                flash("Run a preview first. An import starts only from a successful preview of the last "
-                      f"{NETBOX_PREVIEW_VALID_HOURS} hours.", "error")
+                flash(tr("Run a preview first. An import starts only from a successful preview of the last {netbox_preview_valid_hours} hours.", netbox_preview_valid_hours=NETBOX_PREVIEW_VALID_HOURS), "error")
                 return redirect(url_for("cmdb_import") + anchor)
             if not request.form.get("confirm_reviewed"):
-                flash("Confirm that you reviewed the preview before importing.", "error")
+                flash(tr("Confirm that you reviewed the preview before importing."), "error")
                 return redirect(url_for("cmdb_import") + anchor)
         job = IntegrationSyncJob(
             tenant_id=tenant_id, actor_user_id=current_user.id,
@@ -709,8 +705,8 @@ def register(app):
         db.session.flush()
         audit("configure", f"{label} CMDB sync queued", f"Job {job.id}; preview={dry_run}")
         db.session.commit()
-        flash(f"{label} preview queued. Nothing is saved until you review it and import."
-              if dry_run else f"{label} import queued. It runs in controlled batches.", "success")
+        flash(tr("{source} preview queued. Nothing is saved until you review it and import.", source=label)
+              if dry_run else tr("{source} import queued. It runs in controlled batches.", source=label), "success")
         return redirect(url_for("cmdb_import") + anchor)
 
     def _sync_job_status(integration, job_id):
@@ -822,9 +818,9 @@ def register(app):
                 abort(403)
             name = request.form.get("name", "").strip()
             if not name:
-                flash("Rack name is required.", "error")
+                flash(tr("Rack name is required."), "error")
             elif tenant_query(Rack).filter(func.lower(Rack.name) == name.casefold()).first():
-                flash("A rack with that name already exists.", "error")
+                flash(tr("A rack with that name already exists."), "error")
             else:
                 rack = Rack(
                     tenant_id=current_user.tenant_id, name=name,
@@ -835,7 +831,7 @@ def register(app):
                 db.session.add(rack)
                 audit("create", "Rack", name)
                 db.session.commit()
-                flash(f"{name} created.", "success")
+                flash(tr("{name} created.", name=name), "success")
                 return redirect(url_for("rack_list"))
         racks = tenant_query(Rack).filter_by(active=True).order_by(Rack.site, Rack.name).all()
         occupied_u = {
@@ -863,9 +859,9 @@ def register(app):
                 func.lower(Rack.name) == name.casefold(), Rack.id != rack.id,
             ).first()
             if not name:
-                flash("Rack name is required.", "error")
+                flash(tr("Rack name is required."), "error")
             elif duplicate:
-                flash("A rack with that name already exists.", "error")
+                flash(tr("A rack with that name already exists."), "error")
             else:
                 rack.name = name
                 rack.site = request.form.get("site", "").strip()
@@ -873,7 +869,7 @@ def register(app):
                 rack.notes = request.form.get("notes", "").strip()
                 audit("update", "Rack", rack.name)
                 db.session.commit()
-                flash(f"{rack.name} updated.", "success")
+                flash(tr("{name} updated.", name=rack.name), "success")
                 return redirect(url_for("rack_list"))
         return render_template("rack_form.html", rack=rack)
 
@@ -884,14 +880,13 @@ def register(app):
         still_mounted = tenant_query(ConfigurationItem).filter_by(rack_id=rack.id).count()
         if still_mounted:
             flash(
-                f"Cannot delete {rack.name}: {still_mounted} configuration item(s) are still "
-                "mounted in it. Unassign them first.", "error",
+                tr("Cannot delete {name}: {still_mounted} configuration item(s) are still mounted in it. Unassign them first.", name=rack.name, still_mounted=still_mounted), "error",
             )
             return redirect(url_for("rack_list"))
         audit("delete", "Rack", rack.name)
         db.session.delete(rack)
         db.session.commit()
-        flash(f"{rack.name} deleted.", "success")
+        flash(tr("{name} deleted.", name=rack.name), "success")
         return redirect(url_for("rack_list"))
 
     @app.get("/cmdb/racks/<int:rack_id>")
@@ -956,10 +951,10 @@ def register(app):
             if device_type is None:
                 abort(404)
             if not isinstance(device_type, dict):
-                raise ValueError("Invalid NetBox device type")
+                raise ValueError(tr("Invalid NetBox device type"))
             device_type_id = device_type.get("id")
             if type(device_type_id) is not int or device_type_id <= 0:
-                raise ValueError("Invalid NetBox device type identifier")
+                raise ValueError(tr("Invalid NetBox device type identifier"))
             type_response = client.get(
                 f"{base_url.rstrip('/')}/api/dcim/device-types/{device_type_id}/",
                 timeout=(5, 5), allow_redirects=False, stream=True,
@@ -968,7 +963,7 @@ def register(app):
             if not image_url:
                 abort(404)
             if not isinstance(image_url, str):
-                raise ValueError("Invalid NetBox artwork URL")
+                raise ValueError(tr("Invalid NetBox artwork URL"))
             image_url = urljoin(f"{base_url.rstrip('/')}/", image_url)
             base = urlparse(base_url)
             image = urlparse(image_url)
@@ -1001,25 +996,25 @@ def register(app):
         if not ci_class_action_allowed(
             current_user.tenant_id, parent.ci_class, current_user.effective_role, "update",
         ):
-            abort(403, description=f"You are not permitted to edit {parent.ci_class} configuration items.")
+            abort(403, description=tr("You are not permitted to edit {ci_class} configuration items.", ci_class=parent.ci_class))
         relationship_type = request.form.get("relationship_type", "Depends on")
         if relationship_type not in CI_RELATIONSHIP_TYPES:
-            abort(400, description="Select a valid relationship type.")
+            abort(400, description=tr("Select a valid relationship type."))
         try:
             child_ids = [int(raw) for raw in request.form.getlist("child_id") if raw.strip()]
         except ValueError:
             abort(400)
         if not child_ids:
-            abort(400, description="Select at least one child configuration item.")
+            abort(400, description=tr("Select at least one child configuration item."))
         linked_names = []
         for child_id in dict.fromkeys(child_ids):
             child = tenant_record_or_404(ConfigurationItem, child_id)
             if parent.id == child.id:
-                abort(400, description="A configuration item cannot depend on itself.")
+                abort(400, description=tr("A configuration item cannot depend on itself."))
             if not ci_class_action_allowed(
                 current_user.tenant_id, child.ci_class, current_user.effective_role, "update",
             ):
-                abort(403, description=f"You are not permitted to edit {child.ci_class} configuration items.")
+                abort(403, description=tr("You are not permitted to edit {ci_class} configuration items.", ci_class=child.ci_class))
             existing = tenant_query(CIRelationship).filter_by(
                 parent_id=parent.id, child_id=child.id, relationship_type=relationship_type,
             ).first()
@@ -1031,7 +1026,7 @@ def register(app):
             audit("create", "CI relationship",
                   f"{parent.name} — {relationship_type} → {', '.join(linked_names)}")
             db.session.commit()
-            flash(f"Linked {parent.name} to {', '.join(linked_names)}.", "success")
+            flash(tr("Linked {name} to {linked_names}.", name=parent.name, linked_names=', '.join(linked_names)), "success")
         return redirect(url_for("cmdb"))
 
     @app.post("/cmdb/relationships/<int:relationship_id>/delete")
@@ -1042,11 +1037,11 @@ def register(app):
             if not ci_class_action_allowed(
                 current_user.tenant_id, endpoint_class, current_user.effective_role, "update",
             ):
-                abort(403, description=f"You are not permitted to edit {endpoint_class} configuration items.")
+                abort(403, description=tr("You are not permitted to edit {endpoint_class} configuration items.", endpoint_class=endpoint_class))
         audit("delete", "CI relationship", f"{relationship.parent.name} — {relationship.child.name}")
         db.session.delete(relationship)
         db.session.commit()
-        flash("Relationship removed.", "success")
+        flash(tr("Relationship removed."), "success")
         return redirect(url_for("cmdb"))
 
     @app.get("/cmdb/discovery")
@@ -1068,17 +1063,17 @@ def register(app):
         address = request.form.get("address", "").strip()
         community = request.form.get("community", "")
         if not name or not address:
-            flash("Name and address are required.", "error")
+            flash(tr("Name and address are required."), "error")
             return redirect(url_for("cmdb_discovery"))
         if target_type not in ("host", "subnet"):
-            abort(400, description="Invalid target type.")
+            abort(400, description=tr("Invalid target type."))
         try:
             if target_type == "host":
                 ipaddress.ip_address(address)
             else:
                 ipaddress.ip_network(address, strict=False)
         except ValueError:
-            flash("Address must be a valid IP address (host) or CIDR range (subnet).", "error")
+            flash(tr("Address must be a valid IP address (host) or CIDR range (subnet)."), "error")
             return redirect(url_for("cmdb_discovery"))
         target = DiscoveryTarget(
             name=name, target_type=target_type, address=address,
@@ -1092,7 +1087,7 @@ def register(app):
         db.session.add(target)
         audit("create", "Discovery target", f"{name} ({target_type}: {address})")
         db.session.commit()
-        flash(f"Discovery target {name} created.", "success")
+        flash(tr("Discovery target {name} created.", name=name), "success")
         return redirect(url_for("cmdb_discovery"))
 
     @app.post("/cmdb/discovery/<int:target_id>/run")
@@ -1138,14 +1133,14 @@ def register(app):
                 f"-- awaiting review before anything is added to the CMDB."
             )
             flash(
-                f"{target.last_run_summary} Review and add them below." if facts_list
-                else "No hosts responded.",
+                tr("{summary} Review and add them below.", summary=target.last_run_summary) if facts_list
+                else tr("No hosts responded."),
                 "success" if facts_list else "warning",
             )
         except Exception as error:  # noqa: BLE001 - a bad target must surface, not crash the request
             target.last_run_status = "failed"
             target.last_run_summary = str(error)[:2000]
-            flash(f"Discovery run failed: {error}", "error")
+            flash(tr("Discovery run failed: {error}", error=error), "error")
         target.last_run_at = now()
         audit("run", "Discovery target", f"{target.name}: {target.last_run_status}")
         db.session.commit()
@@ -1170,7 +1165,7 @@ def register(app):
         if request.form.get("select_all") != "1":
             selected_ids = {int(value) for value in request.form.getlist("candidate_id")}
             if not selected_ids:
-                flash("No devices selected -- nothing was added.", "warning")
+                flash(tr("No devices selected -- nothing was added."), "warning")
                 return redirect(url_for("cmdb_discovery_review", target_id=target.id))
             query = query.filter(DiscoveryCandidate.id.in_(selected_ids))
         candidates = query.all()
@@ -1184,8 +1179,7 @@ def register(app):
         )
         db.session.commit()
         flash(
-            f"Added {summary['created']} new and updated {summary['updated']} existing CI(s), "
-            f"{summary['relationships_created']} relationship(s) created.",
+            tr("Added {summary} new and updated {summary2} existing CI(s), {summary3} relationship(s) created.", summary=summary['created'], summary2=summary['updated'], summary3=summary['relationships_created']),
             "success" if not summary["errors"] else "warning",
         )
         remaining = DiscoveryCandidate.query.filter_by(target_id=target.id).count()
@@ -1201,7 +1195,7 @@ def register(app):
         deleted = DiscoveryCandidate.query.filter_by(target_id=target.id).delete()
         audit("discard", "Discovery target", f"{target.name}: {deleted} candidate(s) discarded")
         db.session.commit()
-        flash(f"Discarded {deleted} discovered device(s) without adding them to the CMDB.", "success")
+        flash(tr("Discarded {deleted} discovered device(s) without adding them to the CMDB.", deleted=deleted), "success")
         return redirect(url_for("cmdb_discovery"))
 
     @app.post("/cmdb/discovery/<int:target_id>/delete")
@@ -1212,7 +1206,7 @@ def register(app):
         audit("delete", "Discovery target", target.name)
         db.session.delete(target)
         db.session.commit()
-        flash("Discovery target removed.", "success")
+        flash(tr("Discovery target removed."), "success")
         return redirect(url_for("cmdb_discovery"))
 
     @app.get("/cmdb/topology")
@@ -1323,7 +1317,7 @@ def register(app):
             if changed:
                 audit("configure", "CI class permission", "; ".join(changed))
             db.session.commit()
-            flash("CI class permissions saved.", "success")
+            flash(tr("CI class permissions saved."), "success")
             return redirect(url_for("cmdb_permissions"))
 
         classes_in_use = {

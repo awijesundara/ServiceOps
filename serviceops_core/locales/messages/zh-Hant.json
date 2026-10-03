@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "星期一",
+   "星期二",
+   "星期三",
+   "星期四",
+   "星期五",
+   "星期六",
+   "星期日"
+  ],
+  "days_abbr": [
+   "週一",
+   "週二",
+   "週三",
+   "週四",
+   "週五",
+   "週六",
+   "週日"
+  ],
+  "months": [
+   "1月",
+   "2月",
+   "3月",
+   "4月",
+   "5月",
+   "6月",
+   "7月",
+   "8月",
+   "9月",
+   "10月",
+   "11月",
+   "12月"
+  ],
+  "months_abbr": [
+   "1月",
+   "2月",
+   "3月",
+   "4月",
+   "5月",
+   "6月",
+   "7月",
+   "8月",
+   "9月",
+   "10月",
+   "11月",
+   "12月"
+  ]
+ },
+ "language": "zh-Hant",
+ "messages": {
+  "Administration": "管理",
+  "Back": "返回",
+  "Cancel": "取消",
+  "Changes": "變更",
+  "Close": "關閉",
+  "Create": "建立",
+  "Dashboard": "儀表板",
+  "Delete": "刪除",
+  "Description": "描述",
+  "Edit": "編輯",
+  "General": "一般",
+  "Incidents": "事件",
+  "Knowledge": "知識",
+  "Language": "語言",
+  "Name": "名稱",
+  "Notifications": "通知",
+  "Preferences": "偏好設定",
+  "Priority": "優先順序",
+  "Save": "儲存",
+  "Save preferences": "儲存偏好設定",
+  "Search": "搜尋",
+  "Service requests": "服務請求",
+  "Status": "狀態",
+  "System preferences": "系統偏好設定"
+ }
+}

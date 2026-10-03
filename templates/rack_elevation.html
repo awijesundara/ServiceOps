@@ -1,35 +1,35 @@
 {% extends "base.html" %}
 {% block title %}{{ rack.name }} · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>{{ rack.name }}{% if rack.site %} <small class="muted">({{ rack.site }})</small>{% endif %}</h1><p>{{ rack.u_height }}U rack{% if rack.external_source == 'netbox' %} &middot; synced from NetBox{% endif %}</p></div><a class="button" href="{{ url_for('rack_list') }}">← Back to racks</a></header>
+<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>{{ rack.name }}{% if rack.site %} <small class="muted">({{ rack.site }})</small>{% endif %}</h1><p>{{ tr('{u_height}U rack', u_height=(rack.u_height)) }}{% if rack.external_source == 'netbox' %} {{ tr('· synced from NetBox') }}{% endif %}</p></div><a class="button" href="{{ url_for('rack_list') }}">← {{ tr('Back to racks') }}</a></header>
 <div id="rack-elevation-root" data-rack="{{ rack_json }}">
   <div class="rack-elevation-layout">
     <div class="rack-elevation-panels">
-      <section class="panel"><h2>Front</h2><svg id="rack-elevation-front" width="220" data-face="front"></svg></section>
-      <section class="panel"><h2>Rear</h2><svg id="rack-elevation-rear" width="220" data-face="rear"></svg></section>
+      <section class="panel"><h2>{{ tr('Front') }}</h2><svg id="rack-elevation-front" width="220" data-face="front"></svg></section>
+      <section class="panel"><h2>{{ tr('Rear') }}</h2><svg id="rack-elevation-rear" width="220" data-face="rear"></svg></section>
     </div>
     <aside class="rack-elevation-sidebar">
       {% if rack.attributes %}
       <section class="panel">
-        <h2>NetBox rack details</h2>
+        <h2>{{ tr('NetBox rack details') }}</h2>
         <dl class="detail-list">{% for key, value in rack.attributes.items() %}<div><dt>{{ key|replace('NetBox: ', '') }}</dt><dd>{{ value }}</dd></div>{% endfor %}</dl>
       </section>
       {% endif %}
       <section class="panel">
-        <h2>Rack statistics</h2>
-        <div class="rack-stat"><span>Space</span><div class="rack-stat-bar"><div id="rack-stat-space" class="rack-stat-fill"></div></div><small id="rack-stat-space-label"></small></div>
-        <div class="rack-stat"><span>Weight</span><div class="rack-stat-bar"><div id="rack-stat-weight" class="rack-stat-fill"></div></div><small id="rack-stat-weight-label"></small></div>
-        <div class="rack-stat"><span>Power</span><div class="rack-stat-bar"><div id="rack-stat-power" class="rack-stat-fill"></div></div><small id="rack-stat-power-label"></small></div>
+        <h2>{{ tr('Rack statistics') }}</h2>
+        <div class="rack-stat"><span>{{ tr('Space') }}</span><div class="rack-stat-bar"><div id="rack-stat-space" class="rack-stat-fill"></div></div><small id="rack-stat-space-label"></small></div>
+        <div class="rack-stat"><span>{{ tr('Weight') }}</span><div class="rack-stat-bar"><div id="rack-stat-weight" class="rack-stat-fill"></div></div><small id="rack-stat-weight-label"></small></div>
+        <div class="rack-stat"><span>{{ tr('Power') }}</span><div class="rack-stat-bar"><div id="rack-stat-power" class="rack-stat-fill"></div></div><small id="rack-stat-power-label"></small></div>
       </section>
       <section class="panel">
-        <h2>0U / unpositioned power units</h2>
-        <div id="rack-pdu-list"><p class="muted">No PDUs recorded.</p></div>
+        <h2>{{ tr('0U / unpositioned power units') }}</h2>
+        <div id="rack-pdu-list"><p class="muted">{{ tr('No PDUs recorded.') }}</p></div>
       </section>
-      <section class="panel"><h2>Other unpositioned equipment</h2><div id="rack-unplaced-list"><p class="muted">All other equipment has a valid U position.</p></div></section>
+      <section class="panel"><h2>{{ tr('Other unpositioned equipment') }}</h2><div id="rack-unplaced-list"><p class="muted">{{ tr('All other equipment has a valid U position.') }}</p></div></section>
     </aside>
   </div>
-  <section class="panel rack-equipment-inventory"><h2>Equipment inventory</h2><p class="muted">Model images are used when available. Type illustrations represent the identified equipment category. Select equipment to view or update its details.</p><div id="rack-equipment-list" class="rack-equipment-grid"></div></section>
-  <p id="rack-elevation-empty" class="muted" hidden>Nothing mounted in this rack yet.</p>
+  <section class="panel rack-equipment-inventory"><h2>{{ tr('Equipment inventory') }}</h2><p class="muted">{{ tr('Model images are used when available. Type illustrations represent the identified equipment category. Select equipment to view or update its details.') }}</p><div id="rack-equipment-list" class="rack-equipment-grid"></div></section>
+  <p id="rack-elevation-empty" class="muted" hidden>{{ tr('Nothing mounted in this rack yet.') }}</p>
 </div>
 <script src="{{ url_for('static', filename='rack-elevation.js', v=app_version) }}" defer></script>
 {% endblock %}

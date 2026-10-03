@@ -1,31 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Review discovered devices · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Review discovered devices · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">CMDB · {{ target.name }}</p><h1>Review discovered devices</h1><p>Nothing has been added to the CMDB yet. Pick which devices to add, add all of them, or discard the whole batch.</p></div><a class="button" href="{{ url_for('cmdb_discovery') }}">‹ Back to discovery</a></header>
+<header class="page-head"><div><p class="eyebrow">CMDB · {{ target.name }}</p><h1>{{ tr('Review discovered devices') }}</h1><p>{{ tr('Nothing has been added to the CMDB yet. Pick which devices to add, add all of them, or discard the whole batch.') }}</p></div><a class="button" href="{{ url_for('cmdb_discovery') }}">‹ {{ tr('Back to discovery') }}</a></header>
 
 {% if candidates %}
 <form method="post" action="{{ url_for('cmdb_discovery_import', target_id=target.id) }}" id="discovery-review-form">
-  <section class="discovery-review-toolbar" aria-label="Filter and select discovered devices">
+  <section class="discovery-review-toolbar" aria-label="{{ tr('Filter and select discovered devices') }}">
     <div class="discovery-review-filters">
-      <label><span>Search discovered devices</span><input id="device-filter-query" type="search" placeholder="Try: Cisco switch, 192.168, or SNMP" autocomplete="off" aria-controls="discovery-device-table" aria-describedby="device-search-help"><small id="device-search-help">All words can match across different columns.</small></label>
-      <label><span>Class</span><select id="device-filter-class"><option value="">All classes</option></select></label>
-      <label><span>Vendor</span><select id="device-filter-vendor"><option value="">All vendors</option></select></label>
-      <label><span>Source</span><select id="device-filter-source"><option value="">All sources</option></select></label>
+      <label><span>{{ tr('Search discovered devices') }}</span><input id="device-filter-query" type="search" placeholder="{{ tr('Try: Cisco switch, 192.168, or SNMP') }}" autocomplete="off" aria-controls="discovery-device-table" aria-describedby="device-search-help"><small id="device-search-help">{{ tr('All words can match across different columns.') }}</small></label>
+      <label><span>{{ tr('Class') }}</span><select id="device-filter-class"><option value="">{{ tr('All classes') }}</option></select></label>
+      <label><span>{{ tr('Vendor') }}</span><select id="device-filter-vendor"><option value="">{{ tr('All vendors') }}</option></select></label>
+      <label><span>{{ tr('Source') }}</span><select id="device-filter-source"><option value="">{{ tr('All sources') }}</option></select></label>
     </div>
     <div class="discovery-review-selection">
       <p id="device-selection-summary" aria-live="polite"></p>
       <div class="discovery-review-actions">
-        <button type="button" class="button" data-selection="select-visible">Select filtered</button>
-        <button type="button" class="button" data-selection="deselect-visible">Deselect filtered</button>
-        <button type="button" class="button" data-selection="select-all">Select every device</button>
-        <button type="button" class="button" data-selection="deselect-all">Deselect every device</button>
-        <button type="button" class="button" id="device-filter-clear">Clear filters</button>
+        <button type="button" class="button" data-selection="select-visible">{{ tr('Select filtered') }}</button>
+        <button type="button" class="button" data-selection="deselect-visible">{{ tr('Deselect filtered') }}</button>
+        <button type="button" class="button" data-selection="select-all">{{ tr('Select every device') }}</button>
+        <button type="button" class="button" data-selection="deselect-all">{{ tr('Deselect every device') }}</button>
+        <button type="button" class="button" id="device-filter-clear">{{ tr('Clear filters') }}</button>
       </div>
     </div>
   </section>
   <section class="list-workspace">
     <table class="record-list" id="discovery-device-table">
-      <thead><tr><th><input type="checkbox" id="review-select-all-checkbox" title="Select or deselect visible devices" aria-label="Select or deselect visible devices"></th><th>{{ t('Name') }}</th><th>Address</th><th>Class</th><th>Vendor</th><th>Source</th></tr></thead>
+      <thead><tr><th><input type="checkbox" id="review-select-all-checkbox" title="{{ tr('Select or deselect visible devices') }}" aria-label="{{ tr('Select or deselect visible devices') }}"></th><th>{{ tr('Name') }}</th><th>{{ tr('Address') }}</th><th>{{ tr('Class') }}</th><th>{{ tr('Vendor') }}</th><th>{{ tr('Source') }}</th></tr></thead>
       <tbody>
         {% for candidate in candidates %}
         <tr data-device-row data-name="{{ candidate.name|lower }}" data-host="{{ candidate.host|lower }}" data-class="{{ candidate.ci_class|lower }}" data-vendor="{{ (candidate.vendor or '')|lower }}" data-source="{{ candidate.discovery_source|lower }}">
@@ -39,16 +39,16 @@
         {% endfor %}
       </tbody>
     </table>
-    <p id="device-filter-empty" class="empty-table" hidden>No discovered devices match these filters.</p>
+    <p id="device-filter-empty" class="empty-table" hidden>{{ tr('No discovered devices match these filters.') }}</p>
   </section>
   <footer class="record-footer-actions">
-    <button type="submit" class="button danger-button" formaction="{{ url_for('cmdb_discovery_discard', target_id=target.id) }}" data-confirm="Discard all {{ candidates|length }} discovered device(s) without adding them?">Discard all</button>
-    <button type="submit" class="button" name="select_all" value="1">Add all {{ candidates|length }}</button>
-    <button type="submit" class="primary">Add selected</button>
+    <button type="submit" class="button danger-button" formaction="{{ url_for('cmdb_discovery_discard', target_id=target.id) }}" data-confirm="{{ tr('Discard all {candidates} discovered device(s) without adding them?', candidates=(candidates|length)) }}">{{ tr('Discard all') }}</button>
+    <button type="submit" class="button" name="select_all" value="1">{{ tr('Add all {candidates}', candidates=(candidates|length)) }}</button>
+    <button type="submit" class="primary">{{ tr('Add selected') }}</button>
   </footer>
 </form>
 {% else %}
-<section class="panel"><p class="empty-table">Nothing pending review for this target. Run it again from the discovery page.</p></section>
+<section class="panel"><p class="empty-table">{{ tr('Nothing pending review for this target. Run it again from the discovery page.') }}</p></section>
 {% endif %}
 
 <script src="{{ url_for('static', filename='discovery.js', v=app_version) }}" defer></script>

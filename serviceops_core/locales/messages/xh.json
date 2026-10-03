@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Mvulo",
+   "Lwesibini",
+   "Lwesithathu",
+   "Lwesine",
+   "Lwesihlanu",
+   "Mgqibelo",
+   "Cawe"
+  ],
+  "days_abbr": [
+   "Mvu",
+   "Lwesb",
+   "Tha",
+   "Sin",
+   "Hla",
+   "Mgq",
+   "Caw"
+  ],
+  "months": [
+   "Janyuwari",
+   "Februwari",
+   "Matshi",
+   "Epreli",
+   "Meyi",
+   "Juni",
+   "Julayi",
+   "Agasti",
+   "Septemba",
+   "Okthobha",
+   "Novemba",
+   "Disemba"
+  ],
+  "months_abbr": [
+   "Jan",
+   "Feb",
+   "Mat",
+   "Epr",
+   "Mey",
+   "Jun",
+   "Jul",
+   "Aga",
+   "Sept",
+   "Okt",
+   "Nov",
+   "Dis"
+  ]
+ },
+ "language": "xh",
+ "messages": {
+  "Administration": "Ulawulo",
+  "Back": "Buyela",
+  "Cancel": "Rhoxisa",
+  "Changes": "Utshintsho",
+  "Close": "Vala",
+  "Create": "Yenza",
+  "Dashboard": "Ideshbhodi",
+  "Delete": "Cima",
+  "Description": "Inkcazelo",
+  "Edit": "Hlela",
+  "General": "Ngokubanzi",
+  "Incidents": "Iziganeko",
+  "Knowledge": "Ulwazi",
+  "Language": "Ulwimi",
+  "Name": "Igama",
+  "Notifications": "Izaziso",
+  "Preferences": "Okukhethwayo",
+  "Priority": "Okuphambili",
+  "Save": "Gcina",
+  "Save preferences": "Gcina okukhethwayo",
+  "Search": "Khangela",
+  "Service requests": "Izicelo zenkonzo",
+  "Status": "Isimo",
+  "System preferences": "Okukhethwayo kwenkqubo"
+ }
+}

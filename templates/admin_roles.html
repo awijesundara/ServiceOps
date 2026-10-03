@@ -1,30 +1,30 @@
 {% extends "base.html" %}
-{% block title %}Roles & permissions · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Roles & permissions · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-{% set admin_page_title = 'Roles & permissions' %}{% set admin_parent_title = 'People & access' %}{% set admin_parent_url = url_for('admin_section', section='people-access') %}{% include '_admin_context.html' %}
-<header class="page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Roles &amp; permissions</h1><p>Manage role permissions for this organization. Reset a role to restore its recommended defaults.</p></div></header>
+{% set admin_page_title = tr('Roles & permissions') %}{% set admin_parent_title = tr('People & access') %}{% set admin_parent_url = url_for('admin_section', section='people-access') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><p class="eyebrow">{{ tr('ADMINISTRATION') }}</p><h1>{{ tr('Roles & permissions') }}</h1><p>{{ tr('Manage role permissions for this organization. Reset a role to restore its recommended defaults.') }}</p></div></header>
 <section class="panel">
-  <div class="panel-head"><h2>Role &rarr; action policy</h2></div>
+  <div class="panel-head"><h2>{{ tr('Role → action policy') }}</h2></div>
   <form method="post">
     <input type="hidden" name="action" value="save">
     <div class="task-list-scroll">
       <table class="role-matrix">
         <thead><tr>
-          <th>Action</th>
-          {% for role in role_actions.keys() %}<th>{{ role|capitalize }}{% if role not in editable_roles %} <small class="muted">(fixed)</small>{% endif %}</th>{% endfor %}
+          <th>{{ tr('Action') }}</th>
+          {% for role in role_actions.keys() %}<th>{{ tr_value(role|capitalize) }}{% if role not in editable_roles %} <small class="muted">{{ tr('(fixed)') }}</small>{% endif %}</th>{% endfor %}
         </tr></thead>
         <tbody>
           {% for act in actions %}
           <tr{% if act in unenforced_actions %} class="muted"{% endif %}>
-            <td>{{ act }}{% if act in unenforced_actions %} <span class="badge" title="No route or check anywhere in the app consults this action yet; it's authorized separately and unconditionally by role/team rules instead.">not yet enforced</span>{% elif act == 'create' %} <span class="badge" title="Enforced for REST API v1 clients only; the browser ticket-creation form doesn't check this action.">API only</span>{% endif %}</td>
+            <td>{{ act }}{% if act in unenforced_actions %} <span class="badge" title="{{ tr("No route or check anywhere in the app consults this action yet; it's authorized separately and unconditionally by role/team rules instead.") }}">{{ tr('not yet enforced') }}</span>{% elif act == 'create' %} <span class="badge" title="{{ tr("Enforced for REST API v1 clients only; the browser ticket-creation form doesn't check this action.") }}">{{ tr('API only') }}</span>{% endif %}</td>
             {% for role in role_actions.keys() %}
             <td>
               {% if act in unenforced_actions %}
               {% if act in role_actions[role] %}✓{% else %}—{% endif %}
               {% elif role in editable_roles and not (role != 'admin' and act in admin_panel_gated_actions) %}
-              <input type="checkbox" aria-label="{{ act }} for {{ role }}" name="grant__{{ role }}__{{ act }}" {% if act in role_actions[role] %}checked{% endif %}>
+              <input type="checkbox" aria-label="{{ tr('{act} for {role}', act=(act), role=(role)) }}" name="grant__{{ role }}__{{ act }}" {% if act in role_actions[role] %}checked{% endif %}>
               {% elif role != 'admin' and act in admin_panel_gated_actions %}
-              <span class="muted" title="Every admin panel route requires the admin role itself; granting this action to {{ role }} can never open panel access.">n/a</span>
+              <span class="muted" title="{{ tr('Every admin panel route requires the admin role itself; granting this action to {role} can never open panel access.', role=(role)) }}">n/a</span>
               {% else %}
               {% if act in role_actions[role] %}✓{% else %}—{% endif %}
               {% endif %}
@@ -35,28 +35,28 @@
         </tbody>
       </table>
     </div>
-    <p class="muted">superadmin is always implicitly allowed every action and can't be edited here. A checkbox that differs from the ITIL-recommended baseline is stored as an override for this tenant only.</p>
-    <div class="actions"><button class="primary">Save permissions</button></div>
+    <p class="muted">{{ tr("superadmin is always implicitly allowed every action and can't be edited here. A checkbox that differs from the ITIL-recommended baseline is stored as an override for this tenant only.") }}</p>
+    <div class="actions"><button class="primary">{{ tr('Save permissions') }}</button></div>
   </form>
 </section>
 <section class="panel">
-  <h2>Reset to recommended</h2>
-  <p class="muted">Discards this tenant's overrides for a role, restoring it to exactly what <code>config/authorization.json</code> grants.</p>
+  <h2>{{ tr('Reset to recommended') }}</h2>
+  <p class="muted">{{ tr("Discards this tenant's overrides for a role, restoring it to exactly what") }} <code>config/authorization.json</code> {{ tr('grants.') }}</p>
   <div style="display:flex;gap:10px;flex-wrap:wrap">
     {% for role in editable_roles %}
-    <form method="post" data-confirm="Reset {{ role }} to the ITIL-recommended baseline? This discards any custom permission changes made for this role.">
+    <form method="post" data-confirm="{{ tr('Reset {role} to the ITIL-recommended baseline? This discards any custom permission changes made for this role.', role=(role)) }}">
       <input type="hidden" name="action" value="reset">
       <input type="hidden" name="role" value="{{ role }}">
       <button type="submit" class="button" {% if not has_overrides.get(role) %}disabled{% endif %}>
-        Reset {{ role|capitalize }}{% if has_overrides.get(role) %} <span class="badge">customized</span>{% else %} <small class="muted">(at baseline)</small>{% endif %}
+        {{ tr('Reset {role}', role=(tr_value(role|capitalize))) }}{% if has_overrides.get(role) %} <span class="badge">{{ tr('customized') }}</span>{% else %} <small class="muted">{{ tr('(at baseline)') }}</small>{% endif %}
       </button>
     </form>
     {% endfor %}
   </div>
 </section>
 <section class="panel">
-  <h2>CI class permissions</h2>
-  <p>Per-(CI class, role) Read/Create/Update/Delete grants for the CMDB.</p>
-  <a class="button" href="{{ url_for('cmdb_permissions') }}">Open CI class permissions ›</a>
+  <h2>{{ tr('CI class permissions') }}</h2>
+  <p>{{ tr('Per-(CI class, role) Read/Create/Update/Delete grants for the CMDB.') }}</p>
+  <a class="button" href="{{ url_for('cmdb_permissions') }}">{{ tr('Open CI class permissions') }} ›</a>
 </section>
 {% endblock %}

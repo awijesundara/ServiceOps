@@ -3,6 +3,6 @@
    browser's print dialog ("Save as PDF" is a standard print-destination
    choice, so this needs no extra PDF-rendering dependency in the app). #}
 <div class="export-toolbar no-print">
-  {% if csv_url %}<a class="button" href="{{ csv_url }}">⬇ Export CSV</a>{% endif %}
-  <button type="button" class="button" data-print-page>🖶 Print / Save as PDF</button>
+  {% if csv_url %}<a class="button" href="{{ csv_url }}">⬇ {{ tr('Export CSV') }}</a>{% endif %}
+  <button type="button" class="button" data-print-page>🖶 {{ tr('Print / Save as PDF') }}</button>
 </div>

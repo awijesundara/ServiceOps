@@ -14,6 +14,7 @@ from serviceops_core.dns_pin import pin_resolved_addresses
 from serviceops_core.proxy_tunnel import parse_proxy_url
 from serviceops_core.security import redact
 from serviceops_models import settings_cipher
+from serviceops_core.localization import tr
 
 HOSTED_ENDPOINT = "https://api.openai.com/v1/responses"
 DEFAULT_TIMEOUT_SECONDS = 60
@@ -99,7 +100,7 @@ def normalize_endpoint(raw):
         parsed = urlsplit(url)
         parsed.port  # noqa: B018 - raises ValueError for an invalid port
     except ValueError:
-        raise ProviderError("Invalid endpoint address.") from None
+        raise ProviderError(tr("Invalid endpoint address.")) from None
     path = parsed.path.rstrip("/")
     if path.endswith("/chat/completions"):
         pass
@@ -149,37 +150,36 @@ def endpoint_allowed(url):
 
 def validate_configuration(config, *, need_model=True):
     if config.provider not in PROVIDERS:
-        raise ProviderError("Choose a supported provider.")
+        raise ProviderError(tr("Choose a supported provider."))
     if need_model and (not config.model or not re.fullmatch(r"[A-Za-z0-9_./:@+-]{1,160}", config.model)):
-        raise ProviderError("Enter a valid model identifier.")
+        raise ProviderError(tr("Enter a valid model identifier."))
     if config.provider in FIXED_PROVIDERS:
         if not config.external_consent:
-            raise ProviderError("Authorize external processing before using a hosted provider.")
+            raise ProviderError(tr("Authorize external processing before using a hosted provider."))
         if not config.key_encrypted:
-            raise ProviderError("A hosted API key is required.")
+            raise ProviderError(tr("A hosted API key is required."))
         return fixed_endpoint(config.provider)
     url = normalize_endpoint(config.endpoint)
     try:
         parsed = urlsplit(url)
         port = parsed.port
     except ValueError:
-        raise ProviderError("Invalid endpoint address.") from None
+        raise ProviderError(tr("Invalid endpoint address.")) from None
     if (parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password
             or parsed.query or parsed.fragment or not _CHAT_PATH.fullmatch(parsed.path)
             or (port is not None and port < 1)):
-        raise ProviderError("Enter the server address, for example http://192.168.68.68:8080, without credentials or query parameters.")
+        raise ProviderError(tr("Enter the server address, for example http://192.168.68.68:8080, without credentials or query parameters."))
     if config.provider == "openai_compatible":
         if parsed.scheme != "https":
-            raise ProviderError("A hosted OpenAI-compatible service must use HTTPS.")
+            raise ProviderError(tr("A hosted OpenAI-compatible service must use HTTPS."))
         if not config.external_consent:
-            raise ProviderError("Authorize external processing before using a hosted provider.")
+            raise ProviderError(tr("Authorize external processing before using a hosted provider."))
         if not config.key_encrypted:
-            raise ProviderError("A hosted API key is required.")
+            raise ProviderError(tr("A hosted API key is required."))
         return url
     if not endpoint_allowed(url):
         origin = f"{parsed.scheme}://{parsed.hostname}" + (f":{parsed.port}" if parsed.port else "")
-        raise ProviderError("This endpoint has not been allowlisted by the deployment operator. "
-                            f"The operator must add {origin} to AI_SELF_HOSTED_ENDPOINTS (Helm ai.selfHostedEndpoints).")
+        raise ProviderError(tr("This endpoint has not been allowlisted by the deployment operator. The operator must add {origin} to AI_SELF_HOSTED_ENDPOINTS (Helm ai.selfHostedEndpoints).", origin=origin))
     return url
 
 
@@ -189,21 +189,21 @@ def resolve_destination(url, local):
         infos = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80),
                                    type=socket.SOCK_STREAM)
     except OSError:
-        raise ProviderError("Provider address could not be resolved.") from None
+        raise ProviderError(tr("Provider address could not be resolved.")) from None
     if not infos:
-        raise ProviderError("Provider address could not be resolved.")
+        raise ProviderError(tr("Provider address could not be resolved."))
     for info in infos:
         address = ipaddress.ip_address(info[4][0])
         if address.version == 6 and address.ipv4_mapped:
             address = address.ipv4_mapped
         if address.is_link_local or address.is_multicast or address.is_unspecified or address.is_reserved:
-            raise ProviderError("Provider address is not permitted.")
+            raise ProviderError(tr("Provider address is not permitted."))
         if local:
             # Explicit local allowlist also permits loopback for dedicated local installations.
             if not address.is_private:
-                raise ProviderError("Self-hosted mode requires a private network destination.")
+                raise ProviderError(tr("Self-hosted mode requires a private network destination."))
         elif not address.is_global:
-            raise ProviderError("Hosted provider must resolve to public addresses.")
+            raise ProviderError(tr("Hosted provider must resolve to public addresses."))
     return parsed.hostname, infos
 
 
@@ -219,13 +219,13 @@ def rejection(status):
     """A display-safe reason for a non-200 answer, so an administrator knows what to fix. `code` lets the
     worker retry a busy service once and lets the person asking see why an answer did not arrive."""
     if status in (401, 403):
-        error, code = ProviderError("The service rejected the access key. Check it, and that it may use this model."), "provider_key"
+        error, code = ProviderError(tr("The service rejected the access key. Check it, and that it may use this model.")), "provider_key"
     elif status in (404, 400):
-        error, code = ProviderError("The service does not know this model or request. Check the model name."), "provider_model"
+        error, code = ProviderError(tr("The service does not know this model or request. Check the model name.")), "provider_model"
     elif status in (429, 500, 502, 503, 504):
-        error, code = ProviderError("The service is busy or temporarily unavailable. Try again in a moment."), "provider_busy"
+        error, code = ProviderError(tr("The service is busy or temporarily unavailable. Try again in a moment.")), "provider_busy"
     else:
-        error, code = ProviderError("Provider rejected the request; check credentials, model and service availability."), "provider_failed"
+        error, code = ProviderError(tr("Provider rejected the request; check credentials, model and service availability.")), "provider_failed"
     error.code = code
     error.status = status
     return error
@@ -235,7 +235,7 @@ def decrypt_key(config):
     try:
         return settings_cipher().decrypt(config.key_encrypted.encode()).decode() if config.key_encrypted else ""
     except Exception:
-        raise ProviderError("Provider credential could not be decrypted.") from None
+        raise ProviderError(tr("Provider credential could not be decrypted.")) from None
 
 
 def proxy_url(config):
@@ -249,7 +249,7 @@ def proxy_url(config):
     try:
         parse_proxy_url(value)
     except ValueError:
-        raise ProviderError("The configured outbound proxy URL is invalid.") from None
+        raise ProviderError(tr("The configured outbound proxy URL is invalid.")) from None
     return value
 
 
@@ -286,14 +286,14 @@ def read_metadata(config, url, key, *, optional=False):
                 if optional and response.status_code != 200:
                     return {}
                 if response.status_code in {401, 403}:
-                    raise ProviderError("The server rejected the API key.")
+                    raise ProviderError(tr("The server rejected the API key."))
                 if response.status_code != 200:
-                    raise ProviderError("The server did not list its models. Enter the model identifier manually.")
+                    raise ProviderError(tr("The server did not list its models. Enter the model identifier manually."))
                 body = bytearray()
                 for chunk in response.iter_content(1):
                     body.extend(chunk)
                     if len(body) > 1_000_000 or time.monotonic() - started > 15:
-                        raise ProviderError("The metadata response exceeded its size or time limit.")
+                        raise ProviderError(tr("The metadata response exceeded its size or time limit."))
                 data = json.loads(body)
                 return data if isinstance(data, dict) else {}
     except ProviderError:
@@ -303,7 +303,7 @@ def read_metadata(config, url, key, *, optional=False):
     except (requests.RequestException, ValueError, TypeError):
         if optional:
             return {}
-        raise ProviderError("Could not reach the server. Check the address and that it is running.") from None
+        raise ProviderError(tr("Could not reach the server. Check the address and that it is running.")) from None
 
 
 _NOT_CHAT = re.compile(r"(embed|tts|imagen|image|veo|aqa|audio|transcri|whisper|moderation|dall-e|rerank|live|robotics)", re.I)
@@ -338,7 +338,7 @@ def list_models(config, key=None, details=None, profiles=None):
         if len(names) == 200:
             break
     if not names:
-        raise ProviderError("The server answered but listed no models. Enter the model identifier manually.")
+        raise ProviderError(tr("The server answered but listed no models. Enter the model identifier manually."))
     names = suggested_order(names)  # the first entry is what the settings page selects for a new service
     # Query runtime props only for the selected model, or an unambiguous single-model server.
     selected = config.model if config.model in names else names[0] if len(names) == 1 else None
@@ -357,7 +357,7 @@ def generate(config, evidence, *, probe=False):
     key = decrypt_key(config)
     prompt = "Reply with the word READY." if probe else json.dumps(evidence, ensure_ascii=True)
     if len(prompt) > 40000:
-        raise ProviderError("Evidence exceeds the request limit.")
+        raise ProviderError(tr("Evidence exceeds the request limit."))
     from serviceops_core.ai.capabilities import fit_messages
     fitted, cap, budget_info = fit_messages(config, [{"role": "system", "content": INSTRUCTIONS},
                                                    {"role": "user", "content": prompt}],
@@ -389,24 +389,24 @@ def generate(config, evidence, *, probe=False):
                 for chunk in response.iter_content(1):
                     body.extend(chunk)
                     if len(body) > 256000 or time.monotonic() - started > limit:
-                        raise ProviderError("Provider response exceeded its size or time limit.")
+                        raise ProviderError(tr("Provider response exceeded its size or time limit."))
                 data = json.loads(body)
         if config.provider == "openai":
             if data.get("status") != "completed":
-                raise ProviderError("Provider response was incomplete; review the output limit or model.")
+                raise ProviderError(tr("Provider response was incomplete; review the output limit or model."))
             answer = "\n".join(part["text"] for item in data.get("output", []) if item.get("type") == "message"
                                for part in item.get("content", []) if part.get("type") == "output_text")
         elif config.provider == "anthropic":
             if data.get("stop_reason") not in {"end_turn", "stop_sequence", None}:
-                raise ProviderError("Provider response was incomplete; review the output limit or model.")
+                raise ProviderError(tr("Provider response was incomplete; review the output limit or model."))
             answer = "".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text")
         else:
             choice = data["choices"][0]
             if choice.get("finish_reason") not in {"stop", None}:
-                raise ProviderError("Provider response was incomplete; review the output limit or model.")
+                raise ProviderError(tr("Provider response was incomplete; review the output limit or model."))
             answer = choice["message"]["content"]
         if not isinstance(answer, str) or not answer.strip() or len(answer) > 20000:
-            raise ProviderError("Provider returned no usable text.")
+            raise ProviderError(tr("Provider returned no usable text."))
         usage = {name: value for name, value in (data.get("usage") or {}).items()
                  if name in {"input_tokens", "output_tokens", "total_tokens", "prompt_tokens", "completion_tokens"}
                  and type(value) is int and value >= 0}
@@ -416,7 +416,7 @@ def generate(config, evidence, *, probe=False):
     except ProviderError:
         raise
     except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, AttributeError):
-        raise ProviderError("Provider connection failed or returned an invalid response.") from None
+        raise ProviderError(tr("Provider connection failed or returned an invalid response.")) from None
 
 
 class StreamCancelled(Exception):
@@ -532,7 +532,7 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
                 if config.provider == "openai":
                     data = response.json()
                     if data.get("status") != "completed":
-                        raise ProviderError("Provider response was incomplete; review the output limit or model.")
+                        raise ProviderError(tr("Provider response was incomplete; review the output limit or model."))
                     answer = "\n".join(part["text"] for item in data.get("output", []) if item.get("type") == "message"
                                        for part in item.get("content", []) if part.get("type") == "output_text")
                     usage = _clean_usage(data.get("usage"))
@@ -542,13 +542,13 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
                     for raw in response.iter_lines(chunk_size=512):
                         received += len(raw)
                         if received > 2_000_000 or time.monotonic() - started > limit:
-                            raise ProviderError("Provider response exceeded its size or time limit.")
+                            raise ProviderError(tr("Provider response exceeded its size or time limit."))
                         if not raw.startswith(b"data:"):
                             continue
                         event = json.loads(raw[5:].strip())
                         kind = event.get("type")
                         if kind == "error":
-                            raise ProviderError("Provider reported an error while answering.")
+                            raise ProviderError(tr("Provider reported an error while answering."))
                         if kind == "message_start":
                             usage["prompt_tokens"] = int(((event.get("message") or {}).get("usage") or {}).get("input_tokens") or 0)
                         elif kind == "content_block_delta":
@@ -572,7 +572,7 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
                     for raw in response.iter_lines(chunk_size=512):
                         received += len(raw)
                         if received > 2_000_000 or time.monotonic() - started > limit:
-                            raise ProviderError("Provider response exceeded its size or time limit.")
+                            raise ProviderError(tr("Provider response exceeded its size or time limit."))
                         if not raw.startswith(b"data:"):
                             continue
                         body = raw[5:].strip()
@@ -597,10 +597,10 @@ def generate_stream(config, messages, on_delta, *, thinking=None, max_tokens=Non
     except (ProviderError, StreamCancelled):
         raise
     except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, AttributeError):
-        raise ProviderError("Provider connection failed or returned an invalid response.") from None
+        raise ProviderError(tr("Provider connection failed or returned an invalid response.")) from None
     answer = "".join(content)
     if not answer.strip() or len(answer) > 40000:
-        raise ProviderError("Provider returned no usable text.")
+        raise ProviderError(tr("Provider returned no usable text."))
     usage["duration_ms"] = int((time.monotonic() - started) * 1000)
     usage.update(budget_info)
     return redact(answer), redact("".join(reasoning)), usage

@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Litinin",
+   "Talata",
+   "Laraba",
+   "Alhamis",
+   "Jummaʼa",
+   "Asabar",
+   "Lahadi"
+  ],
+  "days_abbr": [
+   "Lit",
+   "Tal",
+   "Lar",
+   "Alh",
+   "Jum",
+   "Asa",
+   "Lah"
+  ],
+  "months": [
+   "Janairu",
+   "Faburairu",
+   "Maris",
+   "Afirilu",
+   "Mayu",
+   "Yuni",
+   "Yuli",
+   "Agusta",
+   "Satumba",
+   "Oktoba",
+   "Nuwamba",
+   "Disamba"
+  ],
+  "months_abbr": [
+   "Jan",
+   "Fab",
+   "Mar",
+   "Afi",
+   "May",
+   "Yun",
+   "Yul",
+   "Agu",
+   "Sat",
+   "Okt",
+   "Nuw",
+   "Dis"
+  ]
+ },
+ "language": "ha",
+ "messages": {
+  "Administration": "Gudanarwa",
+  "Back": "Baya",
+  "Cancel": "Soke",
+  "Changes": "Canje-canje",
+  "Close": "Rufe",
+  "Create": "Ƙirƙira",
+  "Dashboard": "Allon bayanai",
+  "Delete": "Goge",
+  "Description": "Bayani",
+  "Edit": "Gyara",
+  "General": "Gaba ɗaya",
+  "Incidents": "Abubuwan da suka faru",
+  "Knowledge": "Ilimi",
+  "Language": "Harshe",
+  "Name": "Suna",
+  "Notifications": "Sanarwa",
+  "Preferences": "Zaɓuɓɓuka",
+  "Priority": "Fifiko",
+  "Save": "Ajiye",
+  "Save preferences": "Ajiye zaɓuɓɓuka",
+  "Search": "Nema",
+  "Service requests": "Buƙatun sabis",
+  "Status": "Matsayi",
+  "System preferences": "Zaɓuɓɓukan tsarin"
+ }
+}

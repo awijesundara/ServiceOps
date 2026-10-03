@@ -1,43 +1,43 @@
 {% extends "base.html" %}
 {% from '_status_badge.html' import status_badge %}
-{% block title %}Continual improvement · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Continual improvement · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">CONTINUAL IMPROVEMENT</p><h1>Improvement register</h1><p>Improvement opportunities raised from incidents, problems, changes, and events — tracked with an owner and outcome, per ITIL 4's continual improvement practice.</p></div>
-  <a class="primary button" href="#raise-improvement">+ Raise improvement</a>
+<header class="page-head"><div><p class="eyebrow">{{ tr('CONTINUAL IMPROVEMENT') }}</p><h1>{{ tr('Improvement register') }}</h1><p>{{ tr("Improvement opportunities raised from incidents, problems, changes, and events — tracked with an owner and outcome, per ITIL 4's continual improvement practice.") }}</p></div>
+  <a class="primary button" href="#raise-improvement">+ {{ tr('Raise improvement') }}</a>
 </header>
 
 <form class="filters">
   <select name="status" data-auto-submit>
-    <option value="">All statuses</option>
-    {% for state in states %}<option value="{{ state }}" {% if status_filter==state %}selected{% endif %}>{{ state }}</option>{% endfor %}
+    <option value="">{{ tr('All statuses') }}</option>
+    {% for state in states %}<option value="{{ state }}" {% if status_filter==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}
   </select>
 </form>
 
 <div class="task-list-scroll">
   <table class="task-list">
-    <thead><tr><th>Number</th><th>Title</th><th>Source</th><th>{{ t('Status') }}</th><th>Owner</th><th>Raised</th></tr></thead>
+    <thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Title') }}</th><th>{{ tr('Source') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Owner') }}</th><th>{{ tr('Raised') }}</th></tr></thead>
     <tbody>
       {% for item in items %}
       <tr>
         <td><a href="{{ url_for('improvement_detail', item_id=item.id) }}">{{ item.number }}</a></td>
         <td><span class="truncate" title="{{ item.title }}">{{ item.title }}</span></td>
-        <td>{{ item.source_type|title if item.source_type else 'Manual' }}</td>
+        <td>{{ item.source_type|title if item.source_type else tr('Manual') }}</td>
         <td>{{ status_badge(item.status) }}</td>
-        <td><span class="truncate" title="{{ item.owner.name if item.owner else 'Unassigned' }}">{{ item.owner.name if item.owner else 'Unassigned' }}</span></td>
+        <td><span class="truncate" title="{{ item.owner.name if item.owner else tr('Unassigned') }}">{{ item.owner.name if item.owner else tr('Unassigned') }}</span></td>
         <td>{{ (item.created_at|usertime('%b %d, %Y')) }}</td>
       </tr>
-      {% else %}<tr><td colspan="6" class="empty-table">No improvement items yet.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="6" class="empty-table">{{ tr('No improvement items yet.') }}</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>
 
 <section class="panel" id="raise-improvement">
-  <h2>Raise an improvement</h2>
+  <h2>{{ tr('Raise an improvement') }}</h2>
   <form method="post" action="{{ url_for('improvement_new') }}" class="form-grid">
-    <label class="wide required-field"><span>Title</span><input name="title" maxlength="200" required></label>
-    <label class="wide"><span>{{ t('Description') }}</span><textarea name="description" rows="3"></textarea></label>
-    <label class="wide"><span>Expected outcome</span><textarea name="expected_outcome" rows="2" placeholder="What would success look like?"></textarea></label>
-    <div class="wide actions"><button class="primary">Raise improvement</button></div>
+    <label class="wide required-field"><span>{{ tr('Title') }}</span><input name="title" maxlength="200" required></label>
+    <label class="wide"><span>{{ tr('Description') }}</span><textarea name="description" rows="3"></textarea></label>
+    <label class="wide"><span>{{ tr('Expected outcome') }}</span><textarea name="expected_outcome" rows="2" placeholder="{{ tr('What would success look like?') }}"></textarea></label>
+    <div class="wide actions"><button class="primary">{{ tr('Raise improvement') }}</button></div>
   </form>
 </section>
 {% endblock %}

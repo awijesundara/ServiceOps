@@ -7,6 +7,7 @@ without Flask or external services.
 import fnmatch
 import html
 import json
+from serviceops_core.localization import tr
 
 
 WEBHOOK_KINDS = {
@@ -203,4 +204,4 @@ def provider_payload(kind, event_payload, configuration=None):
         if configuration.get("message_thread_id"):
             payload["message_thread_id"] = configuration["message_thread_id"]
         return payload
-    raise ValueError(f"Unsupported chat provider: {html.escape(str(kind))}")
+    raise ValueError(tr("Unsupported chat provider: {html}", html=html.escape(str(kind))))
