@@ -1,5 +1,5 @@
-{{- if and (eq .Values.deploymentProfile "production") (lt (int .Values.replicaCount) 2) (not .Values.autoscaling.enabled) }}
-{{- fail "Production requires at least two application replicas" }}
+{{- if and (eq .Values.deploymentProfile "production") (lt (int .Values.replicaCount) 2) (not .Values.autoscaling.enabled) (not .Values.allowSingleReplica) }}
+{{- fail "Production requires at least two application replicas (set allowSingleReplica: true to accept a single replica deliberately)" }}
 {{- end }}
 {{- if and (eq .Values.deploymentProfile "production") (not .Values.uploads.persistence.enabled) }}
 {{- fail "Production requires persistent shared upload storage; configure uploads.persistence or object storage" }}

@@ -1,4 +1,8 @@
 replicaCount: 2
+# Production refuses fewer than two web replicas unless this is set. A single
+# replica has no failover: each restart or rollout briefly takes the web tier
+# down. Set it only where that trade-off is accepted (e.g. a small home cluster).
+allowSingleReplica: false
 
 image:
   repository: serviceops

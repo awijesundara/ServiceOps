@@ -172,3 +172,25 @@ def test_gitops_example_self_heals_without_automatic_pruning_state():
     assert "selfHeal: true" in application
     assert "prune: false" in application
     assert "allowEmpty: false" in application
+
+
+def test_single_replica_production_requires_an_explicit_opt_in(tmp_path):
+    import shutil
+    import subprocess
+
+    if not shutil.which("helm"):
+        pytest.skip("helm is not installed")
+    chart = ROOT / "charts/serviceops"
+    base = ["helm", "template", "serviceops", str(chart), "--set", "existingSecret=s",
+            "--set", "existingBootstrapSecret=b", "--set", "replicaCount=1"]
+    refused = subprocess.run(base, capture_output=True, text=True)
+    assert refused.returncode != 0
+    assert "Production requires at least two application replicas" in refused.stderr
+    allowed = subprocess.run([*base, "--set", "allowSingleReplica=true"], capture_output=True, text=True)
+    assert allowed.returncode == 0, allowed.stderr
+    assert "replicas: 1" in allowed.stdout
+    # A single web replica must not get a disruption budget that blocks node drains.
+    import re
+    budgets = [re.search(r"^metadata:\n  name: (\S+)", doc, re.M).group(1)
+               for doc in allowed.stdout.split("\n---") if "\nkind: PodDisruptionBudget" in doc]
+    assert "serviceops" not in budgets
