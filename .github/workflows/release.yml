@@ -52,21 +52,23 @@ jobs:
         env:
           INCREMENT: ${{ inputs.increment || 'patch' }}
         run: |
-          version="$(python3 tools/release_version.py --bump "$INCREMENT" --write --check)"
-          tag="v${version}"
-          git rev-parse "$tag" >/dev/null 2>&1 && { echo "Tag $tag already exists" >&2; exit 1; }
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          version="$(python3 tools/release_version.py --bump "$INCREMENT")"
+          # A run whose release commit never reached main can leave its tag behind.
+          # Tags are immutable, so skip past any taken version instead of reusing it.
+          while git rev-parse -q --verify "refs/tags/v${version}" >/dev/null; do
+            echo "::warning::v${version} already exists without a release on main; using the next ${INCREMENT} version"
+            version="$(python3 -c 'import sys; sys.path.insert(0, "tools"); import release_version as r; print(r.render(r.next_version(r.parse(sys.argv[1]), sys.argv[2])))' "$version" "$INCREMENT")"
+          done
+          python3 tools/release_version.py --set "$version" --write --check >/dev/null
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Commit the immutable release version
+      - name: Commit the immutable release version (signed by GitHub)
         env:
           TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add VERSION README.md charts/serviceops/Chart.yaml charts/serviceops/values.yaml static/service-worker.js .env.example installer/app.py tools/install/server.sh packaging/rpm/serviceops.spec
-          git commit -m "chore(release): ${TAG#v}"
-          git tag -a "$TAG" -m "ServiceOps $TAG"
-          git push origin HEAD:main "$TAG"
+          GH_TOKEN: ${{ github.token }}
+        # main requires verified signatures, so the commit is created through the
+        # GitHub API (which signs it) and the tag only after that commit lands.
+        run: python3 tools/release_commit.py "$TAG"
 
   supply-chain:
     needs: version

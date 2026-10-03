@@ -3,6 +3,8 @@ import re
 import subprocess
 import sys
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -97,3 +99,52 @@ def test_developer_and_ci_commands_never_suppress_failures():
     workflows = "\n".join(path.read_text() for path in (ROOT / ".github/workflows").glob("*.yml"))
     assert "|| true" not in makefile
     assert "pytest -q || true" not in workflows
+
+
+def test_release_commit_is_created_by_the_api_and_tagged_only_after_it_lands(monkeypatch, tmp_path):
+    import json
+    import sys
+
+    sys.path.insert(0, str(ROOT / "tools"))
+    import release_commit
+
+    calls = []
+
+    def fake_api(method, path, payload):
+        calls.append((method, path, payload))
+        if path == "/graphql":
+            return {"data": {"createCommitOnBranch": {"commit": {"oid": "c0ffee"}}}}
+        if path.endswith("/git/tags"):
+            return {"sha": "7a9"}
+        return {}
+
+    (tmp_path / "VERSION").write_text("1.110.0\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(release_commit, "api", fake_api)
+    monkeypatch.setattr(release_commit, "git", lambda *args: "VERSION" if args[0] == "diff" else "abc123")
+    assert release_commit.release("v1.110.0", "owner/ServiceOps") == "c0ffee"
+    (_, path, payload), (_, tag_path, tag_payload), (_, ref_path, ref_payload) = calls
+    commit_input = payload["variables"]["input"]
+    assert path == "/graphql" and commit_input["expectedHeadOid"] == "abc123"
+    assert commit_input["message"]["headline"] == "chore(release): 1.110.0"
+    assert [item["path"] for item in commit_input["fileChanges"]["additions"]] == ["VERSION"]
+    assert tag_path == "/repos/owner/ServiceOps/git/tags" and tag_payload["object"] == "c0ffee"
+    assert ref_path == "/repos/owner/ServiceOps/git/refs" and ref_payload == {"ref": "refs/tags/v1.110.0", "sha": "7a9"}
+
+
+def test_release_commit_refuses_unexpected_changes(monkeypatch):
+    import sys
+
+    sys.path.insert(0, str(ROOT / "tools"))
+    import release_commit
+
+    monkeypatch.setattr(release_commit, "git", lambda *args: "VERSION\napp.py")
+    with pytest.raises(SystemExit, match="unexpected changes: app.py"):
+        release_commit.changed_release_files()
+
+
+def test_release_workflow_signs_through_the_api_and_skips_taken_tags():
+    release_workflow = (ROOT / ".github/workflows/release.yml").read_text()
+    assert 'run: python3 tools/release_commit.py "$TAG"' in release_workflow
+    assert "git push origin HEAD:main" not in release_workflow
+    assert 'while git rev-parse -q --verify "refs/tags/v${version}"' in release_workflow
