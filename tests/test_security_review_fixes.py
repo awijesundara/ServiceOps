@@ -6,8 +6,10 @@ was before the corresponding fix.
 import datetime
 import json
 import logging
+import os
 import socket
 import ssl
+import tempfile
 import threading
 
 import pyotp
@@ -21,7 +23,7 @@ from werkzeug.security import generate_password_hash
 import app as app_module
 from app import (
     APIClient, ClientMailbox, ConfigurationItem, Rack, SLADefinition, SupportGroup, TaskSLA,
-    Tenant, Ticket, User, attach_slas, create_api_token, db, settings_cipher,
+    Tenant, Ticket, User, attach_slas, create_api_token, create_app, db, settings_cipher,
 )
 from serviceops_core import proxy_tunnel
 from serviceops_core.security import redact
@@ -341,6 +343,25 @@ def test_recovery_token_is_redacted_from_request_logs(app, client, caplog):
         assert token not in record.getMessage()
         assert token not in str(getattr(record, "path", ""))
 
+
+
+def test_startup_migrations_do_not_disable_existing_loggers():
+    # Alembic's env.py runs logging.config.fileConfig(); with its default it
+    # disables every logger that already exists, silencing the request log
+    # and module loggers for the rest of the process.
+    request_logger = logging.getLogger("serviceops.request")
+    module_logger = logging.getLogger("serviceops_core.proxy_tunnel")
+    request_logger.disabled = module_logger.disabled = False
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    try:
+        create_app({"TESTING": True, "AUTO_MIGRATE_IN_TESTS": True,
+                    "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}"})
+        assert not request_logger.disabled
+        assert not module_logger.disabled
+    finally:
+        request_logger.disabled = module_logger.disabled = False
+        os.unlink(path)
 
 # 8. Inbound email is marked read only after it is saved ---------------------
 

@@ -8,7 +8,10 @@ from app import db
 
 config = context.config
 if config.config_file_name:
-    fileConfig(config.config_file_name)
+    # The default (disable_existing_loggers=True) silences every logger that
+    # already exists when migrations run at startup -- module loggers and the
+    # request log included -- for the rest of the process.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = db.metadata
 
