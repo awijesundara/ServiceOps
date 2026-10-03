@@ -1,4 +1,6 @@
 """Executive membership and concise settings controls."""
+import os
+
 import pytest
 
 from app import (Audit, ChangeGovernance, ChangeOwnership, ConfigurationItem, GroupMember, PlatformSetting,
@@ -115,8 +117,16 @@ def test_invalid_syslog_destination_does_not_save_settings(app, client):
         assert db.session.get(PlatformSetting, 'SYSLOG_ENABLED') is None
 
 
+def _require_browser_tooling():
+    """Skip where the browser job's tooling is absent (e.g. the Docker test image)."""
+    pytest.importorskip("playwright.sync_api")
+    if not os.path.isfile(os.environ.get("AXE_CORE_PATH", "")):
+        pytest.skip("AXE_CORE_PATH must point to axe.min.js for browser accessibility checks")
+
+
 @pytest.mark.parametrize('width', [1440, 390])
 def test_browser_admin_controls_are_accessible_and_save_multiple_executives(app, client, width):
+    _require_browser_tooling()
     import os
     import threading
     from pathlib import Path
