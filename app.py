@@ -274,26 +274,7 @@ def parse_list_filter_param(raw):
     return conditions
 
 
-LOCAL_DEVICE_ARTWORK = {
-    "dell": {"poweredge r640": "dell-poweredge-r640", "r640": "dell-poweredge-r640"},
-    "cisco": {"catalyst 9300-48p": "cisco-c9300-48p", "c9300-48p": "cisco-c9300-48p"},
-    "juniper": {"ex4300-48p": "juniper-ex4300-48p"},
-}
-
-
-def local_device_artwork(vendor, model):
-    """Resolve a locally-bundled rack elevation image for a vendor/model pair.
-
-    Tolerates the vendor name being repeated inside the model field --
-    "Dell PowerEdge R640" and "PowerEdge R640" both resolve the same way
-    once vendor is "Dell", not just the exact strings hardcoded below."""
-    vendor_key = (vendor or "").strip().casefold()
-    model_key = (model or "").strip().casefold()
-    if not vendor_key or not model_key:
-        return None
-    if model_key.startswith(vendor_key + " "):
-        model_key = model_key[len(vendor_key):].strip()
-    return LOCAL_DEVICE_ARTWORK.get(vendor_key, {}).get(model_key)
+from serviceops_core.equipment_artwork import local_device_artwork
 
 
 def apply_filter_conditions(query, conditions, field_spec, extra_handlers=None):

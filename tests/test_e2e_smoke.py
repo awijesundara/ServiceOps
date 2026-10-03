@@ -11,6 +11,7 @@ CI always sets it; local runs fail rather than silently skipping accessibility.
 """
 
 import os
+import json
 from pathlib import Path
 
 import pytest
@@ -73,6 +74,9 @@ def authenticated_page(browser, authenticated_storage, request):
     context = browser.new_context(
         viewport={"width": viewport["width"], "height": viewport["height"]},
         bypass_csp=True,
+        # Service-worker fetches bypass Playwright routing. Block them in
+        # this context so simulated missing images exercise real fallbacks.
+        service_workers="block",
         storage_state=authenticated_storage,
     )
     context.tracing.start(screenshots=True, snapshots=True, sources=True)
@@ -497,3 +501,53 @@ def test_reflow_at_320px_has_no_two_dimensional_scrolling(browser, authenticated
         assert overflow <= 1, f"{journey} causes page-level horizontal scroll at 320px (overflow={overflow}px)"
     finally:
         context.close()
+
+
+# E2E_RACK_ID is an isolated fixture with all equipment categories, missing
+# NetBox artwork and 0U/unpositioned equipment. Never seed production for QA.
+RACK_ID = os.environ.get("E2E_RACK_ID", "")
+
+
+@pytest.mark.skipif(not RACK_ID, reason="requires isolated rack browser fixture")
+def test_rack_equipment_images_and_accessible_inventory(authenticated_page):
+    page, viewport, errors = authenticated_page
+    page.goto(f'{BASE_URL}/cmdb/racks/{RACK_ID}', wait_until='networkidle')
+    payload = json.loads(page.locator('#rack-elevation-root').get_attribute('data-rack'))
+    devices = [device for key in ('front', 'rear', 'pdus', 'unplaced') for device in payload[key]]
+    assert len(devices) >= 17
+    assert page.locator('#rack-equipment-list .rack-equipment-row').count() == len(devices)
+    assert page.locator('#rack-elevation-root svg image').count() == len(payload['front']) + len(payload['rear'])
+    assert page.locator('#rack-pdu-list img').count() > 0
+    assert page.locator('#rack-unplaced-list img').count() > 0
+    assert page.locator('#rack-equipment-list img').evaluate_all('(images) => images.every(i => i.complete && i.naturalWidth > 0)')
+    assert page.locator('#rack-equipment-list img[data-artwork-source="Type illustration"]').count() >= 14
+    assert page.locator('#rack-equipment-list img[data-artwork-source="Exact model image"]').count() > 0
+    assert not page.locator('#rack-elevation-empty').is_visible()
+    assert page.locator('#rack-equipment-list').inner_text().find('Unidentified equipment') >= 0
+    assert page.locator('#rack-equipment-list').inner_text().find('Placement outside rack bounds') >= 0
+    assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+    link = page.locator('#rack-equipment-list a').first
+    link.focus()
+    assert link.evaluate('(el) => el === document.activeElement && getComputedStyle(el).outlineStyle !== "none"')
+    page.add_script_tag(path=AXE_CORE_PATH)
+    violations = page.evaluate('''async () => (await axe.run(document.querySelector('#rack-elevation-root'), {
+        runOnly: {type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa']}
+    })).violations''')
+    assert not violations, [(v['id'], v['description']) for v in violations]
+    # Failed NetBox artwork HTTP requests are expected; JS failures are not.
+    assert not [error for error in errors if 'Failed to load resource' not in error]
+
+
+@pytest.mark.skipif(not RACK_ID, reason="requires isolated rack browser fixture")
+def test_rack_missing_images_fall_back_in_both_views(authenticated_page):
+    page, viewport, errors = authenticated_page
+    # Exercise a failure of the exact image as well as a missing NetBox image.
+    page.route('**/static/device-artwork/*.png*', lambda route: route.abort())
+    for suffix in ('', '/embed'):
+        page.goto(f'{BASE_URL}/cmdb/racks/{RACK_ID}{suffix}', wait_until='networkidle')
+        images = page.locator('#rack-elevation-root svg image')
+        assert images.count() > 0
+        assert images.evaluate_all('(items) => items.every(i => i.getAttribute("href").includes("generic-") && i.getAttribute("preserveAspectRatio") === "xMidYMid meet")')
+        assert page.locator('#rack-pdu-list img').evaluate_all('(items) => items.every(i => i.complete && i.naturalWidth > 0)')
+        assert page.locator('#rack-unplaced-list img').count() > 0
+    assert not [error for error in errors if 'Failed to load resource' not in error]

@@ -26,7 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (payload.compact && highlightId) {
     const all = [...(payload.front || []), ...(payload.rear || []), ...(payload.pdus || [])];
     const target = all.find((d) => d.id === highlightId);
-    if (target) {
+    if (target && target.position != null && !target.placement_note) {
       const height = Math.max(target.u_height || 1, 1);
       winStart = Math.max(1, target.position - 5);
       winEnd = Math.min(uHeight, target.position + height - 1 + 5);
@@ -43,6 +43,37 @@ document.addEventListener("DOMContentLoaded", () => {
     if (key.includes("storage")) return "#7c5cbf";
     return "#003e4c";
   };
+
+  // Walk through NetBox → exact bundled model → local type illustration.
+  // Each failed URL is tried at most once, so a missing image cannot loop.
+  function applyArtwork(image, device, svg = false) {
+    const urls = [...new Set([device.artwork_url, ...(device.artwork_fallbacks || [])].filter(Boolean))];
+    let index = 0;
+    // Probe through an HTML image before publishing the URL into an SVG
+    // faceplate, so only a successfully loaded candidate is displayed.
+    const loader = svg ? new Image() : image;
+    if (svg) loader.addEventListener("load", () => image.setAttribute("href", urls[index]));
+    const setUrl = () => {
+      loader.setAttribute("src", urls[index]);
+      const source = urls[index].includes("/generic-") ? "Type illustration"
+        : urls[index].includes("/device-artwork/") && !urls[index].startsWith("/cmdb/") ? "Exact model image" : "NetBox model image";
+      image.dataset.artworkSource = source;
+      if (image.parentElement) {
+        const sourceLabel = image.parentElement.querySelector(".rack-image-source");
+        if (sourceLabel) sourceLabel.textContent = `${source} · ${device.identification?.basis || ""}`;
+      }
+    };
+    loader.addEventListener("error", () => {
+      index += 1;
+      if (index < urls.length) setUrl();
+      else image.remove();
+    });
+    if (urls.length) setUrl();
+  }
+
+  const describe = (device) => [device.name, device.vendor, device.model,
+    device.identification?.label || device.ci_class, device.status,
+    device.identification?.basis, device.placement_note].filter(Boolean).join(" · ");
 
   function renderPanel(svg, devices) {
     svg.setAttribute("height", svgHeight);
@@ -69,7 +100,7 @@ document.addEventListener("DOMContentLoaded", () => {
       svg.appendChild(gridline);
     }
     devices.forEach((device) => {
-      const height = Math.max(device.u_height, 1);
+      const height = device.u_height;
       const top = device.position + height - 1;
       if (top < winStart || device.position > winEnd) return; // outside the visible window
       const y = 10 + (winEnd - top) * rowHeight;
@@ -82,6 +113,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // than a real navigation. Harmless no-op on the full (non-iframed)
       // /cmdb/racks/<id> view.
       group.setAttribute("target", "_top");
+      group.setAttribute("aria-label", describe(device));
       const block = document.createElementNS(svgNS, "rect");
       block.setAttribute("x", 32); block.setAttribute("y", y);
       block.setAttribute("width", 176); block.setAttribute("height", height * rowHeight - 2);
@@ -94,29 +126,24 @@ document.addEventListener("DOMContentLoaded", () => {
         highlightedBlock = block;
       }
       const title = document.createElementNS(svgNS, "title");
-      title.textContent = [device.name, device.vendor, device.model, device.ci_class, device.status]
-        .filter(Boolean).join(" · ");
-      block.appendChild(title);
+      title.textContent = describe(device);
+      group.appendChild(title);
       group.appendChild(block);
       if (device.artwork_url) {
         const artwork = document.createElementNS(svgNS, "image");
-        artwork.setAttribute("href", device.artwork_url);
+        applyArtwork(artwork, device, true);
         artwork.setAttribute("x", 33); artwork.setAttribute("y", y + 1);
         artwork.setAttribute("width", 174); artwork.setAttribute("height", Math.max(height * rowHeight - 4, 1));
-        artwork.setAttribute("preserveAspectRatio", "none");
+        artwork.setAttribute("preserveAspectRatio", "xMidYMid meet");
         artwork.setAttribute("aria-hidden", "true");
-        // Keep the generated faceplate visible if NetBox has no image for
-        // this model, its media is temporarily unavailable, or the current
-        // role is not permitted to retrieve it.
-        artwork.addEventListener("error", () => artwork.remove());
         group.appendChild(artwork);
       }
       const text = document.createElementNS(svgNS, "text");
-      text.textContent = device.name;
-      text.setAttribute("x", 40); text.setAttribute("y", y + (height * rowHeight) / 2 + 3);
-      text.setAttribute("font-size", "9.5"); text.setAttribute("fill", "#fff");
+      text.textContent = device.name.length > 36 ? `${device.name.slice(0, 33)}…` : device.name;
+      text.setAttribute("x", 40); text.setAttribute("y", y + height * rowHeight - 3);
+      text.setAttribute("font-size", "7"); text.setAttribute("fill", "#fff");
       text.setAttribute("paint-order", "stroke"); text.setAttribute("stroke", "#102a32");
-      text.setAttribute("stroke-width", "2.5"); text.setAttribute("stroke-linejoin", "round");
+      text.setAttribute("stroke-width", "2"); text.setAttribute("stroke-linejoin", "round");
       group.appendChild(text);
       svg.appendChild(group);
     });
@@ -128,25 +155,38 @@ document.addEventListener("DOMContentLoaded", () => {
   if (rear) renderPanel(rear, payload.rear || []);
 
   const empty = document.getElementById("rack-elevation-empty");
-  if (empty && !(payload.front || []).length && !(payload.rear || []).length) {
-    empty.hidden = false;
-  }
+  if (empty) empty.hidden = ["front", "rear", "pdus", "unplaced"].some((key) => (payload[key] || []).length);
 
-  const pduList = document.getElementById("rack-pdu-list");
-  if (pduList && (payload.pdus || []).length) {
-    pduList.replaceChildren(...payload.pdus.map((pdu) => {
+  function renderEquipmentList(id, devices) {
+    const list = document.getElementById(id);
+    if (!list || !devices.length) return;
+    list.replaceChildren(...devices.map((device) => {
       const row = document.createElement("a");
-      row.href = `/cmdb/${encodeURIComponent(pdu.id)}/edit`;
+      row.href = `/cmdb/${encodeURIComponent(device.id)}/edit`;
       row.target = "_top";
-      row.className = `rack-pdu-row${highlightId && pdu.id === highlightId ? " rack-pdu-row-highlight" : ""}`;
+      row.className = `rack-equipment-row${device.id === highlightId ? " rack-pdu-row-highlight" : ""}`;
+      row.setAttribute("aria-label", describe(device));
+      const image = document.createElement("img");
+      image.alt = "";
+      image.width = 240; image.height = 40;
+      applyArtwork(image, device);
       const name = document.createElement("strong");
-      name.textContent = pdu.name;
-      const power = document.createElement("span");
-      power.textContent = pdu.power_watts != null ? `${pdu.power_watts}W` : "power not tracked";
-      row.append(name, power);
+      name.textContent = device.name;
+      const detail = document.createElement("span");
+      detail.textContent = [device.vendor, device.model, device.identification?.label, device.status,
+        device.placement_note, device.power_watts != null ? `${device.power_watts}W` : null].filter(Boolean).join(" · ");
+      const source = document.createElement("small");
+      source.className = "rack-image-source";
+      source.textContent = `${image.dataset.artworkSource || device.artwork_source} · ${device.identification?.basis || ""}`;
+      row.append(image, name, detail, source);
       return row;
     }));
   }
+  renderEquipmentList("rack-pdu-list", payload.pdus || []);
+  renderEquipmentList("rack-unplaced-list", payload.unplaced || []);
+  // The inventory also makes every device discoverable without relying on
+  // hover tooltips, tiny SVG labels, or a precise U placement.
+  renderEquipmentList("rack-equipment-list", [...(payload.front || []), ...(payload.rear || []), ...(payload.pdus || []), ...(payload.unplaced || [])]);
 
   if (highlightedBlock) {
     highlightedBlock.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });

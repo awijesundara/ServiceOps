@@ -20,6 +20,7 @@ body{padding:14px;box-sizing:border-box;font-family:inherit}
     <div><h3>Front</h3><svg id="rack-elevation-front" data-face="front"></svg></div>
     <div><h3>Rear</h3><svg id="rack-elevation-rear" data-face="rear"></svg></div>
   </div>
+  <div id="rack-pdu-list"></div><div id="rack-unplaced-list"></div>
   <p id="rack-elevation-empty" class="muted" hidden style="font-size:12px">Nothing mounted in this rack yet.</p>
 </div>
 <script src="{{ url_for('static', filename='rack-elevation.js', v=app_version) }}" defer></script>

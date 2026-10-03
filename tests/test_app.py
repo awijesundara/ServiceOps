@@ -11154,3 +11154,103 @@ def test_approval_chain_takes_the_tenant_of_the_record_not_the_request_context(a
         assert chain.tenant_id == 2
         assert {gate.tenant_id for gate in chain.gates} == {2}
         assert {vote.tenant_id for gate in chain.gates for vote in gate.votes} == {2}
+
+
+def test_rack_images_cover_positioned_zero_u_unplaced_and_unknown_equipment(client, app):
+    from html import unescape
+    with app.app_context():
+        rack = Rack(tenant_id=1, name='equipment-image-coverage', u_height=12)
+        db.session.add(rack)
+        db.session.flush()
+        rows = [
+            ('server-model', 'Server', 2, 2, 'front', 'Dell Technologies', 'PowerEdge R640'),
+            ('rear-switch', 'Switch', 2, 1, 'rear', 'Unknown', 'Unknown'),
+            ('rack-pdu', 'Device', None, 0, 'rear', None, None),
+            ('horizontal-pdu', 'PDU', 6, 1, 'front', None, None),
+            ('missing-ups', 'UPS', None, 2, 'front', None, None),
+            ('outside-router', 'Router', 12, 2, 'rear', None, None),
+            ('unknown-box', 'Device', 10, 1, 'front', None, None),
+        ]
+        for name, cls, pos, height, face, vendor, model in rows:
+            db.session.add(ConfigurationItem(tenant_id=1, name=name, ci_class=cls, rack_id=rack.id,
+                rack_position=pos, rack_u_height=height, rack_face=face, vendor=vendor, model=model))
+        db.session.commit()
+        rack_id = rack.id
+    login(client)
+    for suffix in ('', '/embed'):
+        response = client.get(f'/cmdb/racks/{rack_id}{suffix}')
+        assert response.status_code == 200
+        payload = json.loads(unescape(re.search(r'data-rack="([^"]+)"', response.text).group(1)))
+        assert {row['name'] for key in ('front', 'rear', 'pdus', 'unplaced') for row in payload[key]} == {row[0] for row in rows}
+        assert len(payload['front']) == 3
+        assert len(payload['rear']) == 1
+        assert payload['pdus'][0]['u_height'] == 0
+        assert payload['pdus'][0]['position'] is None
+        assert {row['placement_note'] for row in payload['unplaced']} == {'U position not recorded', 'Placement outside rack bounds'}
+        assert payload['stats']['space_used_u'] == 4  # rear U2 overlaps front U2-3
+        assert all(row['artwork_url'] for key in ('front', 'rear', 'pdus', 'unplaced') for row in payload[key])
+        switch = payload['rear'][0]
+        assert 'generic-switch.rear.svg' in switch['artwork_url']
+        assert switch['artwork_source'] == 'Type illustration'
+        assert all(client.get(row['artwork_url']).status_code == 200 for key in ('front', 'rear', 'pdus', 'unplaced') for row in payload[key])
+
+
+def test_rack_netbox_fallback_chain_keeps_exact_model_and_generic_images(client, app):
+    from html import unescape
+    with app.app_context():
+        rack = Rack(tenant_id=1, name='netbox-fallback', u_height=42)
+        db.session.add(rack)
+        db.session.flush()
+        ci = ConfigurationItem(tenant_id=1, name='netbox-image-fallback', ci_class='Device', rack_id=rack.id,
+            rack_position=1, rack_u_height=1, rack_face='rear', vendor='Dell', model='R640',
+            external_source='netbox', external_id='dcim.device:42')
+        db.session.add(ci)
+        db.session.commit()
+        rack_id, ci_id = rack.id, ci.id
+    login(client)
+    response = client.get(f'/cmdb/racks/{rack_id}')
+    payload = json.loads(unescape(re.search(r'data-rack="([^"]+)"', response.text).group(1)))
+    device = payload['rear'][0]
+    assert device['artwork_url'] == f'/cmdb/device-artwork/{ci_id}/rear'
+    assert 'dell-poweredge-r640.rear.png' in device['artwork_fallbacks'][0]
+    assert 'generic-server.rear.svg' in device['artwork_fallbacks'][1]
+    assert device['identification']['basis'] == 'Exact model'
+
+
+def test_rack_inventory_hides_unpositioned_restricted_and_other_tenant_equipment(client, app):
+    with app.app_context():
+        rack = Rack(tenant_id=1, name='protected-image-inventory', u_height=42)
+        other_tenant = Tenant(name='Other equipment tenant', slug='other-equipment')
+        db.session.add_all([rack, other_tenant])
+        db.session.flush()
+        db.session.add(ConfigurationItem(tenant_id=1, name='restricted-zero-u', ci_class='Consumable',
+            rack_id=rack.id, rack_u_height=0))
+        db.session.add(ConfigurationItem(tenant_id=other_tenant.id, name='foreign-rack-device', ci_class='Server',
+            rack_id=rack.id, rack_position=1, rack_u_height=1))
+        db.session.add(CiClassPermission(tenant_id=1, ci_class='Consumable', role='admin', can_read=False))
+        db.session.commit()
+        rack_id = rack.id
+    login(client)
+    for suffix in ('', '/embed'):
+        response = client.get(f'/cmdb/racks/{rack_id}{suffix}')
+        assert response.status_code == 200
+        assert 'restricted-zero-u' not in response.text
+        assert 'foreign-rack-device' not in response.text
+
+
+def test_rack_usage_preserves_fractional_u_without_double_counting(client, app):
+    from html import unescape
+    with app.app_context():
+        rack = Rack(tenant_id=1, name='fractional-usage', u_height=42)
+        db.session.add(rack)
+        db.session.flush()
+        for name, pos, height, face in [('half', 5.5, 2, 'front'), ('overlap', 6, 1, 'rear')]:
+            db.session.add(ConfigurationItem(tenant_id=1, name=name, ci_class='Server', rack_id=rack.id,
+                rack_position=pos, rack_u_height=height, rack_face=face))
+        db.session.commit()
+        rack_id = rack.id
+    login(client)
+    response = client.get(f'/cmdb/racks/{rack_id}')
+    payload = json.loads(unescape(re.search(r'data-rack="([^"]+)"', response.text).group(1)))
+    assert payload['stats']['space_used_u'] == 2
+    assert payload['front'][0]['position'] == 5.5

@@ -22,11 +22,13 @@
         <div class="rack-stat"><span>Power</span><div class="rack-stat-bar"><div id="rack-stat-power" class="rack-stat-fill"></div></div><small id="rack-stat-power-label"></small></div>
       </section>
       <section class="panel">
-        <h2>Power units</h2>
+        <h2>0U / unpositioned power units</h2>
         <div id="rack-pdu-list"><p class="muted">No PDUs recorded.</p></div>
       </section>
+      <section class="panel"><h2>Other unpositioned equipment</h2><div id="rack-unplaced-list"><p class="muted">All other equipment has a valid U position.</p></div></section>
     </aside>
   </div>
+  <section class="panel rack-equipment-inventory"><h2>Equipment inventory</h2><p class="muted">Model images are used when available. Type illustrations represent the identified equipment category. Select equipment to view or update its details.</p><div id="rack-equipment-list" class="rack-equipment-grid"></div></section>
   <p id="rack-elevation-empty" class="muted" hidden>Nothing mounted in this rack yet.</p>
 </div>
 <script src="{{ url_for('static', filename='rack-elevation.js', v=app_version) }}" defer></script>
