@@ -15,7 +15,7 @@
 
 <div class="task-list-scroll">
   <table class="task-list">
-    <thead><tr><th>Number</th><th>Title</th><th>Source</th><th>Status</th><th>Owner</th><th>Raised</th></tr></thead>
+    <thead><tr><th>Number</th><th>Title</th><th>Source</th><th>{{ t('Status') }}</th><th>Owner</th><th>Raised</th></tr></thead>
     <tbody>
       {% for item in items %}
       <tr>
@@ -35,7 +35,7 @@
   <h2>Raise an improvement</h2>
   <form method="post" action="{{ url_for('improvement_new') }}" class="form-grid">
     <label class="wide required-field"><span>Title</span><input name="title" maxlength="200" required></label>
-    <label class="wide"><span>Description</span><textarea name="description" rows="3"></textarea></label>
+    <label class="wide"><span>{{ t('Description') }}</span><textarea name="description" rows="3"></textarea></label>
     <label class="wide"><span>Expected outcome</span><textarea name="expected_outcome" rows="2" placeholder="What would success look like?"></textarea></label>
     <div class="wide actions"><button class="primary">Raise improvement</button></div>
   </form>

@@ -8,7 +8,7 @@
     <button type="button" class="button" data-print-page>🖶 Print</button>
     <form class="list-search">
       <input name="q" value="{{ q }}" placeholder="REQ number" aria-label="Search requests">
-      <button>Search</button>
+      <button>{{ t('Search') }}</button>
     </form>
     <nav class="list-pagination" aria-label="Pagination">
       <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('requests_list', q=q, page=page-1) }}">‹</a>

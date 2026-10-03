@@ -4,12 +4,15 @@
 <section class="ai-run">
   <div class="ai-run-head"><div><p class="eyebrow">HUMAN APPROVAL REQUIRED</p><h1>{{ action_label }} for {{ ticket.number }}</h1><p class="muted"><a href="{{ back_url }}">Back to AI assistance</a> · Expires {{ action.expires_at|usertime }}</p></div><span class="ai-pill" data-state="{{ 'completed' if action.status == 'executed' else 'cancelled' if action.status != 'pending' else 'queued' }}">{{ action.status|capitalize }}</span></div>
   <div class="panel">
-    <h2>Exact proposed change</h2>
+    <h2>{{ 'Review your comment' if editable_comment else 'Exact proposed change' }}</h2>
     <p>This will update <a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a> only:</p>
-    <dl class="detail-list">{% for label, value in fields %}<dt>{{ label }}</dt><dd{% if label == 'Comment' %} class="pre"{% endif %}>{{ value }}</dd>{% endfor %}</dl>
+    {% if not editable_comment or action.status != 'pending' or expired %}<dl class="detail-list">{% for label, value in fields %}<dt>{{ label }}</dt><dd{% if label == 'Comment' %} class="pre"{% endif %}>{{ value }}</dd>{% endfor %}</dl>{% endif %}
     {% if action.status == 'pending' and not expired %}
     <p class="muted">Approving rechecks your access and the ticket version. If the ticket changed, ServiceOps will reject this proposal.</p>
-    <form method="post" class="ai-actions"><button name="decision" value="reject" class="button">Reject</button><button name="decision" value="approve" class="primary">Approve and apply</button></form>
+    <form method="post">
+      {% if editable_comment %}<label for="ai-comment-body">Comment</label><textarea id="ai-comment-body" name="body" rows="8" maxlength="10000" required>{{ payload.body }}</textarea>{% endif %}
+      <div class="ai-actions"><button name="decision" value="reject" class="button" formnovalidate>{{ 'Discard' if editable_comment else 'Reject' }}</button><button name="decision" value="approve" class="primary">{{ 'Post comment' if editable_comment else 'Approve and apply' }}</button></div>
+    </form>
     {% elif expired and action.status == 'pending' %}<p class="ai-banner">This proposal expired. Prepare a new one from a current investigation.</p>
     {% elif action.status == 'executed' %}<p class="ai-banner">Approved and applied to the ticket.</p>
     {% else %}<p class="ai-banner">This proposal cannot be executed.</p>{% endif %}

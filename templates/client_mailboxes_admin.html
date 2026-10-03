@@ -2,7 +2,7 @@
 {% block content %}
 <header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('client_management_home') }}">CLIENT MANAGEMENT</a> / MAILBOXES</p><h1>Mailboxes</h1><p>A dedicated support email address, polled over IMAP into customer tickets and replied to over SMTP. Basic username/password auth only -- providers like Gmail/Office 365 need an app password, not your normal login password.</p></div></header>
 <section class="panel">
-  <table><thead><tr><th>Name</th><th>IMAP</th><th>SMTP from</th><th>Status</th><th>Last checked</th><th></th></tr></thead><tbody>
+  <table><thead><tr><th>{{ t('Name') }}</th><th>IMAP</th><th>SMTP from</th><th>{{ t('Status') }}</th><th>Last checked</th><th></th></tr></thead><tbody>
     {% for mailbox in mailboxes %}
     <tr>
       <td>{{ mailbox.name }}{% if not mailbox.active %} <span class="badge">Inactive</span>{% endif %}</td>
@@ -23,7 +23,7 @@
   <details><summary>Add a mailbox</summary>
     <form method="post" class="form-grid">
       <input type="hidden" name="action" value="create">
-      <label class="wide"><span>Name</span><input name="name" maxlength="120" required placeholder="e.g. Support"></label>
+      <label class="wide"><span>{{ t('Name') }}</span><input name="name" maxlength="120" required placeholder="e.g. Support"></label>
       <label><span>IMAP host</span><input name="imap_host" maxlength="255" required placeholder="imap.example.com"></label>
       <label><span>IMAP port</span><input type="number" name="imap_port" value="993" required></label>
       <label class="check"><input type="checkbox" name="imap_use_ssl" checked> IMAP uses SSL (port 993)</label>

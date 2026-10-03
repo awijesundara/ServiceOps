@@ -25,7 +25,7 @@
       <label><span>Approval</span><input value="{{ chain.state if chain else 'Not Yet Requested' }}" disabled></label>
       <label><span>Opened by</span><input value="{{ ritm.request.requested_by.name if ritm.request else 'Unknown' }}" disabled></label>
       <label><span>Assignment group</span><input value="{{ task.assignment_group.name if task.assignment_group else 'Unassigned' }}" disabled></label>
-      <label><span>Status</span><select name="state" {% if not can_edit or selectable_states|length < 2 %}disabled{% endif %}>{% for state in selectable_states %}<option {% if task.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select>{% if gate_block %}<small class="field-gate-note">{{ gate_block }}</small>{% endif %}</label>
+      <label><span>{{ t('Status') }}</span><select name="state" {% if not can_edit or selectable_states|length < 2 %}disabled{% endif %}>{% for state in selectable_states %}<option {% if task.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select>{% if gate_block %}<small class="field-gate-note">{{ gate_block }}</small>{% endif %}</label>
       <label><span>Assigned to</span><input value="{{ task.assignee.name if task.assignee else 'Unassigned' }}" disabled></label>
       <label><span>Request item</span><a class="record-parent-link" href="{{ url_for('request_detail', request_id=ritm.request_id) }}">{{ ritm.number }}</a></label>
       <label><span>Requested for</span><input value="{{ ritm.request.requested_for.name if ritm.request else '' }}" disabled></label>
@@ -68,7 +68,7 @@
   <section class="panel">
     <header class="section-heading"><div><h2>RITM Comments (Customer Visible)</h2><p>Posted to {{ ritm.number }}; the requester is notified.</p></div></header>
     {% for note in ritm_comments %}<article class="comment">{{ user_avatar(note.author) }}<div><strong>{{ note.author.name }}</strong><small>{{ (note.created_at|usertime('%b %d, %H:%M')) }}</small><p>{{ note.body }}</p></div></article>{% else %}<p class="muted">No customer-visible comments yet.</p>{% endfor %}
-    <form method="post" action="{{ url_for('catalog_task_note_add', task_id=task.id) }}" class="comment-box"><input type="hidden" name="visibility" value="customer"><p class="muted">Click Save to post to {{ ritm.number }}. The requester will get a notification.</p><textarea name="body" rows="3" placeholder="Additional comments" required></textarea><button class="primary">Save</button></form>
+    <form method="post" action="{{ url_for('catalog_task_note_add', task_id=task.id) }}" class="comment-box"><input type="hidden" name="visibility" value="customer"><p class="muted">Click Save to post to {{ ritm.number }}. The requester will get a notification.</p><textarea name="body" rows="3" placeholder="Additional comments" required></textarea><button class="primary">{{ t('Save') }}</button></form>
   </section>
 </div>
 

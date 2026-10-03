@@ -6,7 +6,7 @@
 <section class="panel">
   <h2>Data classification</h2>
   <p>Governed statically alongside the source, not admin-editable — what counts as PII/confidential for a record type is a governance decision, not a runtime setting.</p>
-  <table><thead><tr><th>Record type</th><th>Classification</th><th>Description</th></tr></thead><tbody>
+  <table><thead><tr><th>Record type</th><th>Classification</th><th>{{ t('Description') }}</th></tr></thead><tbody>
   {% for record_type, info in classification_registry.items() %}
     <tr><td>{{ info.label }}</td><td><span class="client-status {{ info.classification|lower }}">{{ info.classification }}</span></td><td>{{ info.description }}</td></tr>
   {% endfor %}
@@ -38,7 +38,7 @@
           <label class="check"><input name="legal_hold" type="checkbox" {% if policy and policy.legal_hold %}checked{% endif %}> Legal hold (blanket)</label>
           <label class="check"><input name="policy_active" type="checkbox" {% if not policy or policy.active %}checked{% endif %}> Active</label>
           <small>{{ policy.last_run_at|usertime('%Y-%m-%d %H:%M') if policy and policy.last_run_at else 'Never run' }}{% if policy and policy.last_run_at %} · {{ policy.last_run_count }} erased{% endif %}</small>
-          <button class="button">Save</button>
+          <button class="button">{{ t('Save') }}</button>
         </form>
       </td>
     </tr>

@@ -26,7 +26,7 @@
       <div class="panel">
         <h2>Your recent investigations</h2>
         <table>
-          <thead><tr><th>Started</th><th>Model</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Started</th><th>Model</th><th>{{ t('Status') }}</th><th></th></tr></thead>
           <tbody>
           {% for run in runs %}<tr><td>{{ run.created_at|usertime }}</td><td>{{ run.model }}</td><td><span class="ai-pill" data-state="{{ run.status }}">{{ run.status|capitalize }}</span></td><td><a href="{{ url_for('ai.result', run_id=run.id) }}">Open</a></td></tr>
           {% else %}<tr><td colspan="4" class="empty">No investigations yet.</td></tr>{% endfor %}

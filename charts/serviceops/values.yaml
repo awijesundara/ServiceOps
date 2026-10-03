@@ -194,6 +194,10 @@ podDisruptionBudget:
   enabled: true
   minAvailable: 1
 
+syslog:
+  # Narrow destination/port rules for the administrator's syslog receiver.
+  extraEgress: []
+
 networkPolicy:
   enabled: true
   ingressNamespaceSelector: {}

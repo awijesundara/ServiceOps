@@ -2,7 +2,7 @@
 {% block content %}
 <header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('client_management_home') }}">CLIENT MANAGEMENT</a> / TRIGGERS</p><h1>Triggers</h1><p>Automatically apply an action to a customer ticket when it's created, updated, or its status changes and one condition matches.</p></div></header>
 <section class="panel">
-  <table><thead><tr><th>Name</th><th>Event</th><th>Condition</th><th>Action</th><th>Status</th><th></th></tr></thead><tbody>
+  <table><thead><tr><th>{{ t('Name') }}</th><th>Event</th><th>Condition</th><th>Action</th><th>{{ t('Status') }}</th><th></th></tr></thead><tbody>
     {% for trigger in triggers %}
     <tr>
       <td>{{ trigger.name }}</td>
@@ -17,7 +17,7 @@
   <details><summary>Add a trigger</summary>
     <form method="post" class="stack">
       <input type="hidden" name="action" value="create">
-      <label>Name<input name="name" maxlength="120" required placeholder="e.g. Auto-escalate urgent tickets"></label>
+      <label>{{ t('Name') }}<input name="name" maxlength="120" required placeholder="e.g. Auto-escalate urgent tickets"></label>
       <label>When<select name="event">{% for value in events %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
       <div class="field-pair">
         <label>If field<select name="condition_field">{% for value in fields %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>

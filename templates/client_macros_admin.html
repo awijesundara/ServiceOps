@@ -2,7 +2,7 @@
 {% block content %}
 <header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('client_management_home') }}">CLIENT MANAGEMENT</a> / MACROS</p><h1>Macros</h1><p>One-click bulk actions and canned replies agents can apply to a customer ticket.</p></div></header>
 <section class="panel">
-  <table><thead><tr><th>Name</th><th>Actions</th><th>Reply</th><th>Status</th><th></th></tr></thead><tbody>
+  <table><thead><tr><th>{{ t('Name') }}</th><th>Actions</th><th>Reply</th><th>{{ t('Status') }}</th><th></th></tr></thead><tbody>
     {% for row in macro_rows %}
     <tr>
       <td>{{ row.macro.name }}</td>
@@ -16,7 +16,7 @@
   <details><summary>Add a macro</summary>
     <form method="post" class="stack">
       <input type="hidden" name="action" value="create">
-      <label>Name<input name="name" maxlength="120" required placeholder="e.g. Close as resolved"></label>
+      <label>{{ t('Name') }}<input name="name" maxlength="120" required placeholder="e.g. Close as resolved"></label>
       <label>Set status<select name="macro_status"><option value="">Don't change</option>{% for value in statuses %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
       <label>Set priority<select name="macro_priority"><option value="">Don't change</option>{% for value in priorities %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
       <label>Set type<select name="macro_ticket_type"><option value="">Don't change</option>{% for value in ticket_types %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>

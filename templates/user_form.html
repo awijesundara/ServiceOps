@@ -6,7 +6,7 @@
 <section class="record-shell">
   <header class="record-toolbar">
     <div class="record-identity">
-      <a class="record-back" href="{{ url_for('dashboard') if self_service else url_for('users') }}" aria-label="Back">‹</a>
+      <a class="record-back" href="{{ url_for('dashboard') if self_service else url_for('users') }}" aria-label="{{ t('Back') }}">‹</a>
       <span class="record-type-icon">U</span><div><strong>User</strong><small>{{ user.username if editing else "New record" }}{% if self_service %} · Self-service view{% endif %}</small></div>
     </div>
     <div class="record-actions"><button class="primary" form="user-record-form">{{ "Update" if editing else "Create" }}</button></div>
@@ -25,7 +25,7 @@
     </div>
     <label class="avatar-crop-zoom"><span>Zoom</span><input type="range" id="avatar-crop-zoom" min="1" max="4" step="0.01" value="1"></label>
     <div class="avatar-crop-actions">
-      <button type="button" class="button" id="avatar-crop-cancel">Cancel</button>
+      <button type="button" class="button" id="avatar-crop-cancel">{{ t('Cancel') }}</button>
       <button type="button" class="primary" id="avatar-crop-save">Save picture</button>
     </div>
   </dialog>

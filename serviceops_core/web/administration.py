@@ -1441,6 +1441,12 @@ def register(app):
                 url_key = mode_key[:-len("_MODE")] + "_URL"
                 if not core.setting_value(url_key, ""):
                     errors.append(f"{definition['label']} is set to a custom proxy, but no custom proxy URL is saved.")
+            if category == "security" and core.setting_bool("SYSLOG_ENABLED"):
+                from serviceops_core.syslog_forwarding import validate_destination
+                try:
+                    validate_destination(core.setting_value("SYSLOG_HOST"), core.setting_value("SYSLOG_PORT"), core.setting_value("SYSLOG_TRANSPORT"))
+                except ValueError as error:
+                    errors.append(str(error))
             if category == "branding":
                 logo = request.files.get("company_logo")
                 if logo and logo.filename:
@@ -2000,15 +2006,18 @@ def register(app):
                 db.session.flush()
                 audit("create", f"Support group: {name}", group_type)
                 flash(f"Team {name} created. Assign its manager and members below.", "success")
-            elif action == "update_support_group":
-                group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
+            elif action in {"update_support_group", "rename_support_group"}:
+                group_id = request.form.get("group_id", type=int)
+                if group_id is None:
+                    abort(400, description="Select a valid team.")
+                group = tenant_record_or_404(SupportGroup, group_id)
                 if group.name in ("Change Control Board", "Executive Office"):
                     abort(400, description="Use the dedicated governance controls for this group.")
                 name = request.form.get("name", "").strip()
-                group_type = request.form.get("group_type", "IT Fulfillment")
+                group_type = group.group_type if action == "rename_support_group" else request.form.get("group_type", "IT Fulfillment")
                 if not name or len(name) > 120:
                     abort(400, description="Team name must contain 1 to 120 characters.")
-                if group_type not in ("IT Fulfillment", "Fulfillment", "Executive"):
+                if group_type not in ("IT Fulfillment", "Fulfillment", "Executive") and not (action == "rename_support_group" and group_type == "Client Support"):
                     abort(400, description="Select a supported team type.")
                 duplicate = tenant_query(SupportGroup).filter(
                     SupportGroup.id != group.id,
@@ -2017,15 +2026,24 @@ def register(app):
                 if duplicate:
                     abort(409, description="A team with that name already exists.")
                 before = f"{group.name}; {group.group_type}; active={group.active}"
+                old_name = group.name
                 affected_users = [member.user for member in group.members]
                 if group.manager:
                     affected_users.append(group.manager)
                 group.name = name
                 group.group_type = group_type
-                group.active = bool(request.form.get("active"))
+                if action != "rename_support_group":
+                    group.active = bool(request.form.get("active"))
                 for affected in {user.id: user for user in affected_users if user}.values():
                     sync_implied_role_grants(affected)
                 audit("update", f"Support group: {name}", f"{before} -> {group_type}; active={group.active}")
+                if old_name != name:
+                    alias = tenant_query(SupportGroupAlias).filter(func.lower(SupportGroupAlias.alias) == old_name.casefold()).first()
+                    if alias and alias.group_id != group.id:
+                        abort(409, description="The old group name is already an alias of another team.")
+                    if not alias:
+                        db.session.add(SupportGroupAlias(alias=old_name, group_id=group.id, tenant_id=group.tenant_id))
+                    audit("team renamed", f"support_group:{group.id}", f"{old_name} → {name}")
                 flash(f"Team {name} updated.", "success")
             elif action == "create_ticket_category":
                 name = request.form.get("name", "").strip()
@@ -2186,6 +2204,36 @@ def register(app):
                     f"Merged {merged} duplicate team name(s)." if merged
                     else "No duplicate team names found.", "success",
                 )
+            elif action == "set_executive_approvers":
+                executive = tenant_query(SupportGroup).filter_by(name="Executive Office", group_type="Executive").with_for_update().first_or_404()
+                mode = request.form.get("approval_mode", "all")
+                try:
+                    selected_ids = sorted({int(value) for value in request.form.getlist("user_ids")})
+                except (TypeError, ValueError):
+                    abort(400, description="Select valid executive users.")
+                if mode not in {"all", "any"} or len(selected_ids) > 100:
+                    abort(400, description="Select a valid approval rule and at most 100 executives.")
+                selected = tenant_query(User).filter(User.id.in_(selected_ids), User.active.is_(True)).all()
+                if len(selected) != len(selected_ids):
+                    abort(400, description="Select active users in this organization.")
+                for member in executive.members:
+                    if member.role in {"executive approver", "manager"}:
+                        member.role = "member"
+                for user in selected:
+                    membership = GroupMember.query.filter_by(group_id=executive.id, user_id=user.id).first()
+                    if membership:
+                        membership.role = "executive approver"
+                    else:
+                        db.session.add(GroupMember(group_id=executive.id, user_id=user.id,
+                                                   role="executive approver", tenant_id=executive.tenant_id))
+                old_manager = executive.manager
+                executive.manager_id = None
+                executive.approval_mode = mode
+                db.session.flush()
+                for user in selected + ([old_manager] if old_manager else []):
+                    sync_implied_role_grants(user)
+                audit("configure", "Executive approval", f"mode={mode}; users={','.join(map(str, selected_ids))}")
+                flash("Executive approvers updated.", "success")
             elif action == "set_manager":
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
                 if group.group_type not in ("IT Fulfillment", "Fulfillment", "Executive"):
@@ -2276,7 +2324,7 @@ def register(app):
                 membership = tenant_record_or_404(GroupMember, int(request.form["member_id"]))
                 group = db.session.get(SupportGroup, membership.group_id)
                 user = membership.user
-                if membership.role in ("manager", "CCB approver"):
+                if membership.role in ("manager", "CCB approver", "executive approver"):
                     abort(400, description=(
                         "Remove this person's manager/CCB authority first, from Team managers "
                         "or Approval authority, before removing their membership."
@@ -2658,6 +2706,9 @@ def register(app):
             manager_candidates=manager_candidates, ccb_candidates=ccb_candidates,
             ccb=ccb, ccb_approver_ids=ccb_approver_ids,
             executive_office=executive_office,
+            executive_approver_ids={member.user_id for member in executive_office.members if member.role == "executive approver"}
+                                  | ({executive_office.manager_id} if executive_office.manager_id else set()),
+            team_rename_history=tenant_query(Audit).filter_by(action="team renamed").order_by(Audit.created_at.desc()).limit(5).all(),
             directory_managed_member_keys=directory_managed_member_keys,
             support_group_aliases=tenant_query(SupportGroupAlias).order_by(
                 SupportGroupAlias.alias

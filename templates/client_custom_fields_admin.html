@@ -4,7 +4,7 @@
 {% for entity_type in entity_types %}
 <section class="panel" id="fields-{{ entity_type }}">
   <div class="panel-head"><div><h2>{{ {'client_ticket': 'Ticket fields', 'organization': 'Organization fields', 'contact': 'Contact fields'}[entity_type] }}</h2></div></div>
-  <table><thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Required by default</th><th>Status</th><th></th></tr></thead><tbody>
+  <table><thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Required by default</th><th>{{ t('Status') }}</th><th></th></tr></thead><tbody>
     {% for field in fields_by_entity[entity_type] %}
     <tr><td>{{ field.label }}</td><td><code>{{ field.key }}</code></td><td>{{ field.field_type }}</td><td>{{ 'Yes' if field.required else 'No' }}</td><td><span class="badge">{{ 'Active' if field.active else 'Inactive' }}</span></td>
       <td><form method="post"><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="field_id" value="{{ field.id }}"><button class="link-button">{{ 'Deactivate' if field.active else 'Activate' }}</button></form></td>

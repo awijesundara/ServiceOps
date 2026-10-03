@@ -1,0 +1,19 @@
+/* Logical direction overrides; record identifiers and code keep their own direction. */
+html[dir="rtl"] body { text-align: start; }
+html[dir="rtl"] .sidebar { left: auto; right: 0; border-left: 1px solid var(--border, #d8e0e5); border-right: 0; }
+html[dir="rtl"] main:not(.auth-main) { margin-left: 0; margin-right: 245px; }
+html[dir="rtl"] th, html[dir="rtl"] td { text-align: start; }
+html[dir="rtl"] input[type="email"], html[dir="rtl"] input[type="url"], html[dir="rtl"] pre, html[dir="rtl"] code { direction: ltr; text-align: left; }
+html[dir="rtl"] .nav-chevron, html[dir="rtl"] .admin-area-chevron { transform: scaleX(-1); }
+@media (max-width: 900px) {
+  html[dir="rtl"] main:not(.auth-main) { margin-right: 0; }
+}
+
+html[dir="rtl"] .unified-nav { left: 0; right: 245px; }
+html[dir="rtl"] .nav-collapsed .sidebar { transform: translateX(245px); }
+html[dir="rtl"] .nav-collapsed main { margin-right: 0; }
+html[dir="rtl"] .nav-collapsed .unified-nav { right: 0; }
+html[dir="rtl"] .nav-popover { right: auto; left: 0; }
+@media (max-width: 900px) {
+  html[dir="rtl"] .unified-nav { right: 0; }
+}

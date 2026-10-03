@@ -99,4 +99,7 @@ spec:
         - {port: 465, protocol: TCP}
         - {port: 587, protocol: TCP}
         - {port: 443, protocol: TCP}
+    {{- with .Values.syslog.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}

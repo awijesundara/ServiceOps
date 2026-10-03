@@ -221,7 +221,7 @@
     if (!failed && message.content && !message.withheld) {
       copy.hidden = false;
       copy.addEventListener("click", function () {
-        if (navigator.clipboard) navigator.clipboard.writeText(window.AIRender.plainText(message.content));
+        if (navigator.clipboard) navigator.clipboard.writeText(window.AIRender.plainText(message.content, window.AIChat.sourceMap(message.sources)));
         copy.textContent = "Copied";
         setTimeout(function () { copy.textContent = "Copy"; }, 1500);
       });

@@ -12,7 +12,7 @@
       {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
       <input type="hidden" name="filter" value="{{ raw_filter }}">
       <input name="q" value="{{ q }}" placeholder="Name, serial, IP, model, vendor, location" aria-label="Search configuration items">
-      <button>Search</button>
+      <button>{{ t('Search') }}</button>
       <div class="list-filter" data-filter-fields='{{ filter_fields|tojson }}' data-filter-value='{{ raw_filter or "[]" }}'>
         <button type="button" class="list-filter-toggle">▽ Filter</button>
         <div class="list-filter-builder" hidden>
@@ -56,10 +56,10 @@
   <div class="list-breadcrumb"><span>▽</span> All{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
   <div class="task-list-scroll">
   <table class="task-list" id="cmdb-table"><thead><tr>
-    <th>Name</th>
+    <th>{{ t('Name') }}</th>
     <th data-col="ci_class">Class</th>
     <th data-col="environment">Environment</th>
-    <th data-col="operational_status">Status</th>
+    <th data-col="operational_status">{{ t('Status') }}</th>
     <th data-col="lifecycle_state">Lifecycle</th>
     <th data-col="business_criticality">Criticality</th>
     <th data-col="location">Location</th>
@@ -93,7 +93,7 @@
       <td data-col="install_date">{{ ci.install_date.strftime('%Y-%m-%d') if ci.install_date else '—' }}</td>
       <td data-col="warranty_expiry_date">{{ ci.warranty_expiry_date.strftime('%Y-%m-%d') if ci.warranty_expiry_date else '—' }}</td>
       {% for key in extra_attribute_keys %}<td data-col="attr:{{ key }}">{{ (ci.attributes or {}).get(key) or '—' }}</td>{% endfor %}
-      {% if current_user.effective_role in ['admin','superadmin'] %}<td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}">Edit</a></td>{% endif %}
+      {% if current_user.effective_role in ['admin','superadmin'] %}<td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}">{{ t('Edit') }}</a></td>{% endif %}
     </tr>
     {% else %}<tr><td colspan="{{ 17 + extra_attribute_keys|length }}" class="empty">No matching configuration items{% if status %} with this status{% endif %}.</td></tr>{% endfor %}
   </tbody></table>

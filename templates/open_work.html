@@ -7,9 +7,9 @@
 
 <section class="panel table-panel">
 <h2>Open incidents & changes{% if priority %} <small>· {{ priority }}</small>{% endif %}</h2>
-{% if open_tickets_truncated %}<p class="muted">Showing the first {{ open_tickets|length }} — use <a href="{{ url_for('tickets', kind='incident') }}">Incidents</a> or <a href="{{ url_for('tickets', kind='change') }}">Changes</a> with filters to see the rest.</p>{% endif %}
+{% if open_tickets_truncated %}<p class="muted">Showing the first {{ open_tickets|length }} — use <a href="{{ url_for('tickets', kind='incident') }}">{{ t('Incidents') }}</a> or <a href="{{ url_for('tickets', kind='change') }}">{{ t('Changes') }}</a> with filters to see the rest.</p>{% endif %}
 <table>
-  <thead><tr><th>Number</th><th>Summary</th><th>State</th><th>Priority</th><th>Updated</th></tr></thead>
+  <thead><tr><th>Number</th><th>Summary</th><th>State</th><th>{{ t('Priority') }}</th><th>Updated</th></tr></thead>
   <tbody>
     {% for t in open_tickets %}
     <tr>

@@ -1867,6 +1867,7 @@ class SupportGroup(db.Model):
     group_type = db.Column(db.String(40), nullable=False, default="Fulfillment")
     manager_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     active = db.Column(db.Boolean, nullable=False, default=True)
+    approval_mode = db.Column(db.String(3), nullable=False, default="all", server_default="all")
     manager = db.relationship("User")
     members = db.relationship("GroupMember", cascade="all, delete-orphan", backref="group")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
@@ -2606,6 +2607,7 @@ class RecentView(db.Model):
 
 
 class UserPreference(db.Model):
+    language = db.Column(db.String(16), nullable=False, default="en", server_default="en")
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
     theme = db.Column(db.String(30), nullable=False, default="light")

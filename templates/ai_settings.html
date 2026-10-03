@@ -102,7 +102,7 @@
   </form>
 
   <dialog class="aiadm-dialog" data-ai-dialog aria-labelledby="aiadm-dialog-title">
-    <form method="dialog" class="aiadm-dialog-head"><h2 id="aiadm-dialog-title" data-ai-dialog-title>Add an AI service</h2><button class="ai-tool-dark" aria-label="Close">✕</button></form>
+    <form method="dialog" class="aiadm-dialog-head"><h2 id="aiadm-dialog-title" data-ai-dialog-title>Add an AI service</h2><button class="ai-tool-dark" aria-label="{{ t('Close') }}">✕</button></form>
     <div class="aiadm-dialog-body">
       <div class="aiadm-step" data-ai-step="pick">
         <p class="muted">Pick what you are connecting to. You can change everything afterwards.</p>
@@ -128,7 +128,7 @@
       <div class="aiadm-step" data-ai-step="details" hidden>
         <input type="hidden" data-ai-f="id"><input type="hidden" data-ai-f="provider"><input type="hidden" data-ai-f="token">
         <p class="aiadm-where" data-ai-where></p>
-        <label>Name<input type="text" maxlength="80" data-ai-f="name" placeholder="For example: Office server"></label>
+        <label>{{ t('Name') }}<input type="text" maxlength="80" data-ai-f="name" placeholder="For example: Office server"></label>
         <label data-ai-row="endpoint">Server address<input type="text" inputmode="url" maxlength="500" data-ai-f="endpoint" placeholder="http://192.168.68.68:8080"><small>Just the address. The rest is added for you.</small></label>
         <label>Access key<input type="password" autocomplete="new-password" maxlength="4096" data-ai-f="api_key"><small data-ai-keyhint>Leave blank if the server needs none.</small></label>
         <fieldset class="aiadm-more">
@@ -170,7 +170,7 @@
         </details>
         <label class="aiadm-switch"><input type="checkbox" checked data-ai-f="enabled"><span><strong>Use this service</strong></span></label>
         <p class="ai-banner" data-ai-dialog-error role="alert" hidden></p>
-        <div class="aiadm-dialog-actions"><button type="button" class="button" data-ai-back>Back</button><button type="button" class="primary" data-ai-save>Save service</button></div>
+        <div class="aiadm-dialog-actions"><button type="button" class="button" data-ai-back>{{ t('Back') }}</button><button type="button" class="primary" data-ai-save>Save service</button></div>
       </div>
     </div>
   </dialog>

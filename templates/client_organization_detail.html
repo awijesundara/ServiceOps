@@ -5,7 +5,7 @@
   <section class="panel">
     <h2>Overview</h2>
     <dl class="facts">
-      <dt>Status</dt><dd>{{ 'Active' if organization.active else 'Inactive' }}</dd>
+      <dt>{{ t('Status') }}</dt><dd>{{ 'Active' if organization.active else 'Inactive' }}</dd>
       <dt>Contacts</dt><dd>{{ organization.contacts|length }}</dd>
       <dt>Notes</dt><dd>{{ organization.notes or '—' }}</dd>
     </dl>

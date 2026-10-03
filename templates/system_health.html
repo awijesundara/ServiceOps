@@ -17,7 +17,7 @@
     <div><h2>Performance</h2><p>Request rate, latency, and error rate sampled roughly every minute by the background worker.</p></div>
     <div class="performance-controls">
       <span class="tag" title="From DEPLOYMENT_MODE and GUNICORN_WORKERS -- the chart's scale/labels adapt to whichever deployment method is actually running, not a fixed assumption.">{{ deployment_mode }} · {{ gunicorn_workers }} worker process(es)</span>
-      <select id="performance-range">
+      <select id="performance-range" aria-label="Performance period">
         <option value="1">Last hour</option>
         <option value="6" selected>Last 6 hours</option>
         <option value="24">Last 24 hours</option>
@@ -31,7 +31,7 @@
 </section>
 
 <div class="detail-grid">
-<section class="panel" id="active-users">
+<section class="panel" id="active-users" tabindex="0" role="region" aria-label="Currently active users">
   <h2>Currently active users</h2>
   <table><thead><tr><th>User</th><th>Role</th><th>Connection</th><th>Last seen</th></tr></thead><tbody>
     {% for user in active_users %}
@@ -42,10 +42,9 @@
   </tbody></table>
 </section>
 <aside class="panel">
-  <h2>About this page</h2>
-  <p>"Active" means a request from that user in the last 15 minutes; the timestamp itself updates at most once a minute per user.</p>
-  <p>Errors below are anything ERROR/CRITICAL/WARNING the application logger emitted -- including unhandled exceptions, which are recorded here <em>before</em> the user sees the error page, so this list should be checked first when something appeared to crash.</p>
-  <p>The <a href="{{ url_for('system_health_log_file') }}">detailed request log</a> covers every request (not just errors) but lives on disk, not here, since its volume would dwarf every other table.</p>
+  <h2>Activity &amp; logs</h2>
+  <p>Active users were seen in the last 15 minutes.</p>
+  <p>Warnings and errors appear below. <a href="{{ url_for('system_health_log_file') }}">View all request logs</a>.</p>
 </aside>
 </div>
 

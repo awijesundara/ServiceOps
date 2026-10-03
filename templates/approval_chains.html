@@ -7,7 +7,7 @@
     <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>All chains</strong><small>{{ total }} records</small></div></div>
     <form class="list-search">
       <input name="q" value="{{ q }}" placeholder="Chain name or target" aria-label="Search approval chains">
-      <button>Search</button>
+      <button>{{ t('Search') }}</button>
     </form>
     <nav class="list-pagination" aria-label="Pagination">
       <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('approval_chains', q=q, page=page-1) }}">‹</a>

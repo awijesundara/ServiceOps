@@ -8,7 +8,7 @@
   <div class="panel-head"><div><h2 id="published-automation-rules">Published automation rules</h2><p>{{ package.workflows|length }} rule(s) in the approved configuration · package <code>{{ package_hash }}</code></p></div>
     <form method="post"><input type="hidden" name="action" value="deploy"><button class="primary">Validate and publish rules</button></form>
   </div>
-  <table><thead><tr><th>Rule</th><th>Runs when</th><th>Published version</th><th>Status</th></tr></thead><tbody>
+  <table><thead><tr><th>Rule</th><th>Runs when</th><th>Published version</th><th>{{ t('Status') }}</th></tr></thead><tbody>
   {% for definition in definitions %}<tr><td><strong>{{ definition.name }}</strong><small><code>{{ definition.workflow_key }}</code></small></td><td>{{ definition.event_type }}</td><td>{{ definition.published_version.version if definition.published_version else "None" }}</td><td>{{ "Active" if definition.active else "Disabled" }}</td></tr>{% else %}<tr><td colspan="4">No workflows deployed.</td></tr>{% endfor %}
   </tbody></table>
 </section>

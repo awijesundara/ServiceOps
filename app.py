@@ -3656,7 +3656,11 @@ def change_approval_stages(ticket):
             "approver_ids": ccb_ids,
         })
         executive = executive_office_group(ticket.tenant_id)
-        if not executive or not executive.manager or not executive.manager.active:
+        executive_ids = sorted({
+            member.user_id for member in (executive.members if executive and executive.active else [])
+            if member.role == "executive approver" and member.user.active
+        } | ({executive.manager_id} if executive and executive.active and executive.manager and executive.manager.active else set()))
+        if not executive_ids:
             abort(409, description=(
                 "Executive (CEO) approval authority must be configured "
                 "(itil_admin's Executive approval section) before a "
@@ -3664,8 +3668,8 @@ def change_approval_stages(ticket):
             ))
         stages.append({
             "name": "Executive (CEO) approval",
-            "mode": "all",
-            "approver_ids": [executive.manager_id],
+            "mode": executive.approval_mode if executive.approval_mode in {"all", "any"} else "all",
+            "approver_ids": executive_ids,
         })
     return stages
 
@@ -5593,9 +5597,9 @@ def user_support_group_ids(user):
 def client_sysops_group(tenant_id):
     return SupportGroup.query.filter(
         SupportGroup.tenant_id == tenant_id,
-        func.lower(SupportGroup.name) == "sysops",
+        SupportGroup.group_type == "Client Support",
         SupportGroup.active.is_(True),
-    ).first()
+    ).order_by(SupportGroup.id).first()
 
 
 def user_can_access_client_management(user):
@@ -6153,7 +6157,7 @@ def seed_itil(admin):
         db.session.add_all([service_desk, security])
     if not SupportGroup.query.filter(
         SupportGroup.tenant_id == admin.tenant_id,
-        func.lower(SupportGroup.name) == "sysops",
+        SupportGroup.group_type == "Client Support",
     ).first():
         db.session.add(SupportGroup(
             name="SysOps", group_type="Client Support", tenant_id=admin.tenant_id,
@@ -7529,6 +7533,9 @@ def create_app(test_config=None):
     validate_projection_policy()
 
     with app.app_context():
+        if app.config["SQLALCHEMY_DATABASE_URI"].startswith("postgres"):
+            from serviceops_core.database_pool import install_process_guard
+            install_process_guard(db.engine)
         os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
         # Optional database-less deployment mode (STORAGE_MODE=ipfs): this
         # milestone (BACKLOG B-335) covers file attachments plus login --
@@ -7631,10 +7638,6 @@ def create_app(test_config=None):
                     server_metadata_url=setting_value("KEYCLOAK_DISCOVERY_URL"),
                     client_kwargs={"scope": "openid profile email"},
                 )
-        # Gunicorn preloads the application before forking workers. Do not let
-        # workers inherit PostgreSQL connections or prepared-statement state.
-        if not ipfs_enabled():
-            db.engine.dispose()
 
     def csrf_token():
         token = session.get("_csrf_token")
@@ -7983,7 +7986,8 @@ def create_app(test_config=None):
 
     @app.context_processor
     def ui_context():
-        platform_context = {
+        from serviceops_core.localization import template_context
+        platform_context = template_context() | {
             "nav_active": nav_active,
             "instance_name": setting_value("INSTANCE_NAME", "ServiceOps"),
             "company_name": setting_value("COMPANY_NAME", "Your Company"),
@@ -8013,7 +8017,7 @@ def create_app(test_config=None):
         recent_notifications = notification_query.order_by(Notification.created_at.desc()).limit(6).all()
         current_page_url = request.path + (f"?{request.query_string.decode()}" if request.query_string else "")
         current_tenant = db.session.get(Tenant, current_user.tenant_id)
-        return platform_context | {
+        return platform_context | template_context(preference.language) | {
             "current_tenant_slug": current_tenant.slug if current_tenant else None,
             "ui_preference": preference,
             "ui_favorites": favorites,
@@ -8141,6 +8145,9 @@ def create_app(test_config=None):
     # recorded" -- silently no-ops for the rest of the process.
     app.logger.disabled = False
 
+    from serviceops_core.syslog_forwarding import install as install_syslog
+    install_syslog(app, setting_value, JsonLogFormatter(), RedactingFilter())
+
     if ipfs_enabled() and os.getenv("SERVICEOPS_SERVING") == "1":
         app.extensions["ipfs_projection"].start_checkpoint_loop()
 
@@ -8182,6 +8189,19 @@ def create_app(test_config=None):
 
     from serviceops_core.ai.routes import register as register_ai
     register_ai(app)
+    if os.getenv("SERVICEOPS_SERVING") == "1":
+        from serviceops_core.crash_reports import install_request_watchdog
+        install_request_watchdog(app)
+    # Configuration reads (including syslog setup) can reopen the pool. Release
+    # sessions and connections only after every startup component has finished.
+    if not ipfs_enabled():
+        try:
+            with app.app_context():
+                db.session.remove()
+                db.engine.dispose()
+        except Exception:
+            app.logger.exception("Unable to clear startup database connections before serving")
+            raise
     return app
 
 

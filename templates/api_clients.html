@@ -8,12 +8,12 @@
 {% endif %}
 <div class="detail-grid">
 <section class="panel"><h2>Clients</h2>
-<table><thead><tr><th>Name</th><th>Acting user</th><th>Scopes</th><th>Last used</th><th>Status</th><th></th></tr></thead><tbody>
+<table><thead><tr><th>{{ t('Name') }}</th><th>Acting user</th><th>Scopes</th><th>Last used</th><th>{{ t('Status') }}</th><th></th></tr></thead><tbody>
 {% for client in clients %}<tr><td><strong>{{ client.name }}</strong><small>{{ client.token_prefix }}…</small></td><td>{{ client.acting_user.name }}</td><td>{{ client.scopes|sort|join(', ') }}</td><td>{{ (client.last_used_at|usertime('%Y-%m-%d %H:%M')) if client.last_used_at else 'Never' }}</td><td>{{ 'Active' if client.active else 'Revoked' }}</td><td>{% if client.active %}<form method="post" action="{{ url_for('api_client_revoke', client_id=client.id) }}"><button>Revoke</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="6">No API clients.</td></tr>{% endfor %}
 </tbody></table></section>
 <aside class="panel"><h2>Create client</h2><form method="post" class="stack">
-<label>Name<input name="name" maxlength="160" required></label>
+<label>{{ t('Name') }}<input name="name" maxlength="160" required></label>
 <label>Acting user<select name="acting_user_id" required>{% for user in users %}<option value="{{ user.id }}">{{ user.name }} · {{ user.role }}</option>{% endfor %}</select></label>
 <fieldset><legend>Scopes</legend>{% for scope in available_scopes %}<label class="check"><input type="checkbox" name="scopes" value="{{ scope }}"> {{ scope }}</label>{% endfor %}</fieldset>
 <button class="primary">Create and reveal token</button></form></aside>

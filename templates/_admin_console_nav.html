@@ -1,11 +1,11 @@
 <aside class="settings-console-nav admin-console-nav" aria-label="Administration areas">
   <header class="settings-nav-head">
     <span class="settings-nav-mark" aria-hidden="true">⚙</span>
-    <span><strong>Administration</strong><small>ServiceOps control center</small></span>
+    <span><strong>{{ t('Administration') }}</strong><small>ServiceOps control center</small></span>
   </header>
   <label class="settings-console-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search administration" aria-label="Search administration areas" data-settings-menu-search></label>
   <nav>
-    <a href="{{ url_for('admin_home') }}" class="{{ 'active' if not active_section else '' }}"><span class="settings-nav-icon" aria-hidden="true">⌂</span><span><strong>General</strong><small>Administration overview</small></span><b aria-hidden="true">›</b></a>
+    <a href="{{ url_for('admin_home') }}" class="{{ 'active' if not active_section else '' }}"><span class="settings-nav-icon" aria-hidden="true">⌂</span><span><strong>{{ t('General') }}</strong><small>Administration overview</small></span><b aria-hidden="true">›</b></a>
     {% set nav_areas = [
       ('people-access','People & access','Users, teams and permissions','♙'),
       ('service-configuration','Service configuration','Requests, changes and SLAs','↔'),
@@ -18,5 +18,5 @@
     {% endfor %}
   </nav>
   <p class="settings-menu-empty" hidden data-settings-menu-empty>No matching administration area.</p>
-  <footer><span class="status-dot" aria-hidden="true"></span><span><strong>Administration</strong><small>Role protected and audited</small></span></footer>
+  <footer><span class="status-dot" aria-hidden="true"></span><span><strong>{{ t('Administration') }}</strong><small>Role protected and audited</small></span></footer>
 </aside>

@@ -21,7 +21,7 @@
       <button class="primary" type="submit" form="incident-record-form" name="resolve" value="1">Resolve</button>
       {% endif %}
       {% endif %}
-      {% if can_close %}<form method="post"><input type="hidden" name="action" value="close"><button class="button">Close</button></form>{% endif %}
+      {% if can_close %}<form method="post"><input type="hidden" name="action" value="close"><button class="button">{{ t('Close') }}</button></form>{% endif %}
       {% if can_reopen %}<form method="post"><input type="hidden" name="action" value="reopen"><button class="button">Reopen</button></form>{% endif %}
     </div>
   </header>
@@ -40,7 +40,7 @@
       <label><span>Subcategory</span>{{ subcategory_field(ticket.subcategory, disabled=not can_manage_ticket) }}</label>
       <label><span>Urgency</span><select name="urgency" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.urgency==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label><span>Service offering</span><select name="service_offering_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">Not selected</option>{% for offering in service_offerings %}<option value="{{ offering.id }}" {% if ticket.service_offering_id==offering.id %}selected{% endif %}>{{ offering.name }}</option>{% endfor %}</select></label>
-      <label><span>Priority</span><select name="priority" {% if not can_manage_ticket %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
+      <label><span>{{ t('Priority') }}</span><select name="priority" {% if not can_manage_ticket %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
       <label><span>Configuration item</span><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" value="{{ primary_ci_link.ci.name if primary_ci_link else '' }}" {% if not can_manage_ticket %}disabled{% endif %}><input type="hidden" name="ci_id" value="{{ primary_ci_link.ci_id if primary_ci_link else '' }}" data-owning-team="{{ primary_ci_link.ci.support_group.name if primary_ci_link and primary_ci_link.ci.support_group else '' }}"><div class="lookup-results" hidden></div></div></label>
       <label><span>Notify</span><select name="notify" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Email','In-app only','Do not notify'] %}<option {% if ticket.notify==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <div class="record-grid-trio">
@@ -51,7 +51,7 @@
     </div>
     <div class="record-long-fields">
       <label class="required-field"><span>Short description</span><input name="title" maxlength="180" value="{{ ticket.title }}" required {% if not can_manage_ticket %}disabled{% endif %}></label>
-      <label class="required-field"><span>Description</span><textarea name="description" rows="7" required {% if not can_manage_ticket %}disabled{% endif %}>{{ ticket.description }}</textarea></label>
+      <label class="required-field"><span>{{ t('Description') }}</span><textarea name="description" rows="7" required {% if not can_manage_ticket %}disabled{% endif %}>{{ ticket.description }}</textarea></label>
       {% if can_manage_ticket %}<label><span>Priority override reason</span><textarea name="priority_override_reason" rows="2" placeholder="Required when overriding calculated priority">{{ ticket.priority_override_reason or '' }}</textarea></label>{% endif %}
     </div>
     {% if can_manage_ticket or ticket.resolution_notes or ticket.closure_category %}
@@ -78,7 +78,7 @@
   <header class="section-heading"><div><h2>Major incident coordination</h2></div></header>
   {% if major %}
   <dl class="governance-grid">
-    <dt>Status</dt><dd>{{ major.status }}</dd>
+    <dt>{{ t('Status') }}</dt><dd>{{ major.status }}</dd>
     <dt>Coordinator</dt><dd>{{ major.coordinator.name if major.coordinator else 'Not assigned' }}</dd>
     <dt>Business impact</dt><dd>{{ major.business_impact or 'Not documented' }}</dd>
     <dt>Communications</dt><dd>{{ major.communications or 'Not documented' }}</dd>
@@ -88,7 +88,7 @@
   {% if can_manage_ticket %}
   <details><summary>{{ 'Update' if major else 'Propose' }} major incident</summary>
     <form method="post" action="{{ url_for('major_incident_update', ticket_id=ticket.id) }}" class="form-grid">
-      <label>Status<select name="status">{% for value in ['Proposed','Accepted','Rejected','Resolved'] %}<option {% if major and major.status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label>{{ t('Status') }}<select name="status">{% for value in ['Proposed','Accepted','Rejected','Resolved'] %}<option {% if major and major.status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label class="wide">Business impact<textarea name="business_impact" rows="3">{{ major.business_impact if major else '' }}</textarea></label>
       <label class="wide">Coordination and communications<textarea name="communications" rows="3">{{ major.communications if major else '' }}</textarea></label>
       <div class="wide actions"><button>Save major incident status</button></div>
@@ -143,7 +143,7 @@
       <input type="hidden" name="source_type" value="ticket"><input type="hidden" name="source_id" value="{{ ticket.id }}">
       <input type="hidden" name="redirect_to" value="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">
       <label class="wide required-field"><span>Title</span><input name="title" maxlength="200" required value="Improvement from {{ ticket.number }}: "></label>
-      <label class="wide"><span>Description</span><textarea name="description" rows="2"></textarea></label>
+      <label class="wide"><span>{{ t('Description') }}</span><textarea name="description" rows="2"></textarea></label>
       <div class="wide actions"><button>Raise improvement</button></div>
     </form>
   </details>
@@ -167,7 +167,7 @@
     <header class="section-heading"><div><h2>Activity and work notes</h2><p>Conversation and resolution evidence</p></div></header>
     {% from "_comment_thread.html" import comment_thread %}
     <div class="comment-thread">{{ comment_thread(ticket) }}</div>
-    <form method="post" class="comment-box" enctype="multipart/form-data" id="comment-form" data-ticket-id="{{ ticket.id }}"><input type="hidden" name="action" value="comment"><input type="hidden" name="parent_id" value="" id="comment-parent-id"><div class="comment-reply-banner" id="comment-reply-banner" hidden>Replying to <b id="comment-reply-author"></b> <button type="button" id="comment-reply-cancel">Cancel</button></div><div class="mention-input-wrap"><textarea name="body" rows="3" placeholder="Add a work note or comment… (type @ to mention someone)" required id="comment-body-input"></textarea><ul class="mention-suggestions" id="mention-suggestions" hidden></ul></div><label class="comment-attach"><span>Attach a file (optional)</span><input type="file" name="file"></label><button class="primary">Post comment</button></form>
+    <form method="post" class="comment-box" enctype="multipart/form-data" id="comment-form" data-ticket-id="{{ ticket.id }}"><input type="hidden" name="action" value="comment"><input type="hidden" name="parent_id" value="" id="comment-parent-id"><div class="comment-reply-banner" id="comment-reply-banner" hidden>Replying to <b id="comment-reply-author"></b> <button type="button" id="comment-reply-cancel">{{ t('Cancel') }}</button></div><div class="mention-input-wrap"><textarea name="body" rows="3" placeholder="Add a work note or comment… (type @ to mention someone)" required id="comment-body-input"></textarea><ul class="mention-suggestions" id="mention-suggestions" hidden></ul></div><label class="comment-attach"><span>Attach a file (optional)</span><input type="file" name="file"></label><button class="primary">Post comment</button></form>
   </section>
 
   <section class="panel">

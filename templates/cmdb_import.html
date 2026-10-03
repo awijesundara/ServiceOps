@@ -112,7 +112,7 @@
     {% if netbox_probe.roles %}<p><strong>Device roles → CI class:</strong> {% for role in netbox_probe.roles %}{{ role.name }}{% if role.devices is not none %} ({{ role.devices }}){% endif %} → {{ role.ci_class }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
     {% if netbox_probe.sample %}
     <p><strong>Sample devices as they would appear in the CMDB:</strong></p>
-    <div class="import-changes-scroll"><table class="import-changes-table"><thead><tr><th scope="col">Name</th><th scope="col">Class</th><th scope="col">Serial</th><th scope="col">Model</th><th scope="col">IP</th><th scope="col">Location</th><th scope="col">Rack</th><th scope="col">Status</th></tr></thead><tbody>
+    <div class="import-changes-scroll"><table class="import-changes-table"><thead><tr><th scope="col">{{ t('Name') }}</th><th scope="col">Class</th><th scope="col">Serial</th><th scope="col">Model</th><th scope="col">IP</th><th scope="col">Location</th><th scope="col">Rack</th><th scope="col">{{ t('Status') }}</th></tr></thead><tbody>
     {% for d in netbox_probe.sample %}<tr><td>{{ d.name }}</td><td>{{ d.ci_class }}</td><td>{{ d.serial_number or '—' }}</td><td>{{ [d.vendor, d.model]|select|join(' ') or '—' }}</td><td>{{ d.ip_address or '—' }}</td><td>{{ d.location or '—' }}</td><td>{{ d.rack or '—' }}</td><td>{{ d.operational_status or 'kept' }}</td></tr>{% endfor %}
     </tbody></table></div>
     {% endif %}
@@ -189,7 +189,7 @@
     {% if snipeit_probe.status_labels %}<p><strong>Status labels → lifecycle:</strong> {% for l in snipeit_probe.status_labels %}{{ l.name }} → {{ l.lifecycle_state or 'kept' }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
     {% if snipeit_probe.sample %}
     <p><strong>Sample assets as they would appear in the CMDB:</strong></p>
-    <div class="import-changes-scroll"><table class="import-changes-table"><thead><tr><th scope="col">Name</th><th scope="col">Asset tag</th><th scope="col">Class</th><th scope="col">Serial</th><th scope="col">Model</th><th scope="col">Location</th><th scope="col">Rack / U</th><th scope="col">Environment</th><th scope="col">Assigned to</th><th scope="col">Lifecycle</th></tr></thead><tbody>
+    <div class="import-changes-scroll"><table class="import-changes-table"><thead><tr><th scope="col">{{ t('Name') }}</th><th scope="col">Asset tag</th><th scope="col">Class</th><th scope="col">Serial</th><th scope="col">Model</th><th scope="col">Location</th><th scope="col">Rack / U</th><th scope="col">Environment</th><th scope="col">Assigned to</th><th scope="col">Lifecycle</th></tr></thead><tbody>
     {% for a in snipeit_probe.sample %}<tr><td>{{ a.name }}</td><td>{{ a.asset_tag or '—' }}</td><td>{{ a.ci_class }}</td><td>{{ a.serial_number or '—' }}</td><td>{{ [a.vendor, a.model]|select|join(' ') or '—' }}</td><td>{{ a.location or '—' }}</td><td>{{ a.rack or '—' }}</td><td>{{ a.environment or 'kept' }}</td><td>{% if a.assigned_to %}{{ a.assigned_to }}{% if not a.owner_matched %} <small class="muted">(no matching user)</small>{% endif %}{% else %}—{% endif %}</td><td>{{ a.lifecycle_state or 'kept' }}</td></tr>{% endfor %}
     </tbody></table></div>
     {% endif %}

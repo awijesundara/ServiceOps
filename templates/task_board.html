@@ -8,7 +8,7 @@
 <section class="board-toolbar panel" aria-label="Task board filters">
   <form method="get" class="board-filters">
     <label><span>Board scope</span><select name="scope"><option value="focus" {% if scope == 'focus' %}selected{% endif %}>Operational focus</option><option value="all" {% if scope == 'all' %}selected{% endif %}>All current work</option></select></label>
-    <label><span>Priority</span><select name="priority"><option value="">All priorities</option>{% for priority in ['P1', 'P2', 'P3', 'P4'] %}<option value="{{ priority }}" {% if priority_filter == priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
+    <label><span>{{ t('Priority') }}</span><select name="priority"><option value="">All priorities</option>{% for priority in ['P1', 'P2', 'P3', 'P4'] %}<option value="{{ priority }}" {% if priority_filter == priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
     <button class="primary" type="submit">Apply</button>
     {% if scope != 'focus' or priority_filter %}<a class="button" href="{{ url_for('task_board') }}">Reset</a>{% endif %}
   </form>

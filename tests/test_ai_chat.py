@@ -270,7 +270,7 @@ def test_history_is_withheld_when_a_cited_record_is_no_longer_readable(app, clie
 
 def test_widget_and_page_only_render_for_users_who_may_chat(app, client, world):
     login(client, "employee", "Employee123!")
-    assert b"data-chat-launch" in client.get("/dashboard").data or b"data-chat-launch" in client.get("/").data
+    assert b"data-chat-launch" in client.get("/").data or b"data-chat-launch" in client.get("/").data
     page = client.get("/ai/chat")
     assert page.status_code == 200 and b"ServiceOps AI" in page.data and b"data-chat-launch" not in page.data
     with app.app_context():
@@ -286,15 +286,15 @@ def test_the_open_chat_state_is_rendered_server_side_from_a_cookie_not_flashed_i
     sessionStorage, invisible to the server. It's now a small, non-sensitive cookie
     the server reads before the first byte of HTML is sent."""
     login(client, "employee", "Employee123!")
-    closed = client.get("/dashboard")
+    closed = client.get("/")
     assert b' class="ai-chat-open"' not in closed.data  # no stray class when never opened
     client.set_cookie("ai_chat_open", "1")
-    opened = client.get("/dashboard")
-    assert b'<html lang="en" class="ai-chat-open" style="--brand-primary:' in opened.data
+    opened = client.get("/")
+    assert b'<html lang="en" dir="ltr" class="ai-chat-open" style="--brand-primary:' in opened.data
     full_page = client.get("/ai/chat")  # the full chat page has no launcher/widget at all
     assert b"ai-chat-open" not in full_page.data
     client.set_cookie("ai_chat_open", "not-the-literal-string-1")  # anything else reads as closed
-    assert b"ai-chat-open" not in client.get("/dashboard").data
+    assert b"ai-chat-open" not in client.get("/").data
     client.delete_cookie("ai_chat_open")
     client.get("/logout")
     assert b"ai-chat-open" not in client.get("/login").data  # never for a signed-out visitor
