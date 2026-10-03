@@ -7,5 +7,5 @@
    labels, or other non-status badges, which should keep the plain
    .badge/.tag styling. #}
 {% macro status_badge(value) -%}
-<span class="status-badge {{ (value or '')|lower|replace(' ', '-') }}">{{ value }}</span>
+<span class="status-badge {{ (value or '')|lower|replace(' ', '-') }}">{{ tr_value(value) }}</span>
 {%- endmacro %}

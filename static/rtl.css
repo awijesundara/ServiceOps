@@ -17,3 +17,60 @@ html[dir="rtl"] .nav-popover { right: auto; left: 0; }
 @media (max-width: 900px) {
   html[dir="rtl"] .unified-nav { right: 0; }
 }
+
+/* Accent bars and indents belong on the inline-start side (the right in RTL). */
+html[dir="rtl"] .flash { border-left: 0; border-right: 4px solid var(--brand-teal); }
+html[dir="rtl"] .flash.error { border-right-color: #b9362d; }
+html[dir="rtl"] .sidebar nav a { border-left: 0; border-right: 3px solid transparent; }
+html[dir="rtl"] .sidebar nav a:hover, html[dir="rtl"] .sidebar nav a:focus-visible { border-right-color: var(--brand-amber); }
+html[dir="rtl"] .sidebar nav { padding-right: 0; padding-left: 3px; }
+html[dir="rtl"] .settings-nav a { border-left: 0; border-right: 3px solid transparent; }
+html[dir="rtl"] .settings-nav a:hover, html[dir="rtl"] .settings-nav a.active { border-right-color: var(--brand-amber); }
+html[dir="rtl"] .settings-scope-note { border-left: 0; border-right: 4px solid var(--brand-teal); }
+html[dir="rtl"] .settings-scope-banner { border-left-width: 1px; border-right: 4px solid var(--green); }
+html[dir="rtl"] .audience-banner { border-left: 0; border-right: 4px solid var(--green); }
+html[dir="rtl"] .import-run { border-left-width: 1px; border-right: 4px solid #1d6f82; }
+html[dir="rtl"] .board-card { border-left-width: 1px; border-right: 4px solid #8da0a7; }
+html[dir="rtl"] .board-card.sla-breached { border-right-color: #b42318; }
+html[dir="rtl"] .board-card.sla-at-risk { border-right-color: #d97706; }
+html[dir="rtl"] .board-card.sla-healthy { border-right-color: #16856b; }
+html[dir="rtl"] .gate { margin: 10px 14px 0 0; border-left: 0; border-right: 3px solid #b7dcd5; }
+html[dir="rtl"] .comment-thread .comment-reply { margin-left: 0; margin-right: 46px; padding-left: 0; padding-right: 14px; border-left: 0; border-right: 2px solid #e3ebe9; }
+html[dir="rtl"] .org2-children { margin-left: 0; margin-right: 26px; padding-left: 0; padding-right: 22px; border-left: 0; border-right: 2px solid #dfe7e9; }
+html[dir="rtl"] .ai-answer .ai-quote { border-left: 0; border-right: 3px solid var(--line); }
+html[dir="rtl"] .ai-answer .ai-list { padding-left: 0; padding-right: 22px; }
+html[dir="rtl"] .ai-step+.ai-step::before { left: auto; right: 9px; }
+html[dir="rtl"] .ai-chat-history { border-right: 0; border-left: 1px solid var(--line); }
+html[dir="rtl"] .settings-console-nav { border-right: 0; border-left: 1px solid #d9e0e3; }
+@media (max-width: 650px) {
+  html[dir="rtl"] .org2-children { margin-right: 14px; padding-right: 12px; }
+}
+@media (max-width: 760px) {
+  html[dir="rtl"] .settings-console-nav { border-left: 0; }
+}
+
+/* Items pushed to the far end of a row, and start-aligned text. */
+html[dir="rtl"] .columns-picker, html[dir="rtl"] .list-breadcrumb-count, html[dir="rtl"] .ai-actions .muted,
+html[dir="rtl"] .comment-reply-banner button { margin-left: 0; margin-right: auto; }
+html[dir="rtl"] .approval-history-table th, html[dir="rtl"] .ai-history-open, html[dir="rtl"] .aiadm-presets button,
+html[dir="rtl"] .sidebar .role-switcher summary>span { text-align: start; }
+html[dir="rtl"] .chain>.badge { float: left; }
+html[dir="rtl"] .field-source, html[dir="rtl"] .ai-collab-tag, html[dir="rtl"] .record-related-panel .info-tip,
+html[dir="rtl"] .aiadm-choice em { margin-left: 0; margin-right: 6px; }
+html[dir="rtl"] .field-label .field-source { margin-right: 0; }
+html[dir="rtl"] .priority-dot, html[dir="rtl"] .attachment-thumb, html[dir="rtl"] .brand .serviceops-app-mark,
+html[dir="rtl"] .ai-history-delete-icon { margin-right: 0; margin-left: 8px; }
+
+/* Floating panels and launchers open from the inline-start corner. */
+html[dir="rtl"] .columns-picker-panel, html[dir="rtl"] .ai-chat-menu-items { right: auto; left: 0; }
+html[dir="rtl"] .notification-menu summary b { right: auto; left: 0; }
+html[dir="rtl"] .ai-launcher { right: auto; left: 22px; }
+html[dir="rtl"] .ai-chat.is-widget { right: auto; left: 22px; }
+@media (max-width: 700px) {
+  html[dir="rtl"] .ai-launcher { left: 14px; }
+  html[dir="rtl"] .ai-chat.is-widget { left: 0; }
+}
+
+/* Typing in either direction: identifiers, addresses and numbers stay LTR. */
+html[dir="rtl"] input[type="number"], html[dir="rtl"] input[type="tel"],
+html[dir="rtl"] .record-number { direction: ltr; unicode-bidi: isolate; }

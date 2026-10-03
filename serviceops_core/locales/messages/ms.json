@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Isnin",
+   "Selasa",
+   "Rabu",
+   "Khamis",
+   "Jumaat",
+   "Sabtu",
+   "Ahad"
+  ],
+  "days_abbr": [
+   "Isn",
+   "Sel",
+   "Rab",
+   "Kha",
+   "Jum",
+   "Sab",
+   "Ahd"
+  ],
+  "months": [
+   "Januari",
+   "Februari",
+   "Mac",
+   "April",
+   "Mei",
+   "Jun",
+   "Julai",
+   "Ogos",
+   "September",
+   "Oktober",
+   "November",
+   "Disember"
+  ],
+  "months_abbr": [
+   "Jan",
+   "Feb",
+   "Mac",
+   "Apr",
+   "Mei",
+   "Jun",
+   "Jul",
+   "Ogo",
+   "Sep",
+   "Okt",
+   "Nov",
+   "Dis"
+  ]
+ },
+ "language": "ms",
+ "messages": {
+  "Administration": "Pentadbiran",
+  "Back": "Kembali",
+  "Cancel": "Batal",
+  "Changes": "Perubahan",
+  "Close": "Tutup",
+  "Create": "Cipta",
+  "Dashboard": "Papan pemuka",
+  "Delete": "Padam",
+  "Description": "Penerangan",
+  "Edit": "Sunting",
+  "General": "Umum",
+  "Incidents": "Insiden",
+  "Knowledge": "Pengetahuan",
+  "Language": "Bahasa",
+  "Name": "Nama",
+  "Notifications": "Pemberitahuan",
+  "Preferences": "Keutamaan",
+  "Priority": "Keutamaan",
+  "Save": "Simpan",
+  "Save preferences": "Simpan keutamaan",
+  "Search": "Cari",
+  "Service requests": "Permintaan perkhidmatan",
+  "Status": "Status",
+  "System preferences": "Keutamaan sistem"
+ }
+}

@@ -1,25 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Sign in · ServiceOps{% endblock %}
+{% block title %}{{ tr('Sign in · ServiceOps') }}{% endblock %}
 {% block content %}
 <section class="login-card">
   {% if has_company_logo %}
-  <img class="company-logo brand-login-mark" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo">
+  <img class="company-logo brand-login-mark" src="{{ url_for('company_logo') }}" alt="{{ tr('{company_name} logo', company_name=(company_name)) }}">
   {% else %}
-  <img class="serviceops-wordmark brand-login-wordmark" src="{{ url_for('static', filename='brand/serviceops-wordmark.png', v=app_version) }}" alt="ServiceOps">
+  <img class="serviceops-wordmark brand-login-wordmark" src="{{ url_for('static', filename='brand/serviceops-wordmark.png', v=app_version) }}" alt="{{ tr('ServiceOps') }}">
   {% endif %}
-  <h1>Welcome to ServiceOps</h1>
-  <p>One place for IT services, support, and operations.</p>
+  <h1>{{ tr('Welcome to ServiceOps') }}</h1>
+  <p>{{ tr('One place for IT services, support, and operations.') }}</p>
   {% if keycloak_enabled %}
-  <a class="button primary" href="{{ url_for('keycloak_login') }}">Continue with Keycloak</a>
-  <div class="muted">or use a directory/local account</div>
+  <a class="button primary" href="{{ url_for('keycloak_login') }}">{{ tr('Continue with Keycloak') }}</a>
+  <div class="muted">{{ tr('or use a directory/local account') }}</div>
   {% endif %}
   {% if local_enabled or ldap_enabled %}
   <form method="post" class="stack">
     {% if local_enabled and ldap_enabled %}
-    <label>Authentication source
+    <label>{{ tr('Authentication source') }}
       <select name="provider" data-auth-provider-select>
-        <option value="ldap">Corporate directory (AD/LDAP)</option>
-        <option value="local">Local administrator</option>
+        <option value="ldap">{{ tr('Corporate directory (AD/LDAP)') }}</option>
+        <option value="local">{{ tr('Local administrator') }}</option>
       </select>
     </label>
     {% elif ldap_enabled %}
@@ -27,11 +27,11 @@
     {% else %}
     <input type="hidden" name="provider" value="local">
     {% endif %}
-    <label>Username<input name="username" autocomplete="username" required autofocus placeholder="{{ ldap_username_placeholder if ldap_enabled else 'Username' }}" data-username-input data-ldap-placeholder="{{ ldap_username_placeholder }}"></label>
-    <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
-  <button class="primary">Sign in</button>
+    <label>{{ tr('Username') }}<input name="username" autocomplete="username" required autofocus placeholder="{{ ldap_username_placeholder if ldap_enabled else tr('Username') }}" data-username-input data-ldap-placeholder="{{ ldap_username_placeholder }}"></label>
+    <label>{{ tr('Password') }}<input name="password" type="password" autocomplete="current-password" required></label>
+  <button class="primary">{{ tr('Sign in') }}</button>
   {% if local_enabled %}
-  <a class="login-card-forgot" href="{{ url_for('forgot_password') }}" data-forgot-password-link{% if local_enabled and ldap_enabled %} hidden{% endif %}>Forgot your password?</a>
+  <a class="login-card-forgot" href="{{ url_for('forgot_password') }}" data-forgot-password-link{% if local_enabled and ldap_enabled %} hidden{% endif %}>{{ tr('Forgot your password?') }}</a>
   {% endif %}
   </form>
   {% endif %}

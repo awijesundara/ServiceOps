@@ -1,43 +1,43 @@
 {% extends "base.html" %}
-{% block title %}Investigate {{ ticket.number }} · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Investigate {number} · {instance_name}', number=(ticket.number), instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <section class="ai-run">
   <div class="ai-run-head">
     <div>
-      <p class="eyebrow">AI INVESTIGATION</p>
-      <h1>Investigate {{ ticket.number }} with AI</h1>
-      <p class="muted"><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">Back to {{ ticket.number }}</a> · {{ ticket.title }}</p>
+      <p class="eyebrow">{{ tr('AI INVESTIGATION') }}</p>
+      <h1>{{ tr('Investigate {number} with AI', number=(ticket.number)) }}</h1>
+      <p class="muted"><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ tr('Back to {number}', number=(ticket.number)) }}</a> · {{ ticket.title }}</p>
     </div>
-    <span class="ai-pill" data-state="completed">{{ 'External (OpenAI)' if config.provider == 'openai' else 'Self-hosted' }} · {{ config.model }}</span>
+    <span class="ai-pill" data-state="completed">{{ tr('External (OpenAI)') if config.provider == 'openai' else 'Self-hosted' }} · {{ config.model }}</span>
   </div>
   <div class="ai-layout">
     <div class="ai-main">
       <div class="panel">
-        <h2>What the assistant will do</h2>
+        <h2>{{ tr('What the assistant will do') }}</h2>
         <ul class="ai-list">
-          <li>Read this incident and its recent comments.</li>
-          <li>Find matching published knowledge and related resolved incidents.</li>
-          <li>Look at related configuration items your role may read.</li>
-          <li>Write a summary, likely causes, missing information and safe next steps, citing each source.</li>
+          <li>{{ tr('Read this incident and its recent comments.') }}</li>
+          <li>{{ tr('Find matching published knowledge and related resolved incidents.') }}</li>
+          <li>{{ tr('Look at related configuration items your role may read.') }}</li>
+          <li>{{ tr('Write a summary, likely causes, missing information and safe next steps, citing each source.') }}</li>
         </ul>
-        <p class="muted">A small activity label appears while the assistant works and disappears when the answer is ready. Private model reasoning is not shown. It drafts advice for your review and makes no operational changes.</p>
-        <form method="post" class="ai-actions"><input type="hidden" name="request_key" value="{{ request_key }}"><button class="primary">Start investigation</button></form>
+        <p class="muted">{{ tr('A small activity label appears while the assistant works and disappears when the answer is ready. Private model reasoning is not shown. It drafts advice for your review and makes no operational changes.') }}</p>
+        <form method="post" class="ai-actions"><input type="hidden" name="request_key" value="{{ request_key }}"><button class="primary">{{ tr('Start investigation') }}</button></form>
       </div>
       <div class="panel">
-        <h2>Your recent investigations</h2>
+        <h2>{{ tr('Your recent investigations') }}</h2>
         <table>
-          <thead><tr><th>Started</th><th>Model</th><th>{{ t('Status') }}</th><th></th></tr></thead>
+          <thead><tr><th>{{ tr('Started') }}</th><th>{{ tr('Model') }}</th><th>{{ tr('Status') }}</th><th></th></tr></thead>
           <tbody>
-          {% for run in runs %}<tr><td>{{ run.created_at|usertime }}</td><td>{{ run.model }}</td><td><span class="ai-pill" data-state="{{ run.status }}">{{ run.status|capitalize }}</span></td><td><a href="{{ url_for('ai.result', run_id=run.id) }}">Open</a></td></tr>
-          {% else %}<tr><td colspan="4" class="empty">No investigations yet.</td></tr>{% endfor %}
+          {% for run in runs %}<tr><td>{{ run.created_at|usertime }}</td><td>{{ run.model }}</td><td><span class="ai-pill" data-state="{{ run.status }}">{{ tr_value(run.status|capitalize) }}</span></td><td><a href="{{ url_for('ai.result', run_id=run.id) }}">{{ tr('Open') }}</a></td></tr>
+          {% else %}<tr><td colspan="4" class="empty">{{ tr('No investigations yet.') }}</td></tr>{% endfor %}
           </tbody>
         </table>
       </div>
     </div>
     <aside class="ai-side">
       <div class="panel">
-        <h2>Privacy</h2>
-        <p class="ai-privacy">The assistant only sees what <strong>you</strong> are allowed to see, and it cannot change anything.</p>
+        <h2>{{ tr('Privacy') }}</h2>
+        <p class="ai-privacy">{{ tr('The assistant only sees what') }} <strong>{{ tr('you') }}</strong> {{ tr('are allowed to see, and it cannot change anything.') }}</p>
       </div>
     </aside>
   </div>

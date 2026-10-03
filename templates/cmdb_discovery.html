@@ -1,48 +1,48 @@
 {% extends "base.html" %}
-{% block title %}CMDB discovery · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('CMDB discovery · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>Agentless discovery<span class="info-tip" tabindex="0" data-tip="SNMP-based discovery reads switches and other SNMP-speaking devices directly -- no software installed on the target, unlike tools/cmdb_sync_agent.sh's self-registering host agent. Each target is explicit: an administrator-entered host or CIDR range with its own credentials. Nothing outside a configured target is ever scanned.">i</span></h1><p>Discover devices and their connections without installing anything on them. Devices that answer SNMP get full detail (vendor, interfaces, neighbors); other live devices on the network still show up as a bare entry so nothing is silently missed — most phones, laptops, and consumer routers don't run SNMP, so on a typical network expect far more "liveness-only" hits than SNMP ones. A run never adds anything to the CMDB by itself — you review what was found and choose to add some, add all, or discard them.</p></div><a class="button" href="{{ url_for('cmdb') }}">‹ Back to CMDB</a></header>
+<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>{{ tr('Agentless discovery') }}<span class="info-tip" tabindex="0" data-tip="SNMP-based discovery reads switches and other SNMP-speaking devices directly -- no software installed on the target, unlike tools/cmdb_sync_agent.sh's self-registering host agent. Each target is explicit: an administrator-entered host or CIDR range with its own credentials. Nothing outside a configured target is ever scanned.">i</span></h1><p>{{ tr('Discover devices and their connections without installing anything on them. Devices that answer SNMP get full detail (vendor, interfaces, neighbors); other live devices on the network still show up as a bare entry so nothing is silently missed — most phones, laptops, and consumer routers don\'t run SNMP, so on a typical network expect far more "liveness-only" hits than SNMP ones. A run never adds anything to the CMDB by itself — you review what was found and choose to add some, add all, or discard them.') }}</p></div><a class="button" href="{{ url_for('cmdb') }}">‹ {{ tr('Back to CMDB') }}</a></header>
 
 <section class="panel">
-  <h2>Add a discovery target</h2>
+  <h2>{{ tr('Add a discovery target') }}</h2>
   <form method="post" action="{{ url_for('cmdb_discovery_add') }}" class="form-grid">
-    <label><span>{{ t('Name') }}</span><input name="name" required maxlength="160" placeholder="Core switch stack"></label>
-    <label><span>Target type</span><select name="target_type" id="discovery-target-type"><option value="host">Single host</option><option value="subnet">Subnet (CIDR)</option></select></label>
-    <label><span>Address</span><input name="address" required placeholder="10.0.1.1 or 10.0.1.0/24"></label>
-    <label><span>SNMP version</span><select name="snmp_version"><option value="2c">v2c</option><option value="3">v3</option></select></label>
-    <label><span>SNMP port</span><input type="number" name="snmp_port" value="161" min="1" max="65535"></label>
-    <label><span>Community string<span class="info-tip" tabindex="0" data-tip="Encrypted at rest with the same cipher used for webhook and integration secrets. Never shown again after saving.">i</span></span><input type="password" name="community" autocomplete="off"></label>
-    <label class="switch-row"><input type="checkbox" name="schedule_enabled"> Run on a schedule</label>
-    <label><span>Interval (minutes)</span><input type="number" name="schedule_interval_minutes" value="1440" min="5"></label>
-    <div class="wide actions"><button class="primary">Add discovery target</button></div>
+    <label><span>{{ tr('Name') }}</span><input name="name" required maxlength="160" placeholder="{{ tr('Core switch stack') }}"></label>
+    <label><span>{{ tr('Target type') }}</span><select name="target_type" id="discovery-target-type"><option value="host">{{ tr('Single host') }}</option><option value="subnet">{{ tr('Subnet (CIDR)') }}</option></select></label>
+    <label><span>{{ tr('Address') }}</span><input name="address" required placeholder="{{ tr('10.0.1.1 or 10.0.1.0/24') }}"></label>
+    <label><span>{{ tr('SNMP version') }}</span><select name="snmp_version"><option value="2c">v2c</option><option value="3">v3</option></select></label>
+    <label><span>{{ tr('SNMP port') }}</span><input type="number" name="snmp_port" value="161" min="1" max="65535"></label>
+    <label><span>{{ tr('Community string') }}<span class="info-tip" tabindex="0" data-tip="Encrypted at rest with the same cipher used for webhook and integration secrets. Never shown again after saving.">i</span></span><input type="password" name="community" autocomplete="off"></label>
+    <label class="switch-row"><input type="checkbox" name="schedule_enabled"> {{ tr('Run on a schedule') }}</label>
+    <label><span>{{ tr('Interval (minutes)') }}</span><input type="number" name="schedule_interval_minutes" value="1440" min="5"></label>
+    <div class="wide actions"><button class="primary">{{ tr('Add discovery target') }}</button></div>
   </form>
 </section>
 
 <section class="discovery-targets" aria-labelledby="discovery-targets-title">
-  <div class="section-heading"><div><h2 id="discovery-targets-title">Discovery targets</h2><p>Run a scan or open its pending results without horizontal scrolling.</p></div><span>{{ targets|length }} configured</span></div>
+  <div class="section-heading"><div><h2 id="discovery-targets-title">{{ tr('Discovery targets') }}</h2><p>{{ tr('Run a scan or open its pending results without horizontal scrolling.') }}</p></div><span>{{ tr('{targets} configured', targets=(targets|length)) }}</span></div>
   <div class="discovery-target-grid">
     {% for target in targets %}
     <article class="discovery-target-card">
       <header>
         <div><span class="badge">{{ target.target_type|capitalize }}</span><h3>{{ target.name }}</h3><code>{{ target.address }}</code></div>
         <div class="discovery-target-primary-actions">
-          <span class="discovery-target-state">{{ target.last_run_status or 'Not run' }}</span>
-          <form method="post" action="{{ url_for('cmdb_discovery_run', target_id=target.id) }}" class="discovery-run-form" data-target-type="{{ target.target_type }}"><button class="button" type="submit">Run now</button></form>
-          {% if pending_counts.get(target.id) %}<a class="primary button" href="{{ url_for('cmdb_discovery_review', target_id=target.id) }}">View results ({{ pending_counts[target.id] }})</a>{% endif %}
+          <span class="discovery-target-state">{{ target.last_run_status or tr('Not run') }}</span>
+          <form method="post" action="{{ url_for('cmdb_discovery_run', target_id=target.id) }}" class="discovery-run-form" data-target-type="{{ target.target_type }}"><button class="button" type="submit">{{ tr('Run now') }}</button></form>
+          {% if pending_counts.get(target.id) %}<a class="primary button" href="{{ url_for('cmdb_discovery_review', target_id=target.id) }}">{{ tr('View results ({pending_counts})', pending_counts=(pending_counts[target.id])) }}</a>{% endif %}
         </div>
       </header>
       <dl>
-        <div><dt>Schedule</dt><dd>{% if target.schedule_enabled %}Every {{ target.schedule_interval_minutes }} min{% else %}Manual only{% endif %}</dd></div>
-        <div><dt>Last run</dt><dd>{{ (target.last_run_at|usertime('%b %d, %Y · %H:%M')) if target.last_run_at else 'Never' }}</dd></div>
-        <div class="wide"><dt>Latest result</dt><dd>{{ target.last_run_summary or 'No discovery results yet.' }}</dd></div>
+        <div><dt>{{ tr('Schedule') }}</dt><dd>{% if target.schedule_enabled %}{{ tr('Every {schedule_interval_minutes} min', schedule_interval_minutes=(target.schedule_interval_minutes)) }}{% else %}{{ tr('Manual only') }}{% endif %}</dd></div>
+        <div><dt>{{ tr('Last run') }}</dt><dd>{{ (target.last_run_at|usertime('%b %d, %Y · %H:%M')) if target.last_run_at else tr('Never') }}</dd></div>
+        <div class="wide"><dt>{{ tr('Latest result') }}</dt><dd>{{ target.last_run_summary or tr('No discovery results yet.') }}</dd></div>
       </dl>
       <footer class="discovery-target-actions">
-        {% if not pending_counts.get(target.id) %}<span class="discovery-no-results">No pending results to review</span>{% endif %}
-        <form method="post" action="{{ url_for('cmdb_discovery_delete', target_id=target.id) }}" data-confirm="Remove discovery target {{ target.name }}?"><button class="link-button discovery-delete" type="submit">Delete target</button></form>
+        {% if not pending_counts.get(target.id) %}<span class="discovery-no-results">{{ tr('No pending results to review') }}</span>{% endif %}
+        <form method="post" action="{{ url_for('cmdb_discovery_delete', target_id=target.id) }}" data-confirm="{{ tr('Remove discovery target {name}?', name=(target.name)) }}"><button class="link-button discovery-delete" type="submit">{{ tr('Delete target') }}</button></form>
       </footer>
     </article>
     {% else %}
-    <div class="panel empty-table">No discovery targets configured yet.</div>
+    <div class="panel empty-table">{{ tr('No discovery targets configured yet.') }}</div>
     {% endfor %}
   </div>
 </section>

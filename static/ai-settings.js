@@ -10,8 +10,8 @@
   const cards = $("cards"), empty = $("empty"), dialog = $("dialog"), form = $("form");
   let services = data.services.slice();
 
-  const PROVIDER_NAMES = { self_hosted: "Your own server", openai_compatible: "Hosted service", openai: "OpenAI", anthropic: "Claude" };
-  const STATUS = { ready: "Working", untested: "Not tested yet", failing: "Not responding", off: "Paused" };
+  const PROVIDER_NAMES = { self_hosted: tr("Your own server"), openai_compatible: tr("Hosted service"), openai: "OpenAI", anthropic: "Claude" };
+  const STATUS = { ready: tr("Working"), untested: tr("Not tested yet"), failing: tr("Not responding"), off: tr("Paused") };
   const FIXED = { openai: true, anthropic: true };
 
   function el(tag, cls, text) {
@@ -28,7 +28,7 @@
       body: JSON.stringify(body || {})
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (json) {
-        if (!response.ok) throw new Error(json.error || "Something went wrong. Please try again.");
+        if (!response.ok) throw new Error(json.error || tr("Something went wrong. Please try again."));
         return json;
       });
     });
@@ -47,9 +47,9 @@
     const node = el("article", "aiadm-card" + (service.enabled ? "" : " is-off"));
     const top = el("div", "aiadm-card-top");
     top.appendChild(el("h3", "", service.name));
-    top.appendChild(el("span", "ai-route-chip is-" + (service.external ? "external" : "private"), service.external ? "Outside" : "Private"));
+    top.appendChild(el("span", "ai-route-chip is-" + (service.external ? "external" : "private"), service.external ? tr("Outside") : tr("Private")));
     node.appendChild(top);
-    node.appendChild(el("p", "aiadm-card-sub", (PROVIDER_NAMES[service.provider] || service.provider) + " · " + (service.model || "no model")));
+    node.appendChild(el("p", "aiadm-card-sub", (PROVIDER_NAMES[service.provider] || service.provider) + " · " + (service.model || tr("no model"))));
     const status = el("p", "aiadm-status is-" + service.status);
     status.appendChild(el("span", "aiadm-dot"));
     status.appendChild(document.createTextNode(STATUS[service.status] || service.status));
@@ -57,52 +57,54 @@
     const load = el("div", "aiadm-load");
     const bar = el("progress");
     bar.max = service.max_concurrency; bar.value = Math.min(service.load, service.max_concurrency);
-    bar.setAttribute("aria-label", "Busy: " + service.load + " of " + service.max_concurrency);
+    bar.setAttribute("aria-label", tr("Busy: {load} of {limit}", { load: service.load, limit: service.max_concurrency }));
     load.appendChild(bar);
-    load.appendChild(el("span", "muted", service.load ? "Busy " + service.load + "/" + service.max_concurrency : "Free"));
+    load.appendChild(el("span", "muted", service.load ? tr("Busy {load}/{limit}", { load: service.load, limit: service.max_concurrency }) : tr("Free")));
     node.appendChild(load);
-    const tierName = { lite: "Fast", standard: "Balanced", pro: "Advanced" }[service.tier];
-    if (tierName) node.appendChild(el("p", "muted aiadm-fine", tierName + " model"));
+    const tierName = { lite: tr("Fast model"), standard: tr("Balanced model"), pro: tr("Advanced model") }[service.tier];
+    if (tierName) node.appendChild(el("p", "muted aiadm-fine", tierName));
     const box = service.allowance;
     if (box) {
       const wrap = el("div", "aiadm-allow" + (box.ok ? "" : " is-used"));
       const line = function (label, used, limit) {
         if (limit === null || limit === undefined) return;
         const row = el("div", "aiadm-allow-row");
-        row.appendChild(el("span", "", label + ": " + used.toLocaleString() + " of " + limit.toLocaleString()));
+        row.appendChild(el("span", "", tr("{period}: {used} of {limit}", { period: label, used: used.toLocaleString(), limit: limit.toLocaleString() })));
         const bar = el("progress"); bar.max = Math.max(1, limit); bar.value = Math.min(used, limit);
-        bar.setAttribute("aria-label", label + " " + used + " of " + limit);
+        bar.setAttribute("aria-label", tr("{period}: {used} of {limit}", { period: label, used: used, limit: limit }));
         row.appendChild(bar);
         wrap.appendChild(row);
       };
-      line("Today", box.rpd_used, service.limits.rpd);
-      line("This minute", box.rpm_used, service.limits.rpm);
+      line(tr("Today"), box.rpd_used, service.limits.rpd);
+      line(tr("This minute"), box.rpm_used, service.limits.rpm);
       if (!box.ok) {
-        const when = box.reason === "none" ? "No allowance on this plan" : box.reason === "day"
-          ? "Used up for today, back in about " + Math.max(1, Math.round(box.resets_in / 3600)) + " h" : "Busy, back in about " + box.wait + " s";
+        const when = box.reason === "none" ? tr("No allowance on this plan") : box.reason === "day"
+          ? tr("Used up for today, back in about {hours} h", { hours: Math.max(1, Math.round(box.resets_in / 3600)) })
+          : tr("Busy, back in about {seconds} s", { seconds: box.wait });
         wrap.appendChild(el("p", "aiadm-allow-note", when));
       }
       node.appendChild(wrap);
     }
     const today = service.today || { requests: 0, tokens: 0 };
-    node.appendChild(el("p", "muted aiadm-fine", "Today: " + today.requests + (today.requests === 1 ? " request" : " requests") +
-      " · " + today.tokens.toLocaleString() + " tokens"));
-    if (service.context) node.appendChild(el("p", "muted aiadm-fine", "Remembers about " + service.context.toLocaleString() + " tokens"));
+    node.appendChild(el("p", "muted aiadm-fine", (today.requests === 1
+      ? tr("Today: {count} request · {tokens} tokens", { count: today.requests, tokens: today.tokens.toLocaleString() })
+      : tr("Today: {count} requests · {tokens} tokens", { count: today.requests, tokens: today.tokens.toLocaleString() }))));
+    if (service.context) node.appendChild(el("p", "muted aiadm-fine", tr("Remembers about {tokens} tokens", { tokens: service.context.toLocaleString() })));
     const note = el("p", "aiadm-testnote", "");
     note.setAttribute("role", "status");
     node.appendChild(note);
     const actions = el("div", "aiadm-card-actions");
-    actions.appendChild(button("Test", function () { test(service, note); }));
-    actions.appendChild(button("Edit", function () { openDialog(service); }));
-    actions.appendChild(button(service.enabled ? "Pause" : "Use", function () {
+    actions.appendChild(button(tr("Test"), function () { test(service, note); }));
+    actions.appendChild(button(tr("Edit"), function () { openDialog(service); }));
+    actions.appendChild(button(service.enabled ? tr("Pause") : tr("Use"), function () {
       call("/admin/ai/services", { id: service.id, enabled: !service.enabled }).then(replace).catch(function (e) { note.textContent = e.message; });
     }));
-    const remove = button("Remove", function () {
+    const remove = button(tr("Remove"), function () {
       if (!remove.dataset.armed) {
-        remove.dataset.armed = "1"; remove.textContent = "Confirm remove";
-        remove.setAttribute("aria-label", "Confirm removing " + service.name);
+        remove.dataset.armed = "1"; remove.textContent = tr("Confirm remove");
+        remove.setAttribute("aria-label", tr("Confirm removing {name}", { name: service.name }));
         setTimeout(function () {
-          delete remove.dataset.armed; remove.textContent = "Remove"; remove.setAttribute("aria-label", "Remove " + service.name);
+          delete remove.dataset.armed; remove.textContent = tr("Remove"); remove.setAttribute("aria-label", tr("Remove {name}", { name: service.name }));
         }, 4000);
         return;
       }
@@ -111,7 +113,7 @@
         draw(); preview();
       }).catch(function (e) { note.textContent = e.message; });
     }, "button danger-quiet");
-    remove.setAttribute("aria-label", "Remove " + service.name);
+    remove.setAttribute("aria-label", tr("Remove ") + service.name);
     actions.appendChild(remove);
     node.appendChild(actions);
     return node;
@@ -132,7 +134,7 @@
   }
 
   function test(service, note) {
-    note.textContent = "Testing…";
+    note.textContent = tr("Testing…");
     note.classList.remove("is-bad");
     call("/admin/ai/services/" + encodeURIComponent(service.id) + "/test").then(function (json) {
       note.textContent = json.message + " (" + (json.ms / 1000).toFixed(1) + "s)";
@@ -157,7 +159,7 @@
     const preset = quotas[f("model").value];
     const button = $("use-preset", dialog);
     button.hidden = !preset;
-    $("preset-note", dialog).textContent = preset ? (preset.rpd_limit === 0 ? "Google lists no free-tier allowance for this model." : "") : "";
+    $("preset-note", dialog).textContent = preset ? (preset.rpd_limit === 0 ? tr("Google lists no free-tier allowance for this model.") : "") : "";
     if (preset && !limitsTouched && !f("rpd").value && !f("rpm").value) applyPreset(false);
   }
 
@@ -180,8 +182,8 @@
     const fixed = Boolean(FIXED[f("provider").value]);
     dialog.querySelector('[data-ai-row="endpoint"]').hidden = fixed;
     $("where", dialog).textContent = f("provider").value === "self_hosted"
-      ? "This service runs on your own network. Requests to it never leave your organization."
-      : "This service is hosted outside your organization. Sensitive requests are never sent to it.";
+      ? tr("This service runs on your own network. Requests to it never leave your organization.")
+      : tr("This service is hosted outside your organization. Sensitive requests are never sent to it.");
   }
 
   function syncProxy() {
@@ -190,11 +192,11 @@
 
   function fillDetails(service, defaults) {
     dError.hidden = true;
-    dStatus.textContent = "Enter the details, then connect.";
+    dStatus.textContent = tr("Enter the details, then connect.");
     dStatus.classList.remove("is-error");
     allModels = [];
     closeList();
-    $("model-hint", dialog).textContent = "Connect first to see every model, or type a name.";
+    $("model-hint", dialog).textContent = tr("Connect first to see every model, or type a name.");
     f("token").value = "";
     f("api_key").value = "";
     const s = service || {};
@@ -219,11 +221,11 @@
     bulk.hidden = true;
     bulkList.textContent = "";
     updatePresetButton();
-    $("keyhint", dialog).textContent = service && s.has_key ? "A key is saved. Leave blank to keep it." : "Leave blank if the server needs none.";
+    $("keyhint", dialog).textContent = service && s.has_key ? tr("A key is saved. Leave blank to keep it.") : tr("Leave blank if the server needs none.");
     $("proxyhint", dialog).textContent = service && s.has_proxy
-      ? "A proxy is saved. Leave blank to keep it. Credentials are never shown again."
-      : "Credentials are encrypted and are never shown again.";
-    $("dialog-title", dialog).textContent = service ? "Edit " + s.name : "Add an AI service";
+      ? tr("A proxy is saved. Leave blank to keep it. Credentials are never shown again.")
+      : tr("Credentials are encrypted and are never shown again.");
+    $("dialog-title", dialog).textContent = service ? tr("Edit {name}", { name: s.name }) : tr("Add an AI service");
     syncProvider();
     syncProxy();
   }
@@ -234,7 +236,7 @@
     if (service) f("name").focus();
   }
 
-  root.querySelector("[data-ai-add]").addEventListener("click", function () { $("dialog-title", dialog).textContent = "Add an AI service"; openDialog(null); });
+  root.querySelector("[data-ai-add]").addEventListener("click", function () { $("dialog-title", dialog).textContent = tr("Add an AI service"); openDialog(null); });
   dialog.querySelectorAll("[data-ai-preset]").forEach(function (b) {
     b.addEventListener("click", function () {
       const p = b.dataset.aiPreset.split("|");
@@ -247,7 +249,7 @@
 
   function detect() {
     dStatus.classList.remove("is-error");
-    dStatus.textContent = "Connecting…";
+    dStatus.textContent = tr("Connecting…");
     call("/admin/ai/models", {
       provider: f("provider").value, endpoint: f("endpoint").value, api_key: f("api_key").value, service_id: f("id").value,
       model: f("model").value, external_consent: true,
@@ -266,19 +268,20 @@
         label.appendChild(box);
         const text = el("span", "");
         text.appendChild(el("strong", "", name));
-        text.appendChild(el("small", "", quotas[name].rpd_limit.toLocaleString() + " requests a day, " + quotas[name].rpm_limit + " a minute"));
+        text.appendChild(el("small", "", tr("{daily} requests a day, {minute} a minute", { daily: quotas[name].rpd_limit.toLocaleString(), minute: quotas[name].rpm_limit })));
         label.appendChild(text);
         li.appendChild(label);
         bulkList.appendChild(li);
       });
       bulk.hidden = extra.length === 0 || Boolean(f("id").value);
-      $("model-hint", dialog).textContent = json.models.length + " models found. Click the box to see them all, or type to search.";
+      $("model-hint", dialog).textContent = tr("{count} models found. Click the box to see them all, or type to search.", { count: json.models.length });
       if (!f("model").value || json.models.indexOf(f("model").value) === -1) f("model").value = json.models[0];
       f("token").value = json.discovery_token || "";
       if (!f("name").value) f("name").value = f("model").value.slice(0, 60);
       const context = (json.context || {})[f("model").value];
-      let message = "Connected. Found " + json.models.length + (json.models.length === 1 ? " model." : " models.");
-      if (context) message += " It remembers about " + context.toLocaleString() + " tokens.";
+      let message = json.models.length === 1 ? tr("Connected. Found {count} model.", { count: json.models.length })
+        : tr("Connected. Found {count} models.", { count: json.models.length });
+      if (context) message += " " + tr("It remembers about {tokens} tokens.", { tokens: context.toLocaleString() });
       dStatus.textContent = message;
     }).catch(function (e) { dStatus.textContent = e.message; dStatus.classList.add("is-error"); });
   }
@@ -306,13 +309,14 @@
     shown.forEach(function (name, index) {
       const item = el("li", "aiadm-model-item" + (name === modelBox.value ? " is-current" : ""), name);
       item.id = "ai-model-opt-" + index;
+      item.dataset.model = name;
       item.setAttribute("role", "option");
       item.setAttribute("aria-selected", name === modelBox.value ? "true" : "false");
-      if (index === 0 && !needle && /latest/i.test(name)) item.appendChild(el("span", "aiadm-model-tag", "suggested"));
+      if (index === 0 && !needle && /latest/i.test(name)) item.appendChild(el("span", "aiadm-model-tag", tr("suggested")));
       item.addEventListener("mousedown", function (event) { event.preventDefault(); choose(name); });
       modelList.appendChild(item);
     });
-    if (!shown.length) modelList.appendChild(el("li", "aiadm-model-none", allModels.length ? "No model matches. You can still use what you typed." : "Connect first to list models."));
+    if (!shown.length) modelList.appendChild(el("li", "aiadm-model-none", allModels.length ? tr("No model matches. You can still use what you typed.") : tr("Connect first to list models.")));
     modelList.hidden = false;
     modelBox.setAttribute("aria-expanded", "true");
     activeIndex = -1;
@@ -341,7 +345,7 @@
   modelBox.addEventListener("keydown", function (event) {
     if (event.key === "ArrowDown") { event.preventDefault(); if (modelList.hidden) openList(""); highlight(activeIndex + 1); }
     else if (event.key === "ArrowUp") { event.preventDefault(); highlight(activeIndex - 1); }
-    else if (event.key === "Enter" && !modelList.hidden && activeIndex >= 0) { event.preventDefault(); choose(modelList.querySelectorAll(".aiadm-model-item")[activeIndex].textContent.replace(/suggested$/, "")); }
+    else if (event.key === "Enter" && !modelList.hidden && activeIndex >= 0) { event.preventDefault(); choose(modelList.querySelectorAll(".aiadm-model-item")[activeIndex].dataset.model); }
     else if (event.key === "Escape" && !modelList.hidden) { event.stopPropagation(); closeList(); }
   });
 
@@ -389,19 +393,20 @@
     clearTimeout(previewTimer);
     previewTimer = setTimeout(function () {
       const text = tryInput.value.trim();
-      if (!text) { verdict.textContent = "Type something above to check it."; verdict.className = "aiadm-verdict"; return; }
+      if (!text) { verdict.textContent = tr("Type something above to check it."); verdict.className = "aiadm-verdict"; return; }
       call("/admin/ai/preview", Object.assign(settings(), { text: text, kinds: [tryKind.value] })).then(function (json) {
         verdict.textContent = "";
-        const names = json.eligible.map(function (e) { return e.name + (e.external ? " (outside)" : ""); });
+        const names = json.eligible.map(function (e) { return e.external ? tr("{name} (outside)", { name: e.name }) : e.name; });
         if (json.blocked) {
           verdict.className = "aiadm-verdict is-blocked";
-          verdict.textContent = (json.sensitive ? "Sensitive: " + json.reasons.join(", ") + ". " : "") + "No service may handle this. " + json.blocked;
+          verdict.textContent = (json.sensitive ? tr("Sensitive: {reasons}.", { reasons: json.reasons.join(", ") }) + " " : "") +
+            tr("No service may handle this.") + " " + json.blocked;
         } else if (json.sensitive) {
           verdict.className = "aiadm-verdict is-private";
-          verdict.textContent = "Sensitive (" + json.reasons.join(", ") + "). Stays on your own AI: " + names.join(", ") + ".";
+          verdict.textContent = tr("Sensitive ({reasons}). Stays on your own AI: {names}.", { reasons: json.reasons.join(", "), names: names.join(", ") });
         } else {
           verdict.className = "aiadm-verdict is-ok";
-          verdict.textContent = "Not sensitive. Could be answered by: " + names.join(", ") + ".";
+          verdict.textContent = tr("Not sensitive. Could be answered by: {names}.", { names: names.join(", ") });
         }
       }).catch(function (e) { verdict.textContent = e.message; verdict.className = "aiadm-verdict is-blocked"; });
     }, 350);

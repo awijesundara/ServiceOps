@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "It-Tnejn",
+   "It-Tlieta",
+   "L-Erbgħa",
+   "Il-Ħamis",
+   "Il-Ġimgħa",
+   "Is-Sibt",
+   "Il-Ħadd"
+  ],
+  "days_abbr": [
+   "Tne",
+   "Tli",
+   "Erb",
+   "Ħam",
+   "Ġim",
+   "Sib",
+   "Ħad"
+  ],
+  "months": [
+   "Jannar",
+   "Frar",
+   "Marzu",
+   "April",
+   "Mejju",
+   "Ġunju",
+   "Lulju",
+   "Awwissu",
+   "Settembru",
+   "Ottubru",
+   "Novembru",
+   "Diċembru"
+  ],
+  "months_abbr": [
+   "Jan",
+   "Fra",
+   "Mar",
+   "Apr",
+   "Mej",
+   "Ġun",
+   "Lul",
+   "Aww",
+   "Set",
+   "Ott",
+   "Nov",
+   "Diċ"
+  ]
+ },
+ "language": "mt",
+ "messages": {
+  "Administration": "Amministrazzjoni",
+  "Back": "Lura",
+  "Cancel": "Ikkanċella",
+  "Changes": "Bidliet",
+  "Close": "Agħlaq",
+  "Create": "Oħloq",
+  "Dashboard": "Dashboard",
+  "Delete": "Ħassar",
+  "Description": "Deskrizzjoni",
+  "Edit": "Editja",
+  "General": "Ġenerali",
+  "Incidents": "Inċidenti",
+  "Knowledge": "Għarfien",
+  "Language": "Lingwa",
+  "Name": "Isem",
+  "Notifications": "Notifiki",
+  "Preferences": "Preferenzi",
+  "Priority": "Prijorità",
+  "Save": "Issejvja",
+  "Save preferences": "Issejvja l-preferenzi",
+  "Search": "Fittex",
+  "Service requests": "Talbiet għal servizz",
+  "Status": "Stat",
+  "System preferences": "Preferenzi tas-sistema"
+ }
+}

@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Thứ Hai",
+   "Thứ Ba",
+   "Thứ Tư",
+   "Thứ Năm",
+   "Thứ Sáu",
+   "Thứ Bảy",
+   "Chủ Nhật"
+  ],
+  "days_abbr": [
+   "Th 2",
+   "Th 3",
+   "Th 4",
+   "Th 5",
+   "Th 6",
+   "Th 7",
+   "CN"
+  ],
+  "months": [
+   "tháng 1",
+   "tháng 2",
+   "tháng 3",
+   "tháng 4",
+   "tháng 5",
+   "tháng 6",
+   "tháng 7",
+   "tháng 8",
+   "tháng 9",
+   "tháng 10",
+   "tháng 11",
+   "tháng 12"
+  ],
+  "months_abbr": [
+   "thg 1",
+   "thg 2",
+   "thg 3",
+   "thg 4",
+   "thg 5",
+   "thg 6",
+   "thg 7",
+   "thg 8",
+   "thg 9",
+   "thg 10",
+   "thg 11",
+   "thg 12"
+  ]
+ },
+ "language": "vi",
+ "messages": {
+  "Administration": "Quản trị",
+  "Back": "Quay lại",
+  "Cancel": "Hủy",
+  "Changes": "Thay đổi",
+  "Close": "Đóng",
+  "Create": "Tạo",
+  "Dashboard": "Bảng điều khiển",
+  "Delete": "Xóa",
+  "Description": "Mô tả",
+  "Edit": "Chỉnh sửa",
+  "General": "Chung",
+  "Incidents": "Sự cố",
+  "Knowledge": "Kiến thức",
+  "Language": "Ngôn ngữ",
+  "Name": "Tên",
+  "Notifications": "Thông báo",
+  "Preferences": "Tùy chọn",
+  "Priority": "Độ ưu tiên",
+  "Save": "Lưu",
+  "Save preferences": "Lưu tùy chọn",
+  "Search": "Tìm kiếm",
+  "Service requests": "Yêu cầu dịch vụ",
+  "Status": "Trạng thái",
+  "System preferences": "Tùy chọn hệ thống"
+ }
+}

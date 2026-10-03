@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "duşem",
+   "sêşem",
+   "çarşem",
+   "pêncşem",
+   "înî",
+   "şemî",
+   "yekşem"
+  ],
+  "days_abbr": [
+   "dşm",
+   "sşm",
+   "çşm",
+   "pşm",
+   "înî",
+   "şem",
+   "yşm"
+  ],
+  "months": [
+   "rêbendan",
+   "sibat",
+   "adar",
+   "nîsan",
+   "gulan",
+   "hezîran",
+   "tîrmeh",
+   "tebax",
+   "îlon",
+   "cotmeh",
+   "mijdar",
+   "berfanbar"
+  ],
+  "months_abbr": [
+   "rbn",
+   "sbt",
+   "adr",
+   "nsn",
+   "gln",
+   "hzr",
+   "trm",
+   "tbx",
+   "îln",
+   "cot",
+   "mjd",
+   "brf"
+  ]
+ },
+ "language": "ku",
+ "messages": {
+  "Administration": "Rêveberî",
+  "Back": "Vegere",
+  "Cancel": "Betal bike",
+  "Changes": "Guhertin",
+  "Close": "Bigire",
+  "Create": "Biafirîne",
+  "Dashboard": "Panela kontrolê",
+  "Delete": "Jê bibe",
+  "Description": "Danasîn",
+  "Edit": "Biguherîne",
+  "General": "Giştî",
+  "Incidents": "Bûyer",
+  "Knowledge": "Zanîn",
+  "Language": "Ziman",
+  "Name": "Nav",
+  "Notifications": "Agahdarî",
+  "Preferences": "Vebijêrk",
+  "Priority": "Pêşînî",
+  "Save": "Tomar bike",
+  "Save preferences": "Vebijêrkan tomar bike",
+  "Search": "Bigere",
+  "Service requests": "Daxwazên xizmetê",
+  "Status": "Rewş",
+  "System preferences": "Vebijêrkên pergalê"
+ }
+}

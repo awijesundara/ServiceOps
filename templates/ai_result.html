@@ -1,50 +1,50 @@
 {% extends "base.html" %}
-{% block title %}AI investigation · {{ ticket.number }} · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('AI investigation · {number} · {instance_name}', number=(ticket.number), instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <section class="ai-run" data-ai-run="{{ run.id }}">
   <div class="ai-run-head">
     <div>
-      <p class="eyebrow">AI INVESTIGATION</p>
+      <p class="eyebrow">{{ tr('AI INVESTIGATION') }}</p>
       <h1>{{ ticket.number }} · {{ ticket.title }}</h1>
-      <p class="muted"><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">Back to {{ ticket.number }}</a> · Model {{ run.model }} · {{ 'External (OpenAI)' if run.provider == 'openai' else 'Self-hosted' }}</p>
+      <p class="muted"><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ tr('Back to {number}', number=(ticket.number)) }}</a> · {{ tr('Model {model} · {value}', model=(run.model), value=(tr('External (OpenAI)') if run.provider == 'openai' else 'Self-hosted')) }}</p>
     </div>
-    <span class="ai-pill" role="status" data-ai-status data-state="{{ run.status }}">{{ run.status|capitalize }}</span>
+    <span class="ai-pill" role="status" data-ai-status data-state="{{ run.status }}">{{ tr_value(run.status|capitalize) }}</span>
   </div>
   <div class="ai-layout">
     <div class="ai-main">
       <div class="ai-thinking-status" data-ai-thinking role="status" aria-live="polite">
         <span class="ai-thinking-dot" aria-hidden="true"></span>
-        <span data-ai-thinking-label>Getting ready</span>
+        <span data-ai-thinking-label>{{ tr('Getting ready') }}</span>
         <span data-ai-elapsed></span>
       </div>
       <article class="ai-answer" data-ai-answer aria-busy="true"></article>
       <p class="ai-banner" data-ai-notice hidden></p>
       <div class="ai-actions">
-        <button type="button" class="button" data-ai-stop{% if run.status not in ['queued', 'running'] %} hidden{% endif %}>Stop</button>
-        <button type="button" class="button" data-ai-copy hidden>Copy answer</button>
-        {% if config.actions_enabled %}<form method="post" action="{{ url_for('ai.propose_comment', run_id=run.id) }}" data-ai-action{% if run.status != 'completed' %} hidden{% endif %}><button class="primary">Review comment draft</button></form>{% endif %}
-        <a class="button" href="{{ url_for('ai.incident', ticket_id=ticket.id) }}">All investigations for this incident</a>
+        <button type="button" class="button" data-ai-stop{% if run.status not in ['queued', 'running'] %} hidden{% endif %}>{{ tr('Stop') }}</button>
+        <button type="button" class="button" data-ai-copy hidden>{{ tr('Copy answer') }}</button>
+        {% if config.actions_enabled %}<form method="post" action="{{ url_for('ai.propose_comment', run_id=run.id) }}" data-ai-action{% if run.status != 'completed' %} hidden{% endif %}><button class="primary">{{ tr('Review comment draft') }}</button></form>{% endif %}
+        <a class="button" href="{{ url_for('ai.incident', ticket_id=ticket.id) }}">{{ tr('All investigations for this incident') }}</a>
         <span class="ai-route" data-ai-route hidden></span>
         <span class="muted" data-ai-stats></span>
       </div>
-      <p class="muted"><strong>AI-generated draft.</strong> Verify the cited evidence before acting. Possible causes are hypotheses; no ticket changes have been made.</p>
+      <p class="muted"><strong>{{ tr('AI-generated draft.') }}</strong> {{ tr('Verify the cited evidence before acting. Possible causes are hypotheses; no ticket changes have been made.') }}</p>
       <noscript>
         <div class="panel">
-          <p>JavaScript is needed to watch the answer being written. Current status: <strong>{{ run.status }}</strong>.</p>
+          <p>{{ tr('JavaScript is needed to watch the answer being written. Current status:') }} <strong>{{ tr_value(run.status) }}</strong>.</p>
           <div class="ai-answer">{{ ai_note_html(fallback_answer) }}</div>
-          {% if run.status in ['queued', 'running'] %}<form method="post"><button class="button">Cancel investigation</button></form>{% endif %}
+          {% if run.status in ['queued', 'running'] %}<form method="post"><button class="button">{{ tr('Cancel investigation') }}</button></form>{% endif %}
         </div>
       </noscript>
     </div>
     <aside class="ai-side">
       <div class="panel">
-        <h2>Evidence used</h2>
+        <h2>{{ tr('Evidence used') }}</h2>
         <ul class="ai-sources" data-ai-sources></ul>
-        <p class="muted">The records the assistant relied on appear here when the answer is complete.</p>
+        <p class="muted">{{ tr('The records the assistant relied on appear here when the answer is complete.') }}</p>
       </div>
       <div class="panel">
-        <h2>Privacy</h2>
-        <p class="ai-privacy">The assistant only used what <strong>you</strong> are allowed to see. Nothing was changed.</p>
+        <h2>{{ tr('Privacy') }}</h2>
+        <p class="ai-privacy">{{ tr('The assistant only used what') }} <strong>{{ tr('you') }}</strong> {{ tr('are allowed to see. Nothing was changed.') }}</p>
       </div>
     </aside>
   </div>

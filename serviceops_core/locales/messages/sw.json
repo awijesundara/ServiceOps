@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Jumatatu",
+   "Jumanne",
+   "Jumatano",
+   "Alhamisi",
+   "Ijumaa",
+   "Jumamosi",
+   "Jumapili"
+  ],
+  "days_abbr": [
+   "Jumatatu",
+   "Jumanne",
+   "Jumatano",
+   "Alhamisi",
+   "Ijumaa",
+   "Jumamosi",
+   "Jumapili"
+  ],
+  "months": [
+   "Januari",
+   "Februari",
+   "Machi",
+   "Aprili",
+   "Mei",
+   "Juni",
+   "Julai",
+   "Agosti",
+   "Septemba",
+   "Oktoba",
+   "Novemba",
+   "Desemba"
+  ],
+  "months_abbr": [
+   "Jan",
+   "Feb",
+   "Mac",
+   "Apr",
+   "Mei",
+   "Jun",
+   "Jul",
+   "Ago",
+   "Sep",
+   "Okt",
+   "Nov",
+   "Des"
+  ]
+ },
+ "language": "sw",
+ "messages": {
+  "Administration": "Utawala",
+  "Back": "Rudi",
+  "Cancel": "Ghairi",
+  "Changes": "Mabadiliko",
+  "Close": "Funga",
+  "Create": "Unda",
+  "Dashboard": "Dashibodi",
+  "Delete": "Futa",
+  "Description": "Maelezo",
+  "Edit": "Hariri",
+  "General": "Jumla",
+  "Incidents": "Matukio",
+  "Knowledge": "Maarifa",
+  "Language": "Lugha",
+  "Name": "Jina",
+  "Notifications": "Arifa",
+  "Preferences": "Mapendeleo",
+  "Priority": "Kipaumbele",
+  "Save": "Hifadhi",
+  "Save preferences": "Hifadhi mapendeleo",
+  "Search": "Tafuta",
+  "Service requests": "Maombi ya huduma",
+  "Status": "Hali",
+  "System preferences": "Mapendeleo ya mfumo"
+ }
+}

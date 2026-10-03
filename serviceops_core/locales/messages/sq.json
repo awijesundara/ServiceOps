@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "e hënë",
+   "e martë",
+   "e mërkurë",
+   "e enjte",
+   "e premte",
+   "e shtunë",
+   "e diel"
+  ],
+  "days_abbr": [
+   "hën",
+   "mar",
+   "mër",
+   "enj",
+   "pre",
+   "sht",
+   "die"
+  ],
+  "months": [
+   "janar",
+   "shkurt",
+   "mars",
+   "prill",
+   "maj",
+   "qershor",
+   "korrik",
+   "gusht",
+   "shtator",
+   "tetor",
+   "nëntor",
+   "dhjetor"
+  ],
+  "months_abbr": [
+   "jan",
+   "shk",
+   "mar",
+   "pri",
+   "maj",
+   "qer",
+   "korr",
+   "gush",
+   "sht",
+   "tet",
+   "nën",
+   "dhj"
+  ]
+ },
+ "language": "sq",
+ "messages": {
+  "Administration": "Administrimi",
+  "Back": "Kthehu",
+  "Cancel": "Anulo",
+  "Changes": "Ndryshimet",
+  "Close": "Mbyll",
+  "Create": "Krijo",
+  "Dashboard": "Paneli",
+  "Delete": "Fshi",
+  "Description": "Përshkrimi",
+  "Edit": "Redakto",
+  "General": "Të përgjithshme",
+  "Incidents": "Incidentet",
+  "Knowledge": "Njohuritë",
+  "Language": "Gjuha",
+  "Name": "Emri",
+  "Notifications": "Njoftimet",
+  "Preferences": "Preferencat",
+  "Priority": "Përparësia",
+  "Save": "Ruaj",
+  "Save preferences": "Ruaj preferencat",
+  "Search": "Kërko",
+  "Service requests": "Kërkesat për shërbim",
+  "Status": "Gjendja",
+  "System preferences": "Preferencat e sistemit"
+ }
+}

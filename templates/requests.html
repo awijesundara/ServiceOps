@@ -1,30 +1,30 @@
-{% extends "base.html" %}{% block title %}Requests & RITMs · {{ instance_name }}{% endblock %}
+{% extends "base.html" %}{% block title %}{{ tr('Requests & RITMs · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <section class="list-workspace">
   <header class="list-toolbar">
-    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Requests</strong><small>{{ total }} records</small></div></div>
-    <a class="primary button" href="{{ url_for('catalog') }}">Open catalog</a>
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Requests') }}</strong><small>{{ tr('{total} records', total=(total)) }}</small></div></div>
+    <a class="primary button" href="{{ url_for('catalog') }}">{{ tr('Open catalog') }}</a>
     <a class="button" href="{{ url_for('requests_export', q=q) }}">⬇ CSV</a>
-    <button type="button" class="button" data-print-page>🖶 Print</button>
+    <button type="button" class="button" data-print-page>🖶 {{ tr('Print') }}</button>
     <form class="list-search">
-      <input name="q" value="{{ q }}" placeholder="REQ number" aria-label="Search requests">
-      <button>{{ t('Search') }}</button>
+      <input name="q" value="{{ q }}" placeholder="{{ tr('REQ number') }}" aria-label="{{ tr('Search requests') }}">
+      <button>{{ tr('Search') }}</button>
     </form>
-    <nav class="list-pagination" aria-label="Pagination">
+    <nav class="list-pagination" aria-label="{{ tr('Pagination') }}">
       <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('requests_list', q=q, page=page-1) }}">‹</a>
-      <span>Page {{ page }} of {{ pages }}</span>
+      <span>{{ tr('Page {page} of {pages}', page=(page), pages=(pages)) }}</span>
       <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('requests_list', q=q, page=page+1) }}">›</a>
     </nav>
   </header>
   <div class="task-list-scroll">
-  <table class="task-list"><thead><tr><th>Request</th><th>Requested for</th><th>Items</th><th>State</th><th>Opened</th></tr></thead><tbody>
+  <table class="task-list"><thead><tr><th>{{ tr('Request') }}</th><th>{{ tr('Requested for') }}</th><th>{{ tr('Items') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Opened') }}</th></tr></thead><tbody>
     {% for req in requests %}<tr>
       <td><a class="record-number" href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></td>
       <td><span class="truncate" title="{{ req.requested_for.name }}">{{ req.requested_for.name }}</span></td>
       <td>{% for item in req.items %}<a class="tag" href="{{ url_for('ritm_detail', ritm_id=item.id) }}">{{ item.number }}</a> {{ item.item.name }}{% if not loop.last %}; {% endif %}{% endfor %}</td>
-      <td><span class="badge">{{ req.state }}</span></td>
+      <td><span class="badge">{{ tr_value(req.state) }}</span></td>
       <td>{{ (req.opened_at|usertime('%b %d, %H:%M')) }}</td>
-    </tr>{% else %}<tr><td colspan="5" class="empty">No catalog requests.</td></tr>{% endfor %}
+    </tr>{% else %}<tr><td colspan="5" class="empty">{{ tr('No catalog requests.') }}</td></tr>{% endfor %}
   </tbody></table>
   </div>
 </section>

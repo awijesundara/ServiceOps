@@ -1,176 +1,176 @@
 {% extends "base.html" %}
-{% block title %}AI assistance · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('AI assistance · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-{% set admin_page_title = 'AI assistance' %}{% set admin_parent_title = 'Platform & security' %}{% set admin_parent_url = url_for('admin_section', section='platform-security') %}{% include '_admin_context.html' %}
+{% set admin_page_title = tr('AI assistance') %}{% set admin_parent_title = tr('Platform & security') %}{% set admin_parent_url = url_for('admin_section', section='platform-security') %}{% include '_admin_context.html' %}
 {% set on = config and config.enabled %}
 <div class="aiadm" data-ai-admin>
   <header class="aiadm-head">
     <div>
-      <p class="eyebrow">AI ASSISTANCE</p>
-      <h1>AI services and privacy</h1>
-      <p class="muted">Connect one or more AI services, choose how requests are shared between them, and decide what may never leave your organization.</p>
+      <p class="eyebrow">{{ tr('AI ASSISTANCE') }}</p>
+      <h1>{{ tr('AI services and privacy') }}</h1>
+      <p class="muted">{{ tr('Connect one or more AI services, choose how requests are shared between them, and decide what may never leave your organization.') }}</p>
     </div>
     <div class="aiadm-head-actions">
-      <span class="ai-pill" data-state="{{ 'completed' if on else 'cancelled' }}">{{ 'AI is on' if on else 'AI is off' }}</span>
-      <form method="post"><input type="hidden" name="action" value="disable"><button class="button danger-quiet">Turn AI off now</button></form>
+      <span class="ai-pill" data-state="{{ 'completed' if on else 'cancelled' }}">{{ tr('AI is on') if on else tr('AI is off') }}</span>
+      <form method="post"><input type="hidden" name="action" value="disable"><button class="button danger-quiet">{{ tr('Turn AI off now') }}</button></form>
     </div>
   </header>
-  {% if ipfs %}<p class="ai-banner">AI needs PostgreSQL storage. This deployment uses IPFS, so AI cannot be turned on.</p>{% endif %}
+  {% if ipfs %}<p class="ai-banner">{{ tr('AI needs PostgreSQL storage. This deployment uses IPFS, so AI cannot be turned on.') }}</p>{% endif %}
 
   <section class="aiadm-section" aria-labelledby="aiadm-services">
     <div class="aiadm-section-head">
-      <div><h2 id="aiadm-services">AI services</h2><p class="muted">Add as many as you like: your own servers, and hosted services such as OpenAI or Claude.</p></div>
-      <button type="button" class="primary" data-ai-add>Add an AI service</button>
+      <div><h2 id="aiadm-services">{{ tr('AI services') }}</h2><p class="muted">{{ tr('Add as many as you like: your own servers, and hosted services such as OpenAI or Claude.') }}</p></div>
+      <button type="button" class="primary" data-ai-add>{{ tr('Add an AI service') }}</button>
     </div>
-    <div class="aiadm-usage" aria-label="Use today">
-      <div><strong>{{ today.requests }}</strong><span>requests today</span></div>
-      <div><strong>{{ daily_limit - today.requests if daily_limit > today.requests else 0 }}</strong><span>left of {{ daily_limit }} allowed per day</span></div>
-      <div><strong>{{ '{:,}'.format(today.tokens) }}</strong><span>tokens used today</span></div>
-      <p class="muted">Counted by ServiceOps. Your provider's own remaining credit is not available through its API; check the provider's dashboard.</p>
+    <div class="aiadm-usage" aria-label="{{ tr('Use today') }}">
+      <div><strong>{{ today.requests }}</strong><span>{{ tr('requests today') }}</span></div>
+      <div><strong>{{ daily_limit - today.requests if daily_limit > today.requests else 0 }}</strong><span>{{ tr('left of {daily_limit} allowed per day', daily_limit=(daily_limit)) }}</span></div>
+      <div><strong>{{ '{:,}'.format(today.tokens) }}</strong><span>{{ tr('tokens used today') }}</span></div>
+      <p class="muted">{{ tr("Counted by ServiceOps. Your provider's own remaining credit is not available through its API; check the provider's dashboard.") }}</p>
     </div>
     <div class="aiadm-cards" data-ai-cards aria-live="polite"></div>
-    <p class="aiadm-empty" data-ai-empty hidden>No AI service yet. Add one to get started.</p>
+    <p class="aiadm-empty" data-ai-empty hidden>{{ tr('No AI service yet. Add one to get started.') }}</p>
   </section>
 
   <form method="post" class="aiadm-form" data-ai-form>
     <input type="hidden" name="action" value="save">
 
     <section class="aiadm-section" aria-labelledby="aiadm-routing">
-      <div class="aiadm-section-head"><div><h2 id="aiadm-routing">How requests are shared</h2><p class="muted">When you have more than one service, this decides which one answers.</p></div></div>
+      <div class="aiadm-section-head"><div><h2 id="aiadm-routing">{{ tr('How requests are shared') }}</h2><p class="muted">{{ tr('When you have more than one service, this decides which one answers.') }}</p></div></div>
       <fieldset class="aiadm-choices">
-        <legend class="ai-sr">Sharing method</legend>
+        <legend class="ai-sr">{{ tr('Sharing method') }}</legend>
         {% set current_mode = config.routing_mode if config else 'smart' %}
-        <label class="aiadm-choice"><input type="radio" name="routing_mode" value="smart" {% if current_mode == 'smart' %}checked{% endif %} data-ai-live><span><strong>Smart <em>Recommended</em></strong><small>Uses your own AI first and only turns to an outside service when yours is busy or down. Sensitive requests never leave.</small></span></label>
-        <label class="aiadm-choice"><input type="radio" name="routing_mode" value="internal_first" {% if current_mode == 'internal_first' %}checked{% endif %} data-ai-live><span><strong>Private first</strong><small>Always tries your own AI first, even if it is busy.</small></span></label>
-        <label class="aiadm-choice"><input type="radio" name="routing_mode" value="balanced" {% if current_mode == 'balanced' %}checked{% endif %} data-ai-live><span><strong>Spread the load</strong><small>Shares requests between all allowed services, favouring the ones you weight higher.</small></span></label>
-        <label class="aiadm-choice"><input type="radio" name="routing_mode" value="priority" {% if current_mode == 'priority' %}checked{% endif %} data-ai-live><span><strong>In order</strong><small>Uses the first service on your list, and the next only if it fails.</small></span></label>
+        <label class="aiadm-choice"><input type="radio" name="routing_mode" value="smart" {% if current_mode == 'smart' %}checked{% endif %} data-ai-live><span><strong>{{ tr('Smart') }} <em>{{ tr('Recommended') }}</em></strong><small>{{ tr('Uses your own AI first and only turns to an outside service when yours is busy or down. Sensitive requests never leave.') }}</small></span></label>
+        <label class="aiadm-choice"><input type="radio" name="routing_mode" value="internal_first" {% if current_mode == 'internal_first' %}checked{% endif %} data-ai-live><span><strong>{{ tr('Private first') }}</strong><small>{{ tr('Always tries your own AI first, even if it is busy.') }}</small></span></label>
+        <label class="aiadm-choice"><input type="radio" name="routing_mode" value="balanced" {% if current_mode == 'balanced' %}checked{% endif %} data-ai-live><span><strong>{{ tr('Spread the load') }}</strong><small>{{ tr('Shares requests between all allowed services, favouring the ones you weight higher.') }}</small></span></label>
+        <label class="aiadm-choice"><input type="radio" name="routing_mode" value="priority" {% if current_mode == 'priority' %}checked{% endif %} data-ai-live><span><strong>{{ tr('In order') }}</strong><small>{{ tr('Uses the first service on your list, and the next only if it fails.') }}</small></span></label>
       </fieldset>
     </section>
 
     <section class="aiadm-section" aria-labelledby="aiadm-privacy">
-      <div class="aiadm-section-head"><div><h2 id="aiadm-privacy">Privacy protection</h2><p class="muted">Requests that contain sensitive information are only ever handled by AI on your own network.</p></div></div>
+      <div class="aiadm-section-head"><div><h2 id="aiadm-privacy">{{ tr('Privacy protection') }}</h2><p class="muted">{{ tr('Requests that contain sensitive information are only ever handled by AI on your own network.') }}</p></div></div>
       <div class="aiadm-grid">
         <div>
-          <h3>What may go to an outside service</h3>
+          <h3>{{ tr('What may go to an outside service') }}</h3>
           {% set scope = config.external_scope if config else 'not_sensitive' %}
           <fieldset class="aiadm-choices compact">
-            <legend class="ai-sr">Outside services</legend>
-            <label class="aiadm-choice"><input type="radio" name="external_scope" value="never" {% if scope == 'never' %}checked{% endif %} data-ai-live><span><strong>Nothing</strong><small>Everything stays on your own AI.</small></span></label>
-            <label class="aiadm-choice"><input type="radio" name="external_scope" value="knowledge_only" {% if scope == 'knowledge_only' %}checked{% endif %} data-ai-live><span><strong>Only published knowledge</strong><small>Questions that use tickets or infrastructure records stay private.</small></span></label>
-            <label class="aiadm-choice"><input type="radio" name="external_scope" value="not_sensitive" {% if scope == 'not_sensitive' %}checked{% endif %} data-ai-live><span><strong>Anything not sensitive</strong><small>Everything except requests marked sensitive.</small></span></label>
+            <legend class="ai-sr">{{ tr('Outside services') }}</legend>
+            <label class="aiadm-choice"><input type="radio" name="external_scope" value="never" {% if scope == 'never' %}checked{% endif %} data-ai-live><span><strong>{{ tr('Nothing') }}</strong><small>{{ tr('Everything stays on your own AI.') }}</small></span></label>
+            <label class="aiadm-choice"><input type="radio" name="external_scope" value="knowledge_only" {% if scope == 'knowledge_only' %}checked{% endif %} data-ai-live><span><strong>{{ tr('Only published knowledge') }}</strong><small>{{ tr('Questions that use tickets or infrastructure records stay private.') }}</small></span></label>
+            <label class="aiadm-choice"><input type="radio" name="external_scope" value="not_sensitive" {% if scope == 'not_sensitive' %}checked{% endif %} data-ai-live><span><strong>{{ tr('Anything not sensitive') }}</strong><small>{{ tr('Everything except requests marked sensitive.') }}</small></span></label>
           </fieldset>
-          <label class="aiadm-switch"><input type="checkbox" name="external_consent" {% if config and config.external_consent %}checked{% endif %} data-ai-live><span><strong>My organization allows outside AI services</strong><small>Turn this off and hosted services are never used, whatever else is set. An outside service receives the question and the records needed to answer it, never the asker's name or email. Use a plan whose terms do not keep or train on what it receives: free tiers (Google AI Studio's, for example) may use it to improve the provider's products.</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="external_consent" {% if config and config.external_consent %}checked{% endif %} data-ai-live><span><strong>{{ tr('My organization allows outside AI services') }}</strong><small>{{ tr("Turn this off and hosted services are never used, whatever else is set. An outside service receives the question and the records needed to answer it, never the asker's name or email. Use a plan whose terms do not keep or train on what it receives: free tiers (Google AI Studio's, for example) may use it to improve the provider's products.") }}</small></span></label>
         </div>
         <div>
-          <h3>What counts as sensitive</h3>
-          <label class="aiadm-switch"><input type="checkbox" name="detect_personal" {% if not config or config.detect_personal %}checked{% endif %} data-ai-live><span><strong>Personal details</strong><small>Email addresses, phone numbers, ID numbers.</small></span></label>
-          <label class="aiadm-switch"><input type="checkbox" name="detect_credentials" {% if not config or config.detect_credentials %}checked{% endif %} data-ai-live><span><strong>Passwords and keys</strong><small>Passwords, access keys, tokens, private keys.</small></span></label>
-          <label class="aiadm-switch"><input type="checkbox" name="detect_financial" {% if not config or config.detect_financial %}checked{% endif %} data-ai-live><span><strong>Payment and bank numbers</strong><small>Card numbers and bank account numbers.</small></span></label>
-          <label class="aiadm-field" for="ai-terms"><strong>Your own sensitive words</strong><small>One per line. A request that mentions any of them stays private.</small></label>
-          <textarea id="ai-terms" name="sensitive_terms" rows="3" maxlength="4000" placeholder="payroll&#10;acquisition" data-ai-live>{{ config.sensitive_terms if config else '' }}</textarea>
+          <h3>{{ tr('What counts as sensitive') }}</h3>
+          <label class="aiadm-switch"><input type="checkbox" name="detect_personal" {% if not config or config.detect_personal %}checked{% endif %} data-ai-live><span><strong>{{ tr('Personal details') }}</strong><small>{{ tr('Email addresses, phone numbers, ID numbers.') }}</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="detect_credentials" {% if not config or config.detect_credentials %}checked{% endif %} data-ai-live><span><strong>{{ tr('Passwords and keys') }}</strong><small>{{ tr('Passwords, access keys, tokens, private keys.') }}</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="detect_financial" {% if not config or config.detect_financial %}checked{% endif %} data-ai-live><span><strong>{{ tr('Payment and bank numbers') }}</strong><small>{{ tr('Card numbers and bank account numbers.') }}</small></span></label>
+          <label class="aiadm-field" for="ai-terms"><strong>{{ tr('Your own sensitive words') }}</strong><small>{{ tr('One per line. A request that mentions any of them stays private.') }}</small></label>
+          <textarea id="ai-terms" name="sensitive_terms" rows="3" maxlength="4000" placeholder="{{ tr('payroll acquisition') }}" data-ai-live>{{ config.sensitive_terms if config else '' }}</textarea>
         </div>
       </div>
       <div class="aiadm-tester" data-ai-tester>
-        <label for="ai-try"><strong>Try it</strong> <span class="muted">Type a sentence to see where it would go. Nothing is sent to any AI.</span></label>
-        <div class="aiadm-tester-row"><input id="ai-try" type="text" maxlength="500" placeholder="For example: Please call Anna on 090 1234 5678 about her VPN" data-ai-try>
-          <select id="ai-try-kind" aria-label="What the question is about" data-ai-try-kind><option value="ticket">About a ticket</option><option value="knowledge">About a knowledge article</option></select></div>
-        <p class="aiadm-verdict" data-ai-verdict role="status" aria-live="polite">Type something above to check it.</p>
+        <label for="ai-try"><strong>{{ tr('Try it') }}</strong> <span class="muted">{{ tr('Type a sentence to see where it would go. Nothing is sent to any AI.') }}</span></label>
+        <div class="aiadm-tester-row"><input id="ai-try" type="text" maxlength="500" placeholder="{{ tr('For example: Please call Anna on 090 1234 5678 about her VPN') }}" data-ai-try>
+          <select id="ai-try-kind" aria-label="{{ tr('What the question is about') }}" data-ai-try-kind><option value="ticket">{{ tr('About a ticket') }}</option><option value="knowledge">{{ tr('About a knowledge article') }}</option></select></div>
+        <p class="aiadm-verdict" data-ai-verdict role="status" aria-live="polite">{{ tr('Type something above to check it.') }}</p>
       </div>
     </section>
 
     <section class="aiadm-section" aria-labelledby="aiadm-use">
-      <div class="aiadm-section-head"><div><h2 id="aiadm-use">Who can use it</h2><p class="muted">Switch features on and set sensible limits.</p></div></div>
+      <div class="aiadm-section-head"><div><h2 id="aiadm-use">{{ tr('Who can use it') }}</h2><p class="muted">{{ tr('Switch features on and set sensible limits.') }}</p></div></div>
       <div class="aiadm-grid">
         <div>
-          <label class="aiadm-switch"><input type="checkbox" name="enabled" {% if on %}checked{% endif %}><span><strong>Turn AI on for this organization</strong><small>The master switch. Off means nobody can use AI.</small></span></label>
-          <label class="aiadm-switch"><input type="checkbox" name="incident_enabled" {% if config and config.incident_enabled %}checked{% endif %}><span><strong>Investigate with AI on incidents</strong><small>For agents, managers and administrators.</small></span></label>
-          <label class="aiadm-switch"><input type="checkbox" name="chat_enabled" {% if config and config.chat_enabled %}checked{% endif %}><span><strong>Chat assistant for everyone</strong><small>Each person only sees what they can already open.</small></span></label>
-          <label class="aiadm-switch"><input type="checkbox" name="actions_enabled" {% if config and config.actions_enabled %}checked{% endif %}><span><strong>Allow approved ticket actions</strong><small>Administrators may prepare state, priority, assignment and exact-comment changes from chat. Incident investigations may prepare an answer as a comment. A person must review and approve every exact change before it is applied.</small></span></label>
-          <label class="aiadm-switch"><input type="checkbox" name="memory_enabled" {% if not config or config.memory_enabled %}checked{% endif %}><span><strong>Let the assistant remember what people ask it to</strong><small>Short notes only, kept private to each person, which they can see and delete. Never passwords or payment numbers.</small></span></label>
-          <label class="aiadm-switch"><input type="checkbox" name="show_reasoning" {% if config and config.show_reasoning %}checked{% endif %}><span><strong>Let investigations think longer</strong><small>Slower, sometimes better. The thinking itself is never shown or kept.</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="enabled" {% if on %}checked{% endif %}><span><strong>{{ tr('Turn AI on for this organization') }}</strong><small>{{ tr('The master switch. Off means nobody can use AI.') }}</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="incident_enabled" {% if config and config.incident_enabled %}checked{% endif %}><span><strong>{{ tr('Investigate with AI on incidents') }}</strong><small>{{ tr('For agents, managers and administrators.') }}</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="chat_enabled" {% if config and config.chat_enabled %}checked{% endif %}><span><strong>{{ tr('Chat assistant for everyone') }}</strong><small>{{ tr('Each person only sees what they can already open.') }}</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="actions_enabled" {% if config and config.actions_enabled %}checked{% endif %}><span><strong>{{ tr('Allow approved ticket actions') }}</strong><small>{{ tr('Administrators may prepare state, priority, assignment and exact-comment changes from chat. Incident investigations may prepare an answer as a comment. A person must review and approve every exact change before it is applied.') }}</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="memory_enabled" {% if not config or config.memory_enabled %}checked{% endif %}><span><strong>{{ tr('Let the assistant remember what people ask it to') }}</strong><small>{{ tr('Short notes only, kept private to each person, which they can see and delete. Never passwords or payment numbers.') }}</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="show_reasoning" {% if config and config.show_reasoning %}checked{% endif %}><span><strong>{{ tr('Let investigations think longer') }}</strong><small>{{ tr('Slower, sometimes better. The thinking itself is never shown or kept.') }}</small></span></label>
         </div>
         <div class="aiadm-limits">
-          <label>Requests per day<input type="number" name="daily_limit" min="1" max="1000" value="{{ config.daily_limit if config else 100 }}" required></label>
-          <label>Longest answer (tokens)<input type="number" name="max_output_tokens" min="128" max="4096" value="{{ config.max_output_tokens if config else 1500 }}" required></label>
-          <label>Keep results for (days)<input type="number" name="retention_days" min="1" max="30" value="{{ config.retention_days if config else 7 }}" required></label>
-          <label>Delete chats after (days without a message)<input type="number" name="chat_retention_days" min="1" max="365" value="{{ config.chat_retention_days if config else 30 }}" required></label>
+          <label>{{ tr('Requests per day') }}<input type="number" name="daily_limit" min="1" max="1000" value="{{ config.daily_limit if config else 100 }}" required></label>
+          <label>{{ tr('Longest answer (tokens)') }}<input type="number" name="max_output_tokens" min="128" max="4096" value="{{ config.max_output_tokens if config else 1500 }}" required></label>
+          <label>{{ tr('Keep results for (days)') }}<input type="number" name="retention_days" min="1" max="30" value="{{ config.retention_days if config else 7 }}" required></label>
+          <label>{{ tr('Delete chats after (days without a message)') }}<input type="number" name="chat_retention_days" min="1" max="365" value="{{ config.chat_retention_days if config else 30 }}" required></label>
         </div>
       </div>
     </section>
 
-    <div class="aiadm-savebar" data-ai-savebar hidden><span class="muted">You have unsaved changes.</span><button class="primary">Save AI settings</button></div>
+    <div class="aiadm-savebar" data-ai-savebar hidden><span class="muted">{{ tr('You have unsaved changes.') }}</span><button class="primary">{{ tr('Save AI settings') }}</button></div>
   </form>
 
   <dialog class="aiadm-dialog" data-ai-dialog aria-labelledby="aiadm-dialog-title">
-    <form method="dialog" class="aiadm-dialog-head"><h2 id="aiadm-dialog-title" data-ai-dialog-title>Add an AI service</h2><button class="ai-tool-dark" aria-label="{{ t('Close') }}">✕</button></form>
+    <form method="dialog" class="aiadm-dialog-head"><h2 id="aiadm-dialog-title" data-ai-dialog-title>{{ tr('Add an AI service') }}</h2><button class="ai-tool-dark" aria-label="{{ tr('Close') }}">✕</button></form>
     <div class="aiadm-dialog-body">
       <div class="aiadm-step" data-ai-step="pick">
-        <p class="muted">Pick what you are connecting to. You can change everything afterwards.</p>
-        <h3>On your own network</h3>
+        <p class="muted">{{ tr('Pick what you are connecting to. You can change everything afterwards.') }}</p>
+        <h3>{{ tr('On your own network') }}</h3>
         <div class="aiadm-presets">
-          <button type="button" data-ai-preset="self_hosted|http://HOST:8080|llama.cpp"><strong>llama.cpp</strong><small>Your own server</small></button>
-          <button type="button" data-ai-preset="self_hosted|http://HOST:11434/v1|Ollama"><strong>Ollama</strong><small>Your own server</small></button>
-          <button type="button" data-ai-preset="self_hosted|http://HOST:8000/v1|vLLM"><strong>vLLM</strong><small>Your own server</small></button>
-          <button type="button" data-ai-preset="self_hosted|http://HOST:1234/v1|LM Studio"><strong>LM Studio</strong><small>Your own server</small></button>
+          <button type="button" data-ai-preset="self_hosted|http://HOST:8080|llama.cpp"><strong>{{ tr('llama.cpp') }}</strong><small>{{ tr('Your own server') }}</small></button>
+          <button type="button" data-ai-preset="self_hosted|http://HOST:11434/v1|Ollama"><strong>{{ tr('Ollama') }}</strong><small>{{ tr('Your own server') }}</small></button>
+          <button type="button" data-ai-preset="self_hosted|http://HOST:8000/v1|vLLM"><strong>{{ tr('vLLM') }}</strong><small>{{ tr('Your own server') }}</small></button>
+          <button type="button" data-ai-preset="self_hosted|http://HOST:1234/v1|LM Studio"><strong>{{ tr('LM Studio') }}</strong><small>{{ tr('Your own server') }}</small></button>
         </div>
-        <h3>Hosted services <span class="muted">(outside your organization)</span></h3>
+        <h3>{{ tr('Hosted services') }} <span class="muted">{{ tr('(outside your organization)') }}</span></h3>
         <div class="aiadm-presets">
-          <button type="button" data-ai-preset="openai|"><strong>OpenAI</strong><small>ChatGPT models</small></button>
-          <button type="button" data-ai-preset="anthropic|"><strong>Claude</strong><small>Anthropic</small></button>
-          <button type="button" data-ai-preset="openai_compatible|https://openrouter.ai/api/v1|OpenRouter"><strong>OpenRouter</strong><small>Many models</small></button>
-          <button type="button" data-ai-preset="openai_compatible|https://api.groq.com/openai/v1|Groq"><strong>Groq</strong><small>Fast hosting</small></button>
-          <button type="button" data-ai-preset="openai_compatible|https://api.together.xyz/v1|Together"><strong>Together</strong><small>Open models</small></button>
-          <button type="button" data-ai-preset="openai_compatible|https://api.mistral.ai/v1|Mistral"><strong>Mistral</strong><small>Mistral models</small></button>
-          <button type="button" data-ai-preset="openai_compatible|https://generativelanguage.googleapis.com/v1beta/openai|Gemini"><strong>Gemini</strong><small>Google</small></button>
-          <button type="button" data-ai-preset="openai_compatible||Other"><strong>Something else</strong><small>Any compatible service</small></button>
+          <button type="button" data-ai-preset="openai|"><strong>{{ tr('OpenAI') }}</strong><small>{{ tr('ChatGPT models') }}</small></button>
+          <button type="button" data-ai-preset="anthropic|"><strong>{{ tr('Claude') }}</strong><small>{{ tr('Anthropic') }}</small></button>
+          <button type="button" data-ai-preset="openai_compatible|https://openrouter.ai/api/v1|OpenRouter"><strong>{{ tr('OpenRouter') }}</strong><small>{{ tr('Many models') }}</small></button>
+          <button type="button" data-ai-preset="openai_compatible|https://api.groq.com/openai/v1|Groq"><strong>{{ tr('Groq') }}</strong><small>{{ tr('Fast hosting') }}</small></button>
+          <button type="button" data-ai-preset="openai_compatible|https://api.together.xyz/v1|Together"><strong>{{ tr('Together') }}</strong><small>{{ tr('Open models') }}</small></button>
+          <button type="button" data-ai-preset="openai_compatible|https://api.mistral.ai/v1|Mistral"><strong>{{ tr('Mistral') }}</strong><small>{{ tr('Mistral models') }}</small></button>
+          <button type="button" data-ai-preset="openai_compatible|https://generativelanguage.googleapis.com/v1beta/openai|Gemini"><strong>{{ tr('Gemini') }}</strong><small>{{ tr('Google') }}</small></button>
+          <button type="button" data-ai-preset="openai_compatible||Other"><strong>{{ tr('Something else') }}</strong><small>{{ tr('Any compatible service') }}</small></button>
         </div>
       </div>
       <div class="aiadm-step" data-ai-step="details" hidden>
         <input type="hidden" data-ai-f="id"><input type="hidden" data-ai-f="provider"><input type="hidden" data-ai-f="token">
         <p class="aiadm-where" data-ai-where></p>
-        <label>{{ t('Name') }}<input type="text" maxlength="80" data-ai-f="name" placeholder="For example: Office server"></label>
-        <label data-ai-row="endpoint">Server address<input type="text" inputmode="url" maxlength="500" data-ai-f="endpoint" placeholder="http://192.168.68.68:8080"><small>Just the address. The rest is added for you.</small></label>
-        <label>Access key<input type="password" autocomplete="new-password" maxlength="4096" data-ai-f="api_key"><small data-ai-keyhint>Leave blank if the server needs none.</small></label>
+        <label>{{ tr('Name') }}<input type="text" maxlength="80" data-ai-f="name" placeholder="{{ tr('For example: Office server') }}"></label>
+        <label data-ai-row="endpoint">{{ tr('Server address') }}<input type="text" inputmode="url" maxlength="500" data-ai-f="endpoint" placeholder="{{ tr('http://192.168.68.68:8080') }}"><small>{{ tr('Just the address. The rest is added for you.') }}</small></label>
+        <label>{{ tr('Access key') }}<input type="password" autocomplete="new-password" maxlength="4096" data-ai-f="api_key"><small data-ai-keyhint>{{ tr('Leave blank if the server needs none.') }}</small></label>
         <fieldset class="aiadm-more">
-          <legend>Internet connection</legend>
-          <label>Proxy<select data-ai-f="proxy_mode"><option value="default">Use the system default proxy</option><option value="none">No proxy (direct connection)</option><option value="custom">Use a proxy for this model</option></select><small>The system default is managed in Outbound network settings.</small></label>
-          <label data-ai-row="proxy_url">Proxy URL<input type="password" autocomplete="new-password" maxlength="2048" data-ai-f="proxy_url" placeholder="http://user:password@proxy.example:3128"><small data-ai-proxyhint>Credentials are encrypted and are never shown again.</small></label>
+          <legend>{{ tr('Internet connection') }}</legend>
+          <label>{{ tr('Proxy') }}<select data-ai-f="proxy_mode"><option value="default">{{ tr('Use the system default proxy') }}</option><option value="none">{{ tr('No proxy (direct connection)') }}</option><option value="custom">{{ tr('Use a proxy for this model') }}</option></select><small>{{ tr('The system default is managed in Outbound network settings.') }}</small></label>
+          <label data-ai-row="proxy_url">{{ tr('Proxy URL') }}<input type="password" autocomplete="new-password" maxlength="2048" data-ai-f="proxy_url" placeholder="{{ tr('http://user:password@proxy.example:3128') }}"><small data-ai-proxyhint>{{ tr('Credentials are encrypted and are never shown again.') }}</small></label>
         </fieldset>
-        <div class="aiadm-detect"><button type="button" class="button" data-ai-detect>Connect and find models</button><span class="muted" role="status" aria-live="polite" data-ai-detect-status>Enter the details, then connect.</span></div>
+        <div class="aiadm-detect"><button type="button" class="button" data-ai-detect>{{ tr('Connect and find models') }}</button><span class="muted" role="status" aria-live="polite" data-ai-detect-status>{{ tr('Enter the details, then connect.') }}</span></div>
         <div class="aiadm-model">
-          <label for="ai-model-input">Model</label>
+          <label for="ai-model-input">{{ tr('Model') }}</label>
           <div class="aiadm-model-wrap">
-            <input type="text" id="ai-model-input" maxlength="160" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="ai-model-list" aria-autocomplete="list" data-ai-f="model" placeholder="Search models…">
-            <ul class="aiadm-model-list" id="ai-model-list" role="listbox" aria-label="Available models" data-ai-model-list hidden></ul>
+            <input type="text" id="ai-model-input" maxlength="160" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="ai-model-list" aria-autocomplete="list" data-ai-f="model" placeholder="{{ tr('Search models…') }}">
+            <ul class="aiadm-model-list" id="ai-model-list" role="listbox" aria-label="{{ tr('Available models') }}" data-ai-model-list hidden></ul>
           </div>
-          <small data-ai-model-hint>Connect first to see every model, or type a name.</small>
+          <small data-ai-model-hint>{{ tr('Connect first to see every model, or type a name.') }}</small>
         </div>
-        <details class="aiadm-more" data-ai-allowance><summary>Provider allowance (optional)</summary>
-          <p class="muted">If your plan limits how much you can use, such as a free tier, enter it. ServiceOps then avoids a service that has used its allowance, spreads work across your services in proportion to what each has left, and saves the most capable models for the hardest work.</p>
+        <details class="aiadm-more" data-ai-allowance><summary>{{ tr('Provider allowance (optional)') }}</summary>
+          <p class="muted">{{ tr('If your plan limits how much you can use, such as a free tier, enter it. ServiceOps then avoids a service that has used its allowance, spreads work across your services in proportion to what each has left, and saves the most capable models for the hardest work.') }}</p>
           <div class="aiadm-limits">
-            <label>Requests per minute<input type="number" min="0" max="1000000" data-ai-f="rpm" placeholder="No limit"></label>
-            <label>Tokens per minute<input type="number" min="0" max="1000000000" data-ai-f="tpm" placeholder="No limit"></label>
-            <label>Requests per day<input type="number" min="0" max="1000000000" data-ai-f="rpd" placeholder="No limit"></label>
-            <label>The day resets in<select data-ai-f="tz"><option value="UTC">UTC</option><option value="America/Los_Angeles">Pacific time (Google)</option><option value="America/New_York">US Eastern</option><option value="Europe/London">London</option><option value="Asia/Tokyo">Tokyo</option></select></label>
+            <label>{{ tr('Requests per minute') }}<input type="number" min="0" max="1000000" data-ai-f="rpm" placeholder="{{ tr('No limit') }}"></label>
+            <label>{{ tr('Tokens per minute') }}<input type="number" min="0" max="1000000000" data-ai-f="tpm" placeholder="{{ tr('No limit') }}"></label>
+            <label>{{ tr('Requests per day') }}<input type="number" min="0" max="1000000000" data-ai-f="rpd" placeholder="{{ tr('No limit') }}"></label>
+            <label>{{ tr('The day resets in') }}<select data-ai-f="tz"><option value="UTC">UTC</option><option value="America/Los_Angeles">{{ tr('Pacific time (Google)') }}</option><option value="America/New_York">{{ tr('US Eastern') }}</option><option value="Europe/London">{{ tr('London') }}</option><option value="Asia/Tokyo">{{ tr('Tokyo') }}</option></select></label>
           </div>
-          <button type="button" class="button" data-ai-use-preset hidden>Use the free-tier limits Google publishes for this model</button>
+          <button type="button" class="button" data-ai-use-preset hidden>{{ tr('Use the free-tier limits Google publishes for this model') }}</button>
           <small class="muted" data-ai-preset-note></small>
         </details>
         <fieldset class="aiadm-bulk" data-ai-bulk hidden>
-          <legend>Also add these models from the same account</legend>
-          <p class="muted">Each model has its own allowance, so using several multiplies what you can do each day. They share the key you entered.</p>
+          <legend>{{ tr('Also add these models from the same account') }}</legend>
+          <p class="muted">{{ tr('Each model has its own allowance, so using several multiplies what you can do each day. They share the key you entered.') }}</p>
           <ul data-ai-bulk-list></ul>
         </fieldset>
-        <details class="aiadm-more"><summary>Sharing options</summary>
+        <details class="aiadm-more"><summary>{{ tr('Sharing options') }}</summary>
           <div class="aiadm-limits">
-            <label>Order<input type="number" min="1" max="1000" value="100" data-ai-f="priority"><small>Lower goes first (In order mode).</small></label>
-            <label>Weight<input type="number" min="1" max="10" value="1" data-ai-f="weight"><small>Higher gets more requests (Spread the load).</small></label>
-            <label>At once<input type="number" min="1" max="8" value="1" data-ai-f="max_concurrency"><small>Requests it can handle together.</small></label>
+            <label>{{ tr('Order') }}<input type="number" min="1" max="1000" value="100" data-ai-f="priority"><small>{{ tr('Lower goes first (In order mode).') }}</small></label>
+            <label>{{ tr('Weight') }}<input type="number" min="1" max="10" value="1" data-ai-f="weight"><small>{{ tr('Higher gets more requests (Spread the load).') }}</small></label>
+            <label>{{ tr('At once') }}<input type="number" min="1" max="8" value="1" data-ai-f="max_concurrency"><small>{{ tr('Requests it can handle together.') }}</small></label>
           </div>
         </details>
-        <label class="aiadm-switch"><input type="checkbox" checked data-ai-f="enabled"><span><strong>Use this service</strong></span></label>
+        <label class="aiadm-switch"><input type="checkbox" checked data-ai-f="enabled"><span><strong>{{ tr('Use this service') }}</strong></span></label>
         <p class="ai-banner" data-ai-dialog-error role="alert" hidden></p>
-        <div class="aiadm-dialog-actions"><button type="button" class="button" data-ai-back>{{ t('Back') }}</button><button type="button" class="primary" data-ai-save>Save service</button></div>
+        <div class="aiadm-dialog-actions"><button type="button" class="button" data-ai-back>{{ tr('Back') }}</button><button type="button" class="primary" data-ai-save>{{ tr('Save service') }}</button></div>
       </div>
     </div>
   </dialog>

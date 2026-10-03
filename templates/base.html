@@ -9,6 +9,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ instance_name|default('ServiceOps') }}{% endblock %}</title>
+  <script type="application/json" id="serviceops-i18n">{{ ui_javascript_catalog|tojson }}</script>
+  <script src="{{ url_for('static', filename='i18n.js', v=app_version) }}"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v=app_version) }}">
@@ -40,70 +42,70 @@
 </head>
 <body class="{% if current_user.is_authenticated %}theme-light density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}" {% if current_user.is_authenticated %}data-tour-route="{{ request.endpoint }}"{% endif %}>
 {% from '_admin_icons.html' import admin_icon %}
-<a class="skip-link" href="#main-content">Skip to main content</a>
+<a class="skip-link" href="#main-content">{{ tr('Skip to main content') }}</a>
 {% if current_user.is_authenticated %}
 {% set admin_endpoints = ['admin_home','admin_section','itil_admin','system_settings_category','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin','data_governance_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
 <script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
-{% if test_fixture_active %}<div class="test-fixture-banner">NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active</div>{% endif %}
+{% if test_fixture_active %}<div class="test-fixture-banner">{{ tr('NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active') }}</div>{% endif %}
 <aside class="sidebar">
-  <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ company_name }} logo"><span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span>{% else %}<img class="serviceops-wordmark" src="{{ url_for('static', filename='brand/serviceops-wordmark.png', v=app_version) }}" alt="ServiceOps">{% endif %}</a>
-  <nav class="application-nav" aria-label="Application navigation" data-application-nav>
-    <label class="nav-filter"><span aria-hidden="true">⌕</span><input type="search" placeholder="Find menu" aria-label="Find a menu item" data-nav-filter></label>
-    <a class="nav-home{% if nav_active('dashboard') %} active{% endif %}" href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">⌂</span><span>Home</span></a>
-    <a class="nav-home{% if nav_active('my_workspace') %} active{% endif %}" href="{{ url_for('my_workspace') }}" {% if nav_active('my_workspace') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">▤</span><span>My Workspace</span></a>
+  <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ tr('{company_name} logo', company_name=(company_name)) }}"><span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span>{% else %}<img class="serviceops-wordmark" src="{{ url_for('static', filename='brand/serviceops-wordmark.png', v=app_version) }}" alt="{{ tr('ServiceOps') }}">{% endif %}</a>
+  <nav class="application-nav" aria-label="{{ tr('Application navigation') }}" data-application-nav>
+    <label class="nav-filter"><span aria-hidden="true">⌕</span><input type="search" placeholder="{{ tr('Find menu') }}" aria-label="{{ tr('Find a menu item') }}" data-nav-filter></label>
+    <a class="nav-home{% if nav_active('dashboard') %} active{% endif %}" href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">⌂</span><span>{{ tr('Home') }}</span></a>
+    <a class="nav-home{% if nav_active('my_workspace') %} active{% endif %}" href="{{ url_for('my_workspace') }}" {% if nav_active('my_workspace') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">▤</span><span>{{ tr('My Workspace') }}</span></a>
 
     {% if client_management_access %}
     <details class="nav-group nav-group-client" {% if request.endpoint in ['client_management_home','client_tickets','client_ticket_new','client_ticket_detail','client_organizations','client_contacts'] %}open{% endif %}>
-      <summary><span class="nav-symbol" aria-hidden="true">◒</span><span>Client management</span>{% if client_open_ticket_count %}<span class="nav-badge">{{ client_open_ticket_count if client_open_ticket_count < 100 else '99+' }}</span>{% endif %}<span class="nav-chevron" aria-hidden="true"></span></summary>
+      <summary><span class="nav-symbol" aria-hidden="true">◒</span><span>{{ tr('Client management') }}</span>{% if client_open_ticket_count %}<span class="nav-badge">{{ client_open_ticket_count if client_open_ticket_count < 100 else '99+' }}</span>{% endif %}<span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items">
-        <a href="{{ url_for('client_management_home') }}" {% if nav_active('client_management_home') %}class="active" aria-current="page"{% endif %}>Support overview</a>
-        <a href="{{ url_for('client_tickets') }}" {% if request.endpoint in ['client_tickets','client_ticket_new','client_ticket_detail'] %}class="active" aria-current="page"{% endif %}>Customer tickets</a>
-        <a href="{{ url_for('client_organizations') }}" {% if nav_active('client_organizations') %}class="active" aria-current="page"{% endif %}>Organizations</a>
-        <a href="{{ url_for('client_contacts') }}" {% if nav_active('client_contacts') %}class="active" aria-current="page"{% endif %}>Contacts</a>
+        <a href="{{ url_for('client_management_home') }}" {% if nav_active('client_management_home') %}class="active" aria-current="page"{% endif %}>{{ tr('Support overview') }}</a>
+        <a href="{{ url_for('client_tickets') }}" {% if request.endpoint in ['client_tickets','client_ticket_new','client_ticket_detail'] %}class="active" aria-current="page"{% endif %}>{{ tr('Customer tickets') }}</a>
+        <a href="{{ url_for('client_organizations') }}" {% if nav_active('client_organizations') %}class="active" aria-current="page"{% endif %}>{{ tr('Organizations') }}</a>
+        <a href="{{ url_for('client_contacts') }}" {% if nav_active('client_contacts') %}class="active" aria-current="page"{% endif %}>{{ tr('Contacts') }}</a>
       </div>
     </details>
     {% endif %}
 
     <details class="nav-group" {% if request.endpoint in ['task_board','my_work_tasks','tickets','requests_list','approval_chains','org_chart'] %}open{% endif %}>
-      <summary><span class="nav-symbol" aria-hidden="true">◫</span><span>My work</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+      <summary><span class="nav-symbol" aria-hidden="true">◫</span><span>{{ tr('My work') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items">
-        <a href="{{ url_for('task_board') }}" {% if nav_active('task_board') %}class="active" aria-current="page"{% endif %}>Visual task board</a>
-        {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}<a href="{{ url_for('my_work_tasks') }}" {% if nav_active('my_work_tasks') %}class="active" aria-current="page"{% endif %}>My tasks{% if my_open_tasks_count %}<span class="nav-badge">{{ my_open_tasks_count if my_open_tasks_count < 100 else '99+' }}</span>{% endif %}</a>{% endif %}
-        <a href="{{ url_for('tickets', kind='incident') }}" {% if nav_active('tickets', kind='incident') %}class="active" aria-current="page"{% endif %}>{{ t('Incidents') }}</a>
-        <a href="{{ url_for('requests_list') }}" {% if nav_active('requests_list') %}class="active" aria-current="page"{% endif %}>{{ t('Service requests') }}</a>
-        {% if current_user.effective_role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}" {% if nav_active('tickets', kind='change') %}class="active" aria-current="page"{% endif %}>{{ t('Changes') }}</a>{% endif %}
-        <a href="{{ url_for('approval_chains') }}" {% if nav_active('approval_chains') %}class="active" aria-current="page"{% endif %}>My approvals{% if pending_approvals_count %}<span class="nav-badge">{{ pending_approvals_count if pending_approvals_count < 100 else '99+' }}</span>{% endif %}</a>
-        <a href="{{ url_for('org_chart') }}" {% if nav_active('org_chart') %}class="active" aria-current="page"{% endif %}>Organization chart</a>
+        <a href="{{ url_for('task_board') }}" {% if nav_active('task_board') %}class="active" aria-current="page"{% endif %}>{{ tr('Visual task board') }}</a>
+        {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}<a href="{{ url_for('my_work_tasks') }}" {% if nav_active('my_work_tasks') %}class="active" aria-current="page"{% endif %}>{{ tr('My tasks') }}{% if my_open_tasks_count %}<span class="nav-badge">{{ my_open_tasks_count if my_open_tasks_count < 100 else '99+' }}</span>{% endif %}</a>{% endif %}
+        <a href="{{ url_for('tickets', kind='incident') }}" {% if nav_active('tickets', kind='incident') %}class="active" aria-current="page"{% endif %}>{{ tr('Incidents') }}</a>
+        <a href="{{ url_for('requests_list') }}" {% if nav_active('requests_list') %}class="active" aria-current="page"{% endif %}>{{ tr('Service requests') }}</a>
+        {% if current_user.effective_role != 'requester' %}<a href="{{ url_for('tickets', kind='change') }}" {% if nav_active('tickets', kind='change') %}class="active" aria-current="page"{% endif %}>{{ tr('Changes') }}</a>{% endif %}
+        <a href="{{ url_for('approval_chains') }}" {% if nav_active('approval_chains') %}class="active" aria-current="page"{% endif %}>{{ tr('My approvals') }}{% if pending_approvals_count %}<span class="nav-badge">{{ pending_approvals_count if pending_approvals_count < 100 else '99+' }}</span>{% endif %}</a>
+        <a href="{{ url_for('org_chart') }}" {% if nav_active('org_chart') %}class="active" aria-current="page"{% endif %}>{{ tr('Organization chart') }}</a>
       </div>
     </details>
 
     <details class="nav-group" {% if request.endpoint in ['catalog','knowledge','modules','mobile_app'] %}open{% endif %}>
-      <summary><span class="nav-symbol" aria-hidden="true">◎</span><span>Self-service</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+      <summary><span class="nav-symbol" aria-hidden="true">◎</span><span>{{ tr('Self-service') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items">
-        <a href="{{ url_for('catalog') }}" {% if nav_active('catalog') %}class="active" aria-current="page"{% endif %}>Service catalog</a>
-        <a href="{{ url_for('knowledge') }}" {% if nav_active('knowledge') %}class="active" aria-current="page"{% endif %}>{{ t('Knowledge') }}</a>
-        <a href="{{ url_for('modules') }}" {% if nav_active('modules') %}class="active" aria-current="page"{% endif %}>All workspaces</a>
-        <a href="{{ url_for('mobile_app') }}" {% if nav_active('mobile_app') %}class="active" aria-current="page"{% endif %}>ServiceOps mobile</a>
+        <a href="{{ url_for('catalog') }}" {% if nav_active('catalog') %}class="active" aria-current="page"{% endif %}>{{ tr('Service catalog') }}</a>
+        <a href="{{ url_for('knowledge') }}" {% if nav_active('knowledge') %}class="active" aria-current="page"{% endif %}>{{ tr('Knowledge') }}</a>
+        <a href="{{ url_for('modules') }}" {% if nav_active('modules') %}class="active" aria-current="page"{% endif %}>{{ tr('All workspaces') }}</a>
+        <a href="{{ url_for('mobile_app') }}" {% if nav_active('mobile_app') %}class="active" aria-current="page"{% endif %}>{{ tr('ServiceOps mobile') }}</a>
       </div>
     </details>
 
     {% if current_user.effective_role in ['manager','admin','superadmin'] %}
     <details class="nav-group" {% if request.endpoint in ['manager_portal','analytics','analytics_overdue'] %}open{% endif %}>
-      <summary><span class="nav-symbol" aria-hidden="true">▥</span><span>Management</span><span class="nav-chevron" aria-hidden="true"></span></summary>
-      <div class="nav-group-items"><a href="{{ url_for('manager_portal') }}" {% if nav_active('manager_portal') %}class="active" aria-current="page"{% endif %}>Manager portal</a><a href="{{ url_for('analytics') }}" {% if nav_active('analytics') %}class="active" aria-current="page"{% endif %}>Analytics</a></div>
+      <summary><span class="nav-symbol" aria-hidden="true">▥</span><span>{{ tr('Management') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+      <div class="nav-group-items"><a href="{{ url_for('manager_portal') }}" {% if nav_active('manager_portal') %}class="active" aria-current="page"{% endif %}>{{ tr('Manager portal') }}</a><a href="{{ url_for('analytics') }}" {% if nav_active('analytics') %}class="active" aria-current="page"{% endif %}>{{ tr('Analytics') }}</a></div>
     </details>
     {% endif %}
 
     {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}
     <details class="nav-group" {% if request.endpoint in ['module_records','known_errors','improvements','cmdb','cmdb_topology','cmdb_discovery','cmdb_discovery_review','cmdb_import','assets'] %}open{% endif %}>
-      <summary><span class="nav-symbol" aria-hidden="true">◇</span><span>Operations</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+      <summary><span class="nav-symbol" aria-hidden="true">◇</span><span>{{ tr('Operations') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items">
-        <a href="{{ url_for('module_records', domain='problem') }}" {% if nav_active('module_records', domain='problem') %}class="active" aria-current="page"{% endif %}>Problems</a>
-        <a href="{{ url_for('known_errors') }}" {% if nav_active('known_errors') %}class="active" aria-current="page"{% endif %}>Known errors</a>
-        <a href="{{ url_for('module_records', domain='event') }}" {% if nav_active('module_records', domain='event') %}class="active" aria-current="page"{% endif %}>IT operations</a>
-        <a href="{{ url_for('improvements') }}" {% if nav_active('improvements') %}class="active" aria-current="page"{% endif %}>Improvements</a>
-        <a href="{{ url_for('cmdb') }}" {% if nav_active('cmdb') %}class="active" aria-current="page"{% endif %}>CMDB &amp; service map</a>
-        <a href="{{ url_for('assets') }}" {% if nav_active('assets') %}class="active" aria-current="page"{% endif %}>Assets</a>
+        <a href="{{ url_for('module_records', domain='problem') }}" {% if nav_active('module_records', domain='problem') %}class="active" aria-current="page"{% endif %}>{{ tr('Problems') }}</a>
+        <a href="{{ url_for('known_errors') }}" {% if nav_active('known_errors') %}class="active" aria-current="page"{% endif %}>{{ tr('Known errors') }}</a>
+        <a href="{{ url_for('module_records', domain='event') }}" {% if nav_active('module_records', domain='event') %}class="active" aria-current="page"{% endif %}>{{ tr('IT operations') }}</a>
+        <a href="{{ url_for('improvements') }}" {% if nav_active('improvements') %}class="active" aria-current="page"{% endif %}>{{ tr('Improvements') }}</a>
+        <a href="{{ url_for('cmdb') }}" {% if nav_active('cmdb') %}class="active" aria-current="page"{% endif %}>{{ tr('CMDB & service map') }}</a>
+        <a href="{{ url_for('assets') }}" {% if nav_active('assets') %}class="active" aria-current="page"{% endif %}>{{ tr('Assets') }}</a>
       </div>
     </details>
     {% endif %}
@@ -119,74 +121,74 @@
     {% elif request.endpoint in ['system_settings_category','data_governance_admin','platform_tenants','system_health','system_health_log_file','audit_log','api_clients_admin'] %}{% set admin_active_section = 'platform-security' %}
     {% endif %}
     <details class="nav-group nav-group-admin" {% if request.endpoint in admin_endpoints %}open{% endif %}>
-      <summary><span class="nav-symbol" aria-hidden="true">⚙</span><span>{{ t('Administration') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+      <summary><span class="nav-symbol" aria-hidden="true">⚙</span><span>{{ tr('Administration') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items admin-area-links">
-        <a class="admin-area-link{% if nav_active('admin_home') %} active{% endif %}" href="{{ url_for('admin_home') }}" {% if nav_active('admin_home') %}aria-current="page"{% endif %}><span class="admin-area-icon">{{ admin_icon('home') }}</span><span><strong>{{ t('General') }}</strong><small>Administration overview</small></span><span class="admin-area-chevron" aria-hidden="true"></span></a>
+        <a class="admin-area-link{% if nav_active('admin_home') %} active{% endif %}" href="{{ url_for('admin_home') }}" {% if nav_active('admin_home') %}aria-current="page"{% endif %}><span class="admin-area-icon">{{ admin_icon('home') }}</span><span><strong>{{ tr('General') }}</strong><small>{{ tr('Administration overview') }}</small></span><span class="admin-area-chevron" aria-hidden="true"></span></a>
         {% set admin_areas = [
-          ('people-access','People & access','Users, teams and permissions','people'),
-          ('service-configuration','Service configuration','Requests, changes and SLAs','service'),
-          ('connections-channels','Connections & channels','Integrations and delivery','connections'),
-          ('automation-content','Automation & content','Rules, templates and tours','automation'),
-          ('platform-security','Platform & security','Identity, protection and health','security'),
+          ('people-access',tr('People & access'),tr('Users, teams and permissions'),'people'),
+          ('service-configuration',tr('Service configuration'),tr('Requests, changes and SLAs'),'service'),
+          ('connections-channels',tr('Connections & channels'),tr('Integrations and delivery'),'connections'),
+          ('automation-content',tr('Automation & content'),tr('Rules, templates and tours'),'automation'),
+          ('platform-security',tr('Platform & security'),tr('Identity, protection and health'),'security'),
         ] %}
         {% for section, label, help, icon in admin_areas %}
-        <a class="admin-area-link{% if admin_active_section == section %} active{% endif %}" href="{{ url_for('admin_section', section=section) }}" {% if admin_active_section == section %}aria-current="page"{% endif %}><span class="admin-area-icon">{{ admin_icon(icon) }}</span><span><strong>{{ label }}</strong><small>{{ help }}</small></span><span class="admin-area-chevron" aria-hidden="true"></span></a>
+        <a class="admin-area-link{% if admin_active_section == section %} active{% endif %}" href="{{ url_for('admin_section', section=section) }}" {% if admin_active_section == section %}aria-current="page"{% endif %}><span class="admin-area-icon">{{ admin_icon(icon) }}</span><span><strong>{{ tr_value(label) }}</strong><small>{{ tr_value(help) }}</small></span><span class="admin-area-chevron" aria-hidden="true"></span></a>
         {% endfor %}
       </div>
     </details>
     {% endif %}
-    <p class="nav-filter-empty" data-nav-filter-empty hidden>No matching menu items</p>
+    <p class="nav-filter-empty" data-nav-filter-empty hidden>{{ tr('No matching menu items') }}</p>
   </nav>
   <script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
   <div class="profile">
     <div class="profile-row">
       {{ user_avatar(current_user) }}
-      <a class="profile-identity" href="{{ url_for('profile') }}"><strong>{{ current_user.name }}</strong><small>{{ current_user.effective_role }}</small></a>
+      <a class="profile-identity" href="{{ url_for('profile') }}"><strong>{{ current_user.name }}</strong><small>{{ tr_value(current_user.effective_role) }}</small></a>
     </div>
     {% if current_user.granted_roles|length > 1 %}
     <details data-nav-menu="acting-role" class="role-switcher">
-      <summary title="You have multiple roles -- click to switch which one is active" aria-label="Switch your active role (currently {{ current_user.effective_role|capitalize }})">
+      <summary title="{{ tr('You have multiple roles -- click to switch which one is active') }}" aria-label="{{ tr('Switch your active role (currently {effective_role})', effective_role=(current_user.effective_role|capitalize)) }}">
         <svg class="icon" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-        <span>Acting as <strong>{{ current_user.effective_role|capitalize }}</strong></span>
+        <span>{{ tr('Acting as') }} <strong>{{ tr_value(current_user.effective_role|capitalize) }}</strong></span>
         <svg class="icon role-switcher-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
       </summary>
       <div class="nav-popover role-switcher-popover">
-        <h3>Switch your active role</h3>
-        <p class="muted">You hold {{ current_user.granted_roles|length }} roles: {{ current_user.granted_roles|join(', ') }}.</p>
+        <h3>{{ tr('Switch your active role') }}</h3>
+        <p class="muted">{{ tr('You hold {granted_roles} roles: {granted_roles2}.', granted_roles=(current_user.granted_roles|length), granted_roles2=(current_user.granted_roles|join(', '))) }}</p>
         {% for role in current_user.granted_roles %}
         <form method="post" action="{{ url_for('set_acting_role') }}">
           <input type="hidden" name="role" value="{{ role }}">
-          <button type="submit" class="favorite-toggle role-switch-option"{% if role == current_user.effective_role %} disabled{% endif %}>{{ '✓ ' if role == current_user.effective_role }}{{ role|capitalize }}{% if role == current_user.effective_role %} <small>(active now)</small>{% endif %}</button>
+          <button type="submit" class="favorite-toggle role-switch-option"{% if role == current_user.effective_role %} disabled{% endif %}>{{ '✓ ' if role == current_user.effective_role }}{{ tr_value(role|capitalize) }}{% if role == current_user.effective_role %} <small>{{ tr('(active now)') }}</small>{% endif %}</button>
         </form>
         {% endfor %}
       </div>
     </details>
     {% endif %}
-    <form action="{{ url_for('logout') }}" method="post"><button type="submit" class="sign-out-button" title="Sign out" aria-label="Sign out"><svg class="icon" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>Sign out</span></button></form>
+    <form action="{{ url_for('logout') }}" method="post"><button type="submit" class="sign-out-button" title="{{ tr('Sign out') }}" aria-label="{{ tr('Sign out') }}"><svg class="icon" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>{{ tr('Sign out') }}</span></button></form>
   </div>
   <div class="sidebar-version">v{{ app_version }}</div>
 </aside>
 <header class="unified-nav">
-  <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation" aria-expanded="true"><svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
-  <form action="{{ url_for('global_search') }}" class="global-search"><span><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span><input name="q" placeholder="Search ServiceOps" aria-label="Search ServiceOps"></form>
+  <button class="nav-toggle" type="button" data-nav-toggle aria-label="{{ tr('Toggle navigation') }}" aria-expanded="true"><svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
+  <form action="{{ url_for('global_search') }}" class="global-search"><span><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span><input name="q" placeholder="{{ tr('Search ServiceOps') }}" aria-label="{{ tr('Search ServiceOps') }}"></form>
   <div class="nav-menus">
     <details data-nav-menu="favorites">
-      <summary title="Favorites" aria-label="Favorites"><svg class="icon" data-favorite-star viewBox="0 0 24 24" data-active="{{ 'true' if current_page_is_favorite else 'false' }}"><polygon points="12 2.5 15.09 8.99 22.18 10.02 17.09 15.02 18.26 22.06 12 18.72 5.74 22.06 6.91 15.02 1.82 10.02 8.91 8.99"/></svg></summary>
+      <summary title="{{ tr('Favorites') }}" aria-label="{{ tr('Favorites') }}"><svg class="icon" data-favorite-star viewBox="0 0 24 24" data-active="{{ 'true' if current_page_is_favorite else 'false' }}"><polygon points="12 2.5 15.09 8.99 22.18 10.02 17.09 15.02 18.26 22.06 12 18.72 5.74 22.06 6.91 15.02 1.82 10.02 8.91 8.99"/></svg></summary>
       <div class="nav-popover">
-        <h3>Favorites</h3>
-        <button type="button" class="favorite-toggle" data-favorite>{{ 'Remove this page from favorites' if current_page_is_favorite else 'Add this page to favorites' }}</button>
+        <h3>{{ tr('Favorites') }}</h3>
+        <button type="button" class="favorite-toggle" data-favorite>{{ tr('Remove this page from favorites') if current_page_is_favorite else tr('Add this page to favorites') }}</button>
         <hr>
         <div data-favorites-list>
-        {% for favorite in ui_favorites %}<a href="{{ favorite.url }}" data-favorite-url="{{ favorite.url }}">{{ favorite.label }}</a>{% else %}<p data-favorites-empty>No favorites yet.</p>{% endfor %}
+        {% for favorite in ui_favorites %}<a href="{{ favorite.url }}" data-favorite-url="{{ favorite.url }}">{{ tr_value(favorite.label) }}</a>{% else %}<p data-favorites-empty>{{ tr('No favorites yet.') }}</p>{% endfor %}
         </div>
       </div>
     </details>
     <details data-nav-menu="history">
-      <summary title="Recently viewed pages" aria-label="Recently viewed pages"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg></summary>
+      <summary title="{{ tr('Recently viewed pages') }}" aria-label="{{ tr('Recently viewed pages') }}"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg></summary>
       <div class="nav-popover">
-        <h3>Recently viewed</h3>
+        <h3>{{ tr('Recently viewed') }}</h3>
         <div data-history-list>
-        {% for row in ui_history %}<a href="{{ row.url }}" data-history-url="{{ row.url }}">{{ row.label }}</a>{% else %}<p data-history-empty>No recent pages.</p>{% endfor %}
+        {% for row in ui_history %}<a href="{{ row.url }}" data-history-url="{{ row.url }}">{{ tr_value(row.label) }}</a>{% else %}<p data-history-empty>{{ tr('No recent pages.') }}</p>{% endfor %}
         </div>
       </div>
     </details>
@@ -194,12 +196,12 @@
               data-severity="{{ unread_notification_severity or '' }}"
               data-latest-id="{{ ui_notifications[0].id if ui_notifications else 0 }}"
               data-poll-url="{{ url_for('notifications_poll') }}">
-      <summary title="{{ t('Notifications') }}" aria-label="{{ t('Notifications') }}">
+      <summary title="{{ tr('Notifications') }}" aria-label="{{ tr('Notifications') }}">
         <svg class="icon notification-bell-icon" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         {% if unread_notifications %}<b class="notification-count severity-{{ unread_notification_severity or 'info' }}">{{ unread_notifications if unread_notifications < 100 else '99+' }}</b>{% endif %}
       </summary>
       <div class="nav-popover notification-popover">
-        <div class="notification-popover-head"><h3>{{ t('Notifications') }}</h3>{% if unread_notifications %}<span>{{ unread_notifications }} unread</span>{% endif %}</div>
+        <div class="notification-popover-head"><h3>{{ tr('Notifications') }}</h3>{% if unread_notifications %}<span>{{ tr('{count} unread', count=(unread_notifications)) }}</span>{% endif %}</div>
         <div class="notification-preview-list">
           {% for notification in ui_notifications %}
           {% set target_url = ui_notification_urls.get(notification.id) %}
@@ -212,13 +214,13 @@
           {% else %}
           <a class="notification-preview severity-{{ severity }}{% if not notification.read %} unread{% endif %}" href="{{ url_for('notifications') }}"><span class="notification-preview-glyph" aria-hidden="true">{{ icon }}</span><span><strong>{{ notification.title }}</strong><small>{{ notification.body }}</small><time>{{ notification.created_at|usertime('%b %d, %H:%M') }}</time></span></a>
           {% endif %}
-          {% else %}<p class="notification-preview-empty">You have no notifications.</p>{% endfor %}
+          {% else %}<p class="notification-preview-empty">{{ tr('You have no notifications.') }}</p>{% endfor %}
         </div>
-        <a class="notification-view-all" href="{{ url_for('notifications') }}">View all notifications <span aria-hidden="true">→</span></a>
+        <a class="notification-view-all" href="{{ url_for('notifications') }}">{{ tr('View all notifications') }} <span aria-hidden="true">→</span></a>
       </div>
     </details>
-    <a class="nav-icon" href="{{ url_for('help_center') }}" title="Help" aria-label="Help"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.9.4-1.5 1-1.5 2.2"/><line x1="12" y1="17.3" x2="12" y2="17.31"/></svg></a>
-    <a class="nav-icon" href="{{ url_for('preferences') }}" title="{{ t('Preferences') }}" aria-label="{{ t('Preferences') }}"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1z"/></svg></a>
+    <a class="nav-icon" href="{{ url_for('help_center') }}" title="{{ tr('Help') }}" aria-label="{{ tr('Help') }}"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.9.4-1.5 1-1.5 2.2"/><line x1="12" y1="17.3" x2="12" y2="17.31"/></svg></a>
+    <a class="nav-icon" href="{{ url_for('preferences') }}" title="{{ tr('Preferences') }}" aria-label="{{ tr('Preferences') }}"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1z"/></svg></a>
   </div>
 </header>
 {% endif %}
@@ -231,17 +233,17 @@
 {% if current_user.is_authenticated %}
 <dialog id="ci-browser-modal" class="ci-browser-modal" aria-modal="true" aria-labelledby="ci-browser-title">
   <div class="ci-browser-head">
-    <h3 id="ci-browser-title">Select a configuration item</h3>
-    <button type="button" class="link-button" data-ci-browser-close aria-label="{{ t('Close') }}">✕</button>
+    <h3 id="ci-browser-title">{{ tr('Select a configuration item') }}</h3>
+    <button type="button" class="link-button" data-ci-browser-close aria-label="{{ tr('Close') }}">✕</button>
   </div>
   <div class="ci-browser-filters">
-    <input type="text" class="ci-browser-q" placeholder="Search by name or IP address…">
-    <select class="ci-browser-class"><option value="">All classes</option></select>
-    <select class="ci-browser-environment"><option value="">All environments</option></select>
+    <input type="text" class="ci-browser-q" placeholder="{{ tr('Search by name or IP address…') }}">
+    <select class="ci-browser-class"><option value="">{{ tr('All classes') }}</option></select>
+    <select class="ci-browser-environment"><option value="">{{ tr('All environments') }}</option></select>
   </div>
   <div class="ci-browser-table-wrap">
     <table class="ci-browser-table">
-      <thead><tr><th>{{ t('Name') }}</th><th>Class</th><th>Environment</th><th>IP address</th><th>{{ t('Status') }}</th></tr></thead>
+      <thead><tr><th>{{ tr('Name') }}</th><th>{{ tr('Class') }}</th><th>{{ tr('Environment') }}</th><th>{{ tr('IP address') }}</th><th>{{ tr('Status') }}</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -250,9 +252,9 @@
 {% endif %}
 <div id="lightbox-overlay" class="lightbox-overlay" hidden>
   <div class="lightbox-frame">
-    <button type="button" class="lightbox-close" aria-label="Close preview">✕</button>
+    <button type="button" class="lightbox-close" aria-label="{{ tr('Close preview') }}">✕</button>
     <img class="lightbox-img" src="" alt="">
-    <iframe class="lightbox-pdf" src="" title="Attachment preview" hidden></iframe>
+    <iframe class="lightbox-pdf" src="" title="{{ tr('Attachment preview') }}" hidden></iframe>
   </div>
   <p class="lightbox-caption"></p>
 </div>

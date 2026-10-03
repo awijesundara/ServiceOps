@@ -1,23 +1,23 @@
 {% extends "base.html" %}
 {% from '_status_badge.html' import status_badge %}
-{% block title %}Known errors · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Known errors · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">PROBLEM MANAGEMENT</p><h1>Known errors</h1><p>Problems with a documented root cause and workaround — check here before starting a fresh investigation.</p></div></header>
-<form class="filters"><input name="q" value="{{ q }}" placeholder="Search title, root cause, or workaround…"><button>{{ t('Search') }}</button></form>
+<header class="page-head"><div><p class="eyebrow">{{ tr('PROBLEM MANAGEMENT') }}</p><h1>{{ tr('Known errors') }}</h1><p>{{ tr('Problems with a documented root cause and workaround — check here before starting a fresh investigation.') }}</p></div></header>
+<form class="filters"><input name="q" value="{{ q }}" placeholder="{{ tr('Search title, root cause, or workaround…') }}"><button>{{ tr('Search') }}</button></form>
 <div class="task-list-scroll">
   <table class="task-list">
-    <thead><tr><th>Number</th><th>Title</th><th>Primary CI</th><th>Root cause</th><th>Workaround</th><th>State</th></tr></thead>
+    <thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Title') }}</th><th>{{ tr('Primary CI') }}</th><th>{{ tr('Root cause') }}</th><th>{{ tr('Workaround') }}</th><th>{{ tr('State') }}</th></tr></thead>
     <tbody>
       {% for record in records %}
       <tr>
         <td><a href="{{ url_for('enterprise_detail', record_id=record.id) }}">{{ record.number }}</a></td>
         <td><span class="truncate" title="{{ record.title }}">{{ record.title }}</span></td>
         <td><span class="truncate" title="{{ record.problem_profile.primary_ci.name if record.problem_profile.primary_ci else '' }}">{{ record.problem_profile.primary_ci.name if record.problem_profile.primary_ci else '—' }}</span></td>
-        <td>{{ record.problem_profile.root_cause or 'Not documented' }}</td>
-        <td>{{ record.problem_profile.workaround or 'Not documented' }}</td>
+        <td>{{ record.problem_profile.root_cause or tr('Not documented') }}</td>
+        <td>{{ record.problem_profile.workaround or tr('Not documented') }}</td>
         <td>{{ status_badge(record.state) }}</td>
       </tr>
-      {% else %}<tr><td colspan="6" class="empty-table">No known errors documented yet — mark a problem's root-cause analysis as a known error to have it show up here.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="6" class="empty-table">{{ tr("No known errors documented yet — mark a problem's root-cause analysis as a known error to have it show up here.") }}</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>

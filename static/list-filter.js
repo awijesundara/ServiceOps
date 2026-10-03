@@ -7,10 +7,10 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 const FILTER_OPERATORS = {
-  text: [["contains", "contains"], ["eq", "is"], ["starts_with", "starts with"],
-         ["is_empty", "is empty"], ["is_not_empty", "is not empty"]],
-  choice: [["eq", "is"], ["ne", "is not"], ["is_empty", "is empty"], ["is_not_empty", "is not empty"]],
-  date: [["before", "before"], ["after", "after"]],
+  text: [["contains", tr("contains")], ["eq", tr("is")], ["starts_with", tr("starts with")],
+         ["is_empty", tr("is empty")], ["is_not_empty", tr("is not empty")]],
+  choice: [["eq", tr("is")], ["ne", tr("is not")], ["is_empty", tr("is empty")], ["is_not_empty", tr("is not empty")]],
+  date: [["before", tr("before")], ["after", tr("after")]],
 };
 
 function initListFilter(container) {
@@ -71,7 +71,7 @@ function initListFilter(container) {
       const input = document.createElement("input");
       input.type = "text";
       input.className = "filter-value";
-      input.placeholder = "Value";
+      input.placeholder = tr("Value");
       input.value = value || "";
       wrap.appendChild(input);
     }
@@ -112,7 +112,7 @@ function initListFilter(container) {
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.className = "filter-row-remove";
-    removeButton.setAttribute("aria-label", "Remove condition");
+    removeButton.setAttribute("aria-label", tr("Remove condition"));
     removeButton.textContent = "×";
     removeButton.addEventListener("click", () => row.remove());
 

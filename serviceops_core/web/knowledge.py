@@ -6,6 +6,7 @@ from flask_login import current_user, login_required
 
 from app import audit, roles, tenant_query, visible_knowledge_query
 from serviceops_models import db, Knowledge
+from serviceops_core.localization import tr
 
 
 def register(app):
@@ -45,7 +46,7 @@ def register(app):
     def knowledge_edit(article_id):
         article = tenant_query(Knowledge).filter_by(id=article_id).first_or_404()
         if article.archived:
-            abort(409, description="This article is archived. Create a new article instead of editing an archived version.")
+            abort(409, description=tr("This article is archived. Create a new article instead of editing an archived version."))
         if request.method == "POST":
             if not article.published:
                 # A never-published draft has no reader-facing history to
@@ -58,7 +59,7 @@ def register(app):
                 article.published = True
                 audit("publish", f"KB{article.id:06d}", article.title)
                 db.session.commit()
-                flash("Draft published.", "success")
+                flash(tr("Draft published."), "success")
                 return redirect(url_for("knowledge_detail", article_id=article.id))
             new_version = Knowledge(
                 title=request.form["title"], category=request.form["category"],
@@ -72,7 +73,7 @@ def register(app):
             audit("supersede", f"KB{article.id:06d}", f"Replaced by KB{new_version.id:06d}")
             audit("create", f"KB{new_version.id:06d}", new_version.title)
             db.session.commit()
-            flash("Published an updated version. The previous version is preserved and archived.", "success")
+            flash(tr("Published an updated version. The previous version is preserved and archived."), "success")
             return redirect(url_for("knowledge_detail", article_id=new_version.id))
         return render_template("knowledge_form.html", article=article)
 
@@ -84,5 +85,5 @@ def register(app):
         article.published = False
         audit("archive", f"KB{article.id:06d}", article.title)
         db.session.commit()
-        flash("Article archived. It no longer appears in knowledge search but its history is preserved.", "success")
+        flash(tr("Article archived. It no longer appears in knowledge search but its history is preserved."), "success")
         return redirect(url_for("knowledge_detail", article_id=article.id))

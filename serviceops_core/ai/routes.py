@@ -17,6 +17,7 @@ from serviceops_core.ai.provider import (PROVIDERS, ProviderError, decrypt_key, 
 from serviceops_core import read_access
 from serviceops_core.proxy_tunnel import parse_proxy_url
 from serviceops_core.storage import ipfs_enabled
+from serviceops_core.localization import tr
 
 def register(app):
     blueprint = Blueprint("ai", __name__)
@@ -65,7 +66,7 @@ def register(app):
         creating = row is None
         provider = str(data.get("provider", row.provider if row else "self_hosted"))
         if provider not in PROVIDERS:
-            raise ProviderError("Choose a supported provider.")
+            raise ProviderError(tr("Choose a supported provider."))
         endpoint = normalize_endpoint(str(data.get("endpoint", row.endpoint if row else ""))[:500]) if provider in {
             "self_hosted", "openai_compatible"} else ""
         model = str(data.get("model", row.model if row else "")).strip()[:160]
@@ -74,23 +75,23 @@ def register(app):
         if row is not None:
             clash = clash.filter(AIConnection.id != row.id)
         if clash.first():
-            raise ProviderError("Another AI service already uses that name.")
+            raise ProviderError(tr("Another AI service already uses that name."))
         old_destination = (row.provider, row.endpoint) if row else None
         key_encrypted = row.key_encrypted if row else ""
         if old_destination != (provider, endpoint) and not creating or data.get("clear_key"):
             key_encrypted = ""
         typed = str(data.get("api_key", "")).strip()
         if len(typed) > 4096 or any(char in typed for char in "\r\n"):
-            raise ProviderError("Invalid API key.")
+            raise ProviderError(tr("Invalid API key."))
         if typed:
             key_encrypted = settings_cipher().encrypt(typed.encode()).decode()
         proxy_mode = str(data.get("proxy_mode", getattr(row, "proxy_mode", "default") if row else "default"))
         if proxy_mode not in {"default", "none", "custom"}:
-            raise ProviderError("Choose a supported proxy option.")
+            raise ProviderError(tr("Choose a supported proxy option."))
         proxy_url_encrypted = getattr(row, "proxy_url_encrypted", "") if row else ""
         typed_proxy = str(data.get("proxy_url", "")).strip()
         if len(typed_proxy) > 2048 or any(char in typed_proxy for char in "\r\n"):
-            raise ProviderError("Invalid proxy URL.")
+            raise ProviderError(tr("Invalid proxy URL."))
         if proxy_mode == "custom":
             if typed_proxy:
                 try:
@@ -99,7 +100,7 @@ def register(app):
                     raise ProviderError(str(error)) from None
                 proxy_url_encrypted = settings_cipher().encrypt(typed_proxy.encode()).decode()
             elif not proxy_url_encrypted:
-                raise ProviderError("Enter the custom proxy URL.")
+                raise ProviderError(tr("Enter the custom proxy URL."))
         else:
             proxy_url_encrypted = ""
         from app import setting_value
@@ -108,7 +109,7 @@ def register(app):
             try:
                 resolved_proxy = settings_cipher().decrypt(proxy_url_encrypted.encode()).decode()
             except Exception:
-                raise ProviderError("AI proxy credential could not be decrypted.") from None
+                raise ProviderError(tr("AI proxy credential could not be decrypted.")) from None
         candidate = SimpleNamespace(provider=provider, endpoint=endpoint, model=model, key_encrypted=key_encrypted,
                                     external_consent=True, max_output_tokens=config.max_output_tokens,
                                     proxy_mode=proxy_mode, proxy_url=resolved_proxy,
@@ -179,7 +180,7 @@ def register(app):
                     service.cancel_active(current_user.tenant_id)
                 audit("ai disabled", "AI configuration", "Master switch disabled")
                 db.session.commit()
-                flash("AI is off. Queued work is cancelled; answers still being written are discarded.", "success")
+                flash(tr("AI is off. Queued work is cancelled; answers still being written are discarded."), "success")
                 return redirect(url_for("ai.settings"))
             if action != "save":
                 abort(400)
@@ -200,7 +201,7 @@ def register(app):
                 mode = request.form.get("routing_mode", config.routing_mode or "smart")
                 scope = request.form.get("external_scope", config.external_scope or "not_sensitive")
                 if mode not in routing.ROUTING_MODES or scope not in routing.EXTERNAL_SCOPES:
-                    raise ProviderError("Choose one of the listed options.")
+                    raise ProviderError(tr("Choose one of the listed options."))
                 config.routing_mode, config.external_scope = mode, scope
                 if "routing_mode" in request.form:  # the full settings form; older clients leave these untouched
                     config.memory_enabled = request.form.get("memory_enabled") == "on"
@@ -213,12 +214,12 @@ def register(app):
                                                  ("retention_days", 1, 30, 7), ("chat_retention_days", 1, 365, 30)):
                     value = int(request.form.get(name, getattr(config, name) or default))
                     if not low <= value <= high:
-                        raise ProviderError(f"{name.replace('_', ' ').capitalize()} must be between {low} and {high}.")
+                        raise ProviderError(tr("{name} must be between {low} and {high}.", name=name.replace('_', ' ').capitalize(), low=low, high=high))
                     setattr(config, name, value)
                 db.session.flush()
                 if config.enabled:
                     if ipfs_enabled():
-                        raise ProviderError("AI jobs require PostgreSQL storage; IPFS mode is not supported.")
+                        raise ProviderError(tr("AI jobs require PostgreSQL storage; IPFS mode is not supported."))
                     service.ready(config)
                 config.revision += 1
                 config.updated_by_id = current_user.id
@@ -228,7 +229,7 @@ def register(app):
                       f"actions={config.actions_enabled}; "
                       f"routing={config.routing_mode}; external={config.external_scope}; revision={config.revision}")
                 db.session.commit()
-                flash("Saved. Requests waiting or being answered were cancelled so the new settings apply cleanly.", "success")
+                flash(tr("Saved. Requests waiting or being answered were cancelled so the new settings apply cleanly."), "success")
             except (ProviderError, ValueError) as error:
                 db.session.rollback()
                 flash(str(error) if isinstance(error, ProviderError) else "Enter valid numbers for the limits.", "error")
@@ -442,7 +443,7 @@ def register(app):
             try:
                 request_key = str(uuid.UUID(request.form.get("request_key", "")))
             except ValueError:
-                abort(400, description="Refresh the page before starting an investigation.")
+                abort(400, description=tr("Refresh the page before starting an investigation."))
             existing = AIRun.query.filter_by(tenant_id=identity.tenant_id, user_id=identity.id, request_key=request_key).first()
             if existing:
                 if existing.ticket_id != ticket.id:
@@ -455,10 +456,10 @@ def register(app):
             # Tenant configuration row lock serializes submissions and daily quota accounting.
             start = now().replace(hour=0, minute=0, second=0, microsecond=0)
             if AIRun.query.filter(AIRun.tenant_id == identity.tenant_id, AIRun.created_at >= start).count() >= config.daily_limit:
-                abort(429, description="Your organization has reached its daily AI request limit.")
+                abort(429, description=tr("Your organization has reached its daily AI request limit."))
             if AIRun.query.filter(AIRun.tenant_id == identity.tenant_id, AIRun.user_id == identity.id,
                                   AIRun.status.in_(service.ACTIVE)).first():
-                abort(409, description="You already have an AI investigation in progress.")
+                abort(409, description=tr("You already have an AI investigation in progress."))
             run = AIRun(tenant_id=identity.tenant_id, user_id=identity.id, ticket_id=ticket.id,
                         actor_role=identity.role, config_revision=config.revision, request_key=request_key,
                         provider="auto", model="auto")
@@ -479,7 +480,7 @@ def register(app):
         run = AIRun.query.filter_by(id=run_id, tenant_id=identity.tenant_id, user_id=identity.id).first_or_404()
         ticket = service.visible_incident(identity, run.ticket_id)
         if identity.role != run.actor_role:
-            abort(403, description="Switch to the role used to request this investigation.")
+            abort(403, description=tr("Switch to the role used to request this investigation."))
         if request.method == "POST":
             AIRun.query.filter(AIRun.id == run.id, AIRun.status.in_(service.ACTIVE)).update(
                 {"status": "cancelled", "completed_at": now()}, synchronize_session=False)
@@ -487,10 +488,10 @@ def register(app):
             db.session.commit()
             return redirect(url_for("ai.result", run_id=run.id))
         if run.created_at.replace(tzinfo=now().tzinfo) < now() - timedelta(days=config.retention_days):
-            abort(410, description="This AI investigation has expired.")
+            abort(410, description=tr("This AI investigation has expired."))
         sources = json.loads(run.sources_json)
         if not service.sources_accessible(identity, sources):
-            abort(403, description="You no longer have access to all evidence used by this investigation.")
+            abort(403, description=tr("You no longer have access to all evidence used by this investigation."))
         source_links(sources)
         return render_template("ai_result.html", run=run, ticket=ticket, sources=sources, config=config,
                                fallback_answer=readable_references(run.result_text, sources))
@@ -510,19 +511,19 @@ def register(app):
 
         scope, config = chat_scope()
         if not scope.is_staff:
-            abort(403, description="Staff access is required for AI actions.")
+            abort(403, description=tr("Staff access is required for AI actions."))
         if not config.actions_enabled:
-            abort(403, description="AI ticket actions are disabled by your administrator.")
+            abort(403, description=tr("AI ticket actions are disabled by your administrator."))
         run = AIRun.query.filter_by(id=run_id, tenant_id=scope.tenant_id, user_id=scope.user_id,
                                     actor_role=scope.role, kind="chat", status="completed").with_for_update().first_or_404()
         if not access.sources_still_accessible(scope, json.loads(run.sources_json or "[]")):
-            abort(403, description="You no longer have access to all evidence used by this answer.")
+            abort(403, description=tr("You no longer have access to all evidence used by this answer."))
         candidate = json.loads(run.route_json or "{}").get("action")
         supported = {"add_comment", "update_ticket", "kb_article", *actions.DRAFT_COMMENT_PREFIX}
         if not isinstance(candidate, dict) or candidate.get("type") not in supported:
-            abort(409, description="This answer does not contain a supported action proposal.")
+            abort(409, description=tr("This answer does not contain a supported action proposal."))
         if candidate["type"] == "update_ticket" and scope.role not in ("admin", "superadmin"):
-            abort(403, description="Administrator access is required to change ticket state, priority or assignment.")
+            abort(403, description=tr("Administrator access is required to change ticket state, priority or assignment."))
         ticket = read_access.tickets(scope.identity).filter_by(number=candidate.get("ticket")).first_or_404()
         existing = AIAction.query.filter_by(run_id=run.id, action_type=candidate["type"]).first()
         if existing:
@@ -553,15 +554,15 @@ def register(app):
         identity = service.actor(current_user)
         config = service.enabled_config(identity.tenant_id)
         if not config.actions_enabled:
-            abort(403, description="AI ticket actions are disabled by your administrator.")
+            abort(403, description=tr("AI ticket actions are disabled by your administrator."))
         run = AIRun.query.filter_by(id=run_id, tenant_id=identity.tenant_id,
                                     user_id=identity.id, kind="investigation").with_for_update().first_or_404()
         if run.actor_role != identity.role:
-            abort(403, description="Switch to the role used to request this investigation.")
+            abort(403, description=tr("Switch to the role used to request this investigation."))
         if run.status != "completed" or not run.result_text.strip():
-            abort(409, description="Only a completed investigation can become a ticket action.")
+            abort(409, description=tr("Only a completed investigation can become a ticket action."))
         if not service.sources_accessible(identity, json.loads(run.sources_json or "[]")):
-            abort(403, description="You no longer have access to all evidence used by this investigation.")
+            abort(403, description=tr("You no longer have access to all evidence used by this investigation."))
         ticket = service.visible_incident(identity, run.ticket_id)
         existing = AIAction.query.filter_by(run_id=run.id, action_type="add_comment").first()
         if existing:
@@ -597,7 +598,7 @@ def register(app):
             back_url = url_for("ai.result", run_id=run.id)
         actor_id = getattr(identity, "id", getattr(identity, "user_id", None))
         if action.actor_role != identity.role:
-            abort(403, description="Switch to the role used to prepare this action.")
+            abort(403, description=tr("Switch to the role used to prepare this action."))
         ticket = read_access.tickets(identity.identity if hasattr(identity, "identity") else identity).filter_by(
             id=action.ticket_id).first_or_404()
         payload = json.loads(action.payload_json)
@@ -619,15 +620,15 @@ def register(app):
         if action.status == "executed":
             return redirect(url_for("ai.action_review", action_id=action.id))
         if action.status != "pending":
-            abort(409, description="This action is no longer awaiting approval.")
+            abort(409, description=tr("This action is no longer awaiting approval."))
         if not config.actions_enabled:
-            abort(403, description="AI ticket actions are disabled by your administrator.")
+            abort(403, description=tr("AI ticket actions are disabled by your administrator."))
         if action.expires_at.replace(tzinfo=now().tzinfo) <= now():
             action.status, action.decided_at = "expired", now()
             db.session.commit()
-            abort(410, description="This proposal expired. Prepare it again from a current investigation.")
+            abort(410, description=tr("This proposal expired. Prepare it again from a current investigation."))
         if not sources_ok:
-            abort(403, description="You no longer have access to all evidence used by this investigation.")
+            abort(403, description=tr("You no longer have access to all evidence used by this investigation."))
         locked_ticket = Ticket.query.filter_by(id=ticket.id, tenant_id=identity.tenant_id).with_for_update().one()
         expected = action.target_updated_at.replace(tzinfo=now().tzinfo)
         actual = locked_ticket.updated_at.replace(tzinfo=now().tzinfo)
@@ -635,14 +636,14 @@ def register(app):
             action.status, action.decided_at = "stale", now()
             audit("ai action stale", action.id, f"type={action.action_type}; ticket={ticket.number}")
             db.session.commit()
-            abort(409, description="The ticket changed after this proposal was prepared. Run a new investigation first.")
+            abort(409, description=tr("The ticket changed after this proposal was prepared. Run a new investigation first."))
         if editable_comment:
             body = request.form.get("body", "").strip()
             if not body or len(body) > 10000:
-                abort(400, description="Enter a comment between 1 and 10,000 characters.")
+                abort(400, description=tr("Enter a comment between 1 and 10,000 characters."))
             body = readable_references(body, source_links(json.loads(run.sources_json or "[]")))
             if not body.strip() or len(body) > 10000:
-                abort(400, description="Enter a comment between 1 and 10,000 characters after resolving references.")
+                abort(400, description=tr("Enter a comment between 1 and 10,000 characters after resolving references."))
             action.payload_json = json.dumps({"body": body})
         actions.execute(action, locked_ticket, current_user)
         action.status, action.approved_by_id = "executed", actor_id
@@ -662,13 +663,13 @@ def register(app):
                 abort(403)
             config = service.enabled_config(scope.tenant_id, feature="chat")
             if scope.role != run.actor_role:
-                abort(403, description="Switch to the role used for this conversation.")
+                abort(403, description=tr("Switch to the role used for this conversation."))
             return run, config, scope
         identity = service.actor(current_user)
         config = service.enabled_config(identity.tenant_id)
         service.visible_incident(identity, run.ticket_id)
         if identity.role != run.actor_role:
-            abort(403, description="Switch to the role used to request this investigation.")
+            abort(403, description=tr("Switch to the role used to request this investigation."))
         return run, config, identity
 
     from serviceops_core.ai.references import readable_references, source_links
@@ -718,7 +719,7 @@ def register(app):
             ok = (access.sources_still_accessible(who, sources) if run.kind == "chat"
                   else service.sources_accessible(who, sources))
             if not ok:
-                abort(403, description="You no longer have access to all evidence used by this answer.")
+                abort(403, description=tr("You no longer have access to all evidence used by this answer."))
             sources = source_links(sources)
         if run.status == "failed" and run.error_code == "quota":
             problem_override = json.loads(run.route_json or "{}").get("reason", "")
@@ -763,7 +764,7 @@ def register(app):
         query = AIConversation.query.filter_by(id=conversation_id, tenant_id=scope.tenant_id, user_id=scope.user_id)
         conversation = (query.with_for_update() if lock else query).first_or_404()
         if conversation.actor_role != scope.role:
-            abort(403, description="Switch to the role you used for this conversation.")
+            abort(403, description=tr("Switch to the role you used for this conversation."))
         return conversation
 
     def message_payload(message, scope, config, run):
@@ -847,7 +848,7 @@ def register(app):
     def memory_add():
         scope, config = chat_scope()
         if not config.memory_enabled:
-            abort(403, description="Your administrator has turned assistant memory off.")
+            abort(403, description=tr("Your administrator has turned assistant memory off."))
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return no_store({"error": "Expected a JSON object."}, 400)
@@ -886,17 +887,17 @@ def register(app):
             return no_store({"error": "Expected a JSON object."}, 400)
         text = data.get("text")
         if not isinstance(text, str) or not text.strip():
-            abort(400, description="Type a question first.")
+            abort(400, description=tr("Type a question first."))
         text = text.strip()
         if len(text) > MAX_QUESTION:
-            abort(400, description=f"Questions are limited to {MAX_QUESTION} characters.")
+            abort(400, description=tr("Questions are limited to {max_question} characters.", max_question=MAX_QUESTION))
         try:
             request_key = str(uuid.UUID(str(data.get("request_key", ""))))
         except ValueError:
-            abort(400, description="Reload the page and try again.")
+            abort(400, description=tr("Reload the page and try again."))
         if not route_rate_limit("ai_chat", f"user:{scope.user_id}", 20):
             db.session.commit()
-            abort(429, description="You are sending messages too quickly. Wait a moment.")
+            abort(429, description=tr("You are sending messages too quickly. Wait a moment."))
         # The configuration row lock serializes submissions and daily quota accounting.
         config = service.enabled_config(scope.tenant_id, lock=True, feature="chat")
         existing = AIRun.query.filter_by(tenant_id=scope.tenant_id, user_id=scope.user_id, request_key=request_key).first()
@@ -908,15 +909,15 @@ def register(app):
             abort(409, description=str(error))
         start = now().replace(hour=0, minute=0, second=0, microsecond=0)
         if AIRun.query.filter(AIRun.tenant_id == scope.tenant_id, AIRun.created_at >= start).count() >= config.daily_limit:
-            abort(429, description="Your organization has reached its daily AI request limit.")
+            abort(429, description=tr("Your organization has reached its daily AI request limit."))
         if AIRun.query.filter(AIRun.tenant_id == scope.tenant_id, AIRun.user_id == scope.user_id,
                               AIRun.status.in_(service.ACTIVE)).first():
-            abort(409, description="Wait for the current answer to finish, or stop it.")
+            abort(409, description=tr("Wait for the current answer to finish, or stop it."))
         conversation_id = data.get("conversation_id")
         if conversation_id:
             conversation = owned_conversation(str(conversation_id), scope, lock=True)
             if AIMessage.query.filter_by(conversation_id=conversation.id).count() >= MAX_MESSAGES:
-                abort(409, description="This conversation is full. Start a new chat.")
+                abort(409, description=tr("This conversation is full. Start a new chat."))
         else:
             conversation = AIConversation(tenant_id=scope.tenant_id, user_id=scope.user_id, actor_role=scope.role,
                                           title=" ".join(text.split())[:60] or "New chat")

@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "pondělí",
+   "úterý",
+   "středa",
+   "čtvrtek",
+   "pátek",
+   "sobota",
+   "neděle"
+  ],
+  "days_abbr": [
+   "po",
+   "út",
+   "st",
+   "čt",
+   "pá",
+   "so",
+   "ne"
+  ],
+  "months": [
+   "ledna",
+   "února",
+   "března",
+   "dubna",
+   "května",
+   "června",
+   "července",
+   "srpna",
+   "září",
+   "října",
+   "listopadu",
+   "prosince"
+  ],
+  "months_abbr": [
+   "led",
+   "úno",
+   "bře",
+   "dub",
+   "kvě",
+   "čvn",
+   "čvc",
+   "srp",
+   "zář",
+   "říj",
+   "lis",
+   "pro"
+  ]
+ },
+ "language": "cs",
+ "messages": {
+  "Administration": "Správa",
+  "Back": "Zpět",
+  "Cancel": "Zrušit",
+  "Changes": "Změny",
+  "Close": "Zavřít",
+  "Create": "Vytvořit",
+  "Dashboard": "Přehled",
+  "Delete": "Odstranit",
+  "Description": "Popis",
+  "Edit": "Upravit",
+  "General": "Obecné",
+  "Incidents": "Incidenty",
+  "Knowledge": "Znalosti",
+  "Language": "Jazyk",
+  "Name": "Název",
+  "Notifications": "Oznámení",
+  "Preferences": "Předvolby",
+  "Priority": "Priorita",
+  "Save": "Uložit",
+  "Save preferences": "Uložit předvolby",
+  "Search": "Hledat",
+  "Service requests": "Požadavky na služby",
+  "Status": "Stav",
+  "System preferences": "Systémové předvolby"
+ }
+}

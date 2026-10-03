@@ -13,7 +13,7 @@ function showToast(message, category) {
   const close = document.createElement("button");
   close.type = "button";
   close.className = "toast-close";
-  close.setAttribute("aria-label", "Dismiss");
+  close.setAttribute("aria-label", tr("Dismiss"));
   close.textContent = "×";
   close.addEventListener("click", () => toast.remove());
   toast.append(text, close);
@@ -98,7 +98,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".task-list-scroll").forEach((region) => {
     region.tabIndex = 0;
     region.setAttribute("role", "region");
-    if (!region.getAttribute("aria-label")) region.setAttribute("aria-label", "Scrollable records");
+    if (!region.getAttribute("aria-label")) region.setAttribute("aria-label", tr("Scrollable records"));
   });
 
   if ("serviceWorker" in navigator && window.isSecureContext) {
@@ -275,26 +275,26 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       response = await fetch("/ui/favorite", {method: "POST", headers: csrfHeaders, body: data});
     } catch (error) {
-      showToast("Could not reach the server. Check your connection and try again.", "error");
+      showToast(tr("Could not reach the server. Check your connection and try again."), "error");
       return;
     }
     if (!response.ok) {
-      showToast("Could not update favorites. Please try again.", "error");
+      showToast(tr("Could not update favorites. Please try again."), "error");
       return;
     }
     const result = await response.json();
     button.textContent = result.active
-      ? "Remove this page from favorites"
-      : "Add this page to favorites";
+      ? tr("Remove this page from favorites")
+      : tr("Add this page to favorites");
     const star = document.querySelector("[data-favorite-star]");
     if (star) star.setAttribute("data-active", result.active ? "true" : "false");
     const favoritesList = document.querySelector("[data-favorites-list]");
     if (result.active) {
       upsertNavPopoverEntry(favoritesList, "data-favorite-url", "data-favorites-empty", result.url, result.label);
-      showToast("Added to favorites.", "success");
+      showToast(tr("Added to favorites."), "success");
     } else {
-      removeNavPopoverEntry(favoritesList, "data-favorite-url", "data-favorites-empty", "No favorites yet.", result.url);
-      showToast("Removed from favorites.", "success");
+      removeNavPopoverEntry(favoritesList, "data-favorite-url", "data-favorites-empty", tr("No favorites yet."), result.url);
+      showToast(tr("Removed from favorites."), "success");
     }
   });
   let dragged = null;
@@ -311,13 +311,13 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         response = await fetch(`/task-board/${dragged.dataset.ticket}/move`, {method: "POST", headers: csrfHeaders, body: data});
       } catch (error) {
-        showToast("Could not reach the server. The card was not moved.", "error");
+        showToast(tr("Could not reach the server. The card was not moved."), "error");
         return;
       }
       if (response.ok) {
         lane.querySelector(".board-cards").appendChild(dragged);
       } else {
-        let message = "Could not move this card. Please try again.";
+        let message = tr("Could not move this card. Please try again.");
         try {
           message = (await response.json()).error || message;
         } catch (error) {
@@ -329,9 +329,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.querySelector("[data-start-tour]")?.addEventListener("click", () => {
     const steps = [
-      [".global-search", "Search every major ServiceOps record type from here."],
-      [".sidebar", "Navigate between workspaces, operations, and administration."],
-      [".nav-menus", "Open favorites, history, notifications, help, and preferences."]
+      [".global-search", tr("Search every major ServiceOps record type from here.")],
+      [".sidebar", tr("Navigate between workspaces, operations, and administration.")],
+      [".nav-menus", tr("Open favorites, history, notifications, help, and preferences.")]
     ];
     let index = 0;
     const endTour = () => {
@@ -342,7 +342,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelectorAll(".tour-focus").forEach(el => el.classList.remove("tour-focus"));
       document.querySelector(".tour-popover")?.remove();
       if (index >= steps.length) {
-        showToast("Tour complete.", "success");
+        showToast(tr("Tour complete."), "success");
         return;
       }
       const element = document.querySelector(steps[index][0]);
@@ -350,19 +350,19 @@ document.addEventListener("DOMContentLoaded", () => {
       const popover = document.createElement("div");
       popover.className = "tour-popover";
       popover.setAttribute("role", "dialog");
-      popover.setAttribute("aria-label", "Guided tour");
+      popover.setAttribute("aria-label", tr("Guided tour"));
       const text = document.createElement("p");
       text.textContent = steps[index][1];
       const actions = document.createElement("div");
       actions.className = "tour-popover-actions";
       const skip = document.createElement("button");
       skip.type = "button";
-      skip.textContent = "Skip";
+      skip.textContent = tr("Skip");
       skip.addEventListener("click", endTour);
       const next = document.createElement("button");
       next.type = "button";
       next.className = "primary";
-      next.textContent = index === steps.length - 1 ? "Done" : "Next";
+      next.textContent = index === steps.length - 1 ? tr("Done") : tr("Next");
       next.addEventListener("click", () => { index += 1; show(); });
       actions.append(skip, next);
       popover.append(text, actions);
@@ -418,14 +418,14 @@ document.addEventListener("DOMContentLoaded", () => {
     row.className = "ci-attr-row";
     const keyInput = document.createElement("input");
     keyInput.name = "attr_key";
-    keyInput.placeholder = "Field name";
+    keyInput.placeholder = tr("Field name");
     const valueInput = document.createElement("input");
     valueInput.name = "attr_value";
-    valueInput.placeholder = "Value";
+    valueInput.placeholder = tr("Value");
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "link-button ci-attr-remove";
-    remove.setAttribute("aria-label", "Remove field");
+    remove.setAttribute("aria-label", tr("Remove field"));
     remove.textContent = "✕";
     row.append(keyInput, valueInput, remove);
     container.appendChild(row);
@@ -514,13 +514,16 @@ document.addEventListener("DOMContentLoaded", () => {
         badge.remove();
       }
       if (headSpan) {
-        headSpan.textContent = data.unread_count > 0 ? `${data.unread_count} unread` : "";
+        headSpan.textContent = data.unread_count > 0 ? tr("{count} unread", { count: data.unread_count }) : "";
         headSpan.hidden = data.unread_count === 0;
       }
       notificationMenu.dataset.severity = data.severity || "";
       if (!list) return;
       if (!data.notifications.length) {
-        list.innerHTML = '<p class="notification-preview-empty">You have no notifications.</p>';
+        const emptyNote = document.createElement("p");
+        emptyNote.className = "notification-preview-empty";
+        emptyNote.textContent = tr("You have no notifications.");
+        list.replaceChildren(emptyNote);
         return;
       }
       list.innerHTML = "";

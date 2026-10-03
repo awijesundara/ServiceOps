@@ -66,6 +66,7 @@ from serviceops_models import (
     SupportGroup,
     User,
 )
+from serviceops_core.localization import tr, tr_value
 
 
 def register(app):
@@ -136,7 +137,8 @@ def register(app):
         order = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
         tickets = query.order_by(order).limit(250).all()
         client_fields = {
-            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            key: {"label": tr_value(spec["label"]), "type": spec["type"],
+                  "options": [(value, tr_value(label)) for value, label in spec.get("options", [])]}
             for key, spec in field_spec.items()
         }
         return render_template(
@@ -159,11 +161,11 @@ def register(app):
         if sort_dir not in ("asc", "desc"):
             sort_dir = "desc"
         if not name:
-            flash("Name your view before saving it.", "error")
+            flash(tr("Name your view before saving it."), "error")
         elif ClientView.query.filter_by(
             tenant_id=current_user.tenant_id, created_by_id=current_user.id, name=name
         ).first():
-            flash("You already have a view with that name.", "error")
+            flash(tr("You already have a view with that name."), "error")
         else:
             db.session.add(ClientView(
                 tenant_id=current_user.tenant_id, name=name, created_by_id=current_user.id,
@@ -172,7 +174,7 @@ def register(app):
             ))
             audit("client view created", name, "shared" if request.form.get("shared") else "private")
             db.session.commit()
-            flash(f'View "{name}" saved.', "success")
+            flash(tr("View \"{name}\" saved.", name=name), "success")
         return redirect(url_for("client_tickets"))
 
     @app.post("/client-management/views/<int:view_id>/delete")
@@ -180,12 +182,12 @@ def register(app):
     def client_view_delete(view_id):
         view = ClientView.query.filter_by(id=view_id, tenant_id=current_user.tenant_id).first_or_404()
         if view.created_by_id != current_user.id and not role_at_least(current_user.effective_role, "admin"):
-            abort(403, description="Only the view's creator or an admin can delete it.")
+            abort(403, description=tr("Only the view's creator or an admin can delete it."))
         name = view.name
         db.session.delete(view)
         audit("client view deleted", name, "")
         db.session.commit()
-        flash(f'View "{name}" deleted.', "success")
+        flash(tr("View \"{name}\" deleted.", name=name), "success")
         return redirect(url_for("client_tickets"))
 
     @app.route("/client-management/tickets/new", methods=["GET", "POST"])
@@ -193,7 +195,7 @@ def register(app):
     def client_ticket_new():
         group, agents = client_workspace_context()
         if not group:
-            abort(409, description="The SysOps client-support team is not configured.")
+            abort(409, description=tr("The SysOps client-support team is not configured."))
         contacts = visible_client_contact_query(current_user).filter_by(active=True).options(selectinload(ClientContact.organization)).order_by(ClientContact.name).all()
         if request.method == "POST":
             contact = visible_client_contact_query(current_user).filter_by(id=request.form.get("contact_id", type=int), active=True).first_or_404()
@@ -202,7 +204,7 @@ def register(app):
             resolved_fields = client_custom_fields_for("client_ticket", organization=contact.organization)
             custom_values, custom_error = parse_client_custom_field_values(resolved_fields, request.form)
             if not subject or not description:
-                flash("Subject and description are required.", "error")
+                flash(tr("Subject and description are required."), "error")
             elif custom_error:
                 flash(custom_error, "error")
             else:
@@ -256,7 +258,7 @@ def register(app):
                 if visibility not in ("public", "internal"):
                     abort(400)
                 if not body:
-                    flash("Enter a reply or internal note.", "error")
+                    flash(tr("Enter a reply or internal note."), "error")
                 else:
                     reply_message = ClientTicketMessage(
                         tenant_id=current_user.tenant_id, client_ticket_id=ticket.id,
@@ -288,7 +290,7 @@ def register(app):
                                     "Failed to email client ticket reply: ticket=%s", ticket.number,
                                 )
                                 flash(
-                                    "Reply saved, but sending it by email failed -- check the mailbox configuration.",
+                                    tr("Reply saved, but sending it by email failed -- check the mailbox configuration."),
                                     "error",
                                 )
                         else:
@@ -296,7 +298,7 @@ def register(app):
                                 "No active mailbox available to email reply for ticket=%s", ticket.number,
                             )
                             flash(
-                                "Reply saved, but no active mailbox is configured -- the customer was not emailed.",
+                                tr("Reply saved, but no active mailbox is configured -- the customer was not emailed."),
                                 "error",
                             )
                     ticket.updated_at = now()
@@ -379,7 +381,7 @@ def register(app):
                 ticket.updated_at = now()
                 audit("client macro applied", ticket.number, macro.name)
                 db.session.commit()
-                flash(f'Applied "{macro.name}".', "success")
+                flash(tr("Applied \"{name}\".", name=macro.name), "success")
                 return redirect(url_for("client_ticket_detail", ticket_id=ticket.id))
         ticket_fields = client_custom_fields_for("client_ticket", organization=ticket.organization)
         macros = tenant_query(ClientMacro).filter_by(active=True).order_by(ClientMacro.name).all()
@@ -394,9 +396,9 @@ def register(app):
         if request.method == "POST":
             name = request.form.get("name", "").strip()
             if not name:
-                flash("Organization name is required.", "error")
+                flash(tr("Organization name is required."), "error")
             elif tenant_query(ClientOrganization).filter(func.lower(ClientOrganization.name) == name.lower()).first():
-                flash("That client organization already exists.", "error")
+                flash(tr("That client organization already exists."), "error")
             else:
                 row = ClientOrganization(
                     tenant_id=current_user.tenant_id, name=name,
@@ -419,7 +421,7 @@ def register(app):
         ).filter_by(id=organization_id).first_or_404()
         if request.method == "POST":
             if not role_at_least(current_user.effective_role, "admin"):
-                abort(403, description="Only an administrator can change organization visibility or access grants.")
+                abort(403, description=tr("Only an administrator can change organization visibility or access grants."))
             action = request.form.get("action")
             if action == "toggle_restricted":
                 organization.restricted_visibility = not organization.restricted_visibility
@@ -429,8 +431,7 @@ def register(app):
                 )
                 db.session.commit()
                 flash(
-                    f"{organization.name} is now "
-                    f"{'restricted to explicitly granted users/teams' if organization.restricted_visibility else 'visible to every SysOps member'}.",
+                    tr("{name} is now {value}.", name=organization.name, value='restricted to explicitly granted users/teams' if organization.restricted_visibility else 'visible to every SysOps member'),
                     "success",
                 )
             elif action == "add_grant":
@@ -439,7 +440,7 @@ def register(app):
                 try:
                     grantee_id = int(raw_id)
                 except (TypeError, ValueError):
-                    abort(400, description="Select a valid user or team.")
+                    abort(400, description=tr("Select a valid user or team."))
                 if kind == "user":
                     user_row = tenant_record_or_404(User, grantee_id)
                     existing = ClientOrganizationAccess.query.filter_by(
@@ -465,8 +466,8 @@ def register(app):
                         audit("client organization access granted", organization.name, f"team {group_row.name}")
                         db.session.commit()
                 else:
-                    abort(400, description="Select a valid user or team.")
-                flash("Access grant added.", "success")
+                    abort(400, description=tr("Select a valid user or team."))
+                flash(tr("Access grant added."), "success")
             elif action == "remove_grant":
                 grant = ClientOrganizationAccess.query.filter_by(
                     id=request.form.get("grant_id", type=int), organization_id=organization.id,
@@ -475,7 +476,7 @@ def register(app):
                 db.session.delete(grant)
                 audit("client organization access revoked", organization.name, label)
                 db.session.commit()
-                flash("Access grant removed.", "success")
+                flash(tr("Access grant removed."), "success")
             elif action == "update_custom_fields":
                 org_fields = client_custom_fields_for("organization")
                 values, error = parse_client_custom_field_values(org_fields, request.form)
@@ -485,7 +486,7 @@ def register(app):
                     organization.custom_fields = values
                     audit("client organization custom fields updated", organization.name, "")
                     db.session.commit()
-                    flash("Custom fields saved.", "success")
+                    flash(tr("Custom fields saved."), "success")
             elif action == "update_field_overrides":
                 ticket_field_defs = tenant_query(ClientCustomFieldDefinition).filter_by(
                     entity_type="client_ticket", active=True,
@@ -501,7 +502,7 @@ def register(app):
                 organization.settings = overrides
                 audit("client organization field overrides updated", organization.name, "")
                 db.session.commit()
-                flash("Ticket field overrides saved.", "success")
+                flash(tr("Ticket field overrides saved."), "success")
             elif action == "update_branding":
                 # This app has no real multi-domain/multi-portal hosting --
                 # "branding per organization" is scoped honestly to what
@@ -516,7 +517,7 @@ def register(app):
                 organization.settings = settings
                 audit("client organization branding updated", organization.name, "")
                 db.session.commit()
-                flash("Branding saved.", "success")
+                flash(tr("Branding saved."), "success")
             elif action == "update_notification_policy":
                 escalation_hours = request.form.get("escalation_hours", "").strip()
                 escalation_group_id = request.form.get("escalation_group_id", "").strip()
@@ -526,7 +527,7 @@ def register(app):
                     try:
                         hours_value = float(escalation_hours)
                     except ValueError:
-                        flash("Escalation hours must be a number.", "error")
+                        flash(tr("Escalation hours must be a number."), "error")
                         return redirect(url_for("client_organization_detail", organization_id=organization.id))
                     tenant_record_or_404(SupportGroup, int(escalation_group_id))
                     notification = {"escalation_hours": hours_value, "escalation_group_id": int(escalation_group_id)}
@@ -534,7 +535,7 @@ def register(app):
                 organization.settings = settings
                 audit("client organization notification policy updated", organization.name, "")
                 db.session.commit()
-                flash("Notification and escalation policy saved.", "success")
+                flash(tr("Notification and escalation policy saved."), "success")
             return redirect(url_for("client_organization_detail", organization_id=organization.id))
         agents = User.query.filter(
             User.tenant_id == current_user.tenant_id, User.active.is_(True),
@@ -560,7 +561,7 @@ def register(app):
     def client_custom_fields_admin():
         if request.method == "POST":
             if not role_at_least(current_user.effective_role, "admin"):
-                abort(403, description="Only an administrator can manage custom fields.")
+                abort(403, description=tr("Only an administrator can manage custom fields."))
             action = request.form.get("action", "create")
             if action == "create":
                 entity_type = request.form.get("entity_type", "")
@@ -569,17 +570,17 @@ def register(app):
                 field_type = request.form.get("field_type", "text")
                 options_raw = request.form.get("options", "")
                 if entity_type not in CLIENT_CUSTOM_FIELD_ENTITY_TYPES:
-                    abort(400, description="Select a valid entity type.")
+                    abort(400, description=tr("Select a valid entity type."))
                 if field_type not in CLIENT_CUSTOM_FIELD_TYPES:
-                    abort(400, description="Select a valid field type.")
+                    abort(400, description=tr("Select a valid field type."))
                 if not key or not re.match(r"^[a-z][a-z0-9_]{0,58}[a-z0-9]$", key):
-                    flash("Field key must be lowercase letters, numbers, and underscores.", "error")
+                    flash(tr("Field key must be lowercase letters, numbers, and underscores."), "error")
                 elif not label:
-                    flash("Field label is required.", "error")
+                    flash(tr("Field label is required."), "error")
                 elif tenant_query(ClientCustomFieldDefinition).filter_by(
                     entity_type=entity_type, key=key
                 ).first():
-                    flash("A field with that key already exists for this record type.", "error")
+                    flash(tr("A field with that key already exists for this record type."), "error")
                 else:
                     options = [line.strip() for line in options_raw.splitlines() if line.strip()] if field_type == "select" else []
                     db.session.add(ClientCustomFieldDefinition(
@@ -589,13 +590,13 @@ def register(app):
                     ))
                     audit("client custom field created", label, entity_type)
                     db.session.commit()
-                    flash(f"{label} added.", "success")
+                    flash(tr("{label} added.", label=label), "success")
             elif action == "toggle_active":
                 field = tenant_record_or_404(ClientCustomFieldDefinition, request.form.get("field_id", type=int))
                 field.active = not field.active
                 audit("client custom field toggled", field.label, "Active" if field.active else "Inactive")
                 db.session.commit()
-                flash(f"{field.label} is now {'active' if field.active else 'inactive'}.", "success")
+                flash(tr("{label} is now {value}.", label=field.label, value='active' if field.active else 'inactive'), "success")
             return redirect(url_for("client_custom_fields_admin"))
         fields_by_entity = {
             entity_type: tenant_query(ClientCustomFieldDefinition).filter_by(
@@ -613,14 +614,14 @@ def register(app):
     def client_macros_admin():
         if request.method == "POST":
             if not role_at_least(current_user.effective_role, "admin"):
-                abort(403, description="Only an administrator can manage macros.")
+                abort(403, description=tr("Only an administrator can manage macros."))
             action = request.form.get("action", "create")
             if action == "create":
                 name = request.form.get("name", "").strip()
                 if not name:
-                    flash("Macro name is required.", "error")
+                    flash(tr("Macro name is required."), "error")
                 elif tenant_query(ClientMacro).filter_by(name=name).first():
-                    flash("A macro with that name already exists.", "error")
+                    flash(tr("A macro with that name already exists."), "error")
                 else:
                     actions = {}
                     status = request.form.get("macro_status", "")
@@ -645,13 +646,13 @@ def register(app):
                     ))
                     audit("client macro created", name, "")
                     db.session.commit()
-                    flash(f"{name} added.", "success")
+                    flash(tr("{name} added.", name=name), "success")
             elif action == "toggle_active":
                 macro = tenant_record_or_404(ClientMacro, request.form.get("macro_id", type=int))
                 macro.active = not macro.active
                 audit("client macro toggled", macro.name, "Active" if macro.active else "Inactive")
                 db.session.commit()
-                flash(f"{macro.name} is now {'active' if macro.active else 'inactive'}.", "success")
+                flash(tr("{name} is now {value}.", name=macro.name, value='active' if macro.active else 'inactive'), "success")
             return redirect(url_for("client_macros_admin"))
         macros = tenant_query(ClientMacro).order_by(ClientMacro.name).all()
         macro_rows = []
@@ -673,7 +674,7 @@ def register(app):
     def client_triggers_admin():
         if request.method == "POST":
             if not role_at_least(current_user.effective_role, "admin"):
-                abort(403, description="Only an administrator can manage triggers.")
+                abort(403, description=tr("Only an administrator can manage triggers."))
             action = request.form.get("action", "create")
             if action == "create":
                 name = request.form.get("name", "").strip()
@@ -684,9 +685,9 @@ def register(app):
                 action_type = request.form.get("action_type", "")
                 action_value = request.form.get("action_value", "").strip()
                 if not name:
-                    flash("Trigger name is required.", "error")
+                    flash(tr("Trigger name is required."), "error")
                 elif tenant_query(ClientTrigger).filter_by(name=name).first():
-                    flash("A trigger with that name already exists.", "error")
+                    flash(tr("A trigger with that name already exists."), "error")
                 else:
                     try:
                         validate_trigger(event, condition_field, condition_op, action_type, action_value)
@@ -705,13 +706,13 @@ def register(app):
                         ))
                         audit("client trigger created", name, event)
                         db.session.commit()
-                        flash(f"{name} added.", "success")
+                        flash(tr("{name} added.", name=name), "success")
             elif action == "toggle_active":
                 trigger = tenant_record_or_404(ClientTrigger, request.form.get("trigger_id", type=int))
                 trigger.active = not trigger.active
                 audit("client trigger toggled", trigger.name, "Active" if trigger.active else "Inactive")
                 db.session.commit()
-                flash(f"{trigger.name} is now {'active' if trigger.active else 'inactive'}.", "success")
+                flash(tr("{name} is now {value}.", name=trigger.name, value='active' if trigger.active else 'inactive'), "success")
             return redirect(url_for("client_triggers_admin"))
         triggers = tenant_query(ClientTrigger).order_by(ClientTrigger.event, ClientTrigger.position).all()
         return render_template(
@@ -731,14 +732,14 @@ def register(app):
     def client_mailboxes_admin():
         if request.method == "POST":
             if not role_at_least(current_user.effective_role, "admin"):
-                abort(403, description="Only an administrator can manage mailboxes.")
+                abort(403, description=tr("Only an administrator can manage mailboxes."))
             action = request.form.get("action", "create")
             if action == "create":
                 name = request.form.get("name", "").strip()
                 if not name:
-                    flash("Mailbox name is required.", "error")
+                    flash(tr("Mailbox name is required."), "error")
                 elif tenant_query(ClientMailbox).filter_by(name=name).first():
-                    flash("A mailbox with that name already exists.", "error")
+                    flash(tr("A mailbox with that name already exists."), "error")
                 else:
                     default_org_id = request.form.get("default_organization_id", type=int)
                     if default_org_id:
@@ -767,31 +768,31 @@ def register(app):
                     db.session.add(mailbox)
                     audit("client mailbox created", name, mailbox.imap_host)
                     db.session.commit()
-                    flash(f"{name} added.", "success")
+                    flash(tr("{name} added.", name=name), "success")
             elif action == "toggle_active":
                 mailbox = tenant_record_or_404(ClientMailbox, request.form.get("mailbox_id", type=int))
                 mailbox.active = not mailbox.active
                 audit("client mailbox toggled", mailbox.name, "Active" if mailbox.active else "Inactive")
                 db.session.commit()
-                flash(f"{mailbox.name} is now {'active' if mailbox.active else 'inactive'}.", "success")
+                flash(tr("{name} is now {value}.", name=mailbox.name, value='active' if mailbox.active else 'inactive'), "success")
             elif action == "delete":
                 mailbox = tenant_record_or_404(ClientMailbox, request.form.get("mailbox_id", type=int))
                 name = mailbox.name
                 db.session.delete(mailbox)
                 audit("client mailbox deleted", name, "")
                 db.session.commit()
-                flash(f"{name} removed.", "success")
+                flash(tr("{name} removed.", name=name), "success")
             elif action == "poll_now":
                 mailbox = tenant_record_or_404(ClientMailbox, request.form.get("mailbox_id", type=int))
                 try:
                     count = _poll_client_mailbox(mailbox)
-                    flash(f"Checked {mailbox.name}: {count} new ticket/message(s) created.", "success")
+                    flash(tr("Checked {name}: {count} new ticket/message(s) created.", name=mailbox.name, count=count), "success")
                 except Exception as error:
                     mailbox.last_polled_at = now()
                     mailbox.last_poll_status = "error"
                     mailbox.last_poll_error = str(error)[:2000]
                     db.session.commit()
-                    flash(f"Could not connect to {mailbox.name}: {error}", "error")
+                    flash(tr("Could not connect to {name}: {error}", name=mailbox.name, error=error), "error")
             return redirect(url_for("client_mailboxes_admin"))
         mailboxes = tenant_query(ClientMailbox).order_by(ClientMailbox.name).all()
         organizations = tenant_query(ClientOrganization).order_by(ClientOrganization.name).all()
@@ -805,13 +806,13 @@ def register(app):
         organizations = visible_client_organization_query(current_user).filter_by(active=True).order_by(ClientOrganization.name).all()
         if request.method == "POST" and request.form.get("action") == "erase":
             if not role_at_least(current_user.effective_role, "admin"):
-                abort(403, description="Only an administrator can erase a client contact's personal data.")
+                abort(403, description=tr("Only an administrator can erase a client contact's personal data."))
             contact = tenant_record_or_404(ClientContact, request.form.get("contact_id", type=int))
             original_email = contact.email
             try:
                 erase_client_contact(contact)
                 db.session.commit()
-                flash(f"{original_email}'s personal data has been erased.", "success")
+                flash(tr("{original_email}'s personal data has been erased.", original_email=original_email), "success")
             except ValueError as error:
                 db.session.rollback()
                 flash(str(error), "error")
@@ -820,9 +821,9 @@ def register(app):
             organization = visible_client_organization_query(current_user).filter_by(id=request.form.get("organization_id", type=int), active=True).first_or_404()
             name, email = request.form.get("name", "").strip(), request.form.get("email", "").strip().lower()
             if not name or not email or "@" not in email:
-                flash("A valid name and email address are required.", "error")
+                flash(tr("A valid name and email address are required."), "error")
             elif tenant_query(ClientContact).filter(func.lower(ClientContact.email) == email).first():
-                flash("That client email address already exists.", "error")
+                flash(tr("That client email address already exists."), "error")
             else:
                 contact_fields = client_custom_fields_for("contact")
                 custom_values, custom_error = parse_client_custom_field_values(contact_fields, request.form)

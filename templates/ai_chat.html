@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Ask AI · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Ask AI · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <div class="ai-chat-page-shell">
   {% include '_ai_chat_panel.html' %}
 </div>
-<noscript><div class="panel"><p>JavaScript is required for the chat assistant.</p></div></noscript>
+<noscript><div class="panel"><p>{{ tr('JavaScript is required for the chat assistant.') }}</p></div></noscript>
 {% endblock %}

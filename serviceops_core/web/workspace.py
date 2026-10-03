@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from flask import (
     abort,
     flash,
+    g,
     jsonify,
     redirect,
     render_template,
@@ -26,6 +27,7 @@ from flask import (
 from flask_login import current_user, login_required
 
 import app as core
+from serviceops_core.localization import tr
 from app import (
     active_approval_delegation,
     audit,
@@ -109,26 +111,26 @@ def register(app):
     @login_required
     def change_password():
         if not user_is_local(current_user):
-            abort(403, description="Your password is managed by your organization's login provider, not ServiceOps.")
+            abort(403, description=tr("Your password is managed by your organization's login provider, not ServiceOps."))
         if request.method == "POST":
             current_password = request.form.get("current_password", "")
             new_password = request.form.get("new_password", "")
             confirmation = request.form.get("confirm_password", "")
             if not verify_password(current_user.password_hash, current_password):
-                abort(400, description="The current password is incorrect.")
+                abort(400, description=tr("The current password is incorrect."))
             min_length = setting_int("PASSWORD_MIN_LENGTH", 14)
             if len(new_password) < min_length:
-                abort(400, description=f"The new password must contain at least {min_length} characters.")
+                abort(400, description=tr("The new password must contain at least {min_length} characters.", min_length=min_length))
             if new_password != confirmation:
-                abort(400, description="The password confirmation does not match.")
+                abort(400, description=tr("The password confirmation does not match."))
             if verify_password(current_user.password_hash, new_password):
-                abort(400, description="The new password must differ from the current password.")
+                abort(400, description=tr("The new password must differ from the current password."))
             current_user.password_hash = hash_password(new_password)
             current_user.auth_version += 1
             session["_auth_version"] = current_user.auth_version
             audit("credential rotate", current_user.username, "Local password changed")
             db.session.commit()
-            flash("Password changed. Other browser sessions have been invalidated.", "success")
+            flash(tr("Password changed. Other browser sessions have been invalidated."), "success")
             return redirect(url_for("preferences"))
         return render_template("change_password.html")
 
@@ -333,10 +335,10 @@ def register(app):
                 else:
                     ext = None
                 if not ext:
-                    flash("Profile picture must be a PNG or JPEG image.", "error")
+                    flash(tr("Profile picture must be a PNG or JPEG image."), "error")
                     return redirect(url_for("profile"))
                 if request.content_length and request.content_length > 5 * 1024 * 1024:
-                    flash("Profile picture must be smaller than 5 MB.", "error")
+                    flash(tr("Profile picture must be smaller than 5 MB."), "error")
                     return redirect(url_for("profile"))
                 avatar_dir = os.path.join(app.config["UPLOAD_FOLDER"], "avatars")
                 os.makedirs(avatar_dir, exist_ok=True)
@@ -345,7 +347,7 @@ def register(app):
                 user.avatar_path = stored
             audit("update", user.username, "Self-service profile updated")
             db.session.commit()
-            flash("Profile updated.", "success")
+            flash(tr("Profile updated."), "success")
             return redirect(url_for("profile"))
         teams = [membership.group.name for membership in GroupMember.query.filter_by(
             user_id=user.id
@@ -395,23 +397,21 @@ def register(app):
             or tenant_query(SupportGroup).filter_by(manager_id=user.id, active=True).first()
         ):
             abort(403, description=(
-                "Approval absence coverage is available only to a manager with "
-                "an active direct report or managed team."
+                tr("Approval absence coverage is available only to a manager with an active direct report or managed team.")
             ))
         if not user.manager or not user.manager.active or user.manager.tenant_id != user.tenant_id:
             abort(409, description=(
-                "Your active line manager must be recorded before absence approval "
-                "coverage can be delegated upward."
+                tr("Your active line manager must be recorded before absence approval coverage can be delegated upward.")
             ))
         starts_at = parse_form_datetime(request.form.get("starts_at", ""))
         ends_at = parse_form_datetime(request.form.get("ends_at", ""))
         reason = request.form.get("reason", "").strip()[:500]
         if not starts_at or not ends_at or ends_at <= starts_at:
-            abort(400, description="Enter a valid absence start and end time.")
+            abort(400, description=tr("Enter a valid absence start and end time."))
         if ends_at - starts_at > timedelta(days=90):
-            abort(400, description="An absence delegation cannot exceed 90 days.")
+            abort(400, description=tr("An absence delegation cannot exceed 90 days."))
         if not reason:
-            abort(400, description="A reason is required for approval delegation.")
+            abort(400, description=tr("A reason is required for approval delegation."))
         ApprovalDelegation.query.filter_by(
             from_user_id=user.id, active=True, tenant_id=user.tenant_id,
         ).update({"active": False})
@@ -427,8 +427,7 @@ def register(app):
         )
         db.session.commit()
         flash(
-            f"Approval coverage delegated to {user.manager.name}. They will not receive "
-            "the initial request notification; delegated decisions remain fully attributed.",
+            tr("Approval coverage delegated to {name}. They will not receive the initial request notification; delegated decisions remain fully attributed.", name=user.manager.name),
             "success",
         )
         return redirect(url_for("profile"))
@@ -443,7 +442,7 @@ def register(app):
         delegation.active = False
         audit("approval delegation cancel", current_user.username, f"delegation={delegation.id}")
         db.session.commit()
-        flash("Approval absence coverage cancelled.", "success")
+        flash(tr("Approval absence coverage cancelled."), "success")
         return redirect(url_for("profile"))
 
     @app.get("/profile/avatar/<int:user_id>")
@@ -920,6 +919,7 @@ def register(app):
         if not pref:
             pref = UserPreference(
                 user_id=current_user.id, density=core.setting_value("DEFAULT_DENSITY", "comfortable"),
+                language=core.initial_language_preference(),
             )
             db.session.add(pref)
         notification_pref = NotificationPreference.query.filter_by(user_id=current_user.id).first()
@@ -949,15 +949,15 @@ def register(app):
                         secret = request.form.get("secret", "").strip()
                         chat_id = request.form.get("chat_id", "").strip()
                         if not secret or not chat_id or len(chat_id) > 120:
-                            abort(400, description="Telegram bot token and chat ID are required.")
+                            abort(400, description=tr("Telegram bot token and chat ID are required."))
                         configuration = {"chat_id": chat_id, "protect_content": True}
                     if kind not in {"google_chat", "telegram", "slack", "teams", "discord"}:
-                        abort(400, description="Select a supported personal notification provider.")
+                        abort(400, description=tr("Select a supported personal notification provider."))
                     if not name or len(name) > 160 or not integration_endpoint_valid(endpoint) or not provider_endpoint_allowed(kind, urlparse(endpoint).hostname):
-                        abort(400, description="A name and valid provider HTTPS endpoint are required.")
+                        abort(400, description=tr("A name and valid provider HTTPS endpoint are required."))
                     patterns = list(dict.fromkeys(request.form.getlist("event_types")))
                     if not patterns or any(value not in PERSONAL_EVENT_SUBSCRIPTION_PATTERNS for value in patterns):
-                        abort(400, description="Select at least one personal notification event.")
+                        abort(400, description=tr("Select at least one personal notification event."))
                     parsed = urlparse(endpoint)
                     db.session.add(IntegrationConnection(
                         name=name, kind=kind,
@@ -970,7 +970,7 @@ def register(app):
                         tenant_id=current_user.tenant_id,
                     ))
                     audit("personal notification channel create", name, kind)
-                    flash("Personal notification channel added.", "success")
+                    flash(tr("Personal notification channel added."), "success")
                 else:
                     connection = IntegrationConnection.query.filter_by(
                         id=int(action_identifier) if action_identifier.isdigit() else None,
@@ -979,19 +979,19 @@ def register(app):
                     ).first_or_404()
                     if action == "toggle_personal_channel":
                         connection.active = not connection.active
-                        flash("Personal channel status updated.", "success")
+                        flash(tr("Personal channel status updated."), "success")
                     elif action == "delete_personal_channel":
                         IntegrationDelivery.query.filter_by(connection_id=connection.id).update({"connection_id": None})
                         db.session.delete(connection)
-                        flash("Personal notification channel removed.", "success")
+                        flash(tr("Personal notification channel removed."), "success")
                     else:
                         synthetic = SimpleNamespace(event_id=str(uuid.uuid4()), event_type="notification.created", created_at=now(), payload={"title": "ServiceOps personal notification test", "body": "This destination is connected to your account."})
                         try:
                             core.deliver_webhook(synthetic, connection)
                         except Exception as error:
-                            flash(f"Test failed: {error}", "error")
+                            flash(tr("Test failed: {error}", error=error), "error")
                         else:
-                            flash("Test notification delivered successfully.", "success")
+                            flash(tr("Test notification delivered successfully."), "success")
                 db.session.commit()
                 return redirect(url_for("preferences") + "#notifications")
             if request.form.get("action") == "notifications":
@@ -1003,13 +1003,15 @@ def register(app):
                 notification_pref.muted_event_types = json.dumps(muted)
                 audit("update", "Notification preferences", current_user.username)
                 db.session.commit()
-                flash("Notification preferences saved.", "success")
+                flash(tr("Notification preferences saved."), "success")
                 return redirect(url_for("preferences"))
-            from serviceops_core.localization import valid_language
-            language = request.form.get("language", pref.language or "en")
-            if not valid_language(language):
-                abort(400, description="Select a supported interface language.")
+            from serviceops_core.localization import AUTOMATIC, valid_language
+            language = request.form.get("language", pref.language or AUTOMATIC)
+            if language != AUTOMATIC and not valid_language(language):
+                abort(400, description=tr("Select a supported interface language."))
             pref.language = language
+            # Later messages in this request use the newly chosen language.
+            g.pop("serviceops_language", None)
             pref.theme = "light"
             pref.density = request.form.get("density", "comfortable")
             pref.font_scale = max(80, min(140, int(request.form.get("font_scale", 100))))
@@ -1025,7 +1027,7 @@ def register(app):
             pref.start_page = submitted_start_page if is_safe_internal_path(submitted_start_page) else "/"
             audit("update", "UI preferences", current_user.username)
             db.session.commit()
-            flash("Display and accessibility preferences saved.", "success")
+            flash(tr("Display and accessibility preferences saved."), "success")
             return redirect(url_for("preferences"))
         muted_types = set(json.loads(notification_pref.muted_event_types or "[]"))
         return render_template(

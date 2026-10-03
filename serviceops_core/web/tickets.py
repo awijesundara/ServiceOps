@@ -146,6 +146,7 @@ from serviceops_models import (
     User,
     UserWorkspaceLayout,
 )
+from serviceops_core.localization import tr, tr_value
 
 
 def register(app):
@@ -239,12 +240,12 @@ def register(app):
                 else:
                     layout_row.layout_json = new_layout
                 db.session.commit()
-                flash("Workspace layout saved.", "success")
+                flash(tr("Workspace layout saved."), "success")
             elif action == "reset":
                 if layout_row:
                     db.session.delete(layout_row)
                     db.session.commit()
-                flash("Workspace reset to the default widget set.", "success")
+                flash(tr("Workspace reset to the default widget set."), "success")
             return redirect(url_for("my_workspace"))
 
         available = {
@@ -379,7 +380,8 @@ def register(app):
         value_labels = {("group", str(g.id)): g.name for g in filter_groups}
         breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec, value_labels)
         client_fields = {
-            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            key: {"label": tr_value(spec["label"]), "type": spec["type"],
+                  "options": [(value, tr_value(label)) for value, label in spec.get("options", [])]}
             for key, spec in field_spec.items()
         }
         return render_template(
@@ -691,8 +693,8 @@ def register(app):
             db.session.commit()
             conflicts = kind == "change" and governance.conflict_status.startswith("Conflict")
             flash(
-                f"{ticket.number} created."
-                + (f" {governance.conflict_status}." if conflicts else ""),
+                tr("{number} created.", number=ticket.number)
+                + (f" {tr_value(governance.conflict_status)}." if conflicts else ""),
                 "error" if conflicts else "success",
             )
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
@@ -713,7 +715,7 @@ def register(app):
     def ticket_detail(ticket_id):
         ticket = tenant_record_or_404(Ticket, ticket_id)
         if not user_can_view_ticket(current_user, ticket):
-            abort(403, description="You are not involved in this ticket or its assigned work.")
+            abort(403, description=tr("You are not involved in this ticket or its assigned work."))
         if request.method == "POST":
             action = request.form.get("action")
             if action not in ("comment", "reopen", "close", "follow", "unfollow") and ticket_locked_for_edits(ticket):
@@ -743,7 +745,7 @@ def register(app):
                     abort(403)
                 require_ticket_team_access(ticket)
                 if ticket.state not in ("Resolved", "Closed"):
-                    flash(f"{ticket.number} is not Resolved or Closed.", "error")
+                    flash(tr("{number} is not Resolved or Closed.", number=ticket.number), "error")
                     return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 before_state = ticket.state
                 transition_ticket(ticket, "In Progress")
@@ -754,21 +756,21 @@ def register(app):
                 )
                 audit("reopen", ticket.number, f"{before_state} -> In Progress")
                 db.session.commit()
-                flash(f"{ticket.number} reopened.", "success")
+                flash(tr("{number} reopened.", number=ticket.number), "success")
                 return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             elif action == "close":
                 if not effective_role_has_action(current_user.effective_role, "resolve"):
                     abort(403)
                 require_ticket_team_access(ticket)
                 if ticket.state != "Resolved":
-                    flash(f"{ticket.number} is not Resolved.", "error")
+                    flash(tr("{number} is not Resolved.", number=ticket.number), "error")
                     return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 before_state = ticket.state
                 try:
                     transition_ticket(ticket, "Closed")
                 except HTTPException as error:
                     db.session.rollback()
-                    flash(error.description or "That change could not be made.", "error")
+                    flash(error.description or tr("That change could not be made."), "error")
                     return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 log_history(
                     "ticket", ticket.id, "State changed", "state",
@@ -777,7 +779,7 @@ def register(app):
                 )
                 audit("close", ticket.number, f"{before_state} -> Closed")
                 db.session.commit()
-                flash(f"{ticket.number} closed.", "success")
+                flash(tr("{number} closed.", number=ticket.number), "success")
                 return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             elif action == "quick_resolve":
                 if not effective_role_has_action(current_user.effective_role, "resolve"):
@@ -789,7 +791,7 @@ def register(app):
                     transition_ticket(ticket, "Resolved")
                 except HTTPException as error:
                     db.session.rollback()
-                    flash(error.description or "That change could not be made.", "error")
+                    flash(error.description or tr("That change could not be made."), "error")
                     return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 log_history(
                     "ticket", ticket.id, "State changed", "state",
@@ -805,7 +807,7 @@ def register(app):
                 assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
                 eligible_ids = {agent.id for agent in ticket_team_agents(ticket)}
                 if assignee_id is not None and assignee_id not in eligible_ids:
-                    flash("The assignee must be an active member of the owning team.", "error")
+                    flash(tr("The assignee must be an active member of the owning team."), "error")
                     return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 impact = request.form.get("impact", ticket.impact)
                 urgency = request.form.get("urgency", ticket.urgency)
@@ -818,8 +820,7 @@ def register(app):
                     and (not role_at_least(current_user.effective_role, "manager") or len(reason) < 10)
                 ):
                     flash(
-                        "Only a manager or administrator may override calculated priority, "
-                        "with a reason of at least 10 characters.", "error",
+                        tr("Only a manager or administrator may override calculated priority, with a reason of at least 10 characters."), "error",
                     )
                     return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 before = {
@@ -862,7 +863,7 @@ def register(app):
                     transition_ticket(ticket, target_state)
                 except HTTPException as error:
                     db.session.rollback()
-                    flash(error.description or "That change could not be made.", "error")
+                    flash(error.description or tr("That change could not be made."), "error")
                     return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 previous_override_reason = ticket.priority_override_reason
                 if governed_priority_input and requested_priority != calculated:
@@ -901,9 +902,9 @@ def register(app):
                     if contact_type not in {
                         "Self-service", "Phone", "Email", "Chat", "Monitoring"
                     }:
-                        abort(400, description="Select a valid contact type.")
+                        abort(400, description=tr("Select a valid contact type."))
                     if notify not in {"Email", "In-app only", "Do not notify"}:
-                        abort(400, description="Select a valid notification preference.")
+                        abort(400, description=tr("Select a valid notification preference."))
                     ticket.title = request.form.get("title", ticket.title).strip()
                     ticket.description = request.form.get(
                         "description", ticket.description
@@ -925,7 +926,7 @@ def register(app):
                         if offering_id else None
                     )
                     if offering and offering.status != "Operational":
-                        abort(400, description="Select an operational service offering.")
+                        abort(400, description=tr("Select an operational service offering."))
                     ticket.service_offering_id = offering.id if offering else None
                     ci_id = request.form.get("ci_id", "")
                     existing_primary = TaskCI.query.filter_by(
@@ -986,18 +987,18 @@ def register(app):
             elif action == "reassign_team":
                 if not user_can_manage_ticket(current_user, ticket):
                     abort(403, description=(
-                        "Only the current owning team's manager or an admin can reassign this record."
+                        tr("Only the current owning team's manager or an admin can reassign this record.")
                     ))
                 try:
                     new_group_id = int(request.form["new_group_id"])
                 except (KeyError, ValueError):
-                    abort(400, description="Select a team to reassign to.")
+                    abort(400, description=tr("Select a team to reassign to."))
                 new_group = SupportGroup.query.filter_by(
                     id=new_group_id, tenant_id=ticket.tenant_id,
                     active=True, group_type="IT Fulfillment",
                 ).first()
                 if not new_group:
-                    abort(400, description="Select an active IT fulfillment team.")
+                    abort(400, description=tr("Select an active IT fulfillment team."))
                 if ticket.kind == "change":
                     # Lock and re-read the owner so a double-submitted
                     # reassignment stops at the "already owned" check below
@@ -1009,10 +1010,10 @@ def register(app):
                         db.session.refresh(ticket.change_ownership)
                 current_group = ticket_owning_group(ticket)
                 if current_group and current_group.id == new_group.id:
-                    abort(400, description="This record is already owned by that team.")
+                    abort(400, description=tr("This record is already owned by that team."))
                 if ticket.kind == "change" and (not new_group.manager or not new_group.manager.active):
                     abort(400, description=(
-                        "The selected team must have an active manager before it can own a change."
+                        tr("The selected team must have an active manager before it can own a change.")
                     ))
                 if ticket.kind == "change":
                     ticket.change_ownership.group_id = new_group.id
@@ -1035,7 +1036,7 @@ def register(app):
                 if ticket.kind == "change":
                     supersede_change_approval(ticket, ["owning team"])
                 db.session.commit()
-                flash(f"{ticket.number} reassigned to {new_group.name}.", "success")
+                flash(tr("{number} reassigned to {name}.", number=ticket.number, name=new_group.name), "success")
                 return redirect(url_for("ticket_detail", ticket_id=ticket.id))
             elif action == "follow":
                 follow_ticket(ticket, current_user)
@@ -1112,11 +1113,10 @@ def register(app):
             abort(404)
         require_ticket_team_access(ticket)
         if ticket.deleted_at:
-            abort(409, description=f"{ticket.number} has already been deleted.")
+            abort(409, description=tr("{number} has already been deleted.", number=ticket.number))
         if ticket.state not in ("New", "Awaiting Approval"):
             abort(409, description=(
-                f"{ticket.number} cannot be deleted once it has progressed past approval. "
-                "Cancel it through the normal state transition instead."
+                tr("{number} cannot be deleted once it has progressed past approval. Cancel it through the normal state transition instead.", number=ticket.number)
             ))
         cancel_approval_chain(approval_chain_for("ticket", ticket.id))
         ticket.state = "Cancelled"
@@ -1128,7 +1128,7 @@ def register(app):
         )
         audit("delete", ticket.number, f"soft-deleted by {current_user.name}")
         db.session.commit()
-        flash(f"{ticket.number} was deleted. It remains available for audit as a Cancelled change.")
+        flash(tr("{number} was deleted. It remains available for audit as a Cancelled change.", number=ticket.number))
         return redirect(url_for("tickets", kind="change"))
 
     @app.post("/change/<int:ticket_id>/plan")
@@ -1250,15 +1250,15 @@ def register(app):
             "ticket", ticket.id, before, after, event="Material change plan updated"
         )
         if not changed_fields:
-            flash("No change-plan values changed.", "success")
+            flash(tr("No change-plan values changed."), "success")
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))
         conflicts = run_change_conflict_detection(ticket, governance)
         supersede_change_approval(ticket, changed_fields)
         audit("revise change plan", ticket.number, ", ".join(changed_fields))
         db.session.commit()
         flash(
-            f"Change plan revised. {ticket.number} returned to Awaiting Approval and approvers were notified."
-            + (f" Conflicts flagged: {', '.join(conflicts)}." if conflicts else ""),
+            tr("Change plan revised. {number} returned to Awaiting Approval and approvers were notified.", number=ticket.number)
+            + (" " + tr("Conflicts flagged: {conflicts}.", conflicts=", ".join(conflicts)) if conflicts else ""),
             "error" if conflicts else "success",
         )
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
@@ -1276,10 +1276,10 @@ def register(app):
         require_ticket_team_access(ticket)
         outcome = request.form.get("outcome", "")
         if outcome not in CHANGE_PIR_OUTCOMES:
-            abort(400, description="Select a valid review outcome.")
+            abort(400, description=tr("Select a valid review outcome."))
         summary = request.form.get("summary", "").strip()
         if not summary:
-            abort(400, description="A summary is required for the post-implementation review.")
+            abort(400, description=tr("A summary is required for the post-implementation review."))
         pir = ticket.post_implementation_review
         if pir:
             before = {"outcome": pir.outcome, "summary": pir.summary}
@@ -1300,7 +1300,7 @@ def register(app):
             log_history("ticket", ticket.id, "Post-implementation review recorded", details=outcome)
         audit("review", ticket.number, f"PIR outcome: {outcome}")
         db.session.commit()
-        flash(f"Post-implementation review saved for {ticket.number}.", "success")
+        flash(tr("Post-implementation review saved for {number}.", number=ticket.number), "success")
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
     @app.post("/ticket/<int:ticket_id>/satisfaction")
@@ -1313,20 +1313,20 @@ def register(app):
         if ticket.requester_id != current_user.id:
             abort(403)
         if ticket.state not in ("Resolved", "Closed"):
-            abort(409, description="This ticket isn't resolved yet.")
+            abort(409, description=tr("This ticket isn't resolved yet."))
         try:
             rating = int(request.form.get("rating", ""))
         except (TypeError, ValueError):
-            abort(400, description="Select a rating between 1 and 5.")
+            abort(400, description=tr("Select a rating between 1 and 5."))
         if rating < 1 or rating > 5:
-            abort(400, description="Select a rating between 1 and 5.")
+            abort(400, description=tr("Select a rating between 1 and 5."))
         ticket.csat_rating = rating
         ticket.csat_comment = request.form.get("comment", "").strip()
         ticket.csat_submitted_at = now()
         log_history("ticket", ticket.id, "Satisfaction rating submitted", details=f"{rating}/5")
         audit("csat", ticket.number, f"{rating}/5")
         db.session.commit()
-        flash("Thanks for the feedback!", "success")
+        flash(tr("Thanks for the feedback!"), "success")
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
     @app.post("/incident/<int:ticket_id>/major-incident")
@@ -1379,13 +1379,13 @@ def register(app):
         require_ticket_team_access(ticket)
         profile = ticket.major_incident_profile
         if not profile:
-            abort(404, description="Propose this as a major incident before posting a public status update.")
+            abort(404, description=tr("Propose this as a major incident before posting a public status update."))
         status = request.form.get("status", "")
         if status not in ("Investigating", "Identified", "Monitoring", "Resolved"):
             abort(400)
         message = request.form.get("message", "").strip()
         if not message:
-            abort(400, description="A status update message is required.")
+            abort(400, description=tr("A status update message is required."))
         db.session.add(MajorIncidentUpdate(
             major_incident_profile_id=profile.id, status=status, message=message,
             posted_by_id=current_user.id, tenant_id=ticket.tenant_id,
@@ -1394,7 +1394,7 @@ def register(app):
         profile.public = publish
         audit("major incident status update", ticket.number, f"{status}{' · published' if publish else ' · not published'}")
         db.session.commit()
-        flash("Status update posted.", "success")
+        flash(tr("Status update posted."), "success")
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
     @app.post("/incident/<int:ticket_id>/major-incident/review")
@@ -1435,7 +1435,7 @@ def register(app):
         }, event="Post-incident review recorded")
         audit("review", ticket.number, "Post-incident review recorded")
         db.session.commit()
-        flash(f"Post-incident review saved for {ticket.number}.", "success")
+        flash(tr("Post-incident review saved for {number}.", number=ticket.number), "success")
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
     @app.post("/record/<source_type>/<int:source_id>/relationships")
@@ -1448,11 +1448,11 @@ def register(app):
             require_ticket_team_access(source)
             if source.kind == "change" and source.state not in ("New", "Awaiting Approval"):
                 abort(409, description=(
-                    f"{source.number} is locked: related records can only be linked before a change is approved."
+                    tr("{number} is locked: related records can only be linked before a change is approved.", number=source.number)
                 ))
             if source.kind != "change" and ticket_locked_for_edits(source):
                 abort(409, description=(
-                    f"{source.number} is {source.state} and locked: only comments and notes can be added."
+                    tr("{number} is {state} and locked: only comments and notes can be added.", number=source.number, state=source.state)
                 ))
         elif isinstance(source, EnterpriseRecord):
             if not user_can_manage_enterprise_record(current_user, source):
@@ -1462,7 +1462,7 @@ def register(app):
                 abort(403)
         target = find_record_by_number(request.form.get("target_number"))
         if not target:
-            abort(404, description="No record matches the supplied number.")
+            abort(404, description=tr("No record matches the supplied number."))
         if isinstance(target, Ticket) and not user_can_view_ticket(current_user, target):
             abort(404)
         if (
@@ -1513,11 +1513,10 @@ def register(app):
         }
         if relation_type not in allowed.get((source_kind, target_kind), set()):
             abort(400, description=(
-                f"{RELATION_LABELS.get(relation_type, 'This relationship')} is not valid "
-                f"between {source_kind} and {target_kind}."
+                tr("{relation_labels} is not valid between {source_kind} and {target_kind}.", relation_labels=RELATION_LABELS.get(relation_type, 'This relationship'), source_kind=source_kind, target_kind=target_kind)
             ))
         if source_type == target_type and source_id == target.id:
-            abort(400, description="A record cannot be related to itself.")
+            abort(400, description=tr("A record cannot be related to itself."))
         exists = RecordLink.query.filter_by(
             source_type=source_type, source_id=source_id,
             target_type=target_type, target_id=target.id, link_type=relation_type,
@@ -1559,7 +1558,7 @@ def register(app):
         except ValueError:
             abort(400)
         if not ci_ids:
-            abort(400, description="Select at least one configuration item.")
+            abort(400, description=tr("Select at least one configuration item."))
         if role == "Primary CI":
             # A record has exactly one primary CI; multi-select never applies here.
             ci_ids = ci_ids[:1]
@@ -1609,30 +1608,28 @@ def register(app):
         require_ticket_team_access(ticket)
         if ticket.state in ("Resolved", "Closed", "Cancelled"):
             abort(409, description=(
-                f"{ticket.number} is {ticket.state}; change tasks cannot be added to a closed-out change."
+                tr("{number} is {state}; change tasks cannot be added to a closed-out change.", number=ticket.number, state=ticket.state)
             ))
         group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
         if not group.active or group.group_type != "IT Fulfillment":
-            abort(400, description="Change tasks require an active IT fulfillment team.")
+            abort(400, description=tr("Change tasks require an active IT fulfillment team."))
         task_type = request.form.get("task_type")
         if task_type not in ("Planning", "Implementation", "Testing", "Review"):
             abort(400)
         if not request.form.get("planned_start") or not request.form.get("planned_end"):
-            abort(400, description="Task planned start and planned end are required.")
+            abort(400, description=tr("Task planned start and planned end are required."))
         planned_start = parse_form_datetime(request.form["planned_start"])
         planned_end = parse_form_datetime(request.form["planned_end"])
         governance = ticket.change_governance
         if planned_end <= planned_start:
-            abort(400, description="Task end must be later than task start.")
+            abort(400, description=tr("Task end must be later than task start."))
         if governance and governance.planned_start and governance.planned_end:
             if (
                 align_tz(planned_start, governance.planned_start) < governance.planned_start
                 or align_tz(planned_end, governance.planned_end) > governance.planned_end
             ):
                 abort(409, description=(
-                    "Task dates must fall within the parent change's planned window "
-                    f"({governance.planned_start.strftime('%Y-%m-%d %H:%M')} → "
-                    f"{governance.planned_end.strftime('%Y-%m-%d %H:%M')})."
+                    tr("Task dates must fall within the parent change's planned window ({planned_start} → {planned_end}).", planned_start=governance.planned_start.strftime('%Y-%m-%d %H:%M'), planned_end=governance.planned_end.strftime('%Y-%m-%d %H:%M'))
                 ))
         sequence = OperationalTask.query.filter_by(
             parent_type="ticket", parent_id=ticket.id
@@ -1666,8 +1663,7 @@ def register(app):
         db.session.commit()
         if reapproval_triggered:
             flash(
-                f"{task.number} added. Adding a task after submission is a material change — "
-                f"{ticket.number} returned to Awaiting Approval and approvers were notified.",
+                tr("{number} added. Adding a task after submission is a material change — {number2} returned to Awaiting Approval and approvers were notified.", number=task.number, number2=ticket.number),
                 "error",
             )
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
@@ -1741,7 +1737,7 @@ def register(app):
         task = db.get_or_404(OperationalTask, task_id)
         if not user_in_group(current_user, task.assignment_group):
             abort(403, description=(
-                f"Only active members of {task.assignment_group.name} can update {task.number}."
+                tr("Only active members of {name} can update {number}.", name=task.assignment_group.name, number=task.number)
             ))
         body = request.form.get("body", "").strip()
         if body:
@@ -1760,20 +1756,20 @@ def register(app):
         task = db.get_or_404(OperationalTask, task_id)
         if not user_in_group(current_user, task.assignment_group):
             abort(403, description=(
-                f"Only active members of {task.assignment_group.name} can update {task.number}."
+                tr("Only active members of {name} can update {number}.", name=task.assignment_group.name, number=task.number)
             ))
         assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
         if assignee_id:
             assignee = db.session.get(User, assignee_id)
             if not assignee or not user_in_group(assignee, task.assignment_group):
-                flash("The assignee must belong to the task assignment group.", "error")
+                flash(tr("The assignee must belong to the task assignment group."), "error")
                 return redirect(url_for("operational_task_detail", task_id=task.id))
         else:
             assignee = None
         requested_state = request.form.get("state", task.state)
         if requested_state != task.state:
             if requested_state not in OPERATIONAL_TASK_TRANSITIONS.get(task.state, (task.state,)):
-                flash(f"{task.number} cannot move from {task.state} to {requested_state}.", "error")
+                flash(tr("{number} cannot move from {state} to {requested_state}.", number=task.number, state=task.state, requested_state=requested_state), "error")
                 return redirect(url_for("operational_task_detail", task_id=task.id))
             gate_block = change_task_gate_block(task, requested_state)
             if gate_block:
@@ -1846,7 +1842,8 @@ def register(app):
         ).limit(per_page).all()
         breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec)
         client_fields = {
-            key: {"label": spec["label"], "type": spec["type"], "options": spec.get("options", [])}
+            key: {"label": tr_value(spec["label"]), "type": spec["type"],
+                  "options": [(value, tr_value(label)) for value, label in spec.get("options", [])]}
             for key, spec in field_spec.items()
         }
         return render_template(
@@ -1878,7 +1875,7 @@ def register(app):
             if request.form.get("approval_required") and current_user.effective_role != "requester":
                 admin = tenant_query(User).filter(User.role.in_(["admin", "superadmin"]), User.active.is_(True)).first()
                 if not admin:
-                    abort(409, description="No active administrator is configured to approve this record.")
+                    abort(409, description=tr("No active administrator is configured to approve this record."))
                 db.session.add(Approval(enterprise_record_id=record.id, approver_id=admin.id, tenant_id=record.tenant_id))
                 create_notification(
                     admin.id, f"Approval requested: {record.number}",
@@ -1902,7 +1899,7 @@ def register(app):
     def enterprise_detail(record_id):
         record = tenant_record_or_404(EnterpriseRecord, record_id)
         if not user_can_view_enterprise_record(current_user, record):
-            abort(403, description="You are not involved in this record or its assigned work.")
+            abort(403, description=tr("You are not involved in this record or its assigned work."))
         can_manage_record = user_can_manage_enterprise_record(current_user, record)
         if request.method == "POST":
             action = request.form.get("action")
@@ -1919,7 +1916,7 @@ def register(app):
                     transition_enterprise(record, request.form["state"])
                 except HTTPException as error:
                     db.session.rollback()
-                    flash(error.description or "That change could not be made.", "error")
+                    flash(error.description or tr("That change could not be made."), "error")
                     return redirect(url_for("enterprise_detail", record_id=record.id))
                 record.priority = request.form["priority"]
                 record.risk = request.form["risk"]
@@ -2069,7 +2066,7 @@ def register(app):
             abort(403)
         group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
         if not group.active or group.group_type != "IT Fulfillment":
-            abort(400, description="Problem tasks require an active IT fulfillment team.")
+            abort(400, description=tr("Problem tasks require an active IT fulfillment team."))
         sequence = OperationalTask.query.filter_by(
             parent_type="enterprise", parent_id=record.id
         ).count() + 1
@@ -2119,7 +2116,7 @@ def register(app):
         shape record_reference()/record_url() already understand)."""
         title = request.form.get("title", "").strip()
         if not title:
-            abort(400, description="A title is required.")
+            abort(400, description=tr("A title is required."))
         source_type = request.form.get("source_type") or None
         source_id = request.form.get("source_id") or None
         def build():
@@ -2138,7 +2135,7 @@ def register(app):
         item = create_with_retry_on_number_collision(build)
         audit("create", item.number, item.title)
         db.session.commit()
-        flash(f"{item.number} raised as a continual-improvement item.", "success")
+        flash(tr("{number} raised as a continual-improvement item.", number=item.number), "success")
         redirect_to = request.form.get("redirect_to")
         if is_safe_internal_path(redirect_to):
             return redirect(redirect_to)
@@ -2179,7 +2176,7 @@ def register(app):
         log_field_changes("improvement", item.id, before, after, event=f"{item.number} updated")
         audit("update", item.number, item.status)
         db.session.commit()
-        flash(f"{item.number} updated.", "success")
+        flash(tr("{number} updated.", number=item.number), "success")
         return redirect(url_for("improvement_detail", item_id=item.id))
 
     @app.route("/tickets/import/rt", methods=["GET", "POST"])
@@ -2194,7 +2191,7 @@ def register(app):
             except ValueError:
                 limit = None
             if not setting_bool("RT_ENABLED"):
-                flash("RT import is not enabled.", "error")
+                flash(tr("RT import is not enabled."), "error")
                 return redirect(url_for("rt_import"))
             # Enqueue only -- RT import can take many minutes against a real
             # (often slow) instance, and running it inline here routinely
@@ -2210,7 +2207,7 @@ def register(app):
                   f"{'Preview' if dry_run else 'Apply'}: query={query!r}"
                   + (f" limit={limit}" if limit else ""))
             db.session.commit()
-            flash(f"RT import queued (job #{job.id}). This runs in the background.", "success")
+            flash(tr("RT import queued (job #{id}). This runs in the background.", id=job.id), "success")
             return redirect(url_for("rt_import"))
         recent_jobs = RTImportJob.query.filter_by(
             tenant_id=core.tenant_context_id()

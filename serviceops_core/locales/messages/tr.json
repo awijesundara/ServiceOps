@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Pazartesi",
+   "Salı",
+   "Çarşamba",
+   "Perşembe",
+   "Cuma",
+   "Cumartesi",
+   "Pazar"
+  ],
+  "days_abbr": [
+   "Pzt",
+   "Sal",
+   "Çar",
+   "Per",
+   "Cum",
+   "Cmt",
+   "Paz"
+  ],
+  "months": [
+   "Ocak",
+   "Şubat",
+   "Mart",
+   "Nisan",
+   "Mayıs",
+   "Haziran",
+   "Temmuz",
+   "Ağustos",
+   "Eylül",
+   "Ekim",
+   "Kasım",
+   "Aralık"
+  ],
+  "months_abbr": [
+   "Oca",
+   "Şub",
+   "Mar",
+   "Nis",
+   "May",
+   "Haz",
+   "Tem",
+   "Ağu",
+   "Eyl",
+   "Eki",
+   "Kas",
+   "Ara"
+  ]
+ },
+ "language": "tr",
+ "messages": {
+  "Administration": "Yönetim",
+  "Back": "Geri",
+  "Cancel": "İptal",
+  "Changes": "Değişiklikler",
+  "Close": "Kapat",
+  "Create": "Oluştur",
+  "Dashboard": "Gösterge paneli",
+  "Delete": "Sil",
+  "Description": "Açıklama",
+  "Edit": "Düzenle",
+  "General": "Genel",
+  "Incidents": "Olaylar",
+  "Knowledge": "Bilgi",
+  "Language": "Dil",
+  "Name": "Ad",
+  "Notifications": "Bildirimler",
+  "Preferences": "Tercihler",
+  "Priority": "Öncelik",
+  "Save": "Kaydet",
+  "Save preferences": "Tercihleri kaydet",
+  "Search": "Ara",
+  "Service requests": "Hizmet talepleri",
+  "Status": "Durum",
+  "System preferences": "Sistem tercihleri"
+ }
+}

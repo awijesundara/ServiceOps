@@ -12,7 +12,7 @@
         if (button.disabled) return;
         button.disabled = true;
         if (button.type !== "button") button.dataset.label = button.textContent;
-        if (button.type !== "button") button.textContent = "Working…";
+        if (button.type !== "button") button.textContent = tr("Working…");
       });
     });
   });
@@ -42,9 +42,11 @@
         const response = await fetch(panel.dataset.statusUrl, {headers: {Accept: "application/json"}});
         if (!response.ok) throw new Error("status request failed");
         const job = await response.json();
-        status.textContent = `${job.status} · ${job.phase}`;
+        status.dataset.jobStatus = job.status;
+        status.textContent = `${tr(job.status)} · ${tr(job.phase)}`;
         if (meter) meter.value = job.percent;
-        if (count) count.textContent = `${job.processed} processed${job.total ? ` of ${job.total}` : ""}`;
+        if (count) count.textContent = job.total ? tr("{processed} processed of {total}", { processed: job.processed, total: job.total })
+          : tr("{processed} processed", { processed: job.processed });
         if (!["Pending", "Running"].includes(job.status)) {
           stopped = true;
           if (cancel) cancel.hidden = true;
@@ -54,18 +56,19 @@
           return;
         }
       } catch (_error) {
-        status.textContent = "Progress temporarily unavailable; retrying.";
+        status.textContent = tr("Progress temporarily unavailable; retrying.");
       }
       window.setTimeout(refresh, 1500);
     }
 
     cancel?.addEventListener("click", async () => {
       cancel.disabled = true;
-      status.textContent = "Cancellation requested; finishing the current batch safely.";
+      status.textContent = tr("Cancellation requested; finishing the current batch safely.");
       await fetch(panel.dataset.cancelUrl, {
         method: "POST", headers: {"X-CSRF-Token": csrf, Accept: "application/json"},
       });
     });
-    if (["Pending", "Running"].some(value => status.textContent.startsWith(value))) refresh();
+    // The raw status, not the (translated) visible text, decides whether to poll.
+    if (["Pending", "Running"].includes(status.dataset.jobStatus)) refresh();
   });
 })();

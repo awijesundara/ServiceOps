@@ -1,40 +1,40 @@
 {% extends "base.html" %}
-{% block title %}{{ req.number }} · Service request · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('{number} · Service request · {instance_name}', number=(req.number), instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <section class="record-shell task-record-shell request-record-shell">
-  <header class="record-toolbar"><div class="record-identity"><a class="record-back" href="{{ url_for('requests_list') }}" aria-label="Back to requests">‹</a><span class="record-type-icon" aria-hidden="true">R</span><div><strong>Request</strong><small>{{ req.number }}</small></div></div><div class="record-actions"><span class="badge">{{ req.state }}</span></div></header>
+  <header class="record-toolbar"><div class="record-identity"><a class="record-back" href="{{ url_for('requests_list') }}" aria-label="{{ tr('Back to requests') }}">‹</a><span class="record-type-icon" aria-hidden="true">R</span><div><strong>{{ tr('Request') }}</strong><small>{{ req.number }}</small></div></div><div class="record-actions"><span class="badge">{{ tr_value(req.state) }}</span></div></header>
   <div class="record-form">
     <div class="record-grid">
-      <label><span>Number</span><input value="{{ req.number }}" disabled></label>
-      <label><span>State</span><input value="{{ req.state }}" disabled></label>
-      <label class="required-field"><span>Requested by</span><input value="{{ req.requested_by.name }} · {{ req.requested_by.email }}" title="{{ req.requested_by.name }} · {{ req.requested_by.email }}" disabled></label>
-      <label class="required-field"><span>Requested for</span><input value="{{ req.requested_for.name }} · {{ req.requested_for.email }}" title="{{ req.requested_for.name }} · {{ req.requested_for.email }}" disabled></label>
-      <label><span>Opened</span><input value="{{ (req.opened_at|usertime('%b %d, %Y · %H:%M')) }}" disabled></label>
-      <label><span>Requested items</span><input value="{{ req.items|length }}" disabled></label>
+      <label><span>{{ tr('Number') }}</span><input value="{{ req.number }}" disabled></label>
+      <label><span>{{ tr('State') }}</span><input value="{{ req.state }}" disabled></label>
+      <label class="required-field"><span>{{ tr('Requested by') }}</span><input value="{{ req.requested_by.name }} · {{ req.requested_by.email }}" title="{{ req.requested_by.name }} · {{ req.requested_by.email }}" disabled></label>
+      <label class="required-field"><span>{{ tr('Requested for') }}</span><input value="{{ req.requested_for.name }} · {{ req.requested_for.email }}" title="{{ req.requested_for.name }} · {{ req.requested_for.email }}" disabled></label>
+      <label><span>{{ tr('Opened') }}</span><input value="{{ (req.opened_at|usertime('%b %d, %Y · %H:%M')) }}" disabled></label>
+      <label><span>{{ tr('Requested items') }}</span><input value="{{ req.items|length }}" disabled></label>
     </div>
   </div>
 </section>
 
 <section class="panel table-panel">
-  <header class="section-heading"><div><h2>Requested Items (RITM)</h2></div><span>{{ req.items|length }} items</span></header>
-  <table><thead><tr><th>Number</th><th>Item</th><th>Stage</th><th>State</th><th>Due</th><th>Tasks</th></tr></thead><tbody>
+  <header class="section-heading"><div><h2>{{ tr('Requested Items (RITM)') }}</h2></div><span>{{ tr('{items} items', items=(req.items|length)) }}</span></header>
+  <table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Item') }}</th><th>{{ tr('Stage') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Due') }}</th><th>{{ tr('Tasks') }}</th></tr></thead><tbody>
     {% for ritm in req.items %}<tr>
       <td><a class="record-number" href="{{ url_for('ritm_detail', ritm_id=ritm.id) }}">{{ ritm.number }}</a></td>
       <td>{{ ritm.item.name }}</td>
-      <td>{{ ritm.stage }}</td>
-      <td>{{ ritm.state }}</td>
-      <td>{{ (ritm.due_at|usertime('%b %d, %Y')) if ritm.due_at else 'Not set' }}</td>
+      <td>{{ tr_value(ritm.stage) }}</td>
+      <td>{{ tr_value(ritm.state) }}</td>
+      <td>{{ (ritm.due_at|usertime('%b %d, %Y')) if ritm.due_at else tr('Not set') }}</td>
       <td>{{ ritm.tasks|length }}</td>
-    </tr>{% else %}<tr><td colspan="6" class="empty">No requested items.</td></tr>{% endfor %}
+    </tr>{% else %}<tr><td colspan="6" class="empty">{{ tr('No requested items.') }}</td></tr>{% endfor %}
   </tbody></table>
 </section>
 
 {% if req.state in ['Open','Awaiting Approval'] and can_add_request_item %}
-<details class="panel"><summary>Add another requested item to this REQ</summary>
+<details class="panel"><summary>{{ tr('Add another requested item to this REQ') }}</summary>
 <form method="post" action="{{ url_for('request_item_add', request_id=req.id) }}" class="form-grid">
-  <label>Catalog item<select name="catalog_item_id">{% for item in catalog_items %}<option value="{{ item.id }}">{{ item.category }} · {{ item.name }}</option>{% endfor %}</select></label>
-  <label class="wide">Item-specific details<textarea name="details" rows="3" required></textarea></label>
-  <div class="wide actions"><button class="primary">Add RITM</button></div>
+  <label>{{ tr('Catalog item') }}<select name="catalog_item_id">{% for item in catalog_items %}<option value="{{ item.id }}">{{ item.category }} · {{ item.name }}</option>{% endfor %}</select></label>
+  <label class="wide">{{ tr('Item-specific details') }}<textarea name="details" rows="3" required></textarea></label>
+  <div class="wide actions"><button class="primary">{{ tr('Add RITM') }}</button></div>
 </form></details>
 {% endif %}
 {% endblock %}

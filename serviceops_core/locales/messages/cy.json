@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Dydd Llun",
+   "Dydd Mawrth",
+   "Dydd Mercher",
+   "Dydd Iau",
+   "Dydd Gwener",
+   "Dydd Sadwrn",
+   "Dydd Sul"
+  ],
+  "days_abbr": [
+   "Llun",
+   "Maw",
+   "Mer",
+   "Iau",
+   "Gwen",
+   "Sad",
+   "Sul"
+  ],
+  "months": [
+   "Ionawr",
+   "Chwefror",
+   "Mawrth",
+   "Ebrill",
+   "Mai",
+   "Mehefin",
+   "Gorffennaf",
+   "Awst",
+   "Medi",
+   "Hydref",
+   "Tachwedd",
+   "Rhagfyr"
+  ],
+  "months_abbr": [
+   "Ion",
+   "Chwef",
+   "Maw",
+   "Ebr",
+   "Mai",
+   "Meh",
+   "Gorff",
+   "Awst",
+   "Medi",
+   "Hyd",
+   "Tach",
+   "Rhag"
+  ]
+ },
+ "language": "cy",
+ "messages": {
+  "Administration": "Gweinyddu",
+  "Back": "Yn ôl",
+  "Cancel": "Canslo",
+  "Changes": "Newidiadau",
+  "Close": "Cau",
+  "Create": "Creu",
+  "Dashboard": "Dangosfwrdd",
+  "Delete": "Dileu",
+  "Description": "Disgrifiad",
+  "Edit": "Golygu",
+  "General": "Cyffredinol",
+  "Incidents": "Digwyddiadau",
+  "Knowledge": "Gwybodaeth",
+  "Language": "Iaith",
+  "Name": "Enw",
+  "Notifications": "Hysbysiadau",
+  "Preferences": "Dewisiadau",
+  "Priority": "Blaenoriaeth",
+  "Save": "Cadw",
+  "Save preferences": "Cadw dewisiadau",
+  "Search": "Chwilio",
+  "Service requests": "Ceisiadau gwasanaeth",
+  "Status": "Statws",
+  "System preferences": "Dewisiadau'r system"
+ }
+}

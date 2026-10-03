@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "luns",
+   "martes",
+   "mércores",
+   "xoves",
+   "venres",
+   "sábado",
+   "domingo"
+  ],
+  "days_abbr": [
+   "luns",
+   "mar.",
+   "mér.",
+   "xov.",
+   "ven.",
+   "sáb.",
+   "dom."
+  ],
+  "months": [
+   "xaneiro",
+   "febreiro",
+   "marzo",
+   "abril",
+   "maio",
+   "xuño",
+   "xullo",
+   "agosto",
+   "setembro",
+   "outubro",
+   "novembro",
+   "decembro"
+  ],
+  "months_abbr": [
+   "xan.",
+   "feb.",
+   "mar.",
+   "abr.",
+   "maio",
+   "xuño",
+   "xul.",
+   "ago.",
+   "set.",
+   "out.",
+   "nov.",
+   "dec."
+  ]
+ },
+ "language": "gl",
+ "messages": {
+  "Administration": "Administración",
+  "Back": "Volver",
+  "Cancel": "Cancelar",
+  "Changes": "Cambios",
+  "Close": "Pechar",
+  "Create": "Crear",
+  "Dashboard": "Panel de control",
+  "Delete": "Eliminar",
+  "Description": "Descrición",
+  "Edit": "Editar",
+  "General": "Xeral",
+  "Incidents": "Incidentes",
+  "Knowledge": "Coñecemento",
+  "Language": "Idioma",
+  "Name": "Nome",
+  "Notifications": "Notificacións",
+  "Preferences": "Preferencias",
+  "Priority": "Prioridade",
+  "Save": "Gardar",
+  "Save preferences": "Gardar preferencias",
+  "Search": "Buscar",
+  "Service requests": "Solicitudes de servizo",
+  "Status": "Estado",
+  "System preferences": "Preferencias do sistema"
+ }
+}

@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "luni",
+   "marți",
+   "miercuri",
+   "joi",
+   "vineri",
+   "sâmbătă",
+   "duminică"
+  ],
+  "days_abbr": [
+   "lun.",
+   "mar.",
+   "mie.",
+   "joi",
+   "vin.",
+   "sâm.",
+   "dum."
+  ],
+  "months": [
+   "ianuarie",
+   "februarie",
+   "martie",
+   "aprilie",
+   "mai",
+   "iunie",
+   "iulie",
+   "august",
+   "septembrie",
+   "octombrie",
+   "noiembrie",
+   "decembrie"
+  ],
+  "months_abbr": [
+   "ian.",
+   "feb.",
+   "mar.",
+   "apr.",
+   "mai",
+   "iun.",
+   "iul.",
+   "aug.",
+   "sept.",
+   "oct.",
+   "nov.",
+   "dec."
+  ]
+ },
+ "language": "ro",
+ "messages": {
+  "Administration": "Administrare",
+  "Back": "Înapoi",
+  "Cancel": "Anulează",
+  "Changes": "Modificări",
+  "Close": "Închide",
+  "Create": "Creează",
+  "Dashboard": "Panou de control",
+  "Delete": "Șterge",
+  "Description": "Descriere",
+  "Edit": "Editează",
+  "General": "General",
+  "Incidents": "Incidente",
+  "Knowledge": "Cunoștințe",
+  "Language": "Limbă",
+  "Name": "Nume",
+  "Notifications": "Notificări",
+  "Preferences": "Preferințe",
+  "Priority": "Prioritate",
+  "Save": "Salvează",
+  "Save preferences": "Salvează preferințele",
+  "Search": "Caută",
+  "Service requests": "Cereri de servicii",
+  "Status": "Stare",
+  "System preferences": "Preferințe de sistem"
+ }
+}

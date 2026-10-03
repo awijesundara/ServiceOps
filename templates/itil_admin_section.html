@@ -1,20 +1,20 @@
 {% extends "base.html" %}
-{% block title %}{{ title }} · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr_value(title) }} · {{ instance_name }}{% endblock %}
 {% block content %}
-{% set admin_page_title = title %}{% set admin_parent_title = 'Service configuration' %}{% set admin_parent_url = url_for('admin_section', section='service-configuration') %}{% include '_admin_context.html' %}
-<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('admin_section', section='service-configuration') }}">Service configuration</a></p><h1>{{ title }}</h1><p>{{ description }}</p></div></header>
+{% set admin_page_title = title %}{% set admin_parent_title = tr('Service configuration') %}{% set admin_parent_url = url_for('admin_section', section='service-configuration') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('admin_section', section='service-configuration') }}">{{ tr('Service configuration') }}</a></p><h1>{{ tr_value(title) }}</h1><p>{{ tr_value(description) }}</p></div></header>
 {% set post_url = url_for('itil_admin') %}
 
 {% if section == 'ticket-defaults' %}
 <section class="panel admin-section">
   <form method="post" action="{{ post_url }}" class="form-grid">
     <input type="hidden" name="action" value="set_ticket_defaults">
-    <label>Default ticket priority
-      <select name="default_ticket_priority">{% for priority in ['P1','P2','P3','P4'] %}<option value="{{ priority }}" {% if default_ticket_priority == priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select>
-      <small>Applied when a new ticket does not declare a priority.</small>
+    <label>{{ tr('Default ticket priority') }}
+      <select name="default_ticket_priority">{% for priority in ['P1','P2','P3','P4'] %}<option value="{{ priority }}" {% if default_ticket_priority == priority %}selected{% endif %}>{{ tr_value(priority) }}</option>{% endfor %}</select>
+      <small>{{ tr('Applied when a new ticket does not declare a priority.') }}</small>
     </label>
-    <label class="check"><input type="checkbox" name="sync_child_incident_states" {% if sync_child_incident_states %}checked{% endif %}> Synchronize parent incident state to child incidents</label>
-    <div class="wide actions"><button class="primary">Save ticket defaults</button></div>
+    <label class="check"><input type="checkbox" name="sync_child_incident_states" {% if sync_child_incident_states %}checked{% endif %}> {{ tr('Synchronize parent incident state to child incidents') }}</label>
+    <div class="wide actions"><button class="primary">{{ tr('Save ticket defaults') }}</button></div>
   </form>
 </section>
 {% endif %}
@@ -22,79 +22,79 @@
 {% if section == 'catalog' %}
 <section class="panel admin-section">
   <details open>
-    <summary>Add a catalog item</summary>
+    <summary>{{ tr('Add a catalog item') }}</summary>
     <form method="post" action="{{ post_url }}" class="form-grid">
       <input type="hidden" name="action" value="create_catalog_item">
-      <label>Item name<input name="name" maxlength="160" required></label>
-      <label>Category<input name="category" maxlength="80" placeholder="Hardware, Software, Access…" required></label>
-      <label class="wide">{{ t('Description') }}<textarea name="description" rows="3" required></textarea></label>
-      <label>Delivery target (days)<input name="delivery_days" type="number" min="1" max="365" value="3" required></label>
-      <label>Fulfillment team<select name="group_id" required>{% for group in fulfillment_groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></label>
-      <label class="check"><input type="checkbox" name="approval_required" value="1"> Approval required</label>
-      <label class="check"><input type="checkbox" name="active" value="1" checked> Available in catalog</label>
-      <div class="wide actions"><button class="primary">Create catalog item</button></div>
+      <label>{{ tr('Item name') }}<input name="name" maxlength="160" required></label>
+      <label>{{ tr('Category') }}<input name="category" maxlength="80" placeholder="{{ tr('Hardware, Software, Access…') }}" required></label>
+      <label class="wide">{{ tr('Description') }}<textarea name="description" rows="3" required></textarea></label>
+      <label>{{ tr('Delivery target (days)') }}<input name="delivery_days" type="number" min="1" max="365" value="3" required></label>
+      <label>{{ tr('Fulfillment team') }}<select name="group_id" required>{% for group in fulfillment_groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></label>
+      <label class="check"><input type="checkbox" name="approval_required" value="1"> {{ tr('Approval required') }}</label>
+      <label class="check"><input type="checkbox" name="active" value="1" checked> {{ tr('Available in catalog') }}</label>
+      <div class="wide actions"><button class="primary">{{ tr('Create catalog item') }}</button></div>
     </form>
   </details>
   <table>
-    <thead><tr><th>Catalog item</th><th>Category</th><th>Policy</th><th>Current fulfillment team</th><th>Actions</th></tr></thead>
+    <thead><tr><th>{{ tr('Catalog item') }}</th><th>{{ tr('Category') }}</th><th>{{ tr('Policy') }}</th><th>{{ tr('Current fulfillment team') }}</th><th>{{ tr('Actions') }}</th></tr></thead>
     <tbody>
       {% for item in catalog_items %}
       <tr>
         <td><strong>{{ item.name }}</strong><small>{{ item.description }}</small></td>
         <td>{{ item.category }}</td>
-        <td>{{ item.delivery_days }} days · {{ "Approval required" if item.approval_required else "No approval" }} · {{ "Active" if item.active else "Inactive" }}</td>
-        <td>{{ item.fulfillment_route.support_group.name if item.fulfillment_route and item.fulfillment_route.active else "Service Desk fallback" }}</td>
+        <td>{{ tr('{delivery_days} days · {value} · {value2}', delivery_days=(item.delivery_days), value=(tr('Approval required') if item.approval_required else tr('No approval')), value2=(tr('Active') if item.active else tr('Inactive'))) }}</td>
+        <td>{{ item.fulfillment_route.support_group.name if item.fulfillment_route and item.fulfillment_route.active else tr('Service Desk fallback') }}</td>
         <td>
-          <details><summary>Rename / settings</summary>
+          <details><summary>{{ tr('Rename / settings') }}</summary>
             <form method="post" action="{{ post_url }}" class="form-grid">
               <input type="hidden" name="action" value="update_catalog_item">
               <input type="hidden" name="catalog_item_id" value="{{ item.id }}">
-              <label>{{ t('Name') }}<input name="name" maxlength="160" value="{{ item.name }}" required></label>
-              <label>Category<input name="category" maxlength="80" value="{{ item.category }}" required></label>
-              <label class="wide">{{ t('Description') }}<textarea name="description" rows="3" required>{{ item.description }}</textarea></label>
-              <label>Delivery days<input name="delivery_days" type="number" min="1" max="365" value="{{ item.delivery_days }}" required></label>
-              <label>Fulfillment team<select name="group_id" required>{% for group in fulfillment_groups %}<option value="{{ group.id }}" {% if item.fulfillment_route and item.fulfillment_route.support_group_id == group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
-              <label class="check"><input type="checkbox" name="approval_required" value="1" {% if item.approval_required %}checked{% endif %}> Approval required</label>
-              <label class="check"><input type="checkbox" name="active" value="1" {% if item.active %}checked{% endif %}> Available in catalog</label>
-              <div class="wide actions"><button class="button">Save item</button></div>
+              <label>{{ tr('Name') }}<input name="name" maxlength="160" value="{{ item.name }}" required></label>
+              <label>{{ tr('Category') }}<input name="category" maxlength="80" value="{{ item.category }}" required></label>
+              <label class="wide">{{ tr('Description') }}<textarea name="description" rows="3" required>{{ item.description }}</textarea></label>
+              <label>{{ tr('Delivery days') }}<input name="delivery_days" type="number" min="1" max="365" value="{{ item.delivery_days }}" required></label>
+              <label>{{ tr('Fulfillment team') }}<select name="group_id" required>{% for group in fulfillment_groups %}<option value="{{ group.id }}" {% if item.fulfillment_route and item.fulfillment_route.support_group_id == group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
+              <label class="check"><input type="checkbox" name="approval_required" value="1" {% if item.approval_required %}checked{% endif %}> {{ tr('Approval required') }}</label>
+              <label class="check"><input type="checkbox" name="active" value="1" {% if item.active %}checked{% endif %}> {{ tr('Available in catalog') }}</label>
+              <div class="wide actions"><button class="button">{{ tr('Save item') }}</button></div>
             </form>
           </details>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5">No catalog items are configured.</td></tr>
+      <tr><td colspan="5">{{ tr('No catalog items are configured.') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
   <div class="panel-head" style="margin-top: 1.5rem;">
     <div>
-      <p>Spelling/formatting variants of the same team (e.g. "CoreApps", "Core apps", "SSD Team") are detected and merged automatically on every CSV import. Use this to sweep for them on demand — a spreadsheet-imported "Core apps" and the existing "CoreApps" merge into one team; nothing is asked, since this only ever collapses format variants, never genuinely different names (that's what aliases above are for).</p>
+      <p>{{ tr('Spelling/formatting variants of the same team (e.g. "CoreApps", "Core apps", "SSD Team") are detected and merged automatically on every CSV import. Use this to sweep for them on demand — a spreadsheet-imported "Core apps" and the existing "CoreApps" merge into one team; nothing is asked, since this only ever collapses format variants, never genuinely different names (that\'s what aliases above are for).') }}</p>
     </div>
   </div>
   <form method="post" action="{{ post_url }}" class="actions">
     <input type="hidden" name="action" value="merge_duplicate_teams">
-    <button class="primary">Clean up duplicate teams now</button>
+    <button class="primary">{{ tr('Clean up duplicate teams now') }}</button>
   </form>
 </section>
 {% endif %}
 
 {% if section == 'team-aliases' %}
 <section class="panel admin-section">
-  <p class="muted">Add alternate names staff use for a team (e.g. "DBA" for "Database"). Anywhere a team name is resolved from free text — CSV/spreadsheet import's Owner column, for example — the alias resolves to the same team instead of creating a duplicate.</p>
+  <p class="muted">{{ tr('Add alternate names staff use for a team (e.g. "DBA" for "Database"). Anywhere a team name is resolved from free text — CSV/spreadsheet import\'s Owner column, for example — the alias resolves to the same team instead of creating a duplicate.') }}</p>
   <form method="post" action="{{ post_url }}" class="form-grid">
     <input type="hidden" name="action" value="add_support_group_alias">
-    <label>Alias
+    <label>{{ tr('Alias') }}
       <input name="alias" placeholder="DBA" maxlength="160" required>
     </label>
-    <label>ServiceOps team
+    <label>{{ tr('ServiceOps team') }}
       <select name="group_id" required>
         {% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}
       </select>
     </label>
-    <div class="wide actions"><button class="primary">Save alias</button></div>
+    <div class="wide actions"><button class="primary">{{ tr('Save alias') }}</button></div>
   </form>
   <table>
-    <thead><tr><th>Alias</th><th>Resolves to</th><th>Action</th></tr></thead>
+    <thead><tr><th>{{ tr('Alias') }}</th><th>{{ tr('Resolves to') }}</th><th>{{ tr('Action') }}</th></tr></thead>
     <tbody>
       {% for group_alias in support_group_aliases %}
       <tr>
@@ -104,12 +104,12 @@
           <form method="post" action="{{ post_url }}">
             <input type="hidden" name="action" value="delete_support_group_alias">
             <input type="hidden" name="alias_id" value="{{ group_alias.id }}">
-            <button class="button">Remove</button>
+            <button class="button">{{ tr('Remove') }}</button>
           </form>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="3">No team name aliases configured.</td></tr>
+      <tr><td colspan="3">{{ tr('No team name aliases configured.') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -118,43 +118,43 @@
 
 {% if section == 'team-managers' %}
 <section class="panel admin-section">
-  <p class="muted">Create and maintain operational teams here. The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.</p>
+  <p class="muted">{{ tr('Create and maintain operational teams here. The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.') }}</p>
   <form method="post" action="{{ post_url }}" class="form-grid">
     <input type="hidden" name="action" value="create_support_group">
-    <label class="required-field"><span>New team name</span><input name="name" required maxlength="120" placeholder="e.g. Datacenter"></label>
-    <label><span>Team type</span><select name="group_type"><option>IT Fulfillment</option><option>Fulfillment</option><option>Executive</option></select></label>
-    <div class="wide actions"><button class="primary">Create team</button></div>
+    <label class="required-field"><span>{{ tr('New team name') }}</span><input name="name" required maxlength="120" placeholder="{{ tr('e.g. Datacenter') }}"></label>
+    <label><span>{{ tr('Team type') }}</span><select name="group_type"><option>{{ tr('IT Fulfillment') }}</option><option>{{ tr('Fulfillment') }}</option><option>{{ tr('Executive') }}</option></select></label>
+    <div class="wide actions"><button class="primary">{{ tr('Create team') }}</button></div>
   </form>
   <table>
-    <thead><tr><th>Team</th><th>Current manager</th><th>Manager assignment</th><th>Members</th><th>Team settings</th></tr></thead>
+    <thead><tr><th>{{ tr('Team') }}</th><th>{{ tr('Current manager') }}</th><th>{{ tr('Manager assignment') }}</th><th>{{ tr('Members') }}</th><th>{{ tr('Team settings') }}</th></tr></thead>
     <tbody>
       {% for team in teams %}
       <tr>
-        <td><form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="rename_support_group"><input type="hidden" name="group_id" value="{{ team.id }}"><input name="name" value="{{ team.name }}" required maxlength="120" aria-label="Team name for {{ team.name }}"><button class="button">Rename</button></form></td>
-        <td>{{ team.manager.name if team.manager else "Unassigned" }}</td>
+        <td><form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="rename_support_group"><input type="hidden" name="group_id" value="{{ team.id }}"><input name="name" value="{{ team.name }}" required maxlength="120" aria-label="{{ tr('Team name for {name}', name=(team.name)) }}"><button class="button">{{ tr('Rename') }}</button></form></td>
+        <td>{{ team.manager.name if team.manager else tr('Unassigned') }}</td>
         <td>
           <form method="post" action="{{ post_url }}" class="inline-form">
             <input type="hidden" name="action" value="set_manager">
             <input type="hidden" name="group_id" value="{{ team.id }}">
-            <select name="manager_id" aria-label="Manager for {{ team.name }}">
-              <option value="">Unassigned</option>
+            <select name="manager_id" aria-label="{{ tr('Manager for {name}', name=(team.name)) }}">
+              <option value="">{{ tr('Unassigned') }}</option>
               {% for user in manager_candidates %}
               <option value="{{ user.id }}" {% if team.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
               {% endfor %}
             </select>
-            <button class="button">{{ t('Save') }}</button>
+            <button class="button">{{ tr('Save') }}</button>
           </form>
         </td>
         <td>{{ team.members|length }}</td>
         <td>
-          <details><summary>Rename / settings</summary>
+          <details><summary>{{ tr('Rename / settings') }}</summary>
             <form method="post" action="{{ post_url }}" class="stack compact-form">
               <input type="hidden" name="action" value="update_support_group">
               <input type="hidden" name="group_id" value="{{ team.id }}">
-              <label><span>{{ t('Name') }}</span><input name="name" value="{{ team.name }}" required maxlength="120"></label>
-              <label><span>Type</span><select name="group_type">{% for kind in ['IT Fulfillment','Fulfillment','Executive'] %}<option {% if team.group_type == kind %}selected{% endif %}>{{ kind }}</option>{% endfor %}</select></label>
-              <label class="check"><input type="checkbox" name="active" {% if team.active %}checked{% endif %}> Active</label>
-              <button class="button">Update</button>
+              <label><span>{{ tr('Name') }}</span><input name="name" value="{{ team.name }}" required maxlength="120"></label>
+              <label><span>{{ tr('Type') }}</span><select name="group_type">{% for kind in ['IT Fulfillment','Fulfillment','Executive'] %}<option {% if team.group_type == kind %}selected{% endif %}>{{ tr_value(kind) }}</option>{% endfor %}</select></label>
+              <label class="check"><input type="checkbox" name="active" {% if team.active %}checked{% endif %}> {{ tr('Active') }}</label>
+              <button class="button">{{ tr('Update') }}</button>
             </form>
           </details>
         </td>
@@ -168,57 +168,57 @@
 
 {% if section == 'executive-approval' %}
 <section class="panel admin-section">
-  <p class="muted">Choose the executives who can approve Normal and Emergency changes.</p>
+  <p class="muted">{{ tr('Choose the executives who can approve Normal and Emergency changes.') }}</p>
   <form method="post" action="{{ post_url }}" class="stack">
     <input type="hidden" name="action" value="set_executive_approvers">
-    <fieldset><legend>Executive approvers</legend>
+    <fieldset><legend>{{ tr('Executive approvers') }}</legend>
       {% for user in manager_candidates %}<label class="check"><input type="checkbox" name="user_ids" value="{{ user.id }}" {% if user.id in executive_approver_ids %}checked{% endif %}> {{ user.name }} <small class="muted">{{ user.username }}</small></label>{% endfor %}
     </fieldset>
-    <label>Approval rule<select name="approval_mode"><option value="all" {% if executive_office.approval_mode == 'all' %}selected{% endif %}>Every selected executive</option><option value="any" {% if executive_office.approval_mode == 'any' %}selected{% endif %}>Any one selected executive</option></select></label>
-    <div><button class="primary">Save executive approvers</button></div>
+    <label>{{ tr('Approval rule') }}<select name="approval_mode"><option value="all" {% if executive_office.approval_mode == 'all' %}selected{% endif %}>{{ tr('Every selected executive') }}</option><option value="any" {% if executive_office.approval_mode == 'any' %}selected{% endif %}>{{ tr('Any one selected executive') }}</option></select></label>
+    <div><button class="primary">{{ tr('Save executive approvers') }}</button></div>
   </form>
 </section>
 {% endif %}
 
 {% if section == 'governance-groups' %}
 <section class="panel admin-section">
-  <p class="muted">Manage team members. Directory-managed memberships are marked.</p>
+  <p class="muted">{{ tr('Manage team members. Directory-managed memberships are marked.') }}</p>
   {% for group in groups %}
   <details class="panel admin-section" style="margin-bottom:14px">
-    <summary><strong>{{ group.name }}</strong> <span class="muted">{{ group.group_type }} · manager {{ group.manager.name if group.manager else "Unassigned" }} · {{ group.members|length }} member(s)</span></summary>
-    {% if group.name not in ['Change Control Board', 'Executive Office'] %}<form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="rename_support_group"><input type="hidden" name="group_id" value="{{ group.id }}"><label>Group name<input name="name" value="{{ group.name }}" maxlength="120" required></label><button class="button">Rename</button></form>{% endif %}
+    <summary><strong>{{ group.name }}</strong> <span class="muted">{{ tr('{group_type} · manager {name} · {members} member(s)', group_type=(group.group_type), name=(group.manager.name if group.manager else tr('Unassigned')), members=(group.members|length)) }}</span></summary>
+    {% if group.name not in ['Change Control Board', 'Executive Office'] %}<form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="rename_support_group"><input type="hidden" name="group_id" value="{{ group.id }}"><label>{{ tr('Group name') }}<input name="name" value="{{ group.name }}" maxlength="120" required></label><button class="button">{{ tr('Rename') }}</button></form>{% endif %}
     <table>
-      <thead><tr><th>{{ t('Name') }}</th><th>Username</th><th>Role</th><th>Source</th><th></th></tr></thead>
+      <thead><tr><th>{{ tr('Name') }}</th><th>{{ tr('Username') }}</th><th>{{ tr('Role') }}</th><th>{{ tr('Source') }}</th><th></th></tr></thead>
       <tbody>
         {% for member in group.members %}
         <tr>
           <td><strong>{{ member.user.name }}</strong></td>
           <td>{{ member.user.username }}</td>
-          <td>{{ member.role }}</td>
-          <td>{% if (group.id, member.user_id) in directory_managed_member_keys %}<span class="badge">AD-managed</span>{% else %}<span class="muted">Manual</span>{% endif %}</td>
+          <td>{{ tr_value(member.role) }}</td>
+          <td>{% if (group.id, member.user_id) in directory_managed_member_keys %}<span class="badge">{{ tr('AD-managed') }}</span>{% else %}<span class="muted">{{ tr('Manual') }}</span>{% endif %}</td>
           <td>
             {% if member.role not in ('manager', 'CCB approver', 'executive approver') %}
             <form method="post" action="{{ post_url }}">
               <input type="hidden" name="action" value="remove_group_member">
               <input type="hidden" name="member_id" value="{{ member.id }}">
-              <button class="link-button" aria-label="Remove {{ member.user.name }} from {{ group.name }}">✕</button>
+              <button class="link-button" aria-label="{{ tr('Remove {name} from {name2}', name=(member.user.name), name2=(group.name)) }}">✕</button>
             </form>
-            {% else %}<span class="muted" title="Change this from Team managers / Approval authority">—</span>{% endif %}
+            {% else %}<span class="muted" title="{{ tr('Change this from Team managers / Approval authority') }}">—</span>{% endif %}
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5">No members yet.</td></tr>
+        <tr><td colspan="5">{{ tr('No members yet.') }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
     <form method="post" action="{{ post_url }}" class="inline-form">
       <input type="hidden" name="action" value="add_group_member">
       <input type="hidden" name="group_id" value="{{ group.id }}">
-      <select name="user_id" aria-label="Add member to {{ group.name }}" required>
-        <option value="" disabled selected>Add a member manually…</option>
+      <select name="user_id" aria-label="{{ tr('Add member to {name}', name=(group.name)) }}" required>
+        <option value="" disabled selected>{{ tr('Add a member manually…') }}</option>
         {% for user in manager_candidates %}<option value="{{ user.id }}">{{ user.name }} ({{ user.username }})</option>{% endfor %}
       </select>
-      <button class="button">Add member</button>
+      <button class="button">{{ tr('Add member') }}</button>
     </form>
   </details>
   {% endfor %}
@@ -228,41 +228,41 @@
 
 {% if section == 'change-approval-policy' %}
 <section class="panel admin-section">
-  <p class="muted">Choose which CMDB environment names require Change Control Board approval. This policy determines <em>where</em> approval is enforced; Approval authority determines <em>who</em> can approve.</p>
+  <p class="muted">{{ tr('Choose which CMDB environment names require Change Control Board approval. This policy determines') }} <em>{{ tr('where') }}</em> {{ tr('approval is enforced; Approval authority determines') }} <em>{{ tr('who') }}</em> {{ tr('can approve.') }}</p>
   <form method="post" action="{{ post_url }}" class="form-grid">
     <input type="hidden" name="action" value="set_change_approval_policy">
-    <label class="wide">Environments requiring CCB approval
-      <input name="ccb_required_environments" value="{{ ccb_required_environments }}" placeholder="Production, Staging" required>
-      <small>Comma-separated CMDB environment names. Changes apply immediately to new approval decisions.</small>
+    <label class="wide">{{ tr('Environments requiring CCB approval') }}
+      <input name="ccb_required_environments" value="{{ ccb_required_environments }}" placeholder="{{ tr('Production, Staging') }}" required>
+      <small>{{ tr('Comma-separated CMDB environment names. Changes apply immediately to new approval decisions.') }}</small>
     </label>
-    <div class="wide actions"><button class="primary">Save change approval policy</button></div>
+    <div class="wide actions"><button class="primary">{{ tr('Save change approval policy') }}</button></div>
   </form>
 </section>
 {% endif %}
 
 {% if section == 'ccb' %}
 <section class="panel admin-section">
-  <p class="muted">Only users explicitly granted CCB approval authority are selected as voters for new non-standard changes. Removing authority does not rewrite historical decisions.</p>
+  <p class="muted">{{ tr('Only users explicitly granted CCB approval authority are selected as voters for new non-standard changes. Removing authority does not rewrite historical decisions.') }}</p>
   <table>
-    <thead><tr><th>User</th><th>Platform role</th><th>Team memberships</th><th>CCB authority<span class="info-tip" tabindex="0" data-tip="Change Control Board approval authority. Only users granted this can vote on Normal/Emergency change approvals. Removing it does not alter past approval decisions.">i</span></th></tr></thead>
+    <thead><tr><th>{{ tr('User') }}</th><th>{{ tr('Platform role') }}</th><th>{{ tr('Team memberships') }}</th><th>{{ tr('CCB authority') }}<span class="info-tip" tabindex="0" data-tip="Change Control Board approval authority. Only users granted this can vote on Normal/Emergency change approvals. Removing it does not alter past approval decisions.">i</span></th></tr></thead>
     <tbody>
       {% for user in ccb_candidates %}
       <tr>
         <td><strong>{{ user.name }}</strong><small>{{ user.username }}</small></td>
-        <td><span class="tag">{{ user.role }}</span></td>
+        <td><span class="tag">{{ tr_value(user.role) }}</span></td>
         <td>
           {% set ns = namespace(names=[]) %}
           {% for group in groups %}{% for member in group.members %}{% if member.user_id == user.id and group.id != ccb.id %}{% set ns.names = ns.names + [group.name] %}{% endif %}{% endfor %}{% endfor %}
-          {{ ns.names|join(", ") or "None" }}
+          {{ ns.names|join(", ") or tr('None') }}
         </td>
         <td>
           <form method="post" action="{{ post_url }}">
             <input type="hidden" name="action" value="set_ccb_authority">
             <input type="hidden" name="user_id" value="{{ user.id }}">
             {% if user.id in ccb_approver_ids %}
-            <input type="hidden" name="enabled" value="false"><button class="button">Revoke</button>
+            <input type="hidden" name="enabled" value="false"><button class="button">{{ tr('Revoke') }}</button>
             {% else %}
-            <input type="hidden" name="enabled" value="true"><button class="primary">Grant</button>
+            <input type="hidden" name="enabled" value="true"><button class="primary">{{ tr('Grant') }}</button>
             {% endif %}
           </form>
         </td>
@@ -275,33 +275,33 @@
 
 {% if section == 'change-freeze' %}
 <section class="panel admin-section">
-  <p class="muted">While a window is active, Standard and Normal changes can't be scheduled or approved inside it — only Emergency changes are exempt. This actually blocks submission/approval, unlike a banner.</p>
+  <p class="muted">{{ tr("While a window is active, Standard and Normal changes can't be scheduled or approved inside it — only Emergency changes are exempt. This actually blocks submission/approval, unlike a banner.") }}</p>
   <form method="post" action="{{ post_url }}" class="form-grid">
     <input type="hidden" name="action" value="create_change_freeze">
-    <label class="wide">Title<input name="title" placeholder="Year-end code freeze" maxlength="160" required></label>
-    <label>Starts<input type="datetime-local" name="starts_at" required></label>
-    <label>Ends<input type="datetime-local" name="ends_at" required></label>
-    <label class="wide">Reason<textarea name="reason" rows="2" placeholder="Optional — shown to anyone blocked by this freeze"></textarea></label>
-    <div class="wide actions"><button class="primary">Create freeze window</button></div>
+    <label class="wide">{{ tr('Title') }}<input name="title" placeholder="{{ tr('Year-end code freeze') }}" maxlength="160" required></label>
+    <label>{{ tr('Starts') }}<input type="datetime-local" name="starts_at" required></label>
+    <label>{{ tr('Ends') }}<input type="datetime-local" name="ends_at" required></label>
+    <label class="wide">{{ tr('Reason') }}<textarea name="reason" rows="2" placeholder="{{ tr('Optional — shown to anyone blocked by this freeze') }}"></textarea></label>
+    <div class="wide actions"><button class="primary">{{ tr('Create freeze window') }}</button></div>
   </form>
   <table>
-    <thead><tr><th>Title</th><th>Window</th><th>Reason</th><th>Created by</th><th></th></tr></thead>
+    <thead><tr><th>{{ tr('Title') }}</th><th>{{ tr('Window') }}</th><th>{{ tr('Reason') }}</th><th>{{ tr('Created by') }}</th><th></th></tr></thead>
     <tbody>
       {% for window in change_freeze_windows %}
       <tr>
-        <td><strong>{{ window.title }}</strong>{% if window.starts_at <= now() <= window.ends_at %}<br><span class="badge">Active now</span>{% endif %}</td>
+        <td><strong>{{ window.title }}</strong>{% if window.starts_at <= now() <= window.ends_at %}<br><span class="badge">{{ tr('Active now') }}</span>{% endif %}</td>
         <td>{{ (window.starts_at|usertime('%b %d, %Y %H:%M')) }} – {{ (window.ends_at|usertime('%b %d, %Y %H:%M')) }}</td>
         <td>{{ window.reason or '—' }}</td>
-        <td>{{ window.created_by.name if window.created_by else 'System' }}</td>
+        <td>{{ window.created_by.name if window.created_by else tr('System') }}</td>
         <td>
           <form method="post" action="{{ post_url }}">
             <input type="hidden" name="action" value="delete_change_freeze">
             <input type="hidden" name="window_id" value="{{ window.id }}">
-            <button class="button">Remove</button>
+            <button class="button">{{ tr('Remove') }}</button>
           </form>
         </td>
       </tr>
-      {% else %}<tr><td colspan="5">No change freeze windows configured.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="5">{{ tr('No change freeze windows configured.') }}</td></tr>{% endfor %}
     </tbody>
   </table>
 </section>
@@ -309,133 +309,133 @@
 
 {% if section == 'service-offerings' %}
 <section class="panel admin-section">
-    <p class="muted">Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk. Toggle a service to publish or hide it on the <a href="{{ url_for('status_page', slug=current_tenant_slug) }}" target="_blank" rel="noopener">public status page</a>.</p>
+    <p class="muted">{{ tr('Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk. Toggle a service to publish or hide it on the') }} <a href="{{ url_for('status_page', slug=current_tenant_slug) }}" target="_blank" rel="noopener">{{ tr('public status page') }}</a>.</p>
     {% for service in services %}
     <article class="config-row" style="flex-direction:column;align-items:stretch;gap:8px">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><strong>{{ service.name }}</strong><small>{{ service.criticality }} criticality · {{ service.status }}</small></div>
+        <div><strong>{{ service.name }}</strong><small>{{ tr('{criticality} criticality · {status}', criticality=(service.criticality), status=(tr_value(service.status))) }}</small></div>
         <div style="display:flex;align-items:center;gap:10px">
           <span>{{ service.owner.name }}</span>
-          <form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="toggle_service_status_page_visibility"><input type="hidden" name="service_offering_id" value="{{ service.id }}"><button class="badge" style="cursor:pointer;border:0" title="{{ 'Hide from the public status page' if service.status_page_visible else 'Publish on the public status page' }}">{{ '● On status page' if service.status_page_visible else '○ Not on status page' }}</button></form>
+          <form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="toggle_service_status_page_visibility"><input type="hidden" name="service_offering_id" value="{{ service.id }}"><button class="badge" style="cursor:pointer;border:0" title="{{ tr('Hide from the public status page') if service.status_page_visible else tr('Publish on the public status page') }}">{{ ('● ' ~ tr('On status page')) if service.status_page_visible else ('○ ' ~ tr('Not on status page')) }}</button></form>
         </div>
       </div>
       {% for link in service.ci_links %}
       <div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div>
-        <span class="badge">{{ link.relationship_role }}</span>
-        <form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="unlink_service_ci"><input type="hidden" name="link_id" value="{{ link.id }}"><button class="link-button" aria-label="Unlink {{ link.ci.name }}">✕</button></form>
+        <span class="badge">{{ tr_value(link.relationship_role) }}</span>
+        <form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="unlink_service_ci"><input type="hidden" name="link_id" value="{{ link.id }}"><button class="link-button" aria-label="{{ tr('Unlink {name}', name=(link.ci.name)) }}">✕</button></form>
       </div>
-      {% else %}<p class="muted">No configuration items linked yet.</p>{% endfor %}
+      {% else %}<p class="muted">{{ tr('No configuration items linked yet.') }}</p>{% endfor %}
       <form method="post" action="{{ post_url }}" class="inline-form">
         <input type="hidden" name="action" value="link_service_ci">
         <input type="hidden" name="service_offering_id" value="{{ service.id }}">
-        <select name="relationship_role"><option>Primary</option><option selected>Supporting</option></select>
-        <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="Pick one or more configuration items…" autocomplete="off" required><div class="lookup-results" hidden></div></div>
-        <button>Link CIs</button>
+        <select name="relationship_role"><option>{{ tr('Primary') }}</option><option selected>{{ tr('Supporting') }}</option></select>
+        <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick one or more configuration items…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div>
+        <button>{{ tr('Link CIs') }}</button>
       </form>
     </article>
-    {% else %}<p>No service offerings configured.</p>{% endfor %}
+    {% else %}<p>{{ tr('No service offerings configured.') }}</p>{% endfor %}
 </section>
 {% endif %}
 
 {% if section == 'ticket-categories' %}
 <section class="panel admin-section">
   <div class="callout">
-    <strong>Category model</strong>
-    <p>Keep the tree to two levels with no more than about {{ category_option_limit }} options per level. Categorise by the affected service or configuration item, not by the fix. Incidents record a category at logging and a separate closure category when resolved; changes are classified by change model and affected CI or service instead of this tree. Renaming a category or subcategory relabels the tickets that use it.</p>
+    <strong>{{ tr('Category model') }}</strong>
+    <p>{{ tr('Keep the tree to two levels with no more than about {category_option_limit} options per level. Categorise by the affected service or configuration item, not by the fix. Incidents record a category at logging and a separate closure category when resolved; changes are classified by change model and affected CI or service instead of this tree. Renaming a category or subcategory relabels the tickets that use it.', category_option_limit=(category_option_limit)) }}</p>
     {% set active_categories = ticket_categories|selectattr('active')|list %}
-    {% if active_categories|length > category_option_limit %}<p class="error">{{ active_categories|length }} active categories; the model recommends no more than {{ category_option_limit }}.</p>{% endif %}
-    {% for category in active_categories %}{% set active_subs = category.subcategories|selectattr('active')|list %}{% if active_subs|length > category_option_limit %}<p class="error">{{ category.name }} has {{ active_subs|length }} active subcategories; the model recommends no more than {{ category_option_limit }}.</p>{% endif %}{% endfor %}
+    {% if active_categories|length > category_option_limit %}<p class="error">{{ tr('{active_categories} active categories; the model recommends no more than {category_option_limit}.', active_categories=(active_categories|length), category_option_limit=(category_option_limit)) }}</p>{% endif %}
+    {% for category in active_categories %}{% set active_subs = category.subcategories|selectattr('active')|list %}{% if active_subs|length > category_option_limit %}<p class="error">{{ tr('{name} has {active_subs} active subcategories; the model recommends no more than {category_option_limit}.', name=(category.name), active_subs=(active_subs|length), category_option_limit=(category_option_limit)) }}</p>{% endif %}{% endfor %}
   </div>
-  <p class="muted">The category and subcategory choices offered on the ticket form. Deactivating a category or subcategory removes it from the form without changing tickets that already used it. Picking a subcategory on the ticket form only ever suggests its linked service offering — it never overwrites what the requester already chose.</p>
+  <p class="muted">{{ tr('The category and subcategory choices offered on the ticket form. Deactivating a category or subcategory removes it from the form without changing tickets that already used it. Picking a subcategory on the ticket form only ever suggests its linked service offering — it never overwrites what the requester already chose.') }}</p>
   <form method="post" action="{{ post_url }}" class="form-grid">
     <input type="hidden" name="action" value="create_ticket_category">
-    <label class="required-field"><span>New category name</span><input name="name" required maxlength="80" placeholder="e.g. Facilities"></label>
-    <div class="wide actions"><button class="primary">Create category</button></div>
+    <label class="required-field"><span>{{ tr('New category name') }}</span><input name="name" required maxlength="80" placeholder="{{ tr('e.g. Facilities') }}"></label>
+    <div class="wide actions"><button class="primary">{{ tr('Create category') }}</button></div>
   </form>
   {% for category in ticket_categories %}
   <article class="config-row" style="flex-direction:column;align-items:stretch;gap:8px">
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <div><strong>{{ category.name }}</strong>{% if not category.active %}<small class="muted"> · inactive</small>{% endif %}</div>
-      <details><summary>Rename / settings</summary>
+      <div><strong>{{ category.name }}</strong>{% if not category.active %}<small class="muted"> · {{ tr('inactive') }}</small>{% endif %}</div>
+      <details><summary>{{ tr('Rename / settings') }}</summary>
         <form method="post" action="{{ post_url }}" class="stack compact-form">
           <input type="hidden" name="action" value="update_ticket_category">
           <input type="hidden" name="category_id" value="{{ category.id }}">
-          <label><span>{{ t('Name') }}</span><input name="name" value="{{ category.name }}" required maxlength="80"></label>
-          <label class="check"><input type="checkbox" name="active" {% if category.active %}checked{% endif %}> Active</label>
-          <button class="button">Update</button>
+          <label><span>{{ tr('Name') }}</span><input name="name" value="{{ category.name }}" required maxlength="80"></label>
+          <label class="check"><input type="checkbox" name="active" {% if category.active %}checked{% endif %}> {{ tr('Active') }}</label>
+          <button class="button">{{ tr('Update') }}</button>
         </form>
       </details>
     </div>
-    <table><thead><tr><th>Subcategory</th><th>Suggests service offering</th><th></th></tr></thead>
+    <table><thead><tr><th>{{ tr('Subcategory') }}</th><th>{{ tr('Suggests service offering') }}</th><th></th></tr></thead>
       <tbody>
         {% for subcategory in category.subcategories %}
         <tr>
-          <td>{{ subcategory.name }}{% if not subcategory.active %} <small class="muted">(inactive)</small>{% endif %}</td>
+          <td>{{ subcategory.name }}{% if not subcategory.active %} <small class="muted">{{ tr('(inactive)') }}</small>{% endif %}</td>
           <td>{{ subcategory.default_service_offering.name if subcategory.default_service_offering else "—" }}</td>
           <td>
-            <details><summary>Rename / settings</summary>
+            <details><summary>{{ tr('Rename / settings') }}</summary>
               <form method="post" action="{{ post_url }}" class="stack compact-form">
                 <input type="hidden" name="action" value="update_ticket_subcategory">
                 <input type="hidden" name="subcategory_id" value="{{ subcategory.id }}">
-                <label><span>{{ t('Name') }}</span><input name="name" value="{{ subcategory.name }}" required maxlength="80"></label>
-                <label><span>Suggests service offering</span><select name="default_service_offering_id"><option value="">None</option>{% for service in services %}<option value="{{ service.id }}" {% if subcategory.default_service_offering_id == service.id %}selected{% endif %}>{{ service.name }}</option>{% endfor %}</select></label>
-                <label class="check"><input type="checkbox" name="active" {% if subcategory.active %}checked{% endif %}> Active</label>
-                <button class="button">Update</button>
+                <label><span>{{ tr('Name') }}</span><input name="name" value="{{ subcategory.name }}" required maxlength="80"></label>
+                <label><span>{{ tr('Suggests service offering') }}</span><select name="default_service_offering_id"><option value="">{{ tr('None') }}</option>{% for service in services %}<option value="{{ service.id }}" {% if subcategory.default_service_offering_id == service.id %}selected{% endif %}>{{ service.name }}</option>{% endfor %}</select></label>
+                <label class="check"><input type="checkbox" name="active" {% if subcategory.active %}checked{% endif %}> {{ tr('Active') }}</label>
+                <button class="button">{{ tr('Update') }}</button>
               </form>
             </details>
           </td>
         </tr>
-        {% else %}<tr><td colspan="3" class="muted">No subcategories yet.</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="3" class="muted">{{ tr('No subcategories yet.') }}</td></tr>{% endfor %}
       </tbody>
     </table>
     <form method="post" action="{{ post_url }}" class="inline-form">
       <input type="hidden" name="action" value="create_ticket_subcategory">
       <input type="hidden" name="category_id" value="{{ category.id }}">
-      <input name="name" maxlength="80" placeholder="New subcategory name" required>
-      <select name="default_service_offering_id"><option value="">Suggests no service offering</option>{% for service in services %}<option value="{{ service.id }}">{{ service.name }}</option>{% endfor %}</select>
-      <button class="button">Add subcategory</button>
+      <input name="name" maxlength="80" placeholder="{{ tr('New subcategory name') }}" required>
+      <select name="default_service_offering_id"><option value="">{{ tr('Suggests no service offering') }}</option>{% for service in services %}<option value="{{ service.id }}">{{ service.name }}</option>{% endfor %}</select>
+      <button class="button">{{ tr('Add subcategory') }}</button>
     </form>
   </article>
-  {% else %}<p>No ticket categories configured.</p>{% endfor %}
+  {% else %}<p>{{ tr('No ticket categories configured.') }}</p>{% endfor %}
 </section>
 {% endif %}
 
 {% if section == 'sla' %}
 <section class="panel admin-section">
-  <p>New work uses the selected timezone-aware calendar. Existing running SLA targets are preserved.</p>
-  <details><summary>Add business schedule</summary>
+  <p>{{ tr('New work uses the selected timezone-aware calendar. Existing running SLA targets are preserved.') }}</p>
+  <details><summary>{{ tr('Add business schedule') }}</summary>
     <form method="post" action="{{ post_url }}" class="form-grid">
       <input type="hidden" name="action" value="create_business_schedule">
-      <label>{{ t('Name') }}<input name="name" maxlength="160" required></label>
-      <label>IANA timezone<input name="timezone_name" value="Asia/Tokyo" placeholder="Australia/Sydney" required></label>
-      <label>Start time<input type="time" name="start_time" value="09:00" required></label>
-      <label>End time<input type="time" name="end_time" value="17:00" required></label>
-      <fieldset class="wide"><legend>Business days</legend>{% for value,label in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}<label class="check"><input type="checkbox" name="weekdays" value="{{ value }}" {% if value < 5 %}checked{% endif %}> {{ label }}</label>{% endfor %}</fieldset>
-      <div class="wide actions"><button class="primary">Create schedule</button></div>
+      <label>{{ tr('Name') }}<input name="name" maxlength="160" required></label>
+      <label>{{ tr('IANA timezone') }}<input name="timezone_name" value="Asia/Tokyo" placeholder="{{ tr('Australia/Sydney') }}" required></label>
+      <label>{{ tr('Start time') }}<input type="time" name="start_time" value="09:00" required></label>
+      <label>{{ tr('End time') }}<input type="time" name="end_time" value="17:00" required></label>
+      <fieldset class="wide"><legend>{{ tr('Business days') }}</legend>{% for value,label in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}<label class="check"><input type="checkbox" name="weekdays" value="{{ value }}" {% if value < 5 %}checked{% endif %}> {{ tr_value(label) }}</label>{% endfor %}</fieldset>
+      <div class="wide actions"><button class="primary">{{ tr('Create schedule') }}</button></div>
     </form>
   </details>
   {% for schedule in business_schedules %}
-  <article class="config-row"><div><strong>{{ schedule.name }}</strong><small>{{ schedule.timezone_name }} · {{ schedule.start_time_text }}–{{ schedule.end_time_text }} · days {{ schedule.weekdays|join(', ') }}</small></div>
-    <form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="add_schedule_holiday"><input type="hidden" name="schedule_id" value="{{ schedule.id }}"><input type="date" name="holiday_date" required><input name="name" placeholder="Holiday name" required><button class="button">Exclude date</button></form>
+  <article class="config-row"><div><strong>{{ schedule.name }}</strong><small>{{ tr('{timezone_name} · {start_time_text}–{end_time_text} · days {weekdays}', timezone_name=(schedule.timezone_name), start_time_text=(schedule.start_time_text), end_time_text=(schedule.end_time_text), weekdays=(schedule.weekdays|join(', '))) }}</small></div>
+    <form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="add_schedule_holiday"><input type="hidden" name="schedule_id" value="{{ schedule.id }}"><input type="date" name="holiday_date" required><input name="name" placeholder="{{ tr('Holiday name') }}" required><button class="button">{{ tr('Exclude date') }}</button></form>
   </article>
   {% endfor %}
-  <details><summary>Add SLA definition</summary>
+  <details><summary>{{ tr('Add SLA definition') }}</summary>
     <form method="post" action="{{ post_url }}" class="form-grid">
       <input type="hidden" name="action" value="create_sla_definition">
-      <label>{{ t('Name') }}<input name="name" maxlength="160" required></label>
-      <label>Agreement type<span class="info-tip" tabindex="0" data-tip="SLA: customer-facing commitment. OLA: internal agreement between two support teams. UC: underpinning contract with an external vendor.">i</span><select name="agreement_type">{% for value in ['SLA','OLA','UC'] %}<option>{{ value }}</option>{% endfor %}</select></label>
-      <label>Counterparty (OLA/UC only)<input name="counterparty" placeholder="Team name or vendor"></label>
-      <label>Target<select name="target_type" id="sla-target-type"><option value="ticket">Ticket</option><option value="ritm">Requested item</option><option value="client_ticket">Customer ticket (Client Management)</option></select></label>
-      <label>{{ t('Priority') }}<select name="priority"><option value="">All</option><optgroup label="Incidents/changes">{% for value in ['P1','P2','P3','P4'] %}<option>{{ value }}</option>{% endfor %}</optgroup><optgroup label="Customer tickets">{% for value in ['Low','Normal','High','Urgent'] %}<option>{{ value }}</option>{% endfor %}</optgroup></select></label>
-      <label id="sla-client-org-field" class="wide" hidden>Organization override<span class="info-tip" tabindex="0" data-tip="Only used for customer tickets. Leave unselected for the tenant-wide default; select an organization to override it for that organization's tickets specifically, for this same priority.">i</span><select name="client_organization_id"><option value="">Tenant-wide default</option>{% for org in client_organizations %}<option value="{{ org.id }}">{{ org.name }}</option>{% endfor %}</select></label>
-      <label>Duration (business minutes)<input type="number" name="duration_minutes" min="1" max="525600" required></label>
-      <label>Calendar<select name="schedule_id"><option value="">24x7 wall clock</option>{% for schedule in business_schedules %}<option value="{{ schedule.id }}">{{ schedule.name }}</option>{% endfor %}</select></label>
-      <label>Pause states<input name="pause_states" value="Pending,On Hold"><small class="muted">Comma-separated, must exactly match this target's own status values (e.g. customer tickets use "Pending,On-hold", not "On Hold").</small></label>
-      <div class="wide actions"><button class="primary">Create agreement</button></div>
+      <label>{{ tr('Name') }}<input name="name" maxlength="160" required></label>
+      <label>{{ tr('Agreement type') }}<span class="info-tip" tabindex="0" data-tip="SLA: customer-facing commitment. OLA: internal agreement between two support teams. UC: underpinning contract with an external vendor.">i</span><select name="agreement_type">{% for value in ['SLA','OLA','UC'] %}<option>{{ value }}</option>{% endfor %}</select></label>
+      <label>{{ tr('Counterparty (OLA/UC only)') }}<input name="counterparty" placeholder="{{ tr('Team name or vendor') }}"></label>
+      <label>{{ tr('Target') }}<select name="target_type" id="sla-target-type"><option value="ticket">{{ tr('Ticket') }}</option><option value="ritm">{{ tr('Requested item') }}</option><option value="client_ticket">{{ tr('Customer ticket (Client Management)') }}</option></select></label>
+      <label>{{ tr('Priority') }}<select name="priority"><option value="">{{ tr('All') }}</option><optgroup label="{{ tr('Incidents/changes') }}">{% for value in ['P1','P2','P3','P4'] %}<option>{{ value }}</option>{% endfor %}</optgroup><optgroup label="{{ tr('Customer tickets') }}">{% for value in ['Low','Normal','High','Urgent'] %}<option>{{ value }}</option>{% endfor %}</optgroup></select></label>
+      <label id="sla-client-org-field" class="wide" hidden>{{ tr('Organization override') }}<span class="info-tip" tabindex="0" data-tip="Only used for customer tickets. Leave unselected for the tenant-wide default; select an organization to override it for that organization's tickets specifically, for this same priority.">i</span><select name="client_organization_id"><option value="">{{ tr('Tenant-wide default') }}</option>{% for org in client_organizations %}<option value="{{ org.id }}">{{ org.name }}</option>{% endfor %}</select></label>
+      <label>{{ tr('Duration (business minutes)') }}<input type="number" name="duration_minutes" min="1" max="525600" required></label>
+      <label>{{ tr('Calendar') }}<select name="schedule_id"><option value="">{{ tr('24x7 wall clock') }}</option>{% for schedule in business_schedules %}<option value="{{ schedule.id }}">{{ schedule.name }}</option>{% endfor %}</select></label>
+      <label>{{ tr('Pause states') }}<input name="pause_states" value="Pending,On Hold"><small class="muted">{{ tr('Comma-separated, must exactly match this target\'s own status values (e.g. customer tickets use "Pending,On-hold", not "On Hold").') }}</small></label>
+      <div class="wide actions"><button class="primary">{{ tr('Create agreement') }}</button></div>
     </form>
   </details>
-  <table><thead><tr><th>{{ t('Name') }}</th><th>Type</th><th>Target</th><th>{{ t('Priority') }}</th><th>Duration</th><th>Calendar</th><th>Pause states</th></tr></thead>
-    <tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td><span class="badge">{{ sla.agreement_type }}</span>{% if sla.counterparty %} {{ sla.counterparty }}{% endif %}</td><td>{{ sla.target_type }}{% if sla.client_organization %} · {{ sla.client_organization.name }}{% endif %}</td><td>{{ sla.priority or "All" }}</td><td>{{ sla.duration_minutes }} minutes</td><td>{{ sla.schedule.name if sla.schedule else "24x7" }}</td><td>{{ sla.pause_states }}</td></tr>{% endfor %}</tbody>
+  <table><thead><tr><th>{{ tr('Name') }}</th><th>{{ tr('Type') }}</th><th>{{ tr('Target') }}</th><th>{{ tr('Priority') }}</th><th>{{ tr('Duration') }}</th><th>{{ tr('Calendar') }}</th><th>{{ tr('Pause states') }}</th></tr></thead>
+    <tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td><span class="badge">{{ sla.agreement_type }}</span>{% if sla.counterparty %} {{ sla.counterparty }}{% endif %}</td><td>{{ sla.target_type }}{% if sla.client_organization %} · {{ sla.client_organization.name }}{% endif %}</td><td>{{ sla.priority or tr('All') }}</td><td>{{ tr('{duration_minutes} minutes', duration_minutes=(sla.duration_minutes)) }}</td><td>{{ sla.schedule.name if sla.schedule else "24x7" }}</td><td>{{ sla.pause_states }}</td></tr>{% endfor %}</tbody>
   </table>
 </section>
 {% endif %}

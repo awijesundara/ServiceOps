@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Overdue work · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Overdue work · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">PLATFORM ANALYTICS</p><h1>Overdue work</h1><p>Enterprise records past their due date and still open.</p></div><a class="button" href="{{ url_for('analytics') }}">← Back to analytics</a></header>
+<header class="page-head"><div><p class="eyebrow">{{ tr('PLATFORM ANALYTICS') }}</p><h1>{{ tr('Overdue work') }}</h1><p>{{ tr('Enterprise records past their due date and still open.') }}</p></div><a class="button" href="{{ url_for('analytics') }}">← {{ tr('Back to analytics') }}</a></header>
 <section class="panel">
-{% if overdue_truncated %}<p class="muted">Showing the first {{ overdue_records|length }} overdue records.</p>{% endif %}
+{% if overdue_truncated %}<p class="muted">{{ tr('Showing the first {overdue_records} overdue records.', overdue_records=(overdue_records|length)) }}</p>{% endif %}
 {% if overdue_records %}
-<table><thead><tr><th>Number</th><th>Module</th><th>Summary</th><th>State</th><th>{{ t('Priority') }}</th><th>Due</th><th>Assignee</th></tr></thead>
-<tbody>{% for r in overdue_records %}<tr><td><a href="{{ url_for('enterprise_detail', record_id=r.id) }}">{{ r.number }}</a></td><td>{{ modules[r.domain].name }}</td><td>{{ r.title }}</td><td><span class="badge">{{ r.state }}</span></td><td><span class="priority {{ r.priority|lower }}">{{ r.priority }}</span></td><td>{{ (r.due_at|usertime('%b %d, %H:%M')) }}</td><td>{{ r.assignee.name if r.assignee else 'Unassigned' }}</td></tr>{% endfor %}</tbody></table>
-{% else %}<div class="empty"><h3>Nothing overdue</h3><p>Every open enterprise record is within its due date.</p></div>{% endif %}
+<table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Module') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Priority') }}</th><th>{{ tr('Due') }}</th><th>{{ tr('Assignee') }}</th></tr></thead>
+<tbody>{% for r in overdue_records %}<tr><td><a href="{{ url_for('enterprise_detail', record_id=r.id) }}">{{ r.number }}</a></td><td>{{ modules[r.domain].name }}</td><td>{{ r.title }}</td><td><span class="badge">{{ tr_value(r.state) }}</span></td><td><span class="priority {{ r.priority|lower }}">{{ tr_value(r.priority) }}</span></td><td>{{ (r.due_at|usertime('%b %d, %H:%M')) }}</td><td>{{ r.assignee.name if r.assignee else tr('Unassigned') }}</td></tr>{% endfor %}</tbody></table>
+{% else %}<div class="empty"><h3>{{ tr('Nothing overdue') }}</h3><p>{{ tr('Every open enterprise record is within its due date.') }}</p></div>{% endif %}
 </section>
 {% endblock %}

@@ -53,7 +53,7 @@ function initLookup(container) {
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "lookup-chip-remove";
-    remove.setAttribute("aria-label", `Remove ${item.label}`);
+    remove.setAttribute("aria-label", tr("Remove {label}", { label: item.label }));
     remove.textContent = "✕";
     remove.addEventListener("click", () => {
       chip.remove();
@@ -79,8 +79,8 @@ function initLookup(container) {
     const browseButton = document.createElement("button");
     browseButton.type = "button";
     browseButton.className = "lookup-browse";
-    browseButton.setAttribute("aria-label", "Browse configuration items");
-    browseButton.title = "Browse configuration items";
+    browseButton.setAttribute("aria-label", tr("Browse configuration items"));
+    browseButton.title = tr("Browse configuration items");
     browseButton.textContent = "⌕";
     browseButton.addEventListener("click", () => openCIBrowser(input, hidden, multiName ? {addChip, selectedValues} : null));
     container.appendChild(browseButton);
@@ -91,7 +91,7 @@ function initLookup(container) {
     owningTeamHint.hidden = true;
     container.insertAdjacentElement("afterend", owningTeamHint);
     const showOwningTeam = (owningTeam) => {
-      owningTeamHint.textContent = `Owning team: ${owningTeam || "Unassigned"}`;
+      owningTeamHint.textContent = tr("Owning team: {team}", { team: owningTeam || tr("Unassigned") });
       owningTeamHint.hidden = false;
     };
     hidden.addEventListener("lookup:change", (event) => {
@@ -128,7 +128,7 @@ function initLookup(container) {
       if (options.searched) {
         const empty = document.createElement("div");
         empty.className = "lookup-empty";
-        empty.textContent = "No matches found.";
+        empty.textContent = tr("No matches found.");
         results.appendChild(empty);
         results.hidden = false;
       } else {
@@ -196,12 +196,12 @@ function initLookup(container) {
         response = await fetch(`${url}?q=${encodeURIComponent(q)}`);
       } catch (error) {
         container.classList.remove("is-loading");
-        window.showToast?.("Search is unavailable right now. Please try again.", "error");
+        window.showToast?.(tr("Search is unavailable right now. Please try again."), "error");
         return;
       }
       container.classList.remove("is-loading");
       if (!response.ok) {
-        window.showToast?.("Search is unavailable right now. Please try again.", "error");
+        window.showToast?.(tr("Search is unavailable right now. Please try again."), "error");
         return;
       }
       lastQuery = q;
@@ -249,7 +249,7 @@ function updateCIBrowserAddButton() {
   if (!addButton) return;
   const picked = modal.querySelectorAll(".ci-browser-pick:checked").length;
   addButton.disabled = picked === 0;
-  addButton.textContent = picked ? `Add ${picked} selected` : "Add selected";
+  addButton.textContent = picked ? tr("Add {count} selected", { count: picked }) : tr("Add selected");
 }
 
 function openCIBrowser(input, hidden, multi) {
@@ -258,13 +258,13 @@ function openCIBrowser(input, hidden, multi) {
   ciBrowserTarget = {input, hidden, multi};
   modal.classList.toggle("ci-browser-multi", Boolean(multi));
   modal.querySelector("#ci-browser-title").textContent = multi
-    ? "Tick every configuration item to add" : "Select a configuration item";
+    ? tr("Tick every configuration item to add") : tr("Select a configuration item");
   const headRow = modal.querySelector(".ci-browser-table thead tr");
   let pickHead = headRow.querySelector(".ci-browser-pick-head");
   if (multi && !pickHead) {
     pickHead = document.createElement("th");
     pickHead.className = "ci-browser-pick-head";
-    pickHead.setAttribute("aria-label", "Add");
+    pickHead.setAttribute("aria-label", tr("Add"));
     headRow.prepend(pickHead);
   } else if (!multi && pickHead) {
     pickHead.remove();
@@ -280,7 +280,7 @@ function openCIBrowser(input, hidden, multi) {
     const addButton = document.createElement("button");
     addButton.type = "button";
     addButton.className = "primary ci-browser-add-selected";
-    addButton.textContent = "Add selected";
+    addButton.textContent = tr("Add selected");
     addButton.disabled = true;
     addButton.addEventListener("click", () => {
       modal.querySelectorAll(".ci-browser-pick:checked").forEach((box) => {
@@ -312,7 +312,7 @@ function renderCIBrowserResults(payload) {
     const cell = document.createElement("td");
     cell.colSpan = multi ? 6 : 5;
     cell.className = "empty";
-    cell.textContent = "No matching configuration items.";
+    cell.textContent = tr("No matching configuration items.");
     row.appendChild(cell);
     tbody.appendChild(row);
     return;
@@ -329,11 +329,11 @@ function renderCIBrowserResults(payload) {
       checkbox.dataset.id = ci.id;
       checkbox.dataset.name = ci.name;
       checkbox.dataset.owningTeam = ci.owning_team || "";
-      checkbox.setAttribute("aria-label", `Add ${ci.name}`);
+      checkbox.setAttribute("aria-label", tr("Add {name}", { name: ci.name }));
       if (multi.selectedValues().includes(String(ci.id))) {
         checkbox.checked = true;
         checkbox.disabled = true;
-        checkbox.title = "Already added";
+        checkbox.title = tr("Already added");
       }
       checkbox.addEventListener("change", updateCIBrowserAddButton);
       pickCell.appendChild(checkbox);
@@ -404,11 +404,11 @@ async function runCIBrowserSearch() {
   try {
     response = await fetch(`/internal/lookup/cis/browse?${params.toString()}`);
   } catch (error) {
-    window.showToast?.("Configuration item search is unavailable right now.", "error");
+    window.showToast?.(tr("Configuration item search is unavailable right now."), "error");
     return;
   }
   if (!response.ok) {
-    window.showToast?.("Configuration item search is unavailable right now.", "error");
+    window.showToast?.(tr("Configuration item search is unavailable right now."), "error");
     return;
   }
   const payload = await response.json();

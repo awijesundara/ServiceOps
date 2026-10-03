@@ -1,78 +1,78 @@
-{% extends "base.html" %}{% block title %}Administration · {{ instance_name }}{% endblock %}
+{% extends "base.html" %}{% block title %}{{ tr('Administration · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 {% from '_admin_icons.html' import admin_icon %}
 {% set sections = [
-  ('people-access','People & access','Users, teams, roles, sessions, and accountable ownership','people',[
-    ('Users','Create, edit, deactivate, and erase accounts; assign roles and reporting lines','users',None,'U','user account manager'),
-    ('Roles & permissions','Role-to-action policy and per-CI-class permissions','admin_roles',None,'⛊','authorization grant revoke'),
-    ('Active sessions','Review and revoke browser sessions across the organization','admin_sessions',None,'◉','session logout device'),
-    ('Team name aliases','Safely merge historical or imported team-name spellings','itil_admin_section','team-aliases','▤','alias duplicate merge'),
-    ('Groups & team ownership','Manage support groups, team managers, and workspace access','itil_admin_section','team-managers','▤','support group owner manager'),
-    ('Executive approval','Choose executive approvers for Normal and Emergency changes','itil_admin_section','executive-approval','♙','ceo executive approval'),
-    ('Governance groups','Review accountable groups, managers, and membership','itil_admin_section','governance-groups','▤','governance membership'),
+  ('people-access',tr('People & access'),tr('Users, teams, roles, sessions, and accountable ownership'),'people',[
+    (tr('Users'),tr('Create, edit, deactivate, and erase accounts; assign roles and reporting lines'),'users',None,'U','user account manager'),
+    (tr('Roles & permissions'),tr('Role-to-action policy and per-CI-class permissions'),'admin_roles',None,'⛊','authorization grant revoke'),
+    (tr('Active sessions'),tr('Review and revoke browser sessions across the organization'),'admin_sessions',None,'◉','session logout device'),
+    (tr('Team name aliases'),tr('Safely merge historical or imported team-name spellings'),'itil_admin_section','team-aliases','▤','alias duplicate merge'),
+    (tr('Groups & team ownership'),tr('Manage support groups, team managers, and workspace access'),'itil_admin_section','team-managers','▤','support group owner manager'),
+    (tr('Executive approval'),tr('Choose executive approvers for Normal and Emergency changes'),'itil_admin_section','executive-approval','♙','ceo executive approval'),
+    (tr('Governance groups'),tr('Review accountable groups, managers, and membership'),'itil_admin_section','governance-groups','▤','governance membership'),
   ]),
-  ('service-configuration','Service configuration','How tickets, requests, changes, services, and commitments are governed','service',[
-    ('Ticket defaults','Initial priority and parent/child incident-state behavior','itil_admin_section','ticket-defaults','↔','priority incident sync'),
-    ('Catalog & fulfillment routing','Catalog items and the teams that fulfill them','itil_admin_section','catalog','▦','catalog routing request'),
-    ('Change approval policy','CMDB environments that require Change Control Board approval','itil_admin_section','change-approval-policy','✓','change ccb environment'),
-    ('Change Control Board approvers','Users authorized to vote on non-standard changes','itil_admin_section','ccb','♙','ccb approver voter'),
-    ('Change freeze windows','Blackout periods for Standard and Normal changes','itil_admin_section','change-freeze','▣','freeze blackout'),
-    ('Service offerings','Map business services to supporting configuration items','itil_admin_section','service-offerings','◇','service offering ci'),
-    ('Ticket categories','The category/subcategory taxonomy offered on the ticket form','itil_admin_section','ticket-categories','▤','category subcategory itil taxonomy'),
-    ('SLA definitions & calendars','Schedules and target durations by priority','itil_admin_section','sla','◷','sla calendar commitment'),
+  ('service-configuration',tr('Service configuration'),tr('How tickets, requests, changes, services, and commitments are governed'),'service',[
+    (tr('Ticket defaults'),tr('Initial priority and parent/child incident-state behavior'),'itil_admin_section','ticket-defaults','↔','priority incident sync'),
+    (tr('Catalog & fulfillment routing'),tr('Catalog items and the teams that fulfill them'),'itil_admin_section','catalog','▦','catalog routing request'),
+    (tr('Change approval policy'),tr('CMDB environments that require Change Control Board approval'),'itil_admin_section','change-approval-policy','✓','change ccb environment'),
+    (tr('Change Control Board approvers'),tr('Users authorized to vote on non-standard changes'),'itil_admin_section','ccb','♙','ccb approver voter'),
+    (tr('Change freeze windows'),tr('Blackout periods for Standard and Normal changes'),'itil_admin_section','change-freeze','▣','freeze blackout'),
+    (tr('Service offerings'),tr('Map business services to supporting configuration items'),'itil_admin_section','service-offerings','◇','service offering ci'),
+    (tr('Ticket categories'),tr('The category/subcategory taxonomy offered on the ticket form'),'itil_admin_section','ticket-categories','▤','category subcategory itil taxonomy'),
+    (tr('SLA definitions & calendars'),tr('Schedules and target durations by priority'),'itil_admin_section','sla','◷','sla calendar commitment'),
   ]),
-  ('connections-channels','Connections & channels','Outbound notifications, imports, monitoring, and external systems','connections',[
-    ('Notification channels','Telegram, Google Chat, Slack, Teams, Discord, and webhooks','integrations_admin','channels','♧','telegram webhook chat teams slack'),
-    ('Delivery log','Delivered, failed, retrying, and skipped outbound messages','integrations_admin','deliveries','≣','outbox retry failed'),
-    ('Monitoring sources','External monitoring sources that create operations events','integrations_admin','monitoring','⌁','monitoring alert ingestion'),
-    ('Request Tracker (RT)','Connection settings and controlled ticket import','rt_import',None,'⇣','request tracker import'),
-    ('Email delivery','Google Workspace, Gmail OAuth, app passwords, and SMTP','system_settings_category','email_delivery','✉','smtp gmail email'),
-    ('Outbound proxy & updates','System egress proxy for AI models and every internet-bound integration, with per-connection overrides','system_settings_category','outbound_network','⇄','proxy egress airgap ai integration update github'),
-    ('Google Chat bot','Interactive app credentials for reading /ack and /escalate replies via Pub/Sub','system_settings_category','google_chat_app','♧','google chat bot pubsub slash command'),
-    ('NetBox connection','Connection used for controlled CMDB synchronization','system_settings_category','netbox_connection','⇄','netbox cmdb sync'),
-    ('Snipe-IT connection','Asset inventory pulled from Snipe-IT into the CMDB','system_settings_category','snipeit_connection','⇄','snipe-it snipeit asset inventory cmdb sync'),
+  ('connections-channels',tr('Connections & channels'),tr('Outbound notifications, imports, monitoring, and external systems'),'connections',[
+    (tr('Notification channels'),tr('Telegram, Google Chat, Slack, Teams, Discord, and webhooks'),'integrations_admin','channels','♧','telegram webhook chat teams slack'),
+    (tr('Delivery log'),tr('Delivered, failed, retrying, and skipped outbound messages'),'integrations_admin','deliveries','≣','outbox retry failed'),
+    (tr('Monitoring sources'),tr('External monitoring sources that create operations events'),'integrations_admin','monitoring','⌁','monitoring alert ingestion'),
+    (tr('Request Tracker (RT)'),tr('Connection settings and controlled ticket import'),'rt_import',None,'⇣','request tracker import'),
+    (tr('Email delivery'),tr('Google Workspace, Gmail OAuth, app passwords, and SMTP'),'system_settings_category','email_delivery','✉','smtp gmail email'),
+    (tr('Outbound proxy & updates'),tr('System egress proxy for AI models and every internet-bound integration, with per-connection overrides'),'system_settings_category','outbound_network','⇄','proxy egress airgap ai integration update github'),
+    (tr('Google Chat bot'),tr('Interactive app credentials for reading /ack and /escalate replies via Pub/Sub'),'system_settings_category','google_chat_app','♧','google chat bot pubsub slash command'),
+    (tr('NetBox connection'),tr('Connection used for controlled CMDB synchronization'),'system_settings_category','netbox_connection','⇄','netbox cmdb sync'),
+    (tr('Snipe-IT connection'),tr('Asset inventory pulled from Snipe-IT into the CMDB'),'system_settings_category','snipeit_connection','⇄','snipe-it snipeit asset inventory cmdb sync'),
   ]),
-  ('automation-content','Automation & content','Rules and guided content that run consistently without manual repetition','automation',[
-    ('Automation rules','React to ticket changes, SLA breaches, and system events','workflows_admin',None,'▶','workflow trigger rule'),
-    ('Scheduled automation','Recurring automation for selected tickets','workflows_scheduled',None,'◷','scheduled recurring interval'),
-    ('Notification templates','Subject and body content for notification types','notification_templates_admin',None,'✉','notification wording subject'),
-    ('Guided tours','Contextual onboarding for matching users and pages','guided_tours_admin',None,'◎','tour onboarding help'),
+  ('automation-content',tr('Automation & content'),tr('Rules and guided content that run consistently without manual repetition'),'automation',[
+    (tr('Automation rules'),tr('React to ticket changes, SLA breaches, and system events'),'workflows_admin',None,'▶','workflow trigger rule'),
+    (tr('Scheduled automation'),tr('Recurring automation for selected tickets'),'workflows_scheduled',None,'◷','scheduled recurring interval'),
+    (tr('Notification templates'),tr('Subject and body content for notification types'),'notification_templates_admin',None,'✉','notification wording subject'),
+    (tr('Guided tours'),tr('Contextual onboarding for matching users and pages'),'guided_tours_admin',None,'◎','tour onboarding help'),
   ]),
-  ('platform-security','Platform & security','Identity, appearance, protection, governance, APIs, audit, and runtime health','security',[
-    ('AI assistance','Enable or disable AI, configure providers and usage limits','ai.settings',None,'◇','ai assistant model local external'),
-    ('Organization','Company identity, support contact, and instance naming','system_settings_category','organization','◎','company organization'),
-    ('Appearance','Brand colors and default interface density','system_settings_category','appearance','◐','theme brand density'),
-    ('Sign-in & directory','Local login, AD/LDAP, Keycloak, group mapping, and scoped sync','system_settings_category','sign_in_and_directory','♙','ldap active directory sso'),
-    ('Security & limits','Passwords, MFA, sessions, rate limits, uploads, and malware scanning','system_settings_category','security','⛊','security password mfa'),
-    ('Workspace defaults','Dashboard content and SLA warning thresholds','system_settings_category','workspace_defaults','▦','workspace dashboard'),
-    ('My Workspace widgets','Widgets users may add to their personal workspace','system_settings_category','my_workspace_widgets','▥','widget personal'),
-    ('Runtime environment','Effective deployment and persistence diagnostics','system_settings_category','infrastructure','◫','runtime deployment'),
-    ('Data governance','Retention, legal holds, GDPR export, and erasure review','data_governance_admin',None,'▤','retention privacy gdpr'),
-    ('API access','Create and revoke credentials with limited scopes','api_clients_admin',None,'⚿','api token client'),
-    ('Audit & evidence','Verify, export, and retain administrative and operational evidence','audit_log',None,'≣','audit evidence export'),
-    ('System health','Application, database, worker, user, and error status','system_health',None,'♥','health worker database'),
+  ('platform-security',tr('Platform & security'),tr('Identity, appearance, protection, governance, APIs, audit, and runtime health'),'security',[
+    (tr('AI assistance'),tr('Enable or disable AI, configure providers and usage limits'),'ai.settings',None,'◇','ai assistant model local external'),
+    (tr('Organization'),tr('Company identity, support contact, and instance naming'),'system_settings_category','organization','◎','company organization'),
+    (tr('Appearance'),tr('Brand colors and default interface density'),'system_settings_category','appearance','◐','theme brand density'),
+    (tr('Sign-in & directory'),tr('Local login, AD/LDAP, Keycloak, group mapping, and scoped sync'),'system_settings_category','sign_in_and_directory','♙','ldap active directory sso'),
+    (tr('Security & limits'),tr('Passwords, MFA, sessions, rate limits, uploads, and malware scanning'),'system_settings_category','security','⛊','security password mfa'),
+    (tr('Workspace defaults'),tr('Dashboard content and SLA warning thresholds'),'system_settings_category','workspace_defaults','▦','workspace dashboard'),
+    (tr('My Workspace widgets'),tr('Widgets users may add to their personal workspace'),'system_settings_category','my_workspace_widgets','▥','widget personal'),
+    (tr('Runtime environment'),tr('Effective deployment and persistence diagnostics'),'system_settings_category','infrastructure','◫','runtime deployment'),
+    (tr('Data governance'),tr('Retention, legal holds, GDPR export, and erasure review'),'data_governance_admin',None,'▤','retention privacy gdpr'),
+    (tr('API access'),tr('Create and revoke credentials with limited scopes'),'api_clients_admin',None,'⚿','api token client'),
+    (tr('Audit & evidence'),tr('Verify, export, and retain administrative and operational evidence'),'audit_log',None,'≣','audit evidence export'),
+    (tr('System health'),tr('Application, database, worker, user, and error status'),'system_health',None,'♥','health worker database'),
   ]),
 ] %}
 {% set active = namespace(title='Administration', description='Every administrative capability, organized by responsibility.', icon='settings', cards=[]) %}
 {% for key,title,description,icon,cards in sections %}{% if active_section == key %}{% set active.title=title %}{% set active.description=description %}{% set active.icon=icon %}{% set active.cards=cards %}{% endif %}{% endfor %}
-{% set admin_page_title = active.title %}{% if active_section %}{% set admin_parent_title='Administration' %}{% set admin_parent_url=url_for('admin_home') %}{% include '_admin_context.html' %}{% else %}<nav class="admin-context" aria-label="Administration breadcrumb"><strong>{{ t('Administration') }}</strong></nav>{% endif %}
+{% set admin_page_title = active.title %}{% if active_section %}{% set admin_parent_title=tr('Administration') %}{% set admin_parent_url=url_for('admin_home') %}{% include '_admin_context.html' %}{% else %}<nav class="admin-context" aria-label="{{ tr('Administration breadcrumb') }}"><strong>{{ tr('Administration') }}</strong></nav>{% endif %}
 <div class="settings-console admin-console admin-console-single">
 <section class="settings-console-main">
-  <header class="settings-page-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>{{ active.title }}</h1><p>{{ active.description }}</p></div><span class="settings-page-symbol">{{ admin_icon(active.icon) }}</span></header>
+  <header class="settings-page-head"><div><p class="eyebrow">{{ tr('ADMINISTRATION') }}</p><h1>{{ active.title }}</h1><p>{{ active.description }}</p></div><span class="settings-page-symbol">{{ admin_icon(active.icon) }}</span></header>
   {% if not active_section %}
   {% if update_info %}
-  <section class="settings-scope-banner"><span aria-hidden="true">⇪</span><div><strong>ServiceOps {{ update_info.version }} is available</strong><p>This instance is running {{ app_version }}. <a href="{{ update_info.url }}" target="_blank" rel="noopener">View the release on GitHub</a>.</p></div></section>
+  <section class="settings-scope-banner"><span aria-hidden="true">⇪</span><div><strong>{{ tr('ServiceOps {version} is available', version=(update_info.version)) }}</strong><p>{{ tr('This instance is running {app_version}.', app_version=(app_version)) }} <a href="{{ update_info.url }}" target="_blank" rel="noopener">{{ tr('View the release on GitHub') }}</a>.</p></div></section>
   {% endif %}
-  <section class="settings-section-list" aria-label="Administration categories">
-    <header><div><h2>Administration areas</h2><p>All controls are grouped by responsibility, with no mixed configuration pages.</p></div></header>
+  <section class="settings-section-list" aria-label="{{ tr('Administration categories') }}">
+    <header><div><h2>{{ tr('Administration areas') }}</h2><p>{{ tr('All controls are grouped by responsibility, with no mixed configuration pages.') }}</p></div></header>
     {% for key,title,description,icon,cards in sections %}
-    <a class="settings-category-row" href="{{ url_for('admin_section', section=key) }}"><span class="settings-category-icon">{{ admin_icon(icon) }}</span><span><strong>{{ title }}</strong><small>{{ description }}</small></span><span class="settings-category-count">{{ cards|length }} tools</span><span class="settings-row-chevron" aria-hidden="true"></span></a>
+    <a class="settings-category-row" href="{{ url_for('admin_section', section=key) }}"><span class="settings-category-icon">{{ admin_icon(icon) }}</span><span><strong>{{ tr_value(title) }}</strong><small>{{ tr_value(description) }}</small></span><span class="settings-category-count">{{ trn(cards|length, '{count} tool', '{count} tools') }}</span><span class="settings-row-chevron" aria-hidden="true"></span></a>
     {% endfor %}
   </section>
   {% else %}
-  <nav class="settings-breadcrumb" aria-label="Administration hierarchy"><a href="{{ url_for('admin_home') }}">{{ t('General') }}</a><span aria-hidden="true">›</span><strong>{{ active.title }}</strong></nav>
-  <label class="admin-quick-find"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search {{ active.title|lower }}" aria-label="Find an administration tool" data-admin-quick-find></label>
-  <p class="muted admin-quick-find-empty" data-admin-quick-find-empty hidden>No matching administration tool.</p>
+  <nav class="settings-breadcrumb" aria-label="{{ tr('Administration hierarchy') }}"><a href="{{ url_for('admin_home') }}">{{ tr('General') }}</a><span aria-hidden="true">›</span><strong>{{ active.title }}</strong></nav>
+  <label class="admin-quick-find"><span aria-hidden="true">⌕</span><input type="search" placeholder="{{ tr('Search {title}', title=(active.title|lower)) }}" aria-label="{{ tr('Find an administration tool') }}" data-admin-quick-find></label>
+  <p class="muted admin-quick-find-empty" data-admin-quick-find-empty hidden>{{ tr('No matching administration tool.') }}</p>
   <section class="admin-home-section" data-admin-home-section>
     <div class="settings-level-grid admin-tool-grid">
       {% for title,description,endpoint,target,icon,keywords in active.cards %}
@@ -80,10 +80,10 @@
       {% elif endpoint == 'system_settings_category' %}{% set destination=url_for(endpoint,category=target) %}
       {% elif endpoint == 'integrations_admin' %}{% set destination=url_for(endpoint,view=target) %}
       {% else %}{% set destination=url_for(endpoint) %}{% endif %}
-      <a class="settings-level-card" data-admin-quick-find-card data-keywords="{{ keywords }}" href="{{ destination }}"><span class="settings-card-icon">{{ admin_icon(icon) }}</span><span><strong>{{ title }}</strong><small>{{ description }}</small></span><span class="settings-row-chevron" aria-hidden="true"></span></a>
+      <a class="settings-level-card" data-admin-quick-find-card data-keywords="{{ keywords }}" href="{{ destination }}"><span class="settings-card-icon">{{ admin_icon(icon) }}</span><span><strong>{{ tr_value(title) }}</strong><small>{{ tr_value(description) }}</small></span><span class="settings-row-chevron" aria-hidden="true"></span></a>
       {% endfor %}
       {% if active_section == 'platform-security' and current_user.effective_role == 'superadmin' %}
-      <a class="settings-level-card" data-admin-quick-find-card data-keywords="tenant platform cross-tenant" href="{{ url_for('platform_tenants') }}"><span class="settings-card-icon">{{ admin_icon('database') }}</span><span><strong>Tenants</strong><small>Create, activate, and deactivate tenants across the platform.</small></span><span class="settings-row-chevron" aria-hidden="true"></span></a>
+      <a class="settings-level-card" data-admin-quick-find-card data-keywords="tenant platform cross-tenant" href="{{ url_for('platform_tenants') }}"><span class="settings-card-icon">{{ admin_icon('database') }}</span><span><strong>{{ tr('Tenants') }}</strong><small>{{ tr('Create, activate, and deactivate tenants across the platform.') }}</small></span><span class="settings-row-chevron" aria-hidden="true"></span></a>
       {% endif %}
     </div>
   </section>

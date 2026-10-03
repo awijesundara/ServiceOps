@@ -53,7 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
       card.innerHTML = "";
       const eyebrow = document.createElement("p");
       eyebrow.className = "guided-tour-eyebrow";
-      eyebrow.textContent = `${tour.title} · ${index + 1} of ${tour.steps.length}`;
+      eyebrow.textContent = tr("{title} · {index} of {count}", { title: tour.title, index: index + 1, count: tour.steps.length });
       const title = document.createElement("h3");
       title.textContent = step.title;
       const body = document.createElement("p");
@@ -64,7 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const skip = document.createElement("button");
       skip.type = "button";
       skip.className = "button";
-      skip.textContent = "Skip";
+      skip.textContent = tr("Skip");
       skip.addEventListener("click", () => finish("dismissed"));
       actions.appendChild(skip);
 
@@ -72,7 +72,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const prev = document.createElement("button");
         prev.type = "button";
         prev.className = "button";
-        prev.textContent = "Back";
+        prev.textContent = tr("Back");
         prev.addEventListener("click", () => {
           index -= 1;
           render();
@@ -83,7 +83,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const next = document.createElement("button");
       next.type = "button";
       next.className = "primary button";
-      next.textContent = index === tour.steps.length - 1 ? "Finish" : "Next";
+      next.textContent = index === tour.steps.length - 1 ? tr("Finish") : tr("Next");
       next.addEventListener("click", () => {
         if (index === tour.steps.length - 1) {
           finish("completed");

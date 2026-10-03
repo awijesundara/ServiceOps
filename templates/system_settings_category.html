@@ -1,33 +1,33 @@
 {% extends "base.html" %}
-{% block title %}{{ title }} · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr_value(title) }} · {{ instance_name }}{% endblock %}
 {% block content %}
-{% set parent_title = 'Connections & channels' if admin_section_key == 'connections-channels' else 'Platform & security' %}
+{% set parent_title = tr('Connections & channels') if admin_section_key == 'connections-channels' else tr('Platform & security') %}
 {% set admin_page_title = title %}{% set admin_parent_title = parent_title %}{% set admin_parent_url = url_for('admin_section', section=admin_section_key) %}{% include '_admin_context.html' %}
 <div class="settings-console admin-console admin-console-single">
 <section class="settings-console-main">
-<header class="settings-page-head"><div><p class="eyebrow">{{ parent_title|upper }}</p><h1>{{ title }}</h1><p>{{ description }}</p></div><span class="settings-page-symbol" aria-hidden="true">⚙</span></header>
+<header class="settings-page-head"><div><p class="eyebrow">{{ parent_title|upper }}</p><h1>{{ tr_value(title) }}</h1><p>{{ tr_value(description) }}</p></div><span class="settings-page-symbol" aria-hidden="true">⚙</span></header>
 {% if category == 'infrastructure' %}
 <section class="panel settings-section">
-  <table><thead><tr><th>Runtime component</th><th>Current effective value</th><th>Where to change it</th></tr></thead><tbody>{% for name,value,source in infrastructure %}<tr><td><strong>{{ name }}</strong></td><td><code>{{ value }}</code></td><td><span class="apply-badge external">{{ source }}</span></td></tr>{% else %}<tr><td colspan="3">Runtime details are unavailable. Check the application deployment configuration.</td></tr>{% endfor %}</tbody></table>
+  <table><thead><tr><th>{{ tr('Runtime component') }}</th><th>{{ tr('Current effective value') }}</th><th>{{ tr('Where to change it') }}</th></tr></thead><tbody>{% for name,value,source in infrastructure %}<tr><td><strong>{{ name }}</strong></td><td><code>{{ value }}</code></td><td><span class="apply-badge external">{{ source }}</span></td></tr>{% else %}<tr><td colspan="3">{{ tr('Runtime details are unavailable. Check the application deployment configuration.') }}</td></tr>{% endfor %}</tbody></table>
 </section>
 {% else %}
 <form method="post" enctype="multipart/form-data" class="settings-content">
   <section class="panel settings-section">
     {% if has_company_logo_field %}
-    <div class="panel-head"><div></div>{% if has_company_logo %}<img class="settings-logo-preview" src="{{ url_for('company_logo') }}" alt="Current company logo">{% endif %}</div>
-    <label>Upload replacement PNG<input type="file" name="company_logo" accept="image/png"></label>
+    <div class="panel-head"><div></div>{% if has_company_logo %}<img class="settings-logo-preview" src="{{ url_for('company_logo') }}" alt="{{ tr('Current company logo') }}">{% endif %}</div>
+    <label>{{ tr('Upload replacement PNG') }}<input type="file" name="company_logo" accept="image/png"></label>
     {% else %}
     <div class="settings-grid">
     {% for setting in definitions %}
       <label class="setting-field {% if setting.type in ['json','text'] and setting.key|length > 20 %}wide{% endif %}">
-        <span>{{ setting.label }} <small class="apply-badge {{ 'live' if setting.live else 'restart' }}">{{ 'Live' if setting.live else 'Restart required' }}</small></span>
+        <span>{{ tr_value(setting.label) }} <small class="apply-badge {{ 'live' if setting.live else 'restart' }}">{{ tr('Live') if setting.live else tr('Restart required') }}</small></span>
         {% if setting.type == 'bool' %}
-          <span class="switch-row"><input type="checkbox" name="{{ setting.key }}" {% if values[setting.key]|lower in ['true','1','yes','on'] %}checked{% endif %}> Enabled</span>
+          <span class="switch-row"><input type="checkbox" name="{{ setting.key }}" {% if values[setting.key]|lower in ['true','1','yes','on'] %}checked{% endif %}> {{ tr('Enabled') }}</span>
         {% elif setting.type == 'choice' %}
-          <select name="{{ setting.key }}">{% for choice in setting.choices %}<option value="{{ choice }}" {% if values[setting.key] == choice %}selected{% endif %}>{{ setting.choice_labels[choice] if setting.choice_labels else choice|title }}</option>{% endfor %}</select>
+          <select name="{{ setting.key }}">{% for choice in setting.choices %}<option value="{{ choice }}" {% if values[setting.key] == choice %}selected{% endif %}>{{ tr_value(setting.choice_labels[choice]) if setting.choice_labels else tr_value(choice|title) }}</option>{% endfor %}</select>
         {% elif setting.type == 'secret' %}
-          <input type="password" name="{{ setting.key }}" value="" placeholder="{{ 'Configured — leave blank to retain' if setting.configured else 'Not configured' }}" autocomplete="new-password">
-          {% if setting.key.endswith('_PROXY_URL') and setting.configured %}<span class="switch-row"><input type="checkbox" name="{{ setting.key }}_CLEAR"> {{ 'Remove the system default proxy' if setting.key == 'OUTBOUND_PROXY_URL' else 'Remove this custom proxy' }}</span>{% endif %}
+          <input type="password" name="{{ setting.key }}" value="" placeholder="{{ tr('Configured — leave blank to retain') if setting.configured else tr('Not configured') }}" autocomplete="new-password">
+          {% if setting.key.endswith('_PROXY_URL') and setting.configured %}<span class="switch-row"><input type="checkbox" name="{{ setting.key }}_CLEAR"> {{ tr('Remove the system default proxy') if setting.key == 'OUTBOUND_PROXY_URL' else tr('Remove this custom proxy') }}</span>{% endif %}
         {% elif setting.type == 'color' %}
           <span class="color-field"><input type="color" name="{{ setting.key }}" value="{{ values[setting.key] }}"><code>{{ values[setting.key] }}</code></span>
         {% else %}
@@ -38,60 +38,60 @@
     </div>
     {% endif %}
   </section>
-  <div class="settings-save"><div><strong>Audited change</strong><small>Review authentication carefully before saving.</small></div><button class="primary">Validate and save settings</button></div>
+  <div class="settings-save"><div><strong>{{ tr('Audited change') }}</strong><small>{{ tr('Review authentication carefully before saving.') }}</small></div><button class="primary">{{ tr('Validate and save settings') }}</button></div>
 </form>
 {% endif %}
 
 {% if category == 'netbox_connection' %}
 <section class="panel admin-section">
-  <div class="panel-head"><div><h2>Test and import</h2><p>Save first, then test the saved connection. The test shows what NetBox holds and what the token may read, without writing anything.</p></div>
-  <form method="post" action="{{ url_for('cmdb_import_netbox_test') }}#netbox-test"><button class="button">Test connection</button></form></div>
+  <div class="panel-head"><div><h2>{{ tr('Test and import') }}</h2><p>{{ tr('Save first, then test the saved connection. The test shows what NetBox holds and what the token may read, without writing anything.') }}</p></div>
+  <form method="post" action="{{ url_for('cmdb_import_netbox_test') }}#netbox-test"><button class="button">{{ tr('Test connection') }}</button></form></div>
 </section>
 {% endif %}
 
 {% if category == 'snipeit_connection' %}
 <section class="panel admin-section">
-  <div class="panel-head"><div><h2>Test and import</h2><p>Save first, then test the saved connection. The test shows what Snipe-IT holds and what the token may read, without writing anything.</p></div>
-  <form method="post" action="{{ url_for('cmdb_import_snipeit_test') }}#snipeit-test"><button class="button">Test connection</button></form></div>
+  <div class="panel-head"><div><h2>{{ tr('Test and import') }}</h2><p>{{ tr('Save first, then test the saved connection. The test shows what Snipe-IT holds and what the token may read, without writing anything.') }}</p></div>
+  <form method="post" action="{{ url_for('cmdb_import_snipeit_test') }}#snipeit-test"><button class="button">{{ tr('Test connection') }}</button></form></div>
 </section>
 {% endif %}
 
 {% if category == 'sign_in_and_directory' %}
 {% set post_url = url_for('itil_admin') %}
 <section class="panel admin-section">
-  <div class="panel-head"><div><h2>AD group → ServiceOps team</h2><p>Enter a short AD group such as <code>gg_unix</code> or its complete distinguished name. Membership synchronizes whenever the user signs in through AD/LDAP.</p></div></div>
+  <div class="panel-head"><div><h2>{{ tr('AD group → ServiceOps team') }}</h2><p>{{ tr('Enter a short AD group such as') }} <code>gg_unix</code> {{ tr('or its complete distinguished name. Membership synchronizes whenever the user signs in through AD/LDAP.') }}</p></div></div>
   <form method="post" action="{{ post_url }}" class="form-grid">
     <input type="hidden" name="action" value="add_directory_mapping">
-    <label>AD group name or DN
-      <input name="directory_group" placeholder="gg_unix" maxlength="500" required>
+    <label>{{ tr('AD group name or DN') }}
+      <input name="directory_group" placeholder="{{ tr('gg_unix') }}" maxlength="500" required>
     </label>
-    <label>ServiceOps team
+    <label>{{ tr('ServiceOps team') }}
       <select name="group_id" required>
         {% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}
       </select>
     </label>
-    <div class="wide actions"><button class="primary">Save mapping</button></div>
+    <div class="wide actions"><button class="primary">{{ tr('Save mapping') }}</button></div>
   </form>
   <table>
-    <thead><tr><th>AD group</th><th>Assigned team</th><th>{{ t('Status') }}</th><th>Action</th></tr></thead>
+    <thead><tr><th>{{ tr('AD group') }}</th><th>{{ tr('Assigned team') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Action') }}</th></tr></thead>
     <tbody>
       {% for mapping in directory_mappings %}
       <tr>
         <td><code>{{ mapping.directory_group }}</code></td>
         <td>{{ mapping.support_group.name }}</td>
-        <td>{{ "Active" if mapping.active else "Disabled" }}</td>
+        <td>{{ tr('Active') if mapping.active else tr('Disabled') }}</td>
         <td>
           {% if mapping.active %}
           <form method="post" action="{{ post_url }}">
             <input type="hidden" name="action" value="delete_directory_mapping">
             <input type="hidden" name="mapping_id" value="{{ mapping.id }}">
-            <button class="button">Disable</button>
+            <button class="button">{{ tr('Disable') }}</button>
           </form>
-          {% else %}<span class="muted">Retained for audit</span>{% endif %}
+          {% else %}<span class="muted">{{ tr('Retained for audit') }}</span>{% endif %}
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4">No AD team mappings configured.</td></tr>
+      <tr><td colspan="4">{{ tr('No AD team mappings configured.') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

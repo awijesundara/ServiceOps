@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}API clients · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('API clients · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-{% set admin_page_title = 'API access' %}{% include '_admin_context.html' %}
-<header class="page-head"><div><h1>API access</h1><p>Create application credentials that act as a named ServiceOps user with only the selected permissions. Tokens are shown once and can be revoked here.</p></div></header>
+{% set admin_page_title = tr('API access') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>{{ tr('API access') }}</h1><p>{{ tr('Create application credentials that act as a named ServiceOps user with only the selected permissions. Tokens are shown once and can be revoked here.') }}</p></div></header>
 {% if new_token %}
-<section class="panel"><h2>Copy this token now</h2><p>The token for <strong>{{ new_client_name }}</strong> is displayed once and cannot be recovered.</p><pre class="pre">{{ new_token }}</pre></section>
+<section class="panel"><h2>{{ tr('Copy this token now') }}</h2><p>{{ tr('The token for') }} <strong>{{ new_client_name }}</strong> {{ tr('is displayed once and cannot be recovered.') }}</p><pre class="pre">{{ new_token }}</pre></section>
 {% endif %}
 <div class="detail-grid">
-<section class="panel"><h2>Clients</h2>
-<table><thead><tr><th>{{ t('Name') }}</th><th>Acting user</th><th>Scopes</th><th>Last used</th><th>{{ t('Status') }}</th><th></th></tr></thead><tbody>
-{% for client in clients %}<tr><td><strong>{{ client.name }}</strong><small>{{ client.token_prefix }}…</small></td><td>{{ client.acting_user.name }}</td><td>{{ client.scopes|sort|join(', ') }}</td><td>{{ (client.last_used_at|usertime('%Y-%m-%d %H:%M')) if client.last_used_at else 'Never' }}</td><td>{{ 'Active' if client.active else 'Revoked' }}</td><td>{% if client.active %}<form method="post" action="{{ url_for('api_client_revoke', client_id=client.id) }}"><button>Revoke</button></form>{% endif %}</td></tr>
-{% else %}<tr><td colspan="6">No API clients.</td></tr>{% endfor %}
+<section class="panel"><h2>{{ tr('Clients') }}</h2>
+<table><thead><tr><th>{{ tr('Name') }}</th><th>{{ tr('Acting user') }}</th><th>{{ tr('Scopes') }}</th><th>{{ tr('Last used') }}</th><th>{{ tr('Status') }}</th><th></th></tr></thead><tbody>
+{% for client in clients %}<tr><td><strong>{{ client.name }}</strong><small>{{ client.token_prefix }}…</small></td><td>{{ client.acting_user.name }}</td><td>{{ client.scopes|sort|join(', ') }}</td><td>{{ (client.last_used_at|usertime('%Y-%m-%d %H:%M')) if client.last_used_at else tr('Never') }}</td><td>{{ tr('Active') if client.active else tr('Revoked') }}</td><td>{% if client.active %}<form method="post" action="{{ url_for('api_client_revoke', client_id=client.id) }}"><button>{{ tr('Revoke') }}</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="6">{{ tr('No API clients.') }}</td></tr>{% endfor %}
 </tbody></table></section>
-<aside class="panel"><h2>Create client</h2><form method="post" class="stack">
-<label>{{ t('Name') }}<input name="name" maxlength="160" required></label>
-<label>Acting user<select name="acting_user_id" required>{% for user in users %}<option value="{{ user.id }}">{{ user.name }} · {{ user.role }}</option>{% endfor %}</select></label>
-<fieldset><legend>Scopes</legend>{% for scope in available_scopes %}<label class="check"><input type="checkbox" name="scopes" value="{{ scope }}"> {{ scope }}</label>{% endfor %}</fieldset>
-<button class="primary">Create and reveal token</button></form></aside>
+<aside class="panel"><h2>{{ tr('Create client') }}</h2><form method="post" class="stack">
+<label>{{ tr('Name') }}<input name="name" maxlength="160" required></label>
+<label>{{ tr('Acting user') }}<select name="acting_user_id" required>{% for user in users %}<option value="{{ user.id }}">{{ user.name }} · {{ tr_value(user.role) }}</option>{% endfor %}</select></label>
+<fieldset><legend>{{ tr('Scopes') }}</legend>{% for scope in available_scopes %}<label class="check"><input type="checkbox" name="scopes" value="{{ scope }}"> {{ scope }}</label>{% endfor %}</fieldset>
+<button class="primary">{{ tr('Create and reveal token') }}</button></form></aside>
 </div>
 {% endblock %}

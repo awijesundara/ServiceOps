@@ -150,8 +150,8 @@ document.addEventListener("DOMContentLoaded", () => {
     line.setAttribute("stroke-width", "1.5");
     const title = document.createElementNS(svgNS, "title");
     title.textContent = edge.label
-      ? `${edge.source.name} — ${edge.type} (${edge.label}) → ${edge.target.name}`
-      : `${edge.source.name} — ${edge.type} → ${edge.target.name}`;
+      ? `${edge.source.name} — ${tr(edge.type)} (${edge.label}) → ${edge.target.name}`
+      : `${edge.source.name} — ${tr(edge.type)} → ${edge.target.name}`;
     line.appendChild(title);
     const portLabel = document.createElementNS(svgNS, "text");
     if (edge.label) {
@@ -173,7 +173,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return { neighbor, localPort: isSource ? localPort : neighborPort, neighborPort: isSource ? neighborPort : localPort, type: edge.type };
     });
     const isSwitchLike = ["switch", "router"].includes((node.ci_class || "").toLowerCase());
-    const heading = isSwitchLike ? "Ports" : "Connected switches/routers";
+    const heading = isSwitchLike ? tr("Ports") : tr("Connected switches/routers");
     const relevant = isSwitchLike ? rows : rows.filter((r) => ["switch", "router"].includes((r.neighbor.ci_class || "").toLowerCase()));
     // CI names/classes and port labels can come from network discovery (names
     // reported by the devices themselves) and PTR hostnames from whoever owns
@@ -185,7 +185,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return element;
     };
     const nameHeading = el("h3", node.name);
-    const meta = el("p", `${node.ci_class || ""} · ${node.status || ""} · ${node.discovery_source || ""}`, "muted");
+    const meta = el("p", `${node.ci_class || ""} · ${tr(node.status || "")} · ${tr(node.discovery_source || "")}`, "muted");
     meta.style.fontSize = "12px";
     const connectionsHeading = el("h4", heading);
     connectionsHeading.style.marginTop = "14px";
@@ -193,7 +193,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (rows.length) {
       connections = el("table", undefined, "ci-permissions-table");
       const headRow = connections.createTHead().insertRow();
-      ["Local port", "Neighbor", "Neighbor port"].forEach((label) => headRow.appendChild(el("th", label)));
+      [tr("Local port"), tr("Neighbor"), tr("Neighbor port")].forEach((label) => headRow.appendChild(el("th", label)));
       const body = connections.createTBody();
       (relevant.length ? relevant : rows).forEach((r) => {
         const row = body.insertRow();
@@ -202,11 +202,11 @@ document.addEventListener("DOMContentLoaded", () => {
         row.appendChild(el("td", r.neighborPort || "—"));
       });
     } else {
-      connections = el("p", "No connections recorded.", "muted");
+      connections = el("p", tr("No connections recorded."), "muted");
     }
-    const dnsHeading = el("h4", "Hostname resolution");
+    const dnsHeading = el("h4", tr("Hostname resolution"));
     dnsHeading.style.marginTop = "14px";
-    const dnsEl = el("div", "Looking up…", "muted");
+    const dnsEl = el("div", tr("Looking up…"), "muted");
     dnsEl.id = "cmdb-topology-dns";
     detailBody.replaceChildren(nameHeading, meta, connectionsHeading, connections, dnsHeading, dnsEl);
     detailPanel.hidden = false;
@@ -215,15 +215,15 @@ document.addEventListener("DOMContentLoaded", () => {
       .then((info) => {
         const lines = [];
         (info.addresses || []).forEach((entry) => {
-          lines.push(el("div", `${entry.ip} → ${entry.hostname || "no PTR record"}`));
+          lines.push(el("div", `${entry.ip} → ${entry.hostname || tr("no PTR record")}`));
         });
         (info.hostnames || []).forEach((entry) => {
-          lines.push(el("div", `${entry.hostname} → ${(entry.ips || []).join(", ") || "no A/AAAA record"}`));
+          lines.push(el("div", `${entry.hostname} → ${(entry.ips || []).join(", ") || tr("no A/AAAA record")}`));
         });
         if (lines.length) dnsEl.replaceChildren(...lines);
-        else dnsEl.textContent = "No IP or hostname to resolve.";
+        else dnsEl.textContent = tr("No IP or hostname to resolve.");
       })
-      .catch(() => { dnsEl.textContent = "Unable to resolve at this time."; });
+      .catch(() => { dnsEl.textContent = tr("Unable to resolve at this time."); });
   }
   if (detailClose) detailClose.addEventListener("click", () => { detailPanel.hidden = true; });
 
@@ -275,7 +275,7 @@ document.addEventListener("DOMContentLoaded", () => {
     badge.setAttribute("text-anchor", "middle");
     badge.setAttribute("fill", "#f9aa3c");
     const title = document.createElementNS(svgNS, "title");
-    title.textContent = `${node.name} · ${node.ci_class} · ${node.status} · ${node.discovery_source}`;
+    title.textContent = `${node.name} · ${node.ci_class} · ${tr(node.status)} · ${tr(node.discovery_source)}`;
     group.appendChild(circle);
     group.appendChild(label);
     group.appendChild(badge);
@@ -316,7 +316,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const show = visible.has(node.id);
       group.style.display = show ? "" : "none";
       const count = show ? collapsedNeighborCount(node) : 0;
-      badge.textContent = count > 0 ? `+${count} more` : "";
+      badge.textContent = count > 0 ? tr("+{count} more", { count: count }) : "";
     });
     edgeEls.forEach(({ edge, line, portLabel }) => {
       const show = visible.has(edge.source.id) && visible.has(edge.target.id);

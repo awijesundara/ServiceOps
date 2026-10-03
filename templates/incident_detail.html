@@ -1,112 +1,112 @@
 {% extends "base.html" %}
 {% from "_ticket_category_fields.html" import category_field, subcategory_field with context %}
-{% block title %}{{ ticket.number }} · Incident · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('{number} · Incident · {instance_name}', number=(ticket.number), instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 {% set primary_ci_link = (ci_links|selectattr('relationship_role','equalto','Primary CI')|first) %}
 <section class="record-shell">
   <header class="record-toolbar">
     <div class="record-identity">
-      <a class="record-back" href="{{ url_for('tickets', kind='incident') }}" aria-label="Back to incidents">‹</a>
+      <a class="record-back" href="{{ url_for('tickets', kind='incident') }}" aria-label="{{ tr('Back to incidents') }}">‹</a>
       <span class="record-type-icon" aria-hidden="true">!</span>
-      <div><strong>Incident</strong><small>{{ ticket.number }}</small></div>
+      <div><strong>{{ tr('Incident') }}</strong><small>{{ ticket.number }}</small></div>
     </div>
     <div class="record-actions">
-      {% if ai_available(current_user) %}<a class="button" href="{{ url_for('ai.incident', ticket_id=ticket.id) }}">Investigate with AI</a>{% endif %}
-      <span class="record-updated">Updated {{ (ticket.updated_at|usertime('%b %d, %H:%M')) }}</span>
-      <form method="post" class="follow-ticket-form"><input type="hidden" name="action" value="{{ 'unfollow' if is_following else 'follow' }}"><button type="submit" class="button follow-toggle{% if is_following %} following{% endif %}" title="{{ 'Stop getting notified about new comments on this ticket' if is_following else 'Get notified when there is a new comment on this ticket' }}">{{ '✓ Following' if is_following else '☆ Follow' }}</button></form>
+      {% if ai_available(current_user) %}<a class="button" href="{{ url_for('ai.incident', ticket_id=ticket.id) }}">{{ tr('Investigate with AI') }}</a>{% endif %}
+      <span class="record-updated">{{ tr('Updated {value}', value=((ticket.updated_at|usertime('%b %d, %H:%M')))) }}</span>
+      <form method="post" class="follow-ticket-form"><input type="hidden" name="action" value="{{ 'unfollow' if is_following else 'follow' }}"><button type="submit" class="button follow-toggle{% if is_following %} following{% endif %}" title="{{ tr('Stop getting notified about new comments on this ticket') if is_following else tr('Get notified when there is a new comment on this ticket') }}">{{ ('✓ ' ~ tr('Following')) if is_following else ('☆ ' ~ tr('Follow')) }}</button></form>
       {% if can_manage_ticket %}
-      <button class="button" type="submit" form="incident-record-form">Update</button>
+      <button class="button" type="submit" form="incident-record-form">{{ tr('Update') }}</button>
       {% if 'Resolved' in ticket_state_options and ticket.state != 'Resolved' %}
       {#- Submits the record form so resolution notes and closure categorisation are saved with it. #}
-      <button class="primary" type="submit" form="incident-record-form" name="resolve" value="1">Resolve</button>
+      <button class="primary" type="submit" form="incident-record-form" name="resolve" value="1">{{ tr('Resolve') }}</button>
       {% endif %}
       {% endif %}
-      {% if can_close %}<form method="post"><input type="hidden" name="action" value="close"><button class="button">{{ t('Close') }}</button></form>{% endif %}
-      {% if can_reopen %}<form method="post"><input type="hidden" name="action" value="reopen"><button class="button">Reopen</button></form>{% endif %}
+      {% if can_close %}<form method="post"><input type="hidden" name="action" value="close"><button class="button">{{ tr('Close') }}</button></form>{% endif %}
+      {% if can_reopen %}<form method="post"><input type="hidden" name="action" value="reopen"><button class="button">{{ tr('Reopen') }}</button></form>{% endif %}
     </div>
   </header>
-  {% if ticket_locked %}<div class="record-readonly-notice">{{ ticket.number }} is {{ ticket.state }} and locked: only comments and notes can be added.{% if can_close %} Use Close to complete it, or Reopen to make other changes.{% elif can_reopen %} Use Reopen to make other changes.{% endif %}</div>{% endif %}
+  {% if ticket_locked %}<div class="record-readonly-notice">{{ tr('{number} is {state} and locked: only comments and notes can be added.', number=(ticket.number), state=(tr_value(ticket.state))) }}{% if can_close %} {{ tr('Use Close to complete it, or Reopen to make other changes.') }}{% elif can_reopen %} {{ tr('Use Reopen to make other changes.') }}{% endif %}</div>{% endif %}
   {% include "_csat_prompt.html" %}
   {% include "_state_track.html" %}
   <form method="post" id="incident-record-form" class="record-form">
     <input type="hidden" name="action" value="update">
     <div class="record-grid">
-      <label><span>Number</span><input value="{{ ticket.number }}" disabled></label>
-      <label><span>Contact type</span><select name="contact_type" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Self-service','Phone','Email','Chat','Monitoring'] %}<option {% if ticket.contact_type==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-      <label class="required-field"><span>Caller</span><input value="{{ ticket.requester.name }} · {{ ticket.requester.email }}" title="{{ ticket.requester.name }} · {{ ticket.requester.email }}" disabled></label>
-      <label><span>State</span><select name="state" {% if not can_manage_ticket %}disabled{% endif %}>{% for state in ticket_state_options %}<option {% if ticket.state==state %}selected{% endif %}>{{ state }}</option>{% endfor %}</select></label>
-      <label><span>Category</span>{{ category_field(ticket.category, disabled=not can_manage_ticket) }}</label>
-      <label><span>Impact</span><select name="impact" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-      <label><span>Subcategory</span>{{ subcategory_field(ticket.subcategory, disabled=not can_manage_ticket) }}</label>
-      <label><span>Urgency</span><select name="urgency" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.urgency==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-      <label><span>Service offering</span><select name="service_offering_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">Not selected</option>{% for offering in service_offerings %}<option value="{{ offering.id }}" {% if ticket.service_offering_id==offering.id %}selected{% endif %}>{{ offering.name }}</option>{% endfor %}</select></label>
-      <label><span>{{ t('Priority') }}</span><select name="priority" {% if not can_manage_ticket %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
-      <label><span>Configuration item</span><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="Search configuration items…" autocomplete="off" value="{{ primary_ci_link.ci.name if primary_ci_link else '' }}" {% if not can_manage_ticket %}disabled{% endif %}><input type="hidden" name="ci_id" value="{{ primary_ci_link.ci_id if primary_ci_link else '' }}" data-owning-team="{{ primary_ci_link.ci.support_group.name if primary_ci_link and primary_ci_link.ci.support_group else '' }}"><div class="lookup-results" hidden></div></div></label>
-      <label><span>Notify</span><select name="notify" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Email','In-app only','Do not notify'] %}<option {% if ticket.notify==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label><span>{{ tr('Number') }}</span><input value="{{ ticket.number }}" disabled></label>
+      <label><span>{{ tr('Contact type') }}</span><select name="contact_type" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Self-service','Phone','Email','Chat','Monitoring'] %}<option {% if ticket.contact_type==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label class="required-field"><span>{{ tr('Caller') }}</span><input value="{{ ticket.requester.name }} · {{ ticket.requester.email }}" title="{{ ticket.requester.name }} · {{ ticket.requester.email }}" disabled></label>
+      <label><span>{{ tr('State') }}</span><select name="state" {% if not can_manage_ticket %}disabled{% endif %}>{% for state in ticket_state_options %}<option {% if ticket.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select></label>
+      <label><span>{{ tr('Category') }}</span>{{ category_field(ticket.category, disabled=not can_manage_ticket) }}</label>
+      <label><span>{{ tr('Impact') }}</span><select name="impact" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label><span>{{ tr('Subcategory') }}</span>{{ subcategory_field(ticket.subcategory, disabled=not can_manage_ticket) }}</label>
+      <label><span>{{ tr('Urgency') }}</span><select name="urgency" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.urgency==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label><span>{{ tr('Service offering') }}</span><select name="service_offering_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">{{ tr('Not selected') }}</option>{% for offering in service_offerings %}<option value="{{ offering.id }}" {% if ticket.service_offering_id==offering.id %}selected{% endif %}>{{ offering.name }}</option>{% endfor %}</select></label>
+      <label><span>{{ tr('Priority') }}</span><select name="priority" {% if not can_manage_ticket %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ tr_value(priority) }}</option>{% endfor %}</select></label>
+      <label><span>{{ tr('Configuration item') }}</span><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="{{ tr('Search configuration items…') }}" autocomplete="off" value="{{ primary_ci_link.ci.name if primary_ci_link else '' }}" {% if not can_manage_ticket %}disabled{% endif %}><input type="hidden" name="ci_id" value="{{ primary_ci_link.ci_id if primary_ci_link else '' }}" data-owning-team="{{ primary_ci_link.ci.support_group.name if primary_ci_link and primary_ci_link.ci.support_group else '' }}"><div class="lookup-results" hidden></div></div></label>
+      <label><span>{{ tr('Notify') }}</span><select name="notify" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Email','In-app only','Do not notify'] %}<option {% if ticket.notify==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <div class="record-grid-trio">
-        <label class="required-field"><span>Assignment group</span><input value="{{ owning_group.name if owning_group else 'Not assigned' }}" disabled></label>
-        <label><span>Team manager</span><input value="{{ owning_group.manager.name if owning_group and owning_group.manager else 'Not assigned' }}" disabled></label>
-        <label><span>Assigned to</span><select name="assignee_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">Unassigned</option>{% for user in agents %}<option value="{{ user.id }}" {% if ticket.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+        <label class="required-field"><span>{{ tr('Assignment group') }}</span><input value="{{ owning_group.name if owning_group else tr('Not assigned') }}" disabled></label>
+        <label><span>{{ tr('Team manager') }}</span><input value="{{ owning_group.manager.name if owning_group and owning_group.manager else tr('Not assigned') }}" disabled></label>
+        <label><span>{{ tr('Assigned to') }}</span><select name="assignee_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">{{ tr('Unassigned') }}</option>{% for user in agents %}<option value="{{ user.id }}" {% if ticket.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
       </div>
     </div>
     <div class="record-long-fields">
-      <label class="required-field"><span>Short description</span><input name="title" maxlength="180" value="{{ ticket.title }}" required {% if not can_manage_ticket %}disabled{% endif %}></label>
-      <label class="required-field"><span>{{ t('Description') }}</span><textarea name="description" rows="7" required {% if not can_manage_ticket %}disabled{% endif %}>{{ ticket.description }}</textarea></label>
-      {% if can_manage_ticket %}<label><span>Priority override reason</span><textarea name="priority_override_reason" rows="2" placeholder="Required when overriding calculated priority">{{ ticket.priority_override_reason or '' }}</textarea></label>{% endif %}
+      <label class="required-field"><span>{{ tr('Short description') }}</span><input name="title" maxlength="180" value="{{ ticket.title }}" required {% if not can_manage_ticket %}disabled{% endif %}></label>
+      <label class="required-field"><span>{{ tr('Description') }}</span><textarea name="description" rows="7" required {% if not can_manage_ticket %}disabled{% endif %}>{{ ticket.description }}</textarea></label>
+      {% if can_manage_ticket %}<label><span>{{ tr('Priority override reason') }}</span><textarea name="priority_override_reason" rows="2" placeholder="{{ tr('Required when overriding calculated priority') }}">{{ ticket.priority_override_reason or '' }}</textarea></label>{% endif %}
     </div>
     {% if can_manage_ticket or ticket.resolution_notes or ticket.closure_category %}
     {% set resolution_locked = not can_manage_ticket %}
     <div class="record-long-fields" id="resolution-fields">
-      <h3>Resolution</h3>
-      <p class="muted">Categorise by the affected service or configuration item as found at closure. The category above stays as logged, so reporting can compare the two.</p>
-      <label><span>Closure category</span>{{ category_field(ticket.closure_category or ticket.category, disabled=resolution_locked, name="closure_category") }}</label>
-      <label><span>Closure subcategory</span>{{ subcategory_field(ticket.closure_subcategory if ticket.closure_category else ticket.subcategory, disabled=resolution_locked, name="closure_subcategory", category_name="closure_category") }}</label>
-      <label class="required-field"><span>Resolution notes</span><textarea name="resolution_notes" rows="4" placeholder="How service was restored; required to resolve" {% if resolution_locked %}disabled{% endif %}>{{ ticket.resolution_notes or '' }}</textarea></label>
-      {% if ticket.resolved_at %}<p class="muted">Resolved {{ ticket.resolved_at|usertime('%b %d, %Y %H:%M') }}</p>{% endif %}
+      <h3>{{ tr('Resolution') }}</h3>
+      <p class="muted">{{ tr('Categorise by the affected service or configuration item as found at closure. The category above stays as logged, so reporting can compare the two.') }}</p>
+      <label><span>{{ tr('Closure category') }}</span>{{ category_field(ticket.closure_category or ticket.category, disabled=resolution_locked, name="closure_category") }}</label>
+      <label><span>{{ tr('Closure subcategory') }}</span>{{ subcategory_field(ticket.closure_subcategory if ticket.closure_category else ticket.subcategory, disabled=resolution_locked, name="closure_subcategory", category_name="closure_category") }}</label>
+      <label class="required-field"><span>{{ tr('Resolution notes') }}</span><textarea name="resolution_notes" rows="4" placeholder="{{ tr('How service was restored; required to resolve') }}" {% if resolution_locked %}disabled{% endif %}>{{ ticket.resolution_notes or '' }}</textarea></label>
+      {% if ticket.resolved_at %}<p class="muted">{{ tr('Resolved {resolved_at}', resolved_at=(ticket.resolved_at|usertime('%b %d, %Y %H:%M'))) }}</p>{% endif %}
     </div>
     {% endif %}
-    {% if can_manage_ticket %}<footer class="record-footer-actions"><button class="primary">Update incident</button></footer>{% endif %}
+    {% if can_manage_ticket %}<footer class="record-footer-actions"><button class="primary">{{ tr('Update incident') }}</button></footer>{% endif %}
   </form>
 </section>
 
 {% if internal_view %}
-<nav class="record-section-tabs" aria-label="Incident sections">
-  <a class="active" href="#notes">Notes</a><a href="#related-records">Related records</a><a href="#affected-cis">Affected CIs</a><a href="#resolution-information">Resolution information</a><a href="#major-incident">Major incident</a><a href="#attachments">Attachments ({{ ticket.attachments|length }})</a><a href="#event-history">Event history</a>
+<nav class="record-section-tabs" aria-label="{{ tr('Incident sections') }}">
+  <a class="active" href="#notes">{{ tr('Notes') }}</a><a href="#related-records">{{ tr('Related records') }}</a><a href="#affected-cis">{{ tr('Affected CIs') }}</a><a href="#resolution-information">{{ tr('Resolution information') }}</a><a href="#major-incident">{{ tr('Major incident') }}</a><a href="#attachments">{{ tr('Attachments ({attachments})', attachments=(ticket.attachments|length)) }}</a><a href="#event-history">{{ tr('Event history') }}</a>
 </nav>
 <section class="panel" id="major-incident">
   {% set major = ticket.major_incident_profile %}
-  <header class="section-heading"><div><h2>Major incident coordination</h2></div></header>
+  <header class="section-heading"><div><h2>{{ tr('Major incident coordination') }}</h2></div></header>
   {% if major %}
   <dl class="governance-grid">
-    <dt>{{ t('Status') }}</dt><dd>{{ major.status }}</dd>
-    <dt>Coordinator</dt><dd>{{ major.coordinator.name if major.coordinator else 'Not assigned' }}</dd>
-    <dt>Business impact</dt><dd>{{ major.business_impact or 'Not documented' }}</dd>
-    <dt>Communications</dt><dd>{{ major.communications or 'Not documented' }}</dd>
-    <dt>Public status page</dt><dd>{% if major.public %}<span class="status-pill">Published</span> — <a href="{{ url_for('status_page', slug=current_tenant_slug) }}" target="_blank" rel="noopener">view page</a>{% else %}Not published{% endif %}</dd>
+    <dt>{{ tr('Status') }}</dt><dd>{{ tr_value(major.status) }}</dd>
+    <dt>{{ tr('Coordinator') }}</dt><dd>{{ major.coordinator.name if major.coordinator else tr('Not assigned') }}</dd>
+    <dt>{{ tr('Business impact') }}</dt><dd>{{ major.business_impact or tr('Not documented') }}</dd>
+    <dt>{{ tr('Communications') }}</dt><dd>{{ major.communications or tr('Not documented') }}</dd>
+    <dt>{{ tr('Public status page') }}</dt><dd>{% if major.public %}<span class="status-pill">{{ tr('Published') }}</span> — <a href="{{ url_for('status_page', slug=current_tenant_slug) }}" target="_blank" rel="noopener">{{ tr('view page') }}</a>{% else %}{{ tr('Not published') }}{% endif %}</dd>
   </dl>
-  {% else %}<p class="muted">This remains a standard INC. Major incident status has not been proposed.</p>{% endif %}
+  {% else %}<p class="muted">{{ tr('This remains a standard INC. Major incident status has not been proposed.') }}</p>{% endif %}
   {% if can_manage_ticket %}
-  <details><summary>{{ 'Update' if major else 'Propose' }} major incident</summary>
+  <details><summary>{{ tr('{value} major incident', value=(tr('Update') if major else tr('Propose'))) }}</summary>
     <form method="post" action="{{ url_for('major_incident_update', ticket_id=ticket.id) }}" class="form-grid">
-      <label>{{ t('Status') }}<select name="status">{% for value in ['Proposed','Accepted','Rejected','Resolved'] %}<option {% if major and major.status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-      <label class="wide">Business impact<textarea name="business_impact" rows="3">{{ major.business_impact if major else '' }}</textarea></label>
-      <label class="wide">Coordination and communications<textarea name="communications" rows="3">{{ major.communications if major else '' }}</textarea></label>
-      <div class="wide actions"><button>Save major incident status</button></div>
+      <label>{{ tr('Status') }}<select name="status">{% for value in ['Proposed','Accepted','Rejected','Resolved'] %}<option {% if major and major.status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <label class="wide">{{ tr('Business impact') }}<textarea name="business_impact" rows="3">{{ major.business_impact if major else '' }}</textarea></label>
+      <label class="wide">{{ tr('Coordination and communications') }}<textarea name="communications" rows="3">{{ major.communications if major else '' }}</textarea></label>
+      <div class="wide actions"><button>{{ tr('Save major incident status') }}</button></div>
     </form>
   </details>
   {% if major %}
-  <details {% if major.public %}open{% endif %}><summary>Public status page updates</summary>
-    <p class="muted" style="margin-top:0">Posted updates appear on the public status page only while "Publish to status page" is checked below. Business impact/communications above never appear publicly.</p>
+  <details {% if major.public %}open{% endif %}><summary>{{ tr('Public status page updates') }}</summary>
+    <p class="muted" style="margin-top:0">{{ tr('Posted updates appear on the public status page only while "Publish to status page" is checked below. Business impact/communications above never appear publicly.') }}</p>
     {% if major.updates %}
     <ol class="status-timeline">
-      {% for update in major.updates %}<li><span class="status-timeline-badge status-{{ update.status|lower|replace(' ', '-') }}">{{ update.status }}</span><div><p>{{ update.message }}</p><time>{{ update.posted_by.name }} · {{ (update.created_at|usertime('%b %d, %H:%M')) }}</time></div></li>{% endfor %}
+      {% for update in major.updates %}<li><span class="status-timeline-badge status-{{ update.status|lower|replace(' ', '-') }}">{{ tr_value(update.status) }}</span><div><p>{{ update.message }}</p><time>{{ update.posted_by.name }} · {{ (update.created_at|usertime('%b %d, %H:%M')) }}</time></div></li>{% endfor %}
     </ol>
     {% endif %}
     <form method="post" action="{{ url_for('major_incident_status_update', ticket_id=ticket.id) }}" class="form-grid">
-      <label>Update status<select name="status">{% for value in ['Investigating','Identified','Monitoring','Resolved'] %}<option>{{ value }}</option>{% endfor %}</select></label>
-      <label class="wide">Message<textarea name="message" rows="2" placeholder="What customers should know right now" required></textarea></label>
-      <label class="check"><input type="checkbox" name="publish" {% if major.public %}checked{% endif %}> Publish to status page ({{ url_for('status_page', slug=current_tenant_slug, _external=True) }})</label>
-      <div class="wide actions"><button class="primary">Post status update</button></div>
+      <label>{{ tr('Update status') }}<select name="status">{% for value in ['Investigating','Identified','Monitoring','Resolved'] %}<option>{{ value }}</option>{% endfor %}</select></label>
+      <label class="wide">{{ tr('Message') }}<textarea name="message" rows="2" placeholder="{{ tr('What customers should know right now') }}" required></textarea></label>
+      <label class="check"><input type="checkbox" name="publish" {% if major.public %}checked{% endif %}> {{ tr('Publish to status page ({url_for})', url_for=(url_for('status_page', slug=current_tenant_slug, _external=True))) }}</label>
+      <div class="wide actions"><button class="primary">{{ tr('Post status update') }}</button></div>
     </form>
   </details>
   {% endif %}
@@ -114,37 +114,37 @@
 
   {% if major or ticket.priority == 'P1' %}
   <hr>
-  <h3>Post-incident review<span class="info-tip" tabindex="0" data-tip="A structured after-the-fact review, separate from the live coordination log above — ITIL 4 continual improvement expects documented lessons learned and follow-up actions. Available for any P1 incident, not only ones formally declared a major incident.">i</span></h3>
+  <h3>{{ tr('Post-incident review') }}<span class="info-tip" tabindex="0" data-tip="A structured after-the-fact review, separate from the live coordination log above — ITIL 4 continual improvement expects documented lessons learned and follow-up actions. Available for any P1 incident, not only ones formally declared a major incident.">i</span></h3>
   {% if major and major.reviewed_at %}
   <dl class="governance-grid">
-    <dt>Reviewed by</dt><dd>{{ major.reviewed_by.name }} · {{ (major.reviewed_at|usertime('%b %d, %Y · %H:%M')) }}</dd>
+    <dt>{{ tr('Reviewed by') }}</dt><dd>{{ major.reviewed_by.name }} · {{ (major.reviewed_at|usertime('%b %d, %Y · %H:%M')) }}</dd>
   </dl>
-  <p><b>What went well:</b> {{ major.review_what_went_well or 'Not documented' }}</p>
-  <p><b>What went poorly:</b> {{ major.review_what_went_poorly or 'Not documented' }}</p>
-  <p><b>Follow-up actions:</b> {{ major.review_follow_up_actions or 'None recorded' }}</p>
-  {% else %}<p class="muted">Not reviewed yet.</p>{% endif %}
+  <p><b>{{ tr('What went well:') }}</b> {{ major.review_what_went_well or tr('Not documented') }}</p>
+  <p><b>{{ tr('What went poorly:') }}</b> {{ major.review_what_went_poorly or tr('Not documented') }}</p>
+  <p><b>{{ tr('Follow-up actions:') }}</b> {{ major.review_follow_up_actions or tr('None recorded') }}</p>
+  {% else %}<p class="muted">{{ tr('Not reviewed yet.') }}</p>{% endif %}
   {% if can_manage_ticket %}
-  <details {% if not major or not major.reviewed_at %}open{% endif %}><summary>{{ 'Update review' if major and major.reviewed_at else 'Record review' }}</summary>
+  <details {% if not major or not major.reviewed_at %}open{% endif %}><summary>{{ tr('Update review') if major and major.reviewed_at else tr('Record review') }}</summary>
     <form method="post" action="{{ url_for('major_incident_review_update', ticket_id=ticket.id) }}" class="form-grid">
-      <label class="wide">What went well<textarea name="what_went_well" rows="2">{{ major.review_what_went_well if major else '' }}</textarea></label>
-      <label class="wide">What went poorly<textarea name="what_went_poorly" rows="2">{{ major.review_what_went_poorly if major else '' }}</textarea></label>
-      <label class="wide">Follow-up actions<textarea name="follow_up_actions" rows="2">{{ major.review_follow_up_actions if major else '' }}</textarea></label>
-      <div class="wide actions"><button class="primary">Save review</button></div>
+      <label class="wide">{{ tr('What went well') }}<textarea name="what_went_well" rows="2">{{ major.review_what_went_well if major else '' }}</textarea></label>
+      <label class="wide">{{ tr('What went poorly') }}<textarea name="what_went_poorly" rows="2">{{ major.review_what_went_poorly if major else '' }}</textarea></label>
+      <label class="wide">{{ tr('Follow-up actions') }}<textarea name="follow_up_actions" rows="2">{{ major.review_follow_up_actions if major else '' }}</textarea></label>
+      <div class="wide actions"><button class="primary">{{ tr('Save review') }}</button></div>
     </form>
   </details>
   {% endif %}
   {% endif %}
 </section>
 <section class="panel event-history-panel" id="event-history">
-  <header class="section-heading"><div><p class="eyebrow">EVENT STREAM</p><h2>Event history</h2></div><span>{{ history|length }} events</span></header>
+  <header class="section-heading"><div><p class="eyebrow">{{ tr('EVENT STREAM') }}</p><h2>{{ tr('Event history') }}</h2></div><span>{{ tr('{history} events', history=(history|length)) }}</span></header>
   {% if can_manage_ticket %}
-  <details><summary>Raise as a continual-improvement item</summary>
+  <details><summary>{{ tr('Raise as a continual-improvement item') }}</summary>
     <form method="post" action="{{ url_for('improvement_new') }}" class="form-grid">
       <input type="hidden" name="source_type" value="ticket"><input type="hidden" name="source_id" value="{{ ticket.id }}">
       <input type="hidden" name="redirect_to" value="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">
-      <label class="wide required-field"><span>Title</span><input name="title" maxlength="200" required value="Improvement from {{ ticket.number }}: "></label>
-      <label class="wide"><span>{{ t('Description') }}</span><textarea name="description" rows="2"></textarea></label>
-      <div class="wide actions"><button>Raise improvement</button></div>
+      <label class="wide required-field"><span>{{ tr('Title') }}</span><input name="title" maxlength="200" required value="Improvement from {{ ticket.number }}: "></label>
+      <label class="wide"><span>{{ tr('Description') }}</span><textarea name="description" rows="2"></textarea></label>
+      <div class="wide actions"><button>{{ tr('Raise improvement') }}</button></div>
     </form>
   </details>
   {% endif %}
@@ -152,66 +152,66 @@
     {% for event in history %}
     <article class="event-entry">
       {{ user_avatar(event.actor, 'event-marker') }}
-      <div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ event.actor.name if event.actor else 'System' }}</small>
+      <div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ event.actor.name if event.actor else tr('System') }}</small>
       {% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span aria-hidden="true">→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}
       {% if event.details %}<p>{{ event.details }}</p>{% endif %}</div>
     </article>
     {% endfor %}
-    <article class="event-entry">{{ user_avatar(ticket.requester, 'event-marker') }}<div class="event-body"><div><strong>Opened</strong><time>{{ (ticket.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ ticket.requester.name }}</small><p>Incident {{ ticket.number }} opened as {{ ticket.priority }} · {{ ticket.impact }} impact via {{ ticket.contact_type }}.</p></div></article>
+    <article class="event-entry">{{ user_avatar(ticket.requester, 'event-marker') }}<div class="event-body"><div><strong>{{ tr('Opened') }}</strong><time>{{ (ticket.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ ticket.requester.name }}</small><p>{{ tr('Incident {number} opened as {priority} · {impact} impact via {contact_type}.', number=(ticket.number), priority=(tr_value(ticket.priority)), impact=(tr_value(ticket.impact)), contact_type=(ticket.contact_type)) }}</p></div></article>
   </div>
 </section>
 {% endif %}
 
 <div class="incident-support-grid" id="notes">
   <section class="panel">
-    <header class="section-heading"><div><h2>Activity and work notes</h2><p>Conversation and resolution evidence</p></div></header>
+    <header class="section-heading"><div><h2>{{ tr('Activity and work notes') }}</h2><p>{{ tr('Conversation and resolution evidence') }}</p></div></header>
     {% from "_comment_thread.html" import comment_thread %}
     <div class="comment-thread">{{ comment_thread(ticket) }}</div>
-    <form method="post" class="comment-box" enctype="multipart/form-data" id="comment-form" data-ticket-id="{{ ticket.id }}"><input type="hidden" name="action" value="comment"><input type="hidden" name="parent_id" value="" id="comment-parent-id"><div class="comment-reply-banner" id="comment-reply-banner" hidden>Replying to <b id="comment-reply-author"></b> <button type="button" id="comment-reply-cancel">{{ t('Cancel') }}</button></div><div class="mention-input-wrap"><textarea name="body" rows="3" placeholder="Add a work note or comment… (type @ to mention someone)" required id="comment-body-input"></textarea><ul class="mention-suggestions" id="mention-suggestions" hidden></ul></div><label class="comment-attach"><span>Attach a file (optional)</span><input type="file" name="file"></label><button class="primary">Post comment</button></form>
+    <form method="post" class="comment-box" enctype="multipart/form-data" id="comment-form" data-ticket-id="{{ ticket.id }}"><input type="hidden" name="action" value="comment"><input type="hidden" name="parent_id" value="" id="comment-parent-id"><div class="comment-reply-banner" id="comment-reply-banner" hidden>{{ tr('Replying to') }} <b id="comment-reply-author"></b> <button type="button" id="comment-reply-cancel">{{ tr('Cancel') }}</button></div><div class="mention-input-wrap"><textarea name="body" rows="3" placeholder="{{ tr('Add a work note or comment… (type @ to mention someone)') }}" required id="comment-body-input"></textarea><ul class="mention-suggestions" id="mention-suggestions" hidden></ul></div><label class="comment-attach"><span>{{ tr('Attach a file (optional)') }}</span><input type="file" name="file"></label><button class="primary">{{ tr('Post comment') }}</button></form>
   </section>
 
   <section class="panel">
-    <header class="section-heading"><div><h2>Service commitments</h2><p>Active SLA definitions and breach targets</p></div></header>
-    {% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ sla.stage }}{% if sla.breached %} · BREACHED{% endif %}</small></div><div><span>Breach target</span><strong>{{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</strong></div></div>{% else %}<p class="muted">No active service commitments.</p>{% endfor %}
+    <header class="section-heading"><div><h2>{{ tr('Service commitments') }}</h2><p>{{ tr('Active SLA definitions and breach targets') }}</p></div></header>
+    {% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ tr_value(sla.stage) }}{% if sla.breached %} · {{ tr('BREACHED') }}{% endif %}</small></div><div><span>{{ tr('Breach target') }}</span><strong>{{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</strong></div></div>{% else %}<p class="muted">{{ tr('No active service commitments.') }}</p>{% endfor %}
   </section>
 </div>
 
 <section class="panel incident-related-panel" id="related-records">
-  <header class="section-heading"><div><h2>Related records</h2><p>Problems, changes, requests, and knowledge articles</p></div></header>
-  {% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ item.label }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">No related records.</p>{% endfor %}
+  <header class="section-heading"><div><h2>{{ tr('Related records') }}</h2><p>{{ tr('Problems, changes, requests, and knowledge articles') }}</p></div></header>
+  {% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ tr_value(item.label) }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">{{ tr('No related records.') }}</p>{% endfor %}
   {% if can_manage_ticket %}
   <form method="post" action="{{ url_for('record_link_add', source_type='ticket', source_id=ticket.id) }}" class="inline-form">
-    <select name="link_type"><option value="parent_incident">Parent incident</option><option value="underlying_problem">Problem</option><option value="resolution_change">Change request</option><option value="caused_by_change">Caused by change</option><option value="converted_request">Service request</option><option value="knowledge_article">Knowledge article</option></select>
-    <div class="lookup" data-lookup-url="{{ url_for('lookup_records') }}"><input type="text" name="target_number" class="lookup-search" placeholder="Search INC, PRB, CHG, REQ, RITM or KB…" autocomplete="off" required><div class="lookup-results" hidden></div></div><button>Link record</button>
+    <select name="link_type"><option value="parent_incident">{{ tr('Parent incident') }}</option><option value="underlying_problem">{{ tr('Problem') }}</option><option value="resolution_change">{{ tr('Change request') }}</option><option value="caused_by_change">{{ tr('Caused by change') }}</option><option value="converted_request">{{ tr('Service request') }}</option><option value="knowledge_article">{{ tr('Knowledge article') }}</option></select>
+    <div class="lookup" data-lookup-url="{{ url_for('lookup_records') }}"><input type="text" name="target_number" class="lookup-search" placeholder="{{ tr('Search INC, PRB, CHG, REQ, RITM or KB…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div><button>{{ tr('Link record') }}</button>
   </form>
   {% endif %}
 </section>
 
 {% set impacted_services = (ci_links|map(attribute='ci.service_links')|sum(start=[])) %}
 <section class="panel" id="affected-cis">
-  <header class="section-heading"><div><h2>Affected CIs and impacted services</h2></div></header>
-  {% for link in ci_links if link.relationship_role != 'Primary CI' %}<div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div><span class="badge">{{ link.relationship_role }}</span></div>{% else %}<p class="muted">No additional CI or service relationships.</p>{% endfor %}
+  <header class="section-heading"><div><h2>{{ tr('Affected CIs and impacted services') }}</h2></div></header>
+  {% for link in ci_links if link.relationship_role != 'Primary CI' %}<div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div><span class="badge">{{ tr_value(link.relationship_role) }}</span></div>{% else %}<p class="muted">{{ tr('No additional CI or service relationships.') }}</p>{% endfor %}
   {% if impacted_services %}
-  <h3 style="margin:16px 0 8px;font-size:13px;color:var(--muted)">Business services realized by the linked CIs</h3>
-  {% for svc_link in impacted_services %}<div class="sla-row"><div><strong>{{ svc_link.service_offering.name }}</strong><small>via {{ svc_link.ci.name }}</small></div><span class="badge">{{ svc_link.service_offering.criticality }}</span></div>{% endfor %}
+  <h3 style="margin:16px 0 8px;font-size:13px;color:var(--muted)">{{ tr('Business services realized by the linked CIs') }}</h3>
+  {% for svc_link in impacted_services %}<div class="sla-row"><div><strong>{{ svc_link.service_offering.name }}</strong><small>{{ tr('via {name}', name=(svc_link.ci.name)) }}</small></div><span class="badge">{{ svc_link.service_offering.criticality }}</span></div>{% endfor %}
   {% endif %}
-  {% if can_manage_ticket %}<form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form"><select name="relationship_role"><option>Affected CI</option><option>Impacted service</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="Pick one or more configuration items…" autocomplete="off" required><div class="lookup-results" hidden></div></div><button>Link CIs</button></form>{% endif %}
+  {% if can_manage_ticket %}<form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form"><select name="relationship_role"><option>{{ tr('Affected CI') }}</option><option>{{ tr('Impacted service') }}</option></select><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick one or more configuration items…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div><button>{{ tr('Link CIs') }}</button></form>{% endif %}
 </section>
 
 <div class="incident-support-grid" id="resolution-information">
   <section class="panel">
-    <h2>Checklist</h2>{% for item in ticket.checklist|sort(attribute='position') %}{% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_toggle', item_id=item.id) }}" class="checklist-row"><button aria-label="Toggle checklist item">{{ '✓' if item.completed else '○' }}</button><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></form>{% else %}<div class="checklist-row"><span>{{ '✓' if item.completed else '○' }}</span><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></div>{% endif %}{% else %}<p class="muted">No checklist items.</p>{% endfor %}
-    {% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_add', ticket_id=ticket.id) }}" class="inline-form"><input name="text" placeholder="Add checklist item" required><button>Add</button></form>{% endif %}
+    <h2>{{ tr('Checklist') }}</h2>{% for item in ticket.checklist|sort(attribute='position') %}{% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_toggle', item_id=item.id) }}" class="checklist-row"><button aria-label="{{ tr('Toggle checklist item') }}">{{ '✓' if item.completed else '○' }}</button><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></form>{% else %}<div class="checklist-row"><span>{{ '✓' if item.completed else '○' }}</span><span class="{% if item.completed %}done{% endif %}">{{ item.text }}</span></div>{% endif %}{% else %}<p class="muted">{{ tr('No checklist items.') }}</p>{% endfor %}
+    {% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_add', ticket_id=ticket.id) }}" class="inline-form"><input name="text" placeholder="{{ tr('Add checklist item') }}" required><button>{{ tr('Add') }}</button></form>{% endif %}
   </section>
 </div>
 
 <section class="panel" id="attachments">
-  <header class="section-heading"><div><h2>Attachments</h2></div></header>
-  {% for attachment in ticket.attachments %}<a class="attachment" href="{{ url_for('attachment_download', attachment_id=attachment.id) }}">{% if attachment.mime_type in IMAGE_ATTACHMENT_TYPES %}<img class="attachment-thumb" src="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" alt="" data-lightbox-src="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" data-lightbox-title="{{ attachment.original_name }}">{% endif %}<strong>{{ attachment.original_name }}</strong><span>{{ (attachment.size_bytes / 1024)|round(1) }} KB · {{ attachment.uploaded_by.name }}{% if attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES and attachment.mime_type not in IMAGE_ATTACHMENT_TYPES %} · <a href="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" data-lightbox-src="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" data-lightbox-title="{{ attachment.original_name }}" data-lightbox-type="pdf">Preview</a>{% endif %}</span></a>{% else %}<p class="muted">No attachments.</p>{% endfor %}
-  <form method="post" action="{{ url_for('attachment_upload', ticket_id=ticket.id) }}" enctype="multipart/form-data" class="inline-form"><input type="file" name="file" required><button>Upload</button></form>
+  <header class="section-heading"><div><h2>{{ tr('Attachments') }}</h2></div></header>
+  {% for attachment in ticket.attachments %}<a class="attachment" href="{{ url_for('attachment_download', attachment_id=attachment.id) }}">{% if attachment.mime_type in IMAGE_ATTACHMENT_TYPES %}<img class="attachment-thumb" src="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" alt="" data-lightbox-src="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" data-lightbox-title="{{ attachment.original_name }}">{% endif %}<strong>{{ attachment.original_name }}</strong><span>{{ (attachment.size_bytes / 1024)|round(1) }} KB · {{ attachment.uploaded_by.name }}{% if attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES and attachment.mime_type not in IMAGE_ATTACHMENT_TYPES %} · <a href="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" data-lightbox-src="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" data-lightbox-title="{{ attachment.original_name }}" data-lightbox-type="pdf">{{ tr('Preview') }}</a>{% endif %}</span></a>{% else %}<p class="muted">{{ tr('No attachments.') }}</p>{% endfor %}
+  <form method="post" action="{{ url_for('attachment_upload', ticket_id=ticket.id) }}" enctype="multipart/form-data" class="inline-form"><input type="file" name="file" required><button>{{ tr('Upload') }}</button></form>
 </section>
 
 {% if can_manage_ticket and reassignable_teams %}
-<details class="panel incident-reassign"><summary>Reassign incident to another team</summary><form method="post" class="inline-form"><input type="hidden" name="action" value="reassign_team"><select name="new_group_id" required><option value="">Select a team</option>{% for team in reassignable_teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select><button>Send to team</button></form></details>
+<details class="panel incident-reassign"><summary>{{ tr('Reassign incident to another team') }}</summary><form method="post" class="inline-form"><input type="hidden" name="action" value="reassign_team"><select name="new_group_id" required><option value="">{{ tr('Select a team') }}</option>{% for team in reassignable_teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select><button>{{ tr('Send to team') }}</button></form></details>
 {% endif %}
 {% endblock %}

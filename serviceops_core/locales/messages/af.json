@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Maandag",
+   "Dinsdag",
+   "Woensdag",
+   "Donderdag",
+   "Vrydag",
+   "Saterdag",
+   "Sondag"
+  ],
+  "days_abbr": [
+   "Ma.",
+   "Di.",
+   "Wo.",
+   "Do.",
+   "Vr.",
+   "Sa.",
+   "So."
+  ],
+  "months": [
+   "Januarie",
+   "Februarie",
+   "Maart",
+   "April",
+   "Mei",
+   "Junie",
+   "Julie",
+   "Augustus",
+   "September",
+   "Oktober",
+   "November",
+   "Desember"
+  ],
+  "months_abbr": [
+   "Jan.",
+   "Feb.",
+   "Mrt.",
+   "Apr.",
+   "Mei",
+   "Jun.",
+   "Jul.",
+   "Aug.",
+   "Sep.",
+   "Okt.",
+   "Nov.",
+   "Des."
+  ]
+ },
+ "language": "af",
+ "messages": {
+  "Administration": "Administrasie",
+  "Back": "Terug",
+  "Cancel": "Kanselleer",
+  "Changes": "Veranderings",
+  "Close": "Sluit",
+  "Create": "Skep",
+  "Dashboard": "Kontrolepaneel",
+  "Delete": "Verwyder",
+  "Description": "Beskrywing",
+  "Edit": "Wysig",
+  "General": "Algemeen",
+  "Incidents": "Insidente",
+  "Knowledge": "Kennis",
+  "Language": "Taal",
+  "Name": "Naam",
+  "Notifications": "Kennisgewings",
+  "Preferences": "Voorkeure",
+  "Priority": "Prioriteit",
+  "Save": "Stoor",
+  "Save preferences": "Stoor voorkeure",
+  "Search": "Soek",
+  "Service requests": "Diensversoeke",
+  "Status": "Status",
+  "System preferences": "Stelselvoorkeure"
+ }
+}

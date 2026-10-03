@@ -18,6 +18,7 @@ import time as time_module
 import uuid
 
 from sqlalchemy import event
+from serviceops_core.localization import tr
 
 
 logger = logging.getLogger("serviceops.storage.ipfs_projection")
@@ -58,7 +59,7 @@ def _decode(value):
         return Decimal(raw)
     if kind == "uuid":
         return uuid.UUID(raw)
-    raise ValueError(f"Unknown checkpoint value type {kind!r}")
+    raise ValueError(tr("Unknown checkpoint value type {kind}", kind=repr(kind)))
 
 
 class IPFSRelationalProjection:

@@ -67,6 +67,7 @@ from serviceops_models import (
     Ticket,
     User,
 )
+from serviceops_core.localization import tr
 
 
 def register(app):
@@ -92,7 +93,7 @@ def register(app):
                 approval_stages = catalog_approval_stages(current_user)
             except ValueError as error:
                 flash(
-                    f"{item.name} cannot be requested yet: {error} Contact an administrator.",
+                    tr("{name} cannot be requested yet: {error} Contact an administrator.", name=item.name, error=error),
                     "error",
                 )
                 return redirect(url_for("catalog"))
@@ -126,7 +127,7 @@ def register(app):
         )
         audit("order", req.number, f"{ritm.number}: {item.name}")
         db.session.commit()
-        flash(f"{item.name} requested as {req.number} / {ritm.number}.", "success")
+        flash(tr("{name} requested as {number} / {number2}.", name=item.name, number=req.number, number2=ritm.number), "success")
         return redirect(url_for("request_detail", request_id=req.id))
 
     @app.get("/approvals")
@@ -318,7 +319,7 @@ def register(app):
     def request_detail(request_id):
         req = tenant_record_or_404(CatalogRequest, request_id)
         if not user_can_view_catalog_request(current_user, req):
-            abort(403, description="You are not involved in this request or its fulfillment.")
+            abort(403, description=tr("You are not involved in this request or its fulfillment."))
         return render_template(
             "request_detail.html", req=req,
             catalog_items=tenant_query(CatalogItem).filter_by(active=True).order_by(
@@ -335,7 +336,7 @@ def register(app):
         if req.tenant_id != current_user.tenant_id:
             abort(404)
         if not user_can_view_catalog_request(current_user, req):
-            abort(403, description="You are not involved in this request or its fulfillment.")
+            abort(403, description=tr("You are not involved in this request or its fulfillment."))
         can_manage = user_can_manage_ritm(current_user, ritm)
         chains = ApprovalChain.query.filter_by(target_type="ritm", target_id=ritm.id).all()
         slas = TaskSLA.query.filter_by(target_type="ritm", target_id=ritm.id).all()
@@ -372,9 +373,9 @@ def register(app):
     def request_item_add(request_id):
         req = tenant_record_or_404(CatalogRequest, request_id)
         if req.state not in ("Open", "Awaiting Approval"):
-            abort(409, description="Items cannot be added to a completed request.")
+            abort(409, description=tr("Items cannot be added to a completed request."))
         if not user_can_add_request_item(current_user, req):
-            abort(403, description="Only request participants or an administrator can add items.")
+            abort(403, description=tr("Only request participants or an administrator can add items."))
         item = tenant_record_or_404(CatalogItem, int(request.form["catalog_item_id"]))
         approval_stages = None
         if item.approval_required:
@@ -418,13 +419,13 @@ def register(app):
     def catalog_task_add(ritm_id):
         ritm = db.get_or_404(RequestedItem, ritm_id)
         if not user_can_manage_ritm(current_user, ritm):
-            abort(403, description="Only the fulfillment team can add tasks to this requested item.")
+            abort(403, description=tr("Only the fulfillment team can add tasks to this requested item."))
         chain = approval_chain_for("ritm", ritm.id)
         if chain and chain.state != "Approved":
-            abort(409, description="Catalog tasks cannot be added until the RITM is approved.")
+            abort(409, description=tr("Catalog tasks cannot be added until the RITM is approved."))
         group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
         if not group.active or group.group_type != "IT Fulfillment":
-            abort(400, description="Catalog tasks require an active IT fulfillment team.")
+            abort(400, description=tr("Catalog tasks require an active IT fulfillment team."))
         def build_task():
             task = CatalogTask(
                 number=sequence_number(CatalogTask, "SCTASK"),
@@ -467,7 +468,7 @@ def register(app):
     def catalog_task_detail(task_id):
         task = db.get_or_404(CatalogTask, task_id)
         if not user_can_view_catalog_task(current_user, task):
-            abort(403, description="You are not involved in this catalog task or its fulfillment.")
+            abort(403, description=tr("You are not involved in this catalog task or its fulfillment."))
         ritm = task.requested_item
         can_edit = user_in_group(current_user, task.assignment_group)
         member_ids = {member.user_id for member in task.assignment_group.members} if task.assignment_group else set()
@@ -537,11 +538,10 @@ def register(app):
         visibility = request.form.get("visibility")
         body = request.form.get("body", "").strip()
         if visibility not in ("internal", "customer"):
-            abort(400, description="Select a valid note visibility.")
+            abort(400, description=tr("Select a valid note visibility."))
         if visibility == "internal" and not user_in_group(current_user, task.assignment_group):
             abort(403, description=(
-                f"Only active members of {task.assignment_group.name if task.assignment_group else 'the assignment group'} "
-                "can add internal work notes."
+                tr("Only active members of {value} can add internal work notes.", value=task.assignment_group.name if task.assignment_group else 'the assignment group')
             ))
         if body:
             if visibility == "internal":
@@ -573,15 +573,14 @@ def register(app):
         task = db.get_or_404(CatalogTask, task_id)
         if not user_in_group(current_user, task.assignment_group):
             abort(403, description=(
-                f"Only active members of {task.assignment_group.name if task.assignment_group else 'the assignment group'} "
-                f"can update {task.number}."
+                tr("Only active members of {value} can update {number}.", value=task.assignment_group.name if task.assignment_group else 'the assignment group', number=task.number)
             ))
         before = {"state": task.state, "work notes": task.work_notes}
         try:
             transition_catalog_task(task, request.form.get("state", task.state))
         except HTTPException as error:
             db.session.rollback()
-            flash(error.description or "That change could not be made.", "error")
+            flash(error.description or tr("That change could not be made."), "error")
             destination = request.referrer
             if destination and destination.startswith(request.host_url):
                 return redirect(destination)

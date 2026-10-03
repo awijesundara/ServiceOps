@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "pirmadienis",
+   "antradienis",
+   "trečiadienis",
+   "ketvirtadienis",
+   "penktadienis",
+   "šeštadienis",
+   "sekmadienis"
+  ],
+  "days_abbr": [
+   "pr",
+   "an",
+   "tr",
+   "kt",
+   "pn",
+   "št",
+   "sk"
+  ],
+  "months": [
+   "sausio",
+   "vasario",
+   "kovo",
+   "balandžio",
+   "gegužės",
+   "birželio",
+   "liepos",
+   "rugpjūčio",
+   "rugsėjo",
+   "spalio",
+   "lapkričio",
+   "gruodžio"
+  ],
+  "months_abbr": [
+   "saus.",
+   "vas.",
+   "kov.",
+   "bal.",
+   "geg.",
+   "birž.",
+   "liep.",
+   "rugp.",
+   "rugs.",
+   "spal.",
+   "lapkr.",
+   "gruod."
+  ]
+ },
+ "language": "lt",
+ "messages": {
+  "Administration": "Administravimas",
+  "Back": "Atgal",
+  "Cancel": "Atšaukti",
+  "Changes": "Pakeitimai",
+  "Close": "Uždaryti",
+  "Create": "Sukurti",
+  "Dashboard": "Valdymo skydelis",
+  "Delete": "Ištrinti",
+  "Description": "Aprašymas",
+  "Edit": "Redaguoti",
+  "General": "Bendrosios",
+  "Incidents": "Incidentai",
+  "Knowledge": "Žinios",
+  "Language": "Kalba",
+  "Name": "Pavadinimas",
+  "Notifications": "Pranešimai",
+  "Preferences": "Nuostatos",
+  "Priority": "Prioritetas",
+  "Save": "Išsaugoti",
+  "Save preferences": "Išsaugoti nuostatas",
+  "Search": "Ieškoti",
+  "Service requests": "Paslaugų užklausos",
+  "Status": "Būsena",
+  "System preferences": "Sistemos nuostatos"
+ }
+}

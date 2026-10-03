@@ -1,31 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Visual task board · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Visual task board · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <header class="page-head task-board-head">
-  <div><p class="eyebrow">VISUAL TASK BOARD</p><h1>Service work board</h1><p>Prioritized operational work with SLA urgency. Completed records roll off automatically but remain available in ticket lists and search.</p></div>
-  <a class="button" href="{{ url_for('tickets', kind='incident') }}">Open ticket list</a>
+  <div><p class="eyebrow">{{ tr('VISUAL TASK BOARD') }}</p><h1>{{ tr('Service work board') }}</h1><p>{{ tr('Prioritized operational work with SLA urgency. Completed records roll off automatically but remain available in ticket lists and search.') }}</p></div>
+  <a class="button" href="{{ url_for('tickets', kind='incident') }}">{{ tr('Open ticket list') }}</a>
 </header>
-<section class="board-toolbar panel" aria-label="Task board filters">
+<section class="board-toolbar panel" aria-label="{{ tr('Task board filters') }}">
   <form method="get" class="board-filters">
-    <label><span>Board scope</span><select name="scope"><option value="focus" {% if scope == 'focus' %}selected{% endif %}>Operational focus</option><option value="all" {% if scope == 'all' %}selected{% endif %}>All current work</option></select></label>
-    <label><span>{{ t('Priority') }}</span><select name="priority"><option value="">All priorities</option>{% for priority in ['P1', 'P2', 'P3', 'P4'] %}<option value="{{ priority }}" {% if priority_filter == priority %}selected{% endif %}>{{ priority }}</option>{% endfor %}</select></label>
-    <button class="primary" type="submit">Apply</button>
-    {% if scope != 'focus' or priority_filter %}<a class="button" href="{{ url_for('task_board') }}">Reset</a>{% endif %}
+    <label><span>{{ tr('Board scope') }}</span><select name="scope"><option value="focus" {% if scope == 'focus' %}selected{% endif %}>{{ tr('Operational focus') }}</option><option value="all" {% if scope == 'all' %}selected{% endif %}>{{ tr('All current work') }}</option></select></label>
+    <label><span>{{ tr('Priority') }}</span><select name="priority"><option value="">{{ tr('All priorities') }}</option>{% for priority in ['P1', 'P2', 'P3', 'P4'] %}<option value="{{ priority }}" {% if priority_filter == priority %}selected{% endif %}>{{ tr_value(priority) }}</option>{% endfor %}</select></label>
+    <button class="primary" type="submit">{{ tr('Apply') }}</button>
+    {% if scope != 'focus' or priority_filter %}<a class="button" href="{{ url_for('task_board') }}">{{ tr('Reset') }}</a>{% endif %}
   </form>
-  <div class="board-legend" aria-label="SLA status legend"><span><i class="legend-dot sla-breached"></i>SLA exceeded</span><span><i class="legend-dot sla-at-risk"></i>SLA at risk</span><span><i class="legend-dot sla-healthy"></i>On track</span></div>
+  <div class="board-legend" aria-label="{{ tr('SLA status legend') }}"><span><i class="legend-dot sla-breached"></i>{{ tr('SLA exceeded') }}</span><span><i class="legend-dot sla-at-risk"></i>{{ tr('SLA at risk') }}</span><span><i class="legend-dot sla-healthy"></i>{{ tr('On track') }}</span></div>
 </section>
-{% if scope == 'focus' %}<p class="board-scope-note"><strong>Operational focus</strong> includes P1/P2, SLA-exposed, assigned-to-you, and recently updated open work. Resolved cards remain for 7 days; closed cards for 2 days.</p>{% else %}<p class="board-scope-note"><strong>All current work</strong> includes every visible open record, capped at 100 cards per lane. Use the ticket list for the complete backlog.</p>{% endif %}
-<section class="task-board" aria-label="Ticket lifecycle board" tabindex="0">
+{% if scope == 'focus' %}<p class="board-scope-note"><strong>{{ tr('Operational focus') }}</strong> {{ tr('includes P1/P2, SLA-exposed, assigned-to-you, and recently updated open work. Resolved cards remain for 7 days; closed cards for 2 days.') }}</p>{% else %}<p class="board-scope-note"><strong>{{ tr('All current work') }}</strong> {{ tr('includes every visible open record, capped at 100 cards per lane. Use the ticket list for the complete backlog.') }}</p>{% endif %}
+<section class="task-board" aria-label="{{ tr('Ticket lifecycle board') }}" tabindex="0">
   {% for state, tickets in tickets_by_state.items() %}<div class="board-lane" data-state="{{ state }}">
-    <header><h2>{{ state }}</h2><span aria-label="{{ board_meta[state].total }} tickets">{{ board_meta[state].total }}</span></header>
+    <header><h2>{{ tr_value(state) }}</h2><span aria-label="{{ tr('{board_meta} tickets', board_meta=(board_meta[state].total)) }}">{{ board_meta[state].total }}</span></header>
     <div class="board-cards">
       {% for ticket in tickets %}{% set sla = ticket_sla[ticket.id] %}<article class="board-card sla-{{ sla.state }}" draggable="{{ 'true' if ticket.id in manageable_ticket_ids else 'false' }}" data-ticket="{{ ticket.id }}">
-        <div class="board-card-top"><span class="priority {{ ticket.priority|lower }}">{{ ticket.priority }}</span>{% if sla.state != 'none' %}<span class="board-sla-status">{{ sla.label }}</span>{% endif %}</div>
+        <div class="board-card-top"><span class="priority {{ ticket.priority|lower }}">{{ tr_value(ticket.priority) }}</span>{% if sla.state != 'none' %}<span class="board-sla-status">{{ tr_value(sla.label) }}</span>{% endif %}</div>
         <a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a><strong>{{ ticket.title }}</strong>
-        <div class="board-card-meta">{% if sla.due %}<span class="board-sla-time">{{ sla.due }}</span>{% endif %}<small>{{ ticket.assignee.name if ticket.assignee else 'Unassigned' }}{% if ticket.id not in manageable_ticket_ids %} · Read only{% endif %}</small></div>
-      </article>{% else %}<p class="board-empty">No matching work</p>{% endfor %}
+        <div class="board-card-meta">{% if sla.due %}<span class="board-sla-time">{{ sla.due }}</span>{% endif %}<small>{{ ticket.assignee.name if ticket.assignee else tr('Unassigned') }}{% if ticket.id not in manageable_ticket_ids %} · {{ tr('Read only') }}{% endif %}</small></div>
+      </article>{% else %}<p class="board-empty">{{ tr('No matching work') }}</p>{% endfor %}
     </div>
-    {% if board_meta[state].hidden %}<a class="board-hidden" href="{{ url_for('tickets', kind='incident') }}">{{ board_meta[state].hidden }} more in ticket lists</a>{% endif %}
+    {% if board_meta[state].hidden %}<a class="board-hidden" href="{{ url_for('tickets', kind='incident') }}">{{ tr('{board_meta} more in ticket lists', board_meta=(board_meta[state].hidden)) }}</a>{% endif %}
   </div>{% endfor %}
 </section>
 {% endblock %}

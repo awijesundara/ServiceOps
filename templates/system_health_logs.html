@@ -1,47 +1,47 @@
-{% extends "base.html" %}{% block title %}Detailed logs · {{ instance_name }}{% endblock %}
+{% extends "base.html" %}{% block title %}{{ tr('Detailed logs · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-{% set admin_page_title = 'Detailed request logs' %}{% set admin_parent_title = 'System health' %}{% set admin_parent_url = url_for('system_health') %}{% include '_admin_context.html' %}
-<header class="page-head"><div><h1>Detailed request logs</h1><p>Every request this process has handled, most recent first -- read directly from {{ log_path or 'the configured log file' }} without shell access.</p></div></header>
+{% set admin_page_title = tr('Detailed request logs') %}{% set admin_parent_title = tr('System health') %}{% set admin_parent_url = url_for('system_health') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>{{ tr('Detailed request logs') }}</h1><p>{{ tr('Every request this process has handled, most recent first -- read directly from {log_path} without shell access.', log_path=(log_path or tr('the configured log file'))) }}</p></div></header>
 {% if error_message %}
 <div class="panel"><p class="flash error">{{ error_message }}</p></div>
 {% else %}
 <section class="panel">
   <form class="filters splunk-filters" style="margin-bottom:14px">
-    <input name="q" value="{{ q }}" placeholder="Search path, message, request ID..." aria-label="Search logs">
-    <select name="level" aria-label="Level">
-      <option value="" {% if not level_filter %}selected{% endif %}>All levels</option>
+    <input name="q" value="{{ q }}" placeholder="{{ tr('Search path, message, request ID...') }}" aria-label="{{ tr('Search logs') }}">
+    <select name="level" aria-label="{{ tr('Level') }}">
+      <option value="" {% if not level_filter %}selected{% endif %}>{{ tr('All levels') }}</option>
       {% for level in ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'] %}
       <option value="{{ level }}" {% if level_filter == level %}selected{% endif %}>{{ level }}</option>
       {% endfor %}
     </select>
-    <input name="logger" value="{{ logger_filter }}" placeholder="Logger contains…" aria-label="Logger name">
-    <input name="path" value="{{ path_filter }}" placeholder="Path contains…" aria-label="Path">
-    <select name="method" aria-label="Method">
-      <option value="" {% if not method_filter %}selected{% endif %}>Any method</option>
+    <input name="logger" value="{{ logger_filter }}" placeholder="{{ tr('Logger contains…') }}" aria-label="{{ tr('Logger name') }}">
+    <input name="path" value="{{ path_filter }}" placeholder="{{ tr('Path contains…') }}" aria-label="{{ tr('Path') }}">
+    <select name="method" aria-label="{{ tr('Method') }}">
+      <option value="" {% if not method_filter %}selected{% endif %}>{{ tr('Any method') }}</option>
       {% for method in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] %}
       <option value="{{ method }}" {% if method_filter == method %}selected{% endif %}>{{ method }}</option>
       {% endfor %}
     </select>
-    <input name="status_code" value="{{ status_filter }}" placeholder="Status code" aria-label="Status code">
-    <input name="request_id" value="{{ request_id_filter }}" placeholder="Request ID" aria-label="Request ID">
-    <label>From <input type="datetime-local" name="from" value="{{ from_filter }}" aria-label="From date/time"></label>
-    <label>To <input type="datetime-local" name="to" value="{{ to_filter }}" aria-label="To date/time"></label>
+    <input name="status_code" value="{{ status_filter }}" placeholder="{{ tr('Status code') }}" aria-label="{{ tr('Status code') }}">
+    <input name="request_id" value="{{ request_id_filter }}" placeholder="{{ tr('Request ID') }}" aria-label="{{ tr('Request ID') }}">
+    <label>{{ tr('From') }} <input type="datetime-local" name="from" value="{{ from_filter }}" aria-label="{{ tr('From date/time') }}"></label>
+    <label>{{ tr('To') }} <input type="datetime-local" name="to" value="{{ to_filter }}" aria-label="{{ tr('To date/time') }}"></label>
     <select name="lines">
       {% for count in [200, 500, 1000, 2000, 5000, 20000] %}
-      <option value="{{ count }}" {% if request.args.get('lines', '500')|int == count %}selected{% endif %}>Last {{ count }} lines</option>
+      <option value="{{ count }}" {% if request.args.get('lines', '500')|int == count %}selected{% endif %}>{{ tr('Last {count} lines', count=(count)) }}</option>
       {% endfor %}
     </select>
-    <button>Apply filters</button>
-    <a class="button" href="{{ url_for('system_health_log_file') }}">Clear filters</a>
+    <button>{{ tr('Apply filters') }}</button>
+    <a class="button" href="{{ url_for('system_health_log_file') }}">{{ tr('Clear filters') }}</a>
   </form>
   <div class="export-bar">
-    <span>Export {{ entries|length }} filtered lines as:</span>
+    <span>{{ tr('Export {entries} filtered lines as:', entries=(entries|length)) }}</span>
     {% for fmt, label in [('ndjson','NDJSON'), ('json','JSON'), ('csv','CSV'), ('txt','Plain text')] %}
-    <a class="button big" href="{{ url_for('system_health_log_file_export', format=fmt, q=q, level=level_filter, logger=logger_filter, path=path_filter, method=method_filter, status_code=status_filter, request_id=request_id_filter, lines=request.args.get('lines', '500'), **{'from': from_filter, 'to': to_filter}) }}">{{ label }}</a>
+    <a class="button big" href="{{ url_for('system_health_log_file_export', format=fmt, q=q, level=level_filter, logger=logger_filter, path=path_filter, method=method_filter, status_code=status_filter, request_id=request_id_filter, lines=request.args.get('lines', '500'), **{'from': from_filter, 'to': to_filter}) }}">{{ tr_value(label) }}</a>
     {% endfor %}
   </div>
   <div class="task-list-scroll">
-  <table class="task-list"><thead><tr><th>Time</th><th>Level</th><th>Method</th><th>Path</th><th>{{ t('Status') }}</th><th>Duration</th><th>User</th><th>Message</th></tr></thead><tbody>
+  <table class="task-list"><thead><tr><th>{{ tr('Time') }}</th><th>{{ tr('Level') }}</th><th>{{ tr('Method') }}</th><th>{{ tr('Path') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Duration') }}</th><th>{{ tr('User') }}</th><th>{{ tr('Message') }}</th></tr></thead><tbody>
     {% for entry in entries %}
     <tr>
       <td>{{ entry.get('timestamp', '')[:19] }}</td>
@@ -51,10 +51,10 @@
       <td>{{ entry.get('status_code', '') }}</td>
       <td>{{ (entry.get('duration_ms') ~ ' ms') if entry.get('duration_ms') is not none else '' }}</td>
       <td>{{ entry.get('user_id', '') }}</td>
-      <td>{{ entry.get('message', '') }}{% if entry.get('exception') %}<details><summary>Traceback</summary><pre class="pre">{{ entry.get('exception') }}</pre></details>{% endif %}</td>
+      <td>{{ entry.get('message', '') }}{% if entry.get('exception') %}<details><summary>{{ tr('Traceback') }}</summary><pre class="pre">{{ entry.get('exception') }}</pre></details>{% endif %}</td>
     </tr>
     {% else %}
-    <tr><td colspan="8" class="empty">No matching log lines in the tailed window.</td></tr>
+    <tr><td colspan="8" class="empty">{{ tr('No matching log lines in the tailed window.') }}</td></tr>
     {% endfor %}
   </tbody></table>
   </div>

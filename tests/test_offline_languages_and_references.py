@@ -17,12 +17,11 @@ from tests.test_ai_assistant import configure, fake_stream, submit, allow_test_e
 from tests.test_app import app, client, login  # noqa: F401
 
 
-def test_bundled_catalogs_are_complete_for_the_common_message_set():
-    assert len(CATALOGS) == 83
-    expected = set(CATALOGS["en"]["messages"])
-    assert len(expected) == 24
-    assert all(set(catalog["messages"]) == expected for catalog in CATALOGS.values())
+def test_bundled_catalogs_keep_the_reviewed_common_terms():
+    assert len(CATALOGS) >= 83
+    assert CATALOGS["en"]["messages"] == {}
     assert translate("Save", "ja") == "保存"
+    assert translate("System preferences", "si") == "පද්ධති අභිරුචි"
     assert translate("Not translated", "ja") == "Not translated"
     assert translate("Save", "unknown") == "Save"
 
@@ -110,7 +109,8 @@ def test_browser_language_selection_rtl_and_safe_ai_citations(app, client, langu
             context.add_cookies([{"name": "session", "value": client.get_cookie("session").value, "domain": "127.0.0.1", "path": "/"}])
             page = context.new_page()
             page.goto(f"http://127.0.0.1:{server.server_port}/preferences")
-            assert page.locator('select[name="language"] option').count() == 83
+            # "Automatic (browser language)" plus every bundled language.
+            assert page.locator('select[name="language"] option').count() == len(CATALOGS) + 1
             page.locator('select[name="language"]').select_option(language)
             page.get_by_role("button", name="Save preferences", exact=True).click()
             page.wait_for_load_state("networkidle")

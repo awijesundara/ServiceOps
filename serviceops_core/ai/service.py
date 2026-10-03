@@ -17,6 +17,7 @@ from serviceops_core.ai.provider import INSTRUCTIONS, ProviderError, StreamCance
 from serviceops_core import read_access
 from serviceops_core.security import mask_pii, redact
 from serviceops_core.storage import ipfs_enabled
+from serviceops_core.localization import tr
 
 ALLOWED_ROLES = {"agent", "manager", "admin", "superadmin"}
 ACTIVE = ("queued", "running")
@@ -39,7 +40,7 @@ def enabled_config(tenant_id, *, lock=False, feature="incident"):
     config = (query.with_for_update() if lock else query).first()
     switch = config.chat_enabled if config and feature == "chat" else (config.incident_enabled if config else False)
     if ipfs_enabled() or not config or not config.enabled or not switch:
-        abort(403, description="AI assistance is disabled by your administrator.")
+        abort(403, description=tr("AI assistance is disabled by your administrator."))
     return config
 
 
@@ -163,7 +164,7 @@ def _snapshot(config, connection):
         try:
             proxy_url = settings_cipher().decrypt(connection.proxy_url_encrypted.encode()).decode()
         except Exception:
-            raise ProviderError("AI proxy credential could not be decrypted.") from None
+            raise ProviderError(tr("AI proxy credential could not be decrypted.")) from None
     return SimpleNamespace(provider=connection.provider, model=connection.model, endpoint=connection.endpoint,
                            key_encrypted=connection.key_encrypted, external_consent=config.external_consent,
                            max_output_tokens=config.max_output_tokens, capabilities_json=connection.capabilities_json or "{}",
@@ -268,7 +269,7 @@ def _prepare_investigation(run, user, config, steps):
     steps.add("Collected evidence", _describe(Counter(source["kind"] for source in sources)))
     prompt = json.dumps(evidence, ensure_ascii=True)
     if len(prompt) > 40000:
-        raise ProviderError("Evidence exceeds the request limit.")
+        raise ProviderError(tr("Evidence exceeds the request limit."))
     return Prepared([{"role": "system", "content": INSTRUCTIONS}, {"role": "user", "content": prompt}], sources,
                     access.identifiers_in(prompt), (), True, bool(config.show_reasoning), reasons=reasons,
                     kinds={source["kind"] for source in sources}, identity_terms=identity_terms(user))
@@ -426,7 +427,7 @@ def _finish(run_id, prepared, steps, content, reasoning, usage, sanitize, featur
             extras["pages"] = pages
         route = {**route, **extras}
     if prepared.cite_required and not re.search(r"\[S\d+\]", final):
-        raise ProviderError("Provider returned an answer without evidence citations.")
+        raise ProviderError(tr("Provider returned an answer without evidence citations."))
     steps.add("Checked your access again", "Every source is still readable by you")
     steps.finish()
     run.result_text, run.partial_text, run.reasoning_text = final, "", ""

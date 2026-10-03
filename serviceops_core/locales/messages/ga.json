@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Dé Luain",
+   "Dé Máirt",
+   "Dé Céadaoin",
+   "Déardaoin",
+   "Dé hAoine",
+   "Dé Sathairn",
+   "Dé Domhnaigh"
+  ],
+  "days_abbr": [
+   "Luan",
+   "Máirt",
+   "Céad",
+   "Déar",
+   "Aoine",
+   "Sath",
+   "Domh"
+  ],
+  "months": [
+   "Eanáir",
+   "Feabhra",
+   "Márta",
+   "Aibreán",
+   "Bealtaine",
+   "Meitheamh",
+   "Iúil",
+   "Lúnasa",
+   "Meán Fómhair",
+   "Deireadh Fómhair",
+   "Samhain",
+   "Nollaig"
+  ],
+  "months_abbr": [
+   "Ean",
+   "Feabh",
+   "Márta",
+   "Aib",
+   "Beal",
+   "Meith",
+   "Iúil",
+   "Lún",
+   "MFómh",
+   "DFómh",
+   "Samh",
+   "Noll"
+  ]
+ },
+ "language": "ga",
+ "messages": {
+  "Administration": "Riarachán",
+  "Back": "Ar ais",
+  "Cancel": "Cealaigh",
+  "Changes": "Athruithe",
+  "Close": "Dún",
+  "Create": "Cruthaigh",
+  "Dashboard": "Painéal",
+  "Delete": "Scrios",
+  "Description": "Cur síos",
+  "Edit": "Cuir in eagar",
+  "General": "Ginearálta",
+  "Incidents": "Teagmhais",
+  "Knowledge": "Eolas",
+  "Language": "Teanga",
+  "Name": "Ainm",
+  "Notifications": "Fógraí",
+  "Preferences": "Sainroghanna",
+  "Priority": "Tosaíocht",
+  "Save": "Sábháil",
+  "Save preferences": "Sábháil sainroghanna",
+  "Search": "Cuardaigh",
+  "Service requests": "Iarratais seirbhíse",
+  "Status": "Stádas",
+  "System preferences": "Sainroghanna córais"
+ }
+}

@@ -39,7 +39,7 @@
       const visible = visibleRows();
       const selected = rows.filter((row) => checkbox(row).checked);
       const selectedVisible = visible.filter((row) => checkbox(row).checked);
-      summary.textContent = `${visible.length} of ${rows.length} shown · ${selected.length} selected`;
+      summary.textContent = tr("{count} of {count2} shown · {count3} selected", { count: visible.length, count2: rows.length, count3: selected.length });
       master.checked = visible.length > 0 && selectedVisible.length === visible.length;
       master.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visible.length;
       empty.hidden = visible.length !== 0;
@@ -81,10 +81,14 @@
     form.addEventListener("submit", () => {
       const button = form.querySelector("button");
       button.disabled = true;
-      button.innerHTML = '<span class="discovery-spinner" aria-hidden="true"></span> Running…';
+      button.textContent = "";
+      const spinner = document.createElement("span");
+      spinner.className = "discovery-spinner";
+      spinner.setAttribute("aria-hidden", "true");
+      button.append(spinner, " " + tr("Running…"));
       const note = document.createElement("span");
       note.className = "discovery-run-note";
-      note.textContent = form.dataset.targetType === "subnet" ? "Scanning subnet…" : "Scanning device…";
+      note.textContent = form.dataset.targetType === "subnet" ? tr("Scanning subnet…") : tr("Scanning device…");
       form.append(note);
     });
   });

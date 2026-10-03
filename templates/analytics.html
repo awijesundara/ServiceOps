@@ -1,23 +1,23 @@
 {% extends "base.html" %}
-{% block title %}Analytics · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Analytics · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">PLATFORM ANALYTICS</p><h1>Operational performance</h1><p>SLA compliance, resolution speed, backlog health, and workload distribution across the service desk.</p></div></header>
+<header class="page-head"><div><p class="eyebrow">{{ tr('PLATFORM ANALYTICS') }}</p><h1>{{ tr('Operational performance') }}</h1><p>{{ tr('SLA compliance, resolution speed, backlog health, and workload distribution across the service desk.') }}</p></div></header>
 {% set csv_url = url_for('analytics_export_csv') %}
 {% include "_export_toolbar.html" %}
 
 <section class="stats">
-  <a href="{{ url_for('open_work') }}"><span>Open work</span><strong>{{ open_count }}</strong><small>Incidents & changes not yet resolved →</small></a>
-  <a href="{{ url_for('dashboard') }}" class="{% if sla_breached_open %}stat-alert{% endif %}"><span>SLA breached (open)</span><strong>{{ sla_breached_open }}</strong>{% if sla_at_risk_open %}<small class="stat-alert-text">{{ sla_at_risk_open }} more at risk</small>{% else %}<small>Needs escalation →</small>{% endif %}</a>
-  <span><span>SLA compliance (30d)</span><strong>{{ (sla_compliance_pct ~ '%') if sla_compliance_pct is not none else '—' }}</strong><small>Resolved tickets that met their SLA</small></span>
-  <a href="{{ url_for('analytics_overdue') }}"><span>Overdue investigations</span><strong>{{ overdue_investigations }}</strong><small>Problems / events past due →</small></a>
+  <a href="{{ url_for('open_work') }}"><span>{{ tr('Open work') }}</span><strong>{{ open_count }}</strong><small>{{ tr('Incidents & changes not yet resolved') }} →</small></a>
+  <a href="{{ url_for('dashboard') }}" class="{% if sla_breached_open %}stat-alert{% endif %}"><span>{{ tr('SLA breached (open)') }}</span><strong>{{ sla_breached_open }}</strong>{% if sla_at_risk_open %}<small class="stat-alert-text">{{ tr('{sla_at_risk_open} more at risk', sla_at_risk_open=(sla_at_risk_open)) }}</small>{% else %}<small>{{ tr('Needs escalation') }} →</small>{% endif %}</a>
+  <span><span>{{ tr('SLA compliance (30d)') }}</span><strong>{{ (sla_compliance_pct ~ '%') if sla_compliance_pct is not none else '—' }}</strong><small>{{ tr('Resolved tickets that met their SLA') }}</small></span>
+  <a href="{{ url_for('analytics_overdue') }}"><span>{{ tr('Overdue investigations') }}</span><strong>{{ overdue_investigations }}</strong><small>{{ tr('Problems / events past due') }} →</small></a>
 </section>
 
 <div class="analytics-grid">
   <section class="panel">
-    <h2>Created vs. resolved <small class="muted">· last 14 days</small></h2>
+    <h2>{{ tr('Created vs. resolved') }} <small class="muted">· {{ tr('last 14 days') }}</small></h2>
     <div class="trend-chart">
       {% for point in volume_trend %}
-      <div class="trend-col" title="{{ point.day.strftime('%b %d') }}: {{ point.created }} created, {{ point.resolved }} resolved">
+      <div class="trend-col" title="{{ tr('{day}: {created} created, {resolved} resolved', day=(point.day|l10n_strftime('%b %d')), created=(point.created), resolved=(point.resolved)) }}">
         <div class="trend-bars">
           <i class="trend-created" style="height:{{ (point.created / trend_max * 100)|round(1) }}%"></i>
           <i class="trend-resolved" style="height:{{ (point.resolved / trend_max * 100)|round(1) }}%"></i>
@@ -26,111 +26,111 @@
       </div>
       {% endfor %}
     </div>
-    <div class="trend-legend"><span><i class="trend-created"></i> Created</span><span><i class="trend-resolved"></i> Resolved</span></div>
+    <div class="trend-legend"><span><i class="trend-created"></i> {{ tr('Created') }}</span><span><i class="trend-resolved"></i> {{ tr('Resolved') }}</span></div>
   </section>
 
   <section class="panel">
-    <h2>Open backlog age</h2>
+    <h2>{{ tr('Open backlog age') }}</h2>
     {% for label, count in aging_buckets.items() %}
-    <div class="metric"><span>{{ label }}</span><div><i style="width:{{ (count / ((aging_buckets.values()|sum) or 1) * 100)|round(1) }}%"></i></div><strong>{{ count }}</strong></div>
+    <div class="metric"><span>{{ tr_value(label) }}</span><div><i style="width:{{ (count / ((aging_buckets.values()|sum) or 1) * 100)|round(1) }}%"></i></div><strong>{{ count }}</strong></div>
     {% endfor %}
-    {% if (aging_buckets.values()|sum) == 0 %}<p class="muted">No open tickets right now.</p>{% endif %}
+    {% if (aging_buckets.values()|sum) == 0 %}<p class="muted">{{ tr('No open tickets right now.') }}</p>{% endif %}
   </section>
 
   <section class="panel">
-    <h2>Mean time to resolve <small class="muted">· incidents, last 30 days</small></h2>
-    <table><thead><tr><th>{{ t('Priority') }}</th><th>Avg. hours to resolve</th></tr></thead><tbody>
+    <h2>{{ tr('Mean time to resolve') }} <small class="muted">· {{ tr('incidents, last 30 days') }}</small></h2>
+    <table><thead><tr><th>{{ tr('Priority') }}</th><th>{{ tr('Avg. hours to resolve') }}</th></tr></thead><tbody>
       {% for priority, hours in mttr_by_priority.items() %}
-      <tr><td><span class="priority {{ priority|lower }}">{{ priority }}</span></td><td>{% if hours is not none %}{{ hours }}h{% else %}<span class="muted">No resolved {{ priority }} incidents</span>{% endif %}</td></tr>
+      <tr><td><span class="priority {{ priority|lower }}">{{ tr_value(priority) }}</span></td><td>{% if hours is not none %}{{ hours }}h{% else %}<span class="muted">{{ tr('No resolved {priority} incidents', priority=(tr_value(priority))) }}</span>{% endif %}</td></tr>
       {% endfor %}
     </tbody></table>
   </section>
 
   <section class="panel">
-    <h2>Incidents by closure category <small class="muted">· last 30 days</small></h2>
+    <h2>{{ tr('Incidents by closure category') }} <small class="muted">· {{ tr('last 30 days') }}</small></h2>
     {% if closure_category_counts %}
-    <table><thead><tr><th>Category at closure</th><th>{{ t('Incidents') }}</th></tr></thead><tbody>
+    <table><thead><tr><th>{{ tr('Category at closure') }}</th><th>{{ tr('Incidents') }}</th></tr></thead><tbody>
       {% for category, count in closure_category_counts %}<tr><td>{{ category }}</td><td>{{ count }}</td></tr>{% endfor %}
     </tbody></table>
-    <p class="muted">{% if recategorised_pct is not none %}{{ recategorised_pct }}% of incidents with a recorded closure category were closed under a different category than logged.{% else %}Closure categories are recorded on incidents resolved from now on; older incidents are counted by their logging category.{% endif %}</p>
-    {% else %}<p class="muted">No incidents resolved in the last 30 days.</p>{% endif %}
+    <p class="muted">{% if recategorised_pct is not none %}{{ tr('{recategorised_pct}% of incidents with a recorded closure category were closed under a different category than logged.', recategorised_pct=(recategorised_pct)) }}{% else %}{{ tr('Closure categories are recorded on incidents resolved from now on; older incidents are counted by their logging category.') }}{% endif %}</p>
+    {% else %}<p class="muted">{{ tr('No incidents resolved in the last 30 days.') }}</p>{% endif %}
   </section>
 
   <section class="panel">
-    <h2>Change success rate <small class="muted">· last 30 days</small></h2>
+    <h2>{{ tr('Change success rate') }} <small class="muted">· {{ tr('last 30 days') }}</small></h2>
     {% if pir_success_pct is not none %}
-    <div class="metric"><span>Reviewed as successful<span class="info-tip" tabindex="0" data-tip="Based on the recorded post-implementation review outcome, not just whether the ticket reached Closed.">i</span></span><div><i style="width:{{ pir_success_pct }}%"></i></div><strong>{{ pir_success_pct }}%</strong></div>
-    <p class="muted">{{ pir_total }} change{{ 's' if pir_total != 1 }} reviewed in this window.</p>
+    <div class="metric"><span>{{ tr('Reviewed as successful') }}<span class="info-tip" tabindex="0" data-tip="Based on the recorded post-implementation review outcome, not just whether the ticket reached Closed.">i</span></span><div><i style="width:{{ pir_success_pct }}%"></i></div><strong>{{ pir_success_pct }}%</strong></div>
+    <p class="muted">{{ trn(pir_total, '{count} change reviewed in this window.', '{count} changes reviewed in this window.') }}</p>
     {% elif change_success_pct is not none %}
-    <div class="metric"><span>Closed successfully<span class="info-tip" tabindex="0" data-tip="No post-implementation reviews recorded yet in this window -- falling back to a ticket-state proxy (Closed vs Cancelled), which can't tell a clean close from one that later caused an incident.">i</span></span><div><i style="width:{{ change_success_pct }}%"></i></div><strong>{{ change_success_pct }}%</strong></div>
-    <p class="muted">{{ change_total }} change{{ 's' if change_total != 1 }} reached a final outcome (closed or cancelled) in this window.</p>
-    {% else %}<p class="muted">No changes reached a final outcome in the last 30 days.</p>{% endif %}
+    <div class="metric"><span>{{ tr('Closed successfully') }}<span class="info-tip" tabindex="0" data-tip="No post-implementation reviews recorded yet in this window -- falling back to a ticket-state proxy (Closed vs Cancelled), which can't tell a clean close from one that later caused an incident.">i</span></span><div><i style="width:{{ change_success_pct }}%"></i></div><strong>{{ change_success_pct }}%</strong></div>
+    <p class="muted">{{ trn(change_total, '{count} change reached a final outcome (closed or cancelled) in this window.', '{count} changes reached a final outcome (closed or cancelled) in this window.') }}</p>
+    {% else %}<p class="muted">{{ tr('No changes reached a final outcome in the last 30 days.') }}</p>{% endif %}
   </section>
 
   <section class="panel">
-    <h2>First contact resolution <small class="muted">· incidents, last 30 days</small></h2>
+    <h2>{{ tr('First contact resolution') }} <small class="muted">· {{ tr('incidents, last 30 days') }}</small></h2>
     {% if fcr_pct is not none %}
-    <div class="metric"><span>Resolved without reopening</span><div><i style="width:{{ fcr_pct }}%"></i></div><strong>{{ fcr_pct }}%</strong></div>
-    <p class="muted">{{ fcr_total }} incident{{ 's' if fcr_total != 1 }} resolved in this window.</p>
-    {% else %}<p class="muted">No incidents resolved in the last 30 days.</p>{% endif %}
+    <div class="metric"><span>{{ tr('Resolved without reopening') }}</span><div><i style="width:{{ fcr_pct }}%"></i></div><strong>{{ fcr_pct }}%</strong></div>
+    <p class="muted">{{ trn(fcr_total, '{count} incident resolved in this window.', '{count} incidents resolved in this window.') }}</p>
+    {% else %}<p class="muted">{{ tr('No incidents resolved in the last 30 days.') }}</p>{% endif %}
   </section>
 
   <section class="panel">
-    <h2>Customer satisfaction <small class="muted">· last 30 days</small></h2>
+    <h2>{{ tr('Customer satisfaction') }} <small class="muted">· {{ tr('last 30 days') }}</small></h2>
     {% if csat_avg is not none %}
-    <div class="metric"><span>Average rating</span><div><i style="width:{{ (csat_avg / 5 * 100)|round(1) }}%"></i></div><strong>{{ csat_avg }}/5</strong></div>
-    <p class="muted">{{ csat_count }} rating{{ 's' if csat_count != 1 }} submitted in this window.</p>
-    {% else %}<p class="muted">No satisfaction ratings submitted in the last 30 days.</p>{% endif %}
+    <div class="metric"><span>{{ tr('Average rating') }}</span><div><i style="width:{{ (csat_avg / 5 * 100)|round(1) }}%"></i></div><strong>{{ csat_avg }}/5</strong></div>
+    <p class="muted">{{ trn(csat_count, '{count} rating submitted in this window.', '{count} ratings submitted in this window.') }}</p>
+    {% else %}<p class="muted">{{ tr('No satisfaction ratings submitted in the last 30 days.') }}</p>{% endif %}
   </section>
 
   <section class="panel">
-    <h2>Open priority mix</h2>
-    {% for label,value in priority_counts.items() %}<div class="metric"><span class="priority {{ label|lower }}">{{ label }}</span><div><i style="width:{{ (value / ((priority_counts.values()|sum) or 1) * 100)|round(1) }}%"></i></div><strong>{{ value }}</strong></div>{% else %}<p class="muted">No open ticket data yet.</p>{% endfor %}
+    <h2>{{ tr('Open priority mix') }}</h2>
+    {% for label,value in priority_counts.items() %}<div class="metric"><span class="priority {{ label|lower }}">{{ tr_value(label) }}</span><div><i style="width:{{ (value / ((priority_counts.values()|sum) or 1) * 100)|round(1) }}%"></i></div><strong>{{ value }}</strong></div>{% else %}<p class="muted">{{ tr('No open ticket data yet.') }}</p>{% endfor %}
   </section>
 
   <section class="panel">
-    <h2>Ticket state distribution</h2>
-    {% for label,value in ticket_states.items() %}<div class="metric"><span>{{ label }}</span><div><i style="width:{{ (value / ((ticket_states.values()|sum) or 1) * 100)|round(1) }}%"></i></div><strong>{{ value }}</strong></div>{% else %}<p class="muted">No ticket data yet.</p>{% endfor %}
+    <h2>{{ tr('Ticket state distribution') }}</h2>
+    {% for label,value in ticket_states.items() %}<div class="metric"><span>{{ tr_value(label) }}</span><div><i style="width:{{ (value / ((ticket_states.values()|sum) or 1) * 100)|round(1) }}%"></i></div><strong>{{ value }}</strong></div>{% else %}<p class="muted">{{ tr('No ticket data yet.') }}</p>{% endfor %}
   </section>
 
   <section class="panel">
-    <h2>Enterprise workload</h2>
+    <h2>{{ tr('Enterprise workload') }}</h2>
     {% for key,module in modules.items() %}<div class="metric"><span>{{ module.name }}</span><div><i style="width:{{ (domain_counts.get(key,0) / ((domain_counts.values()|sum) or 1) * 100)|round(1) }}%"></i></div><strong>{{ domain_counts.get(key,0) }}</strong></div>{% endfor %}
   </section>
 
   <section class="panel table-panel">
-    <h2>Busiest teams <small class="muted">· open incidents & changes</small></h2>
+    <h2>{{ tr('Busiest teams') }} <small class="muted">· {{ tr('open incidents & changes') }}</small></h2>
     {% if top_groups %}
-    <table><thead><tr><th>Team</th><th>Open volume</th></tr></thead><tbody>
+    <table><thead><tr><th>{{ tr('Team') }}</th><th>{{ tr('Open volume') }}</th></tr></thead><tbody>
       {% for row in top_groups %}<tr><td>{{ row.group.name }}</td><td><div class="metric" style="margin:0"><div><i style="width:{{ (row.count / top_groups_max * 100)|round(1) }}%"></i></div><strong>{{ row.count }}</strong></div></td></tr>{% endfor %}
     </tbody></table>
-    {% else %}<p class="muted">No open work assigned to a team yet.</p>{% endif %}
+    {% else %}<p class="muted">{{ tr('No open work assigned to a team yet.') }}</p>{% endif %}
   </section>
 
   <section class="panel table-panel">
-    <h2>Service availability<span class="info-tip" tabindex="0" data-tip="Uptime over the trailing 30 days, computed from outage windows auto-derived from High/Critical impact incidents on each service's linked CIs. A service with no CI links or no incidents shows 100%.">i</span> <small class="muted">· trailing 30 days</small></h2>
+    <h2>{{ tr('Service availability') }}<span class="info-tip" tabindex="0" data-tip="Uptime over the trailing 30 days, computed from outage windows auto-derived from High/Critical impact incidents on each service's linked CIs. A service with no CI links or no incidents shows 100%.">i</span> <small class="muted">· {{ tr('trailing 30 days') }}</small></h2>
     {% if service_availability %}
-    <table><thead><tr><th>Service</th><th>Uptime</th><th>{{ t('Status') }}</th><th>Last outage</th></tr></thead><tbody>
+    <table><thead><tr><th>{{ tr('Service') }}</th><th>{{ tr('Uptime') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Last outage') }}</th></tr></thead><tbody>
       {% for row in service_availability %}
       <tr>
-        <td><strong>{{ row.service.name }}</strong><small>{{ row.service.criticality }} criticality</small></td>
+        <td><strong>{{ row.service.name }}</strong><small>{{ tr('{criticality} criticality', criticality=(row.service.criticality)) }}</small></td>
         <td><span class="{{ 'sla-breached-cell' if row.uptime_pct < 99 else ('sla-at-risk-cell' if row.uptime_pct < 99.9 else '') }}">{{ row.uptime_pct }}%</span></td>
-        <td>{% if row.open_outage %}<span class="badge" style="background:#fdebea;color:#9d2a22">Outage in progress</span>{% else %}<span class="badge">Healthy</span>{% endif %}</td>
-        <td>{% if row.last_outage %}{{ (row.last_outage.started_at|usertime('%b %d, %Y %H:%M')) }}{% if row.last_outage.ended_at %} – {{ (row.last_outage.ended_at|usertime('%H:%M')) }}{% endif %} · <a href="{{ url_for('ticket_detail', ticket_id=row.last_outage.ticket_id) }}">{{ row.last_outage.ticket.number }}</a>{% else %}No outages recorded{% endif %}</td>
+        <td>{% if row.open_outage %}<span class="badge" style="background:#fdebea;color:#9d2a22">{{ tr('Outage in progress') }}</span>{% else %}<span class="badge">{{ tr('Healthy') }}</span>{% endif %}</td>
+        <td>{% if row.last_outage %}{{ (row.last_outage.started_at|usertime('%b %d, %Y %H:%M')) }}{% if row.last_outage.ended_at %} – {{ (row.last_outage.ended_at|usertime('%H:%M')) }}{% endif %} · <a href="{{ url_for('ticket_detail', ticket_id=row.last_outage.ticket_id) }}">{{ row.last_outage.ticket.number }}</a>{% else %}{{ tr('No outages recorded') }}{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody></table>
-    {% else %}<p class="muted">No business services configured yet. Add them under Administration → Service configuration → Service offerings.</p>{% endif %}
+    {% else %}<p class="muted">{{ tr('No business services configured yet. Add them under Administration → Service configuration → Service offerings.') }}</p>{% endif %}
   </section>
 
   <section class="panel table-panel">
-    <h2>KPI history <small class="muted">· nightly snapshots, last 30 days</small></h2>
+    <h2>{{ tr('KPI history') }} <small class="muted">· {{ tr('nightly snapshots, last 30 days') }}</small></h2>
     {% if kpi_history_rows %}
     <div class="kpi-trend-grid">
       {% for trend in kpi_trends %}
       <div class="kpi-trend-card">
         <div class="kpi-trend-head">
-          <span>{{ trend.label }}</span>
+          <span>{{ tr_value(trend.label) }}</span>
           {% if trend.delta is not none %}<span class="kpi-trend-delta {{ 'up' if trend.delta > 0 else ('down' if trend.delta < 0 else '') }}">{{ '%+.1f'|format(trend.delta) }}</span>{% endif %}
         </div>
         <strong class="kpi-trend-value">{{ trend.latest if trend.latest is not none else '—' }}</strong>
@@ -138,16 +138,16 @@
         <svg class="kpi-sparkline" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true">
           <polyline points="{{ trend.spark_points }}" fill="none" />
         </svg>
-        {% else %}<p class="muted" style="margin:8px 0 0">Not enough snapshots yet for a trend line.</p>{% endif %}
+        {% else %}<p class="muted" style="margin:8px 0 0">{{ tr('Not enough snapshots yet for a trend line.') }}</p>{% endif %}
       </div>
       {% endfor %}
     </div>
-    <details style="margin-top:16px"><summary class="muted">Show raw snapshot values</summary>
-    <table><thead><tr><th>Date</th><th>Metric</th><th>Value</th></tr></thead><tbody>
-      {% for row in kpi_history_rows %}<tr><td>{{ row.snapshot_date.strftime('%b %d, %Y') }}</td><td>{{ kpi_metric_labels.get(row.metric_name, row.metric_name) }}</td><td>{{ row.metric_value }}</td></tr>{% endfor %}
+    <details style="margin-top:16px"><summary class="muted">{{ tr('Show raw snapshot values') }}</summary>
+    <table><thead><tr><th>{{ tr('Date') }}</th><th>{{ tr('Metric') }}</th><th>{{ tr('Value') }}</th></tr></thead><tbody>
+      {% for row in kpi_history_rows %}<tr><td>{{ row.snapshot_date|l10n_strftime('%b %d, %Y') }}</td><td>{{ tr_value(kpi_metric_labels.get(row.metric_name, row.metric_name)) }}</td><td>{{ row.metric_value }}</td></tr>{% endfor %}
     </tbody></table>
     </details>
-    {% else %}<p class="muted">No snapshots captured yet — the background worker records one set of metrics per day, so trend data starts accumulating from today onward.</p>{% endif %}
+    {% else %}<p class="muted">{{ tr('No snapshots captured yet — the background worker records one set of metrics per day, so trend data starts accumulating from today onward.') }}</p>{% endif %}
   </section>
 </div>
 {% endblock %}

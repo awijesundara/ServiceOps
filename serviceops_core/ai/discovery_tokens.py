@@ -6,6 +6,7 @@ from flask import current_app
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 
 from serviceops_core.ai.provider import ProviderError
+from serviceops_core.localization import tr
 
 
 def binding(config, key):
@@ -26,4 +27,4 @@ def verify(token, config, key, tenant_id, user_id):
         profile = data["profiles"][config.model]
         return {**profile, "model": config.model}
     except (BadSignature, KeyError, ValueError, TypeError):
-        raise ProviderError("Model discovery expired or no longer matches this connection. Detect models again.") from None
+        raise ProviderError(tr("Model discovery expired or no longer matches this connection. Detect models again.")) from None

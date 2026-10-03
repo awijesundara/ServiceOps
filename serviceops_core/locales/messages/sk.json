@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "pondelok",
+   "utorok",
+   "streda",
+   "štvrtok",
+   "piatok",
+   "sobota",
+   "nedeľa"
+  ],
+  "days_abbr": [
+   "po",
+   "ut",
+   "st",
+   "št",
+   "pi",
+   "so",
+   "ne"
+  ],
+  "months": [
+   "januára",
+   "februára",
+   "marca",
+   "apríla",
+   "mája",
+   "júna",
+   "júla",
+   "augusta",
+   "septembra",
+   "októbra",
+   "novembra",
+   "decembra"
+  ],
+  "months_abbr": [
+   "jan",
+   "feb",
+   "mar",
+   "apr",
+   "máj",
+   "jún",
+   "júl",
+   "aug",
+   "sep",
+   "okt",
+   "nov",
+   "dec"
+  ]
+ },
+ "language": "sk",
+ "messages": {
+  "Administration": "Správa",
+  "Back": "Späť",
+  "Cancel": "Zrušiť",
+  "Changes": "Zmeny",
+  "Close": "Zavrieť",
+  "Create": "Vytvoriť",
+  "Dashboard": "Prehľad",
+  "Delete": "Odstrániť",
+  "Description": "Popis",
+  "Edit": "Upraviť",
+  "General": "Všeobecné",
+  "Incidents": "Incidenty",
+  "Knowledge": "Znalosti",
+  "Language": "Jazyk",
+  "Name": "Názov",
+  "Notifications": "Oznámenia",
+  "Preferences": "Predvoľby",
+  "Priority": "Priorita",
+  "Save": "Uložiť",
+  "Save preferences": "Uložiť predvoľby",
+  "Search": "Hľadať",
+  "Service requests": "Požiadavky na služby",
+  "Status": "Stav",
+  "System preferences": "Systémové predvoľby"
+ }
+}

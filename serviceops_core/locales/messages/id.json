@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "Senin",
+   "Selasa",
+   "Rabu",
+   "Kamis",
+   "Jumat",
+   "Sabtu",
+   "Minggu"
+  ],
+  "days_abbr": [
+   "Sen",
+   "Sel",
+   "Rab",
+   "Kam",
+   "Jum",
+   "Sab",
+   "Min"
+  ],
+  "months": [
+   "Januari",
+   "Februari",
+   "Maret",
+   "April",
+   "Mei",
+   "Juni",
+   "Juli",
+   "Agustus",
+   "September",
+   "Oktober",
+   "November",
+   "Desember"
+  ],
+  "months_abbr": [
+   "Jan",
+   "Feb",
+   "Mar",
+   "Apr",
+   "Mei",
+   "Jun",
+   "Jul",
+   "Agu",
+   "Sep",
+   "Okt",
+   "Nov",
+   "Des"
+  ]
+ },
+ "language": "id",
+ "messages": {
+  "Administration": "Administrasi",
+  "Back": "Kembali",
+  "Cancel": "Batal",
+  "Changes": "Perubahan",
+  "Close": "Tutup",
+  "Create": "Buat",
+  "Dashboard": "Dasbor",
+  "Delete": "Hapus",
+  "Description": "Deskripsi",
+  "Edit": "Edit",
+  "General": "Umum",
+  "Incidents": "Insiden",
+  "Knowledge": "Pengetahuan",
+  "Language": "Bahasa",
+  "Name": "Nama",
+  "Notifications": "Notifikasi",
+  "Preferences": "Preferensi",
+  "Priority": "Prioritas",
+  "Save": "Simpan",
+  "Save preferences": "Simpan preferensi",
+  "Search": "Cari",
+  "Service requests": "Permintaan layanan",
+  "Status": "Status",
+  "System preferences": "Preferensi sistem"
+ }
+}

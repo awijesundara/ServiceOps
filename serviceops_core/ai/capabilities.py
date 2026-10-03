@@ -3,6 +3,7 @@ import json
 from urllib.parse import urlsplit, urlunsplit, urlencode
 
 from serviceops_core.ai import provider
+from serviceops_core.localization import tr
 
 
 def positive(value):
@@ -79,7 +80,7 @@ def fit_messages(config, messages, requested_output):
     budget = context - output - reserve
     result = [dict(item) for item in messages]
     if not result or result[-1].get("role") != "user":
-        raise provider.ProviderError("The model request has no current user question.")
+        raise provider.ProviderError(tr("The model request has no current user question."))
     while estimate(result) > budget and len(result) > 2:
         # Drop a whole old turn; never an initial system instruction or latest question.
         result.pop(1)
@@ -112,7 +113,7 @@ def fit_messages(config, messages, requested_output):
                 records.pop()
             result[-1]["content"] = prefix + json.dumps(data, ensure_ascii=True) + suffix
     if estimate(result) > budget:
-        raise provider.ProviderError("The question and required instructions exceed this model's context. Shorten the question or select a larger-context model.")
+        raise provider.ProviderError(tr("The question and required instructions exceed this model's context. Shorten the question or select a larger-context model."))
     return result, output, {"context_tokens": context, "context_source": profile.get("context_source", "conservative fallback"),
                             "budget_method": "conservative UTF-8 byte estimate", "output_token_cap": output,
                             "prompt_shortened": result != messages}

@@ -1,41 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Automation rules · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Automation rules · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-{% set admin_page_title = 'Automation rules' %}{% include '_admin_context.html' %}
-<header class="page-head"><div><h1>Automation rules</h1><p>Automation rules watch for events—such as a ticket changing state, an SLA being breached, or a schedule becoming due—and perform predefined, audited actions. They cannot run arbitrary scripts.</p></div></header>
-<div class="settings-scope-note"><strong>How it works</strong><span><b>When</b> an event occurs, ServiceOps checks each active rule. <b>If</b> its conditions match, ServiceOps performs its controlled actions and records the result below.</span></div>
+{% set admin_page_title = tr('Automation rules') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>{{ tr('Automation rules') }}</h1><p>{{ tr('Automation rules watch for events—such as a ticket changing state, an SLA being breached, or a schedule becoming due—and perform predefined, audited actions. They cannot run arbitrary scripts.') }}</p></div></header>
+<div class="settings-scope-note"><strong>{{ tr('How it works') }}</strong><span><b>{{ tr('When') }}</b> {{ tr('an event occurs, ServiceOps checks each active rule.') }} <b>{{ tr('If') }}</b> {{ tr('its conditions match, ServiceOps performs its controlled actions and records the result below.') }}</span></div>
 <section class="panel admin-section">
-  <div class="panel-head"><div><h2 id="published-automation-rules">Published automation rules</h2><p>{{ package.workflows|length }} rule(s) in the approved configuration · package <code>{{ package_hash }}</code></p></div>
-    <form method="post"><input type="hidden" name="action" value="deploy"><button class="primary">Validate and publish rules</button></form>
+  <div class="panel-head"><div><h2 id="published-automation-rules">{{ tr('Published automation rules') }}</h2><p>{{ tr('{workflows} rule(s) in the approved configuration · package', workflows=(package.workflows|length)) }} <code>{{ package_hash }}</code></p></div>
+    <form method="post"><input type="hidden" name="action" value="deploy"><button class="primary">{{ tr('Validate and publish rules') }}</button></form>
   </div>
-  <table><thead><tr><th>Rule</th><th>Runs when</th><th>Published version</th><th>{{ t('Status') }}</th></tr></thead><tbody>
-  {% for definition in definitions %}<tr><td><strong>{{ definition.name }}</strong><small><code>{{ definition.workflow_key }}</code></small></td><td>{{ definition.event_type }}</td><td>{{ definition.published_version.version if definition.published_version else "None" }}</td><td>{{ "Active" if definition.active else "Disabled" }}</td></tr>{% else %}<tr><td colspan="4">No workflows deployed.</td></tr>{% endfor %}
+  <table><thead><tr><th>{{ tr('Rule') }}</th><th>{{ tr('Runs when') }}</th><th>{{ tr('Published version') }}</th><th>{{ tr('Status') }}</th></tr></thead><tbody>
+  {% for definition in definitions %}<tr><td><strong>{{ definition.name }}</strong><small><code>{{ definition.workflow_key }}</code></small></td><td>{{ definition.event_type }}</td><td>{{ definition.published_version.version if definition.published_version else tr('None') }}</td><td>{{ tr('Active') if definition.active else tr('Disabled') }}</td></tr>{% else %}<tr><td colspan="4">{{ tr('No workflows deployed.') }}</td></tr>{% endfor %}
   </tbody></table>
 </section>
-<details class="panel admin-section admin-advanced"><summary>Advanced: test a rule without changing records</summary>
-  <p>Evaluates rule conditions and previews actions without changing operational records. This tool expects technical event data in JSON format.</p>
+<details class="panel admin-section admin-advanced"><summary>{{ tr('Advanced: test a rule without changing records') }}</summary>
+  <p>{{ tr('Evaluates rule conditions and previews actions without changing operational records. This tool expects technical event data in JSON format.') }}</p>
   <form method="post" class="form-grid">
     <input type="hidden" name="action" value="simulate">
-    <label>Event<select name="event_type"><option value="ticket.state_entry">Ticket state entry</option><option value="ticket.manual">Manual ticket event</option><option value="ticket.api_trigger">API ticket event</option><option value="ticket.sla_breached">SLA breached</option></select></label>
-    <label class="wide">Context JSON<textarea name="context_json" rows="7" required>{"number":"INC0000001","kind":"incident","state":"Resolved","previous_state":"In Progress","priority":"P2","impact":"High","urgency":"High","category":"Software"}</textarea></label>
-    <div class="wide actions"><button class="button">Preview matching rules</button></div>
+    <label>{{ tr('Event') }}<select name="event_type"><option value="ticket.state_entry">{{ tr('Ticket state entry') }}</option><option value="ticket.manual">{{ tr('Manual ticket event') }}</option><option value="ticket.api_trigger">{{ tr('API ticket event') }}</option><option value="ticket.sla_breached">{{ tr('SLA breached') }}</option></select></label>
+    <label class="wide">{{ tr('Context JSON') }}<textarea name="context_json" rows="7" required>{"number":"INC0000001","kind":"incident","state":"Resolved","previous_state":"In Progress","priority":"P2","impact":"High","urgency":"High","category":"Software"}</textarea></label>
+    <div class="wide actions"><button class="button">{{ tr('Preview matching rules') }}</button></div>
   </form>
   {% if simulation is not none %}<pre>{{ simulation|tojson(indent=2) }}</pre>{% endif %}
 </details>
-<section class="panel admin-section"><h2 id="run-automation">Run an automation for a ticket</h2><p>Sends a controlled manual event for the selected ticket. Only rules explicitly configured to accept manual runs can respond.</p>
-  <form method="post" class="inline-form"><input type="hidden" name="action" value="manual_trigger"><select name="ticket_id" required>{% for ticket in tickets %}<option value="{{ ticket.id }}">{{ ticket.number }} · {{ ticket.title }}</option>{% endfor %}</select><button class="button">Run eligible automation</button></form>
+<section class="panel admin-section"><h2 id="run-automation">{{ tr('Run an automation for a ticket') }}</h2><p>{{ tr('Sends a controlled manual event for the selected ticket. Only rules explicitly configured to accept manual runs can respond.') }}</p>
+  <form method="post" class="inline-form"><input type="hidden" name="action" value="manual_trigger"><select name="ticket_id" required>{% for ticket in tickets %}<option value="{{ ticket.id }}">{{ ticket.number }} · {{ ticket.title }}</option>{% endfor %}</select><button class="button">{{ tr('Run eligible automation') }}</button></form>
 </section>
-<section class="panel admin-section"><h2>Scheduled automation</h2><p>Recurring rule runs on an interval for a selected ticket now have their own page.</p>
-  <a class="button" href="{{ url_for('workflows_scheduled') }}">Go to scheduled automation →</a>
+<section class="panel admin-section"><h2>{{ tr('Scheduled automation') }}</h2><p>{{ tr('Recurring rule runs on an interval for a selected ticket now have their own page.') }}</p>
+  <a class="button" href="{{ url_for('workflows_scheduled') }}">{{ tr('Go to scheduled automation') }} →</a>
 </section>
-<section class="panel admin-section"><h2 id="recent-automation-activity">Recent automation activity</h2><p>Each row is an event waiting to run, running now, completed, or stopped after repeated failures.</p>
-  <table><thead><tr><th>Event ID</th><th>Event</th><th>Target</th><th>State</th><th>Attempts</th><th>Error</th></tr></thead><tbody>
-  {% for job in jobs %}<tr><td><code>{{ job.event_id }}</code></td><td>{{ job.event_type }}</td><td>{{ job.target_type }}:{{ job.target_id }}</td><td>{{ job.state }}</td><td>{{ job.attempts }}</td><td>{{ job.last_error or "—" }}{% if job.state == 'Dead' %}<form method="post"><input type="hidden" name="action" value="replay_dead"><input type="hidden" name="job_id" value="{{ job.id }}"><button class="button">Replay</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="6">No workflow jobs.</td></tr>{% endfor %}
+<section class="panel admin-section"><h2 id="recent-automation-activity">{{ tr('Recent automation activity') }}</h2><p>{{ tr('Each row is an event waiting to run, running now, completed, or stopped after repeated failures.') }}</p>
+  <table><thead><tr><th>{{ tr('Event ID') }}</th><th>{{ tr('Event') }}</th><th>{{ tr('Target') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Attempts') }}</th><th>{{ tr('Error') }}</th></tr></thead><tbody>
+  {% for job in jobs %}<tr><td><code>{{ job.event_id }}</code></td><td>{{ job.event_type }}</td><td>{{ job.target_type }}:{{ job.target_id }}</td><td>{{ tr_value(job.state) }}</td><td>{{ job.attempts }}</td><td>{{ job.last_error or "—" }}{% if job.state == 'Dead' %}<form method="post"><input type="hidden" name="action" value="replay_dead"><input type="hidden" name="job_id" value="{{ job.id }}"><button class="button">{{ tr('Replay') }}</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="6">{{ tr('No workflow jobs.') }}</td></tr>{% endfor %}
   </tbody></table>
 </section>
-<details class="panel admin-section admin-advanced"><summary>Technical execution evidence</summary><p>Version-level evidence for troubleshooting and audit review.</p>
-  <table><thead><tr><th>Correlation</th><th>Rule version</th><th>State</th><th>Started</th><th>Error</th></tr></thead><tbody>
-  {% for execution in executions %}<tr><td><code>{{ execution.correlation_id }}</code></td><td>{{ execution.version.definition.workflow_key }} v{{ execution.version.version }}</td><td>{{ execution.state }}</td><td>{{ (execution.started_at|usertime('%b %d, %H:%M')) }}</td><td>{{ execution.error or "—" }}</td></tr>{% else %}<tr><td colspan="5">No workflow executions.</td></tr>{% endfor %}
+<details class="panel admin-section admin-advanced"><summary>{{ tr('Technical execution evidence') }}</summary><p>{{ tr('Version-level evidence for troubleshooting and audit review.') }}</p>
+  <table><thead><tr><th>{{ tr('Correlation') }}</th><th>{{ tr('Rule version') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Started') }}</th><th>{{ tr('Error') }}</th></tr></thead><tbody>
+  {% for execution in executions %}<tr><td><code>{{ execution.correlation_id }}</code></td><td>{{ execution.version.definition.workflow_key }} v{{ execution.version.version }}</td><td>{{ tr_value(execution.state) }}</td><td>{{ (execution.started_at|usertime('%b %d, %H:%M')) }}</td><td>{{ execution.error or "—" }}</td></tr>{% else %}<tr><td colspan="5">{{ tr('No workflow executions.') }}</td></tr>{% endfor %}
   </tbody></table>
 </details>
 {% endblock %}

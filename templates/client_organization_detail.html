@@ -1,43 +1,43 @@
 {% extends "base.html" %}{% block title %}{{ organization.name }} · {{ instance_name }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('client_management_home') }}">CLIENT MANAGEMENT</a> / <a href="{{ url_for('client_organizations') }}">ORGANIZATIONS</a></p><h1>{{ organization.name }}{% if organization.restricted_visibility %} <span class="badge">Restricted</span>{% endif %}</h1><p>{{ organization.domain or 'No domain set' }}{% if organization.external_id %} · {{ organization.external_id }}{% endif %}</p></div></header>
+<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('client_management_home') }}">{{ tr('CLIENT MANAGEMENT') }}</a> / <a href="{{ url_for('client_organizations') }}">{{ tr('ORGANIZATIONS') }}</a></p><h1>{{ organization.name }}{% if organization.restricted_visibility %} <span class="badge">{{ tr('Restricted') }}</span>{% endif %}</h1><p>{{ organization.domain or tr('No domain set') }}{% if organization.external_id %} · {{ organization.external_id }}{% endif %}</p></div></header>
 <div class="detail-grid">
   <section class="panel">
-    <h2>Overview</h2>
+    <h2>{{ tr('Overview') }}</h2>
     <dl class="facts">
-      <dt>{{ t('Status') }}</dt><dd>{{ 'Active' if organization.active else 'Inactive' }}</dd>
-      <dt>Contacts</dt><dd>{{ organization.contacts|length }}</dd>
-      <dt>Notes</dt><dd>{{ organization.notes or '—' }}</dd>
+      <dt>{{ tr('Status') }}</dt><dd>{{ tr('Active') if organization.active else tr('Inactive') }}</dd>
+      <dt>{{ tr('Contacts') }}</dt><dd>{{ organization.contacts|length }}</dd>
+      <dt>{{ tr('Notes') }}</dt><dd>{{ organization.notes or '—' }}</dd>
     </dl>
   </section>
   {% if is_admin %}
   <section class="panel">
-    <h2>Branding<span class="info-tip" tabindex="0" data-tip="This app has no separate branded portal per organization -- these show as an accent on this organization's own tickets, not a different site.">i</span></h2>
+    <h2>{{ tr('Branding') }}<span class="info-tip" tabindex="0" data-tip="This app has no separate branded portal per organization -- these show as an accent on this organization's own tickets, not a different site.">i</span></h2>
     <form method="post" class="stack">
       <input type="hidden" name="action" value="update_branding">
-      <label>Display name<input name="display_name" maxlength="180" value="{{ branding.get('display_name', '') }}" placeholder="Defaults to the organization name"></label>
-      <label>Accent color<input type="color" name="color" value="{{ branding.get('color') or '#003e4c' }}"></label>
-      <p class="muted">A logo image isn't supported yet -- this app's Content Security Policy (<code>img-src 'self' data:</code>) blocks externally-hosted images, and there's no file upload/storage for one built yet.</p>
-      <button class="button">Save branding</button>
+      <label>{{ tr('Display name') }}<input name="display_name" maxlength="180" value="{{ branding.get('display_name', '') }}" placeholder="{{ tr('Defaults to the organization name') }}"></label>
+      <label>{{ tr('Accent color') }}<input type="color" name="color" value="{{ branding.get('color') or '#003e4c' }}"></label>
+      <p class="muted">{{ tr("A logo image isn't supported yet -- this app's Content Security Policy (") }}<code>img-src 'self' data:</code>{{ tr(") blocks externally-hosted images, and there's no file upload/storage for one built yet.") }}</p>
+      <button class="button">{{ tr('Save branding') }}</button>
     </form>
   </section>
   <section class="panel">
-    <h2>Notification &amp; escalation policy<span class="info-tip" tabindex="0" data-tip="An open ticket for this organization older than the configured hours is automatically reassigned to the escalation team and its manager notified. Runs on the background worker's regular schedule, same as SLA breach detection. Leave escalation hours blank to disable.">i</span></h2>
+    <h2>{{ tr('Notification & escalation policy') }}<span class="info-tip" tabindex="0" data-tip="An open ticket for this organization older than the configured hours is automatically reassigned to the escalation team and its manager notified. Runs on the background worker's regular schedule, same as SLA breach detection. Leave escalation hours blank to disable.">i</span></h2>
     <form method="post" class="stack">
       <input type="hidden" name="action" value="update_notification_policy">
-      <label>Escalate after (hours)<input type="number" name="escalation_hours" min="1" step="0.5" value="{{ notification_policy.get('escalation_hours', '') }}" placeholder="Leave blank to disable"></label>
-      <label>Escalate to team<select name="escalation_group_id"><option value="">Select a team…</option>{% for group in groups %}<option value="{{ group.id }}" {% if notification_policy.get('escalation_group_id') == group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
-      <button class="button">Save policy</button>
+      <label>{{ tr('Escalate after (hours)') }}<input type="number" name="escalation_hours" min="1" step="0.5" value="{{ notification_policy.get('escalation_hours', '') }}" placeholder="{{ tr('Leave blank to disable') }}"></label>
+      <label>{{ tr('Escalate to team') }}<select name="escalation_group_id"><option value="">{{ tr('Select a team…') }}</option>{% for group in groups %}<option value="{{ group.id }}" {% if notification_policy.get('escalation_group_id') == group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
+      <button class="button">{{ tr('Save policy') }}</button>
     </form>
   </section>
   {% endif %}
   {% if org_custom_fields %}
   <section class="panel">
-    <h2>Custom fields</h2>
+    <h2>{{ tr('Custom fields') }}</h2>
     <form method="post" class="stack">
       <input type="hidden" name="action" value="update_custom_fields">
       {% for field in org_custom_fields %}
-      <label>{{ field.definition.label }}{% if field.required %} *{% endif %}
+      <label>{{ tr_value(field.definition.label) }}{% if field.required %} *{% endif %}
         {% if field.definition.field_type == 'select' %}
         <select name="custom__{{ field.definition.key }}" {% if field.required %}required{% endif %}>
           <option value="">—</option>
@@ -48,61 +48,61 @@
         {% endif %}
       </label>
       {% endfor %}
-      <button class="button">Save custom fields</button>
+      <button class="button">{{ tr('Save custom fields') }}</button>
     </form>
   </section>
   {% endif %}
   {% if ticket_field_defs and is_admin %}
   <section class="panel">
-    <h2>Ticket field overrides<span class="info-tip" tabindex="0" data-tip="Fields are defined tenant-wide under Custom fields. Here you can hide a field for this organization's tickets, or make an otherwise-optional field required for them specifically.">i</span></h2>
+    <h2>{{ tr('Ticket field overrides') }}<span class="info-tip" tabindex="0" data-tip="Fields are defined tenant-wide under Custom fields. Here you can hide a field for this organization's tickets, or make an otherwise-optional field required for them specifically.">i</span></h2>
     <form method="post" class="stack">
       <input type="hidden" name="action" value="update_field_overrides">
-      <table><thead><tr><th>Field</th><th>Visible</th><th>Required</th></tr></thead><tbody>
+      <table><thead><tr><th>{{ tr('Field') }}</th><th>{{ tr('Visible') }}</th><th>{{ tr('Required') }}</th></tr></thead><tbody>
         {% for field in ticket_field_defs %}
         {% set override = ticket_field_overrides.get(field.key, {}) %}
         <tr>
-          <td>{{ field.label }}</td>
+          <td>{{ tr_value(field.label) }}</td>
           <td><input type="checkbox" name="visible__{{ field.key }}" {% if override.get('visible', True) %}checked{% endif %}></td>
           <td><input type="checkbox" name="required__{{ field.key }}" {% if override.get('required', field.required) %}checked{% endif %}></td>
         </tr>
         {% endfor %}
       </tbody></table>
-      <button class="button">Save overrides</button>
+      <button class="button">{{ tr('Save overrides') }}</button>
     </form>
   </section>
   {% endif %}
   <aside class="facts">
     <section class="panel">
-      <h2>Visibility<span class="info-tip" tabindex="0" data-tip="Open (default): every SysOps member/admin sees this organization and its tickets, exactly like before this setting existed. Restricted: only admins and users/teams explicitly granted access below can see it.">i</span></h2>
-      <p class="muted">{{ 'Restricted to explicitly granted users and teams.' if organization.restricted_visibility else 'Visible to every SysOps member.' }}</p>
+      <h2>{{ tr('Visibility') }}<span class="info-tip" tabindex="0" data-tip="Open (default): every SysOps member/admin sees this organization and its tickets, exactly like before this setting existed. Restricted: only admins and users/teams explicitly granted access below can see it.">i</span></h2>
+      <p class="muted">{{ tr('Restricted to explicitly granted users and teams.') if organization.restricted_visibility else tr('Visible to every SysOps member.') }}</p>
       {% if is_admin %}
-      <form method="post"><input type="hidden" name="action" value="toggle_restricted"><button class="button">{{ 'Open to all SysOps members' if organization.restricted_visibility else 'Restrict visibility' }}</button></form>
+      <form method="post"><input type="hidden" name="action" value="toggle_restricted"><button class="button">{{ tr('Open to all SysOps members') if organization.restricted_visibility else tr('Restrict visibility') }}</button></form>
       {% endif %}
     </section>
     {% if organization.restricted_visibility %}
     <section class="panel">
-      <h2>Access grants</h2>
+      <h2>{{ tr('Access grants') }}</h2>
       {% if organization.access_grants %}
       <div class="rack-connections-list">
         {% for grant in organization.access_grants %}
         <div class="rack-connection-row">
-          <div><strong>{{ grant.user.name if grant.user_id else grant.group.name }}</strong><small>{{ 'User' if grant.user_id else 'Team' }}</small></div>
+          <div><strong>{{ grant.user.name if grant.user_id else grant.group.name }}</strong><small>{{ tr('User') if grant.user_id else tr('Team') }}</small></div>
           {% if is_admin %}
-          <form method="post"><input type="hidden" name="action" value="remove_grant"><input type="hidden" name="grant_id" value="{{ grant.id }}"><button class="link-button" aria-label="Remove grant">✕</button></form>
+          <form method="post"><input type="hidden" name="action" value="remove_grant"><input type="hidden" name="grant_id" value="{{ grant.id }}"><button class="link-button" aria-label="{{ tr('Remove grant') }}">✕</button></form>
           {% endif %}
         </div>
         {% endfor %}
       </div>
-      {% else %}<p class="muted">No one has been granted access yet — only admins can see this organization.</p>{% endif %}
+      {% else %}<p class="muted">{{ tr('No one has been granted access yet — only admins can see this organization.') }}</p>{% endif %}
       {% if is_admin %}
       <form method="post" class="stack">
         <input type="hidden" name="action" value="add_grant">
-        <label>Grant access to<select name="grantee" required>
-          <option value="">Select a user or team…</option>
-          <optgroup label="Users">{% for agent in agents %}<option value="user:{{ agent.id }}">{{ agent.name }}</option>{% endfor %}</optgroup>
-          <optgroup label="Teams">{% for group in groups %}<option value="group:{{ group.id }}">{{ group.name }}</option>{% endfor %}</optgroup>
+        <label>{{ tr('Grant access to') }}<select name="grantee" required>
+          <option value="">{{ tr('Select a user or team…') }}</option>
+          <optgroup label="{{ tr('Users') }}">{% for agent in agents %}<option value="user:{{ agent.id }}">{{ agent.name }}</option>{% endfor %}</optgroup>
+          <optgroup label="{{ tr('Teams') }}">{% for group in groups %}<option value="group:{{ group.id }}">{{ group.name }}</option>{% endfor %}</optgroup>
         </select></label>
-        <button class="button">Add grant</button>
+        <button class="button">{{ tr('Add grant') }}</button>
       </form>
       {% endif %}
     </section>

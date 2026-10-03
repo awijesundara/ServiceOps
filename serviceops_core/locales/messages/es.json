@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "lunes",
+   "martes",
+   "miércoles",
+   "jueves",
+   "viernes",
+   "sábado",
+   "domingo"
+  ],
+  "days_abbr": [
+   "lun",
+   "mar",
+   "mié",
+   "jue",
+   "vie",
+   "sáb",
+   "dom"
+  ],
+  "months": [
+   "enero",
+   "febrero",
+   "marzo",
+   "abril",
+   "mayo",
+   "junio",
+   "julio",
+   "agosto",
+   "septiembre",
+   "octubre",
+   "noviembre",
+   "diciembre"
+  ],
+  "months_abbr": [
+   "ene",
+   "feb",
+   "mar",
+   "abr",
+   "may",
+   "jun",
+   "jul",
+   "ago",
+   "sept",
+   "oct",
+   "nov",
+   "dic"
+  ]
+ },
+ "language": "es",
+ "messages": {
+  "Administration": "Administración",
+  "Back": "Volver",
+  "Cancel": "Cancelar",
+  "Changes": "Cambios",
+  "Close": "Cerrar",
+  "Create": "Crear",
+  "Dashboard": "Panel de control",
+  "Delete": "Eliminar",
+  "Description": "Descripción",
+  "Edit": "Editar",
+  "General": "General",
+  "Incidents": "Incidentes",
+  "Knowledge": "Conocimiento",
+  "Language": "Idioma",
+  "Name": "Nombre",
+  "Notifications": "Notificaciones",
+  "Preferences": "Preferencias",
+  "Priority": "Prioridad",
+  "Save": "Guardar",
+  "Save preferences": "Guardar preferencias",
+  "Search": "Buscar",
+  "Service requests": "Solicitudes de servicio",
+  "Status": "Estado",
+  "System preferences": "Preferencias del sistema"
+ }
+}

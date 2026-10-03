@@ -70,6 +70,7 @@ from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
+from serviceops_core.localization import tr, tr_value
 
 
 def escape_like(value):
@@ -325,12 +326,13 @@ def filter_conditions_breadcrumb(conditions, field_spec, value_labels=None):
         spec = field_spec.get(condition["field"])
         if not spec:
             continue
-        op_label = FILTER_OPERATOR_LABELS.get(condition["op"], condition["op"])
+        op_label = tr_value(FILTER_OPERATOR_LABELS.get(condition["op"], condition["op"]))
+        field_label = tr_value(spec["label"])
         if condition["op"] in ("is_empty", "is_not_empty"):
-            parts.append(f"{spec['label']} {op_label}")
+            parts.append(tr("{field} {operator}", field=field_label, operator=op_label))
         else:
             shown_value = value_labels.get((condition["field"], condition["value"]), condition["value"])
-            parts.append(f"{spec['label']} {op_label} {shown_value}")
+            parts.append(tr("{field} {operator} {value}", field=field_label, operator=op_label, value=tr_value(shown_value)))
     return parts
 
 # Phase 0 of the app.py blueprint decomposition (see the plan doc from that
@@ -548,8 +550,7 @@ def require_install_settings_authority():
     if Tenant.query.count() > 1 and not effective_role_has_action(
             current_user.effective_role, "platform_administer"):
         abort(403, description=(
-            "These settings apply to every organization on this installation. "
-            "Only a platform administrator can change them."
+            tr("These settings apply to every organization on this installation. Only a platform administrator can change them.")
         ))
 
 
@@ -908,7 +909,7 @@ def passkey_configuration():
     rp_id = os.getenv("WEBAUTHN_RP_ID", "").strip().lower()
     origin = os.getenv("WEBAUTHN_ORIGIN", "").strip().rstrip("/")
     if not rp_id or not origin or not origin.startswith("https://"):
-        abort(503, description="Passkeys require WEBAUTHN_RP_ID and an HTTPS WEBAUTHN_ORIGIN.")
+        abort(503, description=tr("Passkeys require WEBAUTHN_RP_ID and an HTTPS WEBAUTHN_ORIGIN."))
     return rp_id, origin
 
 
@@ -918,7 +919,7 @@ def issue_mobile_session(user, authentication_method, backup_used=False):
     platform = _bounded_mobile_header("X-ServiceOps-Platform", 40)
     device = _bounded_mobile_header("X-ServiceOps-Device", 120)
     if not account_usable(user):
-        abort(403, description="This account or its organization is not active.")
+        abort(403, description=tr("This account or its organization is not active."))
     access = f"som_{secrets.token_urlsafe(32)}"
     refresh = f"sor_{secrets.token_urlsafe(48)}"
     row = APIClient(
@@ -945,7 +946,7 @@ def issue_mobile_session(user, authentication_method, backup_used=False):
 def consume_passkey_challenge(challenge_id, purpose):
     row = PasskeyChallenge.query.filter_by(id=challenge_id, purpose=purpose).with_for_update().first()
     if not row or align_tz(row.expires_at, now()) <= now():
-        abort(400, description="The passkey challenge is invalid or expired.")
+        abort(400, description=tr("The passkey challenge is invalid or expired."))
     db.session.delete(row)
     return row
 
@@ -958,13 +959,13 @@ def enforce_passkey_attempt_limit():
     )
     db.session.commit()
     if not allowed:
-        abort(429, description="Too many passkey attempts. Try again later.")
+        abort(429, description=tr("Too many passkey attempts. Try again later."))
 
 
 def _bounded_mobile_header(name, maximum):
     value = request.headers.get(name, "").strip()
     if not value or len(value) > maximum or any(ord(char) < 32 for char in value):
-        abort(400, description=f"A valid {name} header is required.")
+        abort(400, description=tr("A valid {name} header is required.", name=name))
     return value
 
 
@@ -999,10 +1000,10 @@ def verify_mfa_code(user, code):
 def authenticate_api_request():
     authorization = request.headers.get("Authorization", "")
     if not authorization.startswith("Bearer "):
-        abort(401, description="A bearer API token is required.")
+        abort(401, description=tr("A bearer API token is required."))
     token = authorization[7:].strip()
     if not token:
-        abort(401, description="A bearer API token is required.")
+        abort(401, description=tr("A bearer API token is required."))
     token_hash = api_token_hash(token)
     client = APIClient.query.filter_by(token_hash=token_hash, active=True).first()
     if not client or not hmac.compare_digest(client.token_hash, token_hash):
@@ -1018,15 +1019,15 @@ def authenticate_api_request():
         )
         db.session.commit()
         if not allowed:
-            abort(429, description="Too many invalid API token attempts. Try again later.")
-        abort(401, description="The API token is invalid or revoked.")
+            abort(429, description=tr("Too many invalid API token attempts. Try again later."))
+        abort(401, description=tr("The API token is invalid or revoked."))
     if client.access_expires_at and align_tz(client.access_expires_at, now()) <= now():
-        abort(401, description="The mobile session has expired.")
+        abort(401, description=tr("The mobile session has expired."))
     if not account_usable(client.acting_user) or client.acting_user.tenant_id != client.tenant_id:
-        abort(403, description="The API identity is inactive or invalid.")
+        abort(403, description=tr("The API identity is inactive or invalid."))
     if client.client_kind == "mobile" and client.auth_version != client.acting_user.auth_version:
         end_stale_mobile_session(client)
-        abort(401, description="The mobile session ended because the account's credentials changed.")
+        abort(401, description=tr("The mobile session ended because the account's credentials changed."))
     enforce_api_rate_limit(client)
     client.last_used_at = now()
     # Mirrors track_last_seen()'s throttled web-session update below --
@@ -1088,7 +1089,7 @@ def enforce_api_rate_limit(client):
     if row.request_count > limit:
         db.session.commit()
         g.rate_limit_retry_after = 60 - now().second
-        abort(429, description=f"Rate limit of {limit} requests/minute exceeded for this API client.")
+        abort(429, description=tr("Rate limit of {limit} requests/minute exceeded for this API client.", limit=limit))
 
 
 def user_requires_mfa_by_policy(user):
@@ -1220,7 +1221,7 @@ def require_api_scope(scope):
     if scope not in API_SCOPES:
         raise RuntimeError(f"Unknown API scope: {scope}")
     if scope not in g.api_client.scopes:
-        abort(403, description=f"The API client lacks scope {scope}.")
+        abort(403, description=tr("The API client lacks scope {scope}.", scope=scope))
 
 
 def api_ticket_document(ticket, user):
@@ -1302,11 +1303,11 @@ def api_idempotency_context(required=True):
         if not required:
             return None, None, None
         abort(400, description=(
-            "Idempotency-Key is required and must contain 1-128 safe characters."
+            tr("Idempotency-Key is required and must contain 1-128 safe characters.")
         ))
     if len(key) > 128 or not re.fullmatch(r"[A-Za-z0-9._:-]+", key):
         abort(400, description=(
-            "Idempotency-Key is required and must contain 1-128 safe characters."
+            tr("Idempotency-Key is required and must contain 1-128 safe characters.")
         ))
     request_hash = hashlib.sha256(
         request.method.encode() + b"\0" + request.path.encode() + b"\0"
@@ -1322,7 +1323,7 @@ def api_idempotency_context(required=True):
             or not hmac.compare_digest(existing.request_hash, request_hash)
         ):
             abort(409, description=(
-                "The idempotency key was already used for a different request."
+                tr("The idempotency key was already used for a different request.")
             ))
         response = Response(existing.response_body, status=existing.response_status)
         response.mimetype = "application/json"
@@ -1408,7 +1409,7 @@ def create_with_retry_on_number_collision(build_row, attempts=10, error_descript
         except IntegrityError:
             continue
         return row
-    abort(409, description=error_description or "Could not allocate a unique record number; please try again.")
+    abort(409, description=error_description or tr("Could not allocate a unique record number; please try again."))
 
 
 def create_ticket_with_unique_number(kind, **fields):
@@ -1462,6 +1463,13 @@ DOMAIN_ICONS = {
 
 
 
+
+
+def initial_language_preference():
+    """New accounts start on the administrator's default interface language,
+    or follow their browser language when that default is automatic."""
+    from serviceops_core.localization import AUTOMATIC, canonical_language
+    return canonical_language(setting_value("DEFAULT_LANGUAGE", AUTOMATIC)) or AUTOMATIC
 
 
 def setting_value(key, default=None):
@@ -2609,7 +2617,7 @@ def attachment_file_response(attachment, inline=False):
         current_app.logger.warning(
             "Blocked download of unscanned attachment after scan error: attachment_id=%s", attachment.id,
         )
-        abort(503, description="This attachment could not be verified as safe and is temporarily unavailable. Please contact an administrator.")
+        abort(503, description=tr("This attachment could not be verified as safe and is temporarily unavailable. Please contact an administrator."))
     render_inline = inline and attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES
     disposition = (
         f"inline; filename={json.dumps(attachment.original_name)}"
@@ -2625,7 +2633,7 @@ def attachment_file_response(attachment, inline=False):
             current_app.logger.warning(
                 "Object storage download failed: attachment_id=%s", attachment.id,
             )
-            abort(503, description="Attachment storage is temporarily unavailable. Please try again shortly.")
+            abort(503, description=tr("Attachment storage is temporarily unavailable. Please try again shortly."))
         headers = {
             "Content-Disposition": disposition,
             "Content-Length": str(stored["ContentLength"]),
@@ -2644,7 +2652,7 @@ def attachment_file_response(attachment, inline=False):
             current_app.logger.warning(
                 "IPFS attachment download failed: attachment_id=%s", attachment.id,
             )
-            abort(503, description="Attachment storage is temporarily unavailable. Please try again shortly.")
+            abort(503, description=tr("Attachment storage is temporarily unavailable. Please try again shortly."))
         return Response(
             data_bytes,
             headers={
@@ -2863,8 +2871,7 @@ def enforce_approval_change_freeze(vote, decision, tenant_id):
     )
     if freeze:
         abort(409, description=(
-            f"Cannot approve: this change's planned window falls inside the "
-            f'change freeze "{freeze.title}". Only Emergency changes can be approved during a freeze.'
+            tr("Cannot approve: this change's planned window falls inside the change freeze \"{title}\". Only Emergency changes can be approved during a freeze.", title=freeze.title)
         ))
 
 
@@ -2988,15 +2995,14 @@ def require_resolution_notes(ticket, new_state):
         and not (ticket.resolution_notes or "").strip()
     ):
         abort(409, description=(
-            f"Record resolution notes (in Resolution information) before resolving {ticket.number}."
+            tr("Record resolution notes (in Resolution information) before resolving {number}.", number=ticket.number)
         ))
 
 
 def transition_ticket(ticket, new_state):
     if new_state not in allowed_ticket_states(ticket):
         abort(409, description=(
-            f"{ticket.number} cannot move from {ticket.state} to {new_state}. "
-            "Complete the required approval chain and follow the permitted lifecycle."
+            tr("{number} cannot move from {state} to {new_state}. Complete the required approval chain and follow the permitted lifecycle.", number=ticket.number, state=ticket.state, new_state=new_state)
         ))
     if new_state == "Cancelled" and ticket.kind == "change":
         cancel_approval_chain(approval_chain_for("ticket", ticket.id))
@@ -3008,14 +3014,11 @@ def transition_ticket(ticket, new_state):
         ).first()
         if incomplete:
             abort(409, description=(
-                f"{ticket.number} cannot complete while required task "
-                f"{incomplete.number} remains {incomplete.state}."
+                tr("{number} cannot complete while required task {number2} remains {state}.", number=ticket.number, number2=incomplete.number, state=incomplete.state)
             ))
     if ticket.kind == "change" and new_state == "Closed" and not ticket.post_implementation_review:
         abort(409, description=(
-            f"{ticket.number} cannot close without a post-implementation review "
-            "(ITIL 4 change enablement requires a documented outcome before a "
-            "change is considered complete). Record the review first."
+            tr("{number} cannot close without a post-implementation review (ITIL 4 change enablement requires a documented outcome before a change is considered complete). Record the review first.", number=ticket.number)
         ))
     old_state = ticket.state
     ticket.state = new_state
@@ -3080,11 +3083,10 @@ def allowed_enterprise_states(record):
 
 def transition_enterprise(record, new_state):
     if new_state in ("Awaiting Approval", "Approved", "Rejected") and new_state != record.state:
-        abort(409, description="Approval-derived states can be changed only by an approval decision.")
+        abort(409, description=tr("Approval-derived states can be changed only by an approval decision."))
     if new_state not in allowed_enterprise_states(record):
         abort(409, description=(
-            f"{record.number} cannot move from {record.state} to {new_state} "
-            "while its approval or lifecycle prerequisites are incomplete."
+            tr("{number} cannot move from {state} to {new_state} while its approval or lifecycle prerequisites are incomplete.", number=record.number, state=record.state, new_state=new_state)
         ))
     if record.domain == "problem" and new_state in ("Resolved", "Completed", "Closed"):
         incomplete = OperationalTask.query.filter_by(
@@ -3095,8 +3097,7 @@ def transition_enterprise(record, new_state):
         ).first()
         if incomplete:
             abort(409, description=(
-                f"{record.number} cannot complete while required task "
-                f"{incomplete.number} remains {incomplete.state}."
+                tr("{number} cannot complete while required task {number2} remains {state}.", number=record.number, number2=incomplete.number, state=incomplete.state)
             ))
     record.state = new_state
 
@@ -3116,15 +3117,12 @@ def ritm_linked_change(ritm):
 def transition_catalog_task(task, new_state):
     chain = approval_chain_for("ritm", task.requested_item_id)
     if chain and chain.state != "Approved":
-        abort(409, description="Fulfillment cannot start until the requested item is approved.")
+        abort(409, description=tr("Fulfillment cannot start until the requested item is approved."))
     if new_state == "Work in Progress":
         linked_change = ritm_linked_change(task.requested_item)
         if linked_change and linked_change.state in ("New", "Awaiting Approval"):
             abort(409, description=(
-                f"{task.number} cannot start production work: it is linked to "
-                f"{linked_change.number}, which is not yet approved and authorized. "
-                "Coordination on this task (details, scheduling) is fine — set it to "
-                "Pending until the change is authorized."
+                tr("{number} cannot start production work: it is linked to {number2}, which is not yet approved and authorized. Coordination on this task (details, scheduling) is fine — set it to Pending until the change is authorized.", number=task.number, number2=linked_change.number)
             ))
     control = task.flow_control
     if (
@@ -3134,12 +3132,11 @@ def transition_catalog_task(task, new_state):
         and new_state not in ("Open", "Closed Skipped")
     ):
         abort(409, description=(
-            f"{task.number} cannot start until predecessor "
-            f"{control.predecessor.number} is Closed Complete."
+            tr("{number} cannot start until predecessor {number2} is Closed Complete.", number=task.number, number2=control.predecessor.number)
         ))
     allowed = CATALOG_TASK_TRANSITIONS.get(task.state, (task.state,))
     if new_state not in allowed:
-        abort(409, description=f"{task.number} cannot move from {task.state} to {new_state}.")
+        abort(409, description=tr("{number} cannot move from {state} to {new_state}.", number=task.number, state=task.state, new_state=new_state))
     task.state = new_state
 
 
@@ -3194,7 +3191,7 @@ def change_task_gate_block(task, new_state):
 def transition_operational_task(task, new_state):
     allowed = OPERATIONAL_TASK_TRANSITIONS.get(task.state, (task.state,))
     if new_state not in allowed:
-        abort(409, description=f"{task.number} cannot move from {task.state} to {new_state}.")
+        abort(409, description=tr("{number} cannot move from {state} to {new_state}.", number=task.number, state=task.state, new_state=new_state))
     block = change_task_gate_block(task, new_state)
     if block:
         abort(409, description=block)
@@ -3392,7 +3389,7 @@ def post_ticket_comment(ticket, author, body, parent_id=None, ai_assisted=False)
     if parent_id is not None:
         parent = db.session.get(Comment, parent_id)
         if not parent or parent.ticket_id != ticket.id:
-            abort(400, description="That comment thread no longer exists.")
+            abort(400, description=tr("That comment thread no longer exists."))
         # The discussion UI intentionally has one reply level. A reply to a
         # reply therefore joins the same top-level thread instead of creating
         # a hidden/deceptive deeper hierarchy through the API.
@@ -3425,8 +3422,7 @@ def require_ticket_team_access(ticket):
     if not user_can_manage_ticket(current_user, ticket):
         group = ticket_owning_group(ticket)
         abort(403, description=(
-            f"Only active members of {group.name if group else 'the owning team'} "
-            f"can update {ticket.number}."
+            tr("Only active members of {value} can update {number}.", value=group.name if group else 'the owning team', number=ticket.number)
         ))
 
 
@@ -3440,8 +3436,7 @@ def ticket_locked_for_edits(ticket):
 def require_ticket_not_locked(ticket):
     if ticket_locked_for_edits(ticket):
         flash(
-            f"{ticket.number} is {ticket.state} and locked: only comments and notes "
-            "can be added. Reopen it first to make other changes.",
+            tr("{number} is {state} and locked: only comments and notes can be added. Reopen it first to make other changes.", number=ticket.number, state=ticket.state),
             "error",
         )
         return False
@@ -3571,7 +3566,7 @@ def change_approval_stages(ticket):
     ownership = ticket.change_ownership
     governance = ticket.change_governance
     if not ownership or not ownership.group.manager or not ownership.group.manager.active:
-        abort(409, description="The owning team requires an active manager.")
+        abort(409, description=tr("The owning team requires an active manager."))
     stages = [{
         "name": f"{ownership.group.name} manager assessment",
         "mode": "all",
@@ -3586,7 +3581,7 @@ def change_approval_stages(ticket):
     for group_id in sorted(set(ci_groups) - covered_group_ids):
         ci_group, representative_ci = ci_groups[group_id]
         if not ci_group.active or not ci_group.manager or not ci_group.manager.active:
-            abort(409, description=f"The {ci_group.name} team (owner of {representative_ci.name}) requires an active manager.")
+            abort(409, description=tr("The {name} team (owner of {name2}) requires an active manager.", name=ci_group.name, name2=representative_ci.name))
         stages.append({
             "name": f"{ci_group.name} manager assessment (CI owner)",
             "mode": "all",
@@ -3622,8 +3617,7 @@ def change_approval_stages(ticket):
                     continue
                 if not sibling_group.manager or not sibling_group.manager.active:
                     abort(409, description=(
-                        f"The {sibling_group.name} team (co-owner of a service this CI backs) "
-                        "requires an active manager."
+                        tr("The {name} team (co-owner of a service this CI backs) requires an active manager.", name=sibling_group.name)
                     ))
                 stages.append({
                     "name": f"{sibling_group.name} manager assessment (service co-owner)",
@@ -3639,7 +3633,7 @@ def change_approval_stages(ticket):
         ]
         if not ccb_ids:
             abort(409, description=(
-                "CCB membership must be configured before a non-standard change can be submitted."
+                tr("CCB membership must be configured before a non-standard change can be submitted.")
             ))
         # One active CCB approver authorizes -- not the whole board, and not
         # a majority. Emergency changes already worked this way (an
@@ -3662,9 +3656,7 @@ def change_approval_stages(ticket):
         } | ({executive.manager_id} if executive and executive.active and executive.manager and executive.manager.active else set()))
         if not executive_ids:
             abort(409, description=(
-                "Executive (CEO) approval authority must be configured "
-                "(itil_admin's Executive approval section) before a "
-                "non-standard change requiring CCB authorization can be submitted."
+                tr("Executive (CEO) approval authority must be configured (itil_admin's Executive approval section) before a non-standard change requiring CCB authorization can be submitted.")
             ))
         stages.append({
             "name": "Executive (CEO) approval",
@@ -3878,7 +3870,7 @@ def activate_gate(gate, notify_title=None, notify_body=None):
 def create_approval_chain(name, target_type, target_id, stages, first_gate_title=None, first_gate_body=None):
     if not stages or any(not [item for item in stage["approver_ids"] if item]
                          for stage in stages):
-        raise ValueError("Every approval stage must have at least one configured approver.")
+        raise ValueError(tr("Every approval stage must have at least one configured approver."))
     # Tenant of the record being approved, not the request context: a caller
     # without a logged-in user (API client, worker) would otherwise get tenant 1.
     target = record_reference(target_type, target_id)
@@ -3919,8 +3911,7 @@ def catalog_approval_stages(requested_for):
         or manager.id == requested_for.id
     ):
         raise ValueError(
-            "An active, same-tenant line manager must be assigned to the "
-            "requested-for user before an approval-required item can be submitted."
+            tr("An active, same-tenant line manager must be assigned to the requested-for user before an approval-required item can be submitted.")
         )
 
     fulfillment = SupportGroup.query.filter_by(
@@ -3934,8 +3925,7 @@ def catalog_approval_stages(requested_for):
     }) if fulfillment else []
     if not fulfillment_approver_ids:
         raise ValueError(
-            "At least one active, same-tenant Service Desk member must be configured "
-            "for fulfillment authorization."
+            tr("At least one active, same-tenant Service Desk member must be configured for fulfillment authorization.")
         )
     return [
         {"name": "Line manager approval", "mode": "all", "approver_ids": [manager.id]},
@@ -3946,7 +3936,7 @@ def catalog_approval_stages(requested_for):
 
 def decide_vote(vote, decision, comments):
     if vote.state != "Requested" or vote.gate.state != "Requested" or vote.gate.chain.state != "Running":
-        abort(409, description="This approval is no longer active.")
+        abort(409, description=tr("This approval is no longer active."))
     vote.state = decision
     vote.comments = comments
     vote.decided_at = now()
@@ -4406,9 +4396,9 @@ def erase_client_contact(contact, reason=""):
     responsibility to handle) if the contact is under an active legal hold
     or already erased, so both callers get the same guard for free."""
     if contact.erased_at:
-        raise ValueError("This contact's personal data has already been erased.")
+        raise ValueError(tr("This contact's personal data has already been erased."))
     if _has_active_legal_hold(contact.tenant_id, "client_contact", contact.id):
-        raise ValueError("This contact is under an active legal hold and cannot be erased.")
+        raise ValueError(tr("This contact is under an active legal hold and cannot be erased."))
     placeholder = f"erased-contact-{contact.id}"
     contact.name = f"Erased contact #{contact.id}"
     contact.email = f"{placeholder}@erased.invalid"
@@ -5202,7 +5192,7 @@ def process_integration_sync_jobs(limit=1):
     """Recover ownerless jobs and run reconciliations under exclusive ownership."""
     from serviceops_core.integration_job_lock import integration_job_lock
     if type(limit) is not int or not 1 <= limit <= 100:
-        raise ValueError("The synchronization job limit must be between 1 and 100.")
+        raise ValueError(tr("The synchronization job limit must be between 1 and 100."))
     candidates = db.session.query(IntegrationSyncJob.id, IntegrationSyncJob.tenant_id,
                                   IntegrationSyncJob.integration).filter(
         IntegrationSyncJob.status.in_(["Running", "Pending"])
@@ -6005,7 +5995,7 @@ def create_catalog_task(ritm):
     group = catalog_fulfillment_group(ritm.item)
     if not group:
         abort(409, description=(
-            f"{ritm.item.name} has no active fulfillment route and no active Service Desk fallback."
+            tr("{name} has no active fulfillment route and no active Service Desk fallback.", name=ritm.item.name)
         ))
     def build():
         task = CatalogTask(number=sequence_number(CatalogTask, "SCTASK"), requested_item_id=ritm.id,
@@ -7755,7 +7745,7 @@ def create_app(test_config=None):
         supplied = request.headers.get("X-CSRF-Token") or request.form.get("_csrf_token")
         if not expected or not supplied or not hmac.compare_digest(expected, supplied):
             abort(400, description=(
-                "The security token is missing or expired. Refresh the page and try again."
+                tr("The security token is missing or expired. Refresh the page and try again.")
             ))
         return None
 
@@ -7773,7 +7763,7 @@ def create_app(test_config=None):
             logout_user()
             session.clear()
             if request.path.startswith("/api/"):
-                abort(401, description="The authenticated session is no longer valid.")
+                abort(401, description=tr("The authenticated session is no longer valid."))
             return redirect(url_for("login"))
         return None
 
@@ -7983,11 +7973,12 @@ def create_app(test_config=None):
     app.jinja_env.globals["now"] = now
     app.jinja_env.globals["all_roles"] = ALL_ROLES
     app.jinja_env.globals["role_at_least"] = role_at_least
+    from serviceops_core.localization import init_app as init_localization
+    init_localization(app, default_language=lambda: setting_value("DEFAULT_LANGUAGE", "auto"))
 
     @app.context_processor
     def ui_context():
-        from serviceops_core.localization import template_context
-        platform_context = template_context() | {
+        platform_context = {
             "nav_active": nav_active,
             "instance_name": setting_value("INSTANCE_NAME", "ServiceOps"),
             "company_name": setting_value("COMPANY_NAME", "Your Company"),
@@ -8009,6 +8000,7 @@ def create_app(test_config=None):
             # model column's own hardcoded default, never this setting.
             preference = UserPreference(
                 user_id=current_user.id, density=setting_value("DEFAULT_DENSITY", "comfortable"),
+                language=initial_language_preference(),
             )
             db.session.add(preference)
             db.session.commit()
@@ -8017,7 +8009,7 @@ def create_app(test_config=None):
         recent_notifications = notification_query.order_by(Notification.created_at.desc()).limit(6).all()
         current_page_url = request.path + (f"?{request.query_string.decode()}" if request.query_string else "")
         current_tenant = db.session.get(Tenant, current_user.tenant_id)
-        return platform_context | template_context(preference.language) | {
+        return platform_context | {
             "current_tenant_slug": current_tenant.slug if current_tenant else None,
             "ui_preference": preference,
             "ui_favorites": favorites,

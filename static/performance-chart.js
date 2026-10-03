@@ -46,7 +46,7 @@
     svg.setAttribute("preserveAspectRatio", "none");
     svg.setAttribute("class", "performance-chart-svg");
     svg.setAttribute("role", "img");
-    svg.setAttribute("aria-label", `${title} over the selected period, latest value ${latest}${unit}`);
+    svg.setAttribute("aria-label", tr("{title} over the selected period, latest value {latest}{unit}", { title: title, latest: latest, unit: unit }));
 
     const maxValue = Math.max(1, ...values);
     [0.25, 0.5, 0.75].forEach((fraction) => {
@@ -117,11 +117,11 @@
     try {
       response = await fetch(`${url}?hours=${encodeURIComponent(hours)}`);
     } catch (error) {
-      empty.textContent = "Could not load performance data right now.";
+      empty.textContent = tr("Could not load performance data right now.");
       return;
     }
     if (!response.ok) {
-      empty.textContent = "Could not load performance data right now.";
+      empty.textContent = tr("Could not load performance data right now.");
       return;
     }
     const payload = await response.json();
@@ -135,9 +135,9 @@
     const rps = payload.points.map((point) => point.requests_per_sec);
     const latency = payload.points.map((point) => point.avg_latency_ms);
     const errorRate = payload.points.map((point) => Math.round(point.error_rate * 1000) / 10);
-    container.appendChild(renderChart("Requests / second", "/s", rps, times, "#0c7c68"));
-    container.appendChild(renderChart("Average latency", "ms", latency, times, "#003e4c"));
-    container.appendChild(renderChart("Error rate", "%", errorRate, times, "#c0392b"));
+    container.appendChild(renderChart(tr("Requests / second"), "/s", rps, times, "#0c7c68"));
+    container.appendChild(renderChart(tr("Average latency"), "ms", latency, times, "#003e4c"));
+    container.appendChild(renderChart(tr("Error rate"), "%", errorRate, times, "#c0392b"));
   }
 
   rangeSelect?.addEventListener("change", load);

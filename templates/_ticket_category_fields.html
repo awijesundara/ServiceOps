@@ -10,9 +10,9 @@
 {% macro category_field(current, disabled=False, name="category", required=False) %}
 {% set active_names = ticket_categories|map(attribute='name')|list %}
 <select name="{{ name }}" data-ticket-category="{{ name }}" {% if disabled %}disabled{% endif %} {% if required and not disabled %}required{% endif %}>
-  {% if not current %}<option value="" selected disabled>Select a category</option>{% endif %}
+  {% if not current %}<option value="" selected disabled>{{ tr('Select a category') }}</option>{% endif %}
   {#- A retired category stays selected so saving the record doesn't silently re-categorise it. #}
-  {% if current and current not in active_names %}<option value="{{ current }}" selected>{{ current }} (retired)</option>{% endif %}
+  {% if current and current not in active_names %}<option value="{{ current }}" selected>{{ tr('{current} (retired)', current=(current)) }}</option>{% endif %}
   {% for c in ticket_categories %}<option {% if current == c.name %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
 </select>
 {% endmacro %}
@@ -27,12 +27,12 @@
    select in column 2. #}
 <span class="subcategory-field">
 <select name="{{ name }}" data-ticket-subcategory="{{ category_name }}" {% if disabled %}disabled{% endif %}>
-  <option value="">Not set</option>
+  <option value="">{{ tr('Not set') }}</option>
   {% for sc in ticket_subcategories %}
   <option value="{{ sc.name }}" data-category-name="{{ sc.category.name }}" {% if current == sc.name %}selected{% endif %}>{{ sc.category.name }} / {{ sc.name }}</option>
   {% endfor %}
-  <option value="__other__" {% if is_other %}selected{% endif %}>Other (describe below)</option>
+  <option value="__other__" {% if is_other %}selected{% endif %}>{{ tr('Other (describe below)') }}</option>
 </select>
-<input type="text" name="{{ name }}_other" maxlength="80" placeholder="Describe the affected area" data-ticket-subcategory-other="{{ category_name }}" {% if not is_other %}hidden{% endif %} {% if disabled %}disabled{% endif %} value="{{ current if is_other else '' }}">
+<input type="text" name="{{ name }}_other" maxlength="80" placeholder="{{ tr('Describe the affected area') }}" data-ticket-subcategory-other="{{ category_name }}" {% if not is_other %}hidden{% endif %} {% if disabled %}disabled{% endif %} value="{{ current if is_other else '' }}">
 </span>
 {% endmacro %}

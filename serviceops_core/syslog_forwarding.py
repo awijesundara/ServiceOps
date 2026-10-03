@@ -8,17 +8,18 @@ import ssl
 import threading
 import time
 from datetime import datetime, timezone
+from serviceops_core.localization import tr
 
 
 def validate_destination(host, port, transport):
     if not isinstance(host, str) or not host or len(host) > 253 or not re.fullmatch(r"[A-Za-z0-9.:%_-]+", host):
-        raise ValueError("Enter a syslog hostname or IP address without a URL or path.")
+        raise ValueError(tr("Enter a syslog hostname or IP address without a URL or path."))
     try:
         number = int(port)
     except (TypeError, ValueError) as error:
-        raise ValueError("Enter a valid syslog port.") from error
+        raise ValueError(tr("Enter a valid syslog port.")) from error
     if not 1 <= number <= 65535 or transport not in {"udp", "tcp", "tls"}:
-        raise ValueError("Select a valid syslog port and transport.")
+        raise ValueError(tr("Select a valid syslog port and transport."))
     return host, number, transport
 
 
@@ -150,7 +151,7 @@ def install(app, setting_value, formatter, redacting_filter):
             transport = setting_value("SYSLOG_TRANSPORT", "udp")
             level = setting_value("SYSLOG_LEVEL", "WARNING")
         if level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
-            raise ValueError("Invalid syslog severity")
+            raise ValueError(tr("Invalid syslog severity"))
         handler = SyslogForwarder(host, port, transport, formatter, redacting_filter)
         handler.setLevel(getattr(logging, level))
         root.addHandler(handler)

@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "月曜日",
+   "火曜日",
+   "水曜日",
+   "木曜日",
+   "金曜日",
+   "土曜日",
+   "日曜日"
+  ],
+  "days_abbr": [
+   "月",
+   "火",
+   "水",
+   "木",
+   "金",
+   "土",
+   "日"
+  ],
+  "months": [
+   "1月",
+   "2月",
+   "3月",
+   "4月",
+   "5月",
+   "6月",
+   "7月",
+   "8月",
+   "9月",
+   "10月",
+   "11月",
+   "12月"
+  ],
+  "months_abbr": [
+   "1月",
+   "2月",
+   "3月",
+   "4月",
+   "5月",
+   "6月",
+   "7月",
+   "8月",
+   "9月",
+   "10月",
+   "11月",
+   "12月"
+  ]
+ },
+ "language": "ja",
+ "messages": {
+  "Administration": "管理",
+  "Back": "戻る",
+  "Cancel": "キャンセル",
+  "Changes": "変更",
+  "Close": "閉じる",
+  "Create": "作成",
+  "Dashboard": "ダッシュボード",
+  "Delete": "削除",
+  "Description": "説明",
+  "Edit": "編集",
+  "General": "一般",
+  "Incidents": "インシデント",
+  "Knowledge": "ナレッジ",
+  "Language": "言語",
+  "Name": "名前",
+  "Notifications": "通知",
+  "Preferences": "設定",
+  "Priority": "優先度",
+  "Save": "保存",
+  "Save preferences": "設定を保存",
+  "Search": "検索",
+  "Service requests": "サービス要求",
+  "Status": "状態",
+  "System preferences": "システム設定"
+ }
+}

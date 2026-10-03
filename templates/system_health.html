@@ -1,97 +1,97 @@
-{% extends "base.html" %}{% block title %}System health · {{ instance_name }}{% endblock %}
+{% extends "base.html" %}{% block title %}{{ tr('System health · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-{% set admin_page_title = 'System health' %}{% include '_admin_context.html' %}
-<header class="page-head"><div><h1>System health</h1><p>Live application, database, worker, and error status -- no shell access required.</p></div><a class="button" href="{{ url_for('system_health_log_file') }}">Detailed request logs</a></header>
+{% set admin_page_title = tr('System health') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>{{ tr('System health') }}</h1><p>{{ tr('Live application, database, worker, and error status -- no shell access required.') }}</p></div><a class="button" href="{{ url_for('system_health_log_file') }}">{{ tr('Detailed request logs') }}</a></header>
 <div class="stats">
-  <a href="{{ url_for('health') }}"><span>Application</span><strong>{{ 'Healthy' if db_healthy else 'DB unreachable' }}</strong><small>v{{ app_version }} · up since {{ (app_start_time|usertime('%Y-%m-%d %H:%M')) }}</small></a>
-  <a href="{{ url_for('ready') }}"><span>Database</span><strong>{{ db_latency_ms ~ ' ms' if db_healthy else 'DOWN' }}</strong><small>SELECT 1 round trip · full readiness detail →</small></a>
-  <a href="#performance" class="{% if not worker_healthy %}stat-alert{% endif %}"><span>Background worker</span><strong{% if not worker_healthy %} class="stat-alert-text"{% endif %}>{{ 'Healthy' if worker_healthy else 'STALE / DOWN' }}</strong><small>{{ 'Last heartbeat ' ~ (worker_last_seen|usertime('%Y-%m-%d %H:%M:%S')) if worker_last_seen else 'No heartbeat recorded yet' }}</small></a>
-  <a href="#application-errors" class="{% if error_last_hour > 0 %}stat-alert{% endif %}"><span>Errors (last hour)</span><strong{% if error_last_hour > 0 %} class="stat-alert-text"{% endif %}>{{ error_last_hour }}</strong><small>{{ total_errors }} total recorded · view log →</small></a>
-  <a href="#active-users"><span>Active users</span><strong>{{ active_user_count }}</strong><small>seen in the last 15 minutes</small></a>
-  <a href="{{ url_for('open_work') }}"><span>Open tickets</span><strong>{{ open_tickets }}</strong><small>{{ total_users }} active users total · view queue →</small></a>
-  <a href="#recovery-set" class="{% if not backup_healthy %}stat-alert{% endif %}"><span>Recovery set</span><strong{% if not backup_healthy %} class="stat-alert-text"{% endif %}>{{ 'Current' if backup_healthy else ('Missing' if not last_backup_at else 'Stale') }}</strong><small>{% if last_backup_at %}{{ last_backup_at|usertime('%Y-%m-%d %H:%M:%S') }} · {{ backup_offsite }}{% else %}No successful backup recorded{% endif %} · RPO {{ backup_rpo_hours }}h</small></a>
+  <a href="{{ url_for('health') }}"><span>{{ tr('Application') }}</span><strong>{{ tr('Healthy') if db_healthy else tr('DB unreachable') }}</strong><small>{{ tr('v{app_version} · up since {value}', app_version=(app_version), value=((app_start_time|usertime('%Y-%m-%d %H:%M')))) }}</small></a>
+  <a href="{{ url_for('ready') }}"><span>{{ tr('Database') }}</span><strong>{{ db_latency_ms ~ ' ms' if db_healthy else 'DOWN' }}</strong><small>{{ tr('SELECT 1 round trip · full readiness detail') }} →</small></a>
+  <a href="#performance" class="{% if not worker_healthy %}stat-alert{% endif %}"><span>{{ tr('Background worker') }}</span><strong{% if not worker_healthy %} class="stat-alert-text"{% endif %}>{{ tr('Healthy') if worker_healthy else tr('STALE / DOWN') }}</strong><small>{{ (tr('Last heartbeat') ~ ' ') ~ (worker_last_seen|usertime('%Y-%m-%d %H:%M:%S')) if worker_last_seen else tr('No heartbeat recorded yet') }}</small></a>
+  <a href="#application-errors" class="{% if error_last_hour > 0 %}stat-alert{% endif %}"><span>{{ tr('Errors (last hour)') }}</span><strong{% if error_last_hour > 0 %} class="stat-alert-text"{% endif %}>{{ error_last_hour }}</strong><small>{{ tr('{total_errors} total recorded · view log', total_errors=(total_errors)) }} →</small></a>
+  <a href="#active-users"><span>{{ tr('Active users') }}</span><strong>{{ active_user_count }}</strong><small>{{ tr('seen in the last 15 minutes') }}</small></a>
+  <a href="{{ url_for('open_work') }}"><span>{{ tr('Open tickets') }}</span><strong>{{ open_tickets }}</strong><small>{{ tr('{total_users} active users total · view queue', total_users=(total_users)) }} →</small></a>
+  <a href="#recovery-set" class="{% if not backup_healthy %}stat-alert{% endif %}"><span>{{ tr('Recovery set') }}</span><strong{% if not backup_healthy %} class="stat-alert-text"{% endif %}>{{ tr('Current') if backup_healthy else (tr('Missing') if not last_backup_at else tr('Stale')) }}</strong><small>{% if last_backup_at %}{{ last_backup_at|usertime('%Y-%m-%d %H:%M:%S') }} · {{ backup_offsite }}{% else %}{{ tr('No successful backup recorded') }}{% endif %} · {{ tr('RPO {backup_rpo_hours}h', backup_rpo_hours=(backup_rpo_hours)) }}</small></a>
 </div>
 
 <section class="panel" id="performance">
   <header class="section-heading">
-    <div><h2>Performance</h2><p>Request rate, latency, and error rate sampled roughly every minute by the background worker.</p></div>
+    <div><h2>{{ tr('Performance') }}</h2><p>{{ tr('Request rate, latency, and error rate sampled roughly every minute by the background worker.') }}</p></div>
     <div class="performance-controls">
-      <span class="tag" title="From DEPLOYMENT_MODE and GUNICORN_WORKERS -- the chart's scale/labels adapt to whichever deployment method is actually running, not a fixed assumption.">{{ deployment_mode }} · {{ gunicorn_workers }} worker process(es)</span>
-      <select id="performance-range" aria-label="Performance period">
-        <option value="1">Last hour</option>
-        <option value="6" selected>Last 6 hours</option>
-        <option value="24">Last 24 hours</option>
-        <option value="168">Last 7 days</option>
+      <span class="tag" title="{{ tr("From DEPLOYMENT_MODE and GUNICORN_WORKERS -- the chart's scale/labels adapt to whichever deployment method is actually running, not a fixed assumption.") }}">{{ tr('{deployment_mode} · {gunicorn_workers} worker process(es)', deployment_mode=(deployment_mode), gunicorn_workers=(gunicorn_workers)) }}</span>
+      <select id="performance-range" aria-label="{{ tr('Performance period') }}">
+        <option value="1">{{ tr('Last hour') }}</option>
+        <option value="6" selected>{{ tr('Last 6 hours') }}</option>
+        <option value="24">{{ tr('Last 24 hours') }}</option>
+        <option value="168">{{ tr('Last 7 days') }}</option>
       </select>
     </div>
   </header>
   <div id="performance-charts" data-url="{{ url_for('system_health_performance') }}">
-    <p class="muted" id="performance-empty">No performance samples yet -- the background worker records one roughly every minute once the app is receiving traffic.</p>
+    <p class="muted" id="performance-empty">{{ tr('No performance samples yet -- the background worker records one roughly every minute once the app is receiving traffic.') }}</p>
   </div>
 </section>
 
 <div class="detail-grid">
-<section class="panel" id="active-users" tabindex="0" role="region" aria-label="Currently active users">
-  <h2>Currently active users</h2>
-  <table><thead><tr><th>User</th><th>Role</th><th>Connection</th><th>Last seen</th></tr></thead><tbody>
+<section class="panel" id="active-users" tabindex="0" role="region" aria-label="{{ tr('Currently active users') }}">
+  <h2>{{ tr('Currently active users') }}</h2>
+  <table><thead><tr><th>{{ tr('User') }}</th><th>{{ tr('Role') }}</th><th>{{ tr('Connection') }}</th><th>{{ tr('Last seen') }}</th></tr></thead><tbody>
     {% for user in active_users %}
-    <tr><td>{{ user.name }}<small> {{ user.username }}</small></td><td><span class="tag">{{ user.role }}</span></td><td>{% if user.id in active_mobile_user_ids %}<span class="badge">Mobile</span>{% else %}<span class="muted">Web</span>{% endif %}</td><td>{{ (user.last_seen_at|usertime('%Y-%m-%d %H:%M:%S')) }}</td></tr>
+    <tr><td>{{ user.name }}<small> {{ user.username }}</small></td><td><span class="tag">{{ tr_value(user.role) }}</span></td><td>{% if user.id in active_mobile_user_ids %}<span class="badge">{{ tr('Mobile') }}</span>{% else %}<span class="muted">{{ tr('Web') }}</span>{% endif %}</td><td>{{ (user.last_seen_at|usertime('%Y-%m-%d %H:%M:%S')) }}</td></tr>
     {% else %}
-    <tr><td colspan="4" class="empty">No users active in the last 15 minutes.</td></tr>
+    <tr><td colspan="4" class="empty">{{ tr('No users active in the last 15 minutes.') }}</td></tr>
     {% endfor %}
   </tbody></table>
 </section>
 <aside class="panel">
-  <h2>Activity &amp; logs</h2>
-  <p>Active users were seen in the last 15 minutes.</p>
-  <p>Warnings and errors appear below. <a href="{{ url_for('system_health_log_file') }}">View all request logs</a>.</p>
+  <h2>{{ tr('Activity & logs') }}</h2>
+  <p>{{ tr('Active users were seen in the last 15 minutes.') }}</p>
+  <p>{{ tr('Warnings and errors appear below.') }} <a href="{{ url_for('system_health_log_file') }}">{{ tr('View all request logs') }}</a>.</p>
 </aside>
 </div>
 
 <section class="panel" id="recovery-set" style="margin-top:20px">
-  <h2>Recovery set<span class="info-tip" tabindex="0" data-tip="Tracks the most recent verified backup, not backups themselves -- ServiceOps has no built-in backup pipeline unless the Helm chart's optional backup.enabled CronJob is turned on. Either way, an external backup job reports in by calling tools/record_backup_status.py (Compose/RPM) or POST /api/v1/monitoring/&lt;source_id&gt;/backup-report (Kubernetes) after each successful run.">i</span></h2>
+  <h2>{{ tr('Recovery set') }}<span class="info-tip" tabindex="0" data-tip="Tracks the most recent verified backup, not backups themselves -- ServiceOps has no built-in backup pipeline unless the Helm chart's optional backup.enabled CronJob is turned on. Either way, an external backup job reports in by calling tools/record_backup_status.py (Compose/RPM) or POST /api/v1/monitoring/&lt;source_id&gt;/backup-report (Kubernetes) after each successful run.">i</span></h2>
   {% if not last_backup_at %}
-  <p class="muted">No successful backup has ever been recorded for this deployment. This isn't necessarily a live incident -- it usually just means nothing has reported a successful backup yet: run <code>tools/record_backup_status.py --manifest &lt;path&gt; --offsite archived|not-configured</code> (Compose/RPM), or have the Kubernetes backup CronJob's <code>backup.alertingSecret</code> configured so it can call <code>POST /api/v1/monitoring/&lt;source_id&gt;/backup-report</code> on success.</p>
+  <p class="muted">{{ tr("No successful backup has ever been recorded for this deployment. This isn't necessarily a live incident -- it usually just means nothing has reported a successful backup yet: run") }} <code>tools/record_backup_status.py --manifest &lt;path&gt; --offsite archived|not-configured</code> {{ tr("(Compose/RPM), or have the Kubernetes backup CronJob's") }} <code>backup.alertingSecret</code> {{ tr('configured so it can call') }} <code>POST /api/v1/monitoring/&lt;source_id&gt;/backup-report</code> {{ tr('on success.') }}</p>
   {% elif not backup_healthy %}
-  <p class="muted">The most recent recorded backup was {{ last_backup_at|usertime('%Y-%m-%d %H:%M:%S') }}, which is older than the configured {{ backup_rpo_hours }}-hour RPO. Either the backup pipeline stopped running, or <code>tools/record_backup_status.py</code> stopped being called after a successful run -- check the external backup job's own logs/schedule first.</p>
+  <p class="muted">{{ tr('The most recent recorded backup was {last_backup_at}, which is older than the configured {backup_rpo_hours}-hour RPO. Either the backup pipeline stopped running, or', last_backup_at=(last_backup_at|usertime('%Y-%m-%d %H:%M:%S')), backup_rpo_hours=(backup_rpo_hours)) }} <code>tools/record_backup_status.py</code> {{ tr("stopped being called after a successful run -- check the external backup job's own logs/schedule first.") }}</p>
   {% else %}
-  <p class="muted">Last recorded backup: {{ last_backup_at|usertime('%Y-%m-%d %H:%M:%S') }} · offsite status: {{ backup_offsite }} · within the {{ backup_rpo_hours }}-hour RPO.</p>
+  <p class="muted">{{ tr('Last recorded backup: {last_backup_at} · offsite status: {backup_offsite} · within the {backup_rpo_hours}-hour RPO.', last_backup_at=(last_backup_at|usertime('%Y-%m-%d %H:%M:%S')), backup_offsite=(backup_offsite), backup_rpo_hours=(backup_rpo_hours)) }}</p>
   {% endif %}
 </section>
 
 <section class="list-workspace" style="margin-top:20px" id="application-errors">
   <header class="list-toolbar">
-    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>Application errors</strong><small>{{ total_errors }} records</small></div></div>
-    <nav class="list-pagination" aria-label="Pagination">
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Application errors') }}</strong><small>{{ tr('{total_errors} records', total_errors=(total_errors)) }}</small></div></div>
+    <nav class="list-pagination" aria-label="{{ tr('Pagination') }}">
       <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('system_health', page=page-1, q=q, level=level_filter, logger=logger_filter, path=path_filter, request_id=request_id_filter, **{'from': from_filter, 'to': to_filter}) }}">‹</a>
-      <span>Page {{ page }} of {{ pages }}</span>
+      <span>{{ tr('Page {page} of {pages}', page=(page), pages=(pages)) }}</span>
       <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('system_health', page=page+1, q=q, level=level_filter, logger=logger_filter, path=path_filter, request_id=request_id_filter, **{'from': from_filter, 'to': to_filter}) }}">›</a>
     </nav>
   </header>
   <form class="filters splunk-filters" method="get" action="{{ url_for('system_health') }}">
-    <input name="q" value="{{ q }}" placeholder="Search message text" aria-label="Search errors">
-    <select name="level" aria-label="Level">
-      <option value="" {% if not level_filter %}selected{% endif %}>All levels</option>
+    <input name="q" value="{{ q }}" placeholder="{{ tr('Search message text') }}" aria-label="{{ tr('Search errors') }}">
+    <select name="level" aria-label="{{ tr('Level') }}">
+      <option value="" {% if not level_filter %}selected{% endif %}>{{ tr('All levels') }}</option>
       {% for level in ['CRITICAL', 'ERROR', 'WARNING'] %}
       <option value="{{ level }}" {% if level_filter == level %}selected{% endif %}>{{ level }}</option>
       {% endfor %}
     </select>
-    <input name="logger" value="{{ logger_filter }}" placeholder="Logger contains…" aria-label="Logger name">
-    <input name="path" value="{{ path_filter }}" placeholder="Path contains…" aria-label="Request path">
-    <input name="request_id" value="{{ request_id_filter }}" placeholder="Request ID" aria-label="Request ID">
-    <label>From <input type="datetime-local" name="from" value="{{ from_filter }}" aria-label="From date/time"></label>
-    <label>To <input type="datetime-local" name="to" value="{{ to_filter }}" aria-label="To date/time"></label>
-    <button>Apply filters</button>
-    <a class="button" href="{{ url_for('system_health') }}">Clear filters</a>
+    <input name="logger" value="{{ logger_filter }}" placeholder="{{ tr('Logger contains…') }}" aria-label="{{ tr('Logger name') }}">
+    <input name="path" value="{{ path_filter }}" placeholder="{{ tr('Path contains…') }}" aria-label="{{ tr('Request path') }}">
+    <input name="request_id" value="{{ request_id_filter }}" placeholder="{{ tr('Request ID') }}" aria-label="{{ tr('Request ID') }}">
+    <label>{{ tr('From') }} <input type="datetime-local" name="from" value="{{ from_filter }}" aria-label="{{ tr('From date/time') }}"></label>
+    <label>{{ tr('To') }} <input type="datetime-local" name="to" value="{{ to_filter }}" aria-label="{{ tr('To date/time') }}"></label>
+    <button>{{ tr('Apply filters') }}</button>
+    <a class="button" href="{{ url_for('system_health') }}">{{ tr('Clear filters') }}</a>
   </form>
   <div class="export-bar">
-    <span>Export {{ total_errors }} filtered records as:</span>
+    <span>{{ tr('Export {total_errors} filtered records as:', total_errors=(total_errors)) }}</span>
     {% for fmt, label in [('csv','CSV'), ('json','JSON'), ('ndjson','NDJSON'), ('txt','Plain text')] %}
-    <a class="button big" href="{{ url_for('system_health_errors_export', format=fmt, q=q, level=level_filter, logger=logger_filter, path=path_filter, request_id=request_id_filter, **{'from': from_filter, 'to': to_filter}) }}">{{ label }}</a>
+    <a class="button big" href="{{ url_for('system_health_errors_export', format=fmt, q=q, level=level_filter, logger=logger_filter, path=path_filter, request_id=request_id_filter, **{'from': from_filter, 'to': to_filter}) }}">{{ tr_value(label) }}</a>
     {% endfor %}
   </div>
   <div class="task-list-scroll">
-  <table class="task-list"><thead><tr><th>Time</th><th>Level</th><th>Request</th><th>User</th><th>Path</th><th>Message</th></tr></thead><tbody>
+  <table class="task-list"><thead><tr><th>{{ tr('Time') }}</th><th>{{ tr('Level') }}</th><th>{{ tr('Request') }}</th><th>{{ tr('User') }}</th><th>{{ tr('Path') }}</th><th>{{ tr('Message') }}</th></tr></thead><tbody>
     {% for row in error_rows %}
     <tr>
       <td>{{ (row.created_at|usertime('%Y-%m-%d %H:%M:%S')) }}</td>
@@ -102,17 +102,17 @@
       <td>
         {{ row.message }}
         {% if row.traceback %}
-        <details><summary>Traceback</summary><pre class="pre">{{ row.traceback }}</pre></details>
+        <details><summary>{{ tr('Traceback') }}</summary><pre class="pre">{{ row.traceback }}</pre></details>
         {% endif %}
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="empty">No matching error log entries.</td></tr>
+    <tr><td colspan="6" class="empty">{{ tr('No matching error log entries.') }}</td></tr>
     {% endfor %}
   </tbody></table>
   </div>
-  <form method="post" action="{{ url_for('system_health_clear_errors') }}" class="actions" data-confirm="Clear all recorded error log entries visible to this tenant? This cannot be undone.">
-    <button class="button">Clear error log</button>
+  <form method="post" action="{{ url_for('system_health_clear_errors') }}" class="actions" data-confirm="{{ tr('Clear all recorded error log entries visible to this tenant? This cannot be undone.') }}">
+    <button class="button">{{ tr('Clear error log') }}</button>
   </form>
 </section>
 <script src="{{ url_for('static', filename='performance-chart.js', v=app_version) }}"></script>

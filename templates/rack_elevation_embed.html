@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ ui_language }}" dir="{{ ui_direction }}">
 <head>
 <meta charset="utf-8">
 <title>{{ rack.name }}</title>
@@ -13,15 +13,17 @@ body{padding:14px;box-sizing:border-box;font-family:inherit}
 .rack-embed-panels svg{display:block;width:100%;height:auto;background:#fff}
 .rack-embed-panels a{cursor:pointer}
 </style>
+<script type="application/json" id="serviceops-i18n">{{ ui_javascript_catalog|tojson }}</script>
+<script src="{{ url_for('static', filename='i18n.js', v=app_version) }}"></script>
 </head>
 <body>
 <div id="rack-elevation-root" data-rack="{{ rack_json }}">
   <div class="rack-embed-panels">
-    <div><h3>Front</h3><svg id="rack-elevation-front" data-face="front"></svg></div>
-    <div><h3>Rear</h3><svg id="rack-elevation-rear" data-face="rear"></svg></div>
+    <div><h3>{{ tr('Front') }}</h3><svg id="rack-elevation-front" data-face="front"></svg></div>
+    <div><h3>{{ tr('Rear') }}</h3><svg id="rack-elevation-rear" data-face="rear"></svg></div>
   </div>
   <div id="rack-pdu-list"></div><div id="rack-unplaced-list"></div>
-  <p id="rack-elevation-empty" class="muted" hidden style="font-size:12px">Nothing mounted in this rack yet.</p>
+  <p id="rack-elevation-empty" class="muted" hidden style="font-size:12px">{{ tr('Nothing mounted in this rack yet.') }}</p>
 </div>
 <script src="{{ url_for('static', filename='rack-elevation.js', v=app_version) }}" defer></script>
 </body>

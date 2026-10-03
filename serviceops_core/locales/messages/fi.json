@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "maanantaina",
+   "tiistaina",
+   "keskiviikkona",
+   "torstaina",
+   "perjantaina",
+   "lauantaina",
+   "sunnuntai"
+  ],
+  "days_abbr": [
+   "ma",
+   "ti",
+   "ke",
+   "to",
+   "pe",
+   "la",
+   "su"
+  ],
+  "months": [
+   "tammikuuta",
+   "helmikuuta",
+   "maaliskuuta",
+   "huhtikuuta",
+   "toukokuuta",
+   "kesäkuuta",
+   "heinäkuuta",
+   "elokuuta",
+   "syyskuuta",
+   "lokakuuta",
+   "marraskuuta",
+   "joulukuuta"
+  ],
+  "months_abbr": [
+   "tammi",
+   "helmi",
+   "maalis",
+   "huhti",
+   "touko",
+   "kesä",
+   "heinä",
+   "elo",
+   "syys",
+   "loka",
+   "marras",
+   "joulu"
+  ]
+ },
+ "language": "fi",
+ "messages": {
+  "Administration": "Hallinta",
+  "Back": "Takaisin",
+  "Cancel": "Peruuta",
+  "Changes": "Muutokset",
+  "Close": "Sulje",
+  "Create": "Luo",
+  "Dashboard": "Koontinäyttö",
+  "Delete": "Poista",
+  "Description": "Kuvaus",
+  "Edit": "Muokkaa",
+  "General": "Yleiset",
+  "Incidents": "Häiriöt",
+  "Knowledge": "Tietämys",
+  "Language": "Kieli",
+  "Name": "Nimi",
+  "Notifications": "Ilmoitukset",
+  "Preferences": "Asetukset",
+  "Priority": "Prioriteetti",
+  "Save": "Tallenna",
+  "Save preferences": "Tallenna asetukset",
+  "Search": "Hae",
+  "Service requests": "Palvelupyynnöt",
+  "Status": "Tila",
+  "System preferences": "Järjestelmäasetukset"
+ }
+}

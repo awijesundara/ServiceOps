@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "월요일",
+   "화요일",
+   "수요일",
+   "목요일",
+   "금요일",
+   "토요일",
+   "일요일"
+  ],
+  "days_abbr": [
+   "월",
+   "화",
+   "수",
+   "목",
+   "금",
+   "토",
+   "일"
+  ],
+  "months": [
+   "1월",
+   "2월",
+   "3월",
+   "4월",
+   "5월",
+   "6월",
+   "7월",
+   "8월",
+   "9월",
+   "10월",
+   "11월",
+   "12월"
+  ],
+  "months_abbr": [
+   "1월",
+   "2월",
+   "3월",
+   "4월",
+   "5월",
+   "6월",
+   "7월",
+   "8월",
+   "9월",
+   "10월",
+   "11월",
+   "12월"
+  ]
+ },
+ "language": "ko",
+ "messages": {
+  "Administration": "관리",
+  "Back": "뒤로",
+  "Cancel": "취소",
+  "Changes": "변경",
+  "Close": "닫기",
+  "Create": "생성",
+  "Dashboard": "대시보드",
+  "Delete": "삭제",
+  "Description": "설명",
+  "Edit": "편집",
+  "General": "일반",
+  "Incidents": "인시던트",
+  "Knowledge": "지식",
+  "Language": "언어",
+  "Name": "이름",
+  "Notifications": "알림",
+  "Preferences": "환경설정",
+  "Priority": "우선순위",
+  "Save": "저장",
+  "Save preferences": "환경설정 저장",
+  "Search": "검색",
+  "Service requests": "서비스 요청",
+  "Status": "상태",
+  "System preferences": "시스템 환경설정"
+ }
+}

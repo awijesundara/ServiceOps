@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "mánudagur",
+   "þriðjudagur",
+   "miðvikudagur",
+   "fimmtudagur",
+   "föstudagur",
+   "laugardagur",
+   "sunnudagur"
+  ],
+  "days_abbr": [
+   "mán.",
+   "þri.",
+   "mið.",
+   "fim.",
+   "fös.",
+   "lau.",
+   "sun."
+  ],
+  "months": [
+   "janúar",
+   "febrúar",
+   "mars",
+   "apríl",
+   "maí",
+   "júní",
+   "júlí",
+   "ágúst",
+   "september",
+   "október",
+   "nóvember",
+   "desember"
+  ],
+  "months_abbr": [
+   "jan.",
+   "feb.",
+   "mar.",
+   "apr.",
+   "maí",
+   "jún.",
+   "júl.",
+   "ágú.",
+   "sep.",
+   "okt.",
+   "nóv.",
+   "des."
+  ]
+ },
+ "language": "is",
+ "messages": {
+  "Administration": "Stjórnun",
+  "Back": "Til baka",
+  "Cancel": "Hætta við",
+  "Changes": "Breytingar",
+  "Close": "Loka",
+  "Create": "Búa til",
+  "Dashboard": "Yfirlit",
+  "Delete": "Eyða",
+  "Description": "Lýsing",
+  "Edit": "Breyta",
+  "General": "Almennt",
+  "Incidents": "Atvik",
+  "Knowledge": "Þekking",
+  "Language": "Tungumál",
+  "Name": "Nafn",
+  "Notifications": "Tilkynningar",
+  "Preferences": "Stillingar",
+  "Priority": "Forgangur",
+  "Save": "Vista",
+  "Save preferences": "Vista stillingar",
+  "Search": "Leita",
+  "Service requests": "Þjónustubeiðnir",
+  "Status": "Staða",
+  "System preferences": "Kerfisstillingar"
+ }
+}

@@ -22,6 +22,7 @@ import socket
 import ssl
 import threading
 from urllib.parse import urlparse
+from serviceops_core.localization import tr
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ def parse_proxy_url(proxy_url):
     the SMTP tunnel and the settings-save validation."""
     parsed = urlparse(proxy_url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise ValueError("Proxy URL must be http:// or https://host:port.")
+        raise ValueError(tr("Proxy URL must be http:// or https://host:port."))
     return parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80), parsed.username, parsed.password
 
 

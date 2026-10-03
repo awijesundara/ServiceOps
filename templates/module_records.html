@@ -4,29 +4,29 @@
 {% block content %}
 <section class="list-workspace">
   <header class="list-toolbar">
-    <div class="list-title"><span class="list-menu">☰</span><div><strong>{{ config.name }}</strong><small>{{ total }} records · {{ config.types|join(' · ') }}</small></div></div>
-    <a class="primary button" href="{{ url_for('enterprise_new', domain=domain) }}">New</a>
+    <div class="list-title"><span class="list-menu">☰</span><div><strong>{{ config.name }}</strong><small>{{ tr('{total} records · {types}', total=(total), types=(config.types|join(' · '))) }}</small></div></div>
+    <a class="primary button" href="{{ url_for('enterprise_new', domain=domain) }}">{{ tr('New') }}</a>
     <form class="list-search">
       <input type="hidden" name="filter" value="{{ raw_filter }}">
-      <input name="q" value="{{ q }}" placeholder="Number or short description">
-      <button>{{ t('Search') }}</button>
+      <input name="q" value="{{ q }}" placeholder="{{ tr('Number or short description') }}">
+      <button>{{ tr('Search') }}</button>
       <div class="list-filter" data-filter-fields='{{ filter_fields|tojson }}' data-filter-value='{{ raw_filter or "[]" }}'>
-        <button type="button" class="list-filter-toggle">▽ Filter</button>
+        <button type="button" class="list-filter-toggle">▽ {{ tr('Filter') }}</button>
         <div class="list-filter-builder" hidden>
           <div class="list-filter-rows"></div>
           <div class="list-filter-actions">
-            <button type="button" class="list-filter-add">+ Add condition</button>
-            <button type="submit" class="primary">Run</button>
-            <button type="button" class="list-filter-clear">Clear filter</button>
+            <button type="button" class="list-filter-add">+ {{ tr('Add condition') }}</button>
+            <button type="submit" class="primary">{{ tr('Run') }}</button>
+            <button type="button" class="list-filter-clear">{{ tr('Clear filter') }}</button>
           </div>
         </div>
       </div>
     </form>
-    <nav class="list-pagination"><a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('module_records', domain=domain, q=q, filter=raw_filter, page=page-1) }}">‹</a><span>Page {{ page }} of {{ pages }}</span><a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('module_records', domain=domain, q=q, filter=raw_filter, page=page+1) }}">›</a></nav>
+    <nav class="list-pagination"><a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('module_records', domain=domain, q=q, filter=raw_filter, page=page-1) }}">‹</a><span>{{ tr('Page {page} of {pages}', page=(page), pages=(pages)) }}</span><a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('module_records', domain=domain, q=q, filter=raw_filter, page=page+1) }}">›</a></nav>
   </header>
-  <div class="list-breadcrumb"><span>▽</span> All{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › Search contains “{{ q }}”{% endif %}</div>
-  <div class="task-list-scroll"><table class="task-list"><thead><tr><th>Number</th><th>Opened</th><th>Type</th><th>Short description</th><th>Requester</th><th>{{ t('Priority') }}</th><th>State</th><th>Risk</th><th>Team</th><th>Assigned to</th><th>Updated</th></tr></thead><tbody>
-  {% for r in records %}<tr><td><a class="record-number" href="{{ url_for('enterprise_detail', record_id=r.id) }}">{{ r.number }}</a></td><td>{{ (r.created_at|usertime('%Y-%m-%d %H:%M')) }}</td><td>{{ r.record_type }}</td><td><span class="truncate" title="{{ r.title }}">{{ r.title }}</span></td><td><span class="truncate" title="{{ r.requester.name }}">{{ r.requester.name }}</span></td><td><span class="priority-dot {{ r.priority|lower }}"></span><span class="priority {{ r.priority|lower }}">{{ r.priority }}</span></td><td>{{ status_badge(r.state) }}</td><td>{{ r.risk }}</td><td><span class="truncate" title="{{ r.support_group.name if r.support_group else '' }}">{{ r.support_group.name if r.support_group else '—' }}</span></td><td><span class="truncate" title="{{ r.assignee.name if r.assignee else 'Unassigned' }}">{{ r.assignee.name if r.assignee else 'Unassigned' }}</span></td><td>{{ (r.updated_at|usertime('%Y-%m-%d %H:%M')) }}</td></tr>{% else %}<tr><td colspan="11" class="empty">No records yet.</td></tr>{% endfor %}
+  <div class="list-breadcrumb"><span>▽</span> {{ tr('All') }}{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › {{ tr('Search contains “{q}”', q=(q)) }}{% endif %}</div>
+  <div class="task-list-scroll"><table class="task-list"><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Opened') }}</th><th>{{ tr('Type') }}</th><th>{{ tr('Short description') }}</th><th>{{ tr('Requester') }}</th><th>{{ tr('Priority') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Risk') }}</th><th>{{ tr('Team') }}</th><th>{{ tr('Assigned to') }}</th><th>{{ tr('Updated') }}</th></tr></thead><tbody>
+  {% for r in records %}<tr><td><a class="record-number" href="{{ url_for('enterprise_detail', record_id=r.id) }}">{{ r.number }}</a></td><td>{{ (r.created_at|usertime('%Y-%m-%d %H:%M')) }}</td><td>{{ r.record_type }}</td><td><span class="truncate" title="{{ r.title }}">{{ r.title }}</span></td><td><span class="truncate" title="{{ r.requester.name }}">{{ r.requester.name }}</span></td><td><span class="priority-dot {{ r.priority|lower }}"></span><span class="priority {{ r.priority|lower }}">{{ tr_value(r.priority) }}</span></td><td>{{ status_badge(r.state) }}</td><td>{{ tr_value(r.risk) }}</td><td><span class="truncate" title="{{ r.support_group.name if r.support_group else '' }}">{{ r.support_group.name if r.support_group else '—' }}</span></td><td><span class="truncate" title="{{ r.assignee.name if r.assignee else tr('Unassigned') }}">{{ r.assignee.name if r.assignee else tr('Unassigned') }}</span></td><td>{{ (r.updated_at|usertime('%Y-%m-%d %H:%M')) }}</td></tr>{% else %}<tr><td colspan="11" class="empty">{{ tr('No records yet.') }}</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 {% endblock %}

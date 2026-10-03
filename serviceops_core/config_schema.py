@@ -8,6 +8,8 @@ and the encryption cipher.
 """
 import json
 
+from serviceops_core.localization import AUTOMATIC, LANGUAGES, language_options
+
 
 PROXY_MODE_CHOICES = ["default", "none", "custom"]
 PROXY_MODE_LABELS = {
@@ -45,6 +47,10 @@ SETTING_DEFINITIONS = {
         {"key": "BRAND_TEAL", "label": "Primary brand color", "type": "color", "default": "#003e4c", "live": True},
         {"key": "BRAND_AMBER", "label": "Accent brand color", "type": "color", "default": "#f9aa3c", "live": True},
         {"key": "DEFAULT_DENSITY", "label": "Default density", "type": "choice", "choices": ["comfortable", "compact"], "default": "comfortable", "live": True},
+        # Language names are shown as written (each in its own language), never translated.
+        {"key": "DEFAULT_LANGUAGE", "label": "Default interface language", "type": "choice",
+         "choices": [AUTOMATIC, *LANGUAGES], "default": AUTOMATIC, "live": True,
+         "choice_labels": {AUTOMATIC: "Automatic (browser language)", **dict(language_options())}},
     ],
     "sign_in_and_directory": [
         {"key": "LOCAL_AUTH_ENABLED", "label": "Enable local authentication", "type": "bool", "default": "true", "live": True},
@@ -272,7 +278,7 @@ SETTING_DEFINITIONS = {
 
 SETTING_GROUP_META = {
     "organization": ("Organization", "Company identity, support contact, and instance-wide naming."),
-    "appearance": ("Appearance", "Brand colors and the default screen density for new users."),
+    "appearance": ("Appearance", "Brand colors, and the default screen density and interface language for new users."),
     "sign_in_and_directory": ("Sign-in and directory", "Local login, AD/LDAP, Keycloak, directory attributes, and synchronization."),
     "security": ("Security and limits", "Sessions, passwords, MFA, rate limits, uploads, malware scanning, and audit streaming."),
     "workspace_defaults": ("Workspace defaults", "Dashboard content and service-level warning thresholds."),

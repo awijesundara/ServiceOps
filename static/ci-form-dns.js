@@ -12,13 +12,13 @@ document.addEventListener("DOMContentLoaded", () => {
       };
       const lines = [];
       (info.addresses || []).forEach((entry) => {
-        lines.push(line(`${entry.ip} → ${entry.hostname || "no PTR record"}`));
+        lines.push(line(`${entry.ip} → ${entry.hostname || tr("no PTR record")}`));
       });
       (info.hostnames || []).forEach((entry) => {
-        lines.push(line(`${entry.hostname} → ${(entry.ips || []).join(", ") || "no A/AAAA record"}`));
+        lines.push(line(`${entry.hostname} → ${(entry.ips || []).join(", ") || tr("no A/AAAA record")}`));
       });
       if (lines.length) el.replaceChildren(...lines);
-      else el.textContent = "No IP or hostname to resolve.";
+      else el.textContent = tr("No IP or hostname to resolve.");
     })
-    .catch(() => { el.textContent = "Unable to resolve at this time."; });
+    .catch(() => { el.textContent = tr("Unable to resolve at this time."); });
 });

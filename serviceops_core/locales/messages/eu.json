@@ -1,0 +1,77 @@
+{
+ "calendar": {
+  "days": [
+   "astelehena",
+   "asteartea",
+   "asteazkena",
+   "osteguna",
+   "ostirala",
+   "larunbata",
+   "igandea"
+  ],
+  "days_abbr": [
+   "al.",
+   "ar.",
+   "az.",
+   "og.",
+   "or.",
+   "lr.",
+   "ig."
+  ],
+  "months": [
+   "urtarrila",
+   "otsaila",
+   "martxoa",
+   "apirila",
+   "maiatza",
+   "ekaina",
+   "uztaila",
+   "abuztua",
+   "iraila",
+   "urria",
+   "azaroa",
+   "abendua"
+  ],
+  "months_abbr": [
+   "urt.",
+   "ots.",
+   "mar.",
+   "api.",
+   "mai.",
+   "eka.",
+   "uzt.",
+   "abu.",
+   "ira.",
+   "urr.",
+   "aza.",
+   "abe."
+  ]
+ },
+ "language": "eu",
+ "messages": {
+  "Administration": "Administrazioa",
+  "Back": "Atzera",
+  "Cancel": "Utzi",
+  "Changes": "Aldaketak",
+  "Close": "Itxi",
+  "Create": "Sortu",
+  "Dashboard": "Aginte-panela",
+  "Delete": "Ezabatu",
+  "Description": "Deskribapena",
+  "Edit": "Editatu",
+  "General": "Orokorra",
+  "Incidents": "Gorabeherak",
+  "Knowledge": "Ezagutza",
+  "Language": "Hizkuntza",
+  "Name": "Izena",
+  "Notifications": "Jakinarazpenak",
+  "Preferences": "Hobespenak",
+  "Priority": "Lehentasuna",
+  "Save": "Gorde",
+  "Save preferences": "Gorde hobespenak",
+  "Search": "Bilatu",
+  "Service requests": "Zerbitzu-eskaerak",
+  "Status": "Egoera",
+  "System preferences": "Sistemaren hobespenak"
+ }
+}
