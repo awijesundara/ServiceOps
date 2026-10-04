@@ -4,7 +4,11 @@ Self-hosted ITSM platform — incidents, changes, problems, requests, CMDB,
 service catalog, SLAs, and approvals. No vendor lock-in, runs on your own
 infrastructure.
 
+[![Last commit](https://img.shields.io/github/last-commit/awijesundara/ServiceOps/main)](https://github.com/awijesundara/ServiceOps/commits/main)
+[![Top language](https://img.shields.io/github/languages/top/awijesundara/ServiceOps)](https://github.com/awijesundara/ServiceOps)
+[![Code size](https://img.shields.io/github/languages/code-size/awijesundara/ServiceOps)](https://github.com/awijesundara/ServiceOps)
 [![Supply chain](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml/badge.svg)](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml)
+[![CodeQL](https://github.com/awijesundara/ServiceOps/actions/workflows/codeql.yml/badge.svg)](https://github.com/awijesundara/ServiceOps/actions/workflows/codeql.yml)
 [![Version](https://img.shields.io/badge/version-1.112.1-003E4C)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](Dockerfile)
 [![Docker](https://img.shields.io/badge/docker-compose%20%7C%20kubernetes-2496ED?logo=docker&logoColor=white)](#deploy)
@@ -111,3 +115,15 @@ ServiceOps is an independent implementation, not affiliated with or
 compatible-by-design with any commercial ITSM product. No third-party
 proprietary code, licensed connectors, or bundled hosted AI services are included —
 integrations (AD, SIEM, chat, etc.) connect to systems you choose and control.
+
+## Project statistics
+
+| Metric | Value |
+|---|---|
+| Tracked files | 700 |
+| Lines of code (non-blank) | 85,247 |
+| Languages | Python 69,356, HTML 5,920, JavaScript 4,378, YAML 2,826, Shell 1,620 |
+| Automated tests | 1230 |
+| Commits | 521 |
+
+CI runs the supply-chain gate (tests, lint, migrations, container build, vulnerability scan, SBOM and provenance) and CodeQL on every push to `main`; each passing commit is released and deployed by the governed release workflow.
