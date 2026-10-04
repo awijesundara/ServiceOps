@@ -1,59 +1,20 @@
 {
- "abt": {
-  "english_name": "Ambulas"
- },
  "ace": {},
- "ace-Arab": {},
- "acf": {
-  "english_name": "Saint Lucian Creole French"
- },
- "ada": {},
- "adh": {
-  "english_name": "Adhola"
- },
- "ady": {},
  "af": {},
- "agr": {
-  "english_name": "Aguaruna"
- },
- "ahk": {
-  "english_name": "Akha"
- },
  "ak": {},
- "akb": {
-  "english_name": "Batak Angkola"
- },
- "alt": {},
  "alz": {
   "english_name": "Alur"
  },
  "am": {},
- "amu": {
-  "english_name": "Guerrero Amuzgo"
- },
- "an": {},
- "ann": {},
- "ape": {
-  "english_name": "Bukiyip"
- },
  "ar": {},
- "arn": {},
- "ary": {},
- "arz": {},
  "as": {},
  "av": {},
  "awa": {},
  "ay": {},
  "az": {},
- "az-RU": {},
  "ba": {},
  "ban": {},
- "bar": {},
- "bas": {},
  "bbc": {},
- "bci": {
-  "english_name": "Baoulé"
- },
  "be": {},
  "ber": {
   "english_name": "Berber (Tifinagh)",
@@ -65,28 +26,11 @@
  },
  "bew": {},
  "bg": {},
- "bgp": {
-  "english_name": "Eastern Balochi"
- },
  "bho": {},
- "bi": {},
  "bik": {},
- "bim": {
-  "english_name": "Bimoba"
- },
- "bjn": {},
- "bjn-Arab": {},
  "bm": {},
  "bn": {},
- "bo": {},
- "bqc": {
-  "english_name": "Boko (Benin)"
- },
  "br": {},
- "bru": {
-  "english_name": "Eastern Bru"
- },
- "brx": {},
  "bs": {},
  "bts": {
   "english_name": "Batak Simalungun"
@@ -95,287 +39,113 @@
   "english_name": "Batak Karo"
  },
  "bua": {},
- "bug": {},
- "bum": {},
- "bus": {
-  "english_name": "Bokobaru"
- },
- "bzj": {
-  "english_name": "Belize Kriol English"
- },
  "ca": {},
- "cab": {
-  "english_name": "Garifuna"
- },
- "cac": {
-  "english_name": "Chuj"
- },
- "cak": {
-  "english_name": "Kaqchikel"
- },
- "cbk": {
-  "english_name": "Chavacano"
- },
- "cce": {
-  "english_name": "Chopi"
- },
  "ce": {},
  "ceb": {},
- "cfm": {
-  "english_name": "Falam Chin"
- },
  "ch": {},
  "chk": {},
  "chm": {},
- "chr": {},
  "ckb": {},
  "cnh": {
   "english_name": "Hakha Chin"
  },
  "co": {},
- "cr-Latn": {},
  "crh": {},
  "crh-Latn": {},
  "crs": {},
  "cs": {},
- "ctd-Latn": {
-  "english_name": "Tedim Chin"
- },
- "ctu": {
-  "english_name": "Chol"
- },
- "cuk": {
-  "english_name": "San Blas Kuna"
- },
  "cv": {},
  "cy": {},
  "da": {},
  "de": {},
  "din": {},
- "dje": {},
- "djk": {
-  "english_name": "Eastern Maroon Creole"
- },
- "dln": {
-  "english_name": "Darlong"
- },
  "doi": {},
  "dov": {
   "english_name": "Dombe"
  },
- "dtp": {},
  "dv": {},
- "dwr": {
-  "english_name": "Dawro"
- },
  "dyu": {},
  "dz": {},
  "ee": {},
  "el": {},
- "emp": {
-  "english_name": "Northern Emberá"
- },
- "enq": {
-  "english_name": "Enga"
- },
  "eo": {},
  "es": {},
  "et": {},
  "eu": {},
  "fa": {},
  "ff": {},
- "ffm": {
-  "english_name": "Maasina Fulfulde"
- },
  "fi": {},
  "fil": {},
- "fip": {
-  "english_name": "Fipa"
- },
  "fj": {},
  "fo": {},
  "fon": {},
  "fr": {},
  "fr-CA": {},
- "frp": {},
  "fur": {},
- "fuv": {
-  "english_name": "Nigerian Fulfulde"
- },
  "fy": {},
  "ga": {},
- "gag": {},
- "gbm": {
-  "english_name": "Garhwali"
- },
  "gd": {},
  "gl": {},
  "gn": {},
- "gof": {
-  "english_name": "Gofa"
- },
  "gom": {
   "english_name": "Goan Konkani",
   "script": "Deva"
  },
- "gom-Latn": {
-  "english_name": "Goan Konkani"
- },
  "gor": {},
- "gsw": {},
  "gu": {},
- "gub": {
-  "english_name": "Guajajára"
- },
- "guc": {},
- "guh": {
-  "english_name": "Guahibo"
- },
- "gui": {
-  "english_name": "Eastern Bolivian Guaraní"
- },
  "gv": {},
- "gvl": {
-  "english_name": "Gulay"
- },
- "gym": {
-  "english_name": "Ngäbere"
- },
  "ha": {},
  "haw": {},
  "he": {},
  "hi": {},
- "hif": {},
  "hil": {},
  "hmn": {},
- "hne": {
-  "english_name": "Chhattisgarhi"
- },
- "ho": {},
  "hr": {},
  "ht": {},
  "hu": {},
- "hui": {
-  "english_name": "Huli"
- },
- "hus": {
-  "english_name": "Huastec"
- },
- "hvn": {
-  "english_name": "Sabu"
- },
  "hy": {},
  "iba": {},
- "ibb": {},
  "id": {},
- "ify": {
-  "english_name": "Keley-I Kallahan"
- },
  "ig": {},
  "ilo": {},
- "inb": {
-  "english_name": "Inga"
- },
- "io": {},
  "is": {},
- "iso": {
-  "english_name": "Isoko"
- },
  "it": {},
  "iu": {},
- "ium": {
-  "english_name": "Iu Mien"
- },
- "izz": {
-  "english_name": "Izii"
- },
  "ja": {},
- "jac": {
-  "english_name": "Popti'"
- },
  "jam": {},
- "jiv": {
-  "english_name": "Shuar"
- },
  "jv": {},
- "jvn": {
-  "english_name": "Caribbean Javanese"
- },
  "ka": {},
- "kaa": {},
  "kaa-Latn": {},
  "kac": {},
  "kbd": {},
- "kbp": {
-  "english_name": "Kabiyè"
- },
  "kek": {
   "english_name": "Kekchí"
  },
  "kg": {},
  "kha": {},
- "kj": {},
- "kjg": {
-  "english_name": "Khmu"
- },
- "kjh": {
-  "english_name": "Khakas"
- },
  "kk": {},
  "kl": {},
  "km": {},
  "kmb": {},
- "kmz-Latn": {
-  "english_name": "Khorasani Turkish"
- },
  "kn": {},
- "knj": {
-  "english_name": "Western Kanjobal"
- },
  "ko": {},
- "koi": {},
- "kos": {},
  "kr": {},
- "kr-Arab": {},
- "krc": {},
  "kri": {},
- "ks": {},
- "ks-Deva": {},
- "ksd": {
-  "english_name": "Kuanua"
- },
- "ksw": {
-  "english_name": "S'gaw Karen"
- },
  "ktu": {
   "english_name": "Kituba (Democratic Republic of Congo)"
  },
  "ku": {},
- "kum": {},
  "kv": {},
- "kw": {},
- "kwi": {
-  "english_name": "Awa-Cuaiquer"
- },
  "ky": {},
  "la": {},
- "laj": {
-  "english_name": "Lango (Uganda)"
- },
  "lb": {},
  "lg": {},
- "lhu": {
-  "english_name": "Lahu"
- },
  "li": {},
  "lij": {},
  "lmo": {},
  "ln": {},
  "lo": {},
- "lrc": {},
  "lt": {},
- "ltg": {},
- "lu": {},
  "lus": {},
  "lv": {},
  "mad": {},
@@ -385,320 +155,89 @@
  "mam": {
   "english_name": "Mam"
  },
- "mas": {},
- "maz": {
-  "english_name": "Central Mazahua"
- },
- "mbt": {
-  "english_name": "Matigsalug Manobo"
- },
- "mdf": {},
- "meo": {
-  "english_name": "Kedah Malay"
- },
- "meu": {
-  "english_name": "Motu"
- },
  "mfe": {},
  "mg": {},
- "mgh": {},
  "mh": {},
  "mi": {},
  "min": {},
- "miq": {
-  "english_name": "Mískito"
- },
  "mk": {},
- "mkn": {
-  "english_name": "Kupang Malay"
- },
  "ml": {},
  "mn": {},
  "mni": {},
- "mps": {
-  "english_name": "Dadibi"
- },
- "mqy": {
-  "english_name": "Manggarai"
- },
  "mr": {},
- "mrj": {},
- "mrw": {
-  "english_name": "Maranao"
- },
  "ms": {},
  "ms-Arab": {},
- "ms-Arab-BN": {},
- "msb": {
-  "english_name": "Masbatenyo"
- },
- "msi": {
-  "english_name": "Sabah Malay"
- },
- "msm": {
-  "english_name": "Agusan Manobo"
- },
  "mt": {},
- "mwl": {},
  "my": {},
- "myv": {},
- "nan-Latn-TW": {},
  "nb": {},
  "ndc-ZW": {
   "english_name": "Ndau"
  },
- "nds": {},
- "nds-NL": {},
  "ne": {},
  "new": {},
- "ngu": {
-  "english_name": "Guerrero Nahuatl"
- },
  "nhe": {
   "english_name": "Eastern Huasteca Nahuatl"
  },
- "nia": {},
- "nij": {
-  "english_name": "Ngaju"
- },
- "niq": {
-  "english_name": "Nandi"
- },
  "nl": {},
- "nn": {},
- "nnb": {
-  "english_name": "Nande"
- },
- "noa": {
-  "english_name": "Woun Meu"
- },
- "nog": {},
  "nr": {},
  "nso": {},
  "nus": {},
- "nut": {
-  "english_name": "Nung (Viet Nam)"
- },
- "nv": {},
  "ny": {},
- "nyu": {
-  "english_name": "Nyungwe"
- },
- "nzi": {},
  "oc": {},
- "oj": {},
  "om": {},
  "or": {},
  "os": {},
- "otq": {
-  "english_name": "Querétaro Otomi"
- },
  "pa": {},
  "pag": {},
  "pap": {},
- "pau": {},
- "pck": {
-  "english_name": "Paite Chin"
- },
- "pis": {},
  "pl": {},
- "pon": {},
- "ppk": {
-  "english_name": "Uma"
- },
- "prs": {
-  "english_name": "Dari",
-  "script": "Arab"
- },
  "ps": {},
  "pt": {},
  "pt-BR": {},
  "qu": {},
- "qub": {
-  "english_name": "Huallaga Huánuco Quechua"
- },
- "quc": {},
- "quf": {
-  "english_name": "Lambayeque Quechua"
- },
- "quh": {
-  "english_name": "South Bolivian Quechua",
-  "script": "Latn"
- },
- "qup": {
-  "english_name": "Southern Pastaza Quechua"
- },
- "quy": {
-  "english_name": "Ayacucho Quechua"
- },
- "qvc": {
-  "english_name": "Cajamarca Quechua"
- },
- "qvi": {
-  "english_name": "Imbabura Highland Quichua"
- },
- "qvz": {
-  "english_name": "Northern Pastaza Quichua"
- },
- "qxr": {
-  "english_name": "Cañar Highland Quichua"
- },
- "raj": {},
- "rcf": {
-  "english_name": "Réunion Creole French"
- },
- "rki": {
-  "english_name": "Rakhine"
- },
- "rm": {},
- "rmc": {
-  "english_name": "Carpathian Romani"
- },
  "rn": {},
  "ro": {},
  "rom": {},
  "ru": {},
  "rw": {},
- "rwo": {
-  "english_name": "Rawa"
- },
  "sa": {},
  "sah": {},
- "sat-Latn": {},
- "sc": {},
  "scn": {},
  "sd": {},
- "sda": {
-  "english_name": "Toraja-Sa'dan"
- },
  "se": {},
- "seh": {},
  "sg": {},
- "sh": {
-  "english_name": "Serbo-Croatian (Latin)",
-  "script": "Latn"
- },
- "shn": {},
- "shp": {
-  "english_name": "Shipibo-Conibo"
- },
  "si": {},
- "sja": {
-  "english_name": "Epena"
- },
  "sk": {},
- "skr": {
-  "english_name": "Saraiki"
- },
  "sl": {},
  "sm": {},
- "smt": {
-  "english_name": "Simte"
- },
  "sn": {},
  "so": {},
- "spp": {
-  "english_name": "Supyire Senoufo"
- },
  "sq": {},
  "sr": {},
- "srm": {
-  "english_name": "Saramaccan"
- },
- "srn": {},
- "ss": {},
  "st": {},
- "stq": {},
  "su": {},
  "sus": {},
- "suz": {
-  "english_name": "Sunwar"
- },
  "sv": {},
  "sw": {},
- "sxn": {
-  "english_name": "Sangir"
- },
- "syr": {},
  "szl": {},
  "ta": {},
- "tab": {
-  "english_name": "Tabassaran"
- },
- "taj": {
-  "english_name": "Eastern Tamang"
- },
- "taq": {
-  "english_name": "Tamasheq"
- },
- "taq-Tfng": {
-  "english_name": "Tamasheq"
- },
- "tbz": {
-  "english_name": "Ditammari"
- },
- "tca": {
-  "english_name": "Ticuna"
- },
  "tcy": {},
- "tdx": {
-  "english_name": "Tandroy-Mahafaly Malagasy"
- },
  "te": {},
- "teo": {},
  "tet": {},
  "tg": {},
  "th": {},
  "ti": {},
  "tiv": {},
  "tk": {},
- "tks": {
-  "english_name": "Takestani"
- },
- "tll": {
-  "english_name": "Tetela"
- },
- "tly-IR": {},
  "tn": {},
  "to": {},
- "toj": {
-  "english_name": "Tojolabal"
- },
  "tr": {},
- "trp": {
-  "english_name": "Kok Borok"
- },
  "ts": {},
- "tsc": {
-  "english_name": "Tswa"
- },
- "tsg": {
-  "english_name": "Tausug"
- },
  "tt": {},
- "tuc": {
-  "english_name": "Mutu"
- },
- "tvl": {},
- "twu": {
-  "english_name": "Termanu"
- },
  "tyv": {},
- "tyz": {
-  "english_name": "Tày"
- },
- "tzh": {
-  "english_name": "Tzeltal"
- },
- "tzj": {
-  "english_name": "Tz'utujil"
- },
  "tzm": {},
  "tzo": {
   "english_name": "Tzotzil"
- },
- "ubu": {
-  "english_name": "Umbu-Ungu"
  },
  "udm": {},
  "ug": {},
@@ -708,14 +247,9 @@
  "ve": {},
  "vec": {},
  "vi": {},
- "wa": {},
- "wal": {},
  "war": {},
  "wo": {},
- "wuu": {},
- "xal": {},
  "xh": {},
- "yap": {},
  "yi": {},
  "yo": {},
  "yua": {

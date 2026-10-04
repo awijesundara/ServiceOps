@@ -1005,8 +1005,8 @@ def register(app):
                 db.session.commit()
                 flash(tr("Notification preferences saved."), "success")
                 return redirect(url_for("preferences"))
-            from serviceops_core.localization import AUTOMATIC, valid_language
-            language = request.form.get("language", pref.language or AUTOMATIC)
+            from serviceops_core.localization import AUTOMATIC, SELECTION_ENABLED, valid_language
+            language = request.form.get("language", pref.language or AUTOMATIC) if SELECTION_ENABLED else (pref.language or AUTOMATIC)
             if language != AUTOMATIC and not valid_language(language):
                 abort(400, description=tr("Select a supported interface language."))
             pref.language = language

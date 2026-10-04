@@ -281,8 +281,11 @@ def check_translation(source, translated, script):
         return "markup added"
     visible_source = re.sub(r"\{[A-Za-z_][A-Za-z0-9_]*\}", "", source)
     visible = re.sub(r"\{[A-Za-z_][A-Za-z0-9_]*\}", "", translated)
-    if len(visible) > max(40, 6 * len(visible_source)):
+    if len(visible) > max(24, 3 * len(visible_source)):
         return "too long"
+    source_words = re.findall(r"[A-Za-z]{3,}", visible_source)
+    if script not in {"Latn", None} and len(source_words) <= 3 and any(word in visible for word in source_words):
+        return "English source echoed"
     words = re.findall(r"\w+", visible.casefold())
     if len(words) >= 8 and len(set(words)) <= len(words) // 4:
         return "repetition"

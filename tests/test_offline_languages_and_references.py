@@ -12,9 +12,16 @@ from app import AIRun, Comment, UserPreference, db
 from serviceops_core.ai import service
 from serviceops_core.ai.references import readable_references, safe_reference_url, source_links
 from serviceops_core.ai_note import render_ai_note
+from serviceops_core import localization
 from serviceops_core.localization import CATALOGS, translate
 from tests.test_ai_assistant import configure, fake_stream, submit, allow_test_endpoint  # noqa: F401
 from tests.test_app import app, client, login  # noqa: F401
+
+
+@pytest.fixture(autouse=True)
+def language_selection_on(monkeypatch):
+    """These tests cover the (currently switched-off) language feature."""
+    monkeypatch.setattr(localization, "SELECTION_ENABLED", True)
 
 
 def test_bundled_catalogs_keep_the_reviewed_common_terms():

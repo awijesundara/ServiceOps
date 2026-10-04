@@ -21,6 +21,12 @@ import i18n_interface_values  # noqa: E402
 import i18n_wrap_templates  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def language_selection_on(monkeypatch):
+    """These tests cover the (currently switched-off) language feature."""
+    monkeypatch.setattr(localization, "SELECTION_ENABLED", True)
+
+
 def test_every_template_string_is_routed_through_tr():
     """New interface text must be wrapped; the migration tool finds none left."""
     leftovers = []
@@ -222,3 +228,16 @@ def test_offline_translation_markers_round_trip_and_reject_damage(tmp_path):
                      encoding="utf-8")
     assert offline.to_catalog_input(jsonl, tmp_path / "in.json") == {"si": 1}
     assert offline.done_pairs(jsonl) == {("si", "Save")}
+
+
+def test_switched_off_selection_renders_english_without_a_picker(app, client, monkeypatch):
+    monkeypatch.setattr(localization, "SELECTION_ENABLED", False)
+    login(client)
+    with app.app_context():
+        preference = UserPreference.query.filter_by(user_id=1).first()
+        if preference:
+            preference.language = "ar"
+            db.session.commit()
+    page = client.get("/preferences", headers={"Accept-Language": "ar"}).get_data(as_text=True)
+    assert 'lang="en" dir="ltr"' in page and 'name="language"' not in page
+    assert client.post("/preferences", data={"language": "zz", "font_scale": "100"}).status_code == 302
