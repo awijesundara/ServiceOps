@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 LOCALES = Path(__file__).with_name("locales")
 SOURCE_LANGUAGE = "en"
 AUTOMATIC = "auto"
+# Language selection is switched off until full catalogs are generated: every
+# request renders in English and the picker and default setting are hidden.
+SELECTION_ENABLED = False
 RTL_SCRIPTS = frozenset({"Adlm", "Arab", "Hebr", "Mand", "Mend", "Nkoo", "Rohg", "Samr", "Syrc", "Thaa", "Yezi"})
 _CODE = re.compile(r"[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8}){0,3}")
 # Accept-Language and legacy codes that name a bundled language differently.
@@ -443,7 +446,7 @@ def request_language():
     """The interface language for the current request (cached on flask.g)."""
     try:
         from flask import current_app, g, has_request_context, request
-        if not has_request_context():
+        if not has_request_context() or not SELECTION_ENABLED:
             return SOURCE_LANGUAGE
         cached = g.get("serviceops_language")
         if cached:
@@ -471,6 +474,7 @@ def template_context(language=None):
     entry = LANGUAGES.get(language, LANGUAGES[SOURCE_LANGUAGE])
     return {
         "ui_language": language,
+        "language_selection_enabled": SELECTION_ENABLED,
         "ui_direction": entry["direction"],
         "ui_language_name": entry["name"],
         "language_options": language_options(),

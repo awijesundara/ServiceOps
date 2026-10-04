@@ -10,8 +10,10 @@
   </nav>
   <div class="preferences-content">
     <section data-pref-panel="general"><h2>{{ tr('General') }}</h2>
+      {% if language_selection_enabled %}
       <label for="preferred-language">{{ tr('Language') }}<select id="preferred-language" name="language"><option value="auto"{% if pref.language == 'auto' %} selected{% endif %}>{{ tr('Automatic (browser language)') }}</option>{% for code, name in language_options %}<option value="{{ code }}" lang="{{ code }}" dir="auto"{% if pref.language == code %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
       <small class="muted">{{ tr('Translations are bundled with ServiceOps and work offline. Text without a translation appears in English, and record content stays in the language it was written in.') }}</small>
+      {% endif %}
       <div class="preference-row"><div><strong>{{ tr('High contrast') }}</strong><small>{{ tr('Increase separation between controls and surfaces.') }}</small></div><label class="switch"><input type="checkbox" name="high_contrast" aria-label="{{ tr('High contrast') }}" {% if pref.high_contrast %}checked{% endif %}><span></span></label></div>
       <div class="preference-row"><div><strong>{{ tr('Accessible tooltips') }}</strong><small>{{ tr('Show explanatory help for unfamiliar controls.') }}</small></div><label class="switch"><input type="checkbox" name="accessible_tooltips" aria-label="{{ tr('Accessible tooltips') }}" {% if pref.accessible_tooltips %}checked{% endif %}><span></span></label></div>
       <div class="preference-row"><div><strong>{{ tr('Reduce motion') }}</strong><small>{{ tr('Minimize interface animation.') }}</small></div><label class="switch"><input type="checkbox" name="reduced_motion" aria-label="{{ tr('Reduce motion') }}" {% if pref.reduced_motion %}checked{% endif %}><span></span></label></div>

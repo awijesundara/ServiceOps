@@ -60,6 +60,25 @@ def restore(translated, names):
     return translated
 
 
+def tidy(text, source):
+    """Undo MADLAD's habits on short inputs: whole-output repetition and an
+    echo of the English source; anything still doubtful fails QA later."""
+    text = " ".join(text.split())
+    words = text.split(" ")
+    for parts in (4, 3, 2):
+        if len(words) % parts == 0 and len(words) >= parts:
+            size = len(words) // parts
+            chunks = [" ".join(words[index:index + size]) for index in range(0, len(words), size)]
+            if len(set(chunks)) == 1:
+                text = chunks[0]
+                break
+    if " " not in source.strip() and text.endswith(" " + source):
+        text = text[: -len(source) - 1]
+    if " " not in source.strip() and text.startswith(source + " "):
+        text = text[len(source) + 1:]
+    return text.strip()
+
+
 def done_pairs(path):
     finished = set()
     if path.exists():
@@ -81,7 +100,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--batch-size", type=int, default=48)
     parser.add_argument("--threads", type=int, default=0, help="CPU threads (0 = CTranslate2 default)")
-    parser.add_argument("--beam-size", type=int, default=1, help="1 (greedy) suits short interface strings")
+    parser.add_argument("--beam-size", type=int, default=4)
     args = parser.parse_args()
     try:
         import ctranslate2
@@ -106,10 +125,10 @@ def main():
                 protected = [protect(message) for message in batch]
                 tokens = [tokenizer.encode(f"<2{madlad_tag(code)}> {text}", out_type=str) for text, _ in protected]
                 results = translator.translate_batch(
-                    tokens, beam_size=args.beam_size, max_decoding_length=min(512, 32 + 4 * max(len(row) for row in tokens)),
-                    repetition_penalty=1.1)
+                    tokens, beam_size=args.beam_size, no_repeat_ngram_size=3,
+                    max_decoding_length=min(512, 8 + 2 * max(len(row) for row in tokens)))
                 for message, (_, names), result in zip(batch, protected, results):
-                    text = tokenizer.decode(result.hypotheses[0]).strip()
+                    text = tidy(tokenizer.decode(result.hypotheses[0]), protect(message)[0])
                     restored = restore(text, names) if names else text
                     if restored is not None:
                         output.write(json.dumps({"language": code, "source": message, "translation": restored},
