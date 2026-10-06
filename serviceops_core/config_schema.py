@@ -49,14 +49,20 @@ SETTING_DEFINITIONS = {
     "sign_in_and_directory": [
         {"key": "LOCAL_AUTH_ENABLED", "label": "Enable local authentication", "type": "bool", "default": "true", "live": True},
         {"key": "LDAP_ENABLED", "label": "Enable AD/LDAP", "type": "bool", "default": "false", "live": True},
-        {"key": "LDAP_SERVER_URI", "label": "LDAP server URI", "type": "text", "default": "", "live": True},
+        {"key": "LDAP_SERVER_URI", "label": "LDAP server URI (list several, space separated, for failover)", "type": "text", "default": "", "live": True},
         {"key": "LDAP_BIND_DN", "label": "LDAP bind DN", "type": "text", "default": "", "live": True},
         {"key": "LDAP_BIND_PASSWORD", "label": "LDAP bind password", "type": "secret", "default": "", "live": True},
         {"key": "LDAP_BASE_DN", "label": "LDAP base DN", "type": "text", "default": "", "live": True},
         {"key": "LDAP_USER_FILTER", "label": "LDAP user filter", "type": "text", "default": "(&(objectClass=user)(sAMAccountName={username}))", "live": True},
         {"key": "LDAP_START_TLS", "label": "Use LDAP StartTLS", "type": "bool", "default": "true", "live": True},
         {"key": "LDAP_VALIDATE_CERT", "label": "Validate LDAP certificate", "type": "bool", "default": "true", "live": True},
-        {"key": "LDAP_ROLE_MAPPINGS", "label": "LDAP group role mappings", "type": "json", "default": "{}", "live": True},
+        # Edited through the "AD group → access level" table on the same page.
+        {"key": "LDAP_ROLE_MAPPINGS", "label": "LDAP group role mappings", "type": "json", "default": "{}", "live": True, "managed": True},
+        {"key": "LDAP_ROLE_MAPPINGS_DEFAULT", "label": "Access level for directory users in no mapped group", "type": "choice", "choices": ["requester", "agent", "manager", "admin"], "default": "requester", "live": True, "managed": True},
+        {"key": "LDAP_REQUIRE_ACCESS_GROUP", "label": "Allow sign-in only for members of a mapped access group", "type": "bool", "default": "false", "live": True, "managed": True},
+        {"key": "LDAP_NESTED_GROUPS", "label": "Follow nested AD groups (member of a group inside a mapped group)", "type": "bool", "default": "false", "live": True},
+        {"key": "LDAP_GROUP_BASE_DN", "label": "LDAP group search base DN (blank uses the base DN)", "type": "text", "default": "", "live": True},
+        {"key": "LDAP_GROUP_SEARCH_FILTER", "label": "LDAP group search filter for directories without memberOf, e.g. (|(member={dn})(memberUid={username}))", "type": "text", "default": "", "live": True},
         {
             "key": "LDAP_ATTR_MAP", "label": "LDAP directory attribute map", "type": "json",
             "default": json.dumps({

@@ -28,6 +28,8 @@ from datetime import datetime, timedelta, timezone
 from ldap3 import SUBTREE
 from ldap3.utils.dn import parse_dn
 
+from serviceops_core.ldap_access import resolve_groups, sign_in_allowed
+
 DEFAULT_ATTR_MAP = {
     "title": "title",
     "department": "department",
@@ -296,6 +298,7 @@ def sync_directory(tenant_id, dry_run=False):
         "team_managers_inferred": 0,
         "directory_profiles_updated": 0,
         "accounts_deactivated": 0,
+        "access_levels_changed": 0,
         "users_unmatched": 0,
         "errors": [],
     }
@@ -329,6 +332,14 @@ def sync_directory(tenant_id, dry_run=False):
                     f"Safety limit reached at {max_entries} directory entries; narrow LDAP_USER_FILTER."
                 )
                 break
+        if core_app.setting_bool("LDAP_NESTED_GROUPS", False) or core_app.setting_value("LDAP_GROUP_SEARCH_FILTER", ""):
+            # Resolve nested and searched groups while the service bind is still
+            # open, so the reconciliation below sees the same groups as sign-in.
+            for dn, attrs in entries:
+                attrs["memberOf"] = resolve_groups(
+                    service, dn, _first(attrs, attr_map.get("username", "sAMAccountName")),
+                    attrs.get("memberOf") or [],
+                )
     finally:
         try:
             service.unbind()
@@ -430,6 +441,7 @@ def sync_directory(tenant_id, dry_run=False):
                 "users_updated", "managers_resolved", "managers_provisioned",
                 "self_manager_skipped", "memberships_added", "memberships_removed",
                 "teams_created", "directory_profiles_updated", "accounts_deactivated",
+                "access_levels_changed",
             )
         }
         try:
@@ -472,9 +484,20 @@ def sync_directory(tenant_id, dry_run=False):
                 )
                 core_app.apply_directory_profile(user, directory_profile, friendly_groups)
                 summary["directory_profiles_updated"] += 1
+                # Access follows the directory between sign-ins: a user removed
+                # from an admin group loses admin at the next reconciliation.
+                desired_roles = core_app.mapped_roles(groups, "LDAP_ROLE_MAPPINGS")
+                before_role = user.role
+                core_app.sync_role_grants(user, "directory", desired_roles, detail_by_role=desired_roles)
+                if user.role != before_role:
+                    summary["access_levels_changed"] += 1
+                    if core_app.ROLE_RANK.get(user.role, 0) < core_app.ROLE_RANK.get(before_role, 0):
+                        # Sign the user out everywhere so the lower access applies now.
+                        user.auth_version += 1
+                lost_access = not sign_in_allowed(groups)
                 if (
                     core_app.setting_bool("LDAP_SYNC_ACCOUNT_STATUS", True)
-                    and directory_profile.get("account_enabled") is False
+                    and (directory_profile.get("account_enabled") is False or lost_access)
                     and user.active
                 ):
                     user.active = False

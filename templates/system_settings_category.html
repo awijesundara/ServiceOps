@@ -18,7 +18,7 @@
     <label>{{ tr('Upload replacement PNG') }}<input type="file" name="company_logo" accept="image/png"></label>
     {% else %}
     <div class="settings-grid">
-    {% for setting in definitions %}
+    {% for setting in definitions if not setting.managed %}
       <label class="setting-field {% if setting.type in ['json','text'] and setting.key|length > 20 %}wide{% endif %}">
         <span>{{ tr_value(setting.label) }} <small class="apply-badge {{ 'live' if setting.live else 'restart' }}">{{ tr('Live') if setting.live else tr('Restart required') }}</small></span>
         {% if setting.type == 'bool' %}
@@ -58,6 +58,77 @@
 
 {% if category == 'sign_in_and_directory' %}
 {% set post_url = url_for('itil_admin') %}
+{% set access_url = url_for('save_directory_access') %}
+<section class="panel admin-section" id="directory-access">
+  <div class="panel-head"><div><h2>{{ tr('AD group → access level') }}</h2><p>{{ tr('Choose which AD groups give administrator, manager, agent or regular (requester) access. A user in several mapped groups holds every level they grant. Access is re-checked at each sign-in and at every scheduled directory sync, so removing someone from a group removes the access.') }}</p></div></div>
+  <form method="post" action="{{ access_url }}" class="form-grid">
+    <input type="hidden" name="action" value="add_access_mapping">
+    <label>{{ tr('AD group name or DN') }}
+      <input name="directory_group" placeholder="{{ tr('gg_serviceops_admins') }}" maxlength="500" required>
+    </label>
+    <label>{{ tr('Access level') }}
+      <select name="access_level" required>
+        {% for level in access_levels %}<option value="{{ level }}">{{ tr_value(access_level_labels[level]) }}</option>{% endfor %}
+      </select>
+    </label>
+    <div class="wide actions"><button class="primary">{{ tr('Save access mapping') }}</button></div>
+  </form>
+  <table>
+    <thead><tr><th>{{ tr('AD group') }}</th><th>{{ tr('Access level') }}</th><th>{{ tr('Action') }}</th></tr></thead>
+    <tbody>
+      {% for group, level in access_mappings %}
+      <tr>
+        <td><code>{{ group }}</code></td>
+        <td>{{ tr_value(access_level_labels.get(level, level|title)) }}</td>
+        <td>
+          <form method="post" action="{{ access_url }}">
+            <input type="hidden" name="action" value="remove_access_mapping">
+            <input type="hidden" name="directory_group" value="{{ group }}">
+            <button class="button">{{ tr('Remove') }}</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">{{ tr('No access mappings configured. Every directory user gets the default access level.') }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="{{ access_url }}" class="form-grid">
+    <input type="hidden" name="action" value="save_access_policy">
+    <label>{{ tr('Access for users in no mapped group') }}
+      <select name="default_access_level">
+        {% for level in access_levels %}<option value="{{ level }}" {% if default_access_level == level %}selected{% endif %}>{{ tr_value(access_level_labels[level]) }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" name="require_access_group" {% if require_access_group %}checked{% endif %}> {{ tr('Allow sign-in only for members of a mapped access group (others are refused and deactivated at the next sync)') }}</label>
+    <div class="wide actions"><button class="button">{{ tr('Save access policy') }}</button></div>
+  </form>
+  <h3>{{ tr('Check a user') }}</h3>
+  <p>{{ tr('Look up a directory user to see their groups and the access and teams they would get, without signing them in.') }}</p>
+  <form method="post" action="{{ access_url }}" class="form-grid">
+    <input type="hidden" name="action" value="check_user">
+    <label>{{ tr('Username') }}<input name="username" maxlength="256" required></label>
+    <div class="wide actions"><button class="button">{{ tr('Check access') }}</button></div>
+  </form>
+  {% if access_check %}
+  <div class="access-check">
+    {% if access_check.error %}
+      <p class="error">{{ tr('The directory could not be reached: {error}', error=access_check.error) }}</p>
+    {% elif not access_check.found %}
+      <p>{{ tr('No single directory entry matches {username}.', username=access_check.username) }}</p>
+    {% else %}
+      <dl>
+        <dt>{{ tr('User') }}</dt><dd>{{ access_check.name }} <code>{{ access_check.dn }}</code></dd>
+        <dt>{{ tr('Sign-in') }}</dt><dd>{% if access_check.disabled %}{{ tr('Refused: the account is disabled in the directory') }}{% elif access_check.allowed %}{{ tr('Allowed') }}{% else %}{{ tr('Refused: not in a mapped access group') }}{% endif %}</dd>
+        <dt>{{ tr('Access level') }}</dt><dd>{{ tr_value(access_level_labels.get(access_check.access_level, access_check.access_level|title)) }}{% if access_check.matched %} ({{ tr('from') }} {% for group, level in access_check.matched.items() %}<code>{{ group }}</code>{% if not loop.last %}, {% endif %}{% endfor %}){% else %} ({{ tr('default') }}){% endif %}</dd>
+        <dt>{{ tr('Teams') }}</dt><dd>{{ access_check.teams|join(', ') if access_check.teams else tr('None') }}</dd>
+        <dt>{{ tr('Groups') }} ({{ access_check.group_count }})</dt><dd>{% for group in access_check.groups %}<code>{{ group }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}</dd>
+      </dl>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
 <section class="panel admin-section">
   <div class="panel-head"><div><h2>{{ tr('AD group → ServiceOps team') }}</h2><p>{{ tr('Enter a short AD group such as') }} <code>gg_unix</code> {{ tr('or its complete distinguished name. Membership synchronizes whenever the user signs in through AD/LDAP.') }}</p></div></div>
   <form method="post" action="{{ post_url }}" class="form-grid">

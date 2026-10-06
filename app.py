@@ -49,7 +49,7 @@ from alembic.config import Config as AlembicConfig
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from cryptography.fernet import InvalidToken
-from ldap3 import ALL, BASE, SUBTREE, Connection, Server, Tls
+from ldap3 import ALL, BASE, FIRST, SUBTREE, Connection, Server, ServerPool, Tls
 from ldap3.utils.conv import escape_filter_chars
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -6791,16 +6791,25 @@ def ldap_server_and_service_connection():
     interactive login (ldap_authenticate) and the directory sync job. Raises
     LdapBindError rather than returning a half-usable connection so callers
     never mistake a failed bind for "no directory configured"."""
-    uri = setting_value("LDAP_SERVER_URI", "")
-    if not uri:
+    from serviceops_core.ldap_access import server_uris
+    uris = server_uris(setting_value("LDAP_SERVER_URI", ""))
+    if not uris:
         raise LdapBindError("LDAP_SERVER_URI is not configured.")
-    use_ssl = uri.lower().startswith("ldaps://")
-    host = uri.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
-    port = int(os.getenv("LDAP_PORT", "636" if use_ssl else "389"))
+    use_ssl = uris[0].lower().startswith("ldaps://")
+    if any(uri.lower().startswith("ldaps://") != use_ssl for uri in uris):
+        raise LdapBindError("Every LDAP server URI must use the same scheme (ldap:// or ldaps://).")
     validate = ssl.CERT_REQUIRED if setting_bool("LDAP_VALIDATE_CERT", True) else ssl.CERT_NONE
     tls = Tls(validate=validate, ca_certs_file=os.getenv("LDAP_CA_CERT") or None)
-    server = Server(host, port=port, use_ssl=use_ssl, tls=tls, get_info=ALL,
-                    connect_timeout=int(os.getenv("LDAP_TIMEOUT", "8")))
+    servers = []
+    for uri in uris:
+        address = uri.split("://", 1)[-1].split("/", 1)[0]
+        host, _, explicit_port = address.partition(":")
+        port = int(explicit_port or os.getenv("LDAP_PORT", "636" if use_ssl else "389"))
+        servers.append(Server(host, port=port, use_ssl=use_ssl, tls=tls, get_info=ALL,
+                              connect_timeout=int(os.getenv("LDAP_TIMEOUT", "8"))))
+    # Several servers fail over in the order listed; a server that does not
+    # answer is skipped until it recovers.
+    server = servers[0] if len(servers) == 1 else ServerPool(servers, FIRST, active=1, exhaust=60)
     bind_dn = setting_value("LDAP_BIND_DN") or None
     bind_password = None
     if bind_dn:
@@ -6995,7 +7004,7 @@ def ldap_authenticate(username, password):
         server, service = ldap_server_and_service_connection()
     except LdapBindError:
         return None
-    use_ssl = bool(server.ssl)
+    use_ssl = setting_value("LDAP_SERVER_URI", "").strip().lower().startswith("ldaps://")
     filter_template = setting_value(
         "LDAP_USER_FILTER", "(&(objectClass=user)(sAMAccountName={username}))"
     )
@@ -7034,10 +7043,18 @@ def ldap_authenticate(username, password):
             entries = list(service.entries)
             if len(entries) == 1:
                 break
-    service.unbind()
     if len(entries) != 1:
+        service.unbind()
         return None
     entry = entries[0]
+    from serviceops_core.ldap_access import resolve_groups, sign_in_allowed
+    try:
+        groups = resolve_groups(
+            service, entry.entry_dn, ldap_login_local_part(username),
+            entry.entry_attributes_as_dict.get("memberOf", []),
+        )
+    finally:
+        service.unbind()
     user_conn = Connection(server, user=entry.entry_dn, password=password, auto_bind=False)
     user_conn.open()
     # Every early return below must unbind first -- only the success path
@@ -7053,7 +7070,12 @@ def ldap_authenticate(username, password):
     user_conn.unbind()
     values = entry.entry_attributes_as_dict
     first = lambda key, fallback="": (values.get(key) or [fallback])[0]
-    groups = values.get("memberOf", [])
+    if not sign_in_allowed(groups):
+        # Checked only after the password bind succeeds, so the refusal never
+        # reveals whether an account exists or is merely outside the mapped groups.
+        # The caller records the failed sign-in in the audit log.
+        current_app.logger.info("LDAP sign-in refused: user is not in a mapped access group.")
+        return None
     matched_roles = mapped_roles(groups, "LDAP_ROLE_MAPPINGS")
     merged_attr_map = dict(DEFAULT_ATTR_MAP)
     if isinstance(ldap_attr_map, dict):
