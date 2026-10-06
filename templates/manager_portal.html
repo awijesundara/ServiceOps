@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ tr('Manager portal · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">{{ tr('LEADERSHIP') }}</p><h1>{{ tr('Manager portal') }}</h1><p>{{ tr('Team workload, SLA exposure and performance across the IT fulfillment teams you manage.') }}</p></div></header>
+<header class="page-head"><div><p class="eyebrow">{{ tr('LEADERSHIP') }}</p><h1>{{ tr('Manager portal') }}</h1><p>{{ tr('Team workload, SLA exposure and performance across the teams you manage.') }}</p></div></header>
 {% set csv_url = url_for('manager_portal_export') %}
 {% include "_export_toolbar.html" %}
 {% if team_rows %}
@@ -11,7 +11,7 @@
 {% endif %}
 
 {% if not team_rows %}
-<section class="panel"><p class="empty">{{ tr('No IT fulfillment teams under your management.') }}</p></section>
+<section class="panel"><p class="empty">{{ tr('No teams under your management.') }}</p></section>
 {% endif %}
 
 {% for row in team_rows %}

@@ -122,7 +122,7 @@
   <form method="post" action="{{ post_url }}" class="form-grid">
     <input type="hidden" name="action" value="create_support_group">
     <label class="required-field"><span>{{ tr('New team name') }}</span><input name="name" required maxlength="120" placeholder="{{ tr('e.g. Datacenter') }}"></label>
-    <label><span>{{ tr('Team type') }}</span><select name="group_type"><option>{{ tr('IT Fulfillment') }}</option><option>{{ tr('Fulfillment') }}</option><option>{{ tr('Executive') }}</option></select></label>
+    <label><span>{{ tr('Team type') }}</span><select name="group_type"><option value="IT Fulfillment">{{ tr('IT Fulfillment') }}</option><option value="Fulfillment">{{ tr('Fulfillment') }}</option><option value="Executive">{{ tr('Executive') }}</option></select></label>
     <div class="wide actions"><button class="primary">{{ tr('Create team') }}</button></div>
   </form>
   <table>
@@ -152,7 +152,7 @@
               <input type="hidden" name="action" value="update_support_group">
               <input type="hidden" name="group_id" value="{{ team.id }}">
               <label><span>{{ tr('Name') }}</span><input name="name" value="{{ team.name }}" required maxlength="120"></label>
-              <label><span>{{ tr('Type') }}</span><select name="group_type">{% for kind in ['IT Fulfillment','Fulfillment','Executive'] %}<option {% if team.group_type == kind %}selected{% endif %}>{{ tr_value(kind) }}</option>{% endfor %}</select></label>
+              {% if team.group_type == 'Client Support' %}<input type="hidden" name="group_type" value="Client Support"><p><span>{{ tr('Type') }}</span> {{ tr_value('Client Support') }}</p>{% else %}<label><span>{{ tr('Type') }}</span><select name="group_type">{% for kind in ['IT Fulfillment','Fulfillment','Executive'] %}<option value="{{ kind }}" {% if team.group_type == kind %}selected{% endif %}>{{ tr_value(kind) }}</option>{% endfor %}</select></label>{% endif %}
               <label class="check"><input type="checkbox" name="active" {% if team.active %}checked{% endif %}> {{ tr('Active') }}</label>
               <button class="button">{{ tr('Update') }}</button>
             </form>

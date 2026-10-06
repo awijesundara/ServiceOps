@@ -313,7 +313,7 @@ def _prepare_chat(run, user, config, steps):
         reasons.update(routing.scan(turn.get("content", ""), config))
     messages, _ = access.build_chat_messages(scope, question, history, evidence)
     grounded = access.identifiers_in(json.dumps(evidence.items)) | evidence.identifiers
-    options = _run_options(run)
+    _run_options(run)
     # Chat replies are fast: the model is asked not to spend time on a long reasoning pass.
     return Prepared(messages, evidence.sources, grounded, tuple(access.record_numbers(question)), False, False,
                     reasons=reasons, kinds=evidence.kinds, identity_terms=identity_terms(user))

@@ -441,16 +441,11 @@ def register(app):
             ai_prefill = {name: request.args.get(name, "")[:size] for name, size in limits.items() if request.args.get(name)}
 
         def render_form(error=None):
-            teams_query = tenant_query(SupportGroup).filter_by(
-                group_type="IT Fulfillment", active=True
-            )
+            teams_query = core.team_groups()
             if kind == "change" and not role_at_least(current_user.effective_role, "admin"):
-                if eligible_it_team_ids:
-                    teams_query = teams_query.filter(SupportGroup.id.in_(eligible_it_team_ids))
-                else:
-                    teams_query = teams_query.filter(SupportGroup.id == -1)
+                teams_query = teams_query.filter(SupportGroup.id.in_(team_ids or {-1}))
             return render_template(
-                "ticket_form.html", kind=kind, teams=teams_query.order_by(SupportGroup.name).all(),
+                "ticket_form.html", kind=kind, teams=teams_query.all(),
                 state_track=build_state_track(kind, "New"),
                 default_priority=core.setting_value("DEFAULT_TICKET_PRIORITY", "P3"),
                 service_offerings=tenant_query(ServiceOffering).filter_by(
@@ -493,18 +488,14 @@ def register(app):
             except (TypeError, ValueError):
                 return render_form("Select a valid owning IT team.")
             owning_group = tenant_query(SupportGroup).filter_by(id=group_id).first()
-            if (
-                not owning_group
-                or not owning_group.active
-                or owning_group.group_type != "IT Fulfillment"
-            ):
-                return render_form("Select an active IT fulfillment team.")
+            if not core.is_team_group(owning_group):
+                return render_form("Select an active team.")
             if (
                 kind == "change"
                 and not role_at_least(current_user.effective_role, "admin")
-                and owning_group.id not in eligible_it_team_ids
+                and owning_group.id not in team_ids
             ):
-                return render_form("You can submit changes only for IT fulfillment teams you belong to.")
+                return render_form("You can submit changes only for teams you belong to.")
             if kind == "change" and (
                 not owning_group.manager
                 or not owning_group.manager.active
@@ -993,12 +984,11 @@ def register(app):
                     new_group_id = int(request.form["new_group_id"])
                 except (KeyError, ValueError):
                     abort(400, description=tr("Select a team to reassign to."))
-                new_group = SupportGroup.query.filter_by(
-                    id=new_group_id, tenant_id=ticket.tenant_id,
-                    active=True, group_type="IT Fulfillment",
+                new_group = core.team_groups(ticket.tenant_id).filter(
+                    SupportGroup.id == new_group_id,
                 ).first()
                 if not new_group:
-                    abort(400, description=tr("Select an active IT fulfillment team."))
+                    abort(400, description=tr("Select an active team."))
                 if ticket.kind == "change":
                     # Lock and re-read the owner so a double-submitted
                     # reassignment stops at the "already owned" check below
@@ -1082,14 +1072,10 @@ def register(app):
             work_task_states=OPERATIONAL_TASK_TRANSITIONS, history=history,
             internal_view=internal_view,
             ci_links=ci_links,
-            teams=tenant_query(SupportGroup).filter_by(
-                group_type="IT Fulfillment", active=True
-            ).order_by(SupportGroup.name).all(),
-            reassignable_teams=tenant_query(SupportGroup).filter(
-                SupportGroup.group_type == "IT Fulfillment",
-                SupportGroup.active.is_(True),
+            teams=core.team_groups().all(),
+            reassignable_teams=core.team_groups().filter(
                 SupportGroup.id != (owning_group.id if owning_group else -1),
-            ).order_by(SupportGroup.name).all(),
+            ).all(),
             service_offerings=tenant_query(ServiceOffering).filter_by(
                 status="Operational"
             ).order_by(ServiceOffering.name).all(),
@@ -1611,8 +1597,8 @@ def register(app):
                 tr("{number} is {state}; change tasks cannot be added to a closed-out change.", number=ticket.number, state=ticket.state)
             ))
         group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
-        if not group.active or group.group_type != "IT Fulfillment":
-            abort(400, description=tr("Change tasks require an active IT fulfillment team."))
+        if not core.is_team_group(group):
+            abort(400, description=tr("Change tasks require an active team."))
         task_type = request.form.get("task_type")
         if task_type not in ("Planning", "Implementation", "Testing", "Review"):
             abort(400)
@@ -1982,9 +1968,7 @@ def register(app):
             ci_links=TaskCI.query.filter_by(
                 target_type="enterprise", target_id=record.id
             ).order_by(TaskCI.relationship_role).all(),
-            teams=SupportGroup.query.filter_by(
-                group_type="IT Fulfillment", active=True
-            ).order_by(SupportGroup.name).all(),
+            teams=core.team_groups(record.tenant_id).all(),
             task_agents=task_agents, task_permissions=task_permissions,
             can_manage_record=can_manage_record,
         )
@@ -2065,8 +2049,8 @@ def register(app):
         if not user_can_manage_enterprise_record(current_user, record):
             abort(403)
         group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
-        if not group.active or group.group_type != "IT Fulfillment":
-            abort(400, description=tr("Problem tasks require an active IT fulfillment team."))
+        if not core.is_team_group(group):
+            abort(400, description=tr("Problem tasks require an active team."))
         sequence = OperationalTask.query.filter_by(
             parent_type="enterprise", parent_id=record.id
         ).count() + 1

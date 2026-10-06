@@ -371,7 +371,7 @@ def register(app):
             db.session.commit()
             flash(tr("{name} created.", name=ci.name), "success")
             return redirect(url_for("cmdb"))
-        support_groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
+        support_groups = core.team_groups().all()
         racks = tenant_query(Rack).filter_by(active=True).order_by(Rack.name).all()
         return render_template("ci_form.html", support_groups=support_groups, racks=racks)
 
@@ -446,7 +446,10 @@ def register(app):
             flash(tr("{name} updated.", name=ci.name), "success")
             return redirect(url_for("cmdb"))
         owners = tenant_query(User).filter_by(active=True).order_by(User.name).all()
-        support_groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
+        support_groups = core.team_groups().all()
+        # Keep the CI's current owner selectable even when it is not a listed team.
+        if ci.support_group and ci.support_group not in support_groups:
+            support_groups.append(ci.support_group)
         racks = tenant_query(Rack).filter_by(active=True).order_by(Rack.name).all()
         history = TaskHistory.query.filter_by(
             target_type="ci", target_id=ci.id

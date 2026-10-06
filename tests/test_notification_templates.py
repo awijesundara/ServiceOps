@@ -107,7 +107,7 @@ def test_email_disabled_skips_smtp_send_and_records_skipped_not_failed(app, monk
         admin.email = "admin@example.test"
         db.session.add(NotificationPreference(user_id=admin.id, email_enabled=False))
         db.session.commit()
-        notification = create_notification(
+        create_notification(
             admin.id, "Test", "body", tenant_id=admin.tenant_id,
         )
         db.session.commit()

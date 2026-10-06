@@ -7714,7 +7714,7 @@ def test_operational_task_detail_shows_activity_notes_and_siblings(client, app):
     }).status_code == 302
     with app.app_context():
         tasks = OperationalTask.query.filter_by(parent_id=ticket_id).order_by(OperationalTask.id).all()
-        first_task_id, second_task_id = tasks[0].id, tasks[1].id
+        first_task_id, _second_task_id = tasks[0].id, tasks[1].id
 
     page = client.get(f"/operational-task/{first_task_id}")
     assert page.status_code == 200
@@ -8144,7 +8144,7 @@ def test_change_requires_every_service_co_owner_team_manager_approval(app):
     with app.app_context():
         unix = SupportGroup.query.filter_by(name="Unix").one()
         database = SupportGroup.query.filter_by(name="Database").one()
-        windows = SupportGroup.query.filter_by(name="Windows").one()
+        SupportGroup.query.filter_by(name="Windows").one()
         manager = User.query.filter_by(username="database.manager").one()
         # The shared fixture already makes `manager` the manager of every
         # IT Fulfillment team (including Network) -- no extra setup needed.
@@ -8808,7 +8808,7 @@ def test_follow_and_unfollow_actions_toggle_membership(client, app):
 
 
 def test_mentionable_users_endpoint_is_scoped_to_ticket_viewers(client, app):
-    authorized_id = _add_agent_to_core_apps(app, "scoped.agent", "Scoped123!")
+    _add_agent_to_core_apps(app, "scoped.agent", "Scoped123!")
     with app.app_context():
         outsider = User(
             username="unscoped.user", name="Unscoped User", email="unscoped@test.invalid",
@@ -8853,8 +8853,8 @@ def test_mentioning_a_team_member_reaches_them_even_before_they_ever_followed(cl
 
 def test_ticket_list_filters_by_priority_category_and_assignment_group(client, app):
     with app.app_context():
-        unix = SupportGroup.query.filter_by(name="Unix").one()
-        windows = SupportGroup.query.filter_by(name="Windows").one()
+        SupportGroup.query.filter_by(name="Unix").one()
+        SupportGroup.query.filter_by(name="Windows").one()
     login(client)
     client.post("/tickets/new/incident", data={
         "title": "Unix disk cleanup", "description": "Filter target A",

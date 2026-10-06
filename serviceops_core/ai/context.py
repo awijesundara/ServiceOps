@@ -7,7 +7,6 @@ asker's own profile may name their own manager and teams, but never anyone else'
 import re
 from datetime import timezone
 
-from serviceops_core.ai import access
 from serviceops_models import (CatalogItem, ChangeFreezeWindow, GroupMember, ServiceOffering, SLADefinition, SupportGroup, Ticket, User,
                                db, now)
 
@@ -41,9 +40,8 @@ def _it_team_names(scope):
     ids = user_support_group_ids(scope.identity)
     if not ids:
         return []
-    return [g.name for g in SupportGroup.query.filter(
-        SupportGroup.id.in_(ids), SupportGroup.tenant_id == scope.tenant_id, SupportGroup.active.is_(True),
-        SupportGroup.group_type == "IT Fulfillment").order_by(SupportGroup.name)]
+    from app import team_groups
+    return [g.name for g in team_groups(scope.tenant_id).filter(SupportGroup.id.in_(ids))]
 
 
 def capabilities(scope):
@@ -184,10 +182,11 @@ def _sla(scope):
 
 
 def _teams(scope):
-    rows = SupportGroup.query.filter_by(tenant_id=scope.tenant_id, active=True, group_type="IT Fulfillment").order_by(SupportGroup.name).limit(20).all()
+    from app import team_groups
+    rows = team_groups(scope.tenant_id).limit(20).all()
     if not rows:
         return None
-    return "IT support teams", "Teams that fulfil incidents and changes: " + ", ".join(r.name for r in rows) + "."
+    return "Support teams", "Teams that fulfil incidents and changes: " + ", ".join(r.name for r in rows) + "."
 
 
 def _governance(scope):

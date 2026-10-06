@@ -125,7 +125,7 @@ def test_agent_can_draft_and_approve_a_resolution_note(app, client, world, ready
 
 def test_a_draft_cannot_target_a_ticket_outside_the_evidence_even_via_the_route(app, client, world, ready, monkeypatch):
     with app.app_context():
-        ticket_id = draft_ticket(world)
+        draft_ticket(world)
         other = Ticket(number="INC0088002", kind="incident", title="Outside evidence", description="d",
                        requester_id=world.employee, tenant_id=1)
         db.session.add(other)
@@ -142,7 +142,7 @@ def test_a_draft_cannot_target_a_ticket_outside_the_evidence_even_via_the_route(
 
 def test_requesters_get_no_action_even_if_they_ask(app, client, world, ready, monkeypatch):
     with app.app_context():
-        ticket_id = draft_ticket(world)
+        draft_ticket(world)
     answer = 'Sure [S1].\n[[DRAFT]] {"type":"resolution_note","ticket":"INC0088001","text":"Fixed."}'
     monkeypatch.setattr(service, "generate_stream", fake_stream(answer, {}))
     login(client, "employee", "Employee123!")
@@ -177,7 +177,7 @@ def test_a_suggested_reply_and_a_sentiment_note_both_post_as_labeled_comments(ap
 
 def test_a_knowledge_article_draft_is_created_unpublished_and_never_auto_published(app, client, world, ready, monkeypatch):
     with app.app_context():
-        ticket_id = draft_ticket(world)
+        draft_ticket(world)
     answer = ('Here is a draft article [S1].\n[[DRAFT]] {"type":"kb_article","ticket":"INC0088001",'
               '"title":"Fixing VPN service drops","text":"Restart the VPN service and confirm connectivity with the user."}')
     monkeypatch.setattr(service, "generate_stream", fake_stream(answer, {}))
@@ -197,7 +197,7 @@ def test_a_knowledge_article_draft_is_created_unpublished_and_never_auto_publish
 
 def test_ticket_state_priority_and_assignment_stay_administrator_only_even_though_drafts_are_open_to_staff(app, client, world, ready):
     with app.app_context():
-        ticket_id = draft_ticket(world)
+        draft_ticket(world)
         action = actions.propose_from_question(scope_for(world.insider, "agent"), f"set INC0088001 priority to P1", True)
     assert action is None or action["type"] != "update_ticket"  # deterministic parsing only fires for admins anyway
     # And the prepare route itself refuses an update_ticket-typed proposal from a non-admin staff member.
@@ -219,7 +219,7 @@ def test_ticket_state_priority_and_assignment_stay_administrator_only_even_thoug
 
 def test_a_missing_space_typo_still_matches_the_comment_command(app, world):
     with app.app_context():
-        ticket_id = draft_ticket(world, kind="incident")
+        draft_ticket(world, kind="incident")
         from app import User
         admin = User.query.filter_by(username="admin").one()
         proposal = actions.propose_from_question(scope_for(admin.id), 'to this incident, adda comment as "test"', True)

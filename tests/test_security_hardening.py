@@ -187,7 +187,6 @@ def test_mask_secret_never_returns_the_full_value():
 def test_redacting_filter_scrubs_log_records_via_app_logger(app, caplog):
     with app.app_context():
         app.logger.error("connection failed: connection_string=postgresql://user:hunter2pw@db/app")
-    joined = "\n".join(record.getMessage() for record in caplog.records)
     # Not asserting on caplog (it bypasses our filter by design); instead
     # confirm the filter is actually attached to the app logger.
     assert any(f.__class__.__name__ == "RedactingFilter" for f in app.logger.filters)

@@ -148,7 +148,7 @@
    "id": "A monitoring bearer token is required."
   },
   {
-   "id": "A name and active IT fulfillment team are required."
+   "id": "A name and active team are required."
   },
   {
    "id": "A name and valid provider HTTPS endpoint are required."
@@ -1586,13 +1586,13 @@
    "id": "Catalog items and the teams that fulfill them"
   },
   {
-   "id": "Catalog items can route only to an active fulfillment team."
+   "id": "Catalog items can route only to an active team."
   },
   {
    "id": "Catalog tasks cannot be added until the RITM is approved."
   },
   {
-   "id": "Catalog tasks require an active IT fulfillment team."
+   "id": "Catalog tasks require an active team."
   },
   {
    "id": "Categories → CI class:"
@@ -1700,7 +1700,7 @@
    "id": "Change tasks"
   },
   {
-   "id": "Change tasks require an active IT fulfillment team."
+   "id": "Change tasks require an active team."
   },
   {
    "id": "Change this from Team managers / Approval authority"
@@ -5203,9 +5203,6 @@
    "javascript": true
   },
   {
-   "id": "No IT fulfillment teams under your management."
-  },
-  {
    "id": "No Longer Required"
   },
   {
@@ -5626,6 +5623,9 @@
   },
   {
    "id": "No team name aliases configured."
+  },
+  {
+   "id": "No teams under your management."
   },
   {
    "id": "No thanks",
@@ -6676,7 +6676,7 @@
    "id": "Problem tasks (PTASK)"
   },
   {
-   "id": "Problem tasks require an active IT fulfillment team."
+   "id": "Problem tasks require an active team."
   },
   {
    "id": "Problems"
@@ -8287,13 +8287,13 @@
    "id": "Select an IT team"
   },
   {
-   "id": "Select an active IT fulfillment team."
-  },
-  {
    "id": "Select an active manager in this organization."
   },
   {
-   "id": "Select an active tenant IT fulfillment team."
+   "id": "Select an active team."
+  },
+  {
+   "id": "Select an active tenant team."
   },
   {
    "id": "Select an operational service offering."
@@ -9185,7 +9185,7 @@
    "id": "Team type"
   },
   {
-   "id": "Team workload, SLA exposure and performance across the IT fulfillment teams you manage."
+   "id": "Team workload, SLA exposure and performance across the teams you manage."
   },
   {
    "id": "Team {name} created. Assign its manager and members below."

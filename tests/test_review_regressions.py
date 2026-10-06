@@ -92,7 +92,7 @@ def test_incident_rejects_foreign_owning_team(app, client):
     response = client.post('/tickets/new/incident', data={'title': 'foreign-incident', 'description': 'regression',
                            'category': 'Software', 'group_id': str(foreign_id)})
     assert response.status_code == 400
-    assert b'active IT fulfillment team' in response.data
+    assert b'Select an active team' in response.data
     with app.app_context():
         assert Ticket.query.filter_by(title='foreign-incident').count() == 0
 

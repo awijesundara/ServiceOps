@@ -28,6 +28,7 @@ from app import (
     role_at_least,
     sequence_number,
     sync_slas,
+    team_groups,
     tenant_query,
     tenant_record_or_404,
     visible_client_contact_query,
@@ -541,7 +542,7 @@ def register(app):
             User.tenant_id == current_user.tenant_id, User.active.is_(True),
             User.role.in_(["agent", "manager", "admin"]),
         ).order_by(User.name).all()
-        groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
+        groups = team_groups().all()
         org_custom_fields = client_custom_fields_for("organization")
         ticket_field_defs = tenant_query(ClientCustomFieldDefinition).filter_by(
             entity_type="client_ticket", active=True,
@@ -720,7 +721,7 @@ def register(app):
             fields=CLIENT_TRIGGER_FIELDS, operators=CLIENT_TRIGGER_OPERATORS,
             action_types=CLIENT_TRIGGER_ACTION_TYPES, statuses=CLIENT_TICKET_STATUSES,
             priorities=CLIENT_TICKET_PRIORITIES,
-            groups=tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all(),
+            groups=team_groups().all(),
             agents=User.query.filter(
                 User.tenant_id == current_user.tenant_id, User.active.is_(True),
                 User.role.in_(["agent", "manager", "admin"]),

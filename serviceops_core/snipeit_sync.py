@@ -114,6 +114,11 @@ def _snipeit_session(base_url, token):
         session.verify = _write_ca_bundle(ca_cert)
     elif core_app.setting_bool("SNIPEIT_TLS_INSECURE"):
         session.verify = False
+        from flask import current_app
+        current_app.logger.warning(
+            "Snipe-IT TLS certificate verification is disabled (SNIPEIT_TLS_INSECURE); "
+            "configure SNIPEIT_CA_CERT instead."
+        )
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     return session
