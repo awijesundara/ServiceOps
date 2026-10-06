@@ -1367,6 +1367,8 @@ def register(app):
             require_install_settings_authority()
             errors, restart_required, changed = [], False, []
             for definition in definitions:
+                if definition.get("managed"):
+                    continue  # saved by its own form (see save_directory_access)
                 key, field_type = definition["key"], definition["type"]
                 # Every proxy URL (the system default and each component's
                 # custom proxy) is a secret that can also be removed.
@@ -1507,7 +1509,13 @@ def register(app):
             # Keep the working sign-in-time AD group mapping controls beside
             # the LDAP connection settings.
             teams = core.team_groups().all()
+            from serviceops_core.ldap_access import ACCESS_LEVEL_LABELS, ACCESS_LEVELS, role_mappings
             ad_context = dict(
+                access_mappings=sorted(role_mappings().items(), key=lambda item: item[0].casefold()),
+                access_levels=ACCESS_LEVELS, access_level_labels=ACCESS_LEVEL_LABELS,
+                default_access_level=core.setting_value("LDAP_ROLE_MAPPINGS_DEFAULT", "requester"),
+                require_access_group=core.setting_bool("LDAP_REQUIRE_ACCESS_GROUP", False),
+                access_check=session.pop("ldap_access_check", None),
                 teams=teams,
                 directory_mappings=DirectoryGroupMapping.query.join(SupportGroup).filter(
                     SupportGroup.tenant_id == current_user.tenant_id
@@ -1528,6 +1536,68 @@ def register(app):
             has_company_logo_field=category == "branding",
             **ad_context,
         )
+
+    @app.route("/admin/settings/sign_in_and_directory/access", methods=["POST"])
+    @roles("admin")
+    @require_action("administer")
+    def save_directory_access():
+        """Directory group → access level mappings and the sign-in policy.
+        Install-wide like every LDAP setting, so they follow the same authority."""
+        from serviceops_core.ldap_access import ACCESS_LEVELS, role_mappings
+        require_install_settings_authority()
+        action = request.form.get("action")
+        mappings = role_mappings()
+
+        def store(key, value):
+            row = db.session.get(PlatformSetting, key) or PlatformSetting(key=key)
+            db.session.add(row)
+            row.value, row.encrypted, row.updated_by_id = value, False, current_user.id
+
+        if action == "add_access_mapping":
+            group = request.form.get("directory_group", "").strip()
+            level = request.form.get("access_level", "")
+            if not group or len(group) > 500 or level not in ACCESS_LEVELS:
+                abort(400, description=tr("Enter an AD group and choose an access level."))
+            # One entry per group, matched case-insensitively.
+            for existing in [name for name in mappings if name.strip().casefold() == group.casefold()]:
+                del mappings[existing]
+            mappings[group] = level
+            store("LDAP_ROLE_MAPPINGS", json.dumps(mappings, separators=(",", ":"), sort_keys=True))
+            audit("configure", "AD access mapping", f"{group} -> {level}")
+            flash(tr("Access mapping saved. It applies at each user's next sign-in or directory sync."), "success")
+        elif action == "remove_access_mapping":
+            group = request.form.get("directory_group", "")
+            if group not in mappings:
+                abort(404)
+            level = mappings.pop(group)
+            store("LDAP_ROLE_MAPPINGS", json.dumps(mappings, separators=(",", ":"), sort_keys=True))
+            audit("delete", "AD access mapping", f"{group} -> {level}")
+            flash(tr("Access mapping removed. It applies at each user's next sign-in or directory sync."), "success")
+        elif action == "save_access_policy":
+            default = request.form.get("default_access_level", "")
+            if default not in ACCESS_LEVELS:
+                abort(400)
+            require = bool(request.form.get("require_access_group"))
+            if require and not mappings:
+                abort(400, description=tr("Add at least one access mapping before restricting sign-in to mapped groups."))
+            store("LDAP_ROLE_MAPPINGS_DEFAULT", default)
+            store("LDAP_REQUIRE_ACCESS_GROUP", "true" if require else "false")
+            audit("configure", "AD access policy", f"default={default}; require_mapped_group={require}")
+            flash(tr("Directory access policy saved."), "success")
+        elif action == "check_user":
+            from serviceops_core.ldap_access import check_user
+            username = request.form.get("username", "").strip()[:256]
+            if not username:
+                abort(400)
+            try:
+                session["ldap_access_check"] = check_user(username)
+            except core.LdapBindError as error:
+                session["ldap_access_check"] = {"username": username, "error": str(error)}
+            audit("view", "AD access check", username)
+        else:
+            abort(400)
+        db.session.commit()
+        return redirect(url_for("system_settings_category", category="sign_in_and_directory") + "#directory-access")
 
     @app.get("/admin/audit")
     @roles("admin")

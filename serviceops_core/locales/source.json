@@ -260,6 +260,9 @@
    "id": "AD group → ServiceOps team"
   },
   {
+   "id": "AD group → access level"
+  },
+  {
    "id": "AD-managed"
   },
   {
@@ -375,6 +378,9 @@
    "id": "Accepted"
   },
   {
+   "id": "Access for users in no mapped group"
+  },
+  {
    "id": "Access grant added."
   },
   {
@@ -385,6 +391,18 @@
   },
   {
    "id": "Access key"
+  },
+  {
+   "id": "Access level"
+  },
+  {
+   "id": "Access level for directory users in no mapped group"
+  },
+  {
+   "id": "Access mapping removed. It applies at each user's next sign-in or directory sync."
+  },
+  {
+   "id": "Access mapping saved. It applies at each user's next sign-in or directory sync."
   },
   {
    "id": "Accessibility"
@@ -546,6 +564,9 @@
    "id": "Add as many as you like: your own servers, and hosted services such as OpenAI or Claude."
   },
   {
+   "id": "Add at least one access mapping before restricting sign-in to mapped groups."
+  },
+  {
    "id": "Add business schedule"
   },
   {
@@ -695,6 +716,9 @@
    "id": "Administration → Connections & channels → Snipe-IT connection"
   },
   {
+   "id": "Administrator"
+  },
+  {
    "id": "Administrator access is required to change ticket state, priority or assignment."
   },
   {
@@ -809,6 +833,15 @@
   },
   {
    "id": "Allow approved ticket actions"
+  },
+  {
+   "id": "Allow sign-in only for members of a mapped access group"
+  },
+  {
+   "id": "Allow sign-in only for members of a mapped access group (others are refused and deactivated at the next sync)"
+  },
+  {
+   "id": "Allowed"
   },
   {
    "id": "Already added",
@@ -1745,6 +1778,12 @@
    "id": "Check GitHub for newer ServiceOps releases"
   },
   {
+   "id": "Check a user"
+  },
+  {
+   "id": "Check access"
+  },
+  {
    "id": "Check now"
   },
   {
@@ -1802,6 +1841,9 @@
   },
   {
    "id": "Choose what shows in the table — CIs pulled from NetBox/CSV carry more fields than fit by default."
+  },
+  {
+   "id": "Choose which AD groups give administrator, manager, agent or regular (requester) access. A user in several mapped groups holds every level they grant. Access is re-checked at each sign-in and at every scheduled directory sync, so removing someone from a group removes the access."
   },
   {
    "id": "Choose which AI service answers your next message"
@@ -2805,6 +2847,9 @@
    "id": "Direct reports"
   },
   {
+   "id": "Directory access policy saved."
+  },
+  {
    "id": "Directory group context"
   },
   {
@@ -3120,6 +3165,9 @@
   },
   {
    "id": "Enter a valid syslog port."
+  },
+  {
+   "id": "Enter an AD group and choose an access level."
   },
   {
    "id": "Enter the 6-digit code from your authenticator app, or one of your backup codes."
@@ -3466,6 +3514,9 @@
    "id": "Follow"
   },
   {
+   "id": "Follow nested AD groups (member of a group inside a mapped group)"
+  },
+  {
    "id": "Follow-up actions"
   },
   {
@@ -3684,6 +3735,9 @@
   },
   {
    "id": "Group name"
+  },
+  {
+   "id": "Groups"
   },
   {
    "id": "Groups & team ownership"
@@ -4396,6 +4450,12 @@
    "id": "LDAP group role mappings"
   },
   {
+   "id": "LDAP group search base DN (blank uses the base DN)"
+  },
+  {
+   "id": "LDAP group search filter for directories without memberOf, e.g. (|(member={dn})(memberUid={username}))"
+  },
+  {
    "id": "LDAP must use LDAPS or StartTLS"
   },
   {
@@ -4411,7 +4471,7 @@
    "id": "LDAP reconciliation safety ceiling"
   },
   {
-   "id": "LDAP server URI"
+   "id": "LDAP server URI (list several, space separated, for failover)"
   },
   {
    "id": "LDAP user filter"
@@ -4660,6 +4720,9 @@
   },
   {
    "id": "Look at related configuration items your role may read."
+  },
+  {
+   "id": "Look up a directory user to see their groups and the access and teams they would get, without signing them in."
   },
   {
    "id": "Looked up records you can access",
@@ -5209,6 +5272,9 @@
    "id": "No PDUs recorded."
   },
   {
+   "id": "No access mappings configured. Every directory user gets the default access level."
+  },
+  {
    "id": "No active SLA"
   },
   {
@@ -5599,6 +5665,9 @@
   },
   {
    "id": "No sibling tasks on this record."
+  },
+  {
+   "id": "No single directory entry matches {username}."
   },
   {
    "id": "No snapshots captured yet — the background worker records one set of metrics per day, so trend data starts accumulating from today onward."
@@ -7111,6 +7180,12 @@
    "id": "Refresh the page before starting an investigation."
   },
   {
+   "id": "Refused: not in a mapped access group"
+  },
+  {
+   "id": "Refused: the account is disabled in the directory"
+  },
+  {
    "id": "Regenerate backup codes"
   },
   {
@@ -7322,6 +7397,9 @@
   },
   {
    "id": "Requester"
+  },
+  {
+   "id": "Requester (regular access)"
   },
   {
    "id": "Requests"
@@ -7868,6 +7946,12 @@
   },
   {
    "id": "Save Telegram"
+  },
+  {
+   "id": "Save access mapping"
+  },
+  {
+   "id": "Save access policy"
   },
   {
    "id": "Save alias"
@@ -8661,6 +8745,9 @@
    "id": "Sign out"
   },
   {
+   "id": "Sign-in"
+  },
+  {
    "id": "Sign-in & directory"
   },
   {
@@ -9404,6 +9491,9 @@
   },
   {
    "id": "The day resets in"
+  },
+  {
+   "id": "The directory could not be reached: {error}"
   },
   {
    "id": "The idempotency key was already used for a different request."
@@ -10784,6 +10874,9 @@
    "id": "decision must be Approved or Rejected."
   },
   {
+   "id": "default"
+  },
+  {
    "id": "discord"
   },
   {
@@ -10864,6 +10957,9 @@
   },
   {
    "id": "from"
+  },
+  {
+   "id": "gg_serviceops_admins"
   },
   {
    "id": "gg_unix"
