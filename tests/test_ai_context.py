@@ -41,7 +41,7 @@ def test_catalog_services_sla_and_teams_answer_general_questions(app, world):
         assert "Laptop request" in found["Service catalog (things anyone can request)"]
         assert "15 minutes" in found["Service level targets"]
         assert "Email (Degraded)" in found["Business service status"]
-        assert "IT support teams" in found
+        assert "Support teams" in found
 
 
 def test_stats_adapt_to_authority_and_never_count_what_cannot_be_seen(app, world):
@@ -159,7 +159,6 @@ def test_a_draft_reaches_the_person_as_a_link_to_the_prefilled_form_and_nothing_
               'cannot send since this morning","impact":"Medium","urgency":"High","category":"Software"}\n[[FOLLOWUPS]] Is anyone else affected? | Show email articles')
     monkeypatch.setattr(service, "generate_stream", fake_stream(answer, {}))
     login(client, "employee", "Employee123!")
-    before = Ticket.query.count() if False else None
     reply = client.post("/ai/chat/messages", json={"text": "my email does not send, please raise a ticket", "request_key": str(uuid.uuid4())}).get_json()
     with app.app_context():
         while service.process_one():

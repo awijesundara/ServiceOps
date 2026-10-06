@@ -7,7 +7,7 @@ to the allowance each has left, and (3) keep scarce, more capable models for wor
 """
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from serviceops_models import AICall, db, now

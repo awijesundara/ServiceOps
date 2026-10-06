@@ -114,7 +114,7 @@ def test_owner_can_delete_one_or_clear_all_even_with_the_feature_off_and_others_
         keep, _ = memory.store(scope, "I prefer detailed answers")
         gone, _ = memory.store(scope, "I sit on floor three")
         db.session.commit()
-        keep_id, gone_id = keep.id, gone.id
+        _keep_id, gone_id = keep.id, gone.id
         db.session.get(AIConfiguration, 1).memory_enabled = False
         db.session.commit()
     login(client, "admin", "Admin123!")

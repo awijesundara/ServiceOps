@@ -1130,12 +1130,9 @@ def register(app):
                 group = tenant_record_or_404(
                     SupportGroup, int(request.form.get("group_id", "0"))
                 )
-                if (
-                    not name or len(name) > 160 or not group.active
-                    or group.group_type != "IT Fulfillment"
-                ):
+                if not name or len(name) > 160 or not core.is_team_group(group):
                     abort(400, description=(
-                        tr("A name and active IT fulfillment team are required.")
+                        tr("A name and active team are required.")
                     ))
                 token, prefix, token_hash = create_api_token()
                 source = MonitoringSource(
@@ -1167,9 +1164,7 @@ def register(app):
             outbox=OutboxEvent.query.filter_by(
                 tenant_id=current_user.tenant_id
             ).order_by(OutboxEvent.id.desc()).limit(50).all(),
-            teams=tenant_query(SupportGroup).filter_by(
-                group_type="IT Fulfillment", active=True
-            ).order_by(SupportGroup.name).all(),
+            teams=core.team_groups().all(),
             revealed_token=revealed_token,
             revealed_secret=revealed_secret,
             provider_labels=PROVIDER_LABELS,
@@ -1511,9 +1506,7 @@ def register(app):
         if category == "sign_in_and_directory":
             # Keep the working sign-in-time AD group mapping controls beside
             # the LDAP connection settings.
-            teams = tenant_query(SupportGroup).filter_by(
-                group_type="IT Fulfillment"
-            ).order_by(SupportGroup.name).all()
+            teams = core.team_groups().all()
             ad_context = dict(
                 teams=teams,
                 directory_mappings=DirectoryGroupMapping.query.join(SupportGroup).filter(
@@ -2016,7 +2009,9 @@ def register(app):
                 group_type = group.group_type if action == "rename_support_group" else request.form.get("group_type", "IT Fulfillment")
                 if not name or len(name) > 120:
                     abort(400, description=tr("Team name must contain 1 to 120 characters."))
-                if group_type not in ("IT Fulfillment", "Fulfillment", "Executive") and not (action == "rename_support_group" and group_type == "Client Support"):
+                # The client-support team keeps its type: it gates client management.
+                if group_type not in ("IT Fulfillment", "Fulfillment", "Executive") and not (
+                        group_type == "Client Support" and group.group_type == "Client Support"):
                     abort(400, description=tr("Select a supported team type."))
                 duplicate = tenant_query(SupportGroup).filter(
                     SupportGroup.id != group.id,
@@ -2233,7 +2228,7 @@ def register(app):
                 flash(tr("Executive approvers updated."), "success")
             elif action == "set_manager":
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
-                if group.group_type not in ("IT Fulfillment", "Fulfillment", "Executive"):
+                if group.group_type == "CCB Approval" or group.name in core.GOVERNANCE_GROUP_NAMES:
                     abort(400)
                 old_manager_id = group.manager_id
                 try:
@@ -2377,12 +2372,9 @@ def register(app):
             elif action == "set_catalog_route":
                 item = tenant_record_or_404(CatalogItem, int(request.form["catalog_item_id"]))
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
-                if (
-                    not group.active
-                    or group.group_type not in ("Fulfillment", "IT Fulfillment")
-                ):
+                if not core.is_team_group(group):
                     abort(400, description=(
-                        tr("Catalog items can route only to an active fulfillment team.")
+                        tr("Catalog items can route only to an active team.")
                     ))
                 route = item.fulfillment_route
                 if not route:
@@ -2417,12 +2409,9 @@ def register(app):
                 if delivery_days < 1 or delivery_days > 365:
                     abort(400, description=tr("Delivery target must be between 1 and 365 days."))
                 group = tenant_record_or_404(SupportGroup, group_id)
-                if (
-                    not group.active
-                    or group.group_type not in ("Fulfillment", "IT Fulfillment")
-                ):
+                if not core.is_team_group(group):
                     abort(400, description=(
-                        tr("Catalog items can route only to an active fulfillment team.")
+                        tr("Catalog items can route only to an active team.")
                     ))
                 item_id = (
                     int(request.form["catalog_item_id"])
@@ -2650,15 +2639,12 @@ def register(app):
             abort(404)
         title, description = ITIL_ADMIN_SECTIONS[section]
         groups = tenant_query(SupportGroup).order_by(SupportGroup.name).all()
+        # Inactive teams stay listed here so an administrator can reactivate them.
         teams = [
             group for group in groups
-            if group.group_type in ("IT Fulfillment", "Fulfillment", "Executive")
-            and group.name not in ("Executive Office",)
+            if group.group_type != "CCB Approval" and group.name not in core.GOVERNANCE_GROUP_NAMES
         ]
-        fulfillment_groups = [
-            group for group in groups
-            if group.active and group.group_type in ("Fulfillment", "IT Fulfillment")
-        ]
+        fulfillment_groups = [group for group in groups if core.is_team_group(group)]
         manager_candidates = tenant_query(User).filter(
             User.active.is_(True)
         ).order_by(User.name).all()

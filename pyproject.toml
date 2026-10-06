@@ -6,7 +6,7 @@
 pythonpath = ["."]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 120
 exclude = ["dist", "backups", "instance"]
 
@@ -14,4 +14,11 @@ exclude = ["dist", "backups", "instance"]
 # Start with correctness checks that are safe for the existing codebase. The
 # broader style/refactor rules can be adopted incrementally without hiding
 # real undefined-name or syntax failures in the meantime.
-select = ["E9", "F63", "F7", "F82"]
+select = ["E9", "F63", "F7", "F82", "F401", "F841"]
+
+[tool.ruff.lint.per-file-ignores]
+# app.py is the import hub the web modules and tests use (`from app import ...`,
+# monkeypatching `app.<name>`), so names it imports but does not call are re-exports.
+"app.py" = ["F401"]
+# Tests import pytest fixtures by name (`from test_app import app, client`); they are used by injection.
+"tests/*" = ["F401"]

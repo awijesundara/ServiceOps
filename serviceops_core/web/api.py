@@ -996,12 +996,9 @@ def register(app):
             group_id = int(body.get("assignment_group_id"))
         except (TypeError, ValueError):
             abort(400, description=tr("assignment_group_id is required."))
-        group = SupportGroup.query.filter_by(
-            id=group_id, tenant_id=g.api_client.tenant_id,
-            active=True, group_type="IT Fulfillment",
-        ).first()
+        group = core.team_groups(g.api_client.tenant_id).filter(SupportGroup.id == group_id).first()
         if not group:
-            abort(400, description=tr("Select an active tenant IT fulfillment team."))
+            abort(400, description=tr("Select an active tenant team."))
         ticket = create_ticket_with_unique_number(
             "incident",
             title=title, description=description,

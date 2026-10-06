@@ -9,6 +9,7 @@ import threading
 import os
 import sys
 import ssl
+import unicodedata
 import uuid
 import base64
 import hashlib
@@ -28,7 +29,7 @@ from datetime import date, datetime, time as dt_time, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import formataddr
 from functools import wraps
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
@@ -70,6 +71,7 @@ from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
+from werkzeug.http import dump_options_header
 from serviceops_core.localization import tr, tr_value
 
 
@@ -891,7 +893,7 @@ API_SCOPES = {
 
 
 def api_token_hash(token):
-    pepper = os.getenv("API_TOKEN_PEPPER") or current_app.config["SECRET_KEY"]
+    pepper = secret_value("API_TOKEN_PEPPER") or current_app.config["SECRET_KEY"]
     return hmac.new(
         pepper.encode(), token.encode(), hashlib.sha256
     ).hexdigest()
@@ -2619,10 +2621,8 @@ def attachment_file_response(attachment, inline=False):
         )
         abort(503, description=tr("This attachment could not be verified as safe and is temporarily unavailable. Please contact an administrator."))
     render_inline = inline and attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES
-    disposition = (
-        f"inline; filename={json.dumps(attachment.original_name)}"
-        if render_inline
-        else f"attachment; filename={json.dumps(attachment.original_name)}"
+    disposition = content_disposition(
+        "inline" if render_inline else "attachment", attachment.original_name,
     )
     if object_storage_enabled():
         try:
@@ -2670,6 +2670,19 @@ def attachment_file_response(attachment, inline=False):
     )
     response.headers["Cache-Control"] = "private, no-store"
     return response
+
+
+def content_disposition(disposition, filename):
+    """RFC 6266 Content-Disposition, encoded the way send_file encodes local
+    downloads, so object-storage and IPFS downloads keep non-ASCII names."""
+    try:
+        filename.encode("ascii")
+    except UnicodeEncodeError:
+        simple = unicodedata.normalize("NFKD", filename).encode("ascii", "ignore").decode("ascii")
+        names = {"filename": simple, "filename*": f"UTF-8''{quote(filename, safe='!#$&+-.^_`|~')}"}
+    else:
+        names = {"filename": filename}
+    return dump_options_header(disposition, names)
 
 
 def csv_response(csv_text, filename):
@@ -5584,6 +5597,42 @@ def user_support_group_ids(user):
     return group_ids
 
 
+# The Change Control Board and Executive Office are approval bodies managed by
+# their own governance controls, not teams that own or fulfil work.
+GOVERNANCE_GROUP_NAMES = ("Change Control Board", "Executive Office")
+
+
+def team_group_filter():
+    """The single definition of a ServiceOps team: every active group in the
+    tenant except the governance bodies, whatever its team type. Every team
+    picker and its server-side check uses this, so a newly created team is
+    selectable everywhere. Team type still decides access (see
+    visible_ticket_query), never whether a team is listed."""
+    return db.and_(
+        SupportGroup.active.is_(True),
+        SupportGroup.group_type != "CCB Approval",
+        SupportGroup.name.notin_(GOVERNANCE_GROUP_NAMES),
+    )
+
+
+def team_groups(tenant_id=None):
+    """All teams for the tenant (the current tenant context by default), by name."""
+    return SupportGroup.query.filter(
+        SupportGroup.tenant_id == (tenant_id if tenant_id is not None else tenant_context_id()),
+        team_group_filter(),
+    ).order_by(SupportGroup.name)
+
+
+def is_team_group(group, tenant_id=None):
+    return bool(
+        group
+        and group.active
+        and group.group_type != "CCB Approval"
+        and group.name not in GOVERNANCE_GROUP_NAMES
+        and (tenant_id is None or group.tenant_id == tenant_id)
+    )
+
+
 def client_sysops_group(tenant_id):
     return SupportGroup.query.filter(
         SupportGroup.tenant_id == tenant_id,
@@ -7497,6 +7546,19 @@ def create_app(test_config=None):
         )
     elif not app.config["SECRET_KEY"] or len(app.config["SECRET_KEY"]) < 32:
         raise RuntimeError("SECRET_KEY is required and must contain at least 32 characters.")
+    else:
+        # Both fall back to SECRET_KEY, so rotating it would silently invalidate every
+        # API token and break audit-chain verification. Setting each to the current
+        # SECRET_KEY value decouples them without invalidating anything.
+        for name, consequence in (
+            ("API_TOKEN_PEPPER", "every API token"),
+            ("AUDIT_INTEGRITY_KEY", "audit-log integrity verification"),
+        ):
+            if not secret_value(name) and not (name == "AUDIT_INTEGRITY_KEY" and os.getenv("SETTINGS_ENCRYPTION_KEY")):
+                app.logger.warning(
+                    "%s is not set and falls back to SECRET_KEY; rotating SECRET_KEY would break %s. "
+                    "Set %s to the current SECRET_KEY value to decouple them.", name, consequence, name,
+                )
     if (
         not app.config["TESTING"]
         and not app.config["SESSION_COOKIE_SECURE"]

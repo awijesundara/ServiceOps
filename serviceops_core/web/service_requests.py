@@ -26,6 +26,7 @@ from app import (
     decide_vote,
     delegated_pending_votes,
     enforce_approval_change_freeze,
+    is_team_group,
     log_field_changes,
     log_history,
     related_records,
@@ -34,6 +35,7 @@ from app import (
     roles,
     sequence_number,
     sync_slas,
+    team_groups,
     tenant_query,
     tenant_record_or_404,
     transition_catalog_task,
@@ -359,9 +361,7 @@ def register(app):
             catalog_task_permissions=catalog_task_permissions,
             can_manage=can_manage,
             state_track=build_state_track("ritm", ritm.state),
-            teams=tenant_query(SupportGroup).filter_by(
-                group_type="IT Fulfillment", active=True
-            ).order_by(SupportGroup.name).all(),
+            teams=team_groups().all(),
             related=related_records("ritm", ritm.id),
             history=TaskHistory.query.filter_by(
                 target_type="ritm", target_id=ritm.id
@@ -424,8 +424,8 @@ def register(app):
         if chain and chain.state != "Approved":
             abort(409, description=tr("Catalog tasks cannot be added until the RITM is approved."))
         group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
-        if not group.active or group.group_type != "IT Fulfillment":
-            abort(400, description=tr("Catalog tasks require an active IT fulfillment team."))
+        if not is_team_group(group):
+            abort(400, description=tr("Catalog tasks require an active team."))
         def build_task():
             task = CatalogTask(
                 number=sequence_number(CatalogTask, "SCTASK"),

@@ -12,7 +12,6 @@ from tests.test_app import app, client, group_id, login
 def test_change_risk_score_auto_calculates_when_left_blank(client, app):
     login(client)
     with app.app_context():
-        admin_id = User.query.filter_by(username="admin").one().id
         ci = ConfigurationItem(
             name="payments-db-01", ci_class="Database", business_criticality="Critical",
             environment="Production", tenant_id=1,

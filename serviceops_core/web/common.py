@@ -293,15 +293,8 @@ def ticket_list_query(kind, q="", conditions=None):
 
 def manager_portal_groups():
     if role_at_least(current_user.effective_role, "admin"):
-        return tenant_query(SupportGroup).filter(
-            SupportGroup.group_type == "IT Fulfillment",
-            SupportGroup.active.is_(True),
-        ).order_by(SupportGroup.name).all()
-    return tenant_query(SupportGroup).filter(
-        SupportGroup.group_type == "IT Fulfillment",
-        SupportGroup.active.is_(True),
-        SupportGroup.manager_id == current_user.id,
-    ).order_by(SupportGroup.name).all()
+        return core.team_groups().all()
+    return core.team_groups().filter(SupportGroup.manager_id == current_user.id).all()
 
 
 def manager_portal_context():

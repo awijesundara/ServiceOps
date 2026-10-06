@@ -233,6 +233,11 @@ def _netbox_session(base_url, token):
         session.verify = _write_ca_bundle(ca_cert)
     elif core_app.setting_bool("NETBOX_TLS_INSECURE"):
         session.verify = False
+        from flask import current_app
+        current_app.logger.warning(
+            "NetBox TLS certificate verification is disabled (NETBOX_TLS_INSECURE); "
+            "configure NETBOX_CA_CERT instead."
+        )
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     return session
