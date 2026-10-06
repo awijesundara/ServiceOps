@@ -66,13 +66,13 @@ def test_renaming_keeps_record_links_and_old_name_resolution(app, client, name):
     login(client)
     with app.app_context():
         group = SupportGroup.query.filter_by(name=name, tenant_id=1).one()
-        gid = group.id
+        gid, group_type = group.id, group.group_type
         ci = ConfigurationItem(name='rename-test', ci_class='Server', support_group_id=gid, tenant_id=1)
         db.session.add(ci)
         db.session.commit()
         ci_id = ci.id
     renamed = name + ' operations'
-    assert client.post('/itil/administration', data={"action": "rename_support_group", "group_id": gid, "name": renamed}).status_code == 302
+    assert client.post(f'/admin/groups/{gid}', data={"name": renamed, "group_type": group_type, "active": "on"}).status_code == 302
     with app.app_context():
         group = db.session.get(SupportGroup, gid)
         assert group.active and group.name == renamed

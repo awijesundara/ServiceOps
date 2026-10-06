@@ -49,14 +49,33 @@ def matched_access_groups(groups, mappings=None):
     }
 
 
-def sign_in_allowed(groups):
-    """With LDAP_REQUIRE_ACCESS_GROUP on, only members of a mapped access
-    group may sign in; otherwise every directory user may (and gets the
-    default access level)."""
+def mapped_groups(groups, tenant_id=None):
+    """The active ServiceOps groups whose AD/LDAP mappings these directory
+    groups match."""
+    from app import DirectoryGroupMapping, SupportGroup
+    aliases = normalized_directory_groups(groups)
+    if not aliases:
+        return []
+    query = DirectoryGroupMapping.query.join(SupportGroup).filter(
+        DirectoryGroupMapping.active.is_(True), SupportGroup.active.is_(True),
+    )
+    if tenant_id is not None:
+        query = query.filter(SupportGroup.tenant_id == tenant_id)
+    found = {}
+    for mapping in query:
+        if mapping.directory_group.strip().casefold() in aliases:
+            found[mapping.support_group.id] = mapping.support_group
+    return sorted(found.values(), key=lambda group: group.name)
+
+
+def sign_in_allowed(groups, tenant_id=None):
+    """With LDAP_REQUIRE_ACCESS_GROUP on, only directory users in an AD/LDAP
+    group mapped to a ServiceOps group (or to an LDAP_ROLE_MAPPINGS level)
+    may sign in; otherwise every directory user may, with the default access."""
     import app as core_app
     if not core_app.setting_bool("LDAP_REQUIRE_ACCESS_GROUP", False):
         return True
-    return bool(matched_access_groups(groups))
+    return bool(matched_access_groups(groups) or mapped_groups(groups, tenant_id))
 
 
 def resolve_groups(connection, user_dn, username, member_of):
@@ -108,7 +127,7 @@ def check_user(username):
     matches, the resulting access level and teams, and whether sign-in is
     allowed. Reads the directory with the service account only."""
     import app as core_app
-    from app import DirectoryGroupMapping, SupportGroup, current_user
+    from app import current_user
 
     local_part = core_app.ldap_login_local_part(username)
     _server, service = core_app.ldap_server_and_service_connection()
@@ -129,16 +148,12 @@ def check_user(username):
     finally:
         service.unbind()
     matched = matched_access_groups(groups)
-    roles = core_app.mapped_roles(groups, "LDAP_ROLE_MAPPINGS")
-    aliases = normalized_directory_groups(groups)
-    teams = sorted({
-        mapping.support_group.name
-        for mapping in DirectoryGroupMapping.query.join(SupportGroup).filter(
-            DirectoryGroupMapping.active.is_(True),
-            SupportGroup.tenant_id == current_user.tenant_id,
-        )
-        if mapping.directory_group.strip().casefold() in aliases
-    })
+    roles = set(core_app.mapped_roles(groups, "LDAP_ROLE_MAPPINGS"))
+    teams = []
+    for group in mapped_groups(groups, current_user.tenant_id):
+        group_roles = core_app.group_access_roles(group)
+        roles.update(group_roles)
+        teams.append(group.name + (f" ({', '.join(group_roles)})" if group_roles else ""))
     control = (values.get("userAccountControl") or [None])[0]
     try:
         disabled = bool(int(control) & 2)
@@ -155,6 +170,6 @@ def check_user(username):
         "access_level": max(roles, key=lambda role: core_app.ROLE_RANK.get(role, -1)),
         "roles": sorted(roles, key=lambda role: -core_app.ROLE_RANK.get(role, -1)),
         "teams": teams,
-        "allowed": sign_in_allowed(groups) and not disabled,
+        "allowed": sign_in_allowed(groups, current_user.tenant_id) and not disabled,
         "disabled": disabled,
     }

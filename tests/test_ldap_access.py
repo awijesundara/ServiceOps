@@ -155,33 +155,25 @@ def test_scheduled_sync_revokes_admin_and_deactivates_users_outside_mapped_group
         assert not db.session.get(User, removed.id).active
 
 
-def test_admin_manages_access_mappings_and_policy(client, app):
+def test_admin_sets_the_directory_sign_in_policy(client, app):
     login(client)
-    response = client.post("/admin/settings/sign_in_and_directory/access", data={
-        "action": "add_access_mapping", "directory_group": "gg_serviceops_admins", "access_level": "admin",
-    })
-    assert response.status_code == 302
-    # Platform administrator cannot be granted from a directory group.
+    # Restricting sign-in needs at least one mapped group first.
     assert client.post("/admin/settings/sign_in_and_directory/access", data={
-        "action": "add_access_mapping", "directory_group": "gg_root", "access_level": "superadmin",
+        "action": "save_access_policy", "default_access_level": "requester", "require_access_group": "on",
     }).status_code == 400
+    client.post("/admin/groups/new", data={
+        "name": "Admins", "group_type": "IT Fulfillment", "directory_groups": "gg_serviceops_admins",
+        "access_roles": ["admin"],
+    })
     assert client.post("/admin/settings/sign_in_and_directory/access", data={
         "action": "save_access_policy", "default_access_level": "requester", "require_access_group": "on",
     }).status_code == 302
-    page = client.get("/admin/settings/sign_in_and_directory").get_data(as_text=True)
-    assert "gg_serviceops_admins" in page and "AD group → access level" in page
     with app.app_context():
-        assert json.loads(app_module.setting_value("LDAP_ROLE_MAPPINGS")) == {"gg_serviceops_admins": "admin"}
         assert app_module.setting_bool("LDAP_REQUIRE_ACCESS_GROUP")
     # Saving the main settings form must not silently clear the policy.
     client.post("/admin/settings/sign_in_and_directory", data={"LOCAL_AUTH_ENABLED": "on"})
     with app.app_context():
         assert app_module.setting_bool("LDAP_REQUIRE_ACCESS_GROUP")
-    assert client.post("/admin/settings/sign_in_and_directory/access", data={
-        "action": "remove_access_mapping", "directory_group": "gg_serviceops_admins",
-    }).status_code == 302
-    with app.app_context():
-        assert json.loads(app_module.setting_value("LDAP_ROLE_MAPPINGS")) == {}
 
 
 def test_check_user_reports_access_without_signing_in(client, app, monkeypatch):

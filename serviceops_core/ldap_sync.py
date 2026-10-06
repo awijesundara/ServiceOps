@@ -494,7 +494,7 @@ def sync_directory(tenant_id, dry_run=False):
                     if core_app.ROLE_RANK.get(user.role, 0) < core_app.ROLE_RANK.get(before_role, 0):
                         # Sign the user out everywhere so the lower access applies now.
                         user.auth_version += 1
-                lost_access = not sign_in_allowed(groups)
+                lost_access = not sign_in_allowed(groups, tenant_id)
                 if (
                     core_app.setting_bool("LDAP_SYNC_ACCOUNT_STATUS", True)
                     and (directory_profile.get("account_enabled") is False or lost_access)

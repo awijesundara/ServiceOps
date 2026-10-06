@@ -7,9 +7,7 @@ from serviceops_models import SupportGroup, Tenant, Ticket, db
 
 
 def create_team(client, app, name, group_type):
-    response = client.post("/service-operations/settings", data={
-        "action": "create_support_group", "name": name, "group_type": group_type,
-    })
+    response = client.post("/admin/groups/new", data={"name": name, "group_type": group_type})
     assert response.status_code == 302
     with app.app_context():
         return SupportGroup.query.filter_by(name=name).one().id
@@ -61,8 +59,7 @@ def test_client_support_team_keeps_its_type_when_updated(app, client):
     login(client)
     with app.app_context():
         sysops_id = SupportGroup.query.filter_by(name="SysOps", tenant_id=1).one().id
-    response = client.post("/service-operations/settings", data={
-        "action": "update_support_group", "group_id": sysops_id,
+    response = client.post(f"/admin/groups/{sysops_id}", data={
         "name": "SysOps", "group_type": "Client Support", "active": "on",
     })
     assert response.status_code == 302

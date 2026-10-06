@@ -114,7 +114,13 @@
    "id": "A dedicated support email address, polled over IMAP into customer tickets and replied to over SMTP. Basic username/password auth only -- providers like Gmail/Office 365 need an app password, not your normal login password."
   },
   {
+   "id": "A directory user receives the roles of every group their AD/LDAP groups map to. Access is re-checked at each sign-in and at every scheduled directory sync, so removing someone from an AD group removes the access."
+  },
+  {
    "id": "A field with that key already exists for this record type."
+  },
+  {
+   "id": "A group with that name already exists."
   },
   {
    "id": "A hosted API key is required."
@@ -191,9 +197,6 @@
    "id": "A summary is required for the post-implementation review."
   },
   {
-   "id": "A team with that name already exists."
-  },
-  {
    "id": "A tenant with slug \"{slug}\" already exists."
   },
   {
@@ -245,29 +248,14 @@
    "id": "AD / LDAP"
   },
   {
-   "id": "AD group"
-  },
-  {
-   "id": "AD group mapping disabled. Memberships reconcile at next login."
-  },
-  {
-   "id": "AD group mapping saved. It applies at each user's next login."
-  },
-  {
-   "id": "AD group name or DN"
-  },
-  {
-   "id": "AD group → ServiceOps team"
-  },
-  {
-   "id": "AD group → access level"
-  },
-  {
    "id": "AD-managed"
   },
   {
    "id": "AD/LDAP",
    "javascript": true
+  },
+  {
+   "id": "AD/LDAP groups"
   },
   {
    "id": "AD/LDAP is disabled"
@@ -397,12 +385,6 @@
   },
   {
    "id": "Access level for directory users in no mapped group"
-  },
-  {
-   "id": "Access mapping removed. It applies at each user's next sign-in or directory sync."
-  },
-  {
-   "id": "Access mapping saved. It applies at each user's next sign-in or directory sync."
   },
   {
    "id": "Accessibility"
@@ -562,9 +544,6 @@
   },
   {
    "id": "Add as many as you like: your own servers, and hosted services such as OpenAI or Claude."
-  },
-  {
-   "id": "Add at least one access mapping before restricting sign-in to mapped groups."
   },
   {
    "id": "Add business schedule"
@@ -835,10 +814,10 @@
    "id": "Allow approved ticket actions"
   },
   {
-   "id": "Allow sign-in only for members of a mapped access group"
+   "id": "Allow sign-in only for members of a mapped AD/LDAP group (others are refused and deactivated at the next sync)"
   },
   {
-   "id": "Allow sign-in only for members of a mapped access group (others are refused and deactivated at the next sync)"
+   "id": "Allow sign-in only for members of a mapped access group"
   },
   {
    "id": "Allowed"
@@ -1081,9 +1060,6 @@
   },
   {
    "id": "Assigned assets"
-  },
-  {
-   "id": "Assigned team"
   },
   {
    "id": "Assigned to"
@@ -1843,9 +1819,6 @@
    "id": "Choose what shows in the table — CIs pulled from NetBox/CSV carry more fields than fit by default."
   },
   {
-   "id": "Choose which AD groups give administrator, manager, agent or regular (requester) access. A user in several mapped groups holds every level they grant. Access is re-checked at each sign-in and at every scheduled directory sync, so removing someone from a group removes the access."
-  },
-  {
    "id": "Choose which AI service answers your next message"
   },
   {
@@ -2383,9 +2356,6 @@
    "id": "Create an incident or service request to get started."
   },
   {
-   "id": "Create and maintain operational teams here. The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned."
-  },
-  {
    "id": "Create and reveal token"
   },
   {
@@ -2440,9 +2410,6 @@
    "id": "Create source"
   },
   {
-   "id": "Create team"
-  },
-  {
    "id": "Create teams from the mapped LDAP team attribute"
   },
   {
@@ -2462,6 +2429,9 @@
   },
   {
    "id": "Create, activate, and deactivate tenants across the platform."
+  },
+  {
+   "id": "Create, edit or delete groups in Sign-in and directory."
   },
   {
    "id": "Create, edit, deactivate, and erase accounts; assign roles and reporting lines"
@@ -2742,6 +2712,9 @@
    "javascript": true
   },
   {
+   "id": "Delete group {name}? Members lose the access it grants."
+  },
+  {
    "id": "Delete target"
   },
   {
@@ -2816,6 +2789,9 @@
    "id": "Description"
   },
   {
+   "id": "Description must be 500 characters or fewer."
+  },
+  {
    "id": "Descriptive only — this environment does not enforce multi-region data residency. Recorded here so it's documented for audits and customer questions."
   },
   {
@@ -2856,7 +2832,13 @@
    "id": "Directory groups ({group_names})"
   },
   {
+   "id": "Directory sign-in policy"
+  },
+  {
    "id": "Directory sync"
+  },
+  {
+   "id": "Directory users in any of these groups join this group when they sign in and at each directory sync."
   },
   {
    "id": "Directory/SSO login and team assignment may grant this user additional roles automatically after creation."
@@ -3000,6 +2982,9 @@
    "id": "EVENT STREAM"
   },
   {
+   "id": "Each AD/LDAP group must be 500 characters or fewer."
+  },
+  {
    "id": "Each code can be used once if you lose access to your authenticator app. Store them somewhere safe -- they will not be shown again."
   },
   {
@@ -3017,6 +3002,9 @@
   },
   {
    "id": "Edit \"{title}\" and its steps"
+  },
+  {
+   "id": "Edit group: {name}"
   },
   {
    "id": "Edit material change plan"
@@ -3146,9 +3134,6 @@
    "id": "Enter a search term."
   },
   {
-   "id": "Enter a short AD group such as"
-  },
-  {
    "id": "Enter a syslog hostname or IP address without a URL or path."
   },
   {
@@ -3165,9 +3150,6 @@
   },
   {
    "id": "Enter a valid syslog port."
-  },
-  {
-   "id": "Enter an AD group and choose an access level."
   },
   {
    "id": "Enter the 6-digit code from your authenticator app, or one of your backup codes."
@@ -3286,6 +3268,9 @@
    "id": "Every incident, change, and service request that isn't resolved or closed yet."
   },
   {
+   "id": "Every member of this group receives the access levels ticked here, in addition to their own."
+  },
+  {
    "id": "Every open enterprise record is within its due date."
   },
   {
@@ -3344,9 +3329,6 @@
   },
   {
    "id": "Exclude date"
-  },
-  {
-   "id": "Executive"
   },
   {
    "id": "Executive (CEO) approval authority must be configured (itil_admin's Executive approval section) before a non-standard change requiring CCB authorization can be submitted."
@@ -3737,10 +3719,31 @@
    "id": "Group name"
   },
   {
+   "id": "Group name must contain 1 to 120 characters."
+  },
+  {
+   "id": "Group type"
+  },
+  {
+   "id": "Group {name} created."
+  },
+  {
+   "id": "Group {name} deactivated: existing records still reference it."
+  },
+  {
+   "id": "Group {name} deleted."
+  },
+  {
+   "id": "Group {name} updated."
+  },
+  {
    "id": "Groups"
   },
   {
    "id": "Groups & team ownership"
+  },
+  {
+   "id": "Groups, their AD/LDAP groups and the access they grant"
   },
   {
    "id": "Guided tour",
@@ -3950,9 +3953,6 @@
   },
   {
    "id": "IPFS provider"
-  },
-  {
-   "id": "IT Fulfillment"
   },
   {
    "id": "IT OPERATIONS"
@@ -4722,7 +4722,7 @@
    "id": "Look at related configuration items your role may read."
   },
   {
-   "id": "Look up a directory user to see their groups and the access and teams they would get, without signing them in."
+   "id": "Look up a directory user to see their AD/LDAP groups and the ServiceOps groups and access they would get, without signing them in."
   },
   {
    "id": "Looked up records you can access",
@@ -4863,7 +4863,13 @@
    "id": "Many models"
   },
   {
+   "id": "Map at least one AD/LDAP group to a group before restricting sign-in to mapped groups."
+  },
+  {
    "id": "Map business services to supporting configuration items"
+  },
+  {
+   "id": "Map to AD/LDAP groups"
   },
   {
    "id": "Mapped dependencies"
@@ -5201,6 +5207,9 @@
    "id": "New fulfillment task"
   },
   {
+   "id": "New group"
+  },
+  {
    "id": "New knowledge article"
   },
   {
@@ -5214,9 +5223,6 @@
   },
   {
    "id": "New subcategory name"
-  },
-  {
-   "id": "New team name"
   },
   {
    "id": "New ticket"
@@ -5247,9 +5253,6 @@
    "id": "No"
   },
   {
-   "id": "No AD team mappings configured."
-  },
-  {
    "id": "No AI service yet. Add one to get started."
   },
   {
@@ -5270,9 +5273,6 @@
   },
   {
    "id": "No PDUs recorded."
-  },
-  {
-   "id": "No access mappings configured. Every directory user gets the default access level."
   },
   {
    "id": "No active SLA"
@@ -5444,6 +5444,9 @@
   },
   {
    "id": "No groups returned."
+  },
+  {
+   "id": "No groups yet."
   },
   {
    "id": "No guided tours defined yet."
@@ -5737,6 +5740,9 @@
    "id": "None"
   },
   {
+   "id": "None (default access applies)"
+  },
+  {
    "id": "None recorded"
   },
   {
@@ -5951,6 +5957,9 @@
   },
   {
    "id": "One per line. A request that mentions any of them stays private."
+  },
+  {
+   "id": "One per line: a short name such as gg_unix, or a full DN such as cn=admins,ou=groups,dc=example,dc=com"
   },
   {
    "id": "One place for IT services, support, and operations."
@@ -7180,7 +7189,7 @@
    "id": "Refresh the page before starting an investigation."
   },
   {
-   "id": "Refused: not in a mapped access group"
+   "id": "Refused: not in a mapped AD/LDAP group"
   },
   {
    "id": "Refused: the account is disabled in the directory"
@@ -7551,9 +7560,6 @@
   },
   {
    "id": "Result"
-  },
-  {
-   "id": "Retained for audit"
   },
   {
    "id": "Retention (days)"
@@ -7948,9 +7954,6 @@
    "id": "Save Telegram"
   },
   {
-   "id": "Save access mapping"
-  },
-  {
    "id": "Save access policy"
   },
   {
@@ -7994,9 +7997,6 @@
   },
   {
    "id": "Save major incident status"
-  },
-  {
-   "id": "Save mapping"
   },
   {
    "id": "Save notification preferences"
@@ -8275,13 +8275,13 @@
    "id": "Select a rating between 1 and 5."
   },
   {
+   "id": "Select a supported group type."
+  },
+  {
    "id": "Select a supported interface language."
   },
   {
    "id": "Select a supported personal notification provider."
-  },
-  {
-   "id": "Select a supported team type."
   },
   {
    "id": "Select a team"
@@ -8351,9 +8351,6 @@
   },
   {
    "id": "Select a valid syslog port and transport."
-  },
-  {
-   "id": "Select a valid team."
   },
   {
    "id": "Select a valid trigger event."
@@ -8585,6 +8582,9 @@
   },
   {
    "id": "ServiceOps control center"
+  },
+  {
+   "id": "ServiceOps groups"
   },
   {
    "id": "ServiceOps iOS repository"
@@ -9257,28 +9257,10 @@
    "id": "Team name aliases"
   },
   {
-   "id": "Team name for {name}"
-  },
-  {
-   "id": "Team name must contain 1 to 120 characters."
-  },
-  {
    "id": "Team name or vendor"
   },
   {
-   "id": "Team settings"
-  },
-  {
-   "id": "Team type"
-  },
-  {
    "id": "Team workload, SLA exposure and performance across the teams you manage."
-  },
-  {
-   "id": "Team {name} created. Assign its manager and members below."
-  },
-  {
-   "id": "Team {name} updated."
   },
   {
    "id": "Teams"
@@ -9611,6 +9593,9 @@
    "id": "The security token is missing or expired. Refresh the page and try again."
   },
   {
+   "id": "The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned."
+  },
+  {
    "id": "The selected team must have an active manager before it can own a change."
   },
   {
@@ -9731,6 +9716,9 @@
   },
   {
    "id": "This endpoint has not been allowlisted by the deployment operator. The operator must add {origin} to AI_SELF_HOSTED_ENDPOINTS (Helm ai.selfHostedEndpoints)."
+  },
+  {
+   "id": "This group is required by the platform and cannot be deleted."
   },
   {
    "id": "This instance is running {app_version}."
@@ -10874,9 +10862,6 @@
    "id": "decision must be Approved or Rejected."
   },
   {
-   "id": "default"
-  },
-  {
    "id": "discord"
   },
   {
@@ -10889,13 +10874,13 @@
    "id": "e.g. Active litigation hold, matter #4471"
   },
   {
+   "id": "e.g. Admins"
+  },
+  {
    "id": "e.g. Auto-escalate urgent tickets"
   },
   {
    "id": "e.g. Close as resolved"
-  },
-  {
-   "id": "e.g. Datacenter"
   },
   {
    "id": "e.g. Facilities"
@@ -10957,12 +10942,6 @@
   },
   {
    "id": "from"
-  },
-  {
-   "id": "gg_serviceops_admins"
-  },
-  {
-   "id": "gg_unix"
   },
   {
    "id": "grants."
@@ -11139,9 +11118,6 @@
   },
   {
    "id": "or"
-  },
-  {
-   "id": "or its complete distinguished name. Membership synchronizes whenever the user signs in through AD/LDAP."
   },
   {
    "id": "or use a directory/local account"
@@ -11600,6 +11576,9 @@
    "id": "{duration_minutes} minutes"
   },
   {
+   "id": "{entry} is already mapped to {name}."
+  },
+  {
    "id": "{errors} error(s)"
   },
   {
@@ -11622,6 +11601,9 @@
   },
   {
    "id": "{group_type} · manager {name} · {members} member(s)"
+  },
+  {
+   "id": "{groups} records"
   },
   {
    "id": "{history} events"

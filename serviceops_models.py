@@ -1868,6 +1868,9 @@ class SupportGroup(db.Model):
     manager_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     active = db.Column(db.Boolean, nullable=False, default=True)
     approval_mode = db.Column(db.String(3), nullable=False, default="all", server_default="all")
+    description = db.Column(db.String(500), nullable=False, default="", server_default="")
+    # Comma-separated access levels every member receives (see sync_implied_role_grants).
+    access_roles = db.Column(db.String(80), nullable=False, default="", server_default="")
     manager = db.relationship("User")
     members = db.relationship("GroupMember", cascade="all, delete-orphan", backref="group")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
