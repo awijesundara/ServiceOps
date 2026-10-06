@@ -3360,9 +3360,7 @@ def test_non_manager_cannot_create_approval_absence_coverage(client):
 
 def test_team_admin_can_create_update_and_assign_a_new_team(client, app):
     login(client)
-    created = client.post("/service-operations/settings", data={
-        "action": "create_support_group", "name": "Datacenter", "group_type": "IT Fulfillment",
-    })
+    created = client.post("/admin/groups/new", data={"name": "Datacenter", "group_type": "IT Fulfillment"})
     assert created.status_code == 302
     with app.app_context():
         team = SupportGroup.query.filter_by(name="Datacenter").one()
@@ -3372,8 +3370,7 @@ def test_team_admin_can_create_update_and_assign_a_new_team(client, app):
         "action": "set_manager", "group_id": team_id, "manager_id": manager_id,
     })
     assert assigned.status_code == 302
-    updated = client.post("/service-operations/settings", data={
-        "action": "update_support_group", "group_id": team_id,
+    updated = client.post(f"/admin/groups/{team_id}", data={
         "name": "Datacenter Operations", "group_type": "IT Fulfillment", "active": "on",
     })
     assert updated.status_code == 302
@@ -5654,9 +5651,8 @@ def test_admin_configures_ad_mapping_manager_and_ccb_authority(client, app):
         unix_id = SupportGroup.query.filter_by(name="Unix").one().id
         manager = User.query.filter_by(username="database.manager").one()
         manager_id = manager.id
-    assert client.post("/itil/administration", data={
-        "action": "add_directory_mapping", "directory_group": "gg_unix",
-        "group_id": unix_id,
+    assert client.post(f"/admin/groups/{unix_id}", data={
+        "name": "Unix", "group_type": "IT Fulfillment", "active": "on", "directory_groups": "gg_unix",
     }).status_code == 302
     assert client.post("/itil/administration", data={
         "action": "set_manager", "group_id": unix_id, "manager_id": manager_id,
@@ -5683,7 +5679,7 @@ def test_ad_ldap_settings_do_not_advertise_removed_bulk_reconciliation(client):
     assert page.status_code == 200
     assert b"AD group" in page.data
     assert b"Directory reconciliation" not in page.data
-    assert b"add_directory_mapping" in page.data
+    assert b"/admin/groups/new" in page.data
     assert b"AD/LDAP is not enabled" not in page.data
     assert client.post("/admin/settings/sign_in_and_directory", data={
         "LOCAL_AUTH_ENABLED": "on", "LDAP_ENABLED": "on",

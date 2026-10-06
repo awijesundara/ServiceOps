@@ -118,19 +118,13 @@
 
 {% if section == 'team-managers' %}
 <section class="panel admin-section">
-  <p class="muted">{{ tr('Create and maintain operational teams here. The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.') }}</p>
-  <form method="post" action="{{ post_url }}" class="form-grid">
-    <input type="hidden" name="action" value="create_support_group">
-    <label class="required-field"><span>{{ tr('New team name') }}</span><input name="name" required maxlength="120" placeholder="{{ tr('e.g. Datacenter') }}"></label>
-    <label><span>{{ tr('Team type') }}</span><select name="group_type"><option value="IT Fulfillment">{{ tr('IT Fulfillment') }}</option><option value="Fulfillment">{{ tr('Fulfillment') }}</option><option value="Executive">{{ tr('Executive') }}</option></select></label>
-    <div class="wide actions"><button class="primary">{{ tr('Create team') }}</button></div>
-  </form>
+  <p class="muted">{{ tr('The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.') }} <a href="{{ url_for('groups') }}">{{ tr('Create, edit or delete groups in Sign-in and directory.') }}</a></p>
   <table>
-    <thead><tr><th>{{ tr('Team') }}</th><th>{{ tr('Current manager') }}</th><th>{{ tr('Manager assignment') }}</th><th>{{ tr('Members') }}</th><th>{{ tr('Team settings') }}</th></tr></thead>
+    <thead><tr><th>{{ tr('Team') }}</th><th>{{ tr('Current manager') }}</th><th>{{ tr('Manager assignment') }}</th><th>{{ tr('Members') }}</th></tr></thead>
     <tbody>
       {% for team in teams %}
       <tr>
-        <td><form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="rename_support_group"><input type="hidden" name="group_id" value="{{ team.id }}"><input name="name" value="{{ team.name }}" required maxlength="120" aria-label="{{ tr('Team name for {name}', name=(team.name)) }}"><button class="button">{{ tr('Rename') }}</button></form></td>
+        <td><a href="{{ url_for('group_edit', group_id=team.id) }}">{{ team.name }}</a>{% if not team.active %} <small class="muted">({{ tr('inactive') }})</small>{% endif %}</td>
         <td>{{ team.manager.name if team.manager else tr('Unassigned') }}</td>
         <td>
           <form method="post" action="{{ post_url }}" class="inline-form">
@@ -146,18 +140,6 @@
           </form>
         </td>
         <td>{{ team.members|length }}</td>
-        <td>
-          <details><summary>{{ tr('Rename / settings') }}</summary>
-            <form method="post" action="{{ post_url }}" class="stack compact-form">
-              <input type="hidden" name="action" value="update_support_group">
-              <input type="hidden" name="group_id" value="{{ team.id }}">
-              <label><span>{{ tr('Name') }}</span><input name="name" value="{{ team.name }}" required maxlength="120"></label>
-              {% if team.group_type == 'Client Support' %}<input type="hidden" name="group_type" value="Client Support"><p><span>{{ tr('Type') }}</span> {{ tr_value('Client Support') }}</p>{% else %}<label><span>{{ tr('Type') }}</span><select name="group_type">{% for kind in ['IT Fulfillment','Fulfillment','Executive'] %}<option value="{{ kind }}" {% if team.group_type == kind %}selected{% endif %}>{{ tr_value(kind) }}</option>{% endfor %}</select></label>{% endif %}
-              <label class="check"><input type="checkbox" name="active" {% if team.active %}checked{% endif %}> {{ tr('Active') }}</label>
-              <button class="button">{{ tr('Update') }}</button>
-            </form>
-          </details>
-        </td>
       </tr>
       {% endfor %}
     </tbody>

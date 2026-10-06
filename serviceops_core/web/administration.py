@@ -1506,22 +1506,20 @@ def register(app):
         )
         ad_context = {}
         if category == "sign_in_and_directory":
-            # Keep the working sign-in-time AD group mapping controls beside
-            # the LDAP connection settings.
-            teams = core.team_groups().all()
-            from serviceops_core.ldap_access import ACCESS_LEVEL_LABELS, ACCESS_LEVELS, role_mappings
+            # Groups (with their AD/LDAP mappings and roles) and the directory
+            # sign-in policy sit beside the LDAP connection settings.
+            from serviceops_core.ldap_access import ACCESS_LEVEL_LABELS, ACCESS_LEVELS
+            from serviceops_core.web.groups import directory_groups_of, managed_groups
             ad_context = dict(
-                access_mappings=sorted(role_mappings().items(), key=lambda item: item[0].casefold()),
+                group_rows=[
+                    dict(group=group, roles=core.group_access_roles(group),
+                         directory_groups=[m.directory_group for m in directory_groups_of(group)])
+                    for group in managed_groups()
+                ],
                 access_levels=ACCESS_LEVELS, access_level_labels=ACCESS_LEVEL_LABELS,
                 default_access_level=core.setting_value("LDAP_ROLE_MAPPINGS_DEFAULT", "requester"),
                 require_access_group=core.setting_bool("LDAP_REQUIRE_ACCESS_GROUP", False),
                 access_check=session.pop("ldap_access_check", None),
-                teams=teams,
-                directory_mappings=DirectoryGroupMapping.query.join(SupportGroup).filter(
-                    SupportGroup.tenant_id == current_user.tenant_id
-                ).order_by(
-                    DirectoryGroupMapping.directory_group
-                ).all(),
             )
         admin_section_key = (
             "connections-channels"
@@ -1541,8 +1539,9 @@ def register(app):
     @roles("admin")
     @require_action("administer")
     def save_directory_access():
-        """Directory group → access level mappings and the sign-in policy.
-        Install-wide like every LDAP setting, so they follow the same authority."""
+        """The directory sign-in policy and the "check a user" tool. Install-wide
+        like every LDAP setting, so they follow the same authority. Groups and
+        their AD/LDAP mappings and roles are managed in serviceops_core.web.groups."""
         from serviceops_core.ldap_access import ACCESS_LEVELS, role_mappings
         require_install_settings_authority()
         action = request.form.get("action")
@@ -1553,33 +1552,14 @@ def register(app):
             db.session.add(row)
             row.value, row.encrypted, row.updated_by_id = value, False, current_user.id
 
-        if action == "add_access_mapping":
-            group = request.form.get("directory_group", "").strip()
-            level = request.form.get("access_level", "")
-            if not group or len(group) > 500 or level not in ACCESS_LEVELS:
-                abort(400, description=tr("Enter an AD group and choose an access level."))
-            # One entry per group, matched case-insensitively.
-            for existing in [name for name in mappings if name.strip().casefold() == group.casefold()]:
-                del mappings[existing]
-            mappings[group] = level
-            store("LDAP_ROLE_MAPPINGS", json.dumps(mappings, separators=(",", ":"), sort_keys=True))
-            audit("configure", "AD access mapping", f"{group} -> {level}")
-            flash(tr("Access mapping saved. It applies at each user's next sign-in or directory sync."), "success")
-        elif action == "remove_access_mapping":
-            group = request.form.get("directory_group", "")
-            if group not in mappings:
-                abort(404)
-            level = mappings.pop(group)
-            store("LDAP_ROLE_MAPPINGS", json.dumps(mappings, separators=(",", ":"), sort_keys=True))
-            audit("delete", "AD access mapping", f"{group} -> {level}")
-            flash(tr("Access mapping removed. It applies at each user's next sign-in or directory sync."), "success")
-        elif action == "save_access_policy":
+        if action == "save_access_policy":
             default = request.form.get("default_access_level", "")
             if default not in ACCESS_LEVELS:
                 abort(400)
             require = bool(request.form.get("require_access_group"))
-            if require and not mappings:
-                abort(400, description=tr("Add at least one access mapping before restricting sign-in to mapped groups."))
+            if require and not mappings and not DirectoryGroupMapping.query.join(SupportGroup).filter(
+                    DirectoryGroupMapping.active.is_(True), SupportGroup.tenant_id == current_user.tenant_id).first():
+                abort(400, description=tr("Map at least one AD/LDAP group to a group before restricting sign-in to mapped groups."))
             store("LDAP_ROLE_MAPPINGS_DEFAULT", default)
             store("LDAP_REQUIRE_ACCESS_GROUP", "true" if require else "false")
             audit("configure", "AD access policy", f"default={default}; require_mapped_group={require}")
@@ -2049,67 +2029,7 @@ def register(app):
             action = request.form.get("action")
             if action in INSTALL_SETTINGS_ACTIONS:
                 require_install_settings_authority()
-            if action == "create_support_group":
-                name = request.form.get("name", "").strip()
-                group_type = request.form.get("group_type", "IT Fulfillment")
-                if not name or len(name) > 120:
-                    abort(400, description=tr("Team name must contain 1 to 120 characters."))
-                if group_type not in ("IT Fulfillment", "Fulfillment", "Executive"):
-                    abort(400, description=tr("Select a supported team type."))
-                if tenant_query(SupportGroup).filter(
-                    func.lower(SupportGroup.name) == name.casefold()
-                ).first():
-                    abort(409, description=tr("A team with that name already exists."))
-                group = SupportGroup(
-                    name=name, group_type=group_type, active=True,
-                    tenant_id=current_user.tenant_id,
-                )
-                db.session.add(group)
-                db.session.flush()
-                audit("create", f"Support group: {name}", group_type)
-                flash(tr("Team {name} created. Assign its manager and members below.", name=name), "success")
-            elif action in {"update_support_group", "rename_support_group"}:
-                group_id = request.form.get("group_id", type=int)
-                if group_id is None:
-                    abort(400, description=tr("Select a valid team."))
-                group = tenant_record_or_404(SupportGroup, group_id)
-                if group.name in ("Change Control Board", "Executive Office"):
-                    abort(400, description=tr("Use the dedicated governance controls for this group."))
-                name = request.form.get("name", "").strip()
-                group_type = group.group_type if action == "rename_support_group" else request.form.get("group_type", "IT Fulfillment")
-                if not name or len(name) > 120:
-                    abort(400, description=tr("Team name must contain 1 to 120 characters."))
-                # The client-support team keeps its type: it gates client management.
-                if group_type not in ("IT Fulfillment", "Fulfillment", "Executive") and not (
-                        group_type == "Client Support" and group.group_type == "Client Support"):
-                    abort(400, description=tr("Select a supported team type."))
-                duplicate = tenant_query(SupportGroup).filter(
-                    SupportGroup.id != group.id,
-                    func.lower(SupportGroup.name) == name.casefold(),
-                ).first()
-                if duplicate:
-                    abort(409, description=tr("A team with that name already exists."))
-                before = f"{group.name}; {group.group_type}; active={group.active}"
-                old_name = group.name
-                affected_users = [member.user for member in group.members]
-                if group.manager:
-                    affected_users.append(group.manager)
-                group.name = name
-                group.group_type = group_type
-                if action != "rename_support_group":
-                    group.active = bool(request.form.get("active"))
-                for affected in {user.id: user for user in affected_users if user}.values():
-                    sync_implied_role_grants(affected)
-                audit("update", f"Support group: {name}", f"{before} -> {group_type}; active={group.active}")
-                if old_name != name:
-                    alias = tenant_query(SupportGroupAlias).filter(func.lower(SupportGroupAlias.alias) == old_name.casefold()).first()
-                    if alias and alias.group_id != group.id:
-                        abort(409, description=tr("The old group name is already an alias of another team."))
-                    if not alias:
-                        db.session.add(SupportGroupAlias(alias=old_name, group_id=group.id, tenant_id=group.tenant_id))
-                    audit("team renamed", f"support_group:{group.id}", f"{old_name} → {name}")
-                flash(tr("Team {name} updated.", name=name), "success")
-            elif action == "create_ticket_category":
+            if action == "create_ticket_category":
                 name = request.form.get("name", "").strip()
                 if not name or len(name) > 80:
                     abort(400, description=tr("Category name must contain 1 to 80 characters."))
@@ -2192,34 +2112,6 @@ def register(app):
                 subcategory.default_service_offering_id = offering_id
                 audit("update", f"Ticket subcategory: {name}", f"{before} -> active={subcategory.active}")
                 flash(tr("Subcategory {name} updated.", name=name), "success")
-            elif action == "add_directory_mapping":
-                directory_group = request.form.get("directory_group", "").strip()
-                group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
-                if not directory_group or len(directory_group) > 500:
-                    abort(400)
-                existing = DirectoryGroupMapping.query.join(SupportGroup).filter(
-                    SupportGroup.tenant_id == current_user.tenant_id,
-                    func.lower(DirectoryGroupMapping.directory_group)
-                    == directory_group.casefold()
-                ).first()
-                if existing:
-                    existing.support_group_id = group.id
-                    existing.active = True
-                else:
-                    db.session.add(DirectoryGroupMapping(
-                        directory_group=directory_group, support_group_id=group.id,
-                        tenant_id=group.tenant_id,
-                    ))
-                audit("configure", "AD team mapping", f"{directory_group} -> {group.name}")
-                flash(tr("AD group mapping saved. It applies at each user's next login."), "success")
-            elif action == "delete_directory_mapping":
-                mapping = DirectoryGroupMapping.query.join(SupportGroup).filter(
-                    DirectoryGroupMapping.id == int(request.form["mapping_id"]),
-                    SupportGroup.tenant_id == current_user.tenant_id,
-                ).first_or_404()
-                mapping.active = False
-                audit("disable", "AD team mapping", mapping.directory_group)
-                flash(tr("AD group mapping disabled. Memberships reconcile at next login."), "success")
             elif action == "add_support_group_alias":
                 alias = request.form.get("alias", "").strip()
                 group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))

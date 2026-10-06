@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% set editing = group.id is not none %}
+{% block title %}{{ (tr('Group') ~ ' ' ~ group.name) if editing else tr('New group') }} · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = (tr('Edit group: {name}', name=group.name)) if editing else tr('New group') %}{% set admin_parent_title = tr('Sign-in and directory') %}{% set admin_parent_url = url_for('groups') %}{% include '_admin_context.html' %}
+<section class="record-shell">
+  <header class="record-toolbar">
+    <div class="record-identity">
+      <a class="record-back" href="{{ url_for('groups') }}" aria-label="{{ tr('Back') }}">‹</a>
+      <span class="record-type-icon">G</span><div><strong>{{ tr('Group') }}</strong><small>{{ group.name if editing else tr('New record') }}</small></div>
+    </div>
+    <div class="record-actions">
+      {% if editing and group.group_type != 'Client Support' %}
+      <button class="button" form="group-delete-form">{{ tr('Delete') }}</button>
+      {% endif %}
+      <button class="primary" form="group-record-form">{{ tr('Save') if editing else tr('Create') }}</button>
+    </div>
+  </header>
+  <form method="post" id="group-record-form" class="record-form">
+    <div class="group-form-columns">
+      <div class="stack">
+        <label class="required-field"><span>{{ tr('Group name') }}</span><input name="name" value="{{ group.name }}" required maxlength="120" placeholder="{{ tr('e.g. Admins') }}"></label>
+        <label><span>{{ tr('Description') }}</span><textarea name="description" rows="3" maxlength="500">{{ group.description or '' }}</textarea></label>
+        <label><span>{{ tr('Map to AD/LDAP groups') }}</span><textarea name="directory_groups" rows="4" maxlength="5000" placeholder="{{ tr('One per line: a short name such as gg_unix, or a full DN such as cn=admins,ou=groups,dc=example,dc=com') }}">{{ directory_groups }}</textarea><small class="muted">{{ tr('Directory users in any of these groups join this group when they sign in and at each directory sync.') }}</small></label>
+        {% if group.group_type == 'Client Support' %}
+        <input type="hidden" name="group_type" value="Client Support"><p><span>{{ tr('Type') }}</span> {{ tr_value('Client Support') }}</p>
+        {% else %}
+        <label><span>{{ tr('Group type') }}</span><select name="group_type">{% for kind in group_types %}<option value="{{ kind }}" {% if group.group_type == kind %}selected{% endif %}>{{ tr_value(kind) }}</option>{% endfor %}</select></label>
+        {% endif %}
+        {% if editing %}<label class="check"><input type="checkbox" name="active" {% if group.active %}checked{% endif %}> {{ tr('Active') }}</label>{% endif %}
+      </div>
+      <fieldset class="group-roles">
+        <legend>{{ tr('Roles') }}</legend>
+        <p class="muted">{{ tr('Every member of this group receives the access levels ticked here, in addition to their own.') }}</p>
+        {% for level in access_levels %}
+        <label class="check group-role"><input type="checkbox" name="access_roles" value="{{ level }}" {% if level in selected_roles %}checked{% endif %}>
+          <span><strong>{{ tr_value(access_level_labels[level]) }}</strong><small>{{ tr_value(access_level_help[level]) }}</small></span></label>
+        {% endfor %}
+      </fieldset>
+    </div>
+  </form>
+  {% if editing %}
+  <form method="post" id="group-delete-form" action="{{ url_for('group_delete', group_id=group.id) }}" data-confirm="{{ tr('Delete group {name}? Members lose the access it grants.', name=group.name) }}"></form>
+  {% endif %}
+</section>
+{% endblock %}

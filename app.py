@@ -6559,6 +6559,36 @@ def sync_implied_role_grants(user):
     ).first():
         desired.add("agent")
     sync_role_grants(user, "team_responsibility", desired)
+    # Access levels a group grants to every member (set on the group itself).
+    group_roles = {}
+    for group in SupportGroup.query.join(GroupMember, GroupMember.group_id == SupportGroup.id).filter(
+        GroupMember.user_id == user.id, SupportGroup.active.is_(True),
+        SupportGroup.tenant_id == user.tenant_id, SupportGroup.access_roles != "",
+    ):
+        for role in group_access_roles(group):
+            group_roles.setdefault(role, group.name)
+    sync_role_grants(user, "group", group_roles, detail_by_role=group_roles)
+
+
+def record_group_rename(group, old_name):
+    """Keep a renamed group findable by its old name (CSV imports, free-text
+    team names) through an alias, and record the rename."""
+    alias = SupportGroupAlias.query.filter(
+        SupportGroupAlias.tenant_id == group.tenant_id,
+        func.lower(SupportGroupAlias.alias) == old_name.casefold(),
+    ).first()
+    if alias and alias.group_id != group.id:
+        abort(409, description=tr("The old group name is already an alias of another team."))
+    if not alias:
+        db.session.add(SupportGroupAlias(alias=old_name, group_id=group.id, tenant_id=group.tenant_id))
+    audit("team renamed", f"support_group:{group.id}", f"{old_name} → {group.name}")
+
+
+def group_access_roles(group):
+    """The access levels a group grants its members. Platform administrator
+    is never granted through a group."""
+    from serviceops_core.ldap_access import ACCESS_LEVELS
+    return [role for role in (group.access_roles or "").split(",") if role in ACCESS_LEVELS]
 
 
 def user_is_local(user):
@@ -8138,6 +8168,7 @@ def create_app(test_config=None):
         auth,
         client_management,
         cmdb,
+        groups,
         knowledge,
         platform,
         service_requests,
@@ -8150,6 +8181,7 @@ def create_app(test_config=None):
     auth.register(app)
     workspace.register(app)
     administration.register(app)
+    groups.register(app)
     tickets.register(app)
     knowledge.register(app)
     cmdb.register(app)
