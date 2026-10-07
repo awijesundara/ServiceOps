@@ -40,6 +40,8 @@ NAVIGATION_ENTRIES = (
     NavigationEntry("Improvements", "Continual improvement", "improvements", minimum_role="agent"),
     NavigationEntry("CMDB and service map", "Configuration Management Database CI relationships", "cmdb", minimum_role="agent"),
     NavigationEntry("Assets", "Asset Management inventory", "assets", minimum_role="agent"),
+    NavigationEntry("Suppliers", "Vendors resellers manufacturers service providers GLPI", "itam_list", {"kind": "suppliers"}, "agent"),
+    NavigationEntry("Contracts", "Support maintenance lease subscription renewal notice expiry GLPI", "itam_list", {"kind": "contracts"}, "agent"),
     NavigationEntry("Analytics", "Reports dashboards service performance", "analytics", minimum_role="agent"),
     NavigationEntry("Administration", "Platform administration configuration", "admin_home", minimum_role="admin"),
     NavigationEntry("Users and access", "Users roles accounts", "users", minimum_role="admin"),

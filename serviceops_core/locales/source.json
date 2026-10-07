@@ -882,6 +882,9 @@
    "id": "Any one selected executive"
   },
   {
+   "id": "Any status"
+  },
+  {
    "id": "Anything not sensitive"
   },
   {
@@ -1318,6 +1321,9 @@
   },
   {
    "id": "Body"
+  },
+  {
+   "id": "Bool"
   },
   {
    "id": "Bot token"
@@ -1792,6 +1798,9 @@
    "id": "Child CIs"
   },
   {
+   "id": "Choice"
+  },
+  {
    "id": "Choose a new password"
   },
   {
@@ -1799,6 +1808,9 @@
   },
   {
    "id": "Choose a supported proxy option."
+  },
+  {
+   "id": "Choose a valid {label}."
   },
   {
    "id": "Choose an organization-wide operational feed or one support group's chat room. Users add private destinations in their own preferences."
@@ -1829,6 +1841,9 @@
   },
   {
    "id": "Choose which CMDB environment names require Change Control Board approval. This policy determines"
+  },
+  {
+   "id": "Cis"
   },
   {
    "id": "ClamAV daemon host"
@@ -2237,6 +2252,12 @@
   },
   {
    "id": "Continue with Keycloak"
+  },
+  {
+   "id": "Contract notice period"
+  },
+  {
+   "id": "Contracts"
   },
   {
    "id": "Conversation"
@@ -2737,6 +2758,9 @@
   },
   {
    "id": "Delete view"
+  },
+  {
+   "id": "Delete {name}?"
   },
   {
    "id": "Delete {number}? It will be marked Cancelled and kept for the audit trail — this cannot be undone from here."
@@ -3358,10 +3382,16 @@
    "id": "Expected outcome"
   },
   {
+   "id": "Expired"
+  },
+  {
    "id": "Expires"
   },
   {
    "id": "Expires {expires_at}"
+  },
+  {
+   "id": "Expiring soon"
   },
   {
    "id": "Export CSV"
@@ -3835,6 +3865,9 @@
    "id": "History action schema is invalid."
   },
   {
+   "id": "Hold Ctrl or ⌘ to choose several."
+  },
+  {
    "id": "Holiday name"
   },
   {
@@ -4179,6 +4212,9 @@
   },
   {
    "id": "Instance name"
+  },
+  {
+   "id": "Int"
   },
   {
    "id": "Integrations and delivery"
@@ -5006,6 +5042,9 @@
    "id": "Module"
   },
   {
+   "id": "Money"
+  },
+  {
    "id": "Monitoring"
   },
   {
@@ -5259,6 +5298,9 @@
   },
   {
    "id": "New {kind} · {instance_name}"
+  },
+  {
+   "id": "New {label}"
   },
   {
    "id": "New {name} record · {instance_name}"
@@ -5847,6 +5889,9 @@
    "id": "Not set up"
   },
   {
+   "id": "Not started"
+  },
+  {
    "id": "Not tested yet",
    "javascript": true
   },
@@ -5909,6 +5954,9 @@
   },
   {
    "id": "Nothing yet. Say “remember that I prefer short answers” to add one."
+  },
+  {
+   "id": "Notice period"
   },
   {
    "id": "Notification & escalation policy"
@@ -7222,6 +7270,9 @@
    "id": "Reduce motion"
   },
   {
+   "id": "Ref"
+  },
+  {
    "id": "Reference",
    "javascript": true
   },
@@ -8510,6 +8561,9 @@
    "javascript": true
   },
   {
+   "id": "Sent to a contract's owner (or the administrators) once the last day to give notice is reached."
+  },
+  {
    "id": "Sent to a team manager when a client ticket breaches its organization's escalation threshold."
   },
   {
@@ -9407,7 +9461,13 @@
    "javascript": true
   },
   {
+   "id": "Text"
+  },
+  {
    "id": "Text to match; omit to list recent tickets."
+  },
+  {
+   "id": "Textarea"
   },
   {
    "id": "Thanks for the feedback!"
@@ -9537,6 +9597,9 @@
   },
   {
    "id": "The directory could not be reached: {error}"
+  },
+  {
+   "id": "The end date must be on or after the start date."
   },
   {
    "id": "The idempotency key was already used for a different request."
@@ -10112,6 +10175,9 @@
    "id": "Unsupported chat provider: {html}"
   },
   {
+   "id": "Unsupported field."
+  },
+  {
    "id": "Unsupported workflow package schema."
   },
   {
@@ -10179,6 +10245,9 @@
   },
   {
    "id": "Urgent"
+  },
+  {
+   "id": "Url"
   },
   {
    "id": "Use",
@@ -10414,6 +10483,9 @@
   },
   {
    "id": "View only: you can see every detail of this CI but not change it."
+  },
+  {
+   "id": "View only: you can see this record but not change it."
   },
   {
    "id": "View queue"
@@ -10885,6 +10957,9 @@
    "id": "billing, onboarding, priority-client"
   },
   {
+   "id": "bool"
+  },
+  {
    "id": "by {name}"
   },
   {
@@ -10896,6 +10971,12 @@
   {
    "id": "change",
    "javascript": true
+  },
+  {
+   "id": "choice"
+  },
+  {
+   "id": "cis"
   },
   {
    "id": "closure_category applies to incidents only."
@@ -10912,6 +10993,9 @@
   {
    "id": "contains",
    "javascript": true
+  },
+  {
+   "id": "contracts"
   },
   {
    "id": "cost center"
@@ -10983,10 +11067,16 @@
    "id": "e.g. account_tier"
   },
   {
+   "id": "email"
+  },
+  {
    "id": "empty chain"
   },
   {
    "id": "enabled"
+  },
+  {
+   "id": "ends {date}"
   },
   {
    "id": "environment must be Production, Staging, Development or Test."
@@ -11084,6 +11174,9 @@
    "id": "includes every visible open record, capped at 100 cards per lane. Use the ticket list for the complete backlog."
   },
   {
+   "id": "int"
+  },
+  {
    "id": "investigation"
   },
   {
@@ -11146,6 +11239,9 @@
   },
   {
    "id": "member"
+  },
+  {
+   "id": "money"
   },
   {
    "id": "mounting side"
@@ -11272,6 +11368,9 @@
    "id": "ran on ServiceOps {app_version}"
   },
   {
+   "id": "ref"
+  },
+  {
    "id": "release update check proxy"
   },
   {
@@ -11362,6 +11461,12 @@
    "id": "tenant hierarchy, ownership, functional role, platform, raw status, descriptions, timestamps, coordinates, configuration context, tags, custom fields, all assigned IPs/DNS/VRF context, interfaces/VLANs/cables, console, power and cooling connectivity, modules and bays, front/rear ports, inventory items, VM interfaces and virtual disks. Rack metadata is retained on the rack. Endpoints denied to the read-only token are reported as warnings."
   },
   {
+   "id": "text"
+  },
+  {
+   "id": "textarea"
+  },
+  {
    "id": "the assignment group"
   },
   {
@@ -11408,6 +11513,9 @@
   },
   {
    "id": "unhealthy"
+  },
+  {
+   "id": "url"
   },
   {
    "id": "user"
@@ -11536,6 +11644,9 @@
    "id": "{count} configuration items"
   },
   {
+   "id": "{count} contracts still reference this supplier. Deactivate it instead."
+  },
+  {
    "id": "{count} device"
   },
   {
@@ -11590,6 +11701,9 @@
   },
   {
    "id": "{count} ratings submitted in this window."
+  },
+  {
+   "id": "{count} records"
   },
   {
    "id": "{count} report"
@@ -11727,7 +11841,43 @@
    "id": "{label} is now {value}."
   },
   {
+   "id": "{label} is required."
+  },
+  {
+   "id": "{label} must be a date (YYYY-MM-DD)."
+  },
+  {
+   "id": "{label} must be a whole number."
+  },
+  {
+   "id": "{label} must be an amount."
+  },
+  {
+   "id": "{label} must be an email address."
+  },
+  {
+   "id": "{label} must be between 0 and 999,999,999,999."
+  },
+  {
+   "id": "{label} must be between {low} and {high}."
+  },
+  {
+   "id": "{label} must be {limit} characters or fewer."
+  },
+  {
+   "id": "{label} must start with http:// or https://."
+  },
+  {
    "id": "{label} synchronization is temporarily disabled by an operator feature flag."
+  },
+  {
+   "id": "{label} {name} created."
+  },
+  {
+   "id": "{label} {name} deleted."
+  },
+  {
+   "id": "{label} {name} updated."
   },
   {
    "id": "{label}: {error}"

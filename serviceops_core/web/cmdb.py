@@ -507,7 +507,16 @@ def register(app):
             field_source=lambda field: ci_sources.label(ci, field),
             impacted_cis=impacted_cis, lldp_neighbor_cis=lldp_neighbor_cis,
             network_connections=network_connections, read_only=not can_update,
+            contracts=_ci_contracts(ci),
         )
+
+    def _ci_contracts(ci):
+        """Contracts covering this CI, with their status, for the CI page."""
+        from serviceops_core.itam.definitions import contract_status
+        from serviceops_models import Contract, ContractCI
+        contracts = tenant_query(Contract).join(ContractCI, ContractCI.contract_id == Contract.id).filter(
+            ContractCI.ci_id == ci.id).order_by(Contract.end_date).all()
+        return [(contract, contract_status(contract)) for contract in contracts]
 
     @app.route("/cmdb/import", methods=["GET", "POST"])
     @roles("admin")

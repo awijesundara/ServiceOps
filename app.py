@@ -1528,6 +1528,7 @@ NOTIFICATION_SEVERITY_BY_EVENT = {
     "sla.breached": "critical",
     "client_ticket.escalated": "critical",
     "approval.requested": "warning",
+    "contract.notice": "warning",
     "enterprise.approval_requested": "warning",
     "ticket.mentioned": "warning",
 }
@@ -5164,6 +5165,18 @@ def process_kpi_snapshot_schedule(limit=50):
     return processed
 
 
+def process_contract_alerts():
+    """Alert contract owners once when a contract enters its notice period
+    (see serviceops_core.itam.alerts)."""
+    from serviceops_core.itam.alerts import send_contract_alerts
+    try:
+        return send_contract_alerts()
+    except Exception:  # noqa: BLE001 - never stop the worker loop
+        db.session.rollback()
+        current_app.logger.exception("Contract alert run failed")
+        return 0
+
+
 def process_rt_import_jobs(limit=1):
     """Runs queued RT import jobs (see RTImportJob) in the background
     worker, outside any web-request timeout. Processes at most `limit` per
@@ -8178,6 +8191,7 @@ def create_app(test_config=None):
         client_management,
         cmdb,
         groups,
+        itam,
         knowledge,
         platform,
         service_requests,
@@ -8191,6 +8205,7 @@ def create_app(test_config=None):
     workspace.register(app)
     administration.register(app)
     groups.register(app)
+    itam.register(app)
     tickets.register(app)
     knowledge.register(app)
     cmdb.register(app)
@@ -8281,6 +8296,7 @@ def create_app(test_config=None):
                                 + process_rt_import_jobs() + process_discovery_schedule()
                                 + process_client_escalation_policies() + process_client_email_inbox()
                                 + process_data_retention_purge() + process_google_chat_pubsub_schedule()
+                                + process_contract_alerts()
                             )
                             process_performance_sample_schedule()
                             process_update_check_schedule()

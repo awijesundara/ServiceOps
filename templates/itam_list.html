@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ tr_value(resource.plural) }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<section class="list-workspace">
+  <header class="list-toolbar">
+    <div class="list-title"><span class="record-type-icon">{{ resource.icon }}</span><div><strong>{{ tr_value(resource.plural) }}</strong><small>{{ tr_value(resource.description) }}</small></div></div>
+    {% if can_edit %}<a class="primary button" href="{{ url_for('itam_new', kind=resource.key) }}">{{ tr('New') }}</a>{% endif %}
+    <form method="get" class="list-search">
+      <label for="itam-search">{{ tr('Search') }}</label><input id="itam-search" name="q" value="{{ search }}" placeholder="{{ tr('Search') }}">
+      {% if statuses %}<select name="status" aria-label="{{ tr('Status') }}" data-auto-submit><option value="">{{ tr('Any status') }}</option>{% for s in statuses %}<option {% if s == status_filter %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>{% endif %}
+      <button>{{ tr('Search') }}</button>
+    </form>
+  </header>
+  <div class="list-breadcrumb"><span>▽</span> {{ tr('All') }}{% if search %} › {{ tr('Search contains “{search}”', search=search) }}{% endif %}{% if status_filter %} › {{ status_filter }}{% endif %}<span class="list-breadcrumb-count">{{ tr('{count} records', count=(rows|length)) }}</span></div>
+  <div class="table-scroll">
+    <table class="record-list">
+      <thead><tr>{% for spec in columns %}<th>{{ tr_value(spec.label) }}</th>{% endfor %}{% if resource.status %}<th>{{ tr('Status') }}</th>{% endif %}</tr></thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          {% for cell in row.cells %}<td>{% if loop.first %}<a href="{{ url_for('itam_edit', kind=resource.key, record_id=row.record.id) }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}
+          {% if resource.status %}<td><span class="tag itam-status is-{{ row.status[1] }}">{{ row.status[0] }}</span></td>{% endif %}
+        </tr>
+        {% else %}<tr><td colspan="{{ columns|length + (1 if resource.status else 0) }}" class="empty-table">{{ tr('No records yet.') }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
