@@ -20,7 +20,7 @@ from contextlib import nullcontext
 
 import requests
 
-from serviceops_core import ci_sources, import_changes
+from serviceops_core import ci_precedence, ci_sources, import_changes
 
 DEVICES_PATH = "/api/dcim/devices/"
 VMS_PATH = "/api/virtualization/virtual-machines/"
@@ -715,6 +715,8 @@ def _upsert(mapped, tenant_id, summary):
         ci_sources.mark(ci, [*HARDWARE_FIELDS, "ci_class", *(
             field for field in ("operational_status", "lifecycle_state", "environment") if mapped.get(field))],
             "netbox")
+        ci_precedence.apply_field_mappings(ci, "netbox")
+        ci_precedence.arbitrate(ci, before, "netbox", summary)
         summary["cis_updated"] += 1
         if matched_by_serial:
             summary["cis_matched_by_serial"] += 1
@@ -736,6 +738,7 @@ def _upsert(mapped, tenant_id, summary):
         ci_sources.mark(ci, [*HARDWARE_FIELDS, "ci_class", *(
             field for field in ("operational_status", "lifecycle_state", "environment") if mapped.get(field))],
             "netbox")
+        ci_precedence.apply_field_mappings(ci, "netbox")
         db.session.add(ci)
         summary["cis_created"] += 1
         import_changes.record_create(summary, ci)

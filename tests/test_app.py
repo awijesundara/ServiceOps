@@ -9233,8 +9233,10 @@ def test_cmdb_manager_denied_update_without_explicit_grant(client, app):
         db.session.commit()
         ci_id = ConfigurationItem.query.filter_by(name="update-target-01").one().id
     login(client, "database.manager", "Manager123!")
+    # Without an update grant the CI is shown read-only, and saving is refused.
     get_response = client.get(f"/cmdb/{ci_id}/edit")
-    assert get_response.status_code == 403
+    assert get_response.status_code == 200
+    assert b"View only" in get_response.data and b"Save changes" not in get_response.data
     post_response = client.post(f"/cmdb/{ci_id}/edit", data={
         "name": "update-target-01", "ci_class": "Printer",
         "environment": "Production", "operational_status": "Operational",

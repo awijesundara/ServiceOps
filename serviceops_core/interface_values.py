@@ -98,6 +98,7 @@ VALUES = (
     translatable('Delivered'),
     translatable('Department'),
     translatable('Depends on'),
+    translatable('Description'),
     translatable('Discord'),
     translatable('Dismissed'),
     translatable('Done'),

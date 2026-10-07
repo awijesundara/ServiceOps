@@ -35,7 +35,9 @@ def parse_command(question):
 
 def _config_for_scan(config):
     return SimpleNamespace(detect_personal=True, detect_credentials=True, detect_financial=True,
-                           sensitive_terms=getattr(config, "sensitive_terms", "") if config else "")
+                           sensitive_terms=getattr(config, "sensitive_terms", "") if config else "",
+                           sensitive_patterns=getattr(config, "sensitive_patterns", "") if config else "",
+                           safe_patterns=getattr(config, "safe_patterns", "") if config else "")
 
 
 def notes_for(scope):

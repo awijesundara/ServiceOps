@@ -68,6 +68,10 @@
           <label class="aiadm-switch"><input type="checkbox" name="detect_financial" {% if not config or config.detect_financial %}checked{% endif %} data-ai-live><span><strong>{{ tr('Payment and bank numbers') }}</strong><small>{{ tr('Card numbers and bank account numbers.') }}</small></span></label>
           <label class="aiadm-field" for="ai-terms"><strong>{{ tr('Your own sensitive words') }}</strong><small>{{ tr('One per line. A request that mentions any of them stays private.') }}</small></label>
           <textarea id="ai-terms" name="sensitive_terms" rows="3" maxlength="4000" placeholder="{{ tr('payroll acquisition') }}" data-ai-live>{{ config.sensitive_terms if config else '' }}</textarea>
+          <label class="aiadm-field" for="ai-patterns"><strong>{{ tr('Sensitive patterns') }}</strong><small>{{ tr('Regular expressions, one per line. A request matching any of them stays private, for example employee numbers such as EMP-123456.') }}</small></label>
+          <textarea id="ai-patterns" name="sensitive_patterns" rows="3" maxlength="12000" spellcheck="false" placeholder="EMP-\d{6}" data-ai-live>{{ config.sensitive_patterns if config else '' }}</textarea>
+          <label class="aiadm-field" for="ai-safe-patterns"><strong>{{ tr('Not sensitive') }}</strong><small>{{ tr('Regular expressions, one per line, for text that only looks sensitive, such as your own support number or mail domain. Matching text is ignored by the checks above.') }}</small></label>
+          <textarea id="ai-safe-patterns" name="safe_patterns" rows="3" maxlength="12000" spellcheck="false" placeholder="{{ tr('support@example\.com') }}" data-ai-live>{{ config.safe_patterns if config else '' }}</textarea>
         </div>
       </div>
       <div class="aiadm-tester" data-ai-tester>

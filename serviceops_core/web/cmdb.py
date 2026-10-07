@@ -30,6 +30,7 @@ from app import (
     parse_form_date,
     parse_list_filter_param,
     require_action,
+    require_install_settings_authority,
     resolve_endpoint_addresses_safely,
     roles,
     setting_bool,
@@ -46,7 +47,7 @@ from serviceops_core.ci_class_policy import (
 from serviceops_core.dns_lookup import resolve_hostname, resolve_ip
 from serviceops_core.dns_pin import pin_resolved_addresses
 from serviceops_core.feature_flags import feature_enabled
-from serviceops_core import ci_sources
+from serviceops_core import ci_precedence, ci_sources
 from serviceops_core.web.common import (
     _ci_attributes_from_form,
     _ci_duplicate_of,
@@ -68,6 +69,7 @@ from serviceops_models import (
     DiscoveryTarget,
     IntegrationSyncJob,
     now,
+    PlatformSetting,
     Rack,
     SupportGroup,
     TaskHistory,
@@ -370,6 +372,10 @@ def register(app):
             audit("create", "CI", ci.name)
             db.session.commit()
             flash(tr("{name} created.", name=ci.name), "success")
+            role = current_user.effective_role
+            if (ci_class_action_allowed(current_user.tenant_id, ci.ci_class, role, "update")
+                    or ci_class_read_allowed(current_user.tenant_id, ci.ci_class, role)):
+                return redirect(url_for("ci_edit", ci_id=ci.id))
             return redirect(url_for("cmdb"))
         support_groups = core.team_groups().all()
         racks = tenant_query(Rack).filter_by(active=True).order_by(Rack.name).all()
@@ -379,9 +385,14 @@ def register(app):
     @roles("agent", "manager", "admin")
     def ci_edit(ci_id):
         ci = tenant_record_or_404(ConfigurationItem, ci_id)
-        if not ci_class_action_allowed(
+        # Anyone who may read the CI sees every detail; only an update grant
+        # allows saving (and implies read).
+        can_update = ci_class_action_allowed(
             current_user.tenant_id, ci.ci_class, current_user.effective_role, "update",
-        ):
+        )
+        if not can_update and not ci_class_read_allowed(current_user.tenant_id, ci.ci_class, current_user.effective_role):
+            abort(403, description=tr("You are not permitted to view {ci_class} configuration items.", ci_class=ci.ci_class))
+        if request.method == "POST" and not can_update:
             abort(403, description=tr("You are not permitted to edit {ci_class} configuration items.", ci_class=ci.ci_class))
         if request.method == "POST":
             name = request.form["name"].strip()
@@ -444,7 +455,7 @@ def register(app):
             audit("update", "CI", ci.name)
             db.session.commit()
             flash(tr("{name} updated.", name=ci.name), "success")
-            return redirect(url_for("cmdb"))
+            return redirect(url_for("ci_edit", ci_id=ci.id))
         owners = tenant_query(User).filter_by(active=True).order_by(User.name).all()
         support_groups = core.team_groups().all()
         # Keep the CI's current owner selectable even when it is not a listed team.
@@ -495,7 +506,7 @@ def register(app):
             source_groups=source_groups, editable_attributes=editable_attributes,
             field_source=lambda field: ci_sources.label(ci, field),
             impacted_cis=impacted_cis, lldp_neighbor_cis=lldp_neighbor_cis,
-            network_connections=network_connections,
+            network_connections=network_connections, read_only=not can_update,
         )
 
     @app.route("/cmdb/import", methods=["GET", "POST"])
@@ -671,7 +682,52 @@ def register(app):
             snipeit_import_ready=snipeit_ready, snipeit_import_expires=_preview_expires(snipeit_ready),
             snipeit_last_import=_last_import("snipeit"),
             snipeit_probe=snipeit_probe, snipeit_probe_error=snipeit_probe_error,
+            **_source_rules_context(),
         )
+
+    def _source_rules_context():
+        """Source priority and field-mapping choices for the import page. The
+        remote field lists are the source attributes already stored on CIs, so
+        building them needs no call to NetBox or Snipe-IT."""
+        remote_fields = {}
+        for source, prefix in ci_precedence.MAPPABLE_SOURCES.items():
+            names = set()
+            for (attributes,) in tenant_query(ConfigurationItem).filter(
+                ConfigurationItem.external_source == source,
+            ).with_entities(ConfigurationItem.attributes).limit(500):
+                names.update(key[len(prefix):] for key in (attributes or {}) if key.startswith(prefix))
+            remote_fields[source] = sorted(names, key=str.casefold)[:300]
+        return dict(
+            source_order=ci_precedence.precedence(), source_options=ci_precedence.SOURCES,
+            source_labels=ci_sources.SOURCE_LABELS, mappable_fields=ci_precedence.MAPPABLE_FIELDS,
+            mapping_sources=[(source, ci_sources.SOURCE_LABELS[source]) for source in ci_precedence.MAPPABLE_SOURCES],
+            field_mappings=ci_precedence.field_mappings(), remote_fields=remote_fields,
+        )
+
+    @app.route("/cmdb/import/source-rules", methods=["POST"])
+    @roles("admin")
+    @require_action("configure")
+    def cmdb_source_rules():
+        require_install_settings_authority()
+        order = request.form.getlist("precedence")
+        if sorted(order) != sorted(ci_precedence.SOURCES):
+            flash(tr("List each source exactly once."), "error")
+            return redirect(url_for("cmdb_import") + "#source-rules")
+        mappings = {}
+        for source in ci_precedence.MAPPABLE_SOURCES:
+            for field in ci_precedence.MAPPABLE_FIELDS:
+                remote = request.form.get(f"map_{source}_{field}", "").strip()[:200]
+                if remote:
+                    mappings.setdefault(source, {})[field] = remote
+        for key, value in (("CMDB_SOURCE_PRECEDENCE", ",".join(order)),
+                           ("CMDB_FIELD_MAPPINGS", json.dumps(mappings, sort_keys=True, separators=(",", ":")))):
+            row = db.session.get(PlatformSetting, key) or PlatformSetting(key=key)
+            db.session.add(row)
+            row.value, row.encrypted, row.updated_by_id = value, False, current_user.id
+        audit("configure", "CMDB source rules", f"priority={','.join(order)}; mappings={json.dumps(mappings, sort_keys=True)}")
+        db.session.commit()
+        flash(tr("Source rules saved. They apply from the next import."), "success")
+        return redirect(url_for("cmdb_import") + "#source-rules")
 
     def _queue_sync(integration, anchor):
         label, lock_offset, _, flag = inventory_syncs[integration]
@@ -873,7 +929,7 @@ def register(app):
                 audit("update", "Rack", rack.name)
                 db.session.commit()
                 flash(tr("{name} updated.", name=rack.name), "success")
-                return redirect(url_for("rack_list"))
+                return redirect(url_for("rack_edit", rack_id=rack.id))
         return render_template("rack_form.html", rack=rack)
 
     @app.post("/cmdb/racks/<int:rack_id>/delete")

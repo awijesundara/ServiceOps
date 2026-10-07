@@ -73,16 +73,6 @@ def _save(group, is_new):
         duplicate = duplicate.filter(SupportGroup.id != group.id)
     if duplicate.first():
         return tr("A group with that name already exists.")
-    for entry in directory_names:
-        taken = DirectoryGroupMapping.query.join(SupportGroup).filter(
-            SupportGroup.tenant_id == current_user.tenant_id,
-            DirectoryGroupMapping.active.is_(True),
-            func.lower(DirectoryGroupMapping.directory_group) == entry.casefold(),
-            DirectoryGroupMapping.support_group_id != (group.id or -1),
-        ).first()
-        if taken:
-            return tr("{entry} is already mapped to {name}.", entry=entry, name=taken.support_group.name)
-
     before = "" if is_new else (
         f"{group.name}; {group.group_type}; active={group.active}; roles={group.access_roles or 'none'}"
     )
@@ -103,17 +93,8 @@ def _save(group, is_new):
     for key, mapping in existing.items():
         mapping.active = key in wanted
     for key, entry in wanted.items():
-        if key in existing:
-            continue
-        # A disabled mapping of this AD group to another group is retained for
-        # audit; the unique (tenant, AD group) row moves to this group.
-        retained = DirectoryGroupMapping.query.filter(
-            DirectoryGroupMapping.tenant_id == group.tenant_id,
-            func.lower(DirectoryGroupMapping.directory_group) == key,
-        ).first()
-        if retained:
-            retained.support_group_id, retained.active, retained.directory_group = group.id, True, entry
-        else:
+        if key not in existing:
+            # The same AD group may also map to other groups.
             db.session.add(DirectoryGroupMapping(
                 directory_group=entry, support_group_id=group.id, tenant_id=group.tenant_id,
             ))
@@ -163,7 +144,7 @@ def register(app):
                 return render_form(group, error)
             db.session.commit()
             flash(tr("Group {name} created.", name=group.name), "success")
-            return redirect(url_for("groups"))
+            return redirect(url_for("group_edit", group_id=group.id))
         return render_form(group)
 
     @app.route("/admin/groups/<int:group_id>", methods=["GET", "POST"])
@@ -181,7 +162,7 @@ def register(app):
                 return render_form(group, error)
             db.session.commit()
             flash(tr("Group {name} updated.", name=group.name), "success")
-            return redirect(url_for("groups"))
+            return redirect(url_for("group_edit", group_id=group.id))
         return render_form(group)
 
     @app.route("/admin/groups/<int:group_id>/delete", methods=["POST"])

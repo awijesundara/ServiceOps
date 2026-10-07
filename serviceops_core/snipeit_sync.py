@@ -29,7 +29,7 @@ from datetime import date
 
 import requests
 
-from serviceops_core import ci_sources, import_changes
+from serviceops_core import ci_precedence, ci_sources, import_changes
 from serviceops_core.netbox_sync import _close, _write_ca_bundle
 from serviceops_core.localization import tr
 
@@ -603,7 +603,8 @@ def _upsert(mapped, tenant_id, summary, used_names, user_cache, rack_cache=None)
 
     if ci:
         before = import_changes.snapshot(ci)
-        netbox_owned = ci.external_source == "netbox"
+        # NetBox keeps hardware and status only while it outranks Snipe-IT.
+        netbox_owned = ci.external_source == "netbox" and ci_precedence.outranks("netbox", "snipeit")
         written = []
         if netbox_owned:
             # NetBox stays the source of truth for hardware and status.
@@ -633,6 +634,8 @@ def _upsert(mapped, tenant_id, summary, used_names, user_cache, rack_cache=None)
         preserved = {key: value for key, value in (ci.attributes or {}).items()
                      if not key.startswith(ATTRIBUTE_PREFIX)}
         ci.attributes = {**preserved, **mapped["attributes"]}
+        ci_precedence.apply_field_mappings(ci, "snipeit")
+        ci_precedence.arbitrate(ci, before, "snipeit", summary)
         used_names.add(ci.name.casefold())
         summary["cis_updated"] += 1
         if matched_by_serial:
@@ -659,6 +662,7 @@ def _upsert(mapped, tenant_id, summary, used_names, user_cache, rack_cache=None)
     ci_sources.mark(ci, ["name", "ci_class", "operational_status", "lifecycle_state", "serial_number", "vendor",
                          "model", "ip_address", "location", "install_date", "warranty_expiry_date", "owner_id",
                          *written], "snipeit")
+    ci_precedence.apply_field_mappings(ci, "snipeit")
     db.session.add(ci)
     summary["cis_created"] += 1
     import_changes.record_create(summary, ci)

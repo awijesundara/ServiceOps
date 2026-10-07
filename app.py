@@ -6135,6 +6135,15 @@ def merge_support_group_into(source, target):
     if source.id == target.id:
         return 0
     moved = 0
+    # An AD group mapped to both teams keeps the target's mapping only.
+    target_groups = {
+        m.directory_group.casefold()
+        for m in DirectoryGroupMapping.query.filter_by(support_group_id=target.id)
+    }
+    for mapping in DirectoryGroupMapping.query.filter_by(support_group_id=source.id).all():
+        if mapping.directory_group.casefold() in target_groups:
+            db.session.delete(mapping)
+    db.session.flush()
     for model, field in SUPPORT_GROUP_FK_MODELS:
         column = getattr(model, field)
         moved += model.query.filter(column == source.id).update(
