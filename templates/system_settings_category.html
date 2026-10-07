@@ -13,10 +13,6 @@
 {% else %}
 <form method="post" enctype="multipart/form-data" class="settings-content">
   <section class="panel settings-section">
-    {% if has_company_logo_field %}
-    <div class="panel-head"><div></div>{% if has_company_logo %}<img class="settings-logo-preview" src="{{ url_for('company_logo') }}" alt="{{ tr('Current company logo') }}">{% endif %}</div>
-    <label>{{ tr('Upload replacement PNG') }}<input type="file" name="company_logo" accept="image/png"></label>
-    {% else %}
     <div class="settings-grid">
     {% for setting in definitions if not setting.managed %}
       <label class="setting-field {% if setting.type in ['json','text'] and setting.key|length > 20 %}wide{% endif %}">
@@ -36,8 +32,13 @@
       </label>
     {% endfor %}
     </div>
-    {% endif %}
   </section>
+  {% if has_company_logo_field %}
+  <section class="panel settings-section" id="company-logo">
+    <div class="panel-head"><div><h2>{{ tr('Company logo') }}</h2><p class="muted">{{ tr('PNG only, maximum 5 MB. Recommended transparent canvas, up to 600 × 200 px. Shown in the header and on the sign-in and status pages.') }}</p></div>{% if has_company_logo %}<img class="settings-logo-preview" src="{{ url_for('company_logo') }}" alt="{{ tr('Current company logo') }}">{% endif %}</div>
+    <label>{{ tr('Upload replacement PNG') if has_company_logo else tr('Upload PNG') }}<input type="file" name="company_logo" accept="image/png"></label>
+  </section>
+  {% endif %}
   <div class="settings-save"><div><strong>{{ tr('Audited change') }}</strong><small>{{ tr('Review authentication carefully before saving.') }}</small></div><button class="primary">{{ tr('Validate and save settings') }}</button></div>
 </form>
 {% endif %}

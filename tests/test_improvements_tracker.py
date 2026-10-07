@@ -97,11 +97,57 @@ def test_saving_a_group_stays_on_the_group(client, app):
 
 
 # 9 -------------------------------------------------------------------------
-def test_company_logo_page_is_linked_and_accepts_a_png(client, app):
+def test_company_logo_is_uploaded_on_the_organization_page(client, app):
     login(client)
-    assert "/admin/settings/branding" in client.get("/admin/section/platform-security").get_data(as_text=True)
-    page = client.get("/admin/settings/branding")
-    assert page.status_code == 200 and 'name="company_logo"' in page.get_data(as_text=True)
+    page = client.get("/admin/settings/organization").get_data(as_text=True)
+    assert 'name="company_logo"' in page and 'id="company-logo"' in page
+    assert client.get("/admin/settings/branding").headers["Location"].endswith("/admin/settings/organization#company-logo")
+    import io
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 32
+    response = client.post("/admin/settings/organization", data={"company_logo": (io.BytesIO(png), "logo.png")},
+                           content_type="multipart/form-data")
+    assert response.status_code == 302
+    assert 'class="settings-logo-preview"' in client.get("/admin/settings/organization").get_data(as_text=True)
+
+
+def test_team_aliases_are_managed_on_the_team_managers_page(client):
+    login(client)
+    page = client.get("/service-operations/settings/team-managers").get_data(as_text=True)
+    assert 'id="team-aliases"' in page and "add_support_group_alias" in page and "set_manager" in page
+    assert client.get("/service-operations/settings/team-aliases").headers["Location"].endswith(
+        "/service-operations/settings/team-managers#team-aliases")
+
+
+def test_recovery_set_is_set_up_from_system_health(client, app):
+    from app import MonitoringSource
+    login(client)
+    page = client.get("/admin/system-health").get_data(as_text=True)
+    assert "Set up the recovery set" in page
+    with app.app_context():
+        team_id = SupportGroup.query.filter_by(name="Unix").one().id
+    response = client.post("/admin/system-health/recovery-setup", data={
+        "rpo_hours": "12", "deployment": "kubernetes", "group_id": team_id})
+    assert response.status_code == 302
+    page = client.get("/admin/system-health").get_data(as_text=True)
+    assert "SERVICEOPS_MONITORING_TOKEN=" in page and "backup.alertingSecret" in page
+    token = page.split("SERVICEOPS_MONITORING_TOKEN='")[1].split("'")[0]
+    with app.app_context():
+        source = MonitoringSource.query.filter_by(name="Backup reporter", active=True).one()
+        source_id = source.source_id
+        assert app_module.setting_int("BACKUP_RPO_HOURS", 24) == 12
+    # The token is shown once only, and really records backups.
+    assert token not in client.get("/admin/system-health").get_data(as_text=True)
+    reported = client.post(f"/api/v1/monitoring/{source_id}/backup-report", json={
+        "manifest": "/backups/x.dump", "offsite": "not-configured"}, headers={"Authorization": f"Bearer {token}"})
+    assert reported.status_code == 201
+    assert "Current" in client.get("/admin/system-health").get_data(as_text=True)
+    # Replacing the token revokes the old one.
+    client.post("/admin/system-health/recovery-setup", data={"rpo_hours": "12", "deployment": "compose",
+                                                             "group_id": team_id})
+    assert client.post(f"/api/v1/monitoring/{source_id}/backup-report", json={
+        "manifest": "x", "offsite": "archived"}, headers={"Authorization": f"Bearer {token}"}).status_code == 401
+    assert client.post("/admin/system-health/recovery-setup", data={
+        "rpo_hours": "0", "deployment": "compose", "group_id": team_id}).status_code == 400
 
 
 # 11 ------------------------------------------------------------------------

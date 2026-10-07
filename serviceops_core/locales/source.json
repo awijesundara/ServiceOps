@@ -730,6 +730,9 @@
    "id": "Affected CIs and impacted services"
   },
   {
+   "id": "After each successful backup, have your backup script report it:"
+  },
+  {
    "id": "Agent"
   },
   {
@@ -1060,6 +1063,9 @@
   },
   {
    "id": "Assign actions need the numeric team or agent ID; set_status/set_priority need an exact status/priority value ({statuses} / {priorities}); notify actions post the value as the message."
+  },
+  {
+   "id": "Assign team managers and the alternate names that resolve to each team"
   },
   {
    "id": "Assigned assets"
@@ -1709,6 +1715,9 @@
    "id": "Change primary CI"
   },
   {
+   "id": "Change recovery set settings or replace the reporting token"
+  },
+  {
    "id": "Change request"
   },
   {
@@ -1811,6 +1820,9 @@
   },
   {
    "id": "Choose a valid {label}."
+  },
+  {
+   "id": "Choose an active team to receive backup failure alerts."
   },
   {
    "id": "Choose an organization-wide operational feed or one support group's chat room. Users add private destinations in their own preferences."
@@ -2022,10 +2034,10 @@
    "id": "Companies and customer accounts supported by SysOps."
   },
   {
-   "id": "Company identity, support contact, and instance naming"
+   "id": "Company identity and logo, support contact, and instance naming"
   },
   {
-   "id": "Company identity, support contact, and instance-wide naming."
+   "id": "Company identity and logo, support contact, and instance-wide naming."
   },
   {
    "id": "Company logo"
@@ -2374,6 +2386,9 @@
    "id": "Create a contact first"
   },
   {
+   "id": "Create a new backup reporting token? The previous one stops working."
+  },
+  {
    "id": "Create a tour"
   },
   {
@@ -2434,6 +2449,9 @@
    "id": "Create record"
   },
   {
+   "id": "Create reporting token"
+  },
+  {
    "id": "Create schedule"
   },
   {
@@ -2444,6 +2462,9 @@
   },
   {
    "id": "Create tenant"
+  },
+  {
+   "id": "Create the secret, then enable the chart backup job with it:"
   },
   {
    "id": "Create ticket"
@@ -2512,6 +2533,9 @@
   },
   {
    "id": "Current release"
+  },
+  {
+   "id": "Current reporter created {created_at}; last report {seen}."
   },
   {
    "id": "Current stage"
@@ -2951,6 +2975,9 @@
   },
   {
    "id": "Display name"
+  },
+  {
+   "id": "Docker Compose"
   },
   {
    "id": "Documentation"
@@ -3688,6 +3715,9 @@
    "javascript": true
   },
   {
+   "id": "Give these to the backup job"
+  },
+  {
    "id": "Go to scheduled automation"
   },
   {
@@ -3783,9 +3813,6 @@
   },
   {
    "id": "Groups"
-  },
-  {
-   "id": "Groups & team ownership"
   },
   {
    "id": "Groups, their AD/LDAP groups and the access they grant"
@@ -4471,6 +4498,9 @@
    "id": "Known errors · {instance_name}"
   },
   {
+   "id": "Kubernetes (Helm chart backup job)"
+  },
+  {
    "id": "Kubo node (self-hosted)"
   },
   {
@@ -4860,9 +4890,6 @@
    "id": "Manage role permissions for this organization. Reset a role to restore its recommended defaults."
   },
   {
-   "id": "Manage support groups, team managers, and workspace access"
-  },
-  {
    "id": "Manage team members. Directory-managed memberships are marked."
   },
   {
@@ -4942,6 +4969,9 @@
   },
   {
    "id": "Matching:"
+  },
+  {
+   "id": "Maximum backup age (RPO, hours)"
   },
   {
    "id": "Maximum results."
@@ -6411,6 +6441,9 @@
    "id": "PLATFORM ANALYTICS"
   },
   {
+   "id": "PNG only, maximum 5 MB. Recommended transparent canvas, up to 600 × 200 px. Shown in the header and on the sign-in and status pages."
+  },
+  {
    "id": "PROBLEM MANAGEMENT"
   },
   {
@@ -7020,6 +7053,9 @@
    "id": "RITM comment added"
   },
   {
+   "id": "RPM / server install"
+  },
+  {
    "id": "RPO {backup_rpo_hours}h"
   },
   {
@@ -7259,6 +7295,9 @@
   },
   {
    "id": "Recovery set"
+  },
+  {
+   "id": "Recovery set reporting is set up. Copy the token now: it is not shown again."
   },
   {
    "id": "Recurring automation for selected tickets"
@@ -8027,9 +8066,6 @@
    "id": "STALE / DOWN"
   },
   {
-   "id": "Safely merge historical or imported team-name spellings"
-  },
-  {
    "id": "Same model"
   },
   {
@@ -8058,6 +8094,9 @@
   },
   {
    "id": "Save alias"
+  },
+  {
+   "id": "Save and replace token"
   },
   {
    "id": "Save as view"
@@ -8712,6 +8751,9 @@
    "id": "ServiceOps personal notification test"
   },
   {
+   "id": "ServiceOps records each successful backup your backup job reports. This creates the credential that job uses, sets how old the latest backup may be, and shows the exact command to run. Replacing the token stops the old one from working."
+  },
+  {
    "id": "ServiceOps team"
   },
   {
@@ -8764,6 +8806,9 @@
   },
   {
    "id": "Set type"
+  },
+  {
+   "id": "Set up the recovery set"
   },
   {
    "id": "Settings"
@@ -9348,6 +9393,9 @@
    "id": "Team"
   },
   {
+   "id": "Team alerted when a backup fails"
+  },
+  {
    "id": "Team and agent IDs for assign actions"
   },
   {
@@ -9358,6 +9406,9 @@
   },
   {
    "id": "Team manager"
+  },
+  {
+   "id": "Team managers & aliases"
   },
   {
    "id": "Team membership is assigned automatically from your Active Directory group and cannot be changed here."
@@ -9708,6 +9759,9 @@
    "id": "The records the assistant relied on appear here when the answer is complete."
   },
   {
+   "id": "The recovery point objective must be between 1 and 168 hours."
+  },
+  {
    "id": "The requested ticket was not found."
   },
   {
@@ -9984,6 +10038,9 @@
    "id": "Toggle navigation"
   },
   {
+   "id": "Token (shown once)"
+  },
+  {
    "id": "Token issued for one monitoring source."
   },
   {
@@ -10226,13 +10283,13 @@
    "id": "Upload CSV file"
   },
   {
+   "id": "Upload PNG"
+  },
+  {
    "id": "Upload a CSV, paste CSV text, or point at a published Google Sheet (File → Share → Publish to web, or a link shared as \"Anyone with the link can view\")."
   },
   {
    "id": "Upload replacement PNG"
-  },
-  {
-   "id": "Upload the PNG logo shown in the header, sign-in and status pages"
   },
   {
    "id": "Uptime"
@@ -10252,6 +10309,9 @@
   {
    "id": "Use",
    "javascript": true
+  },
+  {
+   "id": "Use \"archived\" instead of \"not-configured\" once the backup is also copied off the server."
   },
   {
    "id": "Use Close to complete it, or Reopen to make other changes."
@@ -10625,6 +10685,9 @@
   },
   {
    "id": "When you have more than one service, this decides which one answers."
+  },
+  {
+   "id": "Where ServiceOps runs"
   },
   {
    "id": "Where to change it"
@@ -11251,6 +11314,9 @@
   },
   {
    "id": "name, serial, manufacturer, model, location, purchase date, warranty expiry, status, lifecycle, class and owner. A returned (checked-in) asset loses its owner."
+  },
+  {
+   "id": "never"
   },
   {
    "id": "nightly snapshots, last 30 days"

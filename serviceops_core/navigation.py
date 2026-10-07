@@ -53,8 +53,7 @@ NAVIGATION_ENTRIES = (
     NavigationEntry("Scheduled automation", "Recurring workflow interval schedule", "workflows_scheduled", minimum_role="admin"),
     NavigationEntry("Ticket defaults", "Default priority category Service configuration", "itil_admin_section", {"section": "ticket-defaults"}, "admin"),
     NavigationEntry("Catalog routing", "Fulfillment team catalog items Service configuration", "itil_admin_section", {"section": "catalog"}, "admin"),
-    NavigationEntry("Team aliases", "Support group name aliases People access", "itil_admin_section", {"section": "team-aliases"}, "admin"),
-    NavigationEntry("Team managers", "Support group manager assignment People access", "itil_admin_section", {"section": "team-managers"}, "admin"),
+    NavigationEntry("Team managers", "Support group manager assignment team name aliases People access", "itil_admin_section", {"section": "team-managers"}, "admin"),
     NavigationEntry("Governance groups", "CCB executive approval group setup People access", "itil_admin_section", {"section": "governance-groups"}, "admin"),
     NavigationEntry("Change approval policy", "Normal Standard change authorization Service configuration", "itil_admin_section", {"section": "change-approval-policy"}, "admin"),
     NavigationEntry("Change Control Board", "CCB membership approval Service configuration", "itil_admin_section", {"section": "ccb"}, "admin"),
@@ -90,13 +89,10 @@ def navigation_entries(setting_group_meta):
                 minimum_role="admin",
             ))
         else:
+            if category == "organization":
+                description += " Company logo PNG branding image upload"
             setting_entries.append(NavigationEntry(
                 label, f"{description} Administration", "system_settings_category",
                 {"category": category}, "admin",
             ))
-    # Not a SETTING_DEFINITIONS group, but its own settings page all the same.
-    setting_entries.append(NavigationEntry(
-        "Company logo", "Upload company logo PNG branding image Administration", "system_settings_category",
-        {"category": "branding"}, "admin",
-    ))
     return NAVIGATION_ENTRIES + tuple(setting_entries)

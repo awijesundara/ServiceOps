@@ -157,7 +157,7 @@ ITIL_ADMIN_SECTIONS = {
     "ticket-defaults": ("Ticket defaults", "Initial priority for new tickets and parent/child incident state sync."),
     "catalog": ("Catalog and fulfillment routing", "Service catalog items and which team fulfills each one by default."),
     "team-aliases": ("Team name aliases", "Historical/imported team name spellings that safely merge into one canonical team."),
-    "team-managers": ("Team managers", "The named manager who holds change-approval authority for each team."),
+    "team-managers": ("Team managers and aliases", "The named manager who holds change-approval authority for each team, and the alternate names that resolve to it."),
     "executive-approval": ("Executive approval", "Choose executive approvers for Normal and Emergency changes."),
     "governance-groups": ("Governance groups", "Review accountable groups, their type, manager, and current membership."),
     "change-approval-policy": ("Change approval policy", "Which CMDB environment names require Change Control Board approval."),

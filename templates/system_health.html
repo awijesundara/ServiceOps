@@ -57,6 +57,37 @@
   {% else %}
   <p class="muted">{{ tr('Last recorded backup: {last_backup_at} · offsite status: {backup_offsite} · within the {backup_rpo_hours}-hour RPO.', last_backup_at=(last_backup_at|usertime('%Y-%m-%d %H:%M:%S')), backup_offsite=(backup_offsite), backup_rpo_hours=(backup_rpo_hours)) }}</p>
   {% endif %}
+  {% if backup_setup %}
+  <div class="backup-setup-result">
+    <h3>{{ tr('Give these to the backup job') }}</h3>
+    <p>{{ tr('Source ID') }}: <code>{{ backup_setup.source_id }}</code><br>{{ tr('Token (shown once)') }}: <code>{{ backup_setup.token }}</code></p>
+    {% if backup_setup.deployment == 'kubernetes' %}
+    <p>{{ tr('Create the secret, then enable the chart backup job with it:') }}</p>
+    <pre>kubectl -n operations create secret generic serviceops-backup-reporting \
+  --from-literal=SERVICEOPS_MONITORING_SOURCE_ID={{ backup_setup.source_id }} \
+  --from-literal=SERVICEOPS_MONITORING_TOKEN='{{ backup_setup.token }}'
+helm upgrade serviceops charts/serviceops -n operations --reuse-values \
+  --set backup.enabled=true --set backup.alertingSecret=serviceops-backup-reporting</pre>
+    {% else %}
+    <p>{{ tr('After each successful backup, have your backup script report it:') }}</p>
+    <pre>curl -fsS -X POST {{ backup_setup.base_url }}/api/v1/monitoring/{{ backup_setup.source_id }}/backup-report \
+  -H 'Authorization: Bearer {{ backup_setup.token }}' -H 'Content-Type: application/json' \
+  -d '{"manifest":"/backups/serviceops-$(date +%F).dump","offsite":"not-configured"}'</pre>
+    <p class="muted">{{ tr('Use "archived" instead of "not-configured" once the backup is also copied off the server.') }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+  <details class="backup-setup" {% if not backup_healthy and not backup_setup %}open{% endif %}>
+    <summary>{{ tr('Set up the recovery set') if not backup_reporter else tr('Change recovery set settings or replace the reporting token') }}</summary>
+    <p class="muted">{{ tr('ServiceOps records each successful backup your backup job reports. This creates the credential that job uses, sets how old the latest backup may be, and shows the exact command to run. Replacing the token stops the old one from working.') }}</p>
+    <form method="post" action="{{ url_for('recovery_setup') }}" class="form-grid" {% if backup_reporter %}data-confirm="{{ tr('Create a new backup reporting token? The previous one stops working.') }}"{% endif %}>
+      <label>{{ tr('Maximum backup age (RPO, hours)') }}<input type="number" name="rpo_hours" min="1" max="168" value="{{ backup_rpo_hours }}" required></label>
+      <label>{{ tr('Where ServiceOps runs') }}<select name="deployment"><option value="kubernetes">{{ tr('Kubernetes (Helm chart backup job)') }}</option><option value="compose">{{ tr('Docker Compose') }}</option><option value="rpm">{{ tr('RPM / server install') }}</option></select></label>
+      <label>{{ tr('Team alerted when a backup fails') }}<select name="group_id" required>{% for team in backup_teams %}<option value="{{ team.id }}" {% if backup_reporter and backup_reporter.assignment_group_id == team.id %}selected{% endif %}>{{ team.name }}</option>{% endfor %}</select></label>
+      <div class="wide actions"><button class="primary">{{ tr('Create reporting token') if not backup_reporter else tr('Save and replace token') }}</button></div>
+    </form>
+    {% if backup_reporter %}<p class="muted">{{ tr('Current reporter created {created_at}; last report {seen}.', created_at=(backup_reporter.created_at|usertime('%Y-%m-%d %H:%M')), seen=(backup_reporter.last_seen_at|usertime('%Y-%m-%d %H:%M') if backup_reporter.last_seen_at else tr('never'))) }}</p>{% endif %}
+  </details>
 </section>
 
 <section class="list-workspace" style="margin-top:20px" id="application-errors">
