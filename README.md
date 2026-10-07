@@ -9,7 +9,7 @@ infrastructure.
 [![Code size](https://img.shields.io/github/languages/code-size/awijesundara/ServiceOps)](https://github.com/awijesundara/ServiceOps)
 [![Supply chain](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml/badge.svg)](https://github.com/awijesundara/ServiceOps/actions/workflows/supply-chain.yml)
 [![CodeQL](https://github.com/awijesundara/ServiceOps/actions/workflows/codeql.yml/badge.svg)](https://github.com/awijesundara/ServiceOps/actions/workflows/codeql.yml)
-[![Version](https://img.shields.io/badge/version-1.112.4-003E4C)](VERSION)
+[![Version](https://img.shields.io/badge/version-1.113.0-003E4C)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.14-3776AB?logo=python&logoColor=white)](Dockerfile)
 [![Docker](https://img.shields.io/badge/docker-compose%20%7C%20kubernetes-2496ED?logo=docker&logoColor=white)](#deploy)
 [![PostgreSQL](https://img.shields.io/badge/database-postgresql-4169E1?logo=postgresql&logoColor=white)](#architecture)
