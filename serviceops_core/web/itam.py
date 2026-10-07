@@ -9,7 +9,8 @@ from sqlalchemy import or_
 from app import (
     ConfigurationItem, User, audit, db, roles, tenant_query, tenant_record_or_404,
 )
-from serviceops_core.itam.registry import RESOURCES, display, parse_value
+from serviceops_core.itam.registry import RESOURCES, display, parse_value, readable_cis
+from serviceops_core.ci_class_policy import restrict_ci_query_to_readable_classes
 from serviceops_core.localization import tr
 
 LIST_LIMIT = 500
@@ -38,7 +39,9 @@ def _choices(resource):
             options[spec.name] = [(user.id, user.name) for user in tenant_query(User).filter(
                 User.active.is_(True)).order_by(User.name).limit(LIST_LIMIT)]
         elif spec.kind == "cis":
-            options[spec.name] = [(ci.id, ci.name) for ci in tenant_query(ConfigurationItem).order_by(
+            query = restrict_ci_query_to_readable_classes(
+                tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role)
+            options[spec.name] = [(ci.id, ci.name) for ci in query.order_by(
                 ConfigurationItem.name).limit(2000)]
     return options
 
@@ -58,6 +61,10 @@ def _apply(resource, record):
     if errors:
         return errors
     for name, value in values.items():
+        if resource.field(name).kind == "cis" and record.id:
+            existing = getattr(record, name)
+            visible_ids = {ci.id for ci in readable_cis(existing)}
+            value = value + [ci for ci in existing if ci.id not in visible_ids]
         setattr(record, name, value)
     return []
 

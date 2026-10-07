@@ -61,6 +61,23 @@ class ResourceType:
 RESOURCES = {}
 
 
+def readable_cis(cis):
+    """Use the CMDB policy for linked CI names as well as selection options."""
+    from flask_login import current_user
+    from serviceops_core.ci_class_policy import unreadable_ci_classes
+
+    denied = unreadable_ci_classes(current_user.tenant_id, current_user.effective_role)
+    return [ci for ci in cis if ci.tenant_id == current_user.tenant_id and ci.ci_class not in denied]
+
+
+def record_id(raw):
+    """Bound integer identifiers before converting or passing them to SQL."""
+    if not isinstance(raw, str) or not raw.isascii() or not raw.isdecimal() or len(raw) > 10:
+        return None
+    value = int(raw)
+    return value if 0 < value <= 2147483647 else None
+
+
 def register(resource):
     RESOURCES[resource.key] = resource
     return resource
@@ -74,15 +91,25 @@ def parse_value(spec, raw, tenant_id):
         return bool(raw), None
     if spec.kind == "cis":
         from serviceops_models import ConfigurationItem
-        ids = {int(v) for v in request.form.getlist(spec.name) if str(v).isdigit()}
-        cis = ConfigurationItem.query.filter(
+        from flask_login import current_user
+        from serviceops_core.ci_class_policy import restrict_ci_query_to_readable_classes
+        submitted = request.form.getlist(spec.name)
+        ids = {record_id(value) for value in submitted}
+        if None in ids:
+            return None, tr("Choose a valid {label}.", label=tr(spec.label))
+        query = restrict_ci_query_to_readable_classes(ConfigurationItem.query.filter(
             ConfigurationItem.tenant_id == tenant_id, ConfigurationItem.id.in_(ids),
-        ).all() if ids else []
+        ), tenant_id, current_user.effective_role)
+        cis = query.all() if ids else []
+        if len(cis) != len(ids):
+            return None, tr("Choose a valid {label}.", label=tr(spec.label))
         return cis, None
     raw = (raw or "").strip()
     if not raw:
         if spec.required:
             return None, tr("{label} is required.", label=tr(spec.label))
+        if spec.kind == "int":
+            return spec.minimum, None
         return ("" if spec.kind in ("text", "textarea", "email", "url", "choice") else None), None
     if spec.kind in ("text", "email", "url", "textarea"):
         limit = spec.max_length if spec.kind != "textarea" else 10000
@@ -111,18 +138,26 @@ def parse_value(spec, raw, tenant_id):
                             low=spec.minimum, high=spec.maximum)
         return number, None
     if spec.kind == "money":
+        if len(raw) > spec.max_length:
+            return None, tr("{label} must be {limit} characters or fewer.", label=tr(spec.label), limit=spec.max_length)
         try:
             amount = Decimal(raw.replace(",", ""))
+            if not amount.is_finite():
+                return None, tr("{label} must be an amount.", label=tr(spec.label))
+            if amount < 0:
+                return None, tr("{label} must be between 0 and 999,999,999,999.", label=tr(spec.label))
+            amount = amount.quantize(Decimal("0.01"))
+            if amount < 0 or amount >= Decimal("1e12"):
+                return None, tr("{label} must be between 0 and 999,999,999,999.", label=tr(spec.label))
+            return amount, None
         except InvalidOperation:
             return None, tr("{label} must be an amount.", label=tr(spec.label))
-        if amount < 0 or amount >= Decimal("1e12"):
-            return None, tr("{label} must be between 0 and 999,999,999,999.", label=tr(spec.label))
-        return amount.quantize(Decimal("0.01")), None
     if spec.kind in ("ref", "user"):
-        if not raw.isdigit():
+        identifier = record_id(raw)
+        if identifier is None:
             return None, tr("Choose a valid {label}.", label=tr(spec.label))
         model = RESOURCES[spec.ref].model if spec.kind == "ref" else __import__("serviceops_models").User
-        row = model.query.filter_by(id=int(raw), tenant_id=tenant_id).first()
+        row = model.query.filter_by(id=identifier, tenant_id=tenant_id).first()
         return (row.id, None) if row else (None, tr("Choose a valid {label}.", label=tr(spec.label)))
     return None, tr("Unsupported field.")
 
@@ -149,6 +184,7 @@ def display(spec, obj):
         target = getattr(obj, spec.name.removesuffix("_id"), None)
         return target.name if target else "—"
     if spec.kind == "cis":
+        value = readable_cis(value)
         return ", ".join(ci.name for ci in value[:5]) + (" …" if len(value) > 5 else "")
     return str(value)
 

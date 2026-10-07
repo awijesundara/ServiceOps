@@ -7300,6 +7300,9 @@
    "id": "Recovery set reporting is set up. Copy the token now: it is not shown again."
   },
   {
+   "id": "Recovery setup is temporarily unavailable. Try again later."
+  },
+  {
    "id": "Recurring automation for selected tickets"
   },
   {
@@ -12176,6 +12179,9 @@
   },
   {
    "id": "{source} preview queued. Nothing is saved until you review it and import."
+  },
+  {
+   "id": "{source}: {field}"
   },
   {
    "id": "{stage} · target {value}"
