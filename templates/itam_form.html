@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set editing = record.id is not none %}
+{% block title %}{{ (resource.title(record) if editing else tr('New {label}', label=tr_value(resource.label))) }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<section class="record-shell">
+  <header class="record-toolbar">
+    <div class="record-identity">
+      <a class="record-back" href="{{ url_for('itam_list', kind=resource.key) }}" aria-label="{{ tr('Back') }}">‹</a>
+      <span class="record-type-icon">{{ resource.icon }}</span><div><strong>{{ tr_value(resource.label) }}</strong><small>{{ resource.title(record) if editing else tr('New record') }}{% if status %} · <span class="tag itam-status is-{{ status[1] }}">{{ status[0] }}</span>{% endif %}</small></div>
+    </div>
+    <div class="record-actions">
+      {% if editing and can_edit %}<button class="button" form="itam-delete-form">{{ tr('Delete') }}</button>{% endif %}
+      {% if can_edit %}<button class="primary" form="itam-record-form">{{ tr('Save') if editing else tr('Create') }}</button>{% endif %}
+    </div>
+  </header>
+  <form method="post" id="itam-record-form" class="record-form" {% if can_edit %}data-track-dirty{% endif %}>
+    {% if not can_edit %}<p class="muted">{{ tr('View only: you can see this record but not change it.') }}</p>{% endif %}
+    <fieldset class="record-grid read-only-fieldset" {% if not can_edit %}disabled{% endif %}>
+      {% for spec in resource.fields if spec.kind not in ('textarea', 'cis') %}
+      {% set value = record[spec.name] if record[spec.name] is not none else '' %}
+      <label class="{{ 'required-field' if spec.required }}"><span>{{ tr_value(spec.label) }}</span>
+        {% if spec.kind == 'bool' %}<input type="checkbox" name="{{ spec.name }}" {% if record[spec.name] %}checked{% endif %}>
+        {% elif spec.kind == 'choice' %}<select name="{{ spec.name }}">{% if not spec.required %}<option value=""></option>{% endif %}{% for choice in spec.choices %}{% set v = choice[0] if choice is not string else choice %}{% set l = choice[1] if choice is not string else choice %}<option value="{{ v }}" {% if v == value %}selected{% endif %}>{{ tr_value(l) }}</option>{% endfor %}</select>
+        {% elif spec.kind in ('ref', 'user') %}<select name="{{ spec.name }}"><option value="">{{ tr('None') }}</option>{% for id, label in options[spec.name] %}<option value="{{ id }}" {% if id == record[spec.name] %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        {% elif spec.kind == 'date' %}<input type="date" name="{{ spec.name }}" value="{{ value }}">
+        {% elif spec.kind == 'int' %}<input type="number" name="{{ spec.name }}" value="{{ value }}" min="{{ spec.minimum }}" max="{{ spec.maximum }}">
+        {% elif spec.kind == 'money' %}<input type="text" inputmode="decimal" name="{{ spec.name }}" value="{{ value }}">
+        {% else %}<input type="{{ 'email' if spec.kind == 'email' else 'url' if spec.kind == 'url' else 'text' }}" name="{{ spec.name }}" value="{{ value }}" maxlength="{{ spec.max_length }}" {% if spec.required %}required{% endif %}>{% endif %}
+        {% if spec.help %}<small class="muted">{{ tr_value(spec.help) }}</small>{% endif %}
+      </label>
+      {% endfor %}
+    </fieldset>
+    <fieldset class="record-long-fields read-only-fieldset" {% if not can_edit %}disabled{% endif %}>
+      {% for spec in resource.fields if spec.kind in ('textarea', 'cis') %}
+      <label><span>{{ tr_value(spec.label) }}</span>
+        {% if spec.kind == 'cis' %}{% set chosen = record[spec.name]|map(attribute='id')|list if record[spec.name] else [] %}<select name="{{ spec.name }}" multiple size="8">{% for id, label in options[spec.name] %}<option value="{{ id }}" {% if id in chosen %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><small class="muted">{{ tr('Hold Ctrl or ⌘ to choose several.') }}</small>
+        {% else %}<textarea name="{{ spec.name }}" rows="4">{{ record[spec.name] or '' }}</textarea>{% endif %}
+      </label>
+      {% endfor %}
+    </fieldset>
+  </form>
+  {% for title, rows in related %}
+  <section class="panel itam-related"><h2>{{ tr_value(title) }}</h2>
+    {% if rows %}<ul>{% for label, url, detail in rows %}<li><a href="{{ url }}">{{ label }}</a>{% if detail %} <small class="muted">{{ detail }}</small>{% endif %}</li>{% endfor %}</ul>{% else %}<p class="muted">{{ tr('None') }}</p>{% endif %}
+  </section>
+  {% endfor %}
+  {% if editing and can_edit %}
+  <form method="post" id="itam-delete-form" action="{{ url_for('itam_delete', kind=resource.key, record_id=record.id) }}" data-confirm="{{ tr('Delete {name}?', name=resource.title(record)) }}"></form>
+  {% endif %}
+</section>
+{% endblock %}

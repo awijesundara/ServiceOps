@@ -46,6 +46,7 @@
   <button type="button" class="button" id="ci-attr-add">+ {{ tr('Add field') }}</button>
 </div>
 </fieldset><div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">{{ tr('Back') if read_only else tr('Cancel') }}</a>{% if not read_only %}<button class="primary">{{ tr('Save changes') if ci else tr('Create CI') }}</button>{% endif %}</div></form>
+{% if contracts %}<section class="panel"><h2>{{ tr('Contracts') }}</h2><ul>{% for contract, status in contracts %}<li><a href="{{ url_for('itam_edit', kind='contracts', record_id=contract.id) }}">{{ contract.name }}</a> <span class="tag itam-status is-{{ status[1] }}">{{ status[0] }}</span>{% if contract.supplier %} <small class="muted">{{ contract.supplier.name }}</small>{% endif %}{% if contract.end_date %} <small class="muted">{{ tr('ends {date}', date=contract.end_date) }}</small>{% endif %}</li>{% endfor %}</ul></section>{% endif %}
 {% if ci %}
 {% if (ci.rack_id and ci.rack) or network_connections %}
 <section class="panel">

@@ -2966,3 +2966,60 @@ class AIAction(db.Model):
 
 
 __all__ += ["AIConfiguration", "AIConnection", "AICall", "AIMemory", "AIRun", "AIConversation", "AIMessage", "AIAction"]
+
+
+# ---------------------------------------------------------------- IT asset management
+# Suppliers and contracts (GLPI-style financial and administrative management).
+
+class Supplier(db.Model):
+    """A vendor, reseller, service provider or manufacturer the organization deals with."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    name = db.Column(db.String(160), nullable=False)
+    supplier_type = db.Column(db.String(40), nullable=False, default="Vendor")
+    website = db.Column(db.String(255), nullable=False, default="")
+    email = db.Column(db.String(255), nullable=False, default="")
+    phone = db.Column(db.String(60), nullable=False, default="")
+    address = db.Column(db.Text, nullable=False, default="")
+    account_number = db.Column(db.String(80), nullable=False, default="")
+    notes = db.Column(db.Text, nullable=False, default="")
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_supplier_tenant_name"),)
+
+
+class Contract(db.Model):
+    """A support, maintenance, lease, subscription or service contract."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    name = db.Column(db.String(160), nullable=False)
+    number = db.Column(db.String(80), nullable=False, default="")
+    contract_type = db.Column(db.String(40), nullable=False, default="Support")
+    supplier_id = db.Column(db.Integer, db.ForeignKey("supplier.id"), index=True)
+    start_date = db.Column(db.Date)
+    end_date = db.Column(db.Date, index=True)
+    # Days before end_date by which the organization must give notice.
+    notice_days = db.Column(db.Integer, nullable=False, default=30)
+    renewal = db.Column(db.String(20), nullable=False, default="none")
+    cost = db.Column(db.Numeric(14, 2))
+    currency = db.Column(db.String(3), nullable=False, default="JPY")
+    billing_period = db.Column(db.String(20), nullable=False, default="yearly")
+    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    notes = db.Column(db.Text, nullable=False, default="")
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    # When the expiry alert was last sent, so each notice period alerts once.
+    alerted_for_end_date = db.Column(db.Date)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    supplier = db.relationship("Supplier", backref="contracts")
+    owner = db.relationship("User")
+    cis = db.relationship("ConfigurationItem", secondary="contract_ci", lazy="selectin")
+
+
+class ContractCI(db.Model):
+    __tablename__ = "contract_ci"
+    contract_id = db.Column(db.Integer, db.ForeignKey("contract.id", ondelete="CASCADE"), primary_key=True)
+    ci_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id", ondelete="CASCADE"), primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+
+
+__all__ += ["Supplier", "Contract", "ContractCI"]

@@ -97,7 +97,7 @@
     {% endif %}
 
     {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}
-    <details class="nav-group" {% if request.endpoint in ['module_records','known_errors','improvements','cmdb','cmdb_topology','cmdb_discovery','cmdb_discovery_review','cmdb_import','assets'] %}open{% endif %}>
+    <details class="nav-group" {% if request.endpoint in ['module_records','known_errors','improvements','cmdb','cmdb_topology','cmdb_discovery','cmdb_discovery_review','cmdb_import','assets','itam_list','itam_new','itam_edit'] %}open{% endif %}>
       <summary><span class="nav-symbol" aria-hidden="true">◇</span><span>{{ tr('Operations') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items">
         <a href="{{ url_for('module_records', domain='problem') }}" {% if nav_active('module_records', domain='problem') %}class="active" aria-current="page"{% endif %}>{{ tr('Problems') }}</a>
@@ -106,6 +106,7 @@
         <a href="{{ url_for('improvements') }}" {% if nav_active('improvements') %}class="active" aria-current="page"{% endif %}>{{ tr('Improvements') }}</a>
         <a href="{{ url_for('cmdb') }}" {% if nav_active('cmdb') %}class="active" aria-current="page"{% endif %}>{{ tr('CMDB & service map') }}</a>
         <a href="{{ url_for('assets') }}" {% if nav_active('assets') %}class="active" aria-current="page"{% endif %}>{{ tr('Assets') }}</a>
+        {% for key, resource in itam_resources.items() %}<a href="{{ url_for('itam_list', kind=key) }}" {% if request.view_args and request.view_args.get('kind') == key %}class="active" aria-current="page"{% endif %}>{{ tr_value(resource.plural) }}</a>{% endfor %}
       </div>
     </details>
     {% endif %}

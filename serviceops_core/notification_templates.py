@@ -14,6 +14,13 @@ from string import Template
 # than scattered across call sites, since it's what the admin template
 # editor needs to show as available fields.
 NOTIFICATION_EVENT_TYPES = {
+    "contract.notice": {
+        "label": "Contract notice period",
+        "description": "Sent to a contract's owner (or the administrators) once the last day to give notice is reached.",
+        "variables": ["contract", "end_date", "notice_date"],
+        "default_subject": "Contract notice period: ${contract}",
+        "default_body": "Contract ${contract} ends on ${end_date}. The last day to give notice is ${notice_date}.",
+    },
     "approval.requested": {
         "label": "Approval requested",
         "description": "Sent to an approver when their decision is needed on an approval gate.",
