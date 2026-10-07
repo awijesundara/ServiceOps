@@ -1899,7 +1899,9 @@ class DirectoryGroupMapping(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     support_group = db.relationship("SupportGroup")
     __table_args__ = (
-        db.UniqueConstraint("tenant_id", "directory_group", name="uq_directory_group_mapping_tenant_group"),
+        # One AD group may map to several ServiceOps groups, once each.
+        db.UniqueConstraint("tenant_id", "directory_group", "support_group_id",
+                            name="uq_directory_group_mapping_tenant_group_team"),
     )
 
 
@@ -2794,6 +2796,10 @@ class AIConfiguration(db.Model):
     # Whether the chat assistant may keep short notes a person explicitly asks it to remember.
     memory_enabled = db.Column(db.Boolean, nullable=False, default=True)
     sensitive_terms = db.Column(db.Text, nullable=False, default="")
+    # Administrator regular expressions, one per line: text matching a sensitive
+    # pattern stays private; text matching a safe pattern is not treated as sensitive.
+    sensitive_patterns = db.Column(db.Text, nullable=False, default="", server_default="")
+    safe_patterns = db.Column(db.Text, nullable=False, default="", server_default="")
     updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
 

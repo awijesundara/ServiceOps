@@ -210,6 +210,13 @@ def register(app):
                 if "sensitive_terms" in request.form:
                     config.sensitive_terms = "\n".join(routing.custom_terms(SimpleNamespace(
                         sensitive_terms=request.form["sensitive_terms"])))[:4000]
+                for field, label in (("sensitive_patterns", tr("Sensitive patterns")), ("safe_patterns", tr("Not-sensitive patterns"))):
+                    if field in request.form:
+                        raw = request.form[field][:12000]
+                        _patterns, errors = routing.parse_patterns(raw)
+                        if errors:
+                            raise ProviderError(tr("{label}: {error}", label=label, error=errors[0]))
+                        setattr(config, field, "\n".join(line.strip() for line in raw.splitlines() if line.strip()))
                 for name, low, high, default in (("daily_limit", 1, 1000, 100), ("max_output_tokens", 128, 4096, 1500),
                                                  ("retention_days", 1, 30, 7), ("chat_retention_days", 1, 365, 30)):
                     value = int(request.form.get(name, getattr(config, name) or default))
@@ -359,13 +366,18 @@ def register(app):
             detect_personal=data.get("detect_personal", config.detect_personal) is True,
             detect_credentials=data.get("detect_credentials", config.detect_credentials) is True,
             detect_financial=data.get("detect_financial", config.detect_financial) is True,
-            sensitive_terms=str(data.get("sensitive_terms", config.sensitive_terms))[:4000])
+            sensitive_terms=str(data.get("sensitive_terms", config.sensitive_terms))[:4000],
+            sensitive_patterns=str(data.get("sensitive_patterns", config.sensitive_patterns))[:12000],
+            safe_patterns=str(data.get("safe_patterns", config.safe_patterns))[:12000])
         text = str(data.get("text", ""))[:4000]
         kinds = {k for k in data.get("kinds", ["ticket"]) if k in {"ticket", "knowledge", "ci"}} if isinstance(
             data.get("kinds", ["ticket"]), list) else {"ticket"}
         reasons = routing.scan(text, trial)
         chosen = routing.plan(trial, service.connections_for(config), reasons, kinds, {}, random.Random(0))
+        pattern_errors = (routing.parse_patterns(trial.sensitive_patterns)[1]
+                          + routing.parse_patterns(trial.safe_patterns)[1])
         return no_store({
+            "pattern_errors": pattern_errors[:5],
             "sensitive": chosen.sensitive, "reasons": [routing.REASON_TEXT[r] for r in chosen.reasons],
             "blocked": routing.BLOCKED_TEXT.get(chosen.blocked, "") if chosen.blocked else "",
             "eligible": [{"name": c.name, "external": c.external} for c in chosen.candidates],

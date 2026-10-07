@@ -385,7 +385,8 @@
     return {
       routing_mode: value("routing_mode"), external_scope: value("external_scope"), external_consent: on("external_consent"),
       detect_personal: on("detect_personal"), detect_credentials: on("detect_credentials"), detect_financial: on("detect_financial"),
-      sensitive_terms: value("sensitive_terms")
+      sensitive_terms: value("sensitive_terms"),
+      sensitive_patterns: value("sensitive_patterns"), safe_patterns: value("safe_patterns")
     };
   }
 
@@ -396,6 +397,11 @@
       if (!text) { verdict.textContent = tr("Type something above to check it."); verdict.className = "aiadm-verdict"; return; }
       call("/admin/ai/preview", Object.assign(settings(), { text: text, kinds: [tryKind.value] })).then(function (json) {
         verdict.textContent = "";
+        if (json.pattern_errors && json.pattern_errors.length) {
+          verdict.className = "aiadm-verdict is-blocked";
+          verdict.textContent = tr("Pattern problem: {error}", { error: json.pattern_errors[0] });
+          return;
+        }
         const names = json.eligible.map(function (e) { return e.external ? tr("{name} (outside)", { name: e.name }) : e.name; });
         if (json.blocked) {
           verdict.className = "aiadm-verdict is-blocked";

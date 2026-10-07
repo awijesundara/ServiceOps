@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}{{ 'Edit ' + ci.name if ci else tr('New configuration item') }} · {{ instance_name }}{% endblock %}
 {% macro src(field) %}{% if ci and field_source is defined and field_source(field) %} <span class="field-source source-{{ (ci.field_sources or {}).get(field) }}" title="{{ tr('Last set by {field_source}', field_source=(field_source(field))) }}"><span class="visually-hidden">{{ tr('from') }} </span>{{ field_source(field) }}</span>{% endif %}{% endmacro %}
-{% block content %}<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>{{ 'Edit ' + ci.name if ci else tr('New configuration item') }}</h1></div></header><form method="post" class="panel form-grid" data-track-dirty>
+{% block content %}<header class="page-head"><div><p class="eyebrow">CMDB</p><h1>{{ ci.name if read_only else ('Edit ' + ci.name if ci else tr('New configuration item')) }}</h1>{% if read_only %}<p class="muted">{{ tr('View only: you can see every detail of this CI but not change it.') }}</p>{% endif %}</div></header><form method="post" class="panel form-grid" {% if not read_only %}data-track-dirty{% endif %}><fieldset class="wide form-grid read-only-fieldset" {% if read_only %}disabled{% endif %}>
 <label><span class="field-label">{{ tr('Name{src}', src=(src('name'))) }}</span><input name="name" value="{{ (ci.name or '') if ci else '' }}" required></label>
 <label><span class="field-label">{{ tr('Class{src}', src=(src('ci_class'))) }}</span><input name="ci_class" value="{{ (ci.ci_class or '') if ci else '' }}" placeholder="{{ tr('Server, Database, Business Application…') }}" required></label>
 <label class="wide">{{ tr('Description') }}<textarea name="description" rows="2">{{ (ci.description or '') if ci else '' }}</textarea></label>
@@ -45,7 +45,7 @@
   <div class="ci-attr-rows">{% for key, value in (editable_attributes if editable_attributes is defined else {}).items() %}<div class="ci-attr-row"><input name="attr_key" value="{{ key }}" placeholder="{{ tr('Field name') }}" aria-label="{{ tr('Field name') }}"><input name="attr_value" value="{{ value }}" placeholder="{{ tr('Value') }}" aria-label="{{ tr('Value for {key}', key=(key)) }}"><button type="button" class="link-button ci-attr-remove" aria-label="{{ tr('Remove {key}', key=(key)) }}">✕</button></div>{% endfor %}</div>
   <button type="button" class="button" id="ci-attr-add">+ {{ tr('Add field') }}</button>
 </div>
-<div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">{{ tr('Cancel') }}</a><button class="primary">{{ tr('Save changes') if ci else tr('Create CI') }}</button></div></form>
+</fieldset><div class="wide actions"><a class="button" href="{{ url_for('cmdb') }}">{{ tr('Back') if read_only else tr('Cancel') }}</a>{% if not read_only %}<button class="primary">{{ tr('Save changes') if ci else tr('Create CI') }}</button>{% endif %}</div></form>
 {% if ci %}
 {% if (ci.rack_id and ci.rack) or network_connections %}
 <section class="panel">

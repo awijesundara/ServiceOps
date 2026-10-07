@@ -12,6 +12,7 @@ from serviceops_core.cmdb_import import CmdbImportError, import_ci_rows, parse_c
 
 
 @pytest.fixture()
+
 def app():
     fd, path = tempfile.mkstemp()
     os.close(fd)
@@ -54,6 +55,7 @@ def test_creates_new_ci_from_csv(app):
         assert ci.discovery_source == "Import"
 
 
+@pytest.mark.usefixtures("sync_sources_outrank_spreadsheet")
 def test_netbox_owned_ci_only_gets_non_hardware_fields_updated(app):
     with app.app_context():
         db.session.add(ConfigurationItem(
@@ -294,3 +296,13 @@ def test_dry_run_does_not_commit(app):
         result = import_ci_rows(rows, 1, dry_run=True)
         assert result["dry_run"] is True
         assert ConfigurationItem.query.count() == 0
+
+
+@pytest.fixture()
+def sync_sources_outrank_spreadsheet(app):
+    """The order where each sync owns what it imports (configurable via
+    CMDB_SOURCE_PRECEDENCE); the default ranks the spreadsheet first."""
+    from app import PlatformSetting, db
+    with app.app_context():
+        db.session.add(PlatformSetting(key="CMDB_SOURCE_PRECEDENCE", value="manual,netbox,snipeit,csv", encrypted=False))
+        db.session.commit()

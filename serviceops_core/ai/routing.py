@@ -30,7 +30,7 @@ REASON_TEXT = {
     "personal": "personal details",
     "credentials": "passwords or keys",
     "financial": "payment or bank numbers",
-    "custom": "a word marked as sensitive",
+    "custom": "a word or pattern marked as sensitive",
     "customer_content": "customer support content",
     "service_request_content": "service request details",
     "restricted_record": "a restricted operational record",
@@ -65,10 +65,47 @@ def custom_terms(config):
     return [t.strip().lower() for t in terms if t.strip()][:200]
 
 
+MAX_PATTERNS = 50
+MAX_PATTERN_LENGTH = 200
+# Administrator patterns run against at most this much text, which bounds the
+# cost of an expensive expression.
+PATTERN_SCAN_LIMIT = 20000
+
+
+def parse_patterns(raw):
+    """Administrator regular expressions, one per line. Returns (patterns, errors):
+    a pattern that does not compile, or is too long, is reported, never used."""
+    patterns, errors = [], []
+    for line in str(raw or "").replace("\r", "").split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if len(patterns) >= MAX_PATTERNS:
+            errors.append(f"Only the first {MAX_PATTERNS} patterns are used.")
+            break
+        if len(line) > MAX_PATTERN_LENGTH:
+            errors.append(f"Pattern longer than {MAX_PATTERN_LENGTH} characters: {line[:40]}…")
+            continue
+        try:
+            patterns.append(re.compile(line, re.IGNORECASE))
+        except re.error as error:
+            errors.append(f"{line}: {error}")
+    return patterns, errors
+
+
 def scan(text, config, kind=None):
-    """Reasons a piece of text should stay on the organization's own AI (empty set: nothing found)."""
+    """Reasons a piece of text should stay on the organization's own AI (empty set: nothing found).
+
+    Text matching an administrator's "not sensitive" pattern (for example the
+    organization's own support number or mail domain) is set aside before any
+    check; an administrator's "sensitive" pattern always marks the text."""
     text = str(text or "")
     found = set()
+    sensitive_patterns, _ = parse_patterns(getattr(config, "sensitive_patterns", ""))
+    if any(p.search(text[:PATTERN_SCAN_LIMIT]) for p in sensitive_patterns):
+        found.add("custom")
+    for pattern in parse_patterns(getattr(config, "safe_patterns", ""))[0]:
+        text = pattern.sub(" ", text[:PATTERN_SCAN_LIMIT]) + text[PATTERN_SCAN_LIMIT:]
     # Published knowledge is written by the organization; its contact numbers are not personal details.
     if getattr(config, "detect_personal", True) and kind != "knowledge":
         if EMAIL_PATTERN.search(text) or _SSN.search(text) or any(p.search(text) for p in PHONE_PATTERNS):

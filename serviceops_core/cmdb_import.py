@@ -38,7 +38,7 @@ import io
 from datetime import datetime
 
 from app import parse_form_date
-from serviceops_core import ci_sources, import_changes
+from serviceops_core import ci_precedence, ci_sources, import_changes
 
 # Columns NetBox owns; matches netbox_sync.HARDWARE_FIELDS (kept separate to
 # avoid a hard import-time dependency between the two sync modules).
@@ -272,9 +272,11 @@ def import_ci_rows(rows, tenant_id, dry_run=False):
 
             if ci:
                 before = import_changes.snapshot(ci)
-                skipped = _apply_row(
-                    row, ci, OWNED_FIELDS_BY_SOURCE.get(ci.external_source, ()), summary["warnings"],
-                )
+                # A sync's fields stay out of reach only while that sync outranks
+                # the spreadsheet; otherwise precedence decides field by field.
+                owned = (OWNED_FIELDS_BY_SOURCE.get(ci.external_source, ())
+                         if ci_precedence.outranks(ci.external_source or "", "csv") else ())
+                skipped = _apply_row(row, ci, owned, summary["warnings"])
                 summary["fields_skipped_netbox_owned" if ci.external_source == "netbox"
                         else "fields_skipped_snipeit_owned"] += skipped
                 if team:
@@ -283,6 +285,7 @@ def import_ci_rows(rows, tenant_id, dry_run=False):
                     ci.external_source = "csv"
                 summary["cis_updated"] += 1
                 ci_sources.mark_changed(ci, before, "csv")
+                ci_precedence.arbitrate(ci, before, "csv", summary)
                 import_changes.record_update(summary, before, ci)
             else:
                 ci = core_app.ConfigurationItem(

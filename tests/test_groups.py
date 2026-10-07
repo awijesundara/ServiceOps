@@ -43,8 +43,8 @@ def test_group_form_validates_and_rejects_platform_admin(client, app):
     create(client, access_roles=["admin", "superadmin"])
     with app.app_context():
         assert SupportGroup.query.filter_by(name="Admins").one().access_roles == "admin"
-    # The same AD group cannot map to two groups, and names stay unique.
-    assert create(client, name="Other").status_code == 400
+    # The same AD group may map to several groups; names stay unique.
+    assert create(client, name="Other").status_code == 302
     assert create(client, directory_groups="gg_other").status_code == 400
     assert create(client, name="").status_code == 400
 

@@ -62,6 +62,7 @@ class FakeSnipeit:
         pass
 
 
+
 def make_asset(asset_id, name="MacBook Pro", tag=None, serial=None, category="Laptops", meta="deployed",
                assigned_email=None, custom_fields=None, location="HQ", purchase="2024-02-01",
                warranty="2027-02-01"):
@@ -210,6 +211,7 @@ def test_checked_out_asset_gets_the_matching_user_as_owner_and_loses_it_on_retur
         assert "Snipe-IT: Assigned To" not in ci.attributes
 
 
+@pytest.mark.usefixtures("sync_sources_outrank_spreadsheet")
 def test_netbox_items_keep_netbox_hardware_and_only_gain_asset_data(app, monkeypatch):
     with app.app_context():
         configure(monkeypatch)
@@ -296,6 +298,7 @@ def test_sync_refuses_when_disabled_or_unsafe(app, monkeypatch):
             sync_from_snipeit(1, session_factory=factory(FakeSnipeit()))
 
 
+@pytest.mark.usefixtures("sync_sources_outrank_spreadsheet")
 def test_spreadsheet_import_leaves_snipeit_owned_fields_alone(app, monkeypatch):
     with app.app_context():
         configure(monkeypatch)
@@ -476,6 +479,7 @@ def test_preview_reports_rack_and_environment_changes_without_creating_the_rack(
         assert result["racks_created"] == 1 and Rack.query.count() == 0
 
 
+@pytest.mark.usefixtures("sync_sources_outrank_spreadsheet")
 def test_netbox_items_keep_netbox_placement_but_gain_cost_center(app, monkeypatch):
     with app.app_context():
         configure(monkeypatch)
@@ -488,3 +492,13 @@ def test_netbox_items_keep_netbox_placement_but_gain_cost_center(app, monkeypatc
         sync_from_snipeit(1, session_factory=factory(FakeSnipeit(records={"/api/v1/hardware": [server]})))
         ci = ConfigurationItem.query.filter_by(serial_number="SRVJNX1").one()
         assert (ci.environment, ci.rack_position, ci.rack_id, ci.cost_center) == ("Production", 30, None, "CC-500")
+
+
+@pytest.fixture()
+def sync_sources_outrank_spreadsheet(app):
+    """The order where each sync owns what it imports (configurable via
+    CMDB_SOURCE_PRECEDENCE); the default ranks the spreadsheet first."""
+    from app import PlatformSetting, db
+    with app.app_context():
+        db.session.add(PlatformSetting(key="CMDB_SOURCE_PRECEDENCE", value="manual,netbox,snipeit,csv", encrypted=False))
+        db.session.commit()

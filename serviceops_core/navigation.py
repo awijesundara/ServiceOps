@@ -92,4 +92,9 @@ def navigation_entries(setting_group_meta):
                 label, f"{description} Administration", "system_settings_category",
                 {"category": category}, "admin",
             ))
+    # Not a SETTING_DEFINITIONS group, but its own settings page all the same.
+    setting_entries.append(NavigationEntry(
+        "Company logo", "Upload company logo PNG branding image Administration", "system_settings_category",
+        {"category": "branding"}, "admin",
+    ))
     return NAVIGATION_ENTRIES + tuple(setting_entries)

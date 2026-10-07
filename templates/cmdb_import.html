@@ -29,6 +29,18 @@
 {% endif %}
 {% endmacro %}
 
+{% macro conflicts_table(result) %}
+{% if result.conflicts %}
+<details class="import-messages is-warn import-conflicts" open>
+  <summary><strong>{{ tr('{count} source conflicts', count=(result.conflicts_total or result.conflicts|length)) }}</strong> <span class="muted">{{ tr('Fields where two sources disagree. The higher-priority source wins.') }}</span></summary>
+  <div class="table-scroll"><table>
+    <thead><tr><th>{{ tr('CI') }}</th><th>{{ tr('Field') }}</th><th>{{ tr('Value kept') }}</th><th>{{ tr('Other value') }}</th></tr></thead>
+    <tbody>{% for c in result.conflicts %}<tr><td>{{ c.name }}</td><td>{{ c.field|replace('_', ' ') }}</td><td>{{ c.kept or '—' }} <small class="muted">({{ c.kept_source }})</small></td><td>{{ c.other or '—' }} <small class="muted">({{ c.other_source }}{% if c.outcome == 'kept' %}, {{ tr('ignored') }}{% else %}, {{ tr('replaced') }}{% endif %})</small></td></tr>{% endfor %}</tbody>
+  </table></div>
+</details>
+{% endif %}
+{% endmacro %}
+
 {% macro job_card(job, prefix, status_endpoint, cancel_endpoint) %}
 {% set result = job.result %}{% set busy = job.status in ('Pending', 'Running') %}
 <div class="import-run {{ 'is-bad' if job.status == 'Failed' else 'is-warn' if result and (result.errors or result.warnings) else 'is-ok' if job.status == 'Completed' else '' }}" id="{{ prefix }}-sync-progress" data-sync-progress data-status-url="{{ url_for(status_endpoint, job_id=job.id) }}" data-cancel-url="{{ url_for(cancel_endpoint, job_id=job.id) }}">
@@ -49,6 +61,7 @@
   {% if result.errors %}<div class="import-messages is-bad"><strong>{{ tr('Errors') }}</strong><ul>{% for error in result.errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
   {% if result.warnings %}<div class="import-messages is-warn"><strong>{{ tr('Warnings') }}</strong><ul>{% for warning in result.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
   {{ changes_table(result, not job.dry_run) }}
+  {{ conflicts_table(result) }}
   {% endif %}
 </div>
 {% endmacro %}
@@ -66,6 +79,31 @@
   <a href="#{{ anchor }}">{{ tr_value(label) }} <span class="import-chip {{ 'chip-running' if job and job.status in ('Pending', 'Running') else 'chip-ready' if enabled else 'chip-off' }}">{{ tr('Running') if job and job.status in ('Pending', tr('Running')) else tr('Ready') if enabled else tr('Not set up') }}</span></a>
   {% endfor %}
 </nav>
+
+
+{# ------------------------------------------------------------ Source rules #}
+<section class="panel import-source" id="source-rules" aria-labelledby="source-rules-title">
+  <header class="import-source-head">
+    <div><h2 id="source-rules-title">{{ tr('Source priority and field mapping') }}</h2><p>{{ tr('When sources disagree about a field, the source higher in this list wins and the disagreement is reported in the import results.') }}</p></div>
+  </header>
+  <form method="post" action="{{ url_for('cmdb_source_rules') }}#source-rules" class="stack">
+    <ol class="source-priority">
+      {% for source in source_order %}
+      <li><label><span class="source-rank">{{ loop.index }}</span>
+        <select name="precedence" aria-label="{{ tr('Priority {rank}', rank=loop.index) }}">{% for option in source_options %}<option value="{{ option }}" {% if option == source %}selected{% endif %}>{{ source_labels[option] }}</option>{% endfor %}</select></label></li>
+      {% endfor %}
+    </ol>
+    <p class="muted">{{ tr('Manual means edits made on the CI page.') }}</p>
+    <h3>{{ tr('Map remote fields to CMDB fields') }}</h3>
+    <p class="muted">{{ tr('Fields NetBox and Snipe-IT already sent appear in the lists. Mapped values follow the priority above.') }}</p>
+    <div class="table-scroll"><table class="source-mapping">
+      <thead><tr><th>{{ tr('CMDB field') }}</th>{% for source, label in mapping_sources %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for field, label in mappable_fields.items() %}<tr><td>{{ tr_value(label) }}</td>
+        {% for source, _ in mapping_sources %}<td><select name="map_{{ source }}_{{ field }}"><option value="">{{ tr('Not mapped') }}</option>{% set current = field_mappings.get(source, {}).get(field, '') %}{% for name in remote_fields[source] %}<option value="{{ name }}" {% if name == current %}selected{% endif %}>{{ name }}</option>{% endfor %}{% if current and current not in remote_fields[source] %}<option value="{{ current }}" selected>{{ current }}</option>{% endif %}</select></td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table></div>
+    <div class="actions"><button class="primary">{{ tr('Save source rules') }}</button></div>
+  </form>
+</section>
 
 {# ------------------------------------------------------------------ NetBox #}
 <section class="panel import-source" id="netbox-sync" aria-labelledby="netbox-title">
@@ -258,6 +296,7 @@
       {% if preview.errors %}<div class="import-messages is-bad"><strong>{{ tr('Errors') }}</strong><ul>{% for error in preview.errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
       {% if preview.warnings %}<div class="import-messages is-warn"><strong>{{ trn(preview.warnings|length, '{count} warning', '{count} warnings') }}</strong><ul>{% for warning in preview.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
       {{ changes_table(preview, false) }}
+      {{ conflicts_table(preview) }}
       <form method="post" action="{{ url_for('cmdb_import') }}#spreadsheet-import" class="import-confirm" data-submit-once>
         <input type="hidden" name="action" value="apply">
         <textarea name="csv_text" hidden>{{ csv_text }}</textarea>

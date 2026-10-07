@@ -37,6 +37,8 @@ def start(summary):
 def snapshot(ci):
     values = {field: getattr(ci, field, None) for field, _ in TRACKED_FIELDS}
     values["attributes"] = dict(getattr(ci, "attributes", None) or {})
+    # Which source set each field before this import (see ci_precedence.arbitrate).
+    values["_sources"] = dict(getattr(ci, "field_sources", None) or {})
     return values
 
 

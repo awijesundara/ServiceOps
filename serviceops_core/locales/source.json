@@ -1435,6 +1435,9 @@
    "id": "CHG number"
   },
   {
+   "id": "CI"
+  },
+  {
    "id": "CI class"
   },
   {
@@ -1466,6 +1469,9 @@
   },
   {
    "id": "CMDB environments that require Change Control Board approval"
+  },
+  {
+   "id": "CMDB field"
   },
   {
    "id": "CMDB import applied: {result} created, {result2} updated, {count} errors, {count2} warnings."
@@ -2005,6 +2011,9 @@
   },
   {
    "id": "Company identity, support contact, and instance-wide naming."
+  },
+  {
+   "id": "Company logo"
   },
   {
    "id": "Company logo (PNG)"
@@ -2838,7 +2847,7 @@
    "id": "Directory sync"
   },
   {
-   "id": "Directory users in any of these groups join this group when they sign in and at each directory sync."
+   "id": "Directory users in any of these groups join this group when they sign in and at each directory sync. The same AD/LDAP group can also be mapped to other groups."
   },
   {
    "id": "Directory/SSO login and team assignment may grant this user additional roles automatically after creation."
@@ -3443,7 +3452,13 @@
    "javascript": true
   },
   {
+   "id": "Fields NetBox and Snipe-IT already sent appear in the lists. Mapped values follow the priority above."
+  },
+  {
    "id": "Fields kept"
+  },
+  {
+   "id": "Fields where two sources disagree. The higher-priority source wins."
   },
   {
    "id": "Filter"
@@ -4646,6 +4661,9 @@
    "id": "List attachments on a visible ticket"
   },
   {
+   "id": "List each source exactly once."
+  },
+  {
    "id": "List the authenticated mobile user's passkeys"
   },
   {
@@ -4676,7 +4694,7 @@
    "id": "Local login, AD/LDAP, Keycloak, directory attributes, and synchronization."
   },
   {
-   "id": "Local login, AD/LDAP, Keycloak, group mapping, and scoped sync"
+   "id": "Local login, AD/LDAP, Keycloak, groups and their roles, and sync"
   },
   {
    "id": "Local or LDAP credentials with MFA when enabled; requires mobile client metadata headers."
@@ -4848,6 +4866,9 @@
    "id": "Manual entry secret:"
   },
   {
+   "id": "Manual means edits made on the CI page."
+  },
+  {
    "id": "Manual only"
   },
   {
@@ -4867,6 +4888,9 @@
   },
   {
    "id": "Map business services to supporting configuration items"
+  },
+  {
+   "id": "Map remote fields to CMDB fields"
   },
   {
    "id": "Map to AD/LDAP groups"
@@ -5773,6 +5797,9 @@
    "id": "Not imported:"
   },
   {
+   "id": "Not mapped"
+  },
+  {
    "id": "Not mapped to any business service yet. Add it under Administration → Service configuration → Service offerings."
   },
   {
@@ -5807,6 +5834,9 @@
    "id": "Not selected"
   },
   {
+   "id": "Not sensitive"
+  },
+  {
    "id": "Not sensitive. Could be answered by: {names}.",
    "javascript": true
   },
@@ -5826,6 +5856,9 @@
   },
   {
    "id": "Not yet in CMDB"
+  },
+  {
+   "id": "Not-sensitive patterns"
   },
   {
    "id": "Notes"
@@ -6241,6 +6274,9 @@
    "id": "Other unpositioned equipment"
   },
   {
+   "id": "Other value"
+  },
+  {
    "id": "Outage"
   },
   {
@@ -6410,6 +6446,10 @@
   },
   {
    "id": "Path contains…"
+  },
+  {
+   "id": "Pattern problem: {error}",
+   "javascript": true
   },
   {
    "id": "Pause",
@@ -6713,6 +6753,9 @@
   },
   {
    "id": "Priority override reason"
+  },
+  {
+   "id": "Priority {rank}"
   },
   {
    "id": "Privacy"
@@ -7199,6 +7242,12 @@
   },
   {
    "id": "Regional data note"
+  },
+  {
+   "id": "Regular expressions, one per line, for text that only looks sensitive, such as your own support number or mail domain. Matching text is ignored by the checks above."
+  },
+  {
+   "id": "Regular expressions, one per line. A request matching any of them stays private, for example employee numbers such as EMP-123456."
   },
   {
    "id": "Reject"
@@ -8035,6 +8084,9 @@
    "id": "Save service"
   },
   {
+   "id": "Save source rules"
+  },
+  {
    "id": "Save ticket defaults"
   },
   {
@@ -8449,6 +8501,9 @@
   {
    "id": "Sensitive ({reasons}). Stays on your own AI: {names}.",
    "javascript": true
+  },
+  {
+   "id": "Sensitive patterns"
   },
   {
    "id": "Sensitive: {reasons}.",
@@ -8868,6 +8923,12 @@
   },
   {
    "id": "Source data"
+  },
+  {
+   "id": "Source priority and field mapping"
+  },
+  {
+   "id": "Source rules saved. They apply from the next import."
   },
   {
    "id": "Source ticket #"
@@ -10105,6 +10166,9 @@
    "id": "Upload replacement PNG"
   },
   {
+   "id": "Upload the PNG logo shown in the header, sign-in and status pages"
+  },
+  {
    "id": "Uptime"
   },
   {
@@ -10258,6 +10322,9 @@
    "id": "Value for {key}"
   },
   {
+   "id": "Value kept"
+  },
+  {
    "id": "Variables submitted with {number}"
   },
   {
@@ -10344,6 +10411,9 @@
   },
   {
    "id": "View notifications"
+  },
+  {
+   "id": "View only: you can see every detail of this CI but not change it."
   },
   {
    "id": "View queue"
@@ -10477,6 +10547,9 @@
   },
   {
    "id": "When"
+  },
+  {
+   "id": "When sources disagree about a field, the source higher in this list wins and the disagreement is reported in the import results."
   },
   {
    "id": "When you have more than one service, this decides which one answers."
@@ -10622,6 +10695,9 @@
   },
   {
    "id": "You are not permitted to move this CI into {new_ci_class}."
+  },
+  {
+   "id": "You are not permitted to view {ci_class} configuration items."
   },
   {
    "id": "You are sending messages too quickly. Wait a moment."
@@ -10986,6 +11062,9 @@
    "id": "identity/hardware fields, status, lifecycle, recognized environment custom field, and rack placement. Values removed in NetBox are cleared in ServiceOps."
   },
   {
+   "id": "ignored"
+  },
+  {
    "id": "imap.example.com"
   },
   {
@@ -11196,6 +11275,9 @@
    "id": "release update check proxy"
   },
   {
+   "id": "replaced"
+  },
+  {
    "id": "request",
    "javascript": true
   },
@@ -11260,6 +11342,9 @@
   },
   {
    "id": "superadmin is always implicitly allowed every action and can't be edited here. A checkbox that differs from the ITIL-recommended baseline is stored as an override for this tenant only."
+  },
+  {
+   "id": "support@example\\.com"
   },
   {
    "id": "support@yourcompany.com"
@@ -11519,6 +11604,9 @@
    "id": "{count} rows read."
   },
   {
+   "id": "{count} source conflicts"
+  },
+  {
    "id": "{count} tokens written",
    "javascript": true
   },
@@ -11574,9 +11662,6 @@
   },
   {
    "id": "{duration_minutes} minutes"
-  },
-  {
-   "id": "{entry} is already mapped to {name}."
   },
   {
    "id": "{errors} error(s)"
@@ -11643,6 +11728,9 @@
   },
   {
    "id": "{label} synchronization is temporarily disabled by an operator feature flag."
+  },
+  {
+   "id": "{label}: {error}"
   },
   {
    "id": "{last_run_count} erased"
