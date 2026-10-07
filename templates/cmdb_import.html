@@ -99,7 +99,7 @@
     <div class="table-scroll"><table class="source-mapping">
       <thead><tr><th>{{ tr('CMDB field') }}</th>{% for source, label in mapping_sources %}<th>{{ label }}</th>{% endfor %}</tr></thead>
       <tbody>{% for field, label in mappable_fields.items() %}<tr><td>{{ tr_value(label) }}</td>
-        {% for source, _ in mapping_sources %}<td><select name="map_{{ source }}_{{ field }}"><option value="">{{ tr('Not mapped') }}</option>{% set current = field_mappings.get(source, {}).get(field, '') %}{% for name in remote_fields[source] %}<option value="{{ name }}" {% if name == current %}selected{% endif %}>{{ name }}</option>{% endfor %}{% if current and current not in remote_fields[source] %}<option value="{{ current }}" selected>{{ current }}</option>{% endif %}</select></td>{% endfor %}</tr>{% endfor %}</tbody>
+        {% for source, source_label in mapping_sources %}<td><select name="map_{{ source }}_{{ field }}" aria-label="{{ tr('{source}: {field}', source=source_label, field=tr_value(label)) }}"><option value="">{{ tr('Not mapped') }}</option>{% set current = field_mappings.get(source, {}).get(field, '') %}{% for name in remote_fields[source] %}<option value="{{ name }}" {% if name == current %}selected{% endif %}>{{ name }}</option>{% endfor %}{% if current and current not in remote_fields[source] %}<option value="{{ current }}" selected>{{ current }}</option>{% endif %}</select></td>{% endfor %}</tr>{% endfor %}</tbody>
     </table></div>
     <div class="actions"><button class="primary">{{ tr('Save source rules') }}</button></div>
   </form>

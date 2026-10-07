@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from urllib.parse import urlparse
 
 import pyotp
-from flask import abort, flash, jsonify, redirect, render_template, request, Response, session, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, Response, session, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
@@ -1725,7 +1725,8 @@ def register(app):
             return None
         try:
             setup["token"] = settings_cipher().decrypt(setup["token"].encode()).decode()
-        except Exception:  # noqa: BLE001 - a stale or tampered value just isn't shown
+        except Exception:
+            current_app.logger.warning("Unable to reveal the one-time recovery setup credential", exc_info=True)
             return None
         return setup
 
@@ -1747,16 +1748,25 @@ def register(app):
         deployment = request.form.get("deployment", "kubernetes")
         if deployment not in ("kubernetes", "compose", "rpm"):
             abort(400)
-        group = tenant_record_or_404(SupportGroup, int(request.form.get("group_id", "0")))
+        try:
+            group_id = int(request.form.get("group_id", "0"))
+        except ValueError:
+            abort(400, description=tr("Choose an active team to receive backup failure alerts."))
+        group = tenant_record_or_404(SupportGroup, group_id)
         if not core.is_team_group(group):
             abort(400, description=tr("Choose an active team to receive backup failure alerts."))
+        token, prefix, token_hash = create_api_token()
+        try:
+            encrypted_token = settings_cipher().encrypt(token.encode()).decode()
+        except Exception:
+            current_app.logger.exception("Unable to encrypt the recovery setup credential")
+            abort(503, description=tr("Recovery setup is temporarily unavailable. Try again later."))
         row = db.session.get(PlatformSetting, "BACKUP_RPO_HOURS") or PlatformSetting(key="BACKUP_RPO_HOURS")
         db.session.add(row)
         row.value, row.encrypted, row.updated_by_id = str(rpo), False, current_user.id
         for previous in MonitoringSource.query.filter_by(
                 tenant_id=current_user.tenant_id, name=BACKUP_REPORTER_NAME, active=True):
             previous.active = False
-        token, prefix, token_hash = create_api_token()
         source = MonitoringSource(
             name=BACKUP_REPORTER_NAME, token_prefix=prefix, token_hash=token_hash,
             assignment_group_id=group.id, created_by_id=current_user.id, tenant_id=current_user.tenant_id,
@@ -1768,7 +1778,7 @@ def register(app):
         # Shown once on the next page view only; never stored in clear.
         session["backup_setup"] = {
             "deployment": deployment, "source_id": source.source_id,
-            "token": settings_cipher().encrypt(token.encode()).decode(),
+            "token": encrypted_token,
             "base_url": request.host_url.rstrip("/"),
         }
         flash(tr("Recovery set reporting is set up. Copy the token now: it is not shown again."), "success")

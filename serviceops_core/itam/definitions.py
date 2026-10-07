@@ -3,7 +3,7 @@ from datetime import date, timedelta
 
 from flask import url_for
 
-from serviceops_core.itam.registry import Field, ResourceType, register
+from serviceops_core.itam.registry import Field, ResourceType, register, readable_cis
 from serviceops_core.localization import tr
 
 CURRENCIES = ("JPY", "USD", "EUR", "GBP", "AUD", "SGD", "CNY", "INR", "LKR")
@@ -51,7 +51,10 @@ def notice_date(contract):
     """The last day to give notice, or None without an end date."""
     if not contract.end_date:
         return None
-    return contract.end_date - timedelta(days=contract.notice_days or 0)
+    days = contract.notice_days or 0
+    if (contract.end_date - date.min).days < days:
+        return date.min
+    return contract.end_date - timedelta(days=days)
 
 
 def contract_status(contract, today=None):
@@ -66,7 +69,7 @@ def contract_status(contract, today=None):
     deadline = notice_date(contract)
     if deadline and today >= deadline:
         return tr("Notice period"), "warn"
-    if contract.end_date and today >= contract.end_date - timedelta(days=(contract.notice_days or 0) + 30):
+    if contract.end_date and (contract.end_date - today).days <= (contract.notice_days or 0) + 30:
         return tr("Expiring soon"), "warn"
     return tr("Active"), "ok"
 
@@ -79,7 +82,7 @@ def _validate_contract(contract, values):
 
 
 def _contract_cis(contract):
-    return [(ci.name, url_for("ci_edit", ci_id=ci.id), ci.ci_class) for ci in contract.cis]
+    return [(ci.name, url_for("ci_edit", ci_id=ci.id), ci.ci_class) for ci in readable_cis(contract.cis)]
 
 
 CONTRACTS = register(ResourceType(
