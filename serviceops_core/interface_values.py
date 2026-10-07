@@ -63,7 +63,7 @@ VALUES = (
     translatable('Closed Incomplete'),
     translatable('Closed Skipped'),
     translatable('Cloudflare Access key download proxy'),
-    translatable('Company identity, support contact, and instance-wide naming.'),
+    translatable('Company identity and logo, support contact, and instance-wide naming.'),
     translatable('Company name'),
     translatable('Complete Markdown API guide'),
     translatable('Completed'),

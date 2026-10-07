@@ -277,7 +277,7 @@ SETTING_DEFINITIONS = {
 
 
 SETTING_GROUP_META = {
-    "organization": ("Organization", "Company identity, support contact, and instance-wide naming."),
+    "organization": ("Organization", "Company identity and logo, support contact, and instance-wide naming."),
     "appearance": ("Appearance", "Brand colors and the default screen density for new users."),
     "sign_in_and_directory": ("Sign-in and directory", "Local login, AD/LDAP, Keycloak, directory attributes, and synchronization."),
     "security": ("Security and limits", "Sessions, passwords, MFA, rate limits, uploads, malware scanning, and audit streaming."),

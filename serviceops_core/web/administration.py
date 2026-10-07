@@ -149,6 +149,10 @@ from serviceops_models import (
 from serviceops_core.localization import tr, tr_value
 
 
+# The monitoring source a backup job uses to report successful runs.
+BACKUP_REPORTER_NAME = "Backup reporter"
+
+
 def register(app):
     @app.route("/settings/mfa", methods=["GET", "POST"])
     @login_required
@@ -1357,10 +1361,12 @@ def register(app):
     @roles("admin")
     @require_action("administer")
     def system_settings_category(category):
-        # "branding" (company logo) and "infrastructure" (read-only runtime
-        # values) are not real SETTING_DEFINITIONS groups, but get the same
-        # isolated-page treatment as the 9 real ones for consistency.
-        if category not in SETTING_DEFINITIONS and category not in ("branding", "infrastructure"):
+        # The company logo now lives on the Organization page.
+        if category == "branding":
+            return redirect(url_for("system_settings_category", category="organization") + "#company-logo")
+        # "infrastructure" (read-only runtime values) is not a real
+        # SETTING_DEFINITIONS group, but gets the same isolated-page treatment.
+        if category not in SETTING_DEFINITIONS and category != "infrastructure":
             abort(404)
         definitions = SETTING_DEFINITIONS.get(category, [])
         if request.method == "POST":
@@ -1444,7 +1450,7 @@ def register(app):
                     validate_destination(core.setting_value("SYSLOG_HOST"), core.setting_value("SYSLOG_PORT"), core.setting_value("SYSLOG_TRANSPORT"))
                 except ValueError as error:
                     errors.append(str(error))
-            if category == "branding":
+            if category == "organization":
                 logo = request.files.get("company_logo")
                 if logo and logo.filename:
                     header = logo.stream.read(8)
@@ -1498,8 +1504,6 @@ def register(app):
             values[definition["key"]] = "" if definition["type"] == "secret" else value
             definition["configured"] = bool(value) if definition["type"] == "secret" else False
         title, description = (
-            ("Company logo", "PNG only, maximum 5 MB. Recommended transparent canvas, up to 600 × 200 px.")
-            if category == "branding" else
             ("Runtime environment", "These values describe where this ServiceOps instance is running. They are read-only here because changing a database, volume, replica count, or TLS endpoint requires a controlled Docker Compose or Kubernetes rollout.")
             if category == "infrastructure" else
             SETTING_GROUP_META[category]
@@ -1531,7 +1535,7 @@ def register(app):
             definitions=definitions, values=values,
             admin_section_key=admin_section_key,
             infrastructure=_infrastructure_rows() if category == "infrastructure" else None,
-            has_company_logo_field=category == "branding",
+            has_company_logo_field=category == "organization",
             **ad_context,
         )
 
@@ -1704,6 +1708,10 @@ def register(app):
             last_backup_at=last_backup_at, backup_healthy=backup_healthy,
             backup_rpo_hours=backup_rpo_hours,
             backup_offsite=core.setting_value("LAST_BACKUP_OFFSITE_STATUS", "not-recorded"),
+            backup_reporter=MonitoringSource.query.filter_by(
+                tenant_id=current_user.tenant_id, name=BACKUP_REPORTER_NAME, active=True).first(),
+            backup_setup=_reveal_backup_setup(session.pop("backup_setup", None)),
+            backup_teams=core.team_groups().all(),
             total_users=tenant_query(User).filter_by(active=True).count(),
             open_tickets=tenant_query(Ticket).filter(
                 Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])
@@ -1711,6 +1719,60 @@ def register(app):
             deployment_mode=os.getenv("DEPLOYMENT_MODE", "unknown"),
             gunicorn_workers=os.getenv("GUNICORN_WORKERS", "2"),
         )
+
+    def _reveal_backup_setup(setup):
+        if not setup:
+            return None
+        try:
+            setup["token"] = settings_cipher().decrypt(setup["token"].encode()).decode()
+        except Exception:  # noqa: BLE001 - a stale or tampered value just isn't shown
+            return None
+        return setup
+
+    @app.post("/admin/system-health/recovery-setup")
+    @roles("admin")
+    @require_action("security_administer")
+    def recovery_setup():
+        """Set up recovery-set reporting from the browser: the RPO, and a
+        dedicated credential the backup job uses to report each successful
+        run. A new credential replaces (revokes) the previous one. The token is
+        shown once, with the exact command for the chosen deployment."""
+        require_install_settings_authority()
+        try:
+            rpo = int(request.form.get("rpo_hours", "24"))
+        except ValueError:
+            rpo = 0
+        if not 1 <= rpo <= 168:
+            abort(400, description=tr("The recovery point objective must be between 1 and 168 hours."))
+        deployment = request.form.get("deployment", "kubernetes")
+        if deployment not in ("kubernetes", "compose", "rpm"):
+            abort(400)
+        group = tenant_record_or_404(SupportGroup, int(request.form.get("group_id", "0")))
+        if not core.is_team_group(group):
+            abort(400, description=tr("Choose an active team to receive backup failure alerts."))
+        row = db.session.get(PlatformSetting, "BACKUP_RPO_HOURS") or PlatformSetting(key="BACKUP_RPO_HOURS")
+        db.session.add(row)
+        row.value, row.encrypted, row.updated_by_id = str(rpo), False, current_user.id
+        for previous in MonitoringSource.query.filter_by(
+                tenant_id=current_user.tenant_id, name=BACKUP_REPORTER_NAME, active=True):
+            previous.active = False
+        token, prefix, token_hash = create_api_token()
+        source = MonitoringSource(
+            name=BACKUP_REPORTER_NAME, token_prefix=prefix, token_hash=token_hash,
+            assignment_group_id=group.id, created_by_id=current_user.id, tenant_id=current_user.tenant_id,
+        )
+        db.session.add(source)
+        db.session.flush()
+        audit("recovery set setup", BACKUP_REPORTER_NAME, f"rpo={rpo}h; deployment={deployment}; team={group.name}")
+        db.session.commit()
+        # Shown once on the next page view only; never stored in clear.
+        session["backup_setup"] = {
+            "deployment": deployment, "source_id": source.source_id,
+            "token": settings_cipher().encrypt(token.encode()).decode(),
+            "base_url": request.host_url.rstrip("/"),
+        }
+        flash(tr("Recovery set reporting is set up. Copy the token now: it is not shown again."), "success")
+        return redirect(url_for("system_health") + "#recovery-set")
 
     @app.get("/admin/system-health/performance.json")
     @roles("admin")
@@ -2597,6 +2659,9 @@ def register(app):
     @roles("admin")
     @require_action("configure")
     def itil_admin_section(section):
+        # Team name aliases now sit on the Team managers page.
+        if section == "team-aliases":
+            return redirect(url_for("itil_admin_section", section="team-managers") + "#team-aliases")
         if section not in ITIL_ADMIN_SECTIONS:
             abort(404)
         title, description = ITIL_ADMIN_SECTIONS[section]

@@ -78,8 +78,43 @@
 </section>
 {% endif %}
 
-{% if section == 'team-aliases' %}
+
+
+{% if section == 'team-managers' %}
 <section class="panel admin-section">
+  <p class="muted">{{ tr('The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.') }} <a href="{{ url_for('groups') }}">{{ tr('Create, edit or delete groups in Sign-in and directory.') }}</a></p>
+  <table>
+    <thead><tr><th>{{ tr('Team') }}</th><th>{{ tr('Current manager') }}</th><th>{{ tr('Manager assignment') }}</th><th>{{ tr('Members') }}</th></tr></thead>
+    <tbody>
+      {% for team in teams %}
+      <tr>
+        <td><a href="{{ url_for('group_edit', group_id=team.id) }}">{{ team.name }}</a>{% if not team.active %} <small class="muted">({{ tr('inactive') }})</small>{% endif %}</td>
+        <td>{{ team.manager.name if team.manager else tr('Unassigned') }}</td>
+        <td>
+          <form method="post" action="{{ post_url }}" class="inline-form">
+            <input type="hidden" name="action" value="set_manager">
+            <input type="hidden" name="group_id" value="{{ team.id }}">
+            <select name="manager_id" aria-label="{{ tr('Manager for {name}', name=(team.name)) }}">
+              <option value="">{{ tr('Unassigned') }}</option>
+              {% for user in manager_candidates %}
+              <option value="{{ user.id }}" {% if team.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
+              {% endfor %}
+            </select>
+            <button class="button">{{ tr('Save') }}</button>
+          </form>
+        </td>
+        <td>{{ team.members|length }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if team_rename_history %}<small class="muted">{% for entry in team_rename_history %}{{ entry.created_at|usertime('%b %d, %H:%M') }} · {{ entry.details }}{% if not loop.last %}<br>{% endif %}{% endfor %}</small>{% endif %}
+</section>
+{% endif %}
+
+{% if section == 'team-managers' %}
+<section class="panel admin-section" id="team-aliases">
+  <h2>{{ tr('Team name aliases') }}</h2>
   <p class="muted">{{ tr('Add alternate names staff use for a team (e.g. "DBA" for "Database"). Anywhere a team name is resolved from free text — CSV/spreadsheet import\'s Owner column, for example — the alias resolves to the same team instead of creating a duplicate.') }}</p>
   <form method="post" action="{{ post_url }}" class="form-grid">
     <input type="hidden" name="action" value="add_support_group_alias">
@@ -113,38 +148,6 @@
       {% endfor %}
     </tbody>
   </table>
-</section>
-{% endif %}
-
-{% if section == 'team-managers' %}
-<section class="panel admin-section">
-  <p class="muted">{{ tr('The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.') }} <a href="{{ url_for('groups') }}">{{ tr('Create, edit or delete groups in Sign-in and directory.') }}</a></p>
-  <table>
-    <thead><tr><th>{{ tr('Team') }}</th><th>{{ tr('Current manager') }}</th><th>{{ tr('Manager assignment') }}</th><th>{{ tr('Members') }}</th></tr></thead>
-    <tbody>
-      {% for team in teams %}
-      <tr>
-        <td><a href="{{ url_for('group_edit', group_id=team.id) }}">{{ team.name }}</a>{% if not team.active %} <small class="muted">({{ tr('inactive') }})</small>{% endif %}</td>
-        <td>{{ team.manager.name if team.manager else tr('Unassigned') }}</td>
-        <td>
-          <form method="post" action="{{ post_url }}" class="inline-form">
-            <input type="hidden" name="action" value="set_manager">
-            <input type="hidden" name="group_id" value="{{ team.id }}">
-            <select name="manager_id" aria-label="{{ tr('Manager for {name}', name=(team.name)) }}">
-              <option value="">{{ tr('Unassigned') }}</option>
-              {% for user in manager_candidates %}
-              <option value="{{ user.id }}" {% if team.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
-              {% endfor %}
-            </select>
-            <button class="button">{{ tr('Save') }}</button>
-          </form>
-        </td>
-        <td>{{ team.members|length }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% if team_rename_history %}<small class="muted">{% for entry in team_rename_history %}{{ entry.created_at|usertime('%b %d, %H:%M') }} · {{ entry.details }}{% if not loop.last %}<br>{% endif %}{% endfor %}</small>{% endif %}
 </section>
 {% endif %}
 
