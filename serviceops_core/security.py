@@ -158,6 +158,14 @@ _ARGON2_HASHER = PasswordHasher()
 ARGON2_PREFIX = "$argon2"
 
 
+def use_fast_password_hashing():
+    """Test suites only (create_app calls this when TESTING): a minimal-cost
+    Argon2id hasher, so each test login does not spend ~0.1 s hashing.
+    Verification still accepts hashes made with any parameters."""
+    global _ARGON2_HASHER
+    _ARGON2_HASHER = PasswordHasher(time_cost=1, memory_cost=1024, parallelism=1)
+
+
 def hash_password(password):
     """Hash a password with Argon2id. Use for all new/changed passwords."""
     return _ARGON2_HASHER.hash(password)

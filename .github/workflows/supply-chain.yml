@@ -88,7 +88,7 @@ jobs:
           docker run --rm "serviceops-test:${RELEASE_SHA}" python -m compileall -q app.py installer serviceops_core tools
           docker run --rm "serviceops-test:${RELEASE_SHA}" alembic heads | tee /tmp/alembic-heads.txt
           test "$(wc -l < /tmp/alembic-heads.txt)" -eq 1
-          docker run --rm "serviceops-test:${RELEASE_SHA}" pytest -q
+          docker run --rm "serviceops-test:${RELEASE_SHA}" pytest -q -n auto
 
       - name: Validate shell, JavaScript, and Compose configuration
         env:
