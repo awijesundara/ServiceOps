@@ -3024,6 +3024,10 @@
    "javascript": true
   },
   {
+   "id": "Drag and drop files here, or choose files to upload.",
+   "javascript": true
+  },
+  {
    "id": "Drag the image to reposition it, then use the slider to zoom. Only the circle is kept."
   },
   {
@@ -3031,6 +3035,14 @@
   },
   {
    "id": "Drag to reposition and zoom to crop before saving."
+  },
+  {
+   "id": "Drop files to attach them",
+   "javascript": true
+  },
+  {
+   "id": "Drop files to attach them to {number}",
+   "javascript": true
   },
   {
    "id": "Due"
@@ -5416,9 +5428,6 @@
    "id": "No activity yet."
   },
   {
-   "id": "No additional CI or service relationships."
-  },
-  {
    "id": "No additional CI relationships."
   },
   {
@@ -5490,6 +5499,9 @@
   },
   {
    "id": "No configuration items linked yet."
+  },
+  {
+   "id": "No configuration items or services are linked yet."
   },
   {
    "id": "No configuration items to display yet."
@@ -10316,6 +10328,10 @@
    "id": "Upload replacement PNG"
   },
   {
+   "id": "Uploading {current} of {total}: {name}",
+   "javascript": true
+  },
+  {
    "id": "Uptime"
   },
   {
@@ -11998,6 +12014,10 @@
    "id": "{name} cannot be requested yet: {error} Contact an administrator."
   },
   {
+   "id": "{name} could not be uploaded.",
+   "javascript": true
+  },
+  {
    "id": "{name} created and routed to {group}."
   },
   {
@@ -12014,6 +12034,10 @@
   },
   {
    "id": "{name} is already a member of {name2}."
+  },
+  {
+   "id": "{name} is larger than 20 MB.",
+   "javascript": true
   },
   {
    "id": "{name} is now {value} the public status page."

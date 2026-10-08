@@ -54,6 +54,7 @@ from serviceops_models import (
     ApprovalGate,
     ApprovalVote,
     CatalogItem,
+    CatalogItemRouting,
     CatalogRequest,
     CatalogTask,
     CatalogTaskControl,
@@ -78,9 +79,9 @@ def register(app):
     def catalog():
         return render_template(
             "catalog.html",
-            items=tenant_query(CatalogItem).filter_by(active=True).order_by(
-                CatalogItem.category, CatalogItem.name
-            ).all(),
+            items=tenant_query(CatalogItem).filter_by(active=True).options(
+                selectinload(CatalogItem.fulfillment_route).selectinload(CatalogItemRouting.support_group),
+            ).order_by(CatalogItem.category, CatalogItem.name).all(),
         )
 
     @app.post("/catalog/<int:item_id>/order")

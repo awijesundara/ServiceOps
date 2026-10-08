@@ -2,14 +2,16 @@
 {% set ui_theme = ui_preference.theme if current_user.is_authenticated and ui_preference.theme in ('dark', 'system') else 'light' %}
 {% set html_classes = (['theme-dark'] if ui_theme != 'light' else []) + (['ai-chat-open'] if chat_was_open else []) %}
 <!doctype html>
-<html lang="{{ ui_language }}" dir="{{ ui_direction }}"{% if html_classes %} class="{{ html_classes|join(' ') }}"{% endif %} style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }}">
+<html lang="{{ ui_language }}" dir="{{ ui_direction }}"{% if html_classes %} class="{{ html_classes|join(' ') }}"{% endif %}>
 <head>
   <link rel="manifest" href="{{ url_for('pwa_manifest') }}">
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png', v=app_version) }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png', v=app_version) }}">
-  <meta name="theme-color" content="{{ brand_teal }}">
+  <meta name="theme-color" content="{{ brand_teal|css_color('#003e4c') }}">
   <meta name="color-scheme" content="{{ {'light': 'light', 'dark': 'dark', 'system': 'light dark'}[ui_theme] }}">
   <meta charset="utf-8">
+  {# Per-request values (brand colors, font scale) as a nonce'd block: the CSP allows no inline style attributes. #}
+  <style nonce="{{ csp_nonce() }}">:root{--brand-primary:{{ brand_teal|css_color('#003e4c') }};--brand-accent:{{ brand_amber|css_color('#f9aa3c') }}}{% if current_user.is_authenticated %}body{--font-scale:{{ ui_preference.font_scale / 100 }}}{% endif %}</style>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ instance_name|default('ServiceOps') }}{% endblock %}</title>
   <script type="application/json" id="serviceops-i18n">{{ ui_javascript_catalog|tojson }}</script>
@@ -23,6 +25,7 @@
   {% if request.endpoint in ['status_page', 'status_page_default'] %}<link rel="stylesheet" href="{{ url_for('static', filename='status-page.css', v=app_version) }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v=app_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='utilities.css', v=app_version) }}">
   {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='notification-audiences.css', v=app_version) }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='client-management.css', v=app_version) }}">
   {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css', v=app_version) }}">{% endif %}
@@ -34,6 +37,7 @@
   <script src="{{ url_for('static', filename='columns-picker.js', v=app_version) }}" defer></script>
   <script src="{{ url_for('static', filename='admin-nav.js', v=app_version) }}" defer></script>
   <script src="{{ url_for('static', filename='admin-context.js', v=app_version) }}" defer></script>
+  {% if request.endpoint == 'ticket_detail' %}<script src="{{ url_for('static', filename='attachment-drop.js', v=app_version) }}" defer></script>{% endif %}
   {% if current_user.is_authenticated %}<script src="{{ url_for('static', filename='guided-tour.js', v=app_version) }}" defer></script>{% endif %}
   {% if current_user.is_authenticated and ((request.endpoint or '').startswith('ai.') or ai_chat_available(current_user)) %}
   <link rel="stylesheet" href="{{ url_for('static', filename='ai-chat.css', v=app_version) }}">
@@ -45,7 +49,7 @@
   {# Last, so its html.theme-dark rules follow every light stylesheet. "system" lets the browser apply it only while the device is in dark mode. #}
   {% if ui_theme != 'light' %}<link rel="stylesheet" href="{{ url_for('static', filename='dark.css', v=app_version) }}"{% if ui_theme == 'system' %} media="(prefers-color-scheme: dark)"{% endif %}>{% endif %}
 </head>
-<body class="{% if current_user.is_authenticated %}theme-{{ ui_theme }} density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" style="--brand-primary:{{ brand_teal|default('#003e4c') }};--brand-accent:{{ brand_amber|default('#f9aa3c') }};{% if current_user.is_authenticated %}--font-scale:{{ ui_preference.font_scale / 100 }}{% endif %}" {% if current_user.is_authenticated %}data-tour-route="{{ request.endpoint }}"{% endif %}>
+<body class="{% if current_user.is_authenticated %}theme-{{ ui_theme }} density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" {% if current_user.is_authenticated %}data-tour-route="{{ request.endpoint }}"{% endif %}>
 {% from '_admin_icons.html' import admin_icon %}
 <a class="skip-link" href="#main-content">{{ tr('Skip to main content') }}</a>
 {% if current_user.is_authenticated %}

@@ -9,6 +9,7 @@ import re
 import secrets
 import time as time_module
 import uuid
+from collections import defaultdict
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from types import SimpleNamespace
 from urllib.parse import urlparse
@@ -237,7 +238,7 @@ def register(app):
         memberships = GroupMember.query.filter(
             GroupMember.group_id.in_(tenant_group_ids),
             GroupMember.user_id.in_(tenant_user_ids),
-        ).all()
+        ).options(selectinload(GroupMember.group)).all()
         directory_managed = {
             (item.user_id, item.group_id)
             for item in DirectoryManagedMembership.query.filter(
@@ -245,6 +246,11 @@ def register(app):
                 DirectoryManagedMembership.user_id.in_(tenant_user_ids),
             ).all()
         }
+        # One pass here instead of scanning every membership for every user row in the template.
+        membership_labels = defaultdict(list)
+        for membership in memberships:
+            source = "AD" if (membership.user_id, membership.group_id) in directory_managed else "Manual"
+            membership_labels[membership.user_id].append(f"{membership.group.name} ({membership.role}, {source})")
         search = request.args.get("q", "").strip()
         raw_filter = request.args.get("filter", "")
         conditions = parse_list_filter_param(raw_filter)
@@ -286,7 +292,7 @@ def register(app):
             "users.html",
             users=user_query.order_by(User.name).all(), search=search,
             raw_filter=raw_filter, breadcrumb_parts=breadcrumb_parts, filter_fields=client_fields,
-            memberships=memberships, directory_managed=directory_managed,
+            membership_labels=membership_labels,
         )
 
     @app.route("/admin/users/new", methods=["GET", "POST"])

@@ -4,24 +4,24 @@
 <header class="page-head"><div><p class="eyebrow">CMDB</p><h1>{{ tr('Topology map') }}<span class="info-tip" tabindex="0" data-tip="Every configuration item and relationship visible to you, laid out automatically. Discovered nodes (SNMP discovery) are marked distinctly from manually-created ones. Drag nodes to rearrange; the layout is not saved.">i</span></h1><p>{{ tr('A visual map of configuration items and how they connect.') }}</p></div><a class="button" href="{{ url_for('cmdb') }}">‹ {{ tr('Back to CMDB') }}</a></header>
 
 <section class="panel">
-  <div id="cmdb-topology-legend" class="muted" style="margin-bottom:10px;font-size:12px">
+  <div id="cmdb-topology-legend" class="muted u-mb-10-text-12">
     <span class="cmdb-topology-key-manual">●</span> {{ tr('Manually created') }}
     <span class="cmdb-topology-key-discovered">●</span> {{ tr('SNMP discovered   — line = relationship, "+N more" = collapsed connections, click a node (or search above) to expand and inspect its switch, neighbors, and ports') }}
   </div>
-  <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+  <div class="u-toolbar-8">
     <button type="button" id="cmdb-topology-zoom-in" class="button" aria-label="{{ tr('Zoom in') }}">+</button>
     <button type="button" id="cmdb-topology-zoom-out" class="button" aria-label="{{ tr('Zoom out') }}">−</button>
     <button type="button" id="cmdb-topology-reset" class="button">{{ tr('Reset view') }}</button>
-    <div class="lookup" id="cmdb-topology-jump-to" data-lookup-url="{{ url_for('lookup_cis') }}" style="min-width:260px">
+    <div class="lookup u-minw-260" id="cmdb-topology-jump-to" data-lookup-url="{{ url_for('lookup_cis') }}">
       <input type="text" class="lookup-search" placeholder="{{ tr('Jump to a configuration item…') }}" autocomplete="off">
       <input type="hidden">
       <div class="lookup-results" hidden></div>
     </div>
   </div>
-  <div style="display:flex;gap:12px;align-items:flex-start">
+  <div class="u-row-start-12">
     <svg id="cmdb-topology-svg" width="100%" height="640" data-graph="{{ graph_json }}" data-backbone-classes="Switch,Router" class="cmdb-topology-canvas"></svg>
-    <aside id="cmdb-topology-detail" class="panel" hidden style="width:280px;flex-shrink:0">
-      <button type="button" id="cmdb-topology-detail-close" class="button" style="float:right" aria-label="{{ tr('Close details') }}">×</button>
+    <aside id="cmdb-topology-detail" class="panel u-w-280-fixed" hidden>
+      <button type="button" id="cmdb-topology-detail-close" class="button u-float-right" aria-label="{{ tr('Close details') }}">×</button>
       <div id="cmdb-topology-detail-body"></div>
     </aside>
   </div>

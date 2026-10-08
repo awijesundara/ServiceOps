@@ -48,7 +48,7 @@
 </aside>
 </div>
 
-<section class="panel" id="recovery-set" style="margin-top:20px">
+<section class="panel u-mt-20" id="recovery-set">
   <h2>{{ tr('Recovery set') }}<span class="info-tip" tabindex="0" data-tip="Tracks the most recent verified backup, not backups themselves -- ServiceOps has no built-in backup pipeline unless the Helm chart's optional backup.enabled CronJob is turned on. Either way, an external backup job reports in by calling tools/record_backup_status.py (Compose/RPM) or POST /api/v1/monitoring/&lt;source_id&gt;/backup-report (Kubernetes) after each successful run.">i</span></h2>
   {% if not last_backup_at %}
   <p class="muted">{{ tr("No successful backup has ever been recorded for this deployment. This isn't necessarily a live incident -- it usually just means nothing has reported a successful backup yet: run") }} <code>tools/record_backup_status.py --manifest &lt;path&gt; --offsite archived|not-configured</code> {{ tr("(Compose/RPM), or have the Kubernetes backup CronJob's") }} <code>backup.alertingSecret</code> {{ tr('configured so it can call') }} <code>POST /api/v1/monitoring/&lt;source_id&gt;/backup-report</code> {{ tr('on success.') }}</p>
@@ -90,7 +90,7 @@ helm upgrade serviceops charts/serviceops -n operations --reuse-values \
   </details>
 </section>
 
-<section class="list-workspace" style="margin-top:20px" id="application-errors">
+<section class="list-workspace u-mt-20" id="application-errors">
   <header class="list-toolbar">
     <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Application errors') }}</strong><small>{{ tr('{total_errors} records', total_errors=(total_errors)) }}</small></div></div>
     <nav class="list-pagination" aria-label="{{ tr('Pagination') }}">

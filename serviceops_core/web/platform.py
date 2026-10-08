@@ -16,6 +16,7 @@ from sqlalchemy import func
 
 import app as core
 from app import (
+    flush_request_metrics,
     align_tz,
     APP_START_MONOTONIC,
     audit_integrity_key,
@@ -251,6 +252,7 @@ def register(app):
             "# TYPE serviceops_process_uptime_seconds gauge",
             f"serviceops_process_uptime_seconds {time_module.monotonic() - APP_START_MONOTONIC:.3f}",
         ]
+        flush_request_metrics()  # include this worker's buffered counts
         for row in RequestMetricTotal.query.order_by(
             RequestMetricTotal.method, RequestMetricTotal.status,
         ).all():

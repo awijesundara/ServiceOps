@@ -35,7 +35,7 @@ SCOPE = "html.theme-dark"
 SOURCES = [
     "app.css", "enterprise.css", "itil.css", "platform.css", "rtl.css",
     "task-board.css", "status-page.css", "brand.css", "admin-workspace.css",
-    "notification-audiences.css", "client-management.css", "integrations.css",
+    "notification-audiences.css", "utilities.css", "client-management.css", "integrations.css",
     "ai-chat.css",
 ]
 

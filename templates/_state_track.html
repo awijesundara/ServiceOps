@@ -1,5 +1,5 @@
 {% if state_track %}
 <nav class="state-track" aria-label="{{ tr('Lifecycle status') }}">
-  {% for step in state_track %}<span class="state-track-step {{ step.status }}" style="z-index:{{ loop.length - loop.index }}">{{ step.name }}</span>{% endfor %}
+  {% for step in state_track %}<span class="state-track-step {{ step.status }} z-stack-{{ loop.length - loop.index }}">{{ step.name }}</span>{% endfor %}
 </nav>
 {% endif %}

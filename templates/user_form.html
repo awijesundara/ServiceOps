@@ -13,13 +13,13 @@
   </header>
   {% if self_service %}
   <div class="profile-avatar-row">
-    <img class="profile-avatar-preview" id="profile-avatar-preview-img" src="{{ url_for('profile_avatar', user_id=user.id) if user.avatar_path else '' }}" alt="{{ tr('Profile picture') }}"{% if not user.avatar_path %} style="display:none"{% endif %}>
-    <div class="profile-avatar-preview profile-avatar-placeholder" id="profile-avatar-preview-placeholder"{% if user.avatar_path %} style="display:none"{% endif %}>{{ user.name[0] }}</div>
+    <img class="profile-avatar-preview" id="profile-avatar-preview-img" src="{{ url_for('profile_avatar', user_id=user.id) if user.avatar_path else '' }}" alt="{{ tr('Profile picture') }}"{% if not user.avatar_path %} hidden{% endif %}>
+    <div class="profile-avatar-preview profile-avatar-placeholder" id="profile-avatar-preview-placeholder"{% if user.avatar_path %} hidden{% endif %}>{{ user.name[0] }}</div>
     <div class="profile-avatar-meta"><strong>{{ user.name }}</strong><small>{{ user.title or (user.role|capitalize) }}</small></div>
   </div>
   <dialog id="avatar-crop-modal" class="avatar-crop-modal" aria-modal="true" aria-labelledby="avatar-crop-title">
     <h3 id="avatar-crop-title">{{ tr('Adjust your profile picture') }}</h3>
-    <p class="muted" style="font-size:12px;margin-top:-6px">{{ tr('Drag the image to reposition it, then use the slider to zoom. Only the circle is kept.') }}</p>
+    <p class="muted u-text-12-tuck">{{ tr('Drag the image to reposition it, then use the slider to zoom. Only the circle is kept.') }}</p>
     <div class="avatar-crop-viewport" id="avatar-crop-viewport">
       <img id="avatar-crop-image" alt="">
     </div>

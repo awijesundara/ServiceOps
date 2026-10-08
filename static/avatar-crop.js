@@ -113,8 +113,8 @@ document.addEventListener("DOMContentLoaded", () => {
       transfer.items.add(croppedFile);
       input.files = transfer.files;
       const previewUrl = URL.createObjectURL(blob);
-      if (previewImg) { previewImg.src = previewUrl; previewImg.style.display = ""; }
-      if (previewPlaceholder) previewPlaceholder.style.display = "none";
+      if (previewImg) { previewImg.src = previewUrl; previewImg.hidden = false; }
+      if (previewPlaceholder) previewPlaceholder.hidden = true;
       closeCropper(false);
     }, "image/png");
   });

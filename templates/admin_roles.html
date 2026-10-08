@@ -42,7 +42,7 @@
 <section class="panel">
   <h2>{{ tr('Reset to recommended') }}</h2>
   <p class="muted">{{ tr("Discards this tenant's overrides for a role, restoring it to exactly what") }} <code>config/authorization.json</code> {{ tr('grants.') }}</p>
-  <div style="display:flex;gap:10px;flex-wrap:wrap">
+  <div class="u-wrap-10">
     {% for role in editable_roles %}
     <form method="post" data-confirm="{{ tr('Reset {role} to the ITIL-recommended baseline? This discards any custom permission changes made for this role.', role=(role)) }}">
       <input type="hidden" name="action" value="reset">

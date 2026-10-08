@@ -6,7 +6,7 @@
 <div class="panel"><p class="flash error">{{ error_message }}</p></div>
 {% else %}
 <section class="panel">
-  <form class="filters splunk-filters" style="margin-bottom:14px">
+  <form class="filters splunk-filters u-mb-14">
     <input name="q" value="{{ q }}" placeholder="{{ tr('Search path, message, request ID...') }}" aria-label="{{ tr('Search logs') }}">
     <select name="level" aria-label="{{ tr('Level') }}">
       <option value="" {% if not level_filter %}selected{% endif %}>{{ tr('All levels') }}</option>

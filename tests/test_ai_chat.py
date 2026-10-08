@@ -290,7 +290,7 @@ def test_the_open_chat_state_is_rendered_server_side_from_a_cookie_not_flashed_i
     assert b' class="ai-chat-open"' not in closed.data  # no stray class when never opened
     client.set_cookie("ai_chat_open", "1")
     opened = client.get("/")
-    assert b'<html lang="en" dir="ltr" class="ai-chat-open" style="--brand-primary:' in opened.data
+    assert b'<html lang="en" dir="ltr" class="ai-chat-open">' in opened.data
     full_page = client.get("/ai/chat")  # the full chat page has no launcher/widget at all
     assert b"ai-chat-open" not in full_page.data
     client.set_cookie("ai_chat_open", "not-the-literal-string-1")  # anything else reads as closed

@@ -5,7 +5,7 @@
 {% set csv_url = url_for('manager_portal_export') %}
 {% include "_export_toolbar.html" %}
 {% if team_rows %}
-<div class="list-search" style="margin-bottom:16px">
+<div class="list-search u-mb-16">
   <input type="search" id="manager-portal-filter" placeholder="{{ tr('Filter by name, title, or team') }}" aria-label="{{ tr('Filter team members') }}">
 </div>
 {% endif %}
@@ -15,7 +15,7 @@
 {% endif %}
 
 {% for row in team_rows %}
-<section class="panel table-panel mp-team-section" style="margin-bottom:20px" data-team-name="{{ row.group.name|lower }}">
+<section class="panel table-panel mp-team-section u-mb-20" data-team-name="{{ row.group.name|lower }}">
   <header class="section-heading">
     <div>
       <h2>{{ row.group.name }}</h2>
