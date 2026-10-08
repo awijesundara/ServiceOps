@@ -202,10 +202,34 @@
     });
   }
 
-  // Dropping a file on the comment box fills its optional "Attach a file" input.
+  // The comment box's compact "Attach file" control: the chosen, dropped or pasted
+  // file shows as a removable chip and posts together with the note.
   function enhanceCommentForm(form) {
     const input = form.querySelector('input[type="file"]');
     if (!input) return;
+    const control = form.querySelector("[data-comment-attach]");
+    const chip = form.querySelector("[data-comment-attach-chip]");
+    const label = form.querySelector("[data-comment-attach-name]");
+    control?.classList.add("is-enhanced");
+    function show() {
+      const file = input.files[0];
+      if (!chip || !label) return;
+      chip.hidden = !file;
+      if (!file) return;
+      const tooLarge = file.size > MAX_BYTES;
+      label.textContent = tooLarge
+        ? tr("{name} · {size}, over the 20 MB limit", { name: file.name, size: formatSize(file.size) })
+        : tr("{name} · {size}", { name: file.name, size: formatSize(file.size) });
+      chip.classList.toggle("is-too-large", tooLarge);
+    }
+    function attach(file) {
+      const chosen = new DataTransfer();
+      chosen.items.add(file);
+      input.files = chosen.files;
+      show();
+    }
+    input.addEventListener("change", show);
+    form.querySelector("[data-comment-attach-clear]")?.addEventListener("click", () => { input.value = ""; show(); });
     form.addEventListener("dragover", (event) => {
       if (!event.dataTransfer?.types.includes("Files")) return;
       event.preventDefault();
@@ -218,11 +242,16 @@
       if (!event.dataTransfer?.files.length) return;
       event.preventDefault();
       form.classList.remove("is-dragover");
-      const chosen = new DataTransfer();
-      chosen.items.add(event.dataTransfer.files[0]);
-      input.files = chosen.files;
-      input.dispatchEvent(new Event("change", { bubbles: true }));
+      attach(event.dataTransfer.files[0]);
     });
+    form.addEventListener("paste", (event) => {
+      const file = event.clipboardData?.files?.[0];
+      if (!file) return; // plain text keeps pasting into the note
+      event.preventDefault();
+      attach(file.name && file.name !== "image.png" ? file
+        : new File([file], `pasted-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.${(file.type.split("/")[1] || "png").replace("jpeg", "jpg")}`, { type: file.type }));
+    });
+    form.addEventListener("reset", () => { input.value = ""; show(); });
   }
 
   document.addEventListener("DOMContentLoaded", () => {

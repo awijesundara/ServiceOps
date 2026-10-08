@@ -169,3 +169,12 @@ def test_resolved_tickets_keep_their_files_except_for_administrators(client, app
     assert delete(client, attachment_id).status_code == 403
     as_user(client, "admin", "Admin123!")
     assert delete(client, attachment_id).status_code == 302
+
+
+def test_note_box_offers_the_compact_attach_control_with_the_supported_filter(client, app):
+    ticket_id, _, _ = incident_with_attachment(client, app)
+    page = client.get(f"/ticket/{ticket_id}").get_data(as_text=True)
+    box = re.search(r'<form[^>]*class="comment-box".*?</form>', page, re.S).group(0)
+    assert "data-comment-attach" in box and "Attach file" in box
+    file_input = re.search(r'<input type="file" name="file"[^>]*>', box).group(0)
+    assert 'accept=".7z,' in file_input and ".pdf" in file_input

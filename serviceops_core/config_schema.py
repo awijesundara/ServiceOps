@@ -90,7 +90,7 @@ SETTING_DEFINITIONS = {
         },
         {"key": "LDAP_AUTO_CREATE_TEAMS", "label": "Create teams from the mapped LDAP team attribute", "type": "bool", "default": "false", "live": True},
         {"key": "LDAP_SYNC_ACCOUNT_STATUS", "label": "Deactivate ServiceOps sessions when LDAP disables an account", "type": "bool", "default": "true", "live": True},
-        {"key": "CLIENT_HOSTNAME_LOOKUP", "label": "Record verified reverse-DNS names for login sessions", "type": "bool", "default": "false", "live": True},
+        {"key": "CLIENT_HOSTNAME_LOOKUP", "label": "Record verified reverse-DNS hostnames of client devices in sessions and logs", "type": "bool", "default": "true", "live": True},
         {
             "key": "KEYCLOAK_ATTR_MAP", "label": "Keycloak/OIDC directory attribute map", "type": "json",
             "default": json.dumps({

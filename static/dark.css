@@ -435,6 +435,15 @@ html.theme-dark .attachment-queue-remove:hover{color:var(--red);background:#2018
 html.theme-dark .attachment-dialog-status{color:var(--muted)}
 html.theme-dark .attachment-dialog-status.is-error{color:var(--red)}
 html.theme-dark .attachment-dialog-footer{border-top:1px solid var(--line);background:#12181c}
+html.theme-dark .comment-attach-button{border:1px solid var(--line);background:var(--white);color:var(--dk-accent-strong)}
+html.theme-dark .comment-attach-button:hover{border-color:var(--dk-accent);background:#151a1f}
+html.theme-dark .comment-attach-button:focus-within{outline:2px solid var(--dk-accent)}
+html.theme-dark .comment-attach-button .icon{fill:none;stroke:currentColor}
+html.theme-dark .comment-attach-chip{background:var(--brand-teal-soft);color:var(--ink)}
+html.theme-dark .comment-attach-chip button{border:0;background:transparent;color:var(--muted)}
+html.theme-dark .comment-attach-chip button:hover{color:var(--red)}
+html.theme-dark .comment-attach-hint{color:var(--muted)}
+html.theme-dark .comment-attach-chip.is-too-large{background:#201817;color:var(--red)}
 /* platform.css */
 html.theme-dark .unified-nav{background:#182128;border-bottom:1px solid var(--line)}
 html.theme-dark .nav-toggle,html.theme-dark .nav-icon{border:0;background:transparent}
