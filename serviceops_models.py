@@ -515,10 +515,10 @@ class Ticket(db.Model):
     contact_type = db.Column(db.String(40), nullable=False, default="Self-service")
     notify = db.Column(db.String(40), nullable=False, default="Email")
     service_offering_id = db.Column(db.Integer, db.ForeignKey("service_offering.id"))
-    requester_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    assignee_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    requester_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    assignee_id = db.Column(db.Integer, db.ForeignKey("user.id"), index=True)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
-    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False, index=True)
     deleted_at = db.Column(db.DateTime(timezone=True))
     deleted_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     requester = db.relationship("User", foreign_keys=[requester_id])
@@ -542,7 +542,7 @@ class Ticket(db.Model):
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     body = db.Column(db.Text, nullable=False)
     # Null for a top-level comment; set for a threaded reply. Always a
@@ -1782,7 +1782,7 @@ class ServiceOutage(db.Model):
 
 class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     title = db.Column(db.String(180), nullable=False)
     body = db.Column(db.Text, nullable=False)
     target_type = db.Column(db.String(30))
@@ -1882,7 +1882,7 @@ class SupportGroup(db.Model):
 class GroupMember(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     role = db.Column(db.String(40), nullable=False, default="member")
     user = db.relationship("User")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
@@ -2005,8 +2005,8 @@ class ApprovalGate(db.Model):
 
 class ApprovalVote(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    gate_id = db.Column(db.Integer, db.ForeignKey("approval_gate.id"), nullable=False)
-    approver_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    gate_id = db.Column(db.Integer, db.ForeignKey("approval_gate.id"), nullable=False, index=True)
+    approver_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     delegated_from_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     state = db.Column(db.String(30), nullable=False, default="Not Requested")
     comments = db.Column(db.Text, default="")
@@ -2736,9 +2736,9 @@ class FileAttachment(db.Model):
     # ticket_id is nullable because RT import (serviceops_core/rt_import.py)
     # can also attach files to an EnterpriseRecord ("IT operations event")
     # instead -- exactly one of ticket_id/enterprise_record_id is set.
-    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=True, index=True)
     enterprise_record_id = db.Column(db.Integer, db.ForeignKey("enterprise_record.id"), nullable=True)
-    comment_id = db.Column(db.Integer, db.ForeignKey("comment.id"), nullable=True)
+    comment_id = db.Column(db.Integer, db.ForeignKey("comment.id"), nullable=True, index=True)
     # A fourth parent option: a Client Management customer ticket -- email
     # attachments land on the ticket directly (not per-message), matching
     # how ITIL ticket attachments already work.

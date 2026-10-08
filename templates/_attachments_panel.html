@@ -1,0 +1,43 @@
+{# Ticket attachments: file list plus an always-visible upload area. static/attachment-drop.js turns the
+   area into a drag-and-drop / paste target and an "Add attachments" dialog; without JavaScript the
+   form still posts one chosen file. #}
+{% set supported = attachment_supported_types() %}
+{% set type_kinds = {'png': 'image', 'jpg': 'image', 'jpeg': 'image', 'gif': 'image', 'bmp': 'image', 'pdf': 'pdf',
+  'doc': 'doc', 'docx': 'doc', 'rtf': 'doc', 'txt': 'text', 'log': 'text', 'csv': 'sheet', 'xls': 'sheet', 'xlsx': 'sheet',
+  'xlsm': 'sheet', 'ppt': 'slide', 'pptx': 'slide', 'eml': 'mail', 'msg': 'mail', 'json': 'text', 'xml': 'text',
+  'zip': 'archive', '7z': 'archive', 'rar': 'archive', 'gz': 'archive'} %}
+<section class="panel attachments-panel" id="attachments">
+  <header class="section-heading attachments-heading">
+    <div><h2>{{ tr('Attachments') }}</h2><p>{% if ticket.attachments|length == 1 %}{{ tr('1 file') }}{% else %}{{ tr('{count} files', count=(ticket.attachments|length)) }}{% endif %}</p></div>
+    <button type="button" class="primary attachment-add-button" data-attachment-open hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.6 12.2 20.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>{{ tr('Add attachments') }}</button>
+  </header>
+  {% if ticket.attachments %}
+  <ul class="attachment-list">
+    {% for attachment in ticket.attachments %}
+    {% set ext = (attachment.original_name.rsplit('.', 1)[-1] if '.' in attachment.original_name else '')|lower %}
+    {% set download_url = url_for('attachment_download', attachment_id=attachment.id) %}
+    {% set view_url = url_for('attachment_download', attachment_id=attachment.id, view=1) %}
+    <li class="attachment-item">
+      {% if attachment.mime_type in IMAGE_ATTACHMENT_TYPES %}<img class="attachment-thumb" src="{{ view_url }}" alt="" data-lightbox-src="{{ view_url }}" data-lightbox-title="{{ attachment.original_name }}">
+      {% else %}<span class="attachment-type attachment-type-{{ type_kinds.get(ext, 'file') }}" aria-hidden="true">{{ (ext or 'file')[:4]|upper }}</span>{% endif %}
+      <div class="attachment-meta"><a class="attachment-name" href="{{ download_url }}">{{ attachment.original_name }}</a><small>{{ attachment.size_bytes|filesizeformat }} · {{ attachment.uploaded_by.name }} · {{ attachment.created_at|usertime('%b %d, %Y %H:%M') }}</small></div>
+      <div class="attachment-actions">
+        {% if attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES %}<a href="{{ view_url }}" data-lightbox-src="{{ view_url }}" data-lightbox-title="{{ attachment.original_name }}"{% if attachment.mime_type not in IMAGE_ATTACHMENT_TYPES %} data-lightbox-type="pdf"{% endif %}>{{ tr('Preview') }}</a>{% endif %}
+        <a href="{{ download_url }}">{{ tr('Download') }}</a>
+        {% if can_delete_attachment(attachment) %}<form method="post" action="{{ url_for('attachment_delete', attachment_id=attachment.id) }}" class="attachment-delete" data-confirm="{{ tr('Delete {name} from this ticket? This cannot be undone.', name=attachment.original_name) }}"><button type="submit" class="attachment-delete-button" aria-label="{{ tr('Delete {name}', name=attachment.original_name) }}">{{ tr('Delete') }}</button></form>{% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <form method="post" action="{{ url_for('attachment_upload', ticket_id=ticket.id) }}" enctype="multipart/form-data" class="attachment-upload" data-attachment-drop="{{ ticket.number }}">
+    <label class="attachment-dropzone-box">
+      <svg class="attachment-dropzone-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M36.5 20.2A12 12 0 0 0 13.4 17 9 9 0 0 0 14 35h22a7.5 7.5 0 0 0 .5-14.8Z"/><path class="attachment-dropzone-arrow" d="M24 31V21m-5 4.5 5-5 5 5"/></svg>
+      <span class="attachment-dropzone-title"><span class="attachment-choose">{{ tr('Choose a file') }}</span> {{ tr('or drag it here.') }}</span>
+      <span class="attachment-dropzone-paste">{{ tr('Copy and paste clipboard files here.') }}</span>
+      <input type="file" name="file" required accept="{{ supported.accept }}">
+    </label>
+    <p class="attachment-supported"><strong>{{ tr('Supported:') }}</strong> {% for label, exts in supported.groups %}{{ tr_value(label) }} ({{ exts|join(', ') }}){% if not loop.last %} · {% endif %}{% endfor %} · {{ tr('up to 20 MB each') }}</p>
+    <button type="submit" class="attachment-upload-fallback">{{ tr('Upload') }}</button>
+  </form>
+</section>

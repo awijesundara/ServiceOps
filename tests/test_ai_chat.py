@@ -201,6 +201,11 @@ def test_one_active_answer_at_a_time_and_idempotent_retry(app, client, world):
 
 def test_per_user_rate_limit(app, client, world, monkeypatch):
     answer_with(monkeypatch, "ok")
+    # The limiter counts per clock-aligned minute; pin the clock so all 22
+    # requests land in one window even when a loaded test run crosses a minute.
+    import app as app_module
+    fixed = app_module.now()
+    monkeypatch.setattr(app_module, "now", lambda: fixed)
     login(client, "employee", "Employee123!")
     codes = []
     for _ in range(22):

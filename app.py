@@ -2575,6 +2575,31 @@ ATTACHMENT_ALLOWED_TYPES = {
 }
 
 
+ATTACHMENT_TYPE_GROUPS = (
+    # How the upload dialog describes ATTACHMENT_ALLOWED_TYPES, in reading order.
+    ("Images", ("png", "jpg", "jpeg", "gif", "bmp")),
+    ("Documents", ("pdf", "doc", "docx", "xls", "xlsx", "xlsm", "ppt", "pptx", "rtf", "txt", "csv")),
+    ("Email", ("eml", "msg")),
+    ("Logs and data", ("log", "json", "xml")),
+    ("Archives", ("zip", "7z", "rar", "gz")),
+)
+
+
+def attachment_supported_types():
+    """The upload dialog's "Supported" line and file-picker filter, built from
+    ATTACHMENT_ALLOWED_TYPES so they can never drift from what the server accepts."""
+    allowed = set(ATTACHMENT_ALLOWED_TYPES)
+    grouped = [(label, [ext for ext in exts if ext in allowed]) for label, exts in ATTACHMENT_TYPE_GROUPS]
+    listed = {ext for _, exts in grouped for ext in exts}
+    leftover = sorted(allowed - listed)
+    if leftover:
+        grouped.append(("Other", leftover))
+    return {
+        "groups": [(label, exts) for label, exts in grouped if exts],
+        "accept": ",".join(f".{ext}" for ext in sorted(allowed)),
+    }
+
+
 PREVIEWABLE_ATTACHMENT_TYPES = {"image/png", "image/jpeg", "image/gif", "application/pdf"}
 IMAGE_ATTACHMENT_TYPES = {"image/png", "image/jpeg", "image/gif"}
 
@@ -8271,6 +8296,7 @@ def create_app(test_config=None):
 
     app.jinja_env.globals["mentions_html"] = mentions_html
     app.jinja_env.globals["csp_nonce"] = csp_nonce
+    app.jinja_env.globals["attachment_supported_types"] = attachment_supported_types
     app.jinja_env.globals["can_delete_attachment"] = lambda attachment: user_can_delete_attachment(current_user, attachment)
     app.jinja_env.filters["css_color"] = css_color
     app.jinja_env.filters["pct"] = pct
