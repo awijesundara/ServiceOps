@@ -18,6 +18,7 @@ import ipaddress
 import socket
 import re
 import secrets
+import shutil
 import smtplib
 import imaplib
 import email as email_module
@@ -7729,6 +7730,38 @@ def workspace_widget_enabled(widget_key):
     return setting_bool(f"WORKSPACE_WIDGET_{widget_key.upper()}_ENABLED", True)
 
 
+_test_schema_template = {}
+
+
+def create_test_schema():
+    """Create the schema for a TESTING app.
+
+    Building ~200 tables one statement at a time is most of a test's setup
+    cost, so a fresh, empty SQLite file instead receives a copy of a schema
+    template built once per process. Any other database (in-memory, a file
+    that already has tables, PostgreSQL) gets the normal create_all().
+    """
+    url = db.engine.url
+    path = url.database if url.get_backend_name() == "sqlite" else None
+    if not path or path == ":memory:" or not os.path.exists(path) or os.path.getsize(path) > 0:
+        db.create_all()
+        return
+    template = _test_schema_template.get(os.getpid())
+    if template is None or not os.path.exists(template):
+        import tempfile
+        from sqlalchemy import create_engine
+        handle, template = tempfile.mkstemp(prefix="serviceops-schema-", suffix=".db")
+        os.close(handle)
+        engine = create_engine(f"sqlite:///{template}")
+        with engine.begin() as connection:
+            connection.exec_driver_sql("PRAGMA synchronous=OFF")
+            db.metadata.create_all(connection)
+        engine.dispose()
+        _test_schema_template[os.getpid()] = template
+    db.engine.dispose()
+    shutil.copyfile(template, path)
+
+
 def create_app(test_config=None):
     from serviceops_core.web.common import usertime_filter
     app = Flask(__name__)
@@ -7855,7 +7888,16 @@ def create_app(test_config=None):
             x_host=int(os.getenv("PROXY_FIX_X_HOST", "1")),
             x_prefix=int(os.getenv("PROXY_FIX_X_PREFIX", "0")),
         ))
+    if app.config["TESTING"]:
+        from serviceops_core.security import use_fast_password_hashing
+        use_fast_password_hashing()
     db.init_app(app)
+    if app.config["TESTING"] and app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
+        with app.app_context():
+            @sa_event.listens_for(db.engine, "connect")
+            def _fast_test_sqlite(connection, record):
+                # Throwaway test databases: skip the fsync after every write.
+                connection.execute("PRAGMA synchronous=OFF")
     login_manager.init_app(app)
     oauth.init_app(app)
     validate_policy()
@@ -7902,7 +7944,7 @@ def create_app(test_config=None):
             app.config["MAX_FORM_MEMORY_SIZE"] = app.config["MAX_CONTENT_LENGTH"]
         else:
             if app.config["TESTING"] and not app.config.get("AUTO_MIGRATE_IN_TESTS"):
-                db.create_all()
+                create_test_schema()
             else:
                 migration_config = AlembicConfig(
                     os.path.join(os.path.dirname(__file__), "alembic.ini")

@@ -25,7 +25,7 @@ lint:
 	ruff check .
 
 test:
-	pytest -q
+	pytest -q -n auto
 
 ci-build:
 	# Build locally for CI testing; never push from this target.
