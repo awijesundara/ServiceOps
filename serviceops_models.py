@@ -2611,6 +2611,10 @@ class RecentView(db.Model):
     __table_args__ = (db.UniqueConstraint("user_id", "url"),)
 
 
+# Per-user interface theme; "system" follows the device's light/dark setting.
+THEMES = ("light", "dark", "system")
+
+
 class UserPreference(db.Model):
     language = db.Column(db.String(16), nullable=False, default="en", server_default="en")
     id = db.Column(db.Integer, primary_key=True)
@@ -3023,3 +3027,4 @@ class ContractCI(db.Model):
 
 
 __all__ += ["Supplier", "Contract", "ContractCI"]
+__all__ += ["THEMES"]

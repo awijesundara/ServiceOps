@@ -146,7 +146,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const svgNS = "http://www.w3.org/2000/svg";
   const edgeEls = allEdges.map((edge) => {
     const line = document.createElementNS(svgNS, "line");
-    line.setAttribute("stroke", "#c7d1d5");
+    // Colors come from the .cmdb-topology-* rules in app.css so themes can restyle them.
+    line.setAttribute("class", "cmdb-topology-edge");
     line.setAttribute("stroke-width", "1.5");
     const title = document.createElementNS(svgNS, "title");
     title.textContent = edge.label
@@ -158,7 +159,7 @@ document.addEventListener("DOMContentLoaded", () => {
       portLabel.textContent = edge.label;
       portLabel.setAttribute("font-size", "9");
       portLabel.setAttribute("text-anchor", "middle");
-      portLabel.setAttribute("fill", "#667582");
+      portLabel.setAttribute("class", "cmdb-topology-port-label");
     }
     return { edge, line, portLabel };
   });
@@ -260,20 +261,19 @@ document.addEventListener("DOMContentLoaded", () => {
     group.style.cursor = "pointer";
     const circle = document.createElementNS(svgNS, "circle");
     circle.setAttribute("r", "9");
-    circle.setAttribute("fill", node.discovery_source === "Manual" ? "#003e4c" : "#f9aa3c");
-    circle.setAttribute("stroke", "#fff");
+    circle.setAttribute("class", node.discovery_source === "Manual" ? "cmdb-topology-node cmdb-topology-node-manual" : "cmdb-topology-node cmdb-topology-node-discovered");
     circle.setAttribute("stroke-width", "2");
     const label = document.createElementNS(svgNS, "text");
     label.textContent = node.name;
     label.setAttribute("font-size", "10.5");
     label.setAttribute("dy", "-13");
     label.setAttribute("text-anchor", "middle");
-    label.setAttribute("fill", "#43545b");
+    label.setAttribute("class", "cmdb-topology-label");
     const badge = document.createElementNS(svgNS, "text");
     badge.setAttribute("font-size", "9");
     badge.setAttribute("dy", "22");
     badge.setAttribute("text-anchor", "middle");
-    badge.setAttribute("fill", "#f9aa3c");
+    badge.setAttribute("class", "cmdb-topology-badge");
     const title = document.createElementNS(svgNS, "title");
     title.textContent = `${node.name} · ${node.ci_class} · ${tr(node.status)} · ${tr(node.discovery_source)}`;
     group.appendChild(circle);

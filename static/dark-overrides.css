@@ -1,0 +1,12 @@
+/* Hand-tuned dark theme fixes that the color mapping in tools/build_dark_theme.py
+   cannot infer. Selectors are already scoped; this file is appended verbatim to
+   static/dark.css by the generator and is not loaded on its own. */
+html.theme-dark .switch span:after{background:#e8eef0;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+html.theme-dark .switch span{background:#3a4750}
+/* Brand marks sit on the brand-colored sidebar exactly as in the light theme;
+   uploaded logos keep their white plate because most are drawn for light backgrounds. */
+html.theme-dark .brand span,html.theme-dark .logo{background:var(--brand-primary,#003e4c)}
+html.theme-dark .brand .company-logo{background:#fff}
+/* Editable fields sit slightly below the card surface so they read as inputs;
+   disabled and read-only fields keep the flatter, card-level tone from the generated rules. */
+html.theme-dark .filters input,html.theme-dark .filters select,html.theme-dark input,html.theme-dark select,html.theme-dark textarea{background:#11181d}

@@ -1,16 +1,18 @@
+{% set ui_theme = ui_preference.theme if current_user.is_authenticated and ui_preference.theme in ('dark', 'system') else 'light' %}
 <!doctype html>
-<html lang="{{ ui_language }}" dir="{{ ui_direction }}">
+<html lang="{{ ui_language }}" dir="{{ ui_direction }}"{% if ui_theme != 'light' %} class="theme-dark"{% endif %}>
 <head>
 <meta charset="utf-8">
 <title>{{ rack.name }}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=app_version) }}">
+{% if ui_theme != 'light' %}<link rel="stylesheet" href="{{ url_for('static', filename='dark.css', v=app_version) }}"{% if ui_theme == 'system' %} media="(prefers-color-scheme: dark)"{% endif %}>{% endif %}
 <style>
-html,body{margin:0;background:#fff}
+html,body{margin:0;background:var(--white,#fff)}
 body{padding:14px;box-sizing:border-box;font-family:inherit}
 .rack-embed-panels{display:flex;gap:14px}
 .rack-embed-panels>div{flex:1;min-width:0;border:1px solid var(--line,#dfe5e8);border-radius:8px;padding:10px}
 .rack-embed-panels h3{font-size:11px;margin:0 0 8px;color:var(--muted,#667582);font-weight:650;text-transform:uppercase;letter-spacing:.02em}
-.rack-embed-panels svg{display:block;width:100%;height:auto;background:#fff}
+.rack-embed-panels svg{display:block;width:100%;height:auto;background:var(--white,#fff)}
 .rack-embed-panels a{cursor:pointer}
 </style>
 <script type="application/json" id="serviceops-i18n">{{ ui_javascript_catalog|tojson }}</script>

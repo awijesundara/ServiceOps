@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}{{ tr('Preferences · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-<header class="page-head"><div><p class="eyebrow">{{ tr('PERSONALIZATION') }}</p><h1>{{ tr('System preferences') }}</h1><p>{{ tr('Accessible, light-only workspace preferences for your account.') }}</p></div><div class="record-actions"><a class="button" href="{{ url_for('my_sessions') }}">{{ tr('Review sessions') }}</a><a class="button" href="{{ url_for('profile') }}">{{ tr('Edit profile') }}</a></div></header>
+<header class="page-head"><div><p class="eyebrow">{{ tr('PERSONALIZATION') }}</p><h1>{{ tr('System preferences') }}</h1><p>{{ tr('Appearance and accessibility preferences for your account.') }}</p></div><div class="record-actions"><a class="button" href="{{ url_for('my_sessions') }}">{{ tr('Review sessions') }}</a><a class="button" href="{{ url_for('profile') }}">{{ tr('Edit profile') }}</a></div></header>
 <form method="post" class="preferences-workspace">
   <nav class="preferences-nav" aria-label="{{ tr('Preference categories') }}">
     <button type="button" class="active" data-pref-tab="general">{{ tr('General') }}</button>
@@ -14,6 +14,11 @@
       <label for="preferred-language">{{ tr('Language') }}<select id="preferred-language" name="language"><option value="auto"{% if pref.language == 'auto' %} selected{% endif %}>{{ tr('Automatic (browser language)') }}</option>{% for code, name in language_options %}<option value="{{ code }}" lang="{{ code }}" dir="auto"{% if pref.language == code %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
       <small class="muted">{{ tr('Translations are bundled with ServiceOps and work offline. Text without a translation appears in English, and record content stays in the language it was written in.') }}</small>
       {% endif %}
+      <fieldset class="theme-picker"><legend>{{ tr('Theme') }}</legend>
+        <label class="theme-option"><input type="radio" name="theme" value="light" {% if pref.theme not in ('dark', 'system') %}checked{% endif %}><span class="theme-swatch theme-swatch-light" aria-hidden="true"><i></i><i></i></span><span><strong>{{ tr('Light') }}</strong><small>{{ tr('Bright surfaces with dark text.') }}</small></span></label>
+        <label class="theme-option"><input type="radio" name="theme" value="dark" {% if pref.theme == 'dark' %}checked{% endif %}><span class="theme-swatch theme-swatch-dark" aria-hidden="true"><i></i><i></i></span><span><strong>{{ tr('Dark') }}</strong><small>{{ tr('Dim surfaces that are easier on the eyes in low light.') }}</small></span></label>
+        <label class="theme-option"><input type="radio" name="theme" value="system" {% if pref.theme == 'system' %}checked{% endif %}><span class="theme-swatch theme-swatch-system" aria-hidden="true"><i></i><i></i></span><span><strong>{{ tr('Match system') }}</strong><small>{{ tr('Follow your device setting and switch automatically.') }}</small></span></label>
+      </fieldset>
       <div class="preference-row"><div><strong>{{ tr('High contrast') }}</strong><small>{{ tr('Increase separation between controls and surfaces.') }}</small></div><label class="switch"><input type="checkbox" name="high_contrast" aria-label="{{ tr('High contrast') }}" {% if pref.high_contrast %}checked{% endif %}><span></span></label></div>
       <div class="preference-row"><div><strong>{{ tr('Accessible tooltips') }}</strong><small>{{ tr('Show explanatory help for unfamiliar controls.') }}</small></div><label class="switch"><input type="checkbox" name="accessible_tooltips" aria-label="{{ tr('Accessible tooltips') }}" {% if pref.accessible_tooltips %}checked{% endif %}><span></span></label></div>
       <div class="preference-row"><div><strong>{{ tr('Reduce motion') }}</strong><small>{{ tr('Minimize interface animation.') }}</small></div><label class="switch"><input type="checkbox" name="reduced_motion" aria-label="{{ tr('Reduce motion') }}" {% if pref.reduced_motion %}checked{% endif %}><span></span></label></div>
@@ -48,7 +53,7 @@
         <button type="submit" name="action" value="create_personal_channel" class="primary">{{ tr('Add my destination') }}</button>
       </details>
     </section>
-    <footer><span>{{ tr('Theme is governed as light-only.') }}</span><button class="primary">{{ tr('Save preferences') }}</button></footer>
+    <footer><span>{{ tr('Changes apply to your account on every device.') }}</span><button class="primary">{{ tr('Save preferences') }}</button></footer>
   </div>
 </form>
 {% endblock %}
