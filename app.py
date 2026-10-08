@@ -3403,6 +3403,43 @@ def user_can_manage_ticket(user, ticket):
     return GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first() is not None
 
 
+def user_is_executive(user):
+    """True for the tenant's designated executives: the Executive Office
+    group's manager and its active "executive approver" members (the same
+    people who give Executive (CEO) change approval)."""
+    group = executive_office_group(user.tenant_id)
+    if not group or not group.active:
+        return False
+    if group.manager_id == user.id:
+        return True
+    return GroupMember.query.filter_by(
+        group_id=group.id, user_id=user.id, role="executive approver",
+    ).first() is not None
+
+
+def user_can_delete_attachment(user, attachment):
+    """Who may remove a ticket attachment: whoever uploaded it, members and
+    the manager of the ticket's owning team, anyone with manager or higher
+    authority, and the tenant's executives. Once a ticket is resolved,
+    closed or cancelled its record is kept intact: only an administrator
+    may then remove a file."""
+    ticket = attachment.ticket
+    if ticket is None or not user.is_authenticated or not user.active:
+        return False
+    if ticket.tenant_id != user.tenant_id or not user_can_view_ticket(user, ticket):
+        return False
+    if role_at_least(user.effective_role, "admin"):
+        return True
+    if ticket_locked_for_edits(ticket):
+        return False
+    return (
+        attachment.uploaded_by_id == user.id
+        or role_at_least(user.effective_role, "manager")
+        or user_can_manage_ticket(user, ticket)
+        or user_is_executive(user)
+    )
+
+
 def visible_ticket_query(user):
     query = Ticket.query
     if not user.is_authenticated or not user.active:
@@ -8234,6 +8271,7 @@ def create_app(test_config=None):
 
     app.jinja_env.globals["mentions_html"] = mentions_html
     app.jinja_env.globals["csp_nonce"] = csp_nonce
+    app.jinja_env.globals["can_delete_attachment"] = lambda attachment: user_can_delete_attachment(current_user, attachment)
     app.jinja_env.filters["css_color"] = css_color
     app.jinja_env.filters["pct"] = pct
 

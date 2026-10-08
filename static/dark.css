@@ -394,6 +394,15 @@ html.theme-dark .comment-box.is-dragover{outline:2px dashed var(--dk-accent)}
 html.theme-dark .badge.badge-primary-ci{background:var(--brand-teal-soft);color:var(--dk-accent)}
 html.theme-dark .attachment-drop-banner{background:var(--brand-teal,#003e4c);color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.63)}
 html.theme-dark body.attachment-drag-active main{outline:2px dashed var(--dk-accent)}
+html.theme-dark .attachment-confirm{border:1px solid var(--line);background:var(--white);color:var(--ink);box-shadow:0 18px 48px rgba(0,0,0,0.696)}
+html.theme-dark .attachment-confirm::backdrop{background:rgba(255,255,255,0.45)}
+html.theme-dark .attachment-confirm-list{border:1px solid var(--line)}
+html.theme-dark .attachment-confirm-list li{border-bottom:1px solid var(--line)}
+html.theme-dark .attachment-confirm-list li:last-child{border-bottom:0}
+html.theme-dark .attachment-confirm-list small{color:var(--muted)}
+html.theme-dark .attachment-confirm-list li.is-too-large small{color:var(--red)}
+html.theme-dark .attachment-delete-button{border:1px solid transparent;background:transparent;color:var(--red)}
+html.theme-dark .attachment-delete-button:hover,html.theme-dark .attachment-delete-button:focus-visible{border-color:var(--red);background:#201817}
 /* platform.css */
 html.theme-dark .unified-nav{background:#182128;border-bottom:1px solid var(--line)}
 html.theme-dark .nav-toggle,html.theme-dark .nav-icon{border:0;background:transparent}
