@@ -207,11 +207,7 @@
   </section>
 </div>
 
-<section class="panel" id="attachments">
-  <header class="section-heading"><div><h2>{{ tr('Attachments') }}</h2></div></header>
-  {% for attachment in ticket.attachments %}<div class="attachment-row"><a class="attachment" href="{{ url_for('attachment_download', attachment_id=attachment.id) }}">{% if attachment.mime_type in IMAGE_ATTACHMENT_TYPES %}<img class="attachment-thumb" src="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" alt="" data-lightbox-src="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" data-lightbox-title="{{ attachment.original_name }}">{% endif %}<strong>{{ attachment.original_name }}</strong><span>{{ (attachment.size_bytes / 1024)|round(1) }} KB · {{ attachment.uploaded_by.name }}{% if attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES and attachment.mime_type not in IMAGE_ATTACHMENT_TYPES %} · <a href="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" data-lightbox-src="{{ url_for('attachment_download', attachment_id=attachment.id, view=1) }}" data-lightbox-title="{{ attachment.original_name }}" data-lightbox-type="pdf">{{ tr('Preview') }}</a>{% endif %}</span></a>{% if can_delete_attachment(attachment) %}<form method="post" action="{{ url_for('attachment_delete', attachment_id=attachment.id) }}" class="attachment-delete" data-confirm="{{ tr('Delete {name} from this ticket? This cannot be undone.', name=attachment.original_name) }}"><button type="submit" class="attachment-delete-button" aria-label="{{ tr('Delete {name}', name=attachment.original_name) }}">{{ tr('Delete') }}</button></form>{% endif %}</div>{% else %}<p class="muted">{{ tr('No attachments.') }}</p>{% endfor %}
-  <form method="post" action="{{ url_for('attachment_upload', ticket_id=ticket.id) }}" enctype="multipart/form-data" class="inline-form" data-attachment-drop="{{ ticket.number }}"><input type="file" name="file" required><button>{{ tr('Upload') }}</button></form>
-</section>
+{% include '_attachments_panel.html' %}
 
 {% if can_manage_ticket and reassignable_teams %}
 <details class="panel incident-reassign"><summary>{{ tr('Reassign incident to another team') }}</summary><form method="post" class="inline-form"><input type="hidden" name="action" value="reassign_team"><select name="new_group_id" required><option value="">{{ tr('Select a team') }}</option>{% for team in reassignable_teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select><button>{{ tr('Send to team') }}</button></form></details>

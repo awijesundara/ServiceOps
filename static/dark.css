@@ -385,24 +385,56 @@ html.theme-dark .org2-count{color:var(--muted)}
 html.theme-dark .org2-role-admin{background:#261a19;color:#f38a7c}
 html.theme-dark .org2-role-manager{background:#241908;color:#d29048}
 html.theme-dark .org2-role-agent{background:#171d21;color:#93b3ac}
-html.theme-dark .attachment-dropzone.is-dragover{box-shadow:inset 0 0 0 2px var(--dk-accent);background-color:#151a1f}
-html.theme-dark .attachment-dropzone.is-dragover::after{border:2px dashed var(--dk-accent)}
-html.theme-dark .attachment-drop-hint{color:var(--muted)}
-html.theme-dark .attachment-drop-status{color:var(--muted)}
-html.theme-dark .attachment-drop-status.is-error{color:var(--red)}
 html.theme-dark .comment-box.is-dragover{outline:2px dashed var(--dk-accent)}
 html.theme-dark .badge.badge-primary-ci{background:var(--brand-teal-soft);color:var(--dk-accent)}
 html.theme-dark .attachment-drop-banner{background:var(--brand-teal,#003e4c);color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.63)}
 html.theme-dark body.attachment-drag-active main{outline:2px dashed var(--dk-accent)}
-html.theme-dark .attachment-confirm{border:1px solid var(--line);background:var(--white);color:var(--ink);box-shadow:0 18px 48px rgba(0,0,0,0.696)}
-html.theme-dark .attachment-confirm::backdrop{background:rgba(255,255,255,0.45)}
-html.theme-dark .attachment-confirm-list{border:1px solid var(--line)}
-html.theme-dark .attachment-confirm-list li{border-bottom:1px solid var(--line)}
-html.theme-dark .attachment-confirm-list li:last-child{border-bottom:0}
-html.theme-dark .attachment-confirm-list small{color:var(--muted)}
-html.theme-dark .attachment-confirm-list li.is-too-large small{color:var(--red)}
+html.theme-dark .attachments-heading p{color:var(--muted)}
+html.theme-dark .attachment-add-button .icon{fill:none;stroke:currentColor}
+html.theme-dark .attachment-list{border:1px solid var(--line)}
+html.theme-dark .attachment-item{border-bottom:1px solid var(--line)}
+html.theme-dark .attachment-item:last-child{border-bottom:0}
+html.theme-dark .attachment-item:hover{background:#12181c}
+html.theme-dark .attachment-type{background:#181d22;color:#9eb0ba}
+html.theme-dark .attachment-type-pdf{background:#251919;color:#ec8575}
+html.theme-dark .attachment-type-image{background:#171f1c;color:#6dbba7}
+html.theme-dark .attachment-type-doc{background:#1a1e28;color:#88b6f9}
+html.theme-dark .attachment-type-sheet{background:#162019;color:#74bf8b}
+html.theme-dark .attachment-type-slide{background:#22180e;color:#e28e53}
+html.theme-dark .attachment-type-mail{background:#211d29;color:#b19efa}
+html.theme-dark .attachment-type-archive{background:#201d16;color:#c4a262}
+html.theme-dark .attachment-name{color:var(--ink)}
+html.theme-dark .attachment-name:hover{color:var(--dk-accent-strong)}
+html.theme-dark .attachment-meta small{color:var(--muted)}
+html.theme-dark .attachment-actions>a{color:var(--dk-accent-strong)}
+html.theme-dark .attachment-actions>a:hover{background:var(--brand-teal-soft)}
 html.theme-dark .attachment-delete-button{border:1px solid transparent;background:transparent;color:var(--red)}
 html.theme-dark .attachment-delete-button:hover,html.theme-dark .attachment-delete-button:focus-visible{border-color:var(--red);background:#201817}
+html.theme-dark .attachment-dropzone-box{border:2px dashed #4b6c64;background:#12181c}
+html.theme-dark .attachment-dropzone-box:hover,html.theme-dark .attachment-dropzone-box.is-dragover,html.theme-dark body.attachment-drag-active .attachment-upload .attachment-dropzone-box{border-color:var(--dk-accent);background:#151a1f}
+html.theme-dark .attachment-dropzone-box:focus-within{outline:2px solid var(--dk-accent)}
+html.theme-dark .attachment-dropzone-icon{fill:#464f54;stroke:none}
+html.theme-dark .attachment-dropzone-icon .attachment-dropzone-arrow{fill:none;stroke:#292f33}
+html.theme-dark .attachment-dropzone-title{color:var(--ink)}
+html.theme-dark .attachment-choose{color:var(--dk-accent-strong)}
+html.theme-dark .attachment-dropzone-paste{color:var(--muted)}
+html.theme-dark .attachment-supported{color:var(--muted)}
+html.theme-dark .attachment-supported strong{color:var(--ink)}
+html.theme-dark .attachment-dialog{border:1px solid var(--line);background:var(--white);color:var(--ink);box-shadow:0 18px 48px rgba(0,0,0,0.696)}
+html.theme-dark .attachment-dialog::backdrop{background:rgba(255,255,255,0.45)}
+html.theme-dark .attachment-dialog-header{border-bottom:1px solid var(--line)}
+html.theme-dark .attachment-dialog-close{border:0;background:transparent;color:var(--muted)}
+html.theme-dark .attachment-dialog-close:hover{color:var(--ink);background:#181d22}
+html.theme-dark .attachment-queue{border:1px solid var(--line)}
+html.theme-dark .attachment-queue li{border-bottom:1px solid var(--line)}
+html.theme-dark .attachment-queue li:last-child{border-bottom:0}
+html.theme-dark .attachment-queue small{color:var(--muted)}
+html.theme-dark .attachment-queue li.is-too-large small{color:var(--red)}
+html.theme-dark .attachment-queue-remove{border:0;background:transparent;color:var(--muted)}
+html.theme-dark .attachment-queue-remove:hover{color:var(--red);background:#201817}
+html.theme-dark .attachment-dialog-status{color:var(--muted)}
+html.theme-dark .attachment-dialog-status.is-error{color:var(--red)}
+html.theme-dark .attachment-dialog-footer{border-top:1px solid var(--line);background:#12181c}
 /* platform.css */
 html.theme-dark .unified-nav{background:#182128;border-bottom:1px solid var(--line)}
 html.theme-dark .nav-toggle,html.theme-dark .nav-icon{border:0;background:transparent}

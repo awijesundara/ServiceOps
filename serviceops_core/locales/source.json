@@ -72,6 +72,9 @@
    "id": "0U / unpositioned power units"
   },
   {
+   "id": "1 file"
+  },
+  {
    "id": "10.0.1.1 or 10.0.1.0/24"
   },
   {
@@ -541,6 +544,14 @@
   },
   {
    "id": "Add as many as you like: your own servers, and hosted services such as OpenAI or Claude."
+  },
+  {
+   "id": "Add attachments",
+   "javascript": true
+  },
+  {
+   "id": "Add attachments to {number}",
+   "javascript": true
   },
   {
    "id": "Add business schedule"
@@ -1102,14 +1113,6 @@
   },
   {
    "id": "Attach a file (optional)"
-  },
-  {
-   "id": "Attach {count} file(s) to {number}?",
-   "javascript": true
-  },
-  {
-   "id": "Attach {count} file(s)?",
-   "javascript": true
   },
   {
    "id": "Attachment preview"
@@ -1825,6 +1828,9 @@
    "id": "Choice"
   },
   {
+   "id": "Choose a file"
+  },
+  {
    "id": "Choose a new password"
   },
   {
@@ -1970,7 +1976,8 @@
    "id": "Clients"
   },
   {
-   "id": "Close"
+   "id": "Close",
+   "javascript": true
   },
   {
    "id": "Close Task"
@@ -2311,6 +2318,9 @@
   {
    "id": "Copy",
    "javascript": true
+  },
+  {
+   "id": "Copy and paste clipboard files here."
   },
   {
    "id": "Copy answer"
@@ -3023,6 +3033,9 @@
    "id": "Down"
   },
   {
+   "id": "Download"
+  },
+  {
    "id": "Download an attachment from a visible ticket"
   },
   {
@@ -3036,10 +3049,6 @@
   },
   {
    "id": "Draft {kind} ready for you",
-   "javascript": true
-  },
-  {
-   "id": "Drag and drop files here, or choose files to upload.",
    "javascript": true
   },
   {
@@ -9306,6 +9315,9 @@
    "id": "Support overview"
   },
   {
+   "id": "Supported:"
+  },
+  {
    "id": "Supporting"
   },
   {
@@ -10342,6 +10354,10 @@
   },
   {
    "id": "Upload replacement PNG"
+  },
+  {
+   "id": "Upload {count} files",
+   "javascript": true
   },
   {
    "id": "Uploading {current} of {total}: {name}",
@@ -11420,6 +11436,9 @@
    "id": "or"
   },
   {
+   "id": "or drag it here."
+  },
+  {
    "id": "or use a directory/local account"
   },
   {
@@ -11640,6 +11659,9 @@
    "id": "unhealthy"
   },
   {
+   "id": "up to 20 MB each"
+  },
+  {
    "id": "url"
   },
   {
@@ -11776,6 +11798,9 @@
   },
   {
    "id": "{count} devices"
+  },
+  {
+   "id": "{count} files"
   },
   {
    "id": "{count} incident resolved in this window."
@@ -12053,10 +12078,6 @@
   },
   {
    "id": "{name} is already a member of {name2}."
-  },
-  {
-   "id": "{name} is larger than 20 MB.",
-   "javascript": true
   },
   {
    "id": "{name} is now {value} the public status page."

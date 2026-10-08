@@ -115,16 +115,41 @@ ul.org2-tree,.org2-children{list-style:none;margin:0;padding:0}
 }
 /* Phones: the title keeps its row and the actions wrap side by side beneath it instead of stacking one per line. */
 @media(max-width:650px){.record-toolbar{flex-wrap:wrap}.record-toolbar .record-actions{flex:1 0 100%;justify-content:flex-start}}
-/* Ticket attachments: drag-and-drop target (static/attachment-drop.js) and primary CI badge. */
-.attachment-dropzone{position:relative;transition:box-shadow .15s,background-color .15s}.attachment-dropzone.is-dragover{box-shadow:inset 0 0 0 2px var(--green);background-color:#f0f7f5}.attachment-dropzone.is-dragover::after{content:"";position:absolute;inset:8px;border:2px dashed var(--green);border-radius:8px;pointer-events:none}
-.attachment-drop-hint{margin:12px 0 4px;color:var(--muted);font-size:12.5px}.attachment-drop-status{margin:6px 0 0;font-size:12.5px;color:var(--muted)}.attachment-drop-status.is-error{color:var(--red)}.attachment-dropzone.is-uploading form{opacity:.6;pointer-events:none}
+/* Primary CI badge in the Affected CIs tabs; comment box as a drop target (static/attachment-drop.js). */
 .comment-box.is-dragover{outline:2px dashed var(--green);outline-offset:4px;border-radius:8px}
 .badge.badge-primary-ci{background:var(--brand-teal-soft);color:var(--brand-teal);font-weight:750}
 .attachment-drop-banner{position:fixed;left:50%;bottom:28px;z-index:60;transform:translate(-50%,12px);padding:12px 20px;border-radius:999px;background:var(--brand-teal,#003e4c);color:#fff;font-weight:700;font-size:13.5px;box-shadow:0 8px 24px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .15s,transform .15s}body.attachment-drag-active .attachment-drop-banner{opacity:1;transform:translate(-50%,0)}body.attachment-drag-active main{outline:2px dashed var(--green);outline-offset:-10px}
-/* Drop confirmation dialog and per-attachment delete (static/attachment-drop.js, ticket templates). */
-.attachment-confirm{width:min(460px,calc(100vw - 32px));padding:22px 24px;border:1px solid var(--line);border-radius:12px;background:var(--white);color:var(--ink);box-shadow:0 18px 48px rgba(10,25,35,.28)}.attachment-confirm::backdrop{background:rgba(10,20,28,.45)}
-.attachment-confirm h2{margin:0 0 12px;font-size:16px}.attachment-confirm-list{margin:0 0 18px;padding:0;list-style:none;max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px}
-.attachment-confirm-list li{display:flex;justify-content:space-between;gap:12px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:13px}.attachment-confirm-list li:last-child{border-bottom:0}.attachment-confirm-list span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attachment-confirm-list small{flex:0 0 auto;color:var(--muted)}.attachment-confirm-list li.is-too-large small{color:var(--red)}
-.attachment-confirm-actions{display:flex;justify-content:flex-end;gap:10px}
-.attachment-row{display:flex;align-items:center;gap:8px}.attachment-row>.attachment{flex:1;min-width:0}.attachment-delete{margin:0}
+/* Ticket attachments panel and "Add attachments" dialog (templates/_attachments_panel.html, static/attachment-drop.js). */
+.attachments-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.attachments-heading p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+.attachment-add-button{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}.attachment-add-button .icon{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.attachment-list{margin:0 0 16px;padding:0;list-style:none;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.attachment-item{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line)}.attachment-item:last-child{border-bottom:0}.attachment-item:hover{background:#f7f9fa}
+.attachment-type{flex:0 0 40px;height:40px;display:grid;place-items:center;border-radius:8px;font-size:10px;font-weight:800;letter-spacing:.03em;background:#eef1f3;color:#4a5a63}
+.attachment-type-pdf{background:#fdeceb;color:#b42318}.attachment-type-image{background:#e8f3ef;color:#146c5a}.attachment-type-doc{background:#e8eefb;color:#1c4a8c}.attachment-type-sheet{background:#e6f4ea;color:#1c6b3c}.attachment-type-slide{background:#fff1e3;color:#9b4d00}.attachment-type-mail{background:#efeafb;color:#5b3aa6}.attachment-type-archive{background:#f4efe6;color:#7a5b16}
+.attachment-item .attachment-thumb{flex:0 0 40px;width:40px;height:40px;object-fit:cover;border-radius:8px;cursor:zoom-in;margin:0}
+.attachment-meta{flex:1;min-width:0;display:grid;gap:2px}.attachment-name{font-weight:650;color:var(--ink);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attachment-name:hover{color:var(--green-dark);text-decoration:underline}.attachment-meta small{color:var(--muted);font-size:12px}
+.attachment-actions{display:flex;align-items:center;gap:4px;flex:0 0 auto}.attachment-actions>a{padding:6px 10px;border-radius:6px;font-size:12.5px;font-weight:650;color:var(--green-dark);text-decoration:none}.attachment-actions>a:hover{background:var(--brand-teal-soft)}.attachment-delete{margin:0}
 .attachment-delete-button{border:1px solid transparent;background:transparent;color:var(--red);font-size:12.5px;font-weight:650;padding:6px 10px;border-radius:6px;cursor:pointer}.attachment-delete-button:hover,.attachment-delete-button:focus-visible{border-color:var(--red);background:#fdf1f0}
+.attachment-upload{margin:0}
+.attachment-dropzone-box{position:relative;display:grid;justify-items:center;gap:6px;padding:28px 20px;border:2px dashed #7fb7aa;border-radius:10px;background:#fbfdfc;text-align:center;cursor:pointer;transition:border-color .15s,background-color .15s}
+.attachment-dropzone-box:hover,.attachment-dropzone-box.is-dragover,body.attachment-drag-active .attachment-upload .attachment-dropzone-box{border-color:var(--green);background:#f0f7f5}
+.attachment-dropzone-box:focus-within{outline:2px solid var(--green);outline-offset:2px}
+.attachment-dropzone-icon{width:52px;height:52px;fill:#a9b4ba;stroke:none}.attachment-dropzone-icon .attachment-dropzone-arrow{fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.attachment-dropzone-title{font-size:14px;color:var(--ink)}.attachment-choose{color:var(--green-dark);font-weight:650;text-decoration:underline;text-underline-offset:2px}.attachment-dropzone-paste{font-size:13px;color:var(--muted)}
+.attachment-dropzone-box input[type="file"]{margin-top:8px;max-width:320px;font-size:12.5px}
+.is-enhanced .attachment-dropzone-box input[type="file"],.attachment-dialog .attachment-dropzone-box input[type="file"]{position:absolute;inset:0;width:100%;height:100%;max-width:none;margin:0;opacity:0;cursor:pointer}
+.attachment-supported{margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.5}.attachment-supported strong{color:var(--ink);font-weight:650}
+.attachment-upload-fallback{margin-top:10px}.is-enhanced .attachment-upload-fallback{display:none}
+.attachment-dialog{width:min(620px,calc(100vw - 32px));padding:0;border:1px solid var(--line);border-radius:12px;background:var(--white);color:var(--ink);box-shadow:0 18px 48px rgba(10,25,35,.28)}.attachment-dialog::backdrop{background:rgba(10,20,28,.45)}
+.attachment-dialog-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line)}.attachment-dialog-header h2{margin:0;font-size:17px}
+.attachment-dialog-close{border:0;background:transparent;color:var(--muted);font-size:24px;line-height:1;padding:2px 8px;border-radius:6px;cursor:pointer}.attachment-dialog-close:hover{color:var(--ink);background:#eef1f3}
+.attachment-dialog>.attachment-dropzone-box{margin:18px 20px 0}
+.attachment-queue{margin:14px 20px 0;padding:0;list-style:none;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+.attachment-queue li{display:flex;align-items:center;gap:10px;padding:8px 8px 8px 12px;border-bottom:1px solid var(--line);font-size:13px}.attachment-queue li:last-child{border-bottom:0}
+.attachment-queue-meta{flex:1;min-width:0;display:grid;gap:1px}.attachment-queue-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attachment-queue small{color:var(--muted);font-size:11.5px}.attachment-queue li.is-too-large small{color:var(--red)}
+.attachment-queue-remove{border:0;background:transparent;color:var(--muted);font-size:18px;line-height:1;padding:2px 8px;border-radius:6px;cursor:pointer}.attachment-queue-remove:hover{color:var(--red);background:#fdf1f0}
+.attachment-dialog-status{margin:10px 20px 0;color:var(--muted);font-size:12.5px}.attachment-dialog-status:empty{display:none}.attachment-dialog-status.is-error{color:var(--red)}
+.attachment-dialog-footer{display:grid;gap:12px;margin-top:16px;padding:14px 20px;border-top:1px solid var(--line);background:#f8fafb;border-radius:0 0 12px 12px}.attachment-dialog-footer .attachment-supported{margin:0}
+.attachment-dialog-actions{display:flex;justify-content:flex-end;gap:10px}.attachment-dialog.is-uploading .attachment-dropzone-box,.attachment-dialog.is-uploading .attachment-queue-remove{pointer-events:none;opacity:.6}
+@media(max-width:560px){.attachment-item{flex-wrap:wrap}.attachment-actions{width:100%;justify-content:flex-end}}
+.attachment-dialog-actions button:disabled{opacity:.5;cursor:not-allowed}
