@@ -1104,6 +1104,14 @@
    "id": "Attach a file (optional)"
   },
   {
+   "id": "Attach {count} file(s) to {number}?",
+   "javascript": true
+  },
+  {
+   "id": "Attach {count} file(s)?",
+   "javascript": true
+  },
+  {
    "id": "Attachment preview"
   },
   {
@@ -1543,7 +1551,8 @@
    "id": "Caller"
   },
   {
-   "id": "Cancel"
+   "id": "Cancel",
+   "javascript": true
   },
   {
    "id": "Cancel coverage"
@@ -2791,6 +2800,12 @@
   },
   {
    "id": "Delete view"
+  },
+  {
+   "id": "Delete {name}"
+  },
+  {
+   "id": "Delete {name} from this ticket? This cannot be undone."
   },
   {
    "id": "Delete {name}?"
@@ -10313,7 +10328,8 @@
    "id": "Updated {value}"
   },
   {
-   "id": "Upload"
+   "id": "Upload",
+   "javascript": true
   },
   {
    "id": "Upload CSV file"
@@ -10885,6 +10901,9 @@
   },
   {
    "id": "You do not currently hold that role."
+  },
+  {
+   "id": "You do not have permission to delete this attachment."
   },
   {
    "id": "You have multiple roles -- click to switch which one is active"
@@ -12067,6 +12086,9 @@
    "id": "{name} updated."
   },
   {
+   "id": "{name} was deleted."
+  },
+  {
    "id": "{name} will create fulfillment tasks for {name2}."
   },
   {
@@ -12209,6 +12231,22 @@
   },
   {
    "id": "{siblings} other tasks"
+  },
+  {
+   "id": "{size} B",
+   "javascript": true
+  },
+  {
+   "id": "{size} KB",
+   "javascript": true
+  },
+  {
+   "id": "{size} MB",
+   "javascript": true
+  },
+  {
+   "id": "{size} · over the 20 MB limit, will be skipped",
+   "javascript": true
   },
   {
    "id": "{sla_at_risk_open} more at risk"

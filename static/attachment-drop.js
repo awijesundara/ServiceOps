@@ -2,10 +2,66 @@
 // Progressive enhancement: the plain <form data-attachment-drop> still posts one
 // file without JavaScript. With it, the whole record page accepts dropped files,
 // and dropped or multi-selected files are posted one at a time to the same
-// upload route (same CSRF token, validation and malware scan), then the page
-// reloads on the Attachments section so its normal flash messages show the result.
+// upload route (same CSRF token, validation and malware scan) once the person
+// confirms the list of dropped files, then the page reloads on the Attachments
+// section so its normal flash messages show the result.
 (() => {
   const MAX_BYTES = 20 * 1024 * 1024; // matches MAX_CONTENT_LENGTH
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return tr("{size} B", { size: bytes });
+    if (bytes < 1024 * 1024) return tr("{size} KB", { size: (bytes / 1024).toFixed(1) });
+    return tr("{size} MB", { size: (bytes / 1024 / 1024).toFixed(1) });
+  }
+
+  // Dropping is easy to do by accident, so list what was dropped and upload only
+  // after the person confirms. Resolves true to upload, false to cancel.
+  function confirmUpload(files, number) {
+    const title = number
+      ? tr("Attach {count} file(s) to {number}?", { count: files.length, number })
+      : tr("Attach {count} file(s)?", { count: files.length });
+    if (typeof HTMLDialogElement === "undefined") {
+      return Promise.resolve(window.confirm(`${title}\n\n${files.map((file) => file.name).join("\n")}`));
+    }
+    return new Promise((resolve) => {
+      const dialog = document.createElement("dialog");
+      dialog.className = "attachment-confirm";
+      dialog.setAttribute("aria-labelledby", "attachment-confirm-title");
+      const heading = document.createElement("h2");
+      heading.id = "attachment-confirm-title";
+      heading.textContent = title;
+      const list = document.createElement("ul");
+      list.className = "attachment-confirm-list";
+      for (const file of files) {
+        const item = document.createElement("li");
+        const name = document.createElement("span");
+        name.textContent = file.name;
+        const size = document.createElement("small");
+        size.textContent = file.size > MAX_BYTES ? tr("{size} · over the 20 MB limit, will be skipped", { size: formatSize(file.size) }) : formatSize(file.size);
+        if (file.size > MAX_BYTES) item.classList.add("is-too-large");
+        item.append(name, size);
+        list.append(item);
+      }
+      const actions = document.createElement("div");
+      actions.className = "attachment-confirm-actions";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.textContent = tr("Cancel");
+      const accept = document.createElement("button");
+      accept.type = "button";
+      accept.className = "primary";
+      accept.textContent = tr("Upload");
+      actions.append(cancel, accept);
+      dialog.append(heading, list, actions);
+      document.body.append(dialog);
+      const finish = (answer) => { dialog.close(); dialog.remove(); resolve(answer); };
+      cancel.addEventListener("click", () => finish(false));
+      accept.addEventListener("click", () => finish(true));
+      dialog.addEventListener("cancel", (event) => { event.preventDefault(); finish(false); }); // Escape
+      dialog.showModal();
+      accept.focus();
+    });
+  }
 
   function enhanceUploadForm(form) {
     const input = form.querySelector('input[type="file"]');
@@ -101,7 +157,10 @@
       event.preventDefault();
       reset();
       if (inComment(event) || !event.dataTransfer.files.length) return;
-      upload(Array.from(event.dataTransfer.files));
+      const files = Array.from(event.dataTransfer.files);
+      confirmUpload(files, form.dataset.attachmentDrop).then((confirmed) => {
+        if (confirmed) upload(files);
+      });
     });
   }
 

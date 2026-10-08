@@ -6,7 +6,7 @@ import io
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
@@ -24,6 +24,7 @@ from app import (
     attach_slas,
     attachment_file_response,
     audit,
+    current_storage,
     calculate_change_risk_score,
     cancel_approval_chain,
     change_approval_stages,
@@ -88,6 +89,7 @@ from app import (
     user_can_manage_ticket,
     user_can_view_catalog_request,
     user_can_view_enterprise_record,
+    user_can_delete_attachment,
     user_can_view_ticket,
     user_in_group,
     user_support_group_ids,
@@ -2409,6 +2411,28 @@ def register(app):
         )
         db.session.commit()
         return redirect(url_for("ticket_detail", ticket_id=ticket_id))
+
+    @app.post("/attachments/<int:attachment_id>/delete")
+    @login_required
+    def attachment_delete(attachment_id):
+        attachment = db.get_or_404(FileAttachment, attachment_id)
+        if attachment.ticket_id is None:
+            abort(404)
+        if not user_can_delete_attachment(current_user, attachment):
+            abort(403, description=tr("You do not have permission to delete this attachment."))
+        ticket_id, name = attachment.ticket_id, attachment.original_name
+        stored_name, reference = attachment.stored_name, attachment.ipfs_cid or attachment.stored_name
+        log_history("ticket", ticket_id, "Attachment deleted", details=f"{name} ({attachment.size_bytes} bytes)")
+        audit("attach-delete", attachment.ticket.number, name)
+        db.session.delete(attachment)
+        db.session.commit()
+        # Only after the record is gone, so a failed commit never loses the file.
+        try:
+            current_storage().delete_file(stored_name, reference)
+        except Exception:  # noqa: BLE001 - the record is already removed; keep the response clean
+            current_app.logger.warning("Stored file for deleted attachment could not be removed: %s", stored_name)
+        flash(tr("{name} was deleted.", name=name), "success")
+        return redirect(url_for("ticket_detail", ticket_id=ticket_id) + "#attachments")
 
     @app.get("/attachments/<int:attachment_id>")
     @login_required
