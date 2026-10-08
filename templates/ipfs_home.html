@@ -4,13 +4,14 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{ tr('ServiceOps (IPFS mode)') }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=app_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='utilities.css', v=app_version) }}">
 </head>
-<body style="max-width:640px;margin:60px auto;padding:0 20px;font-family:system-ui,sans-serif;">
+<body class="u-standalone-page">
   <h1>{{ tr('ServiceOps IPFS mode') }}</h1>
   <p>{{ tr('Welcome,') }} <strong>{{ user.name }}</strong> {{ tr('({username}). This session, the user record you just authenticated as, and everything backing it lives entirely on IPFS -- there is no PostgreSQL container in this deployment at all.', username=(user.username)) }}</p>
-  <div class="flash" style="background:#fff6e8;padding:14px 16px;border-radius:7px;margin:20px 0;">
+  <div class="flash u-note-amber">
     <strong>{{ tr('Full IPFS-backed application') }}</strong>
-    <p style="margin:8px 0 0;">{{ tr('IPFS is the authoritative encrypted store for application records and attachments. Dashboard, ticketing, administration, audit, session revocation, rate limits, workflows, CMDB, client management, and background processing use the standard ServiceOps experience.') }}</p>
+    <p class="u-m-8-0-0">{{ tr('IPFS is the authoritative encrypted store for application records and attachments. Dashboard, ticketing, administration, audit, session revocation, rate limits, workflows, CMDB, client management, and background processing use the standard ServiceOps experience.') }}</p>
   </div>
   <form method="post" action="{{ url_for('logout') }}">
     <button class="primary">{{ tr('Sign out') }}</button>

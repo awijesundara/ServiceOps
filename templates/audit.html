@@ -46,7 +46,7 @@
     </nav>
   </header>
   <div class="list-breadcrumb"><span>▽</span> {{ tr('All') }}{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › {{ tr('Search contains “{q}”', q=(q)) }}{% endif %}</div>
-  <p style="padding:12px 16px 0">
+  <p class="u-pad-12-16-0">
     <strong>{{ tr('Integrity:') }}</strong>
     {% if integrity is none %}
       {{ tr("Not checked this view — verification hashes every event in the tenant's history and is only run on request.") }}

@@ -66,7 +66,7 @@
       {% endfor %}
     </tbody>
   </table>
-  <div class="panel-head" style="margin-top: 1.5rem;">
+  <div class="panel-head u-mt-24">
     <div>
       <p>{{ tr('Spelling/formatting variants of the same team (e.g. "CoreApps", "Core apps", "SSD Team") are detected and merged automatically on every CSV import. Use this to sweep for them on demand — a spreadsheet-imported "Core apps" and the existing "CoreApps" merge into one team; nothing is asked, since this only ever collapses format variants, never genuinely different names (that\'s what aliases above are for).') }}</p>
     </div>
@@ -169,7 +169,7 @@
 <section class="panel admin-section">
   <p class="muted">{{ tr('Manage team members. Directory-managed memberships are marked.') }}</p>
   {% for group in groups %}
-  <details class="panel admin-section" style="margin-bottom:14px">
+  <details class="panel admin-section u-mb-14">
     <summary><strong>{{ group.name }}</strong> <span class="muted">{{ tr('{group_type} · manager {name} · {members} member(s)', group_type=(group.group_type), name=(group.manager.name if group.manager else tr('Unassigned')), members=(group.members|length)) }}</span></summary>
     {% if group.name not in ['Change Control Board', 'Executive Office'] %}<form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="rename_support_group"><input type="hidden" name="group_id" value="{{ group.id }}"><label>{{ tr('Group name') }}<input name="name" value="{{ group.name }}" maxlength="120" required></label><button class="button">{{ tr('Rename') }}</button></form>{% endif %}
     <table>
@@ -296,12 +296,12 @@
 <section class="panel admin-section">
     <p class="muted">{{ tr('Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk. Toggle a service to publish or hide it on the') }} <a href="{{ url_for('status_page', slug=current_tenant_slug) }}" target="_blank" rel="noopener">{{ tr('public status page') }}</a>.</p>
     {% for service in services %}
-    <article class="config-row" style="flex-direction:column;align-items:stretch;gap:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
+    <article class="config-row u-stack-8">
+      <div class="u-row-between">
         <div><strong>{{ service.name }}</strong><small>{{ tr('{criticality} criticality · {status}', criticality=(service.criticality), status=(tr_value(service.status))) }}</small></div>
-        <div style="display:flex;align-items:center;gap:10px">
+        <div class="u-row-center-10">
           <span>{{ service.owner.name }}</span>
-          <form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="toggle_service_status_page_visibility"><input type="hidden" name="service_offering_id" value="{{ service.id }}"><button class="badge" style="cursor:pointer;border:0" title="{{ tr('Hide from the public status page') if service.status_page_visible else tr('Publish on the public status page') }}">{{ ('● ' ~ tr('On status page')) if service.status_page_visible else ('○ ' ~ tr('Not on status page')) }}</button></form>
+          <form method="post" action="{{ post_url }}" class="inline-form"><input type="hidden" name="action" value="toggle_service_status_page_visibility"><input type="hidden" name="service_offering_id" value="{{ service.id }}"><button class="badge u-plain-button" title="{{ tr('Hide from the public status page') if service.status_page_visible else tr('Publish on the public status page') }}">{{ ('● ' ~ tr('On status page')) if service.status_page_visible else ('○ ' ~ tr('Not on status page')) }}</button></form>
         </div>
       </div>
       {% for link in service.ci_links %}
@@ -338,8 +338,8 @@
     <div class="wide actions"><button class="primary">{{ tr('Create category') }}</button></div>
   </form>
   {% for category in ticket_categories %}
-  <article class="config-row" style="flex-direction:column;align-items:stretch;gap:8px">
-    <div style="display:flex;justify-content:space-between;align-items:center">
+  <article class="config-row u-stack-8">
+    <div class="u-row-between">
       <div><strong>{{ category.name }}</strong>{% if not category.active %}<small class="muted"> · {{ tr('inactive') }}</small>{% endif %}</div>
       <details><summary>{{ tr('Rename / settings') }}</summary>
         <form method="post" action="{{ post_url }}" class="stack compact-form">

@@ -34,7 +34,7 @@
         <form method="post" action="{{ url_for('data_governance_admin') }}" class="inline-form">
           <input type="hidden" name="action" value="save_retention_policy">
           <input type="hidden" name="record_type" value="{{ record_type }}">
-          <input name="retention_days" type="number" min="30" max="36500" value="{{ policy.retention_days if policy else 730 }}" required style="width:6rem">
+          <input class="u-w-6rem" name="retention_days" type="number" min="30" max="36500" value="{{ policy.retention_days if policy else 730 }}" required>
           <label class="check"><input name="legal_hold" type="checkbox" {% if policy and policy.legal_hold %}checked{% endif %}> {{ tr('Legal hold (blanket)') }}</label>
           <label class="check"><input name="policy_active" type="checkbox" {% if not policy or policy.active %}checked{% endif %}> {{ tr('Active') }}</label>
           <small>{{ policy.last_run_at|usertime('%Y-%m-%d %H:%M') if policy and policy.last_run_at else tr('Never run') }}{% if policy and policy.last_run_at %} · {{ tr('{last_run_count} erased', last_run_count=(policy.last_run_count)) }}{% endif %}</small>

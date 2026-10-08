@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import or_
+from sqlalchemy import func, or_
+from sqlalchemy.orm import selectinload
 from werkzeug.exceptions import HTTPException
 
 import app as core
@@ -111,6 +112,8 @@ from serviceops_core.web.common import (
 from serviceops_models import (
     Approval,
     ApprovalChain,
+    ApprovalGate,
+    ApprovalVote,
     CatalogRequest,
     CatalogTask,
     CHANGE_PIR_OUTCOMES,
@@ -1049,14 +1052,16 @@ def register(app):
             and effective_role_has_action(current_user.effective_role, "resolve")
         )
         internal_view = effective_role_has_action(current_user.effective_role, "comment_internal")
-        chains = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).all()
+        chains = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).options(
+            selectinload(ApprovalChain.gates).selectinload(ApprovalGate.votes).selectinload(ApprovalVote.approver),
+        ).all()
         slas = TaskSLA.query.filter_by(target_type="ticket", target_id=ticket.id).all()
         work_tasks = OperationalTask.query.filter_by(
             parent_type="ticket", parent_id=ticket.id
         ).order_by(OperationalTask.sequence, OperationalTask.id).all()
         history = TaskHistory.query.filter_by(
             target_type="ticket", target_id=ticket.id
-        ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).all()
+        ).options(selectinload(TaskHistory.actor)).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).all()
         ci_links = TaskCI.query.filter_by(
             target_type="ticket", target_id=ticket.id
         ).order_by(TaskCI.relationship_role).all()
@@ -1075,7 +1080,7 @@ def register(app):
             teams=core.team_groups().all(),
             reassignable_teams=core.team_groups().filter(
                 SupportGroup.id != (owning_group.id if owning_group else -1),
-            ).all(),
+            ).options(selectinload(SupportGroup.manager)).all(),
             service_offerings=tenant_query(ServiceOffering).filter_by(
                 status="Operational"
             ).order_by(ServiceOffering.name).all(),
@@ -1679,7 +1684,7 @@ def register(app):
         ).order_by(User.name).all() if member_ids else []
         history = TaskHistory.query.filter_by(
             target_type=task.parent_type, target_id=task.parent_id
-        ).filter(TaskHistory.details.contains(task.number)).order_by(
+        ).filter(TaskHistory.details.contains(task.number)).options(selectinload(TaskHistory.actor)).order_by(
             TaskHistory.created_at.desc(), TaskHistory.id.desc()
         ).all()
         allowed_states = OPERATIONAL_TASK_TRANSITIONS.get(task.state, (task.state,))
@@ -1782,7 +1787,9 @@ def register(app):
     @login_required
     def modules():
         query = visible_enterprise_record_query(current_user)
-        counts = {key: query.filter_by(domain=key).count() for key in DOMAIN_CONFIG}
+        grouped = dict(query.with_entities(EnterpriseRecord.domain, func.count(EnterpriseRecord.id))
+                       .group_by(EnterpriseRecord.domain).all())
+        counts = {key: grouped.get(key, 0) for key in DOMAIN_CONFIG}
         return render_template("modules.html", modules=DOMAIN_CONFIG, counts=counts, domain_icons=DOMAIN_ICONS)
 
     @app.get("/module/<domain>")
@@ -1964,7 +1971,7 @@ def register(app):
             work_tasks=work_tasks, work_task_states=OPERATIONAL_TASK_TRANSITIONS,
             history=TaskHistory.query.filter_by(
                 target_type="enterprise", target_id=record.id
-            ).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).all(),
+            ).options(selectinload(TaskHistory.actor)).order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc()).all(),
             ci_links=TaskCI.query.filter_by(
                 target_type="enterprise", target_id=record.id
             ).order_by(TaskCI.relationship_role).all(),
@@ -2303,7 +2310,7 @@ def register(app):
                     Ticket.assignee_id == current_user.id,
                     Ticket.updated_at >= focus_cutoff,
                 ))
-            lane_tickets = state_query.all()
+            lane_tickets = state_query.options(selectinload(Ticket.assignee)).all()
             for ticket in lane_tickets:
                 ticket_sla[ticket.id] = board_sla(ticket)
             lane_tickets.sort(key=lambda ticket: (

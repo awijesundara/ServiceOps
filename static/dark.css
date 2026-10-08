@@ -18,10 +18,10 @@ html.theme-dark .sidebar nav a.active{background:var(--green);color:#fff}
 html.theme-dark .sidebar nav a.active:hover{background:var(--green-dark)}
 html.theme-dark .profile{border-top:1px solid #263440}
 html.theme-dark .profile-identity strong{color:#ffffff}
-html.theme-dark .profile-identity small{color:#8fa0ab}
+html.theme-dark .profile-identity small{color:#a9b9c3}
 html.theme-dark .profile-identity:hover strong{color:var(--brand-amber,#f9aa3c)}
 html.theme-dark .profile .avatar,html.theme-dark .avatar{background:#172522;color:var(--dk-accent-strong)}
-html.theme-dark .link-button{border:0;background:none;color:#a9b5bd}
+html.theme-dark .link-button{border:0;background:none;color:#8d9fa9}
 html.theme-dark .sign-out-button{border:1px solid #33424e;background:none;color:#c2ccd2}
 html.theme-dark .sign-out-button:hover{background:#263440;color:#fff;border-color:#455460}
 html.theme-dark .page-head p{color:var(--muted)}
@@ -314,7 +314,7 @@ html.theme-dark .record-type-icon{background:var(--brand-teal);color:#fff}
 html.theme-dark .state-track-step{background:#1e2428;color:#95a7ae}
 html.theme-dark .state-track-step.done{background:var(--brand-teal-soft);color:var(--dk-accent)}
 html.theme-dark .state-track-step.current{background:var(--brand-teal);color:#fff}
-html.theme-dark .state-track-step.upcoming{background:#1e2428;color:#8a969b}
+html.theme-dark .state-track-step.upcoming{background:#1e2428;color:#98a9b1}
 html.theme-dark .record-grid label,html.theme-dark .record-long-fields label{color:#a1b4bc}
 html.theme-dark .record-grid input,html.theme-dark .record-grid select,html.theme-dark .record-long-fields input,html.theme-dark .record-long-fields textarea{border-color:#3d4549;background:#182128}
 html.theme-dark .record-grid input:disabled,html.theme-dark .record-grid select:disabled,html.theme-dark .record-long-fields input:disabled,html.theme-dark .record-long-fields textarea:disabled{background:#181e22;color:#a1b4bc}
@@ -385,6 +385,15 @@ html.theme-dark .org2-count{color:var(--muted)}
 html.theme-dark .org2-role-admin{background:#261a19;color:#f38a7c}
 html.theme-dark .org2-role-manager{background:#241908;color:#d29048}
 html.theme-dark .org2-role-agent{background:#171d21;color:#93b3ac}
+html.theme-dark .attachment-dropzone.is-dragover{box-shadow:inset 0 0 0 2px var(--dk-accent);background-color:#151a1f}
+html.theme-dark .attachment-dropzone.is-dragover::after{border:2px dashed var(--dk-accent)}
+html.theme-dark .attachment-drop-hint{color:var(--muted)}
+html.theme-dark .attachment-drop-status{color:var(--muted)}
+html.theme-dark .attachment-drop-status.is-error{color:var(--red)}
+html.theme-dark .comment-box.is-dragover{outline:2px dashed var(--dk-accent)}
+html.theme-dark .badge.badge-primary-ci{background:var(--brand-teal-soft);color:var(--dk-accent)}
+html.theme-dark .attachment-drop-banner{background:var(--brand-teal,#003e4c);color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.63)}
+html.theme-dark body.attachment-drag-active main{outline:2px dashed var(--dk-accent)}
 /* platform.css */
 html.theme-dark .unified-nav{background:#182128;border-bottom:1px solid var(--line)}
 html.theme-dark .nav-toggle,html.theme-dark .nav-icon{border:0;background:transparent}
@@ -753,6 +762,10 @@ html.theme-dark .personal-channel{border-bottom:1px solid var(--line)}
 html.theme-dark .personal-channel small{color:var(--muted)}
 html.theme-dark .personal-channel-add{border:1px solid var(--line)}
 html.theme-dark .audience-banner{background:#151b1f;border-left:4px solid var(--dk-accent)}
+/* utilities.css */
+html.theme-dark .u-subheading{color:var(--muted)!important}
+html.theme-dark .u-plain-button{border:0!important}
+html.theme-dark .u-note-amber{background:#1d170d!important}
 /* client-management.css */
 html.theme-dark .client-shell{border:1px solid var(--line);background:#182128;box-shadow:var(--shadow)}
 html.theme-dark .client-views{border-right:1px solid var(--line);background:#12181c}

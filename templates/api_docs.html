@@ -4,17 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{ tr('ServiceOps REST API reference') }}</title>
-<style>
-  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:920px;margin:2rem auto;padding:0 1rem;color:#1b2733;line-height:1.5}
-  h1{color:#003e4c}
-  code{background:#f1f3f5;padding:.1rem .3rem;border-radius:3px}
-  .op{border:1px solid #dfe4e8;border-radius:6px;padding:.75rem 1rem;margin:.75rem 0}
-  .op h3{margin:.1rem 0;font-size:1rem}
-  .method{display:inline-block;font-weight:700;color:#fff;border-radius:3px;padding:.05rem .5rem;margin-right:.5rem;font-size:.8rem}
-  .get{background:#2f7a3d}.post{background:#a05a00}.patch{background:#4b3fa8}.put{background:#0d5c8c}
-  .desc{color:#4a5760;font-size:.92rem;margin:.25rem 0 0}
-  #error{color:#a30000}
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='api-docs.css', v=app_version) }}">
 <script type="application/json" id="serviceops-i18n">{{ ui_javascript_catalog|tojson }}</script>
 <script src="{{ url_for('static', filename='i18n.js', v=app_version) }}"></script>
 </head>

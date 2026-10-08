@@ -6926,9 +6926,8 @@ def test_configured_brand_colors_actually_reach_the_page_not_just_the_database(c
         "BRAND_TEAL": "#124c5a", "BRAND_AMBER": "#f4a340", "DEFAULT_DENSITY": "comfortable",
     })
     page = client.get("/dashboard").data
-    start = page.index(b"<html")
-    html_tag = page[start:page.index(b">", start) + 1]
-    assert b"--brand-primary:#124c5a" in html_tag and b"--brand-accent:#f4a340" in html_tag
+    # Set on :root through the nonce'd <style> block (the CSP allows no inline style attributes).
+    assert b":root{--brand-primary:#124c5a;--brand-accent:#f4a340}" in page
 
 
 def test_settings_category_page_does_not_trigger_auth_method_check_for_other_categories(client):
@@ -6956,7 +6955,7 @@ def test_theme_is_a_per_user_preference(client, app):
 
     client.post("/preferences", data={"theme": "dark"})
     home = client.get("/").data
-    assert b'<html lang="en" dir="ltr" class="theme-dark" style=' in home
+    assert b'<html lang="en" dir="ltr" class="theme-dark">' in home
     assert b'dark.css' in home and b'media="(prefers-color-scheme: dark)"' not in home
 
     # "system" leaves the switch to the browser's prefers-color-scheme.

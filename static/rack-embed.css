@@ -1,0 +1,8 @@
+/* Iframed rack elevation preview (templates/rack_elevation_embed.html); a file because the CSP allows no inline styles. */
+html,body{margin:0;background:var(--white,#fff)}
+body{padding:14px;box-sizing:border-box;font-family:inherit}
+.rack-embed-panels{display:flex;gap:14px}
+.rack-embed-panels>div{flex:1;min-width:0;border:1px solid var(--line,#dfe5e8);border-radius:8px;padding:10px}
+.rack-embed-panels h3{font-size:11px;margin:0 0 8px;color:var(--muted,#667582);font-weight:650;text-transform:uppercase;letter-spacing:.02em}
+.rack-embed-panels svg{display:block;width:100%;height:auto;background:var(--white,#fff)}
+.rack-embed-panels a{cursor:pointer}

@@ -33,7 +33,7 @@
     <div class="columns-picker" data-columns-key="cmdb" data-columns-target="#cmdb-table" data-columns-default-hidden='{{ default_hidden_columns|tojson }}'>
       <button type="button" class="columns-picker-toggle">☰ {{ tr('Columns') }}</button>
       <div class="columns-picker-panel" hidden>
-        <p class="muted" style="margin:0 0 4px">{{ tr('Choose what shows in the table — CIs pulled from NetBox/CSV carry more fields than fit by default.') }}</p>
+        <p class="muted u-m-0-0-4">{{ tr('Choose what shows in the table — CIs pulled from NetBox/CSV carry more fields than fit by default.') }}</p>
         <label><input type="checkbox" value="ci_class"> {{ tr('Class') }}</label>
         <label><input type="checkbox" value="environment"> {{ tr('Environment') }}</label>
         <label><input type="checkbox" value="operational_status"> {{ tr('Status') }}</label>

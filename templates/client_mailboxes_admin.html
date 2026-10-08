@@ -13,9 +13,9 @@
       </td>
       <td>{{ mailbox.last_polled_at|usertime('%b %d, %H:%M') if mailbox.last_polled_at else '—' }}</td>
       <td>
-        <form method="post" style="display:inline"><input type="hidden" name="action" value="poll_now"><input type="hidden" name="mailbox_id" value="{{ mailbox.id }}"><button class="link-button">{{ tr('Check now') }}</button></form>
-        <form method="post" style="display:inline"><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="mailbox_id" value="{{ mailbox.id }}"><button class="link-button">{{ tr('Deactivate') if mailbox.active else tr('Activate') }}</button></form>
-        <form method="post" style="display:inline" data-confirm="{{ tr('Remove mailbox {name}? This deletes its stored credentials.', name=(mailbox.name)) }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="mailbox_id" value="{{ mailbox.id }}"><button class="link-button">{{ tr('Remove') }}</button></form>
+        <form class="u-inline" method="post"><input type="hidden" name="action" value="poll_now"><input type="hidden" name="mailbox_id" value="{{ mailbox.id }}"><button class="link-button">{{ tr('Check now') }}</button></form>
+        <form class="u-inline" method="post"><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="mailbox_id" value="{{ mailbox.id }}"><button class="link-button">{{ tr('Deactivate') if mailbox.active else tr('Activate') }}</button></form>
+        <form class="u-inline" method="post" data-confirm="{{ tr('Remove mailbox {name}? This deletes its stored credentials.', name=(mailbox.name)) }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="mailbox_id" value="{{ mailbox.id }}"><button class="link-button">{{ tr('Remove') }}</button></form>
       </td>
     </tr>
     {% else %}<tr><td colspan="6" class="empty">{{ tr('No mailboxes configured yet.') }}</td></tr>{% endfor %}

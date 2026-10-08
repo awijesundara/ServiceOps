@@ -51,9 +51,9 @@ from alembic.script import ScriptDirectory
 from cryptography.fernet import InvalidToken
 from ldap3 import ALL, BASE, FIRST, SUBTREE, Connection, Server, ServerPool, Tls
 from ldap3.utils.conv import escape_filter_chars
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import event as sa_event, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import aliased, selectinload
+from sqlalchemy.orm import Session, aliased, selectinload
 from sqlalchemy.pool import StaticPool
 from serviceops_core.log_storage import DatabaseLogHandler, report_diagnostic_failure
 # Not called directly in this file (ServiceOps hashes local passwords with
@@ -345,6 +345,7 @@ def filter_conditions_breadcrumb(conditions, field_spec, value_labels=None):
 # module) so every existing `from app import Ticket/db/now/...` caller --
 # tests, serviceops_core/*, tools/*, migrations/* -- keeps working unchanged.
 from serviceops_models import *  # noqa: F401,F403
+from serviceops_core.request_cache import request_cache
 
 login_manager = LoginManager()
 login_manager.login_view = "login"
@@ -443,8 +444,53 @@ def account_usable(user):
     tokens and mobile sessions -- not just its background jobs."""
     if user is None or not user.active:
         return False
-    tenant = db.session.get(Tenant, user.tenant_id)
+    tenant = request_tenant(user.tenant_id)
     return bool(tenant and tenant.active)
+
+
+CSS_COLOR = re.compile(r"#[0-9a-fA-F]{3,8}|(?:rgb|rgba|hsl|hsla)\([0-9.,%\s/]+\)|[a-zA-Z]{3,20}")
+
+
+def css_color(value, fallback):
+    """A stored color made safe to place inside a <style> block: anything that
+    is not a plain hex, rgb()/hsl() or named color falls back, so a setting can
+    never close the rule or inject other CSS."""
+    value = str(value or "").strip()
+    return value if CSS_COLOR.fullmatch(value) else fallback
+
+
+def pct(value):
+    """A 0-100 integer for the .pct-w-N / .pct-h-N bar classes (static/utilities.css),
+    which replace inline width/height styles the CSP no longer allows."""
+    try:
+        return max(0, min(100, round(float(value))))
+    except (TypeError, ValueError):
+        return 0
+
+
+def csp_nonce():
+    """This response's Content-Security-Policy nonce for <style> blocks that
+    carry per-request values (brand colors, font scale). Created on first use,
+    and only then added to the header (see security_headers)."""
+    cache = request_cache()
+    if cache is None:
+        return ""
+    if "csp_nonce" not in cache:
+        cache["csp_nonce"] = secrets.token_urlsafe(18)
+    return cache["csp_nonce"]
+
+
+def request_tenant(tenant_id):
+    """The Tenant row, loaded once per request. The session identity map holds
+    rows weakly, so a tenant looked up and released early in the request (the
+    account check) would otherwise be queried again for the page layout."""
+    cache = request_cache()
+    if cache is None:
+        return db.session.get(Tenant, tenant_id)
+    tenants = cache.setdefault("tenants", {})
+    if tenant_id not in tenants:
+        tenants[tenant_id] = db.session.get(Tenant, tenant_id)
+    return tenants[tenant_id]
 
 
 def object_storage_enabled():
@@ -1123,25 +1169,66 @@ def hash_backup_code(code):
     return hashlib.sha256(code.encode()).hexdigest()
 
 
+_request_metric_buffer = {}
+_request_metric_lock = threading.Lock()
+_request_metric_flushed_at = [time_module.monotonic()]
+
+
 def record_request_metric(method, status_code, duration_ms):
-    """Increments the shared `RequestMetricTotal` row for this method+status.
+    """Adds this request to the shared `RequestMetricTotal` counters.
+
+    Counts are buffered per process and written every
+    REQUEST_METRIC_FLUSH_SECONDS as one atomic increment per method+status.
+    Writing on every request made each one lock the same hot row
+    (`SELECT ... FOR UPDATE` on, say, GET/200) until commit, so concurrent
+    requests across workers queued behind each other. The database row stays
+    the cross-process truth; readers call flush_request_metrics() first so
+    their own process's pending counts are included.
 
     Runs on every request via `after_request`, so a failure here must never
-    break the actual response -- caught and logged, not raised. A stale
-    UniqueConstraint race (two workers creating the same row at once) is
-    retried once via a fresh lookup rather than surfaced as a 500."""
+    break the actual response."""
+    key = (method, str(status_code))
+    with _request_metric_lock:
+        count, total_ms = _request_metric_buffer.get(key, (0, 0.0))
+        _request_metric_buffer[key] = (count + 1, total_ms + duration_ms)
+    interval = current_app.config.get("REQUEST_METRIC_FLUSH_SECONDS", 5)
+    if time_module.monotonic() - _request_metric_flushed_at[0] >= interval:
+        flush_request_metrics()
+
+
+def flush_request_metrics():
+    """Writes this process's buffered request counts to the database."""
+    with _request_metric_lock:
+        pending = dict(_request_metric_buffer)
+        _request_metric_buffer.clear()
+        _request_metric_flushed_at[0] = time_module.monotonic()
+    if not pending:
+        return
     try:
-        status = str(status_code)
-        row = RequestMetricTotal.query.filter_by(method=method, status=status).with_for_update().first()
-        if not row:
-            row = RequestMetricTotal(method=method, status=status)
-            db.session.add(row)
-            db.session.flush()
-        row.request_count += 1
-        row.duration_sum_ms += duration_ms
+        for (method, status), (count, total_ms) in pending.items():
+            increment = update(RequestMetricTotal).where(
+                RequestMetricTotal.method == method, RequestMetricTotal.status == status,
+            ).values(
+                request_count=RequestMetricTotal.request_count + count,
+                duration_sum_ms=RequestMetricTotal.duration_sum_ms + total_ms,
+            )
+            if db.session.execute(increment).rowcount:
+                continue
+            try:
+                with db.session.begin_nested():
+                    db.session.add(RequestMetricTotal(
+                        method=method, status=status, request_count=count, duration_sum_ms=total_ms,
+                    ))
+            except IntegrityError:
+                # Another worker created the row first; add to it instead.
+                db.session.execute(increment)
         db.session.commit()
     except Exception:  # noqa: BLE001 - metrics must never break the actual request
         db.session.rollback()
+        with _request_metric_lock:  # keep the counts for the next attempt
+            for key, (count, total_ms) in pending.items():
+                held_count, held_ms = _request_metric_buffer.get(key, (0, 0.0))
+                _request_metric_buffer[key] = (held_count + count, held_ms + total_ms)
 
 
 _ipfs_rate_limit_windows = {}
@@ -1474,12 +1561,50 @@ def initial_language_preference():
     return canonical_language(setting_value("DEFAULT_LANGUAGE", AUTOMATIC)) or AUTOMATIC
 
 
+def _request_setting_rows():
+    """Every PlatformSetting row, loaded with one query per request.
+
+    A page reads a dozen or more settings (branding, feature flags, limits),
+    and a key with no stored row is not kept by the session identity map, so
+    each lookup used to cost its own query. Outside a request (workers,
+    scripts) this returns None and callers read the row directly. The cache is
+    dropped whenever a flush writes a PlatformSetting (see
+    REQUEST_CACHE_SOURCES), so a value saved mid-request is never stale.
+    """
+    cache = request_cache()
+    if cache is None:
+        return None
+    rows = cache.get("platform_settings")
+    if rows is None:
+        rows = {row.key: row for row in PlatformSetting.query.all()}
+        cache["platform_settings"] = rows
+    return rows
+
+
+# Request-scoped read caches and the models whose writes invalidate them.
+REQUEST_CACHE_SOURCES = {
+    "platform_settings": "PlatformSetting", "ai_chat_available": "AIConfiguration", "tenants": "Tenant",
+}
+
+
+@sa_event.listens_for(Session, "after_flush")
+def _drop_request_caches_on_write(session, flush_context):
+    cache = request_cache()
+    if not cache:
+        return
+    written = {type(obj).__name__ for obj in (*session.new, *session.dirty, *session.deleted)}
+    for key, model in REQUEST_CACHE_SOURCES.items():
+        if model in written:
+            cache.pop(key, None)
+
+
 def setting_value(key, default=None):
     definition = find_setting_definition(key)
     fallback = default if default is not None else (
         os.getenv(key) if os.getenv(key) is not None else (definition or {}).get("default", ""))
     try:
-        row = db.session.get(PlatformSetting, key)
+        rows = _request_setting_rows()
+        row = rows.get(key) if rows is not None else db.session.get(PlatformSetting, key)
     except Exception:
         # Deliberately still falls back rather than raising -- this is called
         # pervasively for feature flags/thresholds throughout request
@@ -4806,6 +4931,7 @@ def process_performance_sample_schedule(interval_seconds=60):
                 return False
         except (TypeError, ValueError):
             pass
+    flush_request_metrics()
     totals = RequestMetricTotal.query.all()
     cumulative_requests = sum(row.request_count for row in totals)
     cumulative_errors = sum(row.request_count for row in totals if row.status[:1] in ("4", "5"))
@@ -7573,6 +7699,7 @@ def create_app(test_config=None):
         CLOUDFLARE_ACCESS_AUD=os.getenv("CLOUDFLARE_ACCESS_AUD", ""),
         LOCAL_AUTH_ENABLED=env_bool("LOCAL_AUTH_ENABLED", True),
         CSRF_ENABLED=env_bool("CSRF_ENABLED", True),
+        REQUEST_METRIC_FLUSH_SECONDS=coerce_int(os.getenv("REQUEST_METRIC_FLUSH_SECONDS", "5"), 5),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=env_bool("SESSION_COOKIE_SECURE", True),
@@ -7614,6 +7741,8 @@ def create_app(test_config=None):
     if app.config["TESTING"]:
         if not test_config or "CSRF_ENABLED" not in test_config:
             app.config["CSRF_ENABLED"] = False
+        if not test_config or "REQUEST_METRIC_FLUSH_SECONDS" not in test_config:
+            app.config["REQUEST_METRIC_FLUSH_SECONDS"] = 0  # tests read counts right after each request
         app.config["SECRET_KEY"] = app.config.get("SECRET_KEY") or "test-only-secret"
         app.config["BOOTSTRAP_ADMIN_PASSWORD"] = app.config.get(
             "BOOTSTRAP_ADMIN_PASSWORD", "Admin123!"
@@ -7805,7 +7934,9 @@ def create_app(test_config=None):
         # request would otherwise add write load proportional to traffic for
         # a stat that only needs minute-level precision (System Health's
         # "currently active users").
-        if not current_user.is_authenticated:
+        # Static files are public and versioned; they need no session work
+        # (loading the user, session row and tenant cost queries per asset).
+        if request.endpoint == "static" or not current_user.is_authenticated:
             return
         stale = (
             current_user.last_seen_at is None
@@ -7817,7 +7948,7 @@ def create_app(test_config=None):
 
     @app.before_request
     def enforce_session_inventory():
-        if not current_user.is_authenticated:
+        if request.endpoint == "static" or not current_user.is_authenticated:
             return None
         session_id = session.get("_session_id")
         record = UserSession.query.filter_by(session_id=session_id).first() if session_id else None
@@ -7887,7 +8018,7 @@ def create_app(test_config=None):
 
     @app.before_request
     def verify_session_version():
-        if current_user.is_authenticated and (
+        if request.endpoint != "static" and current_user.is_authenticated and (
             session.get("_auth_version") != current_user.auth_version
             # A deactivated account must lose access on its very next
             # request, not merely at its next fresh login -- otherwise an
@@ -7941,6 +8072,11 @@ def create_app(test_config=None):
         # the rotating JSON file (INFO) via the root logger, not the
         # DB-backed handler (WARNING+ only, to keep ApplicationLog to
         # actual problems worth an admin's attention).
+        # Read before record_request_metric() commits, which expires the
+        # session and would reload the user row just to log its ids.
+        signed_in = request.endpoint != "static" and current_user.is_authenticated
+        user_id = current_user.id if signed_in else None
+        tenant_id = current_user.tenant_id if signed_in else None
         duration_ms = None
         started_at = g.get("_request_started_at")
         if started_at is not None:
@@ -7957,8 +8093,8 @@ def create_app(test_config=None):
                 "path": logged_path,
                 "status_code": response.status_code,
                 "duration_ms": duration_ms,
-                "user_id": current_user.id if current_user.is_authenticated else None,
-                "tenant_id": current_user.tenant_id if current_user.is_authenticated else None,
+                "user_id": user_id,
+                "tenant_id": tenant_id,
                 "remote_addr": request.remote_addr,
             },
         )
@@ -8097,6 +8233,9 @@ def create_app(test_config=None):
         return Markup("").join(pieces)
 
     app.jinja_env.globals["mentions_html"] = mentions_html
+    app.jinja_env.globals["csp_nonce"] = csp_nonce
+    app.jinja_env.filters["css_color"] = css_color
+    app.jinja_env.filters["pct"] = pct
 
     def ai_note_html(body):
         from serviceops_core.ai_note import render_ai_note
@@ -8144,7 +8283,7 @@ def create_app(test_config=None):
         notification_query = tenant_query(Notification).filter_by(user_id=current_user.id)
         recent_notifications = notification_query.order_by(Notification.created_at.desc()).limit(6).all()
         current_page_url = request.path + (f"?{request.query_string.decode()}" if request.query_string else "")
-        current_tenant = db.session.get(Tenant, current_user.tenant_id)
+        current_tenant = request_tenant(current_user.tenant_id)
         return platform_context | {
             "current_tenant_slug": current_tenant.slug if current_tenant else None,
             "ui_preference": preference,
@@ -8222,11 +8361,15 @@ def create_app(test_config=None):
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        # No 'unsafe-inline' for styles: stylesheets come from 'self', and the
+        # few <style> blocks with per-request values carry this response's nonce.
+        cache = request_cache() or {}
+        style_src = f"style-src 'self' 'nonce-{cache['csp_nonce']}'; " if cache.get("csp_nonce") else "style-src 'self'; "
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; "
             "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline'; "
+            f"{style_src}"
             "img-src 'self' data: blob:; "
             "font-src 'self'; "
             "connect-src 'self'; "
@@ -8236,6 +8379,11 @@ def create_app(test_config=None):
         )
         if setting_bool("ENABLE_HSTS"):
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        if request.endpoint == "static" and request.args.get("v") and response.status_code == 200:
+            # Templates add ?v=<release> to every asset URL, so a versioned URL
+            # never changes content within a release: let browsers keep it
+            # instead of revalidating every stylesheet and script on each page.
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
     @app.errorhandler(403)

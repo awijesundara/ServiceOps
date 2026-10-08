@@ -25,6 +25,15 @@ log_format detailed '$remote_addr - $remote_user [$time_local] '
 access_log /dev/stdout detailed;
 error_log /dev/stderr warn;
 
+# Compress text responses. The base image ships with gzip off, so stylesheets,
+# scripts and HTML pages were sent uncompressed (roughly 4-6x larger).
+gzip on;
+gzip_vary on;
+gzip_proxied any;
+gzip_comp_level 5;
+gzip_min_length 1024;
+gzip_types text/css application/javascript text/javascript application/json image/svg+xml text/plain application/manifest+json;
+
 client_max_body_size 25m;
 proxy_read_timeout 65s;
 proxy_connect_timeout 10s;

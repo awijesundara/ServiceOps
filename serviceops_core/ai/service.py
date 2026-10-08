@@ -18,6 +18,7 @@ from serviceops_core import read_access
 from serviceops_core.security import mask_pii, redact
 from serviceops_core.storage import ipfs_enabled
 from serviceops_core.localization import tr
+from serviceops_core.request_cache import request_cache
 
 ALLOWED_ROLES = {"agent", "manager", "admin", "superadmin"}
 ACTIVE = ("queued", "running")
@@ -52,8 +53,15 @@ def chat_available(user):
     """Whether this person may see the chatbot: signed in, an allowed role, and enabled by the administrator."""
     if not user.is_authenticated or not user.active or user.effective_role not in access.CHAT_ROLES or ipfs_enabled():
         return False
-    config = db.session.get(AIConfiguration, user.tenant_id)
-    return bool(config and config.enabled and config.chat_enabled)
+    # base.html asks several times per page; a missing configuration row is not
+    # kept by the identity map, so remember the answer for this request. App
+    # code drops the cache when an AIConfiguration is written (REQUEST_CACHE_SOURCES).
+    request_scope = request_cache()
+    cache = request_scope.setdefault("ai_chat_available", {}) if request_scope is not None else {}
+    if user.id not in cache:
+        config = db.session.get(AIConfiguration, user.tenant_id)
+        cache[user.id] = bool(config and config.enabled and config.chat_enabled)
+    return cache[user.id]
 
 
 def chat_retention_days(user):

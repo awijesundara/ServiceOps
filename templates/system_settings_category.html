@@ -74,7 +74,7 @@
         <tr>
           <td><a href="{{ url_for('group_edit', group_id=row.group.id) }}">{{ row.group.name }}</a><br><small class="muted">{{ tr_value(row.group.group_type) }}</small></td>
           <td>{{ row.group.description or '—' }}</td>
-          <td>{{ "true" if row.group.active else "false" }}</td>
+          <td>{% if row.group.active %}<span class="status-badge active">{{ tr('Active') }}</span>{% else %}<span class="status-badge inactive">{{ tr('Inactive') }}</span>{% endif %}</td>
           <td>{% for role in row.roles %}<span class="tag">{{ tr_value(access_level_labels[role]) }}</span> {% else %}—{% endfor %}</td>
           <td>{% for name in row.directory_groups %}<code>{{ name }}</code>{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
           <td>{{ row.group.members|length }}</td>
