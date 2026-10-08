@@ -34,6 +34,8 @@ infrastructure.
 - SLAs, escalations, workflow automation, in-app + email + chat notifications
 - Optional AI assistant (role-scoped chat, cited incident investigations, generated resolution/closure notes and suggested replies) with administrator enable/disable and self-hosted or external inference; every write stays a human-reviewed proposal, never autonomous ([setup](https://github.com/awijesundara/serviceops-notes/blob/main/docs/OPERATIONS_MANUAL.md#section-ai_operations))
 - Threaded ticket comments, @mentions, and follow/watch
+- Drag-and-drop and paste ticket attachments with role-based deletion
+- Per-user light, dark, or match-system theme
 - Analytics dashboard (MTTR, SLA compliance, CSAT, backlog aging) with CSV export
 - Public status page for major incidents and service uptime
 - Tamper-evident audit log, versioned REST API, installable PWA, native iOS app
