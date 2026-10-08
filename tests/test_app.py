@@ -9,6 +9,8 @@ import uuid
 from io import BytesIO
 from urllib.parse import quote
 
+from pathlib import Path
+
 import pytest
 from alembic import command
 from alembic.config import Config as AlembicConfig
@@ -4825,7 +4827,7 @@ def test_unified_search_favorites_and_preferences(client, app):
     with app.app_context():
         assert Favorite.query.filter_by(url="/task-board").one()
         pref = UserPreference.query.one()
-        assert (pref.theme, pref.density, pref.font_scale, pref.start_page) == ("light", "compact", 115, "/task-board")
+        assert (pref.theme, pref.density, pref.font_scale, pref.start_page) == ("dark", "compact", 115, "/task-board")
         assert (pref.accessible_tooltips, pref.data_patterns, pref.compact_dates) == (True, True, True)
         assert (pref.keyboard_shortcuts, pref.date_time_display) == (True, "relative")
 
@@ -6944,12 +6946,45 @@ def test_settings_category_page_does_not_trigger_auth_method_check_for_other_cat
     assert b"Administration settings saved" in response.data
 
 
-def test_dark_theme_is_removed(client, app):
+def test_theme_is_a_per_user_preference(client, app):
     login(client)
-    response = client.get("/preferences")
-    assert b'value="dark"' not in response.data
+    page = client.get("/preferences").data
+    assert all(f'name="theme" value="{theme}"'.encode() in page for theme in ("light", "dark", "system"))
+    # Light is the default and loads no dark stylesheet.
+    home = client.get("/").data
+    assert b"dark.css" not in home and b'class="theme-dark' not in home
+
+    client.post("/preferences", data={"theme": "dark"})
+    home = client.get("/").data
+    assert b'<html lang="en" dir="ltr" class="theme-dark" style=' in home
+    assert b'dark.css' in home and b'media="(prefers-color-scheme: dark)"' not in home
+
+    # "system" leaves the switch to the browser's prefers-color-scheme.
+    client.post("/preferences", data={"theme": "system"})
+    home = client.get("/").data
+    assert b'media="(prefers-color-scheme: dark)"' in home
+    assert b'<meta name="color-scheme" content="light dark">' in home
+
+    # Unknown values fall back to light rather than reaching the template.
+    client.post("/preferences", data={"theme": "neon"})
     with app.app_context():
-        assert all(pref.theme == "light" for pref in UserPreference.query.all())
+        assert UserPreference.query.join(User).filter(User.username == "admin").one().theme == "light"
+
+    # The choice belongs to the account: another user still sees light.
+    client.post("/preferences", data={"theme": "dark"})
+    client.post("/logout")
+    login(client, "employee", "Employee123!")
+    assert b"dark.css" not in client.get("/").data
+
+
+def test_dark_stylesheet_is_generated_from_current_light_styles():
+    import subprocess
+    import sys
+    result = subprocess.run(
+        [sys.executable, "tools/build_dark_theme.py", "--check"],
+        cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_declarative_priority_matrix_is_complete():

@@ -84,7 +84,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const frame = document.createElementNS(svgNS, "rect");
     frame.setAttribute("x", 30); frame.setAttribute("y", 10);
     frame.setAttribute("width", 180); frame.setAttribute("height", windowSize * rowHeight);
-    frame.setAttribute("fill", "#f7f9fa"); frame.setAttribute("stroke", "var(--line, #dfe5e8)");
+    // Colors come from the .rack-elevation-* rules in app.css so themes can restyle them.
+    frame.setAttribute("class", "rack-elevation-frame");
     svg.appendChild(frame);
     for (let u = winStart; u <= winEnd; u++) {
       const y = 10 + (winEnd - u) * rowHeight;
@@ -92,12 +93,12 @@ document.addEventListener("DOMContentLoaded", () => {
       label.textContent = u;
       label.setAttribute("x", 24); label.setAttribute("y", y + rowHeight - 5);
       label.setAttribute("text-anchor", "end"); label.setAttribute("font-size", "8");
-      label.setAttribute("fill", "#94a3ac");
+      label.setAttribute("class", "rack-elevation-unit");
       svg.appendChild(label);
       const gridline = document.createElementNS(svgNS, "line");
       gridline.setAttribute("x1", 30); gridline.setAttribute("x2", 210);
       gridline.setAttribute("y1", y); gridline.setAttribute("y2", y);
-      gridline.setAttribute("stroke", "#edf0f2");
+      gridline.setAttribute("class", "rack-elevation-gridline");
       svg.appendChild(gridline);
     }
     devices.forEach((device) => {

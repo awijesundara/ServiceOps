@@ -7735,7 +7735,7 @@ def create_app(test_config=None):
                 db.session.add(default_tenant)
                 db.session.commit()
             seed()
-            UserPreference.query.filter(UserPreference.theme != "light").update({"theme": "light"})
+            UserPreference.query.filter(UserPreference.theme.notin_(THEMES)).update({"theme": "light"})
             db.session.commit()
             app.config["LOCAL_AUTH_ENABLED"] = setting_bool("LOCAL_AUTH_ENABLED", True)
             app.config["LDAP_ENABLED"] = setting_bool("LDAP_ENABLED")

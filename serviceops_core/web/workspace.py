@@ -70,6 +70,7 @@ from serviceops_core.projections import project_document
 from serviceops_core.security import hash_password, verify_password
 from serviceops_core.web.common import analytics_kpis, manager_portal_context, usertime_filter, visible_tickets
 from serviceops_models import (
+    THEMES,
     AIConnection,
     ApprovalDelegation,
     Asset,
@@ -1012,7 +1013,7 @@ def register(app):
             pref.language = language
             # Later messages in this request use the newly chosen language.
             g.pop("serviceops_language", None)
-            pref.theme = "light"
+            pref.theme = request.form.get("theme") if request.form.get("theme") in THEMES else "light"
             pref.density = request.form.get("density", "comfortable")
             pref.font_scale = max(80, min(140, int(request.form.get("font_scale", 100))))
             pref.high_contrast = bool(request.form.get("high_contrast"))

@@ -33,7 +33,7 @@
     });
   }
 
-  function renderChart(title, unit, values, times, color) {
+  function renderChart(title, unit, values, times, series) {
     const wrap = document.createElement("div");
     wrap.className = "performance-chart";
     const heading = document.createElement("h3");
@@ -62,8 +62,8 @@
 
     const path = document.createElementNS(SVG_NS, "path");
     path.setAttribute("d", buildPath(values, maxValue));
-    path.setAttribute("fill", "none");
-    path.setAttribute("stroke", color);
+    // Series colors live in CSS (.performance-chart-line-*) so themes can restyle them.
+    path.setAttribute("class", `performance-chart-line performance-chart-line-${series}`);
     path.setAttribute("stroke-width", "2");
     path.setAttribute("stroke-linejoin", "round");
     path.setAttribute("stroke-linecap", "round");
@@ -135,9 +135,9 @@
     const rps = payload.points.map((point) => point.requests_per_sec);
     const latency = payload.points.map((point) => point.avg_latency_ms);
     const errorRate = payload.points.map((point) => Math.round(point.error_rate * 1000) / 10);
-    container.appendChild(renderChart(tr("Requests / second"), "/s", rps, times, "#0c7c68"));
-    container.appendChild(renderChart(tr("Average latency"), "ms", latency, times, "#003e4c"));
-    container.appendChild(renderChart(tr("Error rate"), "%", errorRate, times, "#c0392b"));
+    container.appendChild(renderChart(tr("Requests / second"), "/s", rps, times, "requests"));
+    container.appendChild(renderChart(tr("Average latency"), "ms", latency, times, "latency"));
+    container.appendChild(renderChart(tr("Error rate"), "%", errorRate, times, "errors"));
   }
 
   rangeSelect?.addEventListener("change", load);

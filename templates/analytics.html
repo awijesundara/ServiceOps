@@ -115,7 +115,7 @@
       <tr>
         <td><strong>{{ row.service.name }}</strong><small>{{ tr('{criticality} criticality', criticality=(row.service.criticality)) }}</small></td>
         <td><span class="{{ 'sla-breached-cell' if row.uptime_pct < 99 else ('sla-at-risk-cell' if row.uptime_pct < 99.9 else '') }}">{{ row.uptime_pct }}%</span></td>
-        <td>{% if row.open_outage %}<span class="badge" style="background:#fdebea;color:#9d2a22">{{ tr('Outage in progress') }}</span>{% else %}<span class="badge">{{ tr('Healthy') }}</span>{% endif %}</td>
+        <td>{% if row.open_outage %}<span class="badge badge-outage">{{ tr('Outage in progress') }}</span>{% else %}<span class="badge">{{ tr('Healthy') }}</span>{% endif %}</td>
         <td>{% if row.last_outage %}{{ (row.last_outage.started_at|usertime('%b %d, %Y %H:%M')) }}{% if row.last_outage.ended_at %} – {{ (row.last_outage.ended_at|usertime('%H:%M')) }}{% endif %} · <a href="{{ url_for('ticket_detail', ticket_id=row.last_outage.ticket_id) }}">{{ row.last_outage.ticket.number }}</a>{% else %}{{ tr('No outages recorded') }}{% endif %}</td>
       </tr>
       {% endfor %}

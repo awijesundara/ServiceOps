@@ -393,9 +393,6 @@
    "id": "Accessible tooltips"
   },
   {
-   "id": "Accessible, light-only workspace preferences for your account."
-  },
-  {
    "id": "Account status"
   },
   {
@@ -894,6 +891,9 @@
    "id": "Appearance"
   },
   {
+   "id": "Appearance and accessibility preferences for your account."
+  },
+  {
    "id": "Append-only, request-correlated security and record activity."
   },
   {
@@ -1371,6 +1371,9 @@
    "id": "Breaching within {count} hours"
   },
   {
+   "id": "Bright surfaces with dark text."
+  },
+  {
    "id": "Bronze Silver Gold"
   },
   {
@@ -1743,6 +1746,9 @@
   },
   {
    "id": "Changes"
+  },
+  {
+   "id": "Changes apply to your account on every device."
   },
   {
    "id": "Changing purpose, risk, schedule, CI, implementation, testing, or backout information supersedes prior decisions and starts a new approval revision."
@@ -2631,6 +2637,9 @@
    "id": "DC=example,DC=com"
   },
   {
+   "id": "Dark"
+  },
+  {
    "id": "Dashboard"
   },
   {
@@ -2875,6 +2884,9 @@
   {
    "id": "Did not save",
    "javascript": true
+  },
+  {
+   "id": "Dim surfaces that are easier on the eyes in low light."
   },
   {
    "id": "Direct reports"
@@ -3569,6 +3581,9 @@
   },
   {
    "id": "Follow nested AD groups (member of a group inside a mapped group)"
+  },
+  {
+   "id": "Follow your device setting and switch automatically."
   },
   {
    "id": "Follow-up actions"
@@ -4697,6 +4712,9 @@
    "id": "Lifecycle status"
   },
   {
+   "id": "Light"
+  },
+  {
    "id": "Limit to first N new tickets (leave blank for all — recommended for your first preview)"
   },
   {
@@ -4963,6 +4981,9 @@
   },
   {
    "id": "Mark all read"
+  },
+  {
+   "id": "Match system"
   },
   {
    "id": "Matching and merging:"
@@ -9816,7 +9837,7 @@
    "id": "The {name} team (owner of {name2}) requires an active manager."
   },
   {
-   "id": "Theme is governed as light-only."
+   "id": "Theme"
   },
   {
    "id": "Then"

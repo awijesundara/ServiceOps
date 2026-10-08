@@ -9,6 +9,7 @@ const SHELL_ASSETS = [
   "/static/itil.css?v=1.113.0",
   "/static/platform.js?v=1.113.0",
   "/static/admin-workspace.css?v=1.113.0",
+  "/static/dark.css?v=1.113.0",
   "/static/lookup.js?v=1.113.0",
   "/static/icons/serviceops-icon-192.png?v=1.113.0",
   "/static/icons/serviceops-icon-512.png?v=1.113.0"
