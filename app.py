@@ -96,6 +96,7 @@ from serviceops_core.ci_class_policy import (
     ci_class_action_allowed, ci_class_read_allowed, managed_ci_classes,
     restrict_ci_query_to_readable_classes, unreadable_ci_classes,
 )
+from serviceops_core.client_identity import CLIENT_HINT_HEADERS, ClientAddressMiddleware, client_location, describe_device
 from serviceops_core.dns_lookup import resolve_hostname, resolve_ip
 from serviceops_core.dns_pin import pin_resolved_addresses
 from serviceops_core.proxy_tunnel import parse_proxy_url, tunnel_through_proxy
@@ -785,8 +786,9 @@ def audit_security_context():
         ),
         "device": (
             getattr(session_record, "device_label", None)
-            or describe_user_agent(request.headers.get("User-Agent", ""))
+            or describe_device(request.headers)
         ),
+        "client_location": client_location(request.headers),
         "authentication_provider": (
             getattr(session_record, "provider", None)
             or session.get("_auth_provider")
@@ -6812,40 +6814,12 @@ def user_is_local(user):
     return ExternalIdentity.query.filter_by(user_id=user.id).first() is None
 
 
-def describe_user_agent(user_agent):
-    """Return a compact, non-fingerprinting browser/OS label for session UI."""
-    value = str(user_agent or "")
-    browser = "Browser"
-    for marker, label in (
-        ("Edg/", "Microsoft Edge"), ("OPR/", "Opera"),
-        ("Firefox/", "Firefox"), ("Chrome/", "Chrome"),
-        ("Safari/", "Safari"),
-    ):
-        if marker in value:
-            browser = label
-            break
-    operating_system = "Unknown OS"
-    for marker, label in (
-        ("Windows", "Windows"), ("Android", "Android"),
-        ("iPhone", "iOS"), ("iPad", "iPadOS"),
-        ("Mac OS X", "macOS"), ("Linux", "Linux"),
-    ):
-        if marker in value:
-            operating_system = label
-            break
-    return f"{browser} on {operating_system}"[:160]
+_hostname_cache = {}
+_hostname_cache_lock = threading.Lock()
+_hostname_pool = None
 
 
-def verified_client_hostname(address):
-    """Best-effort forward-confirmed reverse DNS, never a trusted identity.
-
-    Disabled by default because some sites do not want DNS lookups on web
-    requests. When enabled, a PTR name is retained only when resolving it
-    forward includes the same source address, preventing an arbitrary PTR
-    record from being presented as verified endpoint metadata.
-    """
-    if not address or not setting_bool("CLIENT_HOSTNAME_LOOKUP", False):
-        return None
+def _lookup_verified_hostname(address):
     hostname = resolve_hostname(address)
     if not hostname:
         return None
@@ -6855,6 +6829,40 @@ def verified_client_hostname(address):
     except ValueError:
         return None
     return hostname[:255] if normalized in resolved else None
+
+
+def verified_client_hostname(address):
+    """Best-effort forward-confirmed reverse DNS, never a trusted identity.
+
+    A PTR name is kept only when resolving it forward includes the same source
+    address, so an arbitrary PTR record cannot pose as the client's name. On a
+    corporate network whose DNS registers workstations this is the device's
+    hostname (e.g. LAPTOP-7Q2.corp.example); for internet clients it is the
+    provider's name for their public address. Lookups are capped at one second
+    and cached for 15 minutes per address, so a slow resolver never stalls a
+    request. Administrators can turn it off (CLIENT_HOSTNAME_LOOKUP).
+    """
+    global _hostname_pool
+    if not address or not setting_bool("CLIENT_HOSTNAME_LOOKUP", True):
+        return None
+    current = time_module.monotonic()
+    with _hostname_cache_lock:
+        cached = _hostname_cache.get(address)
+        if cached and cached[0] > current:
+            return cached[1]
+        if _hostname_pool is None:
+            from concurrent.futures import ThreadPoolExecutor
+            _hostname_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="client-dns")
+    future = _hostname_pool.submit(_lookup_verified_hostname, address)
+    try:
+        hostname = future.result(timeout=1.0)
+    except Exception:  # noqa: BLE001 - timeout or resolver failure: no name
+        hostname = None
+    with _hostname_cache_lock:
+        if len(_hostname_cache) > 5000:
+            _hostname_cache.clear()
+        _hostname_cache[address] = (current + 900, hostname)
+    return hostname
 
 
 def apply_external_profile_attrs(user, profile_attrs):
@@ -7369,7 +7377,8 @@ class JsonLogFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
-        for attr in ("request_id", "trace_id", "method", "path", "status_code", "duration_ms", "user_id", "tenant_id", "remote_addr"):
+        for attr in ("request_id", "trace_id", "method", "path", "status_code", "duration_ms", "user_id", "tenant_id", "remote_addr",
+                     "client_hostname", "client_device", "client_location", "cf_ray"):
             value = getattr(record, attr, None)
             if value is not None:
                 payload[attr] = value
@@ -7835,13 +7844,17 @@ def create_app(test_config=None):
             "ALLOW_INSECURE_SESSION_COOKIES=true for a non-TLS development deployment only."
         )
     if env_bool("TRUST_PROXY_HEADERS"):
-        app.wsgi_app = ProxyFix(
+        # ClientAddressMiddleware owns the client address: it walks the whole
+        # proxy chain (ingress, tunnel, Cloudflare) instead of trusting one hop,
+        # which recorded the cluster's address for every user. ProxyFix keeps
+        # handling scheme, host and prefix.
+        app.wsgi_app = ClientAddressMiddleware(ProxyFix(
             app.wsgi_app,
-            x_for=int(os.getenv("PROXY_FIX_X_FOR", "1")),
+            x_for=0,
             x_proto=int(os.getenv("PROXY_FIX_X_PROTO", "1")),
             x_host=int(os.getenv("PROXY_FIX_X_HOST", "1")),
             x_prefix=int(os.getenv("PROXY_FIX_X_PREFIX", "0")),
-        )
+        ))
     db.init_app(app)
     login_manager.init_app(app)
     oauth.init_app(app)
@@ -8028,7 +8041,7 @@ def create_app(test_config=None):
                 ip_address=(request.remote_addr or "")[:64],
                 user_agent=request.headers.get("User-Agent", "")[:500],
                 client_hostname=verified_client_hostname(request.remote_addr),
-                device_label=describe_user_agent(request.headers.get("User-Agent", "")),
+                device_label=describe_device(request.headers),
                 client_language=request.headers.get("Accept-Language", "")[:120],
                 expires_at=now() + app.config["PERMANENT_SESSION_LIFETIME"],
             )
@@ -8158,6 +8171,12 @@ def create_app(test_config=None):
                 "user_id": user_id,
                 "tenant_id": tenant_id,
                 "remote_addr": request.remote_addr,
+                **({} if request.endpoint == "static" else {
+                    "client_hostname": verified_client_hostname(request.remote_addr),
+                    "client_device": describe_device(request.headers),
+                    "client_location": client_location(request.headers),
+                    "cf_ray": (request.headers.get("CF-Ray") or "")[:64] or None,
+                }),
             },
         )
         return response
@@ -8425,6 +8444,10 @@ def create_app(test_config=None):
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if response.mimetype == "text/html":
+            # Chromium browsers then send OS version, architecture and phone
+            # model on later requests (used for the session/log device label).
+            response.headers.setdefault("Accept-CH", ", ".join(CLIENT_HINT_HEADERS))
         # No 'unsafe-inline' for styles: stylesheets come from 'self', and the
         # few <style> blocks with per-request values carry this response's nonce.
         cache = request_cache() or {}

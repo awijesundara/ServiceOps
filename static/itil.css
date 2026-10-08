@@ -153,3 +153,12 @@ ul.org2-tree,.org2-children{list-style:none;margin:0;padding:0}
 .attachment-dialog-actions{display:flex;justify-content:flex-end;gap:10px}.attachment-dialog.is-uploading .attachment-dropzone-box,.attachment-dialog.is-uploading .attachment-queue-remove{pointer-events:none;opacity:.6}
 @media(max-width:560px){.attachment-item{flex-wrap:wrap}.attachment-actions{width:100%;justify-content:flex-end}}
 .attachment-dialog-actions button:disabled{opacity:.5;cursor:not-allowed}
+/* Comment box "Attach file" control (matches the Attachments panel; static/attachment-drop.js). */
+.comment-attach-button{position:relative;display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--white);color:var(--green-dark);font-size:12.5px;font-weight:650;cursor:pointer}.comment-attach-button:hover{border-color:var(--green);background:#f0f7f5}.comment-attach-button:focus-within{outline:2px solid var(--green);outline-offset:2px}
+.comment-attach-button .icon{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.comment-attach-button input[type="file"]{width:auto;margin-left:6px;font-size:12px}.comment-attach.is-enhanced .comment-attach-button input[type="file"]{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.comment-attach-chip{display:inline-flex;align-items:center;gap:6px;max-width:min(320px,100%);padding:4px 6px 4px 10px;border-radius:999px;background:var(--brand-teal-soft);color:var(--ink);font-size:12.5px}.comment-attach-chip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.comment-attach-chip button{border:0;background:transparent;color:var(--muted);font-size:16px;line-height:1;padding:0 4px;border-radius:50%;cursor:pointer}.comment-attach-chip button:hover{color:var(--red)}
+.comment-attach-hint{color:var(--muted);font-size:11.5px}
+.comment-attach-chip.is-too-large{background:#fdf1f0;color:var(--red)}
+.comment-attach-chip[hidden]{display:none}

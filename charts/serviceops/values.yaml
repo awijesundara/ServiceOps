@@ -166,6 +166,15 @@ security:
 proxy:
   trustHeaders: true
   enableHsts: true
+  # Record the real client address instead of the ingress/tunnel's: forwarding
+  # headers are honored only from private/cluster ranges and, when enabled,
+  # Cloudflare's edge ranges. Add other proxy networks (e.g. an external load
+  # balancer) as comma-separated CIDRs. clientIpHeader names a header your
+  # trusted proxy sets to the client address (e.g. CF-Connecting-IP) when it
+  # rewrites X-Forwarded-For.
+  trustCloudflare: true
+  trustedCidrs: ""
+  clientIpHeader: ""
 
 featureFlags: {}
 

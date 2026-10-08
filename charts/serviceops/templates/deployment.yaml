@@ -123,6 +123,9 @@ spec:
             - {name: CLOUDFLARE_ACCESS_AUD, value: {{ .Values.auth.cloudflareAccess.aud | quote }}}
             - {name: APPLE_PASSKEY_APP_ID, value: {{ .Values.auth.passkeys.appleAppId | quote }}}
             - {name: TRUST_PROXY_HEADERS, value: {{ .Values.proxy.trustHeaders | quote }}}
+            - {name: TRUST_CLOUDFLARE_PROXY, value: {{ .Values.proxy.trustCloudflare | default true | quote }}}
+            - {name: TRUSTED_PROXY_CIDRS, value: {{ .Values.proxy.trustedCidrs | default "" | quote }}}
+            - {name: CLIENT_IP_HEADER, value: {{ .Values.proxy.clientIpHeader | default "" | quote }}}
             - {name: ENABLE_HSTS, value: {{ .Values.proxy.enableHsts | quote }}}
           envFrom:
             - configMapRef: {name: {{ include "serviceops.fullname" . }}-config}

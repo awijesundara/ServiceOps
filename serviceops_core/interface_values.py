@@ -271,7 +271,7 @@ VALUES = (
     translatable('Recently updated tickets'),
     translatable('Recently viewed'),
     translatable("Record a successful backup for System Health's recovery-set status"),
-    translatable('Record verified reverse-DNS names for login sessions'),
+    translatable('Record verified reverse-DNS hostnames of client devices in sessions and logs'),
     translatable('Recovered after worker interruption'),
     translatable('Ref'),
     translatable('Rejected'),

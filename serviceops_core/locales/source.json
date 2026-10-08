@@ -1112,7 +1112,10 @@
    "id": "At once"
   },
   {
-   "id": "Attach a file (optional)"
+   "id": "Attach a file to this note (optional)"
+  },
+  {
+   "id": "Attach file"
   },
   {
    "id": "Attachment preview"
@@ -6355,6 +6358,9 @@
    "id": "Optional comment"
   },
   {
+   "id": "Optional · or drop or paste a file here · up to 20 MB"
+  },
+  {
    "id": "Optional — shown to anyone blocked by this freeze"
   },
   {
@@ -7336,7 +7342,7 @@
    "id": "Record type, record ID, and a reason are all required for a legal hold."
   },
   {
-   "id": "Record verified reverse-DNS names for login sessions"
+   "id": "Record verified reverse-DNS hostnames of client devices in sessions and logs"
   },
   {
    "id": "Records visible to this token"
@@ -7475,6 +7481,9 @@
   },
   {
    "id": "Remove relationship"
+  },
+  {
+   "id": "Remove the attached file"
   },
   {
    "id": "Remove the system default proxy"
@@ -12111,6 +12120,14 @@
   },
   {
    "id": "{name} will create fulfillment tasks for {name2}."
+  },
+  {
+   "id": "{name} · {size}",
+   "javascript": true
+  },
+  {
+   "id": "{name} · {size}, over the 20 MB limit",
+   "javascript": true
   },
   {
    "id": "{name}. Events without this exact assignment are rejected by the delivery worker."

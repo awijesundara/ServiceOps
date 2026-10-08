@@ -3453,12 +3453,14 @@ def test_login_session_records_compact_device_and_language_details(client, app):
     assert response.status_code == 200
     with app.app_context():
         row = UserSession.query.one()
-        assert row.device_label == "Chrome on Windows"
+        assert row.device_label == "Chrome 140 on Windows 10"
         assert row.client_language == "en-GB,en;q=0.9"
         assert row.ip_address == "127.0.0.1"
     sessions = client.get("/profile/sessions")
-    assert b"Chrome on Windows" in sessions.data
-    assert b"Hostname unavailable or not verified" in sessions.data
+    assert b"Chrome 140 on Windows 10" in sessions.data
+    # Verified reverse DNS is on by default: the loopback test client resolves
+    # to localhost where the resolver maps it, otherwise no name is shown.
+    assert b"localhost" in sessions.data or b"Hostname unavailable or not verified" in sessions.data
 
 
 def test_item_added_to_existing_request_uses_requested_for_line_manager(client, app):
@@ -10628,7 +10630,7 @@ def test_audit_records_signed_request_and_security_context(app):
         assert row.integrity_version == "hmac-sha256-v3"
         assert context["http_method"] == "POST"
         assert context["request_path"] == "/admin/example"
-        assert context["device"] == "Chrome on Windows"
+        assert context["device"] == "Chrome 140 on Windows 10"
         assert context["client_language"] == "en-US,en;q=0.9"
         assert context["referrer"] == "https://serviceops.example/tickets/1"
         assert "must-never-be-retained" not in row.security_context_json
