@@ -41,7 +41,7 @@ from app import (
     generate_mfa_backup_codes,
     hash_backup_code,
     INSTALL_SETTINGS_ACTIONS,
-    integration_endpoint_valid,
+    webhook_endpoint_valid,
     latest_update_info,
     log_history,
     merge_support_group_into,
@@ -996,7 +996,7 @@ def register(app):
                     not name or len(name) > 160
                     or kind not in WEBHOOK_KINDS
                     or (not interactive_google_chat and (
-                        not integration_endpoint_valid(endpoint)
+                        not webhook_endpoint_valid(endpoint)
                         or not provider_endpoint_allowed(kind, urlparse(endpoint).hostname)
                     ))
                 ):

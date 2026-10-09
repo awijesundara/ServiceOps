@@ -64,6 +64,10 @@ GROUP_EVENT_SUBSCRIPTIONS = tuple(
 GROUP_EVENT_SUBSCRIPTION_PATTERNS = {item[0] for item in GROUP_EVENT_SUBSCRIPTIONS}
 SYSTEM_EVENT_SUBSCRIPTIONS = GROUP_EVENT_SUBSCRIPTIONS + (
     ("audit.created", "Security audit stream", "Immutable security audit events for a trusted SIEM endpoint."),
+    # Signed lifecycle events an orchestration tool such as FlowOps follows
+    # (published by transition_ticket and transition_operational_task).
+    ("change.state_changed", "Change state changes", "Change lifecycle transitions with the old and new state."),
+    ("change_task.state_changed", "Change task state changes", "CTASK transitions with the parent change, team and assignee."),
 )
 SYSTEM_EVENT_SUBSCRIPTION_PATTERNS = {item[0] for item in SYSTEM_EVENT_SUBSCRIPTIONS}
 
