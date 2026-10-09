@@ -578,6 +578,9 @@
    "id": "Add grant"
   },
   {
+   "id": "Add group"
+  },
+  {
    "id": "Add macro"
   },
   {
@@ -1856,6 +1859,9 @@
   },
   {
    "id": "Choose a supported proxy option."
+  },
+  {
+   "id": "Choose a team…"
   },
   {
    "id": "Choose a valid {label}."
@@ -3878,6 +3884,9 @@
    "id": "Group name must contain 1 to 120 characters."
   },
   {
+   "id": "Group to add as {legend}"
+  },
+  {
    "id": "Group type"
   },
   {
@@ -5629,6 +5638,9 @@
    "id": "No fulfillment tasks. Automation may fulfill this item."
   },
   {
+   "id": "No groups added."
+  },
+  {
    "id": "No groups returned."
   },
   {
@@ -5884,9 +5896,6 @@
   },
   {
    "id": "No teams under your management."
-  },
-  {
-   "id": "No teams yet."
   },
   {
    "id": "No thanks",
@@ -8195,9 +8204,6 @@
    "id": "Save AI settings"
   },
   {
-   "id": "Save CCB approver groups"
-  },
-  {
    "id": "Save Google Chat"
   },
   {
@@ -8235,9 +8241,6 @@
   },
   {
    "id": "Save event choices"
-  },
-  {
-   "id": "Save executive approver groups"
   },
   {
    "id": "Save executive approvers"
@@ -8283,9 +8286,6 @@
   },
   {
    "id": "Save proxy setting"
-  },
-  {
-   "id": "Save record approver groups"
   },
   {
    "id": "Save retention policy"

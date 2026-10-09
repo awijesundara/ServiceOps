@@ -240,6 +240,10 @@ html.theme-dark .performance-chart-line{fill:none}
 html.theme-dark .performance-chart-line-requests{stroke:#0c7c68}
 html.theme-dark .performance-chart-line-latency{stroke:var(--dk-accent)}
 html.theme-dark .performance-chart-line-errors{stroke:#c0392b}
+html.theme-dark .approval-groups{border-top:1px solid var(--line)}
+html.theme-dark .approval-group-list li{border:1px solid var(--line);background:#12181c}
+html.theme-dark .approval-group-list li.muted{border:0;background:none}
+html.theme-dark .approval-group-list li .link-button:hover{background:#1b2125}
 /* enterprise.css */
 html.theme-dark .module-card{color:inherit}
 html.theme-dark .module-card:hover{border-color:#365750}

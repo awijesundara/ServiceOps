@@ -22,6 +22,16 @@ function enhanceSelect(select) {
   input.className = "select-enhance-input";
   input.autocomplete = "off";
   input.spellcheck = false;
+  // The visible input is what assistive technology reaches, so it carries
+  // the select's accessible name (aria-label, aria-labelledby or a <label for>).
+  // A select inside its <label> needs nothing: the input sits in that label too.
+  if (select.getAttribute("aria-label")) {
+    input.setAttribute("aria-label", select.getAttribute("aria-label"));
+  } else if (select.getAttribute("aria-labelledby")) {
+    input.setAttribute("aria-labelledby", select.getAttribute("aria-labelledby"));
+  } else if (!select.closest("label") && select.labels && select.labels.length) {
+    input.setAttribute("aria-label", select.labels[0].textContent.trim());
+  }
   if (select.disabled) input.disabled = true;
   if (select.required) input.required = true;
   wrapper.appendChild(input);

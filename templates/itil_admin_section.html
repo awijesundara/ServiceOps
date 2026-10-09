@@ -1,14 +1,33 @@
-{% macro approval_group_form(post_url, authority, legend, help, button) %}
-<form method="post" action="{{ post_url }}" class="stack approval-groups-form">
-  <input type="hidden" name="action" value="set_approval_groups">
-  <input type="hidden" name="authority" value="{{ authority }}">
-  <fieldset><legend>{{ legend }}</legend>
-    <p class="muted">{{ help }}</p>
-    {% set linked = approval_group_ids[authority].get(none, []) %}
-    {% for team in teams if team.active %}<label class="check"><input type="checkbox" name="group_ids" value="{{ team.id }}" {% if team.id in linked %}checked{% endif %}> {{ team.name }} <small class="muted">{{ tr('{members} member(s)', members=(team.members|length)) }}</small></label>{% else %}<p class="muted">{{ tr('No teams yet.') }}</p>{% endfor %}
-  </fieldset>
-  <div><button class="primary">{{ button }}</button></div>
-</form>
+{% macro approval_group_form(post_url, authority, legend, help) %}
+<div class="approval-groups" data-approval-authority="{{ authority }}">
+  <h3>{{ legend }}</h3>
+  <p class="muted">{{ help }}</p>
+  {% set linked = approval_group_ids[authority].get(none, []) %}
+  <ul class="approval-group-list">
+    {% for team in teams if team.id in linked %}
+    <li>
+      <span><strong>{{ team.name }}</strong> <small class="muted">{{ tr('{members} member(s)', members=(team.members|length)) }}</small></span>
+      <form method="post" action="{{ post_url }}">
+        <input type="hidden" name="action" value="remove_approval_group">
+        <input type="hidden" name="authority" value="{{ authority }}">
+        <input type="hidden" name="group_id" value="{{ team.id }}">
+        <button class="link-button" aria-label="{{ tr('Remove {name}', name=(team.name)) }}">✕</button>
+      </form>
+    </li>
+    {% else %}
+    <li class="muted">{{ tr('No groups added.') }}</li>
+    {% endfor %}
+  </ul>
+  <form method="post" action="{{ post_url }}" class="inline-form approval-group-add">
+    <input type="hidden" name="action" value="add_approval_group">
+    <input type="hidden" name="authority" value="{{ authority }}">
+    <select name="group_id" aria-label="{{ tr('Group to add as {legend}', legend=legend) }}" required>
+      <option value="">{{ tr('Choose a team…') }}</option>
+      {% for team in teams if team.active and team.id not in linked %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}
+    </select>
+    <button class="button">{{ tr('Add group') }}</button>
+  </form>
+</div>
 {% endmacro %}
 {% extends "base.html" %}
 {% block title %}{{ tr_value(title) }} · {{ instance_name }}{% endblock %}
@@ -189,11 +208,11 @@
     <label>{{ tr('Approval rule') }}<select name="approval_mode"><option value="all" {% if executive_office.approval_mode == 'all' %}selected{% endif %}>{{ tr('Every selected executive') }}</option><option value="any" {% if executive_office.approval_mode == 'any' %}selected{% endif %}>{{ tr('Any one selected executive') }}</option></select></label>
     <div><button class="primary">{{ tr('Save executive approvers') }}</button></div>
   </form>
-  {{ approval_group_form(post_url, 'executive', tr('Executive approver groups'), tr('Every active member of these teams is also an executive approver. The approval rule above applies to everyone selected.'), tr('Save executive approver groups')) }}
+  {{ approval_group_form(post_url, 'executive', tr('Executive approver groups'), tr('Every active member of these teams is also an executive approver. The approval rule above applies to everyone selected.')) }}
 </section>
 <section class="panel admin-section">
   <h2>{{ tr('Record approval') }}</h2>
-  {{ approval_group_form(post_url, 'enterprise', tr('Record approver groups'), tr('Problem and other records that need approval go to every active member of these teams, and any one of them decides. Without a group, an administrator approves.'), tr('Save record approver groups')) }}
+  {{ approval_group_form(post_url, 'enterprise', tr('Record approver groups'), tr('Problem and other records that need approval go to every active member of these teams, and any one of them decides. Without a group, an administrator approves.')) }}
 </section>
 {% endif %}
 
@@ -287,7 +306,7 @@
       {% endfor %}
     </tbody>
   </table>
-  {{ approval_group_form(post_url, 'ccb', tr('CCB approver groups'), tr('Every active member of these teams is also a CCB approver. Any one CCB approver authorizes a change.'), tr('Save CCB approver groups')) }}
+  {{ approval_group_form(post_url, 'ccb', tr('CCB approver groups'), tr('Every active member of these teams is also a CCB approver. Any one CCB approver authorizes a change.')) }}
 </section>
 {% endif %}
 
