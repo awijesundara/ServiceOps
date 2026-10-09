@@ -1,3 +1,15 @@
+{% macro approval_group_form(post_url, authority, legend, help, button) %}
+<form method="post" action="{{ post_url }}" class="stack approval-groups-form">
+  <input type="hidden" name="action" value="set_approval_groups">
+  <input type="hidden" name="authority" value="{{ authority }}">
+  <fieldset><legend>{{ legend }}</legend>
+    <p class="muted">{{ help }}</p>
+    {% set linked = approval_group_ids[authority].get(none, []) %}
+    {% for team in teams if team.active %}<label class="check"><input type="checkbox" name="group_ids" value="{{ team.id }}" {% if team.id in linked %}checked{% endif %}> {{ team.name }} <small class="muted">{{ tr('{members} member(s)', members=(team.members|length)) }}</small></label>{% else %}<p class="muted">{{ tr('No teams yet.') }}</p>{% endfor %}
+  </fieldset>
+  <div><button class="primary">{{ button }}</button></div>
+</form>
+{% endmacro %}
 {% extends "base.html" %}
 {% block title %}{{ tr_value(title) }} · {{ instance_name }}{% endblock %}
 {% block content %}
@@ -82,9 +94,9 @@
 
 {% if section == 'team-managers' %}
 <section class="panel admin-section">
-  <p class="muted">{{ tr('The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned.') }} <a href="{{ url_for('groups') }}">{{ tr('Create, edit or delete groups in Sign-in and directory.') }}</a></p>
+  <p class="muted">{{ tr('The selected named user receives management authority for that team. A team\'s change assessment is approved by its manager or, when an approval group is set, by any active member of that group. Change submission remains blocked while a team has neither.') }} <a href="{{ url_for('groups') }}">{{ tr('Create, edit or delete groups in Sign-in and directory.') }}</a></p>
   <table>
-    <thead><tr><th>{{ tr('Team') }}</th><th>{{ tr('Current manager') }}</th><th>{{ tr('Manager assignment') }}</th><th>{{ tr('Members') }}</th></tr></thead>
+    <thead><tr><th>{{ tr('Team') }}</th><th>{{ tr('Current manager') }}</th><th>{{ tr('Manager assignment') }}</th><th>{{ tr('Approval group') }}</th><th>{{ tr('Members') }}</th></tr></thead>
     <tbody>
       {% for team in teams %}
       <tr>
@@ -98,6 +110,21 @@
               <option value="">{{ tr('Unassigned') }}</option>
               {% for user in manager_candidates %}
               <option value="{{ user.id }}" {% if team.manager_id == user.id %}selected{% endif %}>{{ user.name }} ({{ user.username }})</option>
+              {% endfor %}
+            </select>
+            <button class="button">{{ tr('Save') }}</button>
+          </form>
+        </td>
+        <td>
+          {% set linked = approval_group_ids['team_manager'].get(team.id, []) %}
+          <form method="post" action="{{ post_url }}" class="inline-form">
+            <input type="hidden" name="action" value="set_approval_groups">
+            <input type="hidden" name="authority" value="team_manager">
+            <input type="hidden" name="subject_group_id" value="{{ team.id }}">
+            <select name="group_ids" aria-label="{{ tr('Approval group for {name}', name=(team.name)) }}">
+              <option value="">{{ tr('Manager only') }}</option>
+              {% for candidate in teams if candidate.active %}
+              <option value="{{ candidate.id }}" {% if candidate.id in linked %}selected{% endif %}>{{ candidate.name }}</option>
               {% endfor %}
             </select>
             <button class="button">{{ tr('Save') }}</button>
@@ -162,6 +189,11 @@
     <label>{{ tr('Approval rule') }}<select name="approval_mode"><option value="all" {% if executive_office.approval_mode == 'all' %}selected{% endif %}>{{ tr('Every selected executive') }}</option><option value="any" {% if executive_office.approval_mode == 'any' %}selected{% endif %}>{{ tr('Any one selected executive') }}</option></select></label>
     <div><button class="primary">{{ tr('Save executive approvers') }}</button></div>
   </form>
+  {{ approval_group_form(post_url, 'executive', tr('Executive approver groups'), tr('Every active member of these teams is also an executive approver. The approval rule above applies to everyone selected.'), tr('Save executive approver groups')) }}
+</section>
+<section class="panel admin-section">
+  <h2>{{ tr('Record approval') }}</h2>
+  {{ approval_group_form(post_url, 'enterprise', tr('Record approver groups'), tr('Problem and other records that need approval go to every active member of these teams, and any one of them decides. Without a group, an administrator approves.'), tr('Save record approver groups')) }}
 </section>
 {% endif %}
 
@@ -255,6 +287,7 @@
       {% endfor %}
     </tbody>
   </table>
+  {{ approval_group_form(post_url, 'ccb', tr('CCB approver groups'), tr('Every active member of these teams is also a CCB approver. Any one CCB approver authorizes a change.'), tr('Save CCB approver groups')) }}
 </section>
 {% endif %}
 
@@ -314,7 +347,7 @@
         <input type="hidden" name="action" value="link_service_ci">
         <input type="hidden" name="service_offering_id" value="{{ service.id }}">
         <select name="relationship_role"><option>{{ tr('Primary') }}</option><option selected>{{ tr('Supporting') }}</option></select>
-        <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick one or more configuration items…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div>
+        <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick CIs by name or serial number…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div>
         <button>{{ tr('Link CIs') }}</button>
       </form>
     </article>

@@ -106,9 +106,9 @@
 {% if current_user.effective_role in ['admin','superadmin'] %}
 <details><summary>{{ tr('Add relationship') }}</summary>
   <form method="post" action="{{ url_for('ci_relationship_add') }}" class="form-grid">
-    <label>{{ tr('Parent CI') }}<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="{{ tr('Search configuration items…') }}" autocomplete="off" required><input type="hidden" name="parent_id"><div class="lookup-results" hidden></div></div></label>
+    <label>{{ tr('Parent CI') }}<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="{{ tr('Search by CI name or serial number…') }}" autocomplete="off" required><input type="hidden" name="parent_id"><div class="lookup-results" hidden></div></div></label>
     <label>{{ tr('Relationship') }}<select name="relationship_type">{% for value in ci_relationship_types %}<option {% if value=='Depends on' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-    <label>{{ tr('Child CIs') }}<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="child_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick one or more configuration items…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div></label>
+    <label>{{ tr('Child CIs') }}<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="child_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick CIs by name or serial number…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div></label>
     <div class="wide actions"><button class="primary">{{ tr('Link CIs') }}</button></div>
   </form>
 </details>

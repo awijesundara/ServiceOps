@@ -186,7 +186,7 @@
   {% if can_manage_ticket %}
   <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
     <input type="hidden" name="relationship_role" value="Primary CI">
-    <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="{{ tr('Search configuration items…') }}" autocomplete="off" required value="{{ primary_ci_link.ci.name if primary_ci_link else '' }}"><input type="hidden" name="ci_id" value="{{ primary_ci_link.ci_id if primary_ci_link else '' }}" data-owning-team="{{ primary_ci_link.ci.support_group.name if primary_ci_link and primary_ci_link.ci.support_group else '' }}"><div class="lookup-results" hidden></div></div>
+    <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="{{ tr('Search by CI name or serial number…') }}" autocomplete="off" required value="{{ primary_ci_link.ci.name if primary_ci_link else '' }}"><input type="hidden" name="ci_id" value="{{ primary_ci_link.ci_id if primary_ci_link else '' }}" data-owning-team="{{ primary_ci_link.ci.support_group.name if primary_ci_link and primary_ci_link.ci.support_group else '' }}"><div class="lookup-results" hidden></div></div>
     <button>{{ tr('Change primary CI') if primary_ci_link else tr('Set primary CI') }}</button>
   </form>
   {% endif %}
@@ -197,7 +197,7 @@
   {% if can_manage_ticket %}
   <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
     <select name="relationship_role"><option>{{ tr('Affected CI') }}</option><option>{{ tr('Impacted service') }}</option></select>
-    <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick one or more configuration items…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div>
+    <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick CIs by name or serial number…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div>
     <button>{{ tr('Link CIs') }}</button>
   </form>
   {% endif %}
@@ -237,7 +237,7 @@
       <label>{{ tr('Impact') }}<select name="impact">{% for value in ['Low','Medium','High'] %}<option {% if ticket.change_governance.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label>{{ tr('Risk score') }}<span class="info-tip" tabindex="0" data-tip="Change type/impact/CI edits above are used to auto-recalculate if you also clear this field — leave it as-is to keep the current score, or edit it directly to override.">i</span><input type="number" min="0" max="100" name="risk_score" value="{{ ticket.change_governance.risk_score }}"></label>
       <label class="wide">{{ tr('Risk score override reason') }}<input name="risk_score_override_reason" value="{{ ticket.change_governance.risk_score_override_reason }}" placeholder="{{ tr('Why does this differ from the calculated baseline?') }}"></label>
-      <label>{{ tr('Primary CI') }}<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="{{ tr('Search configuration items…') }}" autocomplete="off" value="{{ ticket.change_governance.ci.name if ticket.change_governance.ci else '' }}"><input type="hidden" name="ci_id" value="{{ ticket.change_governance.ci_id or '' }}" data-owning-team="{{ ticket.change_governance.ci.support_group.name if ticket.change_governance.ci and ticket.change_governance.ci.support_group else '' }}"><div class="lookup-results" hidden></div></div></label>
+      <label>{{ tr('Primary CI') }}<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="{{ tr('Search by CI name or serial number…') }}" autocomplete="off" value="{{ ticket.change_governance.ci.name if ticket.change_governance.ci else '' }}"><input type="hidden" name="ci_id" value="{{ ticket.change_governance.ci_id or '' }}" data-owning-team="{{ ticket.change_governance.ci.support_group.name if ticket.change_governance.ci and ticket.change_governance.ci.support_group else '' }}"><div class="lookup-results" hidden></div></div></label>
       <label>{{ tr('Planned start') }}<input type="datetime-local" name="planned_start" value="{{ ticket.change_governance.planned_start.strftime('%Y-%m-%dT%H:%M') if ticket.change_governance.planned_start else '' }}" required></label>
       <label>{{ tr('Planned end') }}<input type="datetime-local" name="planned_end" value="{{ ticket.change_governance.planned_end.strftime('%Y-%m-%dT%H:%M') if ticket.change_governance.planned_end else '' }}" required></label>
       <label class="wide">{{ tr('Implementation plan') }}<textarea name="implementation_plan" rows="4" required>{{ ticket.change_governance.implementation_plan }}</textarea></label>
@@ -288,7 +288,7 @@
   <details class="gov-tab-new"><summary>{{ tr('New') }}</summary>
     <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
       <input type="hidden" name="relationship_role" value="Affected CI">
-      <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick one or more configuration items…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div>
+      <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick CIs by name or serial number…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div>
       <button class="primary">{{ tr('Link affected CIs') }}</button>
     </form>
   </details>
@@ -305,7 +305,7 @@
   <details class="gov-tab-new"><summary>{{ tr('New') }}</summary>
     <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
       <input type="hidden" name="relationship_role" value="Impacted service">
-      <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick one or more configuration items…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div>
+      <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick CIs by name or serial number…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div>
       <button class="primary">{{ tr('Link impacted services') }}</button>
     </form>
   </details>

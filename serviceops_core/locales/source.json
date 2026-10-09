@@ -983,6 +983,15 @@
    "id": "Approval coverage during absence"
   },
   {
+   "id": "Approval group"
+  },
+  {
+   "id": "Approval group for {name}"
+  },
+  {
+   "id": "Approval groups updated."
+  },
+  {
    "id": "Approval history"
   },
   {
@@ -1449,10 +1458,16 @@
    "id": "Bytes"
   },
   {
+   "id": "CCB"
+  },
+  {
    "id": "CCB approval authority updated."
   },
   {
    "id": "CCB approver"
+  },
+  {
+   "id": "CCB approver groups"
   },
   {
    "id": "CCB authority"
@@ -3370,6 +3385,12 @@
    "id": "Event subscription"
   },
   {
+   "id": "Every active member of these teams is also a CCB approver. Any one CCB approver authorizes a change."
+  },
+  {
+   "id": "Every active member of these teams is also an executive approver. The approval rule above applies to everyone selected."
+  },
+  {
    "id": "Every admin panel route requires the admin role itself; granting this action to {role} can never open panel access."
   },
   {
@@ -3442,10 +3463,16 @@
    "id": "Exclude date"
   },
   {
+   "id": "Executive"
+  },
+  {
    "id": "Executive (CEO) approval authority must be configured (itil_admin's Executive approval section) before a non-standard change requiring CCB authorization can be submitted."
   },
   {
    "id": "Executive approval"
+  },
+  {
+   "id": "Executive approver groups"
   },
   {
    "id": "Executive approvers"
@@ -4968,6 +4995,9 @@
    "id": "Manager for {name}"
   },
   {
+   "id": "Manager only"
+  },
+  {
    "id": "Manager portal"
   },
   {
@@ -5856,6 +5886,9 @@
    "id": "No teams under your management."
   },
   {
+   "id": "No teams yet."
+  },
+  {
    "id": "No thanks",
    "javascript": true
   },
@@ -6679,10 +6712,10 @@
    "id": "Physical racks and how full they are — sourced from NetBox or entered by hand."
   },
   {
-   "id": "Pick and arrange the widgets you want on your own landing page."
+   "id": "Pick CIs by name or serial number…"
   },
   {
-   "id": "Pick one or more configuration items…"
+   "id": "Pick and arrange the widgets you want on your own landing page."
   },
   {
    "id": "Pick what you are connecting to. You can change everything afterwards."
@@ -6933,6 +6966,9 @@
   },
   {
    "id": "Problem analysis and known error"
+  },
+  {
+   "id": "Problem and other records that need approval go to every active member of these teams, and any one of them decides. Without a group, an administrator approves."
   },
   {
    "id": "Problem fix change"
@@ -7331,6 +7367,12 @@
   },
   {
    "id": "Record a successful backup for System Health's recovery-set status"
+  },
+  {
+   "id": "Record approval"
+  },
+  {
+   "id": "Record approver groups"
   },
   {
    "id": "Record resolution notes (in Resolution information) before resolving {number}."
@@ -8153,6 +8195,9 @@
    "id": "Save AI settings"
   },
   {
+   "id": "Save CCB approver groups"
+  },
+  {
    "id": "Save Google Chat"
   },
   {
@@ -8190,6 +8235,9 @@
   },
   {
    "id": "Save event choices"
+  },
+  {
+   "id": "Save executive approver groups"
   },
   {
    "id": "Save executive approvers"
@@ -8235,6 +8283,9 @@
   },
   {
    "id": "Save proxy setting"
+  },
+  {
+   "id": "Save record approver groups"
   },
   {
    "id": "Save retention policy"
@@ -8383,13 +8434,13 @@
    "id": "Search audit events"
   },
   {
-   "id": "Search by name or IP address…"
+   "id": "Search by CI name or serial number…"
+  },
+  {
+   "id": "Search by name, serial number or IP address…"
   },
   {
    "id": "Search configuration items"
-  },
-  {
-   "id": "Search configuration items…"
   },
   {
    "id": "Search contains “{q}”"
@@ -9780,7 +9831,7 @@
    "id": "The old group name is already an alias of another team."
   },
   {
-   "id": "The owning team requires an active manager."
+   "id": "The owning team requires an active manager or approval group."
   },
   {
    "id": "The passkey challenge belongs to another identity."
@@ -9846,7 +9897,7 @@
    "id": "The security token is missing or expired. Refresh the page and try again."
   },
   {
-   "id": "The selected named user receives management authority for that team. Change submission remains blocked while its manager is unassigned."
+   "id": "The selected named user receives management authority for that team. A team's change assessment is approved by its manager or, when an approval group is set, by any active member of that group. Change submission remains blocked while a team has neither."
   },
   {
    "id": "The selected team must have an active manager before it can own a change."
@@ -9882,10 +9933,10 @@
    "id": "The token for"
   },
   {
-   "id": "The {name} team (co-owner of a service this CI backs) requires an active manager."
+   "id": "The {name} team (co-owner of a service this CI backs) requires an active manager or approval group."
   },
   {
-   "id": "The {name} team (owner of {name2}) requires an active manager."
+   "id": "The {name} team (owner of {name2}) requires an active manager or approval group."
   },
   {
    "id": "Theme"
@@ -12049,6 +12100,9 @@
   },
   {
    "id": "{linked_names} linked to {name}."
+  },
+  {
+   "id": "{members} member(s)"
   },
   {
    "id": "{name} (outside)",
