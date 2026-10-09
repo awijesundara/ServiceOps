@@ -6,7 +6,7 @@ allowSingleReplica: false
 
 image:
   repository: serviceops
-  tag: "1.113.10"
+  tag: "1.113.11"
   digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
   # "digest": pull by repo@digest (default). Requires the registry to serve
   # manifests by digest reference -- true for GHCR, not for every registry
