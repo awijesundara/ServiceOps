@@ -86,12 +86,33 @@ function initLookup(container) {
     container.appendChild(browseButton);
   }
   if (url.includes("/lookup/cis") && hidden) {
-    const owningTeamHint = document.createElement("p");
-    owningTeamHint.className = "lookup-owning-team muted";
+    // Inside a form row (<label><span>…</span>control</label>) the owning team
+    // is its own read-only field beside the CI, laid out like every other
+    // field; elsewhere it is a line under the picker.
+    const row = container.closest("label");
+    let owningTeamHint;
+    let setOwningTeam;
+    if (row && row.parentElement) {
+      owningTeamHint = document.createElement("label");
+      owningTeamHint.className = "ci-owning-team-field";
+      const caption = document.createElement("span");
+      caption.textContent = tr("CI owning team");
+      const value = document.createElement("input");
+      value.disabled = true;
+      owningTeamHint.append(caption, value);
+      row.insertAdjacentElement("afterend", owningTeamHint);
+      setOwningTeam = (team) => { value.value = team || tr("Unassigned"); };
+    } else {
+      owningTeamHint = document.createElement("p");
+      owningTeamHint.className = "lookup-owning-team";
+      container.insertAdjacentElement("afterend", owningTeamHint);
+      setOwningTeam = (team) => {
+        owningTeamHint.textContent = tr("Owning team: {team}", { team: team || tr("Unassigned") });
+      };
+    }
     owningTeamHint.hidden = true;
-    container.insertAdjacentElement("afterend", owningTeamHint);
     const showOwningTeam = (owningTeam) => {
-      owningTeamHint.textContent = tr("Owning team: {team}", { team: owningTeam || tr("Unassigned") });
+      setOwningTeam(owningTeam);
       owningTeamHint.hidden = false;
     };
     hidden.addEventListener("lookup:change", (event) => {

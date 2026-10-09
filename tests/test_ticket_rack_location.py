@@ -91,7 +91,8 @@ def test_data_center_ticket_shows_location_and_opens_on_the_rack_view(app, clien
     ids = app.config["IDS"]
     assert 'data-default-tab="affected-cis"' in html
     # Location line under the Configuration item field, linking to the tab.
-    assert re.search(r'class="ci-rack-location"><a href="#affected-cis">' + re.escape(LOCATION) + "</a>", html)
+    assert re.search(r'<a class="ci-rack-location" href="#affected-cis"><svg class="icon ci-rack-pin"[^>]*>.*?</svg>'
+                     r'<span class="ci-rack-text"><b>' + re.escape(LOCATION) + r'</b></span><span class="ci-rack-cta">View location', html)
     # The CI page's rack card, highlighting the primary CI.
     assert f'/cmdb/racks/{ids["rack"]}/embed?highlight={ids["mounted"]}' in html
     assert f'/cmdb/racks/{ids["rack"]}?highlight={ids["mounted"]}' in html
@@ -156,7 +157,7 @@ def test_change_owned_by_a_data_center_team_opens_on_its_affected_cis_tab(app, c
     login(client)
     html = page(client, change_id)
     assert 'data-default-tab="gov-affected-cis"' in html
-    assert re.search(r'class="ci-rack-location"><a href="#gov-affected-cis">' + re.escape(LOCATION), html)
+    assert re.search(r'<a class="ci-rack-location" href="#gov-affected-cis">.*?' + re.escape(LOCATION), html)
     assert html.count('class="panel ticket-rack-placement"') == 1
     assert f'/cmdb/racks/{ids["rack"]}/embed?highlight={ids["mounted"]}' in html
 
