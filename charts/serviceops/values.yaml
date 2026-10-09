@@ -175,6 +175,11 @@ proxy:
   trustCloudflare: true
   trustedCidrs: ""
   clientIpHeader: ""
+  # Exact host names of trusted in-cluster webhook receivers, such as a
+  # companion FlowOps Service (flowops.operations.svc.cluster.local). Only
+  # these may use http:// and private addresses; every other webhook stays
+  # public-HTTPS-only. Also allow the traffic in your NetworkPolicies.
+  webhookInternalHosts: ""
 
 featureFlags: {}
 

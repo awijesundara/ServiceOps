@@ -1838,6 +1838,37 @@ def integration_endpoint_valid(endpoint, allow_private_network=False):
     return True
 
 
+def internal_webhook_hosts():
+    """Exact host names this deployment trusts as internal webhook receivers
+    (WEBHOOK_INTERNAL_HOSTS, comma or space separated) -- for example the
+    Kubernetes Service of a companion FlowOps instance. Set by the operator
+    in the deployment, never from the UI, like OUTBOUND_PROXY_URL."""
+    raw = os.getenv("WEBHOOK_INTERNAL_HOSTS", "")
+    return {host.strip().lower().rstrip(".") for host in raw.replace(",", " ").split() if host.strip()}
+
+
+def webhook_is_internal(endpoint):
+    return (urlparse(endpoint).hostname or "").lower().rstrip(".") in internal_webhook_hosts()
+
+
+def webhook_endpoint_valid(endpoint):
+    """integration_endpoint_valid() for administrator-configured webhooks,
+    except that a host listed in WEBHOOK_INTERNAL_HOSTS may use http:// and
+    a private (in-cluster) address. Loopback, link-local and other
+    non-routable addresses stay refused, and delivery still DNS-pins the
+    validated addresses. Signed deliveries carry an HMAC and timestamp, so
+    an internal receiver can still reject forged or replayed events."""
+    if not webhook_is_internal(endpoint):
+        return integration_endpoint_valid(endpoint)
+    parsed = urlparse(endpoint)
+    if parsed.scheme not in {"http", "https"} or parsed.username:
+        return False
+    try:
+        return _integration_address_allowed(ipaddress.ip_address(parsed.hostname), True)
+    except ValueError:
+        return True
+
+
 def resolve_endpoint_addresses_safely(endpoint, allow_private_network=False):
     """Re-resolve the endpoint's hostname and reject it if any A/AAAA record is
     disallowed. A literal-IP/hostname string check alone (integration_endpoint_valid)
@@ -2249,9 +2280,10 @@ def deliver_webhook(event, connection):
             except requests.RequestException as error:
                 raise RuntimeError("Notification provider request failed.") from error
         else:
-            if not integration_endpoint_valid(target):
+            if not webhook_endpoint_valid(target):
                 raise RuntimeError("Webhook destination resolves to a non-routable or private address.")
-            ok, hostname, infos = resolve_endpoint_addresses_safely(target)
+            ok, hostname, infos = resolve_endpoint_addresses_safely(
+                target, allow_private_network=webhook_is_internal(target))
             if not ok:
                 raise RuntimeError("Webhook destination resolves to a non-routable or private address.")
             # Pin the addresses just validated for exactly this connection attempt

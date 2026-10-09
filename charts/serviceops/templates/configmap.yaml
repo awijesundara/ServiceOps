@@ -8,6 +8,7 @@ data:
   AI_PROVIDER_TIMEOUT_SECONDS: {{ .Values.ai.providerTimeoutSeconds | default 60 | quote }}
   AI_HOSTED_STALL_SECONDS: {{ .Values.ai.hostedStallSeconds | default 30 | quote }}
   FEATURE_FLAGS: {{ .Values.featureFlags | toJson | quote }}
+  WEBHOOK_INTERNAL_HOSTS: {{ .Values.proxy.webhookInternalHosts | default "" | quote }}
   METRICS_ENABLED: "true"
   OTEL_SERVICE_NAME: "serviceops"
   OTEL_RESOURCE_ATTRIBUTES: {{ printf "service.version=%s,deployment.environment=%s" .Chart.AppVersion .Values.deploymentProfile | quote }}
