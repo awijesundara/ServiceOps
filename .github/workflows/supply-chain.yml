@@ -80,6 +80,18 @@ jobs:
             echo "IMAGE_REF=ghcr.io/${repo_lower}-server:${release_sha}"
           } >> "$GITHUB_ENV"
 
+      - name: Configure digest-preserving Docker Hub mirror
+        run: |
+          sudo python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          config = Path('/etc/docker/daemon.json')
+          data = json.loads(config.read_text()) if config.exists() else {}
+          data['registry-mirrors'] = ['https://mirror.gcr.io']
+          config.write_text(json.dumps(data))
+          PYTHON
+          sudo systemctl restart docker
+
       - name: Run complete application suite
         run: |
           docker build --file Dockerfile.test --tag "serviceops-test:${RELEASE_SHA}" .
@@ -117,6 +129,10 @@ jobs:
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
 
       - name: Authenticate to GHCR for releases
         if: inputs.publish_release || startsWith(github.ref, 'refs/tags/v')
@@ -237,6 +253,18 @@ jobs:
             echo "SERVICEOPS_IMAGE=serviceops-e2e:${GITHUB_SHA}"
             echo "E2E_VOLUME_PREFIX=serviceops_e2e_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
           } >> "$GITHUB_ENV"
+
+      - name: Configure digest-preserving Docker Hub mirror
+        run: |
+          sudo python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          config = Path('/etc/docker/daemon.json')
+          data = json.loads(config.read_text()) if config.exists() else {}
+          data['registry-mirrors'] = ['https://mirror.gcr.io']
+          config.write_text(json.dumps(data))
+          PYTHON
+          sudo systemctl restart docker
 
       - name: Start disposable Compose environment
         run: docker compose --project-name serviceops-e2e -f compose.yaml -f .github/compose.e2e.yaml up --build --detach --wait
