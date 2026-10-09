@@ -100,6 +100,7 @@ from app import (
     workspace_widget_enabled,
     WORKSPACE_WIDGET_REGISTRY,
 )
+from serviceops_core.approval_groups import authority_user_ids
 from serviceops_core.rack_location import is_data_center_group, rack_label, rack_mounted_cis
 from serviceops_core.config_schema import SETTING_DEFINITIONS
 from serviceops_core.priority import calculate_priority
@@ -1879,17 +1880,23 @@ def register(app):
             if domain == "problem":
                 db.session.add(ProblemProfile(enterprise_record_id=record.id))
             if request.form.get("approval_required") and current_user.effective_role != "requester":
-                admin = tenant_query(User).filter(User.role.in_(["admin", "superadmin"]), User.active.is_(True)).first()
-                if not admin:
-                    abort(409, description=tr("No active administrator is configured to approve this record."))
-                db.session.add(Approval(enterprise_record_id=record.id, approver_id=admin.id, tenant_id=record.tenant_id))
-                create_notification(
-                    admin.id, f"Approval requested: {record.number}",
-                    record.title, tenant_id=record.tenant_id,
-                    target_type="enterprise", target_id=record.id,
-                    event_type="enterprise.approval_requested",
-                    template_vars={"record_number": record.number, "record_title": record.title},
-                )
+                # Members of the enterprise approval groups, if configured;
+                # otherwise the first active administrator. Any one decides.
+                approver_ids = sorted(authority_user_ids(record.tenant_id, "enterprise") - {current_user.id})
+                if not approver_ids:
+                    admin = tenant_query(User).filter(User.role.in_(["admin", "superadmin"]), User.active.is_(True)).first()
+                    if not admin:
+                        abort(409, description=tr("No active administrator is configured to approve this record."))
+                    approver_ids = [admin.id]
+                for approver_id in approver_ids:
+                    db.session.add(Approval(enterprise_record_id=record.id, approver_id=approver_id, tenant_id=record.tenant_id))
+                    create_notification(
+                        approver_id, f"Approval requested: {record.number}",
+                        record.title, tenant_id=record.tenant_id,
+                        target_type="enterprise", target_id=record.id,
+                        event_type="enterprise.approval_requested",
+                        template_vars={"record_number": record.number, "record_title": record.title},
+                    )
                 record.state = "Awaiting Approval"
             log_history(
                 "enterprise", record.id, "Record created",
@@ -1942,6 +1949,12 @@ def register(app):
                 approval.state = "Approved" if action == "approve" else "Rejected"
                 approval.comments = request.form.get("comments", "")
                 approval.decided_at = now()
+                # One decision settles a group approval; the other approvers'
+                # requests close without rewriting anything they decided.
+                Approval.query.filter(
+                    Approval.enterprise_record_id == record.id, Approval.id != approval.id,
+                    Approval.state == "Requested",
+                ).update({"state": "No Longer Required"}, synchronize_session=False)
                 record.state = "Approved" if action == "approve" else "Rejected"
                 create_notification(
                     record.requester_id, f"{record.number} {record.state.lower()}",

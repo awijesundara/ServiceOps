@@ -21,6 +21,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
 import app as core
+from serviceops_core.approval_groups import AUTHORITIES as APPROVAL_AUTHORITIES, linked_group_ids, set_authority_groups
 from app import (
     _export_response,
     _filtered_application_log_query,
@@ -148,6 +149,11 @@ from serviceops_models import (
     WorkflowSchedule,
 )
 from serviceops_core.localization import tr, tr_value
+
+# Audit wording for each approval authority (serviceops_core/approval_groups.py).
+APPROVAL_AUTHORITY_LABELS = {
+    "ccb": "CCB", "executive": "Executive", "team_manager": "Team manager", "enterprise": "Record",
+}
 
 
 # The monitoring source a backup job uses to report successful runs.
@@ -2310,6 +2316,28 @@ def register(app):
                 audit("configure", f"{group.name} manager",
                       manager.username if manager else "Unassigned")
                 flash(tr("{name} manager updated.", name=group.name), "success")
+            elif action == "set_approval_groups":
+                authority = request.form.get("authority", "")
+                subject_group_id = None
+                if authority == "team_manager":
+                    subject = tenant_record_or_404(SupportGroup, int(request.form.get("subject_group_id") or 0))
+                    if not core.is_team_group(subject, current_user.tenant_id):
+                        abort(400)
+                    subject_group_id = subject.id
+                try:
+                    group_ids = [int(value) for value in request.form.getlist("group_ids") if value]
+                    groups = set_authority_groups(
+                        current_user.tenant_id, authority, group_ids,
+                        core.team_groups(current_user.tenant_id), subject_group_id=subject_group_id,
+                        actor_id=current_user.id,
+                    )
+                except ValueError as error:
+                    abort(400, description=tr(str(error)))
+                label = APPROVAL_AUTHORITY_LABELS[authority]
+                if subject_group_id:
+                    label = f"{label}: {subject.name}"
+                audit("configure", f"{label} approval groups", ", ".join(group.name for group in groups) or "none")
+                flash(tr("Approval groups updated."), "success")
             elif action == "set_ccb_authority":
                 user = tenant_record_or_404(User, int(request.form["user_id"]))
                 ccb = tenant_query(SupportGroup).filter_by(name="Change Control Board").one()
@@ -2730,6 +2758,8 @@ def register(app):
             manager_candidates=manager_candidates, ccb_candidates=ccb_candidates,
             ccb=ccb, ccb_approver_ids=ccb_approver_ids,
             executive_office=executive_office,
+            approval_group_ids={authority: linked_group_ids(current_user.tenant_id, authority)
+                                for authority in APPROVAL_AUTHORITIES},
             executive_approver_ids={member.user_id for member in executive_office.members if member.role == "executive approver"}
                                   | ({executive_office.manager_id} if executive_office.manager_id else set()),
             team_rename_history=tenant_query(Audit).filter_by(action="team renamed").order_by(Audit.created_at.desc()).limit(5).all(),

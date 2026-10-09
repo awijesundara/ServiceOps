@@ -3766,16 +3766,27 @@ def executive_office_group(tenant_id):
     return SupportGroup.query.filter_by(name="Executive Office", tenant_id=tenant_id).first()
 
 
+def team_assessment_stage(group, name):
+    """A team's manager assessment: its active manager, or any active member
+    of the groups linked to it as approval groups (serviceops_core.approval_groups).
+    None when the team has neither."""
+    from serviceops_core.approval_groups import authority_user_ids
+    approver_ids = set(authority_user_ids(group.tenant_id, "team_manager", group.id))
+    if group.manager and group.manager.active:
+        approver_ids.add(group.manager_id)
+    if not approver_ids:
+        return None
+    return {"name": name, "mode": "any" if len(approver_ids) > 1 else "all", "approver_ids": sorted(approver_ids)}
+
+
 def change_approval_stages(ticket):
+    from serviceops_core.approval_groups import authority_user_ids
     ownership = ticket.change_ownership
     governance = ticket.change_governance
-    if not ownership or not ownership.group.manager or not ownership.group.manager.active:
-        abort(409, description=tr("The owning team requires an active manager."))
-    stages = [{
-        "name": f"{ownership.group.name} manager assessment",
-        "mode": "all",
-        "approver_ids": [ownership.group.manager_id],
-    }]
+    owner_stage = team_assessment_stage(ownership.group, f"{ownership.group.name} manager assessment") if ownership else None
+    if not owner_stage:
+        abort(409, description=tr("The owning team requires an active manager or approval group."))
+    stages = [owner_stage]
     covered_group_ids = {ownership.group_id}
     scoped_cis = change_target_cis(ticket)
     ci_groups = {}
@@ -3784,13 +3795,10 @@ def change_approval_stages(ticket):
             ci_groups.setdefault(ci.support_group.id, (ci.support_group, ci))
     for group_id in sorted(set(ci_groups) - covered_group_ids):
         ci_group, representative_ci = ci_groups[group_id]
-        if not ci_group.active or not ci_group.manager or not ci_group.manager.active:
-            abort(409, description=tr("The {name} team (owner of {name2}) requires an active manager.", name=ci_group.name, name2=representative_ci.name))
-        stages.append({
-            "name": f"{ci_group.name} manager assessment (CI owner)",
-            "mode": "all",
-            "approver_ids": [ci_group.manager_id],
-        })
+        stage = team_assessment_stage(ci_group, f"{ci_group.name} manager assessment (CI owner)") if ci_group.active else None
+        if not stage:
+            abort(409, description=tr("The {name} team (owner of {name2}) requires an active manager or approval group.", name=ci_group.name, name2=representative_ci.name))
+        stages.append(stage)
         covered_group_ids.add(ci_group.id)
     # If this change's CI backs a business service (ServiceOfferingCI) that is
     # also backed by other CIs owned by different teams, each of those teams
@@ -3819,22 +3827,19 @@ def change_approval_stages(ticket):
                 sibling_group = db.session.get(SupportGroup, group_id)
                 if not sibling_group or not sibling_group.active:
                     continue
-                if not sibling_group.manager or not sibling_group.manager.active:
+                stage = team_assessment_stage(sibling_group, f"{sibling_group.name} manager assessment (service co-owner)")
+                if not stage:
                     abort(409, description=(
-                        tr("The {name} team (co-owner of a service this CI backs) requires an active manager.", name=sibling_group.name)
+                        tr("The {name} team (co-owner of a service this CI backs) requires an active manager or approval group.", name=sibling_group.name)
                     ))
-                stages.append({
-                    "name": f"{sibling_group.name} manager assessment (service co-owner)",
-                    "mode": "all",
-                    "approver_ids": [sibling_group.manager_id],
-                })
+                stages.append(stage)
                 covered_group_ids.add(group_id)
     if governance.change_type != "Standard" and change_requires_ccb(governance, scoped_cis):
         ccb = SupportGroup.query.filter_by(name="Change Control Board", tenant_id=ticket.tenant_id).first()
-        ccb_ids = [
+        ccb_ids = sorted({
             member.user_id for member in (ccb.members if ccb else [])
             if member.role == "CCB approver" and member.user.active
-        ]
+        } | authority_user_ids(ticket.tenant_id, "ccb"))
         if not ccb_ids:
             abort(409, description=(
                 tr("CCB membership must be configured before a non-standard change can be submitted.")
@@ -3857,7 +3862,8 @@ def change_approval_stages(ticket):
         executive_ids = sorted({
             member.user_id for member in (executive.members if executive and executive.active else [])
             if member.role == "executive approver" and member.user.active
-        } | ({executive.manager_id} if executive and executive.active and executive.manager and executive.manager.active else set()))
+        } | ({executive.manager_id} if executive and executive.active and executive.manager and executive.manager.active else set())
+          | (authority_user_ids(ticket.tenant_id, "executive") if executive and executive.active else set()))
         if not executive_ids:
             abort(409, description=(
                 tr("Executive (CEO) approval authority must be configured (itil_admin's Executive approval section) before a non-standard change requiring CCB authorization can be submitted.")

@@ -36,6 +36,7 @@ __all__ = [
     "settings_cipher",
     "ROLE_RANK",
     "IT_FULFILLMENT_GROUP_TYPES",
+    "ApprovalAuthorityGroup",
     "TenantResolutionError",
     "CI_RELATIONSHIP_TYPES",
     "SLA_AGREEMENT_TYPES",
@@ -2005,6 +2006,25 @@ class ApprovalGate(db.Model):
     # remembering to join back through approval_chain.
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     __table_args__ = (db.UniqueConstraint("chain_id", "sequence"),)
+
+
+class ApprovalAuthorityGroup(db.Model):
+    """A support group whose active members are approvers for an authority,
+    alongside any named users (serviceops_core/approval_groups.py).
+    `subject_group_id` names the team for a "team_manager" authority."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    authority = db.Column(db.String(40), nullable=False)
+    subject_group_id = db.Column(db.Integer, db.ForeignKey("support_group.id", ondelete="CASCADE"), index=True)
+    group_id = db.Column(db.Integer, db.ForeignKey("support_group.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    group = db.relationship("SupportGroup", foreign_keys=[group_id])
+    subject_group = db.relationship("SupportGroup", foreign_keys=[subject_group_id])
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "authority", "subject_group_id", "group_id",
+                            name="uq_approval_authority_group"),
+    )
 
 
 class ApprovalVote(db.Model):

@@ -29,6 +29,7 @@ from flask_login import current_user, login_required
 import app as core
 from serviceops_core.localization import tr
 from app import (
+    escape_like,
     active_approval_delegation,
     audit,
     csv_response,
@@ -599,17 +600,22 @@ def register(app):
         query = restrict_ci_query_to_readable_classes(
             tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
         )
+        order = [ConfigurationItem.name]
         if q:
-            pattern = f"%{q}%"
+            pattern = f"%{escape_like(q)}%"
             query = query.filter(db.or_(
-                ConfigurationItem.name.ilike(pattern),
-                ConfigurationItem.ci_class.ilike(pattern),
+                ConfigurationItem.name.ilike(pattern, escape="\\"),
+                ConfigurationItem.ci_class.ilike(pattern, escape="\\"),
+                ConfigurationItem.serial_number.ilike(pattern, escape="\\"),
             ))
-        rows = query.order_by(ConfigurationItem.name).limit(15).all()
+            # A typed or scanned serial number finds its device first.
+            order.insert(0, db.case((db.func.lower(ConfigurationItem.serial_number) == q.lower(), 0), else_=1))
+        rows = query.order_by(*order).limit(15).all()
         return jsonify([{
             "value": ci.id,
             "label": ci.name,
-            "description": f"{ci.ci_class} · {ci.environment} · {ci.operational_status}",
+            "description": f"{ci.ci_class} · {ci.environment} · {ci.operational_status}"
+                           + (f" · S/N {ci.serial_number}" if ci.serial_number else ""),
             "owning_team": ci.support_group.name if ci.support_group else None,
         } for ci in rows])
 
@@ -624,10 +630,11 @@ def register(app):
         )
         query = readable
         if q:
-            pattern = f"%{q}%"
+            pattern = f"%{escape_like(q)}%"
             query = query.filter(db.or_(
-                ConfigurationItem.name.ilike(pattern),
-                ConfigurationItem.ip_address.ilike(pattern),
+                ConfigurationItem.name.ilike(pattern, escape="\\"),
+                ConfigurationItem.ip_address.ilike(pattern, escape="\\"),
+                ConfigurationItem.serial_number.ilike(pattern, escape="\\"),
             ))
         if ci_class:
             query = query.filter(ConfigurationItem.ci_class == ci_class)
@@ -648,6 +655,7 @@ def register(app):
             "results": [{
                 "id": ci.id, "name": ci.name, "ci_class": ci.ci_class,
                 "environment": ci.environment, "ip_address": ci.ip_address or "—",
+                "serial_number": ci.serial_number or "—",
                 "status": ci.operational_status,
                 "owning_team": ci.support_group.name if ci.support_group else None,
             } for ci in rows],

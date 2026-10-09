@@ -310,7 +310,7 @@ function renderCIBrowserResults(payload) {
   if (!payload.results.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = multi ? 6 : 5;
+    cell.colSpan = multi ? 7 : 6;
     cell.className = "empty";
     cell.textContent = tr("No matching configuration items.");
     row.appendChild(cell);
@@ -344,7 +344,7 @@ function renderCIBrowserResults(payload) {
     strong.textContent = ci.name;
     nameCell.appendChild(strong);
     row.appendChild(nameCell);
-    [ci.ci_class, ci.environment, ci.ip_address, ci.status].forEach((value) => {
+    [ci.ci_class, ci.environment, ci.serial_number, ci.ip_address, ci.status].forEach((value) => {
       const cell = document.createElement("td");
       cell.textContent = value;
       row.appendChild(cell);
