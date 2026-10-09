@@ -57,6 +57,9 @@ spec:
             - {name: AUTO_MIGRATE, value: "false"}
             - {name: UPLOAD_FOLDER, value: /tmp/uploads}
             - {name: LOG_DIR, value: /tmp/logs}
+            # The outbox worker delivers webhooks, so it needs the trusted
+            # in-cluster receivers too (the web pods read them from the ConfigMap).
+            - {name: WEBHOOK_INTERNAL_HOSTS, value: {{ .Values.proxy.webhookInternalHosts | default "" | quote }}}
           envFrom:
             - secretRef: {name: {{ include "serviceops.secretName" . }}}
           volumeMounts:

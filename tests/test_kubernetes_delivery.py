@@ -53,6 +53,17 @@ def test_helm_workloads_gate_startup_on_database_and_schema():
     assert "Production upgrades require database.backupReference" in deployment
 
 
+def test_webhook_delivering_workloads_receive_the_internal_webhook_hosts():
+    # Web pods load the shared ConfigMap; the outbox worker delivers webhooks
+    # without it, so it must be given the value directly.
+    configmap = (ROOT / "charts/serviceops/templates/configmap.yaml").read_text()
+    worker = (ROOT / "charts/serviceops/templates/worker.yaml").read_text()
+    value = '{{ .Values.proxy.webhookInternalHosts | default "" | quote }}'
+    assert f"WEBHOOK_INTERNAL_HOSTS: {value}" in configmap
+    outbox = worker[worker.index("- name: outbox"):]
+    assert f"{{name: WEBHOOK_INTERNAL_HOSTS, value: {value}}}" in outbox
+
+
 def test_safe_update_changes_the_governed_digest_and_is_atomic():
     script = (ROOT / "tools/safe_update_k8s.sh").read_text()
     assert 'TARGET_DIGEST="${2:-}"' in script
