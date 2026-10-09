@@ -1,0 +1,20 @@
+{# Where the ticket's devices sit: the same card and compact rack elevation the
+   CI page shows, for the first rack-mounted CI (serviceops_core/rack_location.py). #}
+{% if rack_cis %}
+{% set rack_ci = rack_cis[0] %}
+<section class="panel ticket-rack-placement" id="ticket-rack-placement">
+  <div class="panel-head">
+    <div>
+      <h2>{{ tr('Rack & network placement') }}</h2>
+      <p>{{ rack_ci.name }} &middot; {{ rack_labels[rack_ci.id] }}</p>
+    </div>
+    <a class="button" href="{{ url_for('rack_elevation', rack_id=rack_ci.rack_id, highlight=rack_ci.id) }}">{{ tr('Open full rack view') }} →</a>
+  </div>
+  <iframe src="{{ url_for('rack_elevation_embed', rack_id=rack_ci.rack_id, highlight=rack_ci.id) }}" class="rack-placement-preview" title="{{ tr('Rack placement preview') }}"></iframe>
+  {% if rack_cis|length > 1 %}
+  <ul class="plain-list ticket-rack-others">
+    {% for other in rack_cis[1:] %}<li><a href="{{ url_for('rack_elevation', rack_id=other.rack_id, highlight=other.id) }}">{{ other.name }}</a> <span class="muted">&middot; {{ rack_labels[other.id] }}</span></li>{% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}

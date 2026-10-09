@@ -398,8 +398,12 @@ document.addEventListener("DOMContentLoaded", () => {
         history.replaceState(null, "", a.getAttribute("href"));
       });
     });
+    // A link to a section (#affected-cis) wins; otherwise the page may name a
+    // default tab (data-default-tab, e.g. a Data Center team's rack view).
     const hashId = location.hash.slice(1);
-    const initial = targets.some(el => el.id === hashId) ? hashId : targets[0].id;
+    const preferred = nav.dataset.defaultTab;
+    const initial = targets.some(el => el.id === hashId) ? hashId
+      : (preferred && targets.some(el => el.id === preferred) ? preferred : targets[0].id);
     activate(initial);
   });
   document.addEventListener("click", (event) => {

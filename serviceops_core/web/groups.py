@@ -14,7 +14,9 @@ from app import (
 from serviceops_core.ldap_access import ACCESS_LEVEL_LABELS, ACCESS_LEVELS
 from serviceops_core.localization import tr
 
-GROUP_TYPES = ("IT Fulfillment", "Fulfillment", "Executive")
+# "Data Center": tickets assigned to the team open on Affected CIs with the
+# rack view (serviceops_core/rack_location.py).
+GROUP_TYPES = ("IT Fulfillment", "Fulfillment", "Data Center", "Executive")
 ACCESS_LEVEL_HELP = {
     "requester": "Raise and follow their own tickets and requests.",
     "agent": "Work tickets, tasks and requests assigned to their teams.",
