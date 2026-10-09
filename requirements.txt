@@ -27,6 +27,6 @@ argon2-cffi==25.1.0
 pyotp==2.10.0
 pysnmp==7.1.30
 dnspython==2.8.0
-boto3==1.43.105
+boto3==1.43.108
 webauthn==3.0.1
 httpx[http2]==0.28.1
