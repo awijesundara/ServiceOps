@@ -3478,7 +3478,7 @@ def visible_ticket_query(user):
     group_ids = user_support_group_ids(user)
     if group_ids and SupportGroup.query.filter(
         SupportGroup.id.in_(group_ids),
-        SupportGroup.group_type == "IT Fulfillment",
+        SupportGroup.group_type.in_(IT_FULFILLMENT_GROUP_TYPES),
         SupportGroup.active.is_(True),
     ).first():
         return query
@@ -6148,7 +6148,7 @@ def visible_enterprise_record_query(user):
     # strict requester/assignee/approver/actual-owning-group checks below.
     if group_ids and SupportGroup.query.filter(
         SupportGroup.id.in_(group_ids),
-        SupportGroup.group_type == "IT Fulfillment",
+        SupportGroup.group_type.in_(IT_FULFILLMENT_GROUP_TYPES),
         SupportGroup.active.is_(True),
     ).first():
         record_ids.update(

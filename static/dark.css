@@ -152,6 +152,10 @@ html.theme-dark .rack-pdu-row{color:inherit}
 html.theme-dark .rack-pdu-row:hover{background:#161c20}
 html.theme-dark .rack-pdu-row span{color:var(--muted)}
 html.theme-dark .rack-pdu-row-highlight{outline:2px solid var(--brand-amber,#62503b);background:#1d170d}
+html.theme-dark .ci-rack-location a{color:var(--dk-accent-strong)}
+html.theme-dark .ci-rack-inline{color:var(--ink)}
+html.theme-dark td .ci-rack-inline{color:var(--muted)}
+html.theme-dark .ticket-rack-placement{box-shadow:none}
 html.theme-dark .rack-placement-preview{border:1px solid var(--line)}
 html.theme-dark .rack-connection-row{border:1px solid var(--line);color:inherit}
 html.theme-dark .rack-connection-row:hover{background:#161c20;border-color:var(--dk-accent)}

@@ -35,6 +35,7 @@ __all__ = [
     "tenant_context_id",
     "settings_cipher",
     "ROLE_RANK",
+    "IT_FULFILLMENT_GROUP_TYPES",
     "TenantResolutionError",
     "CI_RELATIONSHIP_TYPES",
     "SLA_AGREEMENT_TYPES",
@@ -164,6 +165,9 @@ __all__ = [
 db = SQLAlchemy()
 
 ROLE_RANK = {"requester": 0, "agent": 1, "manager": 2, "admin": 3, "superadmin": 4}
+# Group types that are IT fulfillment teams for access purposes. A "Data
+# Center" team is an IT team whose tickets also open on the rack view.
+IT_FULFILLMENT_GROUP_TYPES = ("IT Fulfillment", "Data Center")
 
 
 def now():

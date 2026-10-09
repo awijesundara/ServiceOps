@@ -39,7 +39,7 @@
       <label><span>{{ tr('Change model') }}</span><input value="{{ ticket.change_governance.change_type if ticket.change_governance else tr('Not set') }}" disabled></label>
       <label><span>{{ tr('Urgency') }}</span><select name="urgency" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.urgency==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label><span>{{ tr('Priority') }}</span><select name="priority" {% if not can_manage_ticket %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ tr_value(priority) }}</option>{% endfor %}</select></label>
-      <label><span>{{ tr('Configuration item') }}</span><input value="{{ display_ci.name if display_ci else tr('Not selected') }}" disabled></label>
+      <label><span>{{ tr('Configuration item') }}</span><input value="{{ display_ci.name if display_ci else tr('Not selected') }}" disabled>{% if display_ci and rack_labels.get(display_ci.id) %}<small class="ci-rack-location"><a href="#{{ 'gov-affected-cis' if ticket.change_governance else 'affected-cis' }}">{{ tr('Rack {location}', location=rack_labels[display_ci.id]) }}</a></small>{% endif %}</label>
       <label><span>{{ tr('CI owning team') }}</span><input value="{{ display_ci.support_group.name if display_ci and display_ci.support_group else tr('Unassigned') }}" disabled></label>
       <div class="record-grid-trio">
         <label class="required-field"><span>{{ tr('Assignment group') }}</span><input value="{{ owning_group.name if owning_group else tr('Not assigned') }}" disabled></label>
@@ -92,7 +92,7 @@
 {% set incidents_caused = related|selectattr('link.link_type','equalto','caused_by_change')|list %}
 {% endif %}
 {% if internal_view %}
-<nav class="record-section-tabs" aria-label="{{ tr('{kind} sections', kind=(ticket.kind|title)) }}">
+<nav class="record-section-tabs" aria-label="{{ tr('{kind} sections', kind=(ticket.kind|title)) }}"{% if open_on_affected_cis %} data-default-tab="{{ 'gov-affected-cis' if ticket.change_governance else 'affected-cis' }}"{% endif %}>
   <a class="active" href="#notes">{{ tr('Notes') }}</a>{% if not ticket.change_governance %}<a href="#related-records">{{ tr('Related records') }}</a><a href="#affected-cis">{{ tr('Affected CIs') }}</a>{% endif %}{% if ticket.change_governance %}<a href="#governance">{{ tr('Change governance') }}</a>
   <a href="#gov-affected-cis">{{ tr('Affected CIs') }}</a>
   <a href="#gov-impacted-services">{{ tr('Impacted Services/CIs') }}</a>
@@ -192,7 +192,8 @@
   {% endif %}
   {# The CI chosen on the main form is stored as the Primary CI link; list it first so the tab shows every linked CI. #}
   {% set ordered_ci_links = (ci_links|selectattr('relationship_role','equalto','Primary CI')|list) + (ci_links|rejectattr('relationship_role','equalto','Primary CI')|list) %}
-  {% for link in ordered_ci_links %}<div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div><span class="badge{% if link.relationship_role == 'Primary CI' %} badge-primary-ci{% endif %}">{{ tr_value(link.relationship_role) }}</span></div>{% else %}<p class="muted">{{ tr('No configuration items or services are linked yet.') }}</p>{% endfor %}
+  {% for link in ordered_ci_links %}<div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}{% if rack_labels.get(link.ci_id) %} · <span class="ci-rack-inline">{{ tr('Rack {location}', location=rack_labels[link.ci_id]) }}</span>{% endif %}</small></div><span class="badge{% if link.relationship_role == 'Primary CI' %} badge-primary-ci{% endif %}">{{ tr_value(link.relationship_role) }}</span></div>{% else %}<p class="muted">{{ tr('No configuration items or services are linked yet.') }}</p>{% endfor %}
+  {% if not ticket.change_governance %}{% include '_ticket_rack_placement.html' %}{% endif %}
   {% if can_manage_ticket %}
   <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
     <select name="relationship_role"><option>{{ tr('Affected CI') }}</option><option>{{ tr('Impacted service') }}</option></select>
@@ -279,9 +280,10 @@
   {% set other_affected_cis = affected_cis|rejectattr('ci_id','equalto',change_primary_ci.id if change_primary_ci else none)|list %}
   <header class="section-heading"><div><h2>{{ tr('Affected CIs') }}</h2></div><span>{{ tr('{affected_cis} linked', affected_cis=(other_affected_cis|length + (1 if change_primary_ci else 0))) }}</span></header>
   <div class="task-list-scroll"><table><thead><tr><th>{{ tr('Configuration item') }}</th><th>{{ tr('Class') }}</th><th>{{ tr('Environment') }}</th><th>{{ tr('Role') }}</th></tr></thead><tbody>
-    {% if change_primary_ci %}<tr><td>{{ change_primary_ci.name }}</td><td>{{ change_primary_ci.ci_class }}</td><td>{{ change_primary_ci.environment }}</td><td><span class="badge badge-primary-ci">{{ tr_value('Primary CI') }}</span></td></tr>{% endif %}
-    {% for link in other_affected_cis %}<tr><td>{{ link.ci.name }}</td><td>{{ link.ci.ci_class }}</td><td>{{ link.ci.environment }}</td><td><span class="badge">{{ tr_value(link.relationship_role) }}</span></td></tr>{% else %}{% if not change_primary_ci %}<tr><td colspan="4" class="empty">{{ tr('No affected CIs linked.') }}</td></tr>{% endif %}{% endfor %}
+    {% if change_primary_ci %}<tr><td>{{ change_primary_ci.name }}{% if rack_labels.get(change_primary_ci.id) %}<small class="ci-rack-inline">{{ tr('Rack {location}', location=rack_labels[change_primary_ci.id]) }}</small>{% endif %}</td><td>{{ change_primary_ci.ci_class }}</td><td>{{ change_primary_ci.environment }}</td><td><span class="badge badge-primary-ci">{{ tr_value('Primary CI') }}</span></td></tr>{% endif %}
+    {% for link in other_affected_cis %}<tr><td>{{ link.ci.name }}{% if rack_labels.get(link.ci_id) %}<small class="ci-rack-inline">{{ tr('Rack {location}', location=rack_labels[link.ci_id]) }}</small>{% endif %}</td><td>{{ link.ci.ci_class }}</td><td>{{ link.ci.environment }}</td><td><span class="badge">{{ tr_value(link.relationship_role) }}</span></td></tr>{% else %}{% if not change_primary_ci %}<tr><td colspan="4" class="empty">{{ tr('No affected CIs linked.') }}</td></tr>{% endif %}{% endfor %}
   </tbody></table></div>
+  {% include '_ticket_rack_placement.html' %}
   {% if can_manage_ticket %}
   <details class="gov-tab-new"><summary>{{ tr('New') }}</summary>
     <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">

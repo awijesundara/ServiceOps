@@ -100,6 +100,7 @@ from app import (
     workspace_widget_enabled,
     WORKSPACE_WIDGET_REGISTRY,
 )
+from serviceops_core.rack_location import is_data_center_group, rack_label, rack_mounted_cis
 from serviceops_core.config_schema import SETTING_DEFINITIONS
 from serviceops_core.priority import calculate_priority
 from serviceops_core.projections import project_document
@@ -112,6 +113,7 @@ from serviceops_core.web.common import (
     visible_tickets,
 )
 from serviceops_models import (
+    IT_FULFILLMENT_GROUP_TYPES,
     Approval,
     ApprovalChain,
     ApprovalGate,
@@ -431,7 +433,7 @@ def register(app):
             group.id
             for group in SupportGroup.query.filter(
                 SupportGroup.id.in_(team_ids),
-                SupportGroup.group_type == "IT Fulfillment",
+                SupportGroup.group_type.in_(IT_FULFILLMENT_GROUP_TYPES),
                 SupportGroup.active.is_(True),
             ).all()
         }
@@ -1067,6 +1069,12 @@ def register(app):
         ci_links = TaskCI.query.filter_by(
             target_type="ticket", target_id=ticket.id
         ).order_by(TaskCI.relationship_role).all()
+        # Rack location is staff information, like the rack view it links to.
+        governance = ticket.change_governance if ticket.kind == "change" else None
+        rack_cis = rack_mounted_cis(
+            ci_links, ticket.tenant_id, current_user.effective_role,
+            extra_ci=governance.ci if governance else None,
+        ) if internal_view else []
         return render_template(
             "incident_detail.html" if ticket.kind == "incident" else "ticket_detail.html",
             ticket=ticket, agents=agents, chains=chains, slas=slas,
@@ -1079,6 +1087,9 @@ def register(app):
             work_task_states=OPERATIONAL_TASK_TRANSITIONS, history=history,
             internal_view=internal_view,
             ci_links=ci_links,
+            rack_cis=rack_cis,
+            rack_labels={ci.id: rack_label(ci) for ci in rack_cis},
+            open_on_affected_cis=bool(rack_cis) and is_data_center_group(owning_group),
             teams=core.team_groups().all(),
             reassignable_teams=core.team_groups().filter(
                 SupportGroup.id != (owning_group.id if owning_group else -1),
