@@ -4,7 +4,7 @@ administrator of the tenant when it has none, is notified once for that end
 date. Changing the end date re-arms the alert."""
 from datetime import date
 
-from flask import url_for
+from flask import current_app, url_for
 
 
 def send_contract_alerts(today=None):
@@ -26,6 +26,10 @@ def send_contract_alerts(today=None):
             recipients = [contract.owner] if contract.owner and contract.owner.active else User.query.filter(
                 User.tenant_id == tenant.id, User.active.is_(True), User.role.in_(["admin", "superadmin"]),
             ).all()
+            if not recipients:
+                current_app.logger.warning("Contract notice pending: no active recipient for tenant %s, contract %s",
+                                           tenant.id, contract.id)
+                continue
             renewal = {"tacit": "renews automatically", "express": "renews only on agreement"}.get(
                 contract.renewal, "ends")
             supplier = f" with {contract.supplier.name}" if contract.supplier else ""

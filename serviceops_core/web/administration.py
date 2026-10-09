@@ -149,6 +149,7 @@ from serviceops_models import (
     WorkflowSchedule,
 )
 from serviceops_core.localization import tr, tr_value
+from serviceops_core.itam.registry import record_id
 
 # Audit wording for each approval authority (serviceops_core/approval_groups.py).
 APPROVAL_AUTHORITY_LABELS = {
@@ -2242,6 +2243,45 @@ def register(app):
                     tr("Merged {count} duplicate team name(s).", count=merged) if merged
                     else tr("No duplicate team names found."), "success",
                 )
+            elif action in {"set_executive_authority", "set_executive_mode"}:
+                executive = tenant_query(SupportGroup).filter_by(name="Executive Office", group_type="Executive").with_for_update().first_or_404()
+                if action == "set_executive_mode":
+                    mode = request.form.get("approval_mode")
+                    if mode not in {"all", "any"}:
+                        abort(400)
+                    executive.approval_mode = mode
+                    audit("configure", "Executive approval rule", mode)
+                else:
+                    identifier = record_id(request.form.get("user_id"))
+                    if identifier is None or request.form.get("enabled") not in {"true", "false"}:
+                        abort(400)
+                    user = tenant_record_or_404(User, identifier)
+                    enabled = request.form["enabled"] == "true"
+                    if enabled and not user.active:
+                        abort(400)
+                    assigned = {member.user_id for member in executive.members
+                                if member.role in {"executive approver", "manager"}}
+                    if executive.manager_id:
+                        assigned.add(executive.manager_id)
+                    if enabled and user.id not in assigned and len(assigned) >= 100:
+                        abort(400, description=tr("Select a valid approval rule and at most 100 executives."))
+                    membership = GroupMember.query.filter_by(group_id=executive.id, user_id=user.id).first()
+                    if enabled:
+                        if membership:
+                            membership.role = "executive approver"
+                        else:
+                            db.session.add(GroupMember(group_id=executive.id, user_id=user.id,
+                                                       role="executive approver", tenant_id=executive.tenant_id))
+                    else:
+                        if executive.manager_id == user.id:
+                            executive.manager_id = None
+                        if membership and membership.role in {"executive approver", "manager"}:
+                            membership.role = "member"
+                    db.session.flush()
+                    sync_implied_role_grants(user)
+                    audit("configure", "Executive approval authority",
+                          f"{user.username}: {'granted' if enabled else 'revoked'}")
+                flash(tr("Executive approvers updated."), "success")
             elif action == "set_executive_approvers":
                 executive = tenant_query(SupportGroup).filter_by(name="Executive Office", group_type="Executive").with_for_update().first_or_404()
                 mode = request.form.get("approval_mode", "all")
@@ -2357,7 +2397,10 @@ def register(app):
                 audit("configure", f"{label} approval groups", ", ".join(group.name for group in groups) or "none")
                 flash(tr("Approval groups updated."), "success")
             elif action == "set_ccb_authority":
-                user = tenant_record_or_404(User, int(request.form["user_id"]))
+                identifier = record_id(request.form.get("user_id"))
+                if identifier is None or request.form.get("enabled") not in {"true", "false"}:
+                    abort(400)
+                user = tenant_record_or_404(User, identifier)
                 ccb = tenant_query(SupportGroup).filter_by(name="Change Control Board").one()
                 membership = GroupMember.query.filter_by(
                     group_id=ccb.id, user_id=user.id
@@ -2773,6 +2816,7 @@ def register(app):
         return render_template(
             "itil_admin_section.html", section=section, title=title, description=description,
             groups=groups, teams=teams,
+            authority_users=tenant_query(User).order_by(User.name, User.id).all(),
             manager_candidates=manager_candidates, ccb_candidates=ccb_candidates,
             ccb=ccb, ccb_approver_ids=ccb_approver_ids,
             executive_office=executive_office,

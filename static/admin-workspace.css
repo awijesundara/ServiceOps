@@ -68,3 +68,12 @@
 .theme-swatch-dark{--sw-bg:#0f151a;--sw-nav:#0b1115;--sw-card:#182128;--sw-bar:#2c3840;--sw-line:#2c3840}
 .theme-swatch-system{--sw-line:#c7d1d5;--sw-l:#f4f7f8;--sw-d:#0f151a;--sw-ln:#003e4c;--sw-dn:#0b1115;--sw-lc:#ffffff;--sw-dc:#182128;background:linear-gradient(135deg,var(--sw-l) 50%,var(--sw-d) 50%)}.theme-swatch-system i:first-child{background:linear-gradient(135deg,var(--sw-ln) 50%,var(--sw-dn) 50%)}.theme-swatch-system i:last-child{background:linear-gradient(135deg,var(--sw-lc) 50%,var(--sw-dc) 50%);box-shadow:none}
 @media(max-width:700px){.theme-picker{grid-template-columns:1fr}.theme-option{grid-template-columns:84px 1fr;align-items:center}}
+
+/* Keep confirmation visible when a save returns to an open group panel. */
+.admin-save-feedback{position:sticky;top:70px;z-index:19;box-shadow:var(--shadow)}
+.admin-section[id^="group-"]{scroll-margin-top:140px}
+.approval-users{display:grid;gap:12px}
+.approval-users .approval-group-list{display:grid;grid-template-columns:minmax(0,1fr);max-width:760px}
+.approval-users .approval-group-list li{border-radius:8px;justify-content:space-between;min-width:0}
+.approval-users .approval-group-list li>span{min-width:0;overflow-wrap:anywhere}
+.approval-users .approval-group-list form{flex-shrink:0}

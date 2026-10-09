@@ -22,7 +22,8 @@ def test_multiple_executive_approvers_can_be_saved(app, client, mode):
         assert executive.manager_id is None and executive.approval_mode == mode
         assert {member.user_id for member in executive.members if member.role == "executive approver"} == set(ids)
     page = client.get('/service-operations/settings/executive-approval').get_data(as_text=True)
-    assert 'name="user_ids"' in page and 'name="approval_mode"' in page
+    assert 'data-approval-users="executive"' in page and 'name="approval_mode"' in page
+    assert 'name="user_ids"' not in page
 
 
 @pytest.mark.parametrize("ids,mode", [(["not-an-id"], "all"), (["99999999"], "all"), ([], "invalid")])

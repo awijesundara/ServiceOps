@@ -27,7 +27,7 @@ def can_edit(resource):
     return current_user.effective_role in resource.edit_roles
 
 
-def _choices(resource):
+def _choices(resource, record):
     """Options for every reference, user and CI field on the form."""
     options = {}
     for spec in resource.fields:
@@ -43,6 +43,21 @@ def _choices(resource):
                 tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role)
             options[spec.name] = [(ci.id, ci.name) for ci in query.order_by(
                 ConfigurationItem.name).limit(2000)]
+    # A bounded picker must always retain its current selection, including
+    # inactive owners and readable CIs beyond the first page of choices.
+    for spec in resource.fields:
+        if spec.kind not in ("ref", "user", "cis"):
+            continue
+        selected = readable_cis(getattr(record, spec.name) or []) if spec.kind == "cis" else []
+        if spec.kind in ("ref", "user"):
+            row = getattr(record, spec.name.removesuffix("_id"), None)
+            if row and row.tenant_id == current_user.tenant_id:
+                selected = [row]
+        ids = {identifier for identifier, _ in options[spec.name]}
+        for row in selected:
+            if row.id not in ids:
+                label = RESOURCES[spec.ref].title(row) if spec.kind == "ref" else row.name
+                options[spec.name].append((row.id, label))
     return options
 
 
@@ -92,16 +107,21 @@ def register(app):
             like = f"%{search}%"
             query = query.filter(or_(*(getattr(model, name).ilike(like) for name in resource.search_fields)))
         order = getattr(model, resource.order_by)
-        records = query.order_by(order.is_(None), order, model.id).limit(LIST_LIMIT).all()
+        records = query.order_by(order.is_(None), order, model.id).yield_per(200)
         status_filter = request.args.get("status", "")
         rows = []
+        statuses = set()
         for record in records:
             status = resource.status(record) if resource.status else None
+            if status:
+                statuses.add(status[0])
             if status_filter and (not status or status[0] != status_filter):
+                continue
+            if len(rows) >= LIST_LIMIT:
                 continue
             rows.append({"record": record, "status": status,
                          "cells": [display(spec, record) for spec in resource.fields if spec.in_list]})
-        statuses = sorted({row["status"][0] for row in rows if row["status"]}) if resource.status else []
+        statuses = sorted(statuses)
         return render_template(
             "itam_list.html", resource=resource, rows=rows, search=search, status_filter=status_filter,
             statuses=statuses, columns=[spec for spec in resource.fields if spec.in_list],
@@ -112,7 +132,7 @@ def register(app):
         for error in errors:
             flash(error, "error")
         return render_template(
-            "itam_form.html", resource=resource, record=record, options=_choices(resource),
+            "itam_form.html", resource=resource, record=record, options=_choices(resource, record),
             can_edit=can_edit(resource), status=resource.status(record) if resource.status and record.id else None,
             related=[(title, rows(record)) for title, rows in resource.related] if record.id else [],
         ), 400 if errors else 200

@@ -4,6 +4,7 @@ Hoisted verbatim from app.create_app(), where they were closures.
 """
 import hashlib
 import os
+import re
 import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
@@ -619,6 +620,13 @@ def _admin_referrer_redirect(fallback_endpoint, **fallback_kwargs):
     """Isolated settings pages (B-320) all post to their one shared
     handler endpoint; send the user back to the specific page they
     came from instead of always landing on the handler's own index."""
+    section = request.form.get("return_section")
+    if fallback_endpoint == "itil_admin" and section in ITIL_ADMIN_SECTIONS:
+        destination = url_for("itil_admin_section", section=section)
+        panel = request.form.get("return_panel", "")
+        if re.fullmatch(r"group-[1-9][0-9]{0,9}", panel):
+            destination = url_for("itil_admin_section", section=section, group=panel[6:]) + "#" + panel
+        return redirect(destination, code=303)
     destination = request.referrer
     if destination and destination.startswith(request.host_url):
         return redirect(destination)
