@@ -637,6 +637,9 @@
    "id": "Add trigger"
   },
   {
+   "id": "Add user"
+  },
+  {
    "id": "Add {count} selected",
    "javascript": true
   },
@@ -1473,9 +1476,6 @@
    "id": "CCB approver groups"
   },
   {
-   "id": "CCB authority"
-  },
-  {
    "id": "CCB membership must be configured before a non-standard change can be submitted."
   },
   {
@@ -1863,6 +1863,9 @@
   },
   {
    "id": "Choose a team…"
+  },
+  {
+   "id": "Choose a user…"
   },
   {
    "id": "Choose a valid {label}."
@@ -3482,9 +3485,6 @@
    "id": "Executive approver groups"
   },
   {
-   "id": "Executive approvers"
-  },
-  {
    "id": "Executive approvers updated."
   },
   {
@@ -3859,9 +3859,6 @@
   },
   {
    "id": "Governed statically alongside the source, not admin-editable — what counts as PII/confidential for a record type is a governance decision, not a runtime setting."
-  },
-  {
-   "id": "Grant"
   },
   {
    "id": "Grant access to"
@@ -5921,6 +5918,9 @@
    "id": "No users active in the last 15 minutes."
   },
   {
+   "id": "No users added."
+  },
+  {
    "id": "No users match this search."
   },
   {
@@ -6777,9 +6777,6 @@
   },
   {
    "id": "Platform name"
-  },
-  {
-   "id": "Platform role"
   },
   {
    "id": "Platform tenants"
@@ -8223,6 +8220,9 @@
    "id": "Save and replace token"
   },
   {
+   "id": "Save approval rule"
+  },
+  {
    "id": "Save as view"
   },
   {
@@ -8242,9 +8242,6 @@
   },
   {
    "id": "Save event choices"
-  },
-  {
-   "id": "Save executive approvers"
   },
   {
    "id": "Save first, then test the saved connection. The test shows what NetBox holds and what the token may read, without writing anything."
@@ -10526,6 +10523,9 @@
    "id": "User record updated."
   },
   {
+   "id": "User to add"
+  },
+  {
    "id": "Username"
   },
   {
@@ -10539,6 +10539,9 @@
   },
   {
    "id": "Users authorized to vote on non-standard changes"
+  },
+  {
+   "id": "Users with authority"
   },
   {
    "id": "Users · {instance_name}"

@@ -255,6 +255,7 @@ jobs:
         run: |
           mkdir -p "${E2E_ARTIFACT_DIR}"
           python -m pytest tests/test_e2e_smoke.py -v
+          RUN_ADMIN_ASSIGNMENT_BROWSER=1 python -m pytest tests/test_admin_assignment_browser.py -v
 
       - name: Capture Compose diagnostics on failure
         if: failure()

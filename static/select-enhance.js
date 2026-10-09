@@ -10,7 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
 function enhanceSelect(select) {
   if (select.multiple || select.dataset.plain !== undefined) return;
   if (select.closest(".select-enhance, .lookup")) return;
-  if (select.options.length < 5) return;
+  if (select.options.length < 5 && select.dataset.searchable === undefined) return;
 
   const wrapper = document.createElement("div");
   wrapper.className = "select-enhance";
@@ -35,9 +35,19 @@ function enhanceSelect(select) {
   if (select.disabled) input.disabled = true;
   if (select.required) input.required = true;
   wrapper.appendChild(input);
+  // The visible combobox owns keyboard and screen-reader interaction.
+  // Keep the native control solely for form values and validation.
+  select.tabIndex = -1;
+  select.setAttribute("aria-hidden", "true");
 
   const panel = document.createElement("div");
   panel.className = "lookup-results select-enhance-results";
+  panel.id = `select-options-${document.querySelectorAll('.select-enhance').length}`;
+  panel.setAttribute("role", "listbox");
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-controls", panel.id);
+  input.setAttribute("aria-expanded", "false");
+  input.setAttribute("aria-autocomplete", "list");
   panel.hidden = true;
   wrapper.appendChild(panel);
 
@@ -53,6 +63,8 @@ function enhanceSelect(select) {
 
   function updateActive(rows) {
     rows.forEach((row, index) => row.classList.toggle("active", index === activeIndex));
+    if (rows[activeIndex]) input.setAttribute("aria-activedescendant", rows[activeIndex].id);
+    else input.removeAttribute("aria-activedescendant");
     rows[activeIndex]?.scrollIntoView({block: "nearest"});
   }
 
@@ -65,6 +77,8 @@ function enhanceSelect(select) {
 
   function close() {
     panel.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
     activeIndex = -1;
   }
 
@@ -79,10 +93,13 @@ function enhanceSelect(select) {
       empty.textContent = tr("No matches found.");
       panel.appendChild(empty);
     } else {
-      matches.slice(0, 300).forEach((option) => {
+      matches.slice(0, 300).forEach((option, index) => {
         const row = document.createElement("div");
         row.className = "lookup-result select-enhance-option";
         row.dataset.value = option.value;
+        row.id = `${panel.id}-${index}`;
+        row.setAttribute("role", "option");
+        row.setAttribute("aria-selected", String(option.value === select.value));
         const strong = document.createElement("strong");
         strong.appendChild(highlightMatch(option.textContent.trim(), query.trim()));
         row.appendChild(strong);
@@ -95,6 +112,8 @@ function enhanceSelect(select) {
       });
     }
     panel.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+    input.removeAttribute("aria-activedescendant");
   }
 
   input.addEventListener("focus", () => {
