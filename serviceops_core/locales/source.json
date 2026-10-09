@@ -1497,7 +1497,8 @@
    "id": "CI class permissions · {instance_name}"
   },
   {
-   "id": "CI owning team"
+   "id": "CI owning team",
+   "javascript": true
   },
   {
    "id": "CLIENT MANAGEMENT"
@@ -10669,6 +10670,9 @@
   },
   {
    "id": "View iOS project"
+  },
+  {
+   "id": "View location"
   },
   {
    "id": "View mobile setup and download details"

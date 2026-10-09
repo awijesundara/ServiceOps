@@ -152,7 +152,12 @@ html.theme-dark .rack-pdu-row{color:inherit}
 html.theme-dark .rack-pdu-row:hover{background:#161c20}
 html.theme-dark .rack-pdu-row span{color:var(--muted)}
 html.theme-dark .rack-pdu-row-highlight{outline:2px solid var(--brand-amber,#62503b);background:#1d170d}
-html.theme-dark .ci-rack-location a{color:var(--dk-accent-strong)}
+html.theme-dark .ci-rack-location{border:1px solid #493b25;background:#1d170d;color:#dbc39d}
+html.theme-dark .ci-rack-location:hover{background:#251a06;border-color:#5d4f38}
+html.theme-dark .ci-rack-location:focus-visible{outline:3px solid var(--brand-amber,#62503b)}
+html.theme-dark .ci-rack-pin{fill:none;stroke:#b86e00}
+html.theme-dark .ci-rack-cta{color:#d69959}
+html.theme-dark .lookup-owning-team{color:var(--ink)}
 html.theme-dark .ci-rack-inline{color:var(--ink)}
 html.theme-dark td .ci-rack-inline{color:var(--muted)}
 html.theme-dark .ticket-rack-placement{box-shadow:none}
