@@ -2316,6 +2316,24 @@ def register(app):
                 audit("configure", f"{group.name} manager",
                       manager.username if manager else "Unassigned")
                 flash(tr("{name} manager updated.", name=group.name), "success")
+            elif action in {"add_approval_group", "remove_approval_group"}:
+                authority = request.form.get("authority", "")
+                if authority not in APPROVAL_AUTHORITIES or authority == "team_manager":
+                    abort(400)
+                try:
+                    group_id = int(request.form.get("group_id") or 0)
+                except ValueError:
+                    abort(400)
+                current = linked_group_ids(current_user.tenant_id, authority).get(None, [])
+                wanted = (current + [group_id]) if action == "add_approval_group" else [g for g in current if g != group_id]
+                try:
+                    groups = set_authority_groups(current_user.tenant_id, authority, wanted,
+                                                  core.team_groups(current_user.tenant_id), actor_id=current_user.id)
+                except ValueError as error:
+                    abort(400, description=tr(str(error)))
+                audit("configure", f"{APPROVAL_AUTHORITY_LABELS[authority]} approval groups",
+                      ", ".join(group.name for group in groups) or "none")
+                flash(tr("Approval groups updated."), "success")
             elif action == "set_approval_groups":
                 authority = request.form.get("authority", "")
                 subject_group_id = None

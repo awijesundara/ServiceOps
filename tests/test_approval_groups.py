@@ -169,15 +169,34 @@ def test_record_approval_goes_to_the_group_and_one_decision_settles_it(app, clie
         assert db.session.get(EnterpriseRecord, record_id).state == "Approved"
 
 
-def test_admin_links_groups_and_refuses_governance_or_foreign_groups(app, client):
+def test_admin_adds_and_removes_groups_from_a_dropdown(app, client):
     ids = app.config["IDS"]
     url = "/service-operations/settings"
     page = client.get(f"{url}/ccb").get_data(as_text=True)
-    assert "CCB approver groups" in page
+    assert "CCB approver groups" in page and "No groups added." in page
     # The form must post to the settings handler (a macro cannot see template-level variables).
-    assert re.search(r'<form method="post" action="/service-operations/settings" class="stack approval-groups-form">', page)
-    assert client.post(url, data={"action": "set_approval_groups", "authority": "ccb",
-                                  "group_ids": [ids["group_board"]]}).status_code in (302, 303)
+    assert re.search(r'<form method="post" action="/service-operations/settings" class="inline-form approval-group-add">', page)
+    for key in ("board", "leadership"):
+        response = client.post(url, data={"action": "add_approval_group", "authority": "ccb",
+                                          "group_id": ids[f"group_{key}"]},
+                               headers={"Referer": f"http://localhost{url}/ccb"})
+        assert response.status_code in (302, 303)
+        assert response.headers["Location"].endswith("/service-operations/settings/ccb")
+    page = client.get(f"{url}/ccb").get_data(as_text=True)
+    added = page[page.index("approval-group-list"):page.index("approval-group-add")]
+    assert "Change Board Delegates" in added and "Leadership Team" in added
+    dropdown = page[page.index("approval-group-add"):]
+    dropdown = dropdown[:dropdown.index("</select>")]
+    assert "Change Board Delegates" not in dropdown and "Unix Ops" in dropdown
+    client.post(url, data={"action": "remove_approval_group", "authority": "ccb", "group_id": ids["group_board"]})
+    with app.app_context():
+        assert [row.group_id for row in ApprovalAuthorityGroup.query.filter_by(authority="ccb")] == [ids["group_leadership"]]
+        assert Audit.query.filter(Audit.target == "CCB approval groups").count() == 3
+
+
+def test_governance_foreign_and_unknown_groups_are_refused(app, client):
+    ids = app.config["IDS"]
+    url = "/service-operations/settings"
     with app.app_context():
         governance = SupportGroup.query.filter_by(name="Change Control Board").one().id
         other_tenant = Tenant(name="Other", slug="other-approvals")
@@ -187,17 +206,14 @@ def test_admin_links_groups_and_refuses_governance_or_foreign_groups(app, client
         db.session.add(foreign)
         db.session.commit()
         foreign_id = foreign.id
-        assert [row.group_id for row in ApprovalAuthorityGroup.query.filter_by(authority="ccb")] == [ids["group_board"]]
-        assert Audit.query.filter(Audit.target == "CCB approval groups").count() == 1
-    for bad in (governance, foreign_id):
-        assert client.post(url, data={"action": "set_approval_groups", "authority": "ccb",
-                                      "group_ids": [bad]}).status_code == 400
-    assert client.post(url, data={"action": "set_approval_groups", "authority": "nobody",
-                                  "group_ids": [ids["group_board"]]}).status_code == 400
-    # Saving an empty selection removes the link.
-    client.post(url, data={"action": "set_approval_groups", "authority": "ccb"})
+    for bad in (governance, foreign_id, 0):
+        assert client.post(url, data={"action": "add_approval_group", "authority": "ccb",
+                                      "group_id": bad}).status_code == 400
+    for authority in ("nobody", "team_manager"):
+        assert client.post(url, data={"action": "add_approval_group", "authority": authority,
+                                      "group_id": ids["group_board"]}).status_code == 400
     with app.app_context():
-        assert ApprovalAuthorityGroup.query.filter_by(authority="ccb").count() == 0
+        assert ApprovalAuthorityGroup.query.count() == 0
 
 
 def test_team_manager_groups_are_set_per_team_from_the_team_managers_page(app, client):
