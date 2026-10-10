@@ -744,6 +744,9 @@
    "id": "Affected CIs and impacted services"
   },
   {
+   "id": "After"
+  },
+  {
    "id": "After each successful backup, have your backup script report it:"
   },
   {
@@ -760,6 +763,9 @@
   },
   {
    "id": "Alias"
+  },
+  {
+   "id": "Alias of the ticket detail sections contract"
   },
   {
    "id": "Alive"
@@ -1010,6 +1016,9 @@
    "id": "Approval required"
   },
   {
+   "id": "Approval revision"
+  },
+  {
    "id": "Approval rule"
   },
   {
@@ -1124,6 +1133,9 @@
    "id": "Assistant status"
   },
   {
+   "id": "At"
+  },
+  {
    "id": "At least one active, same-tenant Service Desk member must be configured for fulfillment authorization."
   },
   {
@@ -1212,6 +1224,9 @@
   },
   {
    "id": "Authorize external processing before using a hosted provider."
+  },
+  {
+   "id": "Authorized details"
   },
   {
    "id": "Auto-calculated"
@@ -1352,6 +1367,9 @@
    "id": "Base DN"
   },
   {
+   "id": "Before"
+  },
+  {
    "id": "Blackout periods for Standard and Normal changes"
   },
   {
@@ -1392,6 +1410,12 @@
   },
   {
    "id": "Breach target"
+  },
+  {
+   "id": "Breach time"
+  },
+  {
+   "id": "Breached"
   },
   {
    "id": "Breached at"
@@ -1579,6 +1603,9 @@
    "id": "Caller"
   },
   {
+   "id": "Caller email"
+  },
+  {
    "id": "Cancel",
    "javascript": true
   },
@@ -1699,6 +1726,9 @@
   },
   {
    "id": "Chain name or target"
+  },
+  {
+   "id": "Chain state"
   },
   {
    "id": "Change"
@@ -2657,7 +2687,13 @@
    "id": "Customer"
   },
   {
+   "id": "Customer feedback"
+  },
+  {
    "id": "Customer identities used for external support conversations."
+  },
+  {
+   "id": "Customer rating"
   },
   {
    "id": "Customer satisfaction"
@@ -2821,6 +2857,9 @@
    "id": "Delegate to {name}"
   },
   {
+   "id": "Delegated from"
+  },
+  {
    "id": "Delete"
   },
   {
@@ -2952,6 +2991,9 @@
   },
   {
    "id": "Direct reports"
+  },
+  {
+   "id": "Direction"
   },
   {
    "id": "Directory access policy saved."
@@ -3796,6 +3838,9 @@
    "id": "Gate"
   },
   {
+   "id": "Gate state"
+  },
+  {
    "id": "Gate-level roll-up"
   },
   {
@@ -4278,6 +4323,9 @@
    "id": "Incident sections"
   },
   {
+   "id": "Incident status updates"
+  },
+  {
    "id": "Incident {number} opened as {priority} · {impact} impact via {contact_type}."
   },
   {
@@ -4348,6 +4396,9 @@
   },
   {
    "id": "Instance name"
+  },
+  {
+   "id": "Insufficient scope"
   },
   {
    "id": "Int"
@@ -5162,6 +5213,9 @@
    "id": "Mobile phone"
   },
   {
+   "id": "Mobile session, tickets:read and agent role required. Returns data entries containing ci, relationship_role, rack and label; meta contains count and open_on_affected_cis. Missing placement values stay null. Cross-tenant and unreadable CI classes are excluded."
+  },
+  {
    "id": "Mode"
   },
   {
@@ -5817,6 +5871,9 @@
   },
   {
    "id": "No phone number"
+  },
+  {
+   "id": "No profile picture has been uploaded."
   },
   {
    "id": "No proxy (direct connection)"
@@ -6843,6 +6900,12 @@
    "id": "Post-incident review saved for {number}."
   },
   {
+   "id": "Posted"
+  },
+  {
+   "id": "Posted by"
+  },
+  {
    "id": "Posted to {number}; the requester is notified."
   },
   {
@@ -7321,10 +7384,16 @@
    "id": "Read"
   },
   {
+   "id": "Read linked ticket rack placements, primary CI first"
+  },
+  {
    "id": "Read only"
   },
   {
    "id": "Read only: operational updates are restricted to active members of {name}."
+  },
+  {
+   "id": "Read the authorized Web UI ticket detail sections"
   },
   {
    "id": "Read this incident and its recent comments."
@@ -7416,6 +7485,9 @@
   },
   {
    "id": "Record approver groups"
+  },
+  {
+   "id": "Record information"
   },
   {
    "id": "Record resolution notes (in Resolution information) before resolving {number}."
@@ -7774,7 +7846,10 @@
    "id": "Requires tickets:read and streams the file from local, object, or IPFS storage with private no-store caching."
   },
   {
-   "id": "Requires tickets:read."
+   "id": "Requires tickets:read and ticket visibility. Includes details and configuration_items using the versioned TicketDetails schema; list responses remain compact."
+  },
+  {
+   "id": "Requires tickets:read and ticket visibility. Returns schema_version, configuration_items, sections, can_manage and allowed_states. CI links include primary, affected and impacted services, with tenant and CI-class filtering. Staff sections include record fields, governance, reviews, SLAs, approval history, work tasks, related records and event history. Requesters receive public record fields, service commitments and visible related records, with no internal sections or topology. The same details and configuration_items are included by GET /tickets/{number}; list responses remain compact."
   },
   {
    "id": "Requires tickets:read. Cursor limit is 1-100."
@@ -8845,6 +8920,9 @@
   },
   {
    "id": "Service configuration"
+  },
+  {
+   "id": "Service level agreements"
   },
   {
    "id": "Service offering"
@@ -10132,6 +10210,9 @@
    "id": "Ticket"
   },
   {
+   "id": "Ticket absent or invisible"
+  },
+  {
    "id": "Ticket categories"
   },
   {
@@ -10923,6 +11004,9 @@
   },
   {
    "id": "Work notes"
+  },
+  {
+   "id": "Work tasks"
   },
   {
    "id": "Workaround"
