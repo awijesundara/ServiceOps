@@ -424,7 +424,7 @@ def _finish(run_id, prepared, steps, content, reasoning, usage, sanitize, featur
         from serviceops_core.ai import actions
         if extras.get("draft"):
             from serviceops_core.ai.ticket_drafts import bind_draft
-            extras["draft"] = bind_draft(extras["draft"], scope_now.identity, prepared.sources)
+            extras["draft"] = bind_draft(extras["draft"], scope_now.identity, prepared.sources, question=run.question)
         proposed_action = actions.propose_from_question(scope_now, run.question or "", config.actions_enabled)
         if not proposed_action and config.actions_enabled:
             draft = access.extract_generated_draft(content, scope_now, prepared.allowed)
