@@ -62,12 +62,14 @@ jobs:
           python3 tools/release_version.py --set "$version" --write --check >/dev/null
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Commit the immutable release version (signed by GitHub)
+      - name: Commit the immutable release version and sign its tag
         env:
           TAG: ${{ steps.version.outputs.tag }}
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG_SIGNING_KEY: ${{ secrets.RELEASE_TAG_SIGNING_KEY }}
         # main requires verified signatures, so the commit is created through the
-        # GitHub API (which signs it) and the tag only after that commit lands.
+        # GitHub API (which signs it). The tag is created only after that commit
+        # lands, SSH-signed with the release signing key, and must show Verified.
         run: python3 tools/release_commit.py "$TAG"
 
   supply-chain:
