@@ -24,7 +24,7 @@
       <div class="attachment-actions">
         {% if attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES %}<a href="{{ view_url }}" data-lightbox-src="{{ view_url }}" data-lightbox-title="{{ attachment.original_name }}"{% if attachment.mime_type not in IMAGE_ATTACHMENT_TYPES %} data-lightbox-type="pdf"{% endif %}>{{ tr('Preview') }}</a>{% endif %}
         <a href="{{ download_url }}">{{ tr('Download') }}</a>
-        {% if can_delete_attachment(attachment) %}<form method="post" action="{{ url_for('attachment_delete', attachment_id=attachment.id) }}" class="attachment-delete" data-confirm="{{ tr('Delete {name} from this ticket? This cannot be undone.', name=attachment.original_name) }}"><button type="submit" class="attachment-delete-button" aria-label="{{ tr('Delete {name}', name=attachment.original_name) }}">{{ tr('Delete') }}</button></form>{% endif %}
+        {% if can_delete_attachment(attachment) %}<form method="post" action="{{ url_for('attachment_delete', attachment_id=attachment.id) }}" class="attachment-delete" data-confirm="{{ tr('Delete {name} from this ticket? This cannot be undone.', name=attachment.original_name) }}"><details><summary>{{ tr('Delete') }}</summary><label for="delete-reason-{{ attachment.id }}">{{ tr('Reason for deletion') }}</label><textarea id="delete-reason-{{ attachment.id }}" name="reason" rows="2" required maxlength="1000"></textarea><button type="submit" class="attachment-delete-button" aria-label="{{ tr('Delete {name}', name=attachment.original_name) }}">{{ tr('Delete attachment') }}</button></details></form>{% endif %}
       </div>
     </li>
     {% endfor %}

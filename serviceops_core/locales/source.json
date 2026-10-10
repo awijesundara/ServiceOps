@@ -1148,6 +1148,9 @@
    "id": "Attach file"
   },
   {
+   "id": "Attachment deleted"
+  },
+  {
    "id": "Attachment preview"
   },
   {
@@ -2863,6 +2866,9 @@
    "id": "Delete"
   },
   {
+   "id": "Delete attachment"
+  },
+  {
    "id": "Delete chats after (days without a message)"
   },
   {
@@ -3310,6 +3316,9 @@
   },
   {
    "id": "Enter a comment between 1 and 10,000 characters."
+  },
+  {
+   "id": "Enter a deletion reason between 1 and 1000 characters."
   },
   {
    "id": "Enter a name and a lowercase, hyphen-safe slug."
@@ -7421,6 +7430,12 @@
    "id": "Reason"
   },
   {
+   "id": "Reason for deletion"
+  },
+  {
+   "id": "Reason: {reason}"
+  },
+  {
    "id": "Reassign incident to another team"
   },
   {
@@ -10418,6 +10433,9 @@
   },
   {
    "id": "US Eastern"
+  },
+  {
+   "id": "Unable to delete the attachment. Please try again."
   },
   {
    "id": "Unable to load assets. Please try again."

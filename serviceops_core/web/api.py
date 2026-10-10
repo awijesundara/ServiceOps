@@ -1604,9 +1604,21 @@ def register(app):
     def api_ticket_comments(number):
         require_api_scope("tickets:read")
         ticket = visible_ticket_query(g.api_user).filter(func.upper(Ticket.number) == number.upper()).first_or_404()
-        return jsonify({"data": [{"id": row.id, "body": row.body, "author": row.author.name,
-                                  "parent_id": row.parent_id,
-                                  "created_at": row.created_at.isoformat()} for row in ticket.comments]})
+        try:
+            from serviceops_core.attachment_history import deleted_comment_attachments
+            history = core.TaskHistory.query.filter_by(target_type="ticket", target_id=ticket.id,
+                                                       event="Attachment deleted").all()
+            deleted = deleted_comment_attachments(history)
+            return jsonify({"data": [{"id": row.id, "body": row.body, "author": row.author.name,
+                                      "parent_id": row.parent_id,
+                                      "deleted_attachments": deleted.get(row.id, []),
+                                      "created_at": row.created_at.isoformat()} for row in ticket.comments]})
+        except HTTPException:
+            raise
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Ticket comment lookup failed")
+            abort(500, description="Unable to load ticket comments. Please try again.")
 
     @app.post("/api/v1/tickets/<number>/comments")
     def api_ticket_comment_create(number):

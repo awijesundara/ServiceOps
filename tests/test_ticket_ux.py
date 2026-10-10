@@ -113,7 +113,7 @@ def incident_with_attachment(client, app, *, requester=("employee", "Employee123
 
 
 def delete(client, attachment_id):
-    return client.post(f"/attachments/{attachment_id}/delete")
+    return client.post(f"/attachments/{attachment_id}/delete", data={"reason": "Incorrect file uploaded"})
 
 
 def test_uploader_sees_the_button_and_deletes_with_history_and_file_removed(client, app):
@@ -178,3 +178,110 @@ def test_note_box_offers_the_compact_attach_control_with_the_supported_filter(cl
     assert "data-comment-attach" in box and "Attach file" in box
     file_input = re.search(r'<input type="file" name="file"[^>]*>', box).group(0)
     assert 'accept=".7z,' in file_input and ".pdf" in file_input
+
+
+def test_deletion_requires_reason_without_mutating_file_or_history(client, app):
+    ticket_id, attachment_id, stored_name = incident_with_attachment(client, app)
+    for reason in ('', '   ', 'x' * 1001):
+        assert client.post(f'/attachments/{attachment_id}/delete', data={'reason': reason}).status_code == 400
+    with app.app_context():
+        assert db.session.get(FileAttachment, attachment_id)
+        assert os.path.exists(os.path.join(app.config['UPLOAD_FOLDER'], stored_name))
+        assert TaskHistory.query.filter_by(target_type='ticket', target_id=ticket_id, event='Attachment deleted').count() == 0
+
+
+def test_deleted_comment_file_remains_identifiable_and_reason_is_in_ticket_history(client, app):
+    from app import Comment
+    ticket_id, attachment_id, _ = incident_with_attachment(client, app)
+    with app.app_context():
+        admin = User.query.filter_by(username='admin').one()
+        parent = Comment(ticket_id=ticket_id, user_id=admin.id, body='Original note')
+        db.session.add(parent)
+        db.session.flush()
+        reply = Comment(ticket_id=ticket_id, user_id=admin.id, body='Evidence attached', parent_id=parent.id)
+        db.session.add(reply)
+        db.session.flush()
+        file = db.session.get(FileAttachment, attachment_id)
+        file.comment_id = reply.id
+        filename, comment_id, number = file.original_name, reply.id, file.ticket.number
+        db.session.commit()
+    reason = 'Wrong evidence <script>alert(1)</script>'
+    response = client.post(f'/attachments/{attachment_id}/delete', data={'reason': reason}, follow_redirects=True)
+    assert response.status_code == 200
+    page = response.get_data(as_text=True)
+    note = re.search(rf'<article[^>]*id="comment-{comment_id}".*?</article>', page, re.S).group(0)
+    assert filename in note and 'Attachment deleted' in note
+    assert '&lt;script&gt;' in note and '<script>alert(1)</script>' not in page
+    assert f'/attachments/{attachment_id}"' not in note
+    with app.app_context():
+        assert db.session.get(Comment, comment_id).body == 'Evidence attached'
+        event = TaskHistory.query.filter_by(target_type='ticket', target_id=ticket_id, event='Attachment deleted').one()
+        assert reason in event.details and filename in event.details
+    from tests.test_ticket_details_api import bearer
+    comments = client.get(f'/api/v1/tickets/{number}/comments', headers=bearer(app)).json['data']
+    deleted = next(row for row in comments if row['id'] == comment_id)['deleted_attachments']
+    assert deleted[0]['name'] == filename and deleted[0]['reason'] == reason
+    assert deleted[0]['deleted_by']
+    assert client.get(f'/attachments/{attachment_id}').status_code == 404
+
+
+def test_failed_deletion_commit_preserves_attachment_and_file(client, app, monkeypatch):
+    ticket_id, attachment_id, stored_name = incident_with_attachment(client, app)
+    def fail():
+        raise RuntimeError('private database diagnostic')
+    with monkeypatch.context() as patch:
+        patch.setattr(db.session, 'commit', fail)
+        response = delete(client, attachment_id)
+    assert response.status_code == 500
+    assert b'private database diagnostic' not in response.data
+    with app.app_context():
+        assert db.session.get(FileAttachment, attachment_id)
+        assert os.path.exists(os.path.join(app.config['UPLOAD_FOLDER'], stored_name))
+        assert TaskHistory.query.filter_by(target_type='ticket', target_id=ticket_id, event='Attachment deleted').count() == 0
+
+
+import pytest
+
+
+@pytest.mark.skipif(os.getenv('RUN_ATTACHMENT_BROWSER') != '1', reason='Enable real-browser attachment deletion checks')
+@pytest.mark.parametrize('width', [1440, 390])
+def test_attachment_deletion_reason_browser(client, app, width):
+    import threading
+    from playwright.sync_api import sync_playwright, expect
+    from werkzeug.serving import make_server
+    ticket_id, attachment_id, _ = incident_with_attachment(client, app)
+    app.config.update(CSRF_ENABLED=True, SESSION_COOKIE_SECURE=False)
+    server = make_server('127.0.0.1', 0, app, threaded=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page(viewport={'width': width, 'height': 1000})
+            errors = []
+            page.on('pageerror', lambda error: errors.append(str(error)))
+            base = f'http://127.0.0.1:{server.server_port}'
+            page.goto(base + '/login')
+            page.locator('[name=username]').fill('admin')
+            page.locator('[name=password]').fill('Admin123!')
+            page.locator('button.primary').click()
+            page.wait_for_load_state('networkidle')
+            page.goto(base + f'/ticket/{ticket_id}#attachments')
+            form = page.locator(f'form[action="/attachments/{attachment_id}/delete"]')
+            form.locator('summary').focus()
+            form.locator('summary').press('Enter')
+            reason = form.get_by_label('Reason for deletion')
+            expect(reason).to_be_visible()
+            assert reason.evaluate('(el) => el.required && el.maxLength === 1000')
+            reason.fill('Uploaded to the wrong ticket')
+            page.on('dialog', lambda dialog: dialog.accept())
+            form.locator('button.attachment-delete-button').click()
+            page.wait_for_load_state('networkidle')
+            expect(form).to_have_count(0)
+            assert 'Uploaded to the wrong ticket' in page.locator('#event-history').inner_text()
+            assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+            assert not errors
+            browser.close()
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
