@@ -11397,3 +11397,63 @@ def test_rack_usage_preserves_fractional_u_without_double_counting(client, app):
     payload = json.loads(unescape(re.search(r'data-rack="([^"]+)"', response.text).group(1)))
     assert payload['stats']['space_used_u'] == 2
     assert payload['front'][0]['position'] == 5.5
+
+
+def test_mobile_cmdb_publishes_location_hardware_and_maintenance(client, app):
+    from datetime import date
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        group = SupportGroup.query.filter_by(tenant_id=admin.tenant_id).first()
+        rack = Rack(name="mobile-rack-42", site="Tokyo east DC", tenant_id=admin.tenant_id)
+        ci = ConfigurationItem(
+            name="mobile-detailed-server", ci_class="Server", location="Tokyo floor 3",
+            ip_address="192.0.2.42", serial_number="MOBILE-SN-42", vendor="Example vendor",
+            model="Rack server", description="Application host", owner=admin, support_group=group,
+            rack=rack, rack_position=12.5, rack_u_height=2, rack_face="Front",
+            install_date=date(2026, 1, 2), warranty_expiry_date=date(2029, 1, 2),
+        )
+        db.session.add_all([rack, ci]); db.session.commit()
+        group_name = group.name
+    signed_in = client.post("/api/v1/auth/mobile/login", headers={
+        "X-ServiceOps-App-Version": "1.3.2", "X-ServiceOps-App-Build": "8",
+        "X-ServiceOps-Platform": "iOS", "X-ServiceOps-Device": "iPhone17,1",
+    }, json={
+        "username": "admin", "password": "Admin123!", "provider": "local",
+    })
+    assert signed_in.status_code == 200
+    headers = {"Authorization": f"Bearer {signed_in.json['access_token']}"}
+    for search in ["mobile-detailed-server", "Tokyo floor 3", "Tokyo east DC", "mobile-rack-42", "MOBILE-SN-42"]:
+        response = client.get("/api/v1/mobile/cmdb", query_string={"q": search}, headers=headers)
+        assert response.status_code == 200
+        row = next(r for r in response.json["data"] if r["name"] == "mobile-detailed-server")
+        assert row["location"] == "Tokyo floor 3"
+        assert row["rack"] == {"name": "mobile-rack-42", "site": "Tokyo east DC", "position": 12.5, "u_height": 2, "face": "Front"}
+        assert row["vendor"] == "Example vendor" and row["serial_number"] == "MOBILE-SN-42"
+        assert row["owner"] == "System Administrator" and row["support_group"] == group_name
+        assert row["warranty_expiry_date"] == "2029-01-02"
+        assert "attributes" not in row
+
+
+def test_mobile_cmdb_excludes_cross_tenant_rack_metadata(client, app):
+    with app.app_context():
+        other = Tenant(slug="mobile-location-other", name="Other tenant")
+        db.session.add(other); db.session.flush()
+        rack = Rack(name="other-tenant-rack", site="secret-site-zz", tenant_id=other.id)
+        db.session.add(rack); db.session.flush()
+        db.session.add(ConfigurationItem(name="local-ci-crossrack", ci_class="Server", rack_id=rack.id))
+        db.session.add(ConfigurationItem(name="other-tenant-ci", ci_class="Server", tenant_id=other.id))
+        db.session.commit()
+    signed_in = client.post("/api/v1/auth/mobile/login", headers={
+        "X-ServiceOps-App-Version": "1.3.2", "X-ServiceOps-App-Build": "8",
+        "X-ServiceOps-Platform": "iOS", "X-ServiceOps-Device": "iPhone17,1",
+    }, json={
+        "username": "admin", "password": "Admin123!", "provider": "local",
+    })
+    assert signed_in.status_code == 200
+    headers = {"Authorization": f"Bearer {signed_in.json['access_token']}"}
+    response = client.get("/api/v1/mobile/cmdb?q=local-ci-crossrack", headers=headers)
+    assert response.status_code == 200
+    assert response.json["data"][0]["rack"] is None
+    assert client.get("/api/v1/mobile/cmdb?q=secret-site-zz", headers=headers).json["data"] == []
+    assert client.get("/api/v1/mobile/cmdb?q=other-tenant-ci", headers=headers).json["data"] == []
+    assert client.get("/api/v1/mobile/cmdb").status_code == 401
