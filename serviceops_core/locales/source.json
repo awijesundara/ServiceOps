@@ -8592,6 +8592,9 @@
    "id": "Select a valid approval rule and at most 100 executives."
   },
   {
+   "id": "Select a valid assignee."
+  },
+  {
    "id": "Select a valid condition field."
   },
   {

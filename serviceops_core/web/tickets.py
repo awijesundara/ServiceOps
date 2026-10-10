@@ -600,7 +600,10 @@ def register(app):
                 risk_score_overridden = False
             impact = request.form.get("impact", "Medium")
             urgency = request.form.get("urgency", "Medium")
-            priority = calculate_priority(impact, urgency)
+            try:
+                priority = calculate_priority(impact, urgency)
+            except ValueError as error:
+                return render_form(str(error))
             # Changes are classified by change model plus the affected CI/service,
             # not by the incident/request symptom tree.
             if kind == "change":
@@ -803,14 +806,21 @@ def register(app):
                     if not effective_role_has_action(current_user.effective_role, required_action):
                         abort(403)
                 require_ticket_team_access(ticket)
-                assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
+                try:
+                    assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
+                except ValueError:
+                    abort(400, description=tr("Select a valid assignee."))
                 eligible_ids = {agent.id for agent in ticket_team_agents(ticket)}
                 if assignee_id is not None and assignee_id not in eligible_ids:
                     flash(tr("The assignee must be an active member of the owning team."), "error")
                     return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 impact = request.form.get("impact", ticket.impact)
                 urgency = request.form.get("urgency", ticket.urgency)
-                calculated = calculate_priority(impact, urgency)
+                try:
+                    calculated = calculate_priority(impact, urgency)
+                except ValueError as error:
+                    flash(str(error), "error")
+                    return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 requested_priority = request.form.get("priority", calculated)
                 reason = request.form.get("priority_override_reason", "").strip()
                 governed_priority_input = "impact" in request.form or "urgency" in request.form
