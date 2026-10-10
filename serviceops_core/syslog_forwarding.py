@@ -98,7 +98,12 @@ class SyslogForwarder(logging.Handler):
             else:
                 connection = socket.create_connection((host, port), timeout=2)
                 try:
-                    self.connection = ssl.create_default_context().wrap_socket(connection, server_hostname=host) if transport == "tls" else connection
+                    if transport == "tls":
+                        context = ssl.create_default_context()
+                        context.minimum_version = ssl.TLSVersion.TLSv1_2
+                        self.connection = context.wrap_socket(connection, server_hostname=host)
+                    else:
+                        self.connection = connection
                 except Exception:
                     connection.close()
                     raise

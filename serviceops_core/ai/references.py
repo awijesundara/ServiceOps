@@ -73,5 +73,21 @@ def readable_references(text, sources):
         pieces.append(match.group(0))
         position = match.end()
     pieces.append(tokens.sub(resolve, text[position:]))
-    result = "".join(pieces)
-    return re.sub(r"(\[[^\]\n]+\]\([^\s()]+\))\s+\1", r"\1", result)
+    return _collapse_repeated_links("".join(pieces))
+
+
+def _collapse_repeated_links(text):
+    """Drop a Markdown link that only repeats the link just before it, with
+    nothing but whitespace between (a model citing the same source twice).
+    One pass over LINK matches -- a backreference regex was quadratic."""
+    kept, position, previous = [], 0, None
+    for match in LINK.finditer(text):
+        gap = text[position:match.start()]
+        if previous == match.group(0) and gap and not gap.strip():
+            position = match.end()
+            continue
+        kept.append(gap)
+        kept.append(match.group(0))
+        previous, position = match.group(0), match.end()
+    kept.append(text[position:])
+    return "".join(kept)

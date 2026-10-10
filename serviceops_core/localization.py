@@ -134,7 +134,9 @@ class _CatalogStore:
 @lru_cache(maxsize=64)
 def _load_catalog(code):
     empty = MappingProxyType({"messages": MappingProxyType({}), "calendar": MappingProxyType({})})
-    if code == SOURCE_LANGUAGE:
+    # Only codes named by the bundled index (each validated by _CODE) ever
+    # become a file name, whatever the caller passes.
+    if code == SOURCE_LANGUAGE or code not in LANGUAGES:
         return empty
     path = LOCALES / "messages" / f"{code}.json"
     if not path.is_file():

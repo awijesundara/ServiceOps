@@ -61,8 +61,10 @@ def _read_connect_response(sock, timeout):
 
 
 def _proxy_tls_context():
-    """Certificate- and hostname-verifying TLS context for https:// proxies."""
-    return ssl.create_default_context()
+    """Certificate- and hostname-verifying TLS 1.2+ context for https:// proxies."""
+    context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
 
 
 def _relay(inner, tls_sock):

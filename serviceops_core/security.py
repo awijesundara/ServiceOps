@@ -1,5 +1,7 @@
 """Declarative role/action policy for browser and future REST surfaces, plus
 secret-redaction and password-hashing helpers shared by app.py."""
+import hashlib
+import hmac
 import json
 import logging
 import re
@@ -71,7 +73,9 @@ def redact(text):
     return text
 
 
-EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+# The lookbehind starts a match only at the beginning of a local-part run,
+# and dot-terminated labels are unambiguous, so searching is linear time.
+EMAIL_PATTERN = re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}")
 # Deliberately narrow so dates (2026-09-20), ticket numbers (INC0000123), versions
 # and IP addresses are left alone: an international number with a leading "+", or a
 # domestic number that starts with 0 and is grouped by spaces or hyphens
@@ -187,6 +191,41 @@ def verify_password(password_hash, password):
         except (VerifyMismatchError, InvalidHashError):
             return False
     return _werkzeug_check_password_hash(password_hash, password)
+
+
+def _normalized_backup_code(code):
+    return (code or "").replace(" ", "").strip().lower()
+
+
+def hash_backup_code(code):
+    """Argon2id, like passwords. A backup code is only 40 random bits, so the
+    unsalted SHA-256 used before could be brute-forced offline from a copy of
+    the database in minutes."""
+    return hash_password(_normalized_backup_code(code))
+
+
+def _legacy_backup_code_digest(code):
+    # Verification of codes issued before Argon2id only; nothing new is
+    # stored this way, and these entries disappear when codes are regenerated.
+    return hashlib.sha256(code.encode()).hexdigest()
+
+
+def consume_backup_code(stored_hashes, code):
+    """Return `stored_hashes` without the entry matching `code`, or None when
+    nothing matches. Accepts Argon2id entries and legacy SHA-256 entries."""
+    normalized = _normalized_backup_code(code)
+    if not normalized or not isinstance(stored_hashes, list):
+        return None
+    for index, stored in enumerate(stored_hashes):
+        if not isinstance(stored, str):
+            continue
+        if is_argon2_hash(stored):
+            matched = verify_password(stored, normalized)
+        else:
+            matched = hmac.compare_digest(stored, _legacy_backup_code_digest(normalized))
+        if matched:
+            return stored_hashes[:index] + stored_hashes[index + 1:]
+    return None
 
 
 def verify_and_upgrade_password(password_hash, password):

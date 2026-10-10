@@ -141,9 +141,9 @@ def _operating_system(user_agent, hints):
     match = re.search(r"Android (\d+(?:\.\d+)?)", user_agent)
     if match:
         return f"Android {platform_version.split('.')[0] or match.group(1)}"
-    match = re.search(r"(iPhone|iPad)[^)]*OS (\d+)[_.](\d+)", user_agent)
-    if match:
-        return f"{'iOS' if match.group(1) == 'iPhone' else 'iPadOS'} {match.group(2)}.{match.group(3)}"
+    apple = _apple_mobile_os(user_agent)
+    if apple:
+        return apple
     match = re.search(r"Mac OS X (\d+)[_.](\d+)", user_agent)
     if match:
         return f"macOS {platform_version or match.group(1) + '.' + match.group(2)}".strip()
@@ -154,6 +154,39 @@ def _operating_system(user_agent, hints):
     return "Unknown OS"
 
 
+def _apple_mobile_os(user_agent):
+    """"iOS 18.1" / "iPadOS 17.4" from the device's own UA segment (up to the
+    next ")"). Parsed by position rather than one open-ended regex, which
+    backtracked quadratically on a header repeating "iPad"."""
+    found = [(user_agent.find(device), device) for device in ("iPhone", "iPad")]
+    found = sorted((index, device) for index, device in found if index >= 0)
+    if not found:
+        return None
+    start, device = found[0]
+    end = user_agent.find(")", start)
+    match = re.search(r"OS (\d{1,4})[_.](\d{1,4})", user_agent[start:end if end >= 0 else len(user_agent)])
+    if not match:
+        return None
+    return f"{'iOS' if device == 'iPhone' else 'iPadOS'} {match.group(1)}.{match.group(2)}"
+
+
+def _android_model(user_agent):
+    """The model in "(Linux; Android 14; Pixel 8 Build/AP1A)": the single
+    field after the Android version and before ")", without a Build/ suffix."""
+    start = user_agent.find("Android ")
+    while start >= 0:
+        end = user_agent.find(")", start)
+        if end < 0:
+            return None
+        fields = user_agent[start:end].split(";")
+        if len(fields) == 2 and fields[1].startswith(" ") and fields[1].strip():
+            model = fields[1].split(" Build/", 1)[0].strip()
+            if model:
+                return model
+        start = user_agent.find("Android ", start + 1)
+    return None
+
+
 def describe_device(headers):
     """A readable, user-specific device label, e.g. "Chrome 141 on Windows 11
     (x86 64-bit)" or "Chrome 141 on Android 15 · Pixel 8"."""
@@ -162,9 +195,9 @@ def describe_device(headers):
     label = f"{_browser(user_agent, hints)} on {_operating_system(user_agent, hints)}"
     model = hints["Sec-CH-UA-Model"].strip('"')
     if not model:
-        match = re.search(r"Android [^;)]*; ([^;)]+?)(?: Build/[^;)]*)?\)", user_agent)
-        if match and match.group(1).strip() not in {"K", "wv"}:
-            model = match.group(1).strip()
+        android_model = _android_model(user_agent)
+        if android_model and android_model not in {"K", "wv"}:
+            model = android_model
         elif "iPhone" in user_agent:
             model = "iPhone"
         elif "iPad" in user_agent:

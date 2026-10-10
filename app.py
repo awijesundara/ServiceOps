@@ -73,6 +73,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from werkzeug.http import dump_options_header
 from serviceops_core.localization import tr, tr_value
+from serviceops_core.safe_redirect import redirect_to_referrer
 
 
 def escape_like(value):
@@ -80,8 +81,8 @@ def escape_like(value):
     return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 from serviceops_core.security import (
-    hash_password, load_policy, redact, RedactingFilter, role_has_action,
-    validate_policy, verify_and_upgrade_password, verify_password,
+    consume_backup_code, hash_backup_code, hash_password, load_policy, redact, RedactingFilter,
+    role_has_action, validate_policy, verify_and_upgrade_password, verify_password,
 )
 from serviceops_core.priority import calculate_priority, validate_priority_policy
 from serviceops_core.business_time import add_business_minutes, validate_calendar
@@ -1038,10 +1039,8 @@ def verify_mfa_code(user, code):
         secret = settings_cipher().decrypt(user.mfa_secret_encrypted.encode()).decode()
         verified = pyotp.TOTP(secret).verify(code.replace(" ", ""), valid_window=1)
     if not verified and code and user.mfa_backup_codes_json:
-        remaining = json.loads(user.mfa_backup_codes_json)
-        code_hash = hash_backup_code(code.lower())
-        if code_hash in remaining:
-            remaining.remove(code_hash)
+        remaining = consume_backup_code(json.loads(user.mfa_backup_codes_json), code)
+        if remaining is not None:
             user.mfa_backup_codes_json = json.dumps(remaining)
             return True, True
     return verified, False
@@ -1165,10 +1164,6 @@ def user_requires_mfa_by_policy(user):
 
 def generate_mfa_backup_codes(count=10):
     return [secrets.token_hex(5) for _ in range(count)]
-
-
-def hash_backup_code(code):
-    return hashlib.sha256(code.encode()).hexdigest()
 
 
 _request_metric_buffer = {}
@@ -7592,10 +7587,7 @@ def create_app(test_config=None):
                 }
             }), 413
         flash(message, "error")
-        destination = request.referrer
-        if destination and destination.startswith(request.host_url):
-            return redirect(destination)
-        return redirect(url_for("dashboard"))
+        return redirect_to_referrer(url_for("dashboard"))
 
     @app.errorhandler(HTTPException)
     def http_error(error):
@@ -7964,4 +7956,10 @@ if __name__ == "__main__":
     # module so they share its state instead of loading a second copy of it.
     import app as _serviceops_app
 
-    _serviceops_app.create_app().run(host="0.0.0.0", port=8080, debug=True)
+    # Local development only (production runs gunicorn). The Werkzeug debugger
+    # executes arbitrary code for whoever reaches it, so it stays off unless
+    # FLASK_DEBUG=1, and the server binds loopback unless DEV_SERVER_HOST says otherwise.
+    _serviceops_app.create_app().run(
+        host=os.getenv("DEV_SERVER_HOST", "127.0.0.1"), port=8080,
+        debug=os.getenv("FLASK_DEBUG", "").strip().lower() in {"1", "true"},
+    )

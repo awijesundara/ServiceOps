@@ -68,6 +68,7 @@ from serviceops_models import (
     User,
 )
 from serviceops_core.localization import tr
+from serviceops_core.safe_redirect import redirect_to_referrer
 from serviceops_core.public_url import public_url_for
 
 
@@ -628,10 +629,7 @@ def _admin_referrer_redirect(fallback_endpoint, **fallback_kwargs):
         if re.fullmatch(r"group-[1-9][0-9]{0,9}", panel):
             destination = url_for("itil_admin_section", section=section, group=panel[6:]) + "#" + panel
         return redirect(destination, code=303)
-    destination = request.referrer
-    if destination and destination.startswith(request.host_url):
-        return redirect(destination)
-    return redirect(url_for(fallback_endpoint, **fallback_kwargs))
+    return redirect_to_referrer(url_for(fallback_endpoint, **fallback_kwargs))
 
 
 def analytics_kpis():
