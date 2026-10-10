@@ -447,10 +447,35 @@ def register(app):
         # reviews every field, picks the owning team and submits through the normal, fully validated path.
         ai_prefill = None
         if request.method == "GET" and request.args.get("ai") == "1":
-            limits = {"title": 180, "description": 1500, "impact": 10, "urgency": 10, "category": 80, "subcategory": 80}
-            ai_prefill = {name: request.args.get(name, "")[:size] for name, size in limits.items() if request.args.get(name)}
+            from serviceops_core.ai import access
+            from serviceops_core.ai.ticket_drafts import form_values
+            from werkzeug.datastructures import MultiDict
+            run_id = request.args.get("draft_run")
+            if run_id:
+                run = core.AIRun.query.filter_by(id=run_id, tenant_id=current_user.tenant_id,
+                                               user_id=current_user.id, kind="chat", status="completed").first_or_404()
+                scope = access.build_scope(current_user)
+                if run.actor_role != scope.role:
+                    abort(403, description=tr("Switch to the role used for this conversation."))
+                sources = json.loads(run.sources_json or "[]")
+                if not access.sources_still_accessible(scope, sources):
+                    abort(403, description=tr("This draft contains records you can no longer access."))
+                draft = json.loads(run.route_json or "{}").get("draft")
+                if not draft or draft.get("kind") != kind:
+                    abort(404)
+                ai_prefill = form_values(draft, scope.identity, sources)
+            else:
+                limits = {"title": 180, "description": 1500, "impact": 10, "urgency": 10, "category": 80, "subcategory": 80}
+                ai_prefill = MultiDict({name: request.args.get(name, "")[:size] for name, size in limits.items() if request.args.get(name)})
 
         def render_form(error=None):
+            from serviceops_core import read_access
+            values = request.form if error else ai_prefill
+            raw_ids = values.getlist("ci_id") if values else []
+            selected_ids = [int(raw) for raw in raw_ids if str(raw).isdigit()]
+            selected = {row.id: row for row in read_access.configuration_items(current_user).filter(
+                ConfigurationItem.id.in_(selected_ids or [-1])).all()}
+            initial_cis = [{"value": cid, "label": selected[cid].name} for cid in dict.fromkeys(selected_ids) if cid in selected]
             teams_query = core.team_groups()
             if kind == "change" and not role_at_least(current_user.effective_role, "admin"):
                 teams_query = teams_query.filter(SupportGroup.id.in_(team_ids or {-1}))
@@ -472,7 +497,7 @@ def register(app):
                     ).order_by(ChangeFreezeWindow.starts_at).all()
                     if kind == "change" else []
                 ),
-                form=request.form if error else ai_prefill, form_error=error, ai_prefill=bool(ai_prefill and not error),
+                form=values, prefill_cis=initial_cis, form_error=error, ai_prefill=bool(ai_prefill and not error),
             ), (400 if error else 200)
 
         if request.method == "POST":

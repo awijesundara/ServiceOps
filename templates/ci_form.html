@@ -127,7 +127,7 @@
 <section class="panel">
   <h2>{{ tr('Change history') }}</h2>
   <div class="event-stream">
-    {% for event in history %}<article class="event-entry">{{ user_avatar(event.actor, 'event-marker') }}<div class="event-body"><div><strong>{{ event.event }}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ event.actor.name if event.actor else tr('System') }}</small>{% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span>→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}</div></article>{% else %}<p class="muted">{{ tr('No changes recorded yet.') }}</p>{% endfor %}
+    {% for event in history %}<article class="event-entry">{{ user_avatar(event.actor, 'event-marker') }}<div class="event-body"><div><strong>{{ event.event }}{% if event.source_platform %} <span class="ai-collab-tag">{{ event.source_platform }}</span>{% endif %}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ event.actor.name if event.actor else tr('System') }}</small>{% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span>→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}</div></article>{% else %}<p class="muted">{{ tr('No changes recorded yet.') }}</p>{% endfor %}
   </div>
 </section>
 {% endif %}

@@ -78,7 +78,7 @@
   <header class="section-heading"><div><h2>{{ tr('History') }}</h2></div></header>
   <table><thead><tr><th>{{ tr('Event') }}</th><th>{{ tr('Field') }}</th><th>{{ tr('From') }}</th><th>{{ tr('To') }}</th><th>{{ tr('Actor') }}</th><th>{{ tr('When') }}</th></tr></thead><tbody>
     {% for event in history %}<tr>
-      <td>{{ event.event }}</td>
+      <td>{{ event.event }}{% if event.source_platform %} <span class="ai-collab-tag">{{ event.source_platform }}</span>{% endif %}</td>
       <td>{{ event.field_name or '—' }}</td>
       <td>{{ event.old_value or '—' }}</td>
       <td>{{ event.new_value or '—' }}</td>

@@ -1357,7 +1357,8 @@
    "id": "Background worker"
   },
   {
-   "id": "Backout plan"
+   "id": "Backout plan",
+   "javascript": true
   },
   {
    "id": "Backs up"
@@ -2151,6 +2152,10 @@
    "id": "Complete Markdown API guide"
   },
   {
+   "id": "Complete these fields before submitting: {fields}",
+   "javascript": true
+  },
+  {
    "id": "Completed"
   },
   {
@@ -2173,7 +2178,8 @@
    "id": "Configuration item/s"
   },
   {
-   "id": "Configuration items"
+   "id": "Configuration items",
+   "javascript": true
   },
   {
    "id": "Configuration items and the dependencies that connect business services."
@@ -3131,6 +3137,10 @@
   },
   {
    "id": "Draft published."
+  },
+  {
+   "id": "Draft {kind} needs more details",
+   "javascript": true
   },
   {
    "id": "Draft {kind} ready for you",
@@ -4263,7 +4273,8 @@
    "id": "Implementation"
   },
   {
-   "id": "Implementation plan"
+   "id": "Implementation plan",
+   "javascript": true
   },
   {
    "id": "Implementation, test, and backout plans are recorded on the change's first task — see"
@@ -6615,7 +6626,8 @@
    "id": "Owner is only meaningful for personally-assigned assets (laptops, phones). For servers, switches, and applications the owning support group above is what matters."
   },
   {
-   "id": "Owning IT team"
+   "id": "Owning IT team",
+   "javascript": true
   },
   {
    "id": "Owning support group{src}"
@@ -6845,13 +6857,21 @@
    "id": "Planned"
   },
   {
-   "id": "Planned end"
+   "id": "Planned end",
+   "javascript": true
+  },
+  {
+   "id": "Planned end (UTC)"
   },
   {
    "id": "Planned end date"
   },
   {
-   "id": "Planned start"
+   "id": "Planned start",
+   "javascript": true
+  },
+  {
+   "id": "Planned start (UTC)"
   },
   {
    "id": "Planned start date"
@@ -6913,6 +6933,9 @@
   },
   {
    "id": "Posted by"
+  },
+  {
+   "id": "Posted from {platform}"
   },
   {
    "id": "Posted to {number}; the requester is notified."
@@ -9764,7 +9787,8 @@
    "id": "Test notification delivered successfully."
   },
   {
-   "id": "Test plan"
+   "id": "Test plan",
+   "javascript": true
   },
   {
    "id": "Testing"
@@ -10155,10 +10179,13 @@
    "id": "This device's port"
   },
   {
+   "id": "This draft contains records you can no longer access."
+  },
+  {
    "id": "This draft has not been published. Only agents, managers and administrators can see it until it is published."
   },
   {
-   "id": "This draft was prepared by the AI assistant from your conversation. Check every field, choose the owning team, then create it. Nothing has been submitted yet."
+   "id": "This draft was prepared by the AI assistant from your conversation. Review every field and complete any missing information before creating it. Nothing has been submitted yet."
   },
   {
    "id": "This endpoint has not been allowlisted by the deployment operator. The operator must add {origin} to AI_SELF_HOSTED_ENDPOINTS (Helm ai.selfHostedEndpoints)."
@@ -10445,6 +10472,10 @@
   },
   {
    "id": "Unable to resolve at this time.",
+   "javascript": true
+  },
+  {
+   "id": "Unable to restore configuration item selections. Reload the page.",
    "javascript": true
   },
   {
@@ -11338,6 +11369,9 @@
   {
    "id": "change",
    "javascript": true
+  },
+  {
+   "id": "chat"
   },
   {
    "id": "choice"

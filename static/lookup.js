@@ -73,6 +73,14 @@ function initLookup(container) {
     }
   }
   syncRequired();
+  if (multiName && container.dataset.initialItems) {
+    try {
+      JSON.parse(container.dataset.initialItems).forEach(addChip);
+    } catch (error) {
+      console.error("Unable to restore configuration item selections", error);
+      input.setCustomValidity(tr("Unable to restore configuration item selections. Reload the page."));
+    }
+  }
 
   if (url.includes("/lookup/cis") && !input.disabled) {
     container.classList.add("lookup-has-browse");

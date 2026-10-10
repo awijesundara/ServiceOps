@@ -698,9 +698,10 @@ def register(app):
             route = {**route, "pages": pages}
         draft = (route or {}).get("draft")
         if draft:
+            params = {"draft_run": run_id} if run_id else {key: draft[key] for key in
+                      ("title", "description", "impact", "urgency", "category")}
             route = {**route, "draft": {**draft, "url": url_for(
-                "ticket_new", kind=draft["kind"], ai="1", title=draft["title"], description=draft["description"],
-                impact=draft["impact"], urgency=draft["urgency"], category=draft["category"])}}
+                "ticket_new", kind=draft["kind"], ai="1", **params)}}
         proposed_action = (route or {}).get("action")
         if proposed_action and run_id:
             public_action = {key: value for key, value in proposed_action.items() if key != "payload"}

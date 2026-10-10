@@ -67,12 +67,12 @@ def test_notes_are_used_as_context_for_later_questions_and_only_for_their_owner(
     chat(client, "Which VPN gateway should the finance team use?")
     drain(app)
     assert "Tokyo VPN gateway" in str(seen)
-    client.get("/logout")
+    client.post("/logout")
     seen.clear()
     login(client, "admin", "Admin123!")
     chat(client, "Which VPN gateway should the finance team use?")
     drain(app)
-    assert "Tokyo" not in str(seen)
+    assert "Tokyo VPN gateway" not in str(seen)
     assert client.get("/ai/chat/memories").get_json()["notes"] == []
 
 

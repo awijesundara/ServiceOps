@@ -75,7 +75,7 @@ def build_scope(user, role=None):
     if role not in CHAT_ROLES or role not in user.granted_roles:
         raise ScopeError("role not granted")
     identity = SimpleNamespace(id=user.id, tenant_id=user.tenant_id, role=role, effective_role=role,
-                               is_authenticated=True, active=True)
+                               is_authenticated=True, active=True, timezone=getattr(user, "timezone", "UTC"))
     return Scope(user.id, user.tenant_id, role, user.name or user.username, identity)
 
 
@@ -483,10 +483,19 @@ def sources_still_accessible(scope, sources):
 def chat_instructions(scope):
     from datetime import datetime, timezone
     from serviceops_core.ai import context
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    zone_name = getattr(scope.identity, "timezone", "UTC") or "UTC"
+    try:
+        zone = ZoneInfo(zone_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        from flask import current_app
+        current_app.logger.warning("Invalid AI requester timezone; using UTC")
+        zone_name, zone = "UTC", timezone.utc
+    local_now = datetime.now(timezone.utc).astimezone(zone)
     return (
         "You are the ServiceOps assistant: a friendly, capable helper for IT service management. "
         f"You are speaking with {scope.display_name}, whose access level is: {scope.summary()}. "
-        f"Today is {datetime.now(timezone.utc).strftime('%A %d %B %Y')} (UTC). "
+        f"Today is {local_now.strftime('%A %d %B %Y')} in {zone_name}. Current local date/time is {local_now.isoformat()}. Interpret tomorrow and unqualified clock times in this timezone, not UTC. "
         f"{context.capability_sentence(scope)} Adapt to this person's authority: use plain language for people who are "
         "not technical, and more detail for staff. "
         "You know only what is supplied in the user message: records, published knowledge, and organization facts such as "
@@ -511,6 +520,15 @@ def chat_instructions(scope):
         "exist. When you have enough, say you have prepared a draft for them to review, then add one final line exactly "
         'like: [[TICKET]] {"kind":"incident","title":"...","description":"...","impact":"Low|Medium|High|Critical",'
         f'"urgency":"Low|Medium|High|Critical","category":"{"|".join(_tenant_categories(scope.tenant_id))}"}} '
+        "For a change, the TICKET JSON must also include change_type (Normal, Standard or Emergency), "
+        "group_name (an eligible supplied team name), ci_sources (the supplied CI source IDs such as [\"S4\"]), "
+        "planned_start and planned_end as ISO-8601 timestamps with timezone offsets, implementation_plan, test_plan "
+        "and backout_plan. Populate all of those fields from the request and supplied evidence. Keep the full plans "
+        "in their separate JSON fields, not just in the description. Draft careful step-by-step implementation, "
+        "verification and rollback procedures, including prerequisites and stop conditions, without asserting "
+        "unverified backups, compatibility, commands or completed work. Risk is calculated by the server; do not invent "
+        "a risk override. If a required fact or target is ambiguous, ask a focused question or explicitly list the "
+        "missing fields; do not call an incomplete draft complete. Never invent a CI source or team. "
         "(kind may be change only if this person may raise changes). The person reviews and submits it themselves. "
         "FOLLOW-UPS: end every answer with one last line: [[FOLLOWUPS]] first question | second question | third question "
         "(short things this person might ask next, at most three). "
@@ -638,7 +656,7 @@ def extract_extras(text, may_raise_change=False, tenant_id=None):
         if isinstance(data, dict):
             kind = str(data.get("kind", "incident")).lower()
             title = " ".join(str(data.get("title", "")).split())[:180]
-            description = str(data.get("description", "")).strip()[:1500]
+            description = str(data.get("description", "")).strip()[:10000]
             if kind == "change" and not may_raise_change:
                 kind = ""
             if kind in ("incident", "change") and title and description:
@@ -647,6 +665,8 @@ def extract_extras(text, may_raise_change=False, tenant_id=None):
                                    "impact": pick(data.get("impact"), _LEVELS, "Medium"),
                                    "urgency": pick(data.get("urgency"), _LEVELS, "Medium"),
                                    "category": pick(data.get("category"), categories, "")}
+                from serviceops_core.ai.ticket_drafts import additional_fields
+                extras["draft"].update(additional_fields(data))
     note = re.search(r"\[\[\s*REMEMBER\s*\]\]\s*(.+?)\s*(?:\[\[|$)", text, re.I | re.S)
     if note:
         candidate = " ".join(note.group(1).split()).strip(" \"'")[:240]

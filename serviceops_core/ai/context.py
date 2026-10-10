@@ -186,7 +186,12 @@ def _teams(scope):
     rows = team_groups(scope.tenant_id).limit(20).all()
     if not rows:
         return None
-    return "Support teams", "Teams that fulfil incidents and changes: " + ", ".join(r.name for r in rows) + "."
+    from app import user_support_group_ids, role_at_least
+    member_ids = user_support_group_ids(scope.identity)
+    return "Support teams", "Teams that fulfil incidents and changes: " + ", ".join(
+        r.name + (" (eligible for changes)" if r.active and r.manager and r.manager.active and
+                  (role_at_least(scope.role, "admin") or r.id in member_ids) else " (not eligible for changes)")
+        for r in rows) + "."
 
 
 def _governance(scope):
@@ -223,6 +228,8 @@ def add_organization_context(scope, question, evidence, base):
         builders.append(lambda: _stats(scope, base))
     if "freeze" in found:
         builders.append(lambda: _freeze(scope))
+        if "about" in found:
+            builders.append(lambda: _teams(scope))
     for name, builder in (("catalog", _catalog), ("services", _services), ("sla", _sla), ("teams", _teams),
                           ("governance", _governance)):
         if name in found:

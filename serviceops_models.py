@@ -556,6 +556,7 @@ class Comment(db.Model):
     parent_id = db.Column(db.Integer, db.ForeignKey("comment.id"), nullable=True, index=True)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     # True when ServiceOps AI drafted the text and the author approved and posted it.
+    source_platform = db.Column(db.String(30), nullable=True)
     ai_assisted = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     author = db.relationship("User")
     replies = db.relationship(
@@ -2453,6 +2454,7 @@ class TaskHistory(db.Model):
     target_type = db.Column(db.String(30), nullable=False, index=True)
     target_id = db.Column(db.Integer, nullable=False, index=True)
     actor_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    source_platform = db.Column(db.String(30), nullable=True)
     event = db.Column(db.String(60), nullable=False)
     field_name = db.Column(db.String(80))
     old_value = db.Column(db.Text, default="")
