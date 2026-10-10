@@ -8,7 +8,7 @@
 
 Self-hosted IT service management for incidents, requests, changes, assets and approvals.
 
-[![Version](https://img.shields.io/badge/version-1.113.29-003E4C?style=for-the-badge)](https://github.com/awijesundara/ServiceOps/releases)
+[![Version](https://img.shields.io/badge/version-1.113.30-003E4C?style=for-the-badge)](https://github.com/awijesundara/ServiceOps/releases)
 [![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://github.com/awijesundara/ServiceOps/wiki/Deployment-and-Recovery)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)](charts/serviceops)
