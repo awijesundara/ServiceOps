@@ -3,6 +3,7 @@
 Moved from app.create_app(); endpoint names are unchanged."""
 import csv
 import io
+import json
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -10,6 +11,7 @@ from flask import abort, current_app, flash, jsonify, redirect, render_template,
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
+from serviceops_core.attachment_history import deleted_comment_attachments
 from werkzeug.exceptions import HTTPException
 
 import app as core
@@ -1096,6 +1098,7 @@ def register(app):
             related=related_records("ticket", ticket.id),
             relation_labels=RELATION_LABELS, work_tasks=work_tasks,
             work_task_states=OPERATIONAL_TASK_TRANSITIONS, history=history,
+            deleted_attachments=deleted_comment_attachments(history),
             internal_view=internal_view,
             ci_links=ci_links,
             rack_cis=rack_cis,
@@ -2462,22 +2465,36 @@ def register(app):
     @app.post("/attachments/<int:attachment_id>/delete")
     @login_required
     def attachment_delete(attachment_id):
-        attachment = db.get_or_404(FileAttachment, attachment_id)
-        if attachment.ticket_id is None:
-            abort(404)
-        if not user_can_delete_attachment(current_user, attachment):
-            abort(403, description=tr("You do not have permission to delete this attachment."))
-        ticket_id, name = attachment.ticket_id, attachment.original_name
-        stored_name, reference = attachment.stored_name, attachment.ipfs_cid or attachment.stored_name
-        log_history("ticket", ticket_id, "Attachment deleted", details=f"{name} ({attachment.size_bytes} bytes)")
-        audit("attach-delete", attachment.ticket.number, name)
-        db.session.delete(attachment)
-        db.session.commit()
-        # Only after the record is gone, so a failed commit never loses the file.
+        try:
+            attachment = db.get_or_404(FileAttachment, attachment_id)
+            if attachment.ticket_id is None:
+                abort(404)
+            if not user_can_delete_attachment(current_user, attachment):
+                abort(403, description=tr("You do not have permission to delete this attachment."))
+            reason = request.form.get("reason", "").strip()
+            if not reason or len(reason) > 1000:
+                abort(400, description=tr("Enter a deletion reason between 1 and 1000 characters."))
+            ticket_id, name = attachment.ticket_id, attachment.original_name
+            stored_name, reference = attachment.stored_name, attachment.ipfs_cid or attachment.stored_name
+            comment_id = attachment.comment_id if attachment.comment and attachment.comment.ticket_id == ticket_id else None
+            metadata = {"schema_version": 1, "attachment_id": attachment.id,
+                        "comment_id": comment_id, "name": name, "reason": reason}
+            log_history("ticket", ticket_id, "Attachment deleted", old_value=json.dumps(metadata),
+                        details=f"{name} ({attachment.size_bytes} bytes). Reason: {reason}")
+            audit("attach-delete", attachment.ticket.number, f"{name}. Reason: {reason}")
+            db.session.delete(attachment)
+            db.session.commit()
+        except HTTPException:
+            raise
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Attachment deletion failed")
+            abort(500, description=tr("Unable to delete the attachment. Please try again."))
+        # Remove bytes only after the deletion and its audit record are durable.
         try:
             current_storage().delete_file(stored_name, reference)
-        except Exception:  # noqa: BLE001 - the record is already removed; keep the response clean
-            current_app.logger.warning("Stored file for deleted attachment could not be removed: %s", stored_name)
+        except Exception:
+            current_app.logger.exception("Stored file cleanup failed for deleted attachment %s", attachment_id)
         flash(tr("{name} was deleted.", name=name), "success")
         return redirect(url_for("ticket_detail", ticket_id=ticket_id) + "#attachments")
 
