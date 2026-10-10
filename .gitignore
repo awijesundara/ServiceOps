@@ -56,14 +56,8 @@ tools/offline/vendor.tar.gz
 .DS_Store
 *.log
 
-# Internal planning/governance docs and release evidence: kept locally only.
-# The public repo ships the app plus the install/operations PDF.
-docs/BACKLOG.md
-docs/ENGINEERING_REFERENCE.md
-docs/DEPLOYMENT.md
-docs/DOCUMENTATION_INDEX.md
-docs/archive/
-docs/screenshots/
+# Product documentation and visual resources live exclusively in the wiki.
+docs/
 release-evidence/
 
 # AI assistant (Claude, Codex) development instructions stay local.
