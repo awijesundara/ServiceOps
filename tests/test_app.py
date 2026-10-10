@@ -11427,7 +11427,8 @@ def test_mobile_cmdb_publishes_location_hardware_and_maintenance(client, app):
         assert response.status_code == 200
         row = next(r for r in response.json["data"] if r["name"] == "mobile-detailed-server")
         assert row["location"] == "Tokyo floor 3"
-        assert row["rack"] == {"name": "mobile-rack-42", "site": "Tokyo east DC", "position": 12.5, "u_height": 2, "face": "Front"}
+        assert row["rack"]["capacity"] == 42
+        assert {k: v for k, v in row["rack"].items() if k not in {"id", "capacity"}} == {"name": "mobile-rack-42", "site": "Tokyo east DC", "position": 12.5, "u_height": 2, "face": "Front"}
         assert row["vendor"] == "Example vendor" and row["serial_number"] == "MOBILE-SN-42"
         assert row["owner"] == "System Administrator" and row["support_group"] == group_name
         assert row["warranty_expiry_date"] == "2029-01-02"
@@ -11457,3 +11458,36 @@ def test_mobile_cmdb_excludes_cross_tenant_rack_metadata(client, app):
     assert client.get("/api/v1/mobile/cmdb?q=secret-site-zz", headers=headers).json["data"] == []
     assert client.get("/api/v1/mobile/cmdb?q=other-tenant-ci", headers=headers).json["data"] == []
     assert client.get("/api/v1/mobile/cmdb").status_code == 401
+
+
+def test_mobile_rack_view_is_tenant_and_class_scoped(client, app):
+    with app.app_context():
+        rack = Rack(name="mobile-view-rack", site="Tokyo", u_height=24)
+        other = Tenant(slug="rack-view-other", name="Other tenant")
+        db.session.add_all([rack, other]); db.session.flush()
+        foreign = Rack(name="foreign-rack", tenant_id=other.id)
+        db.session.add(foreign); db.session.flush()
+        rack_id, foreign_id = rack.id, foreign.id
+        db.session.add_all([
+            ConfigurationItem(name="rack-visible-server", ci_class="Server", rack=rack,
+                              rack_position=8.5, rack_u_height=2, rack_face="front"),
+            ConfigurationItem(name="rack-hidden-printer", ci_class="Printer", rack=rack),
+            ConfigurationItem(name="rack-foreign-server", ci_class="Server", rack=rack, tenant_id=other.id),
+            CiClassPermission(tenant_id=1, ci_class="Printer", role="admin", can_read=False),
+        ])
+        db.session.commit()
+    sign_in = client.post("/api/v1/auth/mobile/login", headers={
+        "X-ServiceOps-App-Version": "1.3.2", "X-ServiceOps-App-Build": "8",
+        "X-ServiceOps-Platform": "iOS", "X-ServiceOps-Device": "iPhone17,1",
+    }, json={"username": "admin", "password": "Admin123!", "provider": "local"})
+    assert sign_in.status_code == 200
+    headers = {"Authorization": f"Bearer {sign_in.json['access_token']}"}
+    response = client.get(f"/api/v1/mobile/racks/{rack_id}", headers=headers)
+    assert response.status_code == 200
+    data = response.json["data"]
+    assert data["capacity"] == 24 and data["site"] == "Tokyo"
+    assert [row["name"] for row in data["assets"]] == ["rack-visible-server"]
+    assert data["assets"][0]["position"] == 8.5
+    assert response.json["meta"]["truncated"] is False
+    assert client.get(f"/api/v1/mobile/racks/{foreign_id}", headers=headers).status_code == 404
+    assert client.get(f"/api/v1/mobile/racks/{rack_id}").status_code == 401

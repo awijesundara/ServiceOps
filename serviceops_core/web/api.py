@@ -1466,7 +1466,8 @@ def register(app):
                     "install_date": row.install_date.isoformat() if row.install_date else None,
                     "warranty_expiry_date": row.warranty_expiry_date.isoformat() if row.warranty_expiry_date else None,
                     "updated_at": row.updated_at.isoformat(),
-                    "rack": {"name": rack.name, "site": rack.site, "position": row.rack_position,
+                    "rack": {"id": rack.id, "capacity": rack.u_height,
+                             "name": rack.name, "site": rack.site, "position": row.rack_position,
                              "u_height": row.rack_u_height, "face": row.rack_face} if rack else None,
                 })
             return jsonify({"data": data, "meta": {"limit": 100, "returned": len(data)}})
@@ -1476,6 +1477,35 @@ def register(app):
             db.session.rollback()
             app.logger.exception("Mobile CMDB lookup failed")
             abort(500, description=tr("Unable to load assets. Please try again."))
+
+    @app.get("/api/v1/mobile/racks/<int:rack_id>")
+    def api_mobile_rack(rack_id):
+        try:
+            mobile_only()
+            if not role_at_least(g.api_user.effective_role, "agent"):
+                abort(403, description=tr("Rack mobile access requires the agent role."))
+            tenant_id = g.api_user.tenant_id
+            rack = Rack.query.filter_by(id=rack_id, tenant_id=tenant_id).first_or_404()
+            query = restrict_ci_query_to_readable_classes(
+                ConfigurationItem.query.filter_by(tenant_id=tenant_id, rack_id=rack.id),
+                tenant_id, g.api_user.effective_role,
+            )
+            rows = query.order_by(ConfigurationItem.name, ConfigurationItem.id).limit(1001).all()
+            truncated = len(rows) > 1000
+            return jsonify({"data": {
+                "id": rack.id, "name": rack.name, "site": rack.site, "capacity": rack.u_height,
+                "active": rack.active,
+                "assets": [{"id": row.id, "name": row.name, "ci_class": row.ci_class,
+                            "status": row.operational_status, "ip_address": row.ip_address,
+                            "position": row.rack_position, "u_height": row.rack_u_height,
+                            "face": row.rack_face} for row in rows[:1000]],
+            }, "meta": {"truncated": truncated, "limit": 1000}})
+        except HTTPException:
+            raise
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Mobile rack lookup failed")
+            abort(500, description=tr("Unable to load the rack. Please try again."))
 
     @app.get("/api/v1/tickets/<number>/comments")
     def api_ticket_comments(number):

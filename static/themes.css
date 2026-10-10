@@ -1,0 +1,13 @@
+/* Account palettes: semantic status colors remain owned by the application. */
+body.theme-navy{--brand-teal:#24496b;--brand-teal-strong:#172f48;--brand-teal-soft:#eaf0f6;--brand-amber:#d9af66;--brand-amber-soft:#f8f0e2;--bg:#f3f6fa;--ink:#172b40;--muted:#52677b;--line:#d4dee8}
+body.theme-slate{--brand-teal:#445365;--brand-teal-strong:#283441;--brand-teal-soft:#edf0f4;--brand-amber:#d6b675;--brand-amber-soft:#f7f1e6;--bg:#f5f6f8;--ink:#202c39;--muted:#576573;--line:#d8dde3}
+body.theme-forest{--brand-teal:#285b4d;--brand-teal-strong:#193d34;--brand-teal-soft:#eaf2ee;--brand-amber:#d9b06c;--brand-amber-soft:#f8f1e6;--bg:#f5f7f3;--ink:#20382f;--muted:#52685c;--line:#d4dfd6}
+body:is(.theme-navy,.theme-slate,.theme-forest){--nav:var(--brand-teal-strong);--green:var(--brand-teal);--green-dark:var(--brand-teal-strong);--shadow:0 2px 8px rgba(20,35,45,.08)}
+body:is(.theme-navy,.theme-slate,.theme-forest) .unified-nav{border-bottom-color:var(--line)}
+body:is(.theme-navy,.theme-slate,.theme-forest) .global-search input{background:var(--brand-teal-soft)}
+body:is(.theme-navy,.theme-slate,.theme-forest) th{background:var(--brand-teal-soft);color:var(--muted);border-bottom-color:var(--line)}
+body:is(.theme-navy,.theme-slate,.theme-forest) tbody tr:hover{background:var(--brand-teal-soft)}
+body:is(.theme-navy,.theme-slate,.theme-forest).high-contrast{--ink:#111b22;--muted:#293b45;--line:#657780;--green:#003e4c;--green-dark:#002f3a}
+.theme-swatch-navy{--sw-bg:#f3f6fa;--sw-nav:#172f48;--sw-card:#fff;--sw-bar:#24496b;--sw-line:#d4dee8}
+.theme-swatch-slate{--sw-bg:#f5f6f8;--sw-nav:#283441;--sw-card:#fff;--sw-bar:#445365;--sw-line:#d8dde3}
+.theme-swatch-forest{--sw-bg:#f5f7f3;--sw-nav:#193d34;--sw-card:#fff;--sw-bar:#285b4d;--sw-line:#d4dfd6}
