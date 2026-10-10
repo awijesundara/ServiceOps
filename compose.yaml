@@ -105,6 +105,7 @@ services:
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
       WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-ServiceOps}
       WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       APPLE_PASSKEY_APP_ID: ${APPLE_PASSKEY_APP_ID:-}
       UPLOAD_FOLDER: /app/uploads
       LOG_DIR: /app/logs

@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import re
+import shutil
 import tempfile
 import uuid
 from io import BytesIO
@@ -60,7 +61,7 @@ from app import (APIClient, APIIdempotencyRecord, APIRateLimitWindow, Approval, 
                  scan_attachment, simulate_workflows,
                  integration_endpoint_valid, integration_endpoint_resolves_safely,
                  is_safe_internal_path, process_outbox,
-                 provision_external_user, secret_value, settings_cipher, user_is_local,
+                 provision_external_user, ExternalIdentityLinkRefused, secret_value, settings_cipher, user_is_local,
                  setting_bool,
                  rotate_audit_integrity_key, tenant_context_id, TenantResolutionError,
                  transition_operational_task, transition_ticket,
@@ -103,7 +104,12 @@ RSA_TEST_PRIVATE_KEY_PEM = _generate_test_rsa_private_key_pem()
 def app():
     fd, path = tempfile.mkstemp()
     os.close(fd)
-    app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}"})
+    # A private upload folder per test: the default instance/uploads is shared
+    # by every xdist worker, so tests that compare its contents raced.
+    upload_folder = tempfile.mkdtemp(prefix="serviceops-uploads-")
+    app = create_app({
+        "TESTING": True, "SQLALCHEMY_DATABASE_URI": f"sqlite:///{path}", "UPLOAD_FOLDER": upload_folder,
+    })
     with app.app_context():
         employee = User(
             username="employee", name="Test Employee", email="employee@test.invalid",
@@ -143,6 +149,7 @@ def app():
         db.session.commit()
     yield app
     os.unlink(path)
+    shutil.rmtree(upload_folder, ignore_errors=True)
 
 
 @pytest.fixture()
@@ -2414,9 +2421,12 @@ def test_cloudflare_access_sso_verifies_signature_audience_and_expiry(app, clien
     other_key = RSAKey.generate_key(2048, parameters={"kid": "other-kid"}, private=True)
     key_set = KeySet([key])
 
-    def make_token(email="admin@example.local", aud="test-aud", exp=None, signing_key=key, kid="test-kid"):
+    def make_token(email="admin@example.local", aud="test-aud", exp=None, signing_key=key, kid="test-kid",
+                   iss="https://test.cloudflareaccess.com"):
         header = {"alg": "RS256", "kid": kid}
         claims = {"email": email, "aud": aud, "exp": exp if exp is not None else 9999999999}
+        if iss is not None:
+            claims["iss"] = iss
         return joserfc_jwt.encode(header, claims, signing_key)
 
     app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = "test.cloudflareaccess.com"
@@ -2446,6 +2456,22 @@ def test_cloudflare_access_sso_verifies_signature_audience_and_expiry(app, clien
 
         # Signed by a key not in our JWKS must be rejected
         response = client.get("/login", headers={"Cf-Access-Jwt-Assertion": make_token(signing_key=other_key, kid="other-kid")})
+        assert b"name=\"username\"" in response.data
+
+        # Issued for another Access team, or with no issuer at all, is rejected
+        response = client.get("/login", headers={"Cf-Access-Jwt-Assertion": make_token(iss="https://evil.cloudflareaccess.com")})
+        assert b"name=\"username\"" in response.data
+        response = client.get("/login", headers={"Cf-Access-Jwt-Assertion": make_token(iss=None)})
+        assert b"name=\"username\"" in response.data
+
+        # Two accounts whose emails differ only in case: neither is signed in
+        with app.app_context():
+            db.session.add(User(
+                username="admin-case-variant", name="Variant", email="Admin@Example.local",
+                password_hash=generate_password_hash(uuid.uuid4().hex), role="requester",
+            ))
+            db.session.commit()
+        response = client.get("/login", headers={"Cf-Access-Jwt-Assertion": make_token()})
         assert b"name=\"username\"" in response.data
     finally:
         app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = ""
@@ -5300,6 +5326,85 @@ def test_keycloak_provisioning_applies_mapped_profile_attrs(app):
         assert relogged.location == "Austin HQ"
 
 
+
+def test_keycloak_never_adopts_an_existing_account_by_username_or_unverified_email(app):
+    """An OIDC preferred_username and an unverified email are both chosen by
+    whoever registers in the realm. Neither may link that registration to an
+    existing ServiceOps account -- above all the local administrator."""
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        admin_id, admin_email = admin.id, admin.email
+
+        # Same username as the administrator: a fresh, unprivileged account.
+        squatter = provision_external_user(
+            "keycloak", "attacker-1", "admin", "Mallory", "mallory@example.test", {},
+            email_verified=True,
+        )
+        db.session.commit()
+        assert squatter.id != admin_id
+        assert squatter.username != "admin"
+        assert squatter.role == "requester"
+
+        # Administrator's email, but unverified (any case): refused outright.
+        for claimed in (admin_email, admin_email.upper()):
+            with pytest.raises(ExternalIdentityLinkRefused):
+                provision_external_user(
+                    "keycloak", "attacker-2", "mallory2", "Mallory", claimed, {},
+                    email_verified=False,
+                )
+            db.session.rollback()
+        assert ExternalIdentity.query.filter_by(user_id=admin_id).count() == 0
+
+        # A new account with an unverified, unclaimed address does not record
+        # it, so the address's real owner cannot later be routed to it.
+        unverified = provision_external_user(
+            "keycloak", "attacker-3", "mallory3", "Mallory", "future.hire@example.test", {},
+        )
+        db.session.commit()
+        assert unverified.email.endswith("@external.serviceops.local")
+
+        # A returning identity cannot rewrite its email from an unverified claim.
+        provision_external_user(
+            "keycloak", "attacker-1", "admin", "Mallory", "ceo@example.test", {},
+            email_verified=False,
+        )
+        db.session.commit()
+        assert db.session.get(User, squatter.id).email == "mallory@example.test"
+
+
+def test_keycloak_adopts_an_existing_account_by_verified_email(app):
+    with app.app_context():
+        preexisting = User(
+            username="carol", name="Carol", email="Carol@Example.test",
+            password_hash=generate_password_hash(uuid.uuid4().hex), role="requester",
+        )
+        db.session.add(preexisting)
+        db.session.commit()
+        user = provision_external_user(
+            "keycloak", "carol-subject", "carol.k", "Carol", "carol@example.test", {},
+            email_verified=True,
+        )
+        db.session.commit()
+        assert user.id == preexisting.id
+        assert user.email == "carol@example.test"
+        assert ExternalIdentity.query.filter_by(provider="keycloak", user_id=user.id).count() == 1
+
+
+def test_profile_email_must_be_valid_and_unique_in_any_case(client, app):
+    login(client, "employee", "Employee123!")
+    with app.app_context():
+        admin_email = User.query.filter_by(username="admin").one().email
+        original = User.query.filter_by(username="employee").one().email
+    base = {"name": "Employee", "timezone": "Asia/Tokyo", "date_format": "system"}
+    for rejected in ("not-an-email", admin_email.upper()):
+        response = client.post("/profile", data={**base, "email": rejected})
+        assert response.status_code == 302
+        with app.app_context():
+            assert User.query.filter_by(username="employee").one().email == original
+    client.post("/profile", data={**base, "email": "  New.Address@Example.TEST "})
+    with app.app_context():
+        assert User.query.filter_by(username="employee").one().email == "new.address@example.test"
+
 def test_manual_role_grant_survives_directory_login(app):
     """An admin directly granting a user an extra role (e.g. admin, via a
     UserRoleGrant with no ManagedRoleGrant backing) must survive that
@@ -7322,7 +7427,8 @@ def test_cloudflare_access_login_respects_lockout_and_mfa(app):
 
     def make_token(email):
         header = {"alg": "RS256", "kid": "test-kid"}
-        claims = {"email": email, "aud": "test-aud", "exp": 9999999999}
+        claims = {"email": email, "aud": "test-aud", "exp": 9999999999,
+                  "iss": "https://test.cloudflareaccess.com"}
         return joserfc_jwt.encode(header, claims, key)
 
     app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = "test.cloudflareaccess.com"
