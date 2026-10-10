@@ -105,6 +105,31 @@ def test_prompt_uses_user_timezone_and_requires_change_fields(app, world):
             assert value in prompt
 
 
+def test_named_ci_precedes_inventory_keyword_matches(app, world):
+    with app.app_context():
+        team = SupportGroup.query.filter_by(name='Database').one()
+        db.session.add_all([ConfigurationItem(name=f'host{n:05d}.example.com', ci_class='Server',
+                                             vendor='Dell', model='R640', tenant_id=1) for n in range(20)])
+        target = ConfigurationItem(name='SAMPLE Dell R640 Front', ci_class='Server', tenant_id=1,
+                                   support_group_id=team.id)
+        rear = ConfigurationItem(name='SAMPLE Dell R640 Rear', ci_class='Server', tenant_id=1)
+        hidden = ConfigurationItem(name=target.name, ci_class='Server', tenant_id=2)
+        db.session.add_all([target, rear, hidden])
+        db.session.commit()
+        question = 'Prepare a new Normal change for SAMPLE Dell R640 Front tomorrow 8 am to 9 am to upgrade the OS.'
+        evidence = access.collect_chat_evidence(scope_for(world.admin), question)
+        cis = [s for s in evidence.sources if s['kind'] == 'ci']
+        assert [s['record_id'] for s in cis] == [target.id]
+        assert hidden.id not in [s['record_id'] for s in cis]
+        source = {'id': 'S99', 'kind': 'ci', 'record_id': rear.id, 'title': rear.name}
+        cis.append(source)
+        fields = {**draft_fields(), 'ci_sources': [source['id']], 'group_name': 'Database'}
+        draft = access.extract_extras('[[TICKET]] ' + json.dumps(fields), may_raise_change=True, tenant_id=1)['draft']
+        bound = bind_draft(draft, scope_for(world.admin).identity, cis, question=question)
+        assert bound['ci_ids'] == [] and 'ci_ids' in bound['missing_fields']
+        assert form_values(bound, scope_for(world.admin).identity, cis).getlist('ci_id') == []
+
+
 import os
 import pytest
 

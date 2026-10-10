@@ -42,12 +42,19 @@ def additional_fields(data):
         raise
 
 
-def bind_draft(draft, identity, sources):
+def bind_draft(draft, identity, sources, question=None):
     """Use supplied CI evidence and eligible teams; never guess an unseen record."""
     try:
         import app as core
         result = dict(draft)
         known = {s['id']: s['record_id'] for s in sources if s.get('kind') == 'ci'}
+        if question:
+            import re
+            normalized = ' '.join(question.casefold().split())
+            named = {s['id'] for s in sources if s.get('kind') == 'ci' and s.get('title') and
+                     re.search(r'(?<!\w)' + re.escape(' '.join(s['title'].casefold().split())) + r'(?!\w)', normalized)}
+            if named:
+                result['ci_sources'] = [s for s in result.get('ci_sources', []) if s in named]
         ids = list(dict.fromkeys(known[s] for s in result.get('ci_sources', []) if s in known))
         cis = {ci.id: ci for ci in read_access.configuration_items(identity).filter(core.ConfigurationItem.id.in_(ids or [-1])).all()}
         result['ci_ids'] = [i for i in ids if i in cis]

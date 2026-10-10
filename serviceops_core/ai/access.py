@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass
 from types import SimpleNamespace
 
-from sqlalchemy import or_
+from sqlalchemy import case, or_
 
 from serviceops_core import read_access
 from serviceops_core.security import mask_pii, redact
@@ -305,6 +305,30 @@ def expanded_keywords(text, limit=14):
     return list(dict.fromkeys(expanded))[:limit]
 
 
+def ci_name_phrases(question):
+    """Bounded literal name candidates from the question, with no model-generated identifiers."""
+    try:
+        tokens = (question or '').lower().split()[:100]
+        return list(dict.fromkeys(' '.join(tokens[start:start + size]).strip('.,;:!?\"\'')
+                                  for size in range(1, 13) for start in range(len(tokens) - size + 1)))
+    except Exception:
+        from flask import current_app
+        current_app.logger.exception('AI CI name matching failed')
+        raise
+
+
+def ci_relevance(question, words):
+    """Rank target-name matches before generic inventory metadata."""
+    try:
+        name = db.func.lower(ConfigurationItem.name)
+        return case((name.in_(ci_name_phrases(question)), 1000), else_=0) + sum(
+            (case((name.contains(word, autoescape=True), 1), else_=0) for word in words), 0)
+    except Exception:
+        from flask import current_app
+        current_app.logger.exception('AI CI relevance calculation failed')
+        raise
+
+
 def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
     """Everything the assistant may know for this question, under this identity."""
     evidence = Evidence(scanner=scanner)
@@ -376,14 +400,18 @@ def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
         for row in articles:
             evidence.add("knowledge", row.id, knowledge_number(row.id), row.title, row.body)
         if scope.can_read_cmdb and not KNOWLEDGE_ONLY.search(question or ""):
-            for row in read_access.configuration_items(scope.identity).filter(
+            visible_cis = read_access.configuration_items(scope.identity)
+            named_cis = visible_cis.filter(db.func.lower(ConfigurationItem.name).in_(
+                ci_name_phrases(question))).order_by(ConfigurationItem.id).limit(8).all()
+            matching_cis = named_cis or visible_cis.filter(
                     or_(*[
                         column.ilike(f"%{word}%")
                         for word in words
                         for column in (ConfigurationItem.name, ConfigurationItem.serial_number, ConfigurationItem.vendor,
                                        ConfigurationItem.model, ConfigurationItem.ip_address, ConfigurationItem.location,
                                        ConfigurationItem.external_id)
-                    ])).order_by(ConfigurationItem.id).limit(8):
+                    ])).order_by(ci_relevance(question, words).desc(), ConfigurationItem.id).limit(8).all()
+            for row in matching_cis:
                 evidence.add("ci", row.id, row.serial_number, row.name, _ci_text(row))
                 if re.search(r"\b(related|linked|associated)\b.{0,30}\b(tickets?|incidents?|changes?)\b|\b(tickets?|incidents?|changes?)\b.{0,30}\b(related|linked|associated)\b", question, re.I | re.S):
                     linked_ids = TaskCI.query.filter_by(target_type="ticket", ci_id=row.id).with_entities(TaskCI.target_id)
@@ -529,6 +557,8 @@ def chat_instructions(scope):
         "unverified backups, compatibility, commands or completed work. Risk is calculated by the server; do not invent "
         "a risk override. If a required fact or target is ambiguous, ask a focused question or explicitly list the "
         "missing fields; do not call an incomplete draft complete. Never invent a CI source or team. "
+        "For each CI source, check that its supplied title identifies the requested target. Never attach an "
+        "unrelated CI just to fill the field; if the named target is not supplied, ask for clarification. "
         "(kind may be change only if this person may raise changes). The person reviews and submits it themselves. "
         "FOLLOW-UPS: end every answer with one last line: [[FOLLOWUPS]] first question | second question | third question "
         "(short things this person might ask next, at most three). "
