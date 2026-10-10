@@ -868,6 +868,9 @@
    "id": "An absence delegation cannot exceed 90 days."
   },
   {
+   "id": "An account with this email already exists. Verify your email address with your identity provider, or ask an administrator to link the account."
+  },
+  {
    "id": "An active, same-tenant line manager must be assigned to the requested-for user before an approval-required item can be submitted."
   },
   {
@@ -3277,6 +3280,12 @@
   },
   {
    "id": "Enter a valid absence start and end time."
+  },
+  {
+   "id": "Enter a valid email address that no other account uses."
+  },
+  {
+   "id": "Enter a valid email address."
   },
   {
    "id": "Enter a valid holiday date."
@@ -9668,6 +9677,9 @@
   {
    "id": "That did not work. Please try again.",
    "javascript": true
+  },
+  {
+   "id": "That email address is already used by another account."
   },
   {
    "id": "That sheet URL could not be reached safely."

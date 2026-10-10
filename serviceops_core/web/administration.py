@@ -22,7 +22,9 @@ from sqlalchemy.orm import selectinload
 
 import app as core
 from serviceops_core.approval_groups import AUTHORITIES as APPROVAL_AUTHORITIES, linked_group_ids, set_authority_groups
+from serviceops_core.identity import normalize_email
 from app import (
+    email_taken_by_other,
     _export_response,
     _filtered_application_log_query,
     _read_and_filter_log_file,
@@ -318,7 +320,11 @@ def register(app):
             if initial_role == "superadmin" and current_user.effective_role != "superadmin":
                 flash(tr("Only a superadmin can grant the superadmin role."), "error")
                 return render_template("user_form.html", user=None, self_service=False)
-            user = User(username=request.form["username"], name=request.form["name"], email=request.form["email"],
+            email = normalize_email(request.form["email"])
+            if not email or email_taken_by_other(email):
+                flash(tr("Enter a valid email address that no other account uses."), "error")
+                return render_template("user_form.html", user=None, self_service=False)
+            user = User(username=request.form["username"], name=request.form["name"], email=email,
                         password_hash=hash_password(password), role=initial_role,
                         title=request.form.get("title", "")[:120],
                         department=request.form.get("department", "")[:120],
@@ -346,8 +352,12 @@ def register(app):
                 "active": user.active, "department": user.department,
                 "manager": user.manager.name if user.manager else "None",
             }
+            email = normalize_email(request.form["email"])
+            if not email or email_taken_by_other(email, user.id):
+                flash(tr("Enter a valid email address that no other account uses."), "error")
+                return redirect(url_for("user_edit", user_id=user.id))
             user.name = request.form["name"].strip()[:120]
-            user.email = request.form["email"].strip()[:160]
+            user.email = email
             requested_roles = set(request.form.getlist("granted_roles")) & set(ALL_ROLES)
             if not requested_roles:
                 flash(tr("A user must hold at least one role."), "error")

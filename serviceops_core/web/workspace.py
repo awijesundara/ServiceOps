@@ -27,8 +27,10 @@ from flask import (
 from flask_login import current_user, login_required
 
 import app as core
+from serviceops_core.identity import normalize_email
 from serviceops_core.localization import tr
 from app import (
+    email_taken_by_other,
     escape_like,
     active_approval_delegation,
     audit,
@@ -318,8 +320,15 @@ def register(app):
         email_managed_externally = directory_identity is not None
         if request.method == "POST":
             if not directory_identity:
+                email = normalize_email(request.form["email"])
+                if not email:
+                    flash(tr("Enter a valid email address."), "error")
+                    return redirect(url_for("profile"))
+                if email_taken_by_other(email, user.id):
+                    flash(tr("That email address is already used by another account."), "error")
+                    return redirect(url_for("profile"))
                 user.name = request.form["name"].strip()[:120]
-                user.email = request.form["email"].strip()[:160]
+                user.email = email
                 user.title = request.form.get("title", "").strip()[:120]
                 user.location = request.form.get("location", "").strip()[:120]
                 user.business_phone = request.form.get("business_phone", "").strip()[:40]

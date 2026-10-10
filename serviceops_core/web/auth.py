@@ -20,6 +20,7 @@ from app import (
     audit,
     create_notification,
     effective_role_has_action,
+    ExternalIdentityLinkRefused,
     hash_backup_code,
     is_safe_internal_path,
     ldap_authenticate,
@@ -36,6 +37,7 @@ from app import (
 from serviceops_core.security import hash_password, verify_and_upgrade_password
 from serviceops_models import db, now, PasswordResetToken, settings_cipher, User, UserPreference, UserSession
 from serviceops_core.localization import tr
+from serviceops_core.public_url import public_url_for
 
 
 def register(app):
@@ -60,10 +62,14 @@ def register(app):
         if not current_user.is_authenticated and app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]:
             access_claims = verify_cloudflare_access_jwt(request.headers.get("Cf-Access-Jwt-Assertion", ""))
             if access_claims and access_claims.get("email"):
-                sso_user = User.query.filter(
+                # Exactly one match or none: emails are compared case-
+                # insensitively, so two accounts differing only in letter
+                # case must not let one receive the other's sign-in.
+                sso_matches = User.query.filter(
                     func.lower(User.email) == access_claims["email"].strip().lower(),
                     User.active.is_(True),
-                ).first()
+                ).limit(2).all()
+                sso_user = sso_matches[0] if len(sso_matches) == 1 else None
                 # A verified Access identity is a login *shortcut* into an
                 # existing account, not a bypass of that account's own
                 # standing controls (CLAUDE.md's Authentication section):
@@ -233,7 +239,7 @@ def register(app):
                     expires_at=now() + timedelta(minutes=30),
                     requested_ip=(request.remote_addr or "")[:64],
                 ))
-                reset_url = url_for("reset_password", token=raw_token, _external=True)
+                reset_url = public_url_for("reset_password", token=raw_token)
                 create_notification(
                     user.id, "ServiceOps password recovery",
                     f"Use this single-use link within 30 minutes to reset your password: {reset_url}",
@@ -368,7 +374,7 @@ def register(app):
     def keycloak_login():
         if not app.config["KEYCLOAK_ENABLED"]:
             abort(404)
-        return oauth.keycloak.authorize_redirect(url_for("keycloak_callback", _external=True))
+        return oauth.keycloak.authorize_redirect(public_url_for("keycloak_callback"))
 
     @app.get("/auth/keycloak/callback")
     def keycloak_callback():
@@ -398,10 +404,20 @@ def register(app):
             for field, claim_name in keycloak_attr_map.items()
             if claims.get(claim_name)
         }
-        user = provision_external_user(
-            "keycloak", subject, claims.get("preferred_username", ""),
-            claims.get("name", ""), claims.get("email", ""), matched_roles,
-            profile_attrs=profile_attrs)
+        try:
+            user = provision_external_user(
+                "keycloak", subject, claims.get("preferred_username", ""),
+                claims.get("name", ""), claims.get("email", ""), matched_roles,
+                profile_attrs=profile_attrs,
+                email_verified=claims.get("email_verified") is True)
+        except ExternalIdentityLinkRefused as refused:
+            db.session.rollback()
+            audit("login_blocked", str(claims.get("preferred_username", subject)), str(refused))
+            db.session.commit()
+            abort(403, description=tr(
+                "An account with this email already exists. Verify your email address with "
+                "your identity provider, or ask an administrator to link the account."
+            ))
         if not account_usable(user):
             abort(403, description=tr("This account or its organization is not active."))
         login_user(user)

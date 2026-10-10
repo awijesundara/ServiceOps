@@ -68,6 +68,7 @@ from serviceops_models import (
     User,
 )
 from serviceops_core.localization import tr
+from serviceops_core.public_url import public_url_for
 
 
 TICKET_STATE_OPTIONS = ["New", "In Progress", "Pending", "Resolved", "Closed", "Cancelled"]
@@ -218,7 +219,7 @@ def scim_user_document(user):
         "active": user.active,
         "emails": [{"value": user.email, "primary": True}],
         "meta": {"resourceType": "User", "created": user.created_at.isoformat(),
-                 "location": url_for("scim_user", user_id=user.id, _external=True)},
+                 "location": public_url_for("scim_user", user_id=user.id)},
     }
 
 

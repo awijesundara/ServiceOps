@@ -21,3 +21,4 @@ dist
 tools/offline/vendor
 tools/offline/vendor.tar.gz
 docs/screenshots
+.smbdelete*

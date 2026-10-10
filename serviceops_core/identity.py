@@ -4,7 +4,25 @@ interface pattern already established by serviceops_core.security. Anything
 here that needs a live setting value, an LDAP connection, or the database
 stays a thin wrapper in app.py that calls into this module.
 """
+import re
+
 from serviceops_models import ROLE_RANK
+
+_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def normalize_email(value):
+    """Canonical stored form of an email address: trimmed and lowercased,
+    or None when it is not a plausible single address or exceeds the
+    160-character column. Every login path matches emails
+    case-insensitively, so storing a case variant of another account's
+    address (Alice@ vs alice@) would make that match ambiguous; the column's
+    own UNIQUE constraint is case-sensitive and cannot catch it.
+    """
+    email = (value or "").strip().lower()
+    if not email or len(email) > 160 or not _EMAIL_PATTERN.match(email):
+        return None
+    return email
 
 
 def ldap_login_local_part(username):

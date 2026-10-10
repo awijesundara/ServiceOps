@@ -35,3 +35,10 @@ app.kubernetes.io/component: web
 {{- printf "%s@%s" .Values.image.repository $digest -}}
 {{- end -}}
 {{- end }}
+{{- define "serviceops.publicBaseUrl" -}}
+{{- if .Values.proxy.publicBaseUrl -}}
+{{- .Values.proxy.publicBaseUrl -}}
+{{- else if and .Values.ingress.enabled .Values.ingress.hosts -}}
+{{- printf "https://%s" (first .Values.ingress.hosts).host -}}
+{{- end -}}
+{{- end }}

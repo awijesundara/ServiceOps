@@ -47,7 +47,7 @@ __pycache__/
 .pytest_cache/
 .chainlit/
 test-results/
-.venv/
+.venv
 instance/
 CLAUDE.md
 dist/
@@ -70,3 +70,6 @@ release-evidence/
 AGENTS.md
 .claude/
 .codex/
+
+# SMB delete-pending placeholders left by network-share clients.
+.smbdelete*

@@ -165,6 +165,10 @@ security:
 
 proxy:
   trustHeaders: true
+  # Public origin (scheme and host) for emailed password-reset links and the
+  # Keycloak callback. Empty derives https://<first ingress host> when the
+  # ingress is enabled.
+  publicBaseUrl: ""
   enableHsts: true
   # Record the real client address instead of the ingress/tunnel's: forwarding
   # headers are honored only from private/cluster ranges and, when enabled,

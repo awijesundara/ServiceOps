@@ -148,6 +148,39 @@ def test_self_service_password_reset_is_single_use_and_revokes_sessions(client, 
         assert UserSession.query.filter_by(user_id=employee.id, revoked_at=None).count() == 0
 
 
+
+def test_password_reset_link_ignores_a_spoofed_request_host(client, app, monkeypatch):
+    """The emailed reset link must use the configured public origin, never
+    the request's Host/X-Forwarded-Host -- otherwise anyone can request a
+    reset for a victim and have the victim's token sent to their own host."""
+    monkeypatch.delenv("WEBAUTHN_ORIGIN", raising=False)
+
+    def reset_link_for(base_url):
+        client.post("/forgot-password", data={"identity": "employee"}, base_url=base_url,
+                    headers={"X-Forwarded-Host": "attacker.example"})
+        with app.app_context():
+            body = Notification.query.filter_by(
+                title="ServiceOps password recovery"
+            ).order_by(Notification.id.desc()).first().body
+        return re.search(r"(\S+)/reset-password/", body).group(1)
+
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://desk.example.org/ignored-path")
+    assert reset_link_for("http://attacker.example") == "https://desk.example.org"
+
+    monkeypatch.delenv("PUBLIC_BASE_URL")
+    monkeypatch.setenv("WEBAUTHN_ORIGIN", "https://passkeys.example.org")
+    assert reset_link_for("http://attacker.example") == "https://passkeys.example.org"
+
+
+def test_public_origin_rejects_unusable_values(monkeypatch):
+    from serviceops_core.public_url import public_origin
+    monkeypatch.delenv("WEBAUTHN_ORIGIN", raising=False)
+    for value in ("", "desk.example.org", "javascript:alert(1)", "https://user@evil.example", "ftp://desk.example.org"):
+        monkeypatch.setenv("PUBLIC_BASE_URL", value)
+        assert public_origin() is None, value
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://desk.example.org:8443/")
+    assert public_origin() == "https://desk.example.org:8443"
+
 def test_scim_create_and_deactivate_is_tenant_scoped(client, app):
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
