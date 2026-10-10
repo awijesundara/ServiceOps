@@ -1,7 +1,8 @@
-{% set ui_themes = ('light', 'dark', 'system', 'navy', 'slate', 'forest') %}
 {% set chat_was_open = ai_chat_available(current_user) and request.endpoint != 'ai.chat_page' and request.cookies.get('ai_chat_open') == '1' %}
 {% set ui_theme = ui_preference.theme if current_user.is_authenticated and ui_preference.theme in ui_themes else 'light' %}
-{% set html_classes = (['theme-dark'] if ui_theme in ('dark', 'system') else []) + (['ai-chat-open'] if chat_was_open else []) %}
+{% set theme_color_scheme = 'light dark' if ui_theme == 'system' else 'dark' if ui_theme in ui_dark_themes else 'light' %}
+{% set theme_dark_media = 'all' if ui_theme in ui_dark_themes else '(prefers-color-scheme: dark)' if ui_theme == 'system' else 'not all' %}
+{% set html_classes = (['theme-dark'] if ui_theme in ui_dark_themes or ui_theme == 'system' else []) + (['ai-chat-open'] if chat_was_open else []) %}
 <!doctype html>
 <html lang="{{ ui_language }}" dir="{{ ui_direction }}"{% if html_classes %} class="{{ html_classes|join(' ') }}"{% endif %}>
 <head>
@@ -9,7 +10,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png', v=app_version) }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png', v=app_version) }}">
   <meta name="theme-color" content="{{ brand_teal|css_color('#003e4c') }}">
-  <meta name="color-scheme" content="{{ {'light': 'light', 'navy': 'light', 'slate': 'light', 'forest': 'light', 'dark': 'dark', 'system': 'light dark'}[ui_theme] }}">
+  <meta name="color-scheme" content="{{ theme_color_scheme }}">
   <meta charset="utf-8">
   {# Per-request values (brand colors, font scale) as a nonce'd block: the CSP allows no inline style attributes. #}
   <style nonce="{{ csp_nonce() }}">:root{--brand-primary:{{ brand_teal|css_color('#003e4c') }};--brand-accent:{{ brand_amber|css_color('#f9aa3c') }}}{% if current_user.is_authenticated %}body{--font-scale:{{ ui_preference.font_scale / 100 }}}{% endif %}</style>
@@ -48,8 +49,9 @@
   <script src="{{ url_for('static', filename='ai-chat-panel.js', v=app_version) }}" defer></script>
   {% endif %}
   {# Last, so its html.theme-dark rules follow every light stylesheet. "system" lets the browser apply it only while the device is in dark mode. #}
-  {% if ui_theme in ('dark', 'system') %}<link rel="stylesheet" href="{{ url_for('static', filename='dark.css', v=app_version) }}"{% if ui_theme == 'system' %} media="(prefers-color-scheme: dark)"{% endif %}>{% endif %}
+  {% if request.endpoint == 'preferences' or ui_theme in ui_dark_themes or ui_theme == 'system' %}<link id="serviceops-dark-theme" rel="stylesheet" href="{{ url_for('static', filename='dark.css', v=app_version) }}" media="{{ theme_dark_media }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='themes.css', v=app_version) }}">
+  {% if request.endpoint == 'preferences' %}<script src="{{ url_for('static', filename='theme-preview.js', v=app_version) }}" defer></script>{% endif %}
 </head>
 <body class="{% if current_user.is_authenticated %}theme-{{ ui_theme }} density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" {% if current_user.is_authenticated %}data-tour-route="{{ request.endpoint }}"{% endif %}>
 {% from '_admin_icons.html' import admin_icon %}

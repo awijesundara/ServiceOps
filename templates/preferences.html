@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block title %}{{ tr('Preferences · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">{{ tr('PERSONALIZATION') }}</p><h1>{{ tr('System preferences') }}</h1><p>{{ tr('Appearance and accessibility preferences for your account.') }}</p></div><div class="record-actions"><a class="button" href="{{ url_for('my_sessions') }}">{{ tr('Review sessions') }}</a><a class="button" href="{{ url_for('profile') }}">{{ tr('Edit profile') }}</a></div></header>
-<form method="post" class="preferences-workspace">
+<form method="post" class="preferences-workspace" data-theme-workspace data-saved-theme="{{ ui_theme }}" data-themes="{{ ui_themes|join(',') }}" data-dark-themes="{{ ui_dark_themes|join(',') }}">
   <nav class="preferences-nav" aria-label="{{ tr('Preference categories') }}">
     <button type="button" class="active" data-pref-tab="general">{{ tr('General') }}</button>
     <button type="button" data-pref-tab="lists">{{ tr('Lists') }}</button>
@@ -14,16 +14,22 @@
       <label for="preferred-language">{{ tr('Language') }}<select id="preferred-language" name="language"><option value="auto"{% if pref.language == 'auto' %} selected{% endif %}>{{ tr('Automatic (browser language)') }}</option>{% for code, name in language_options %}<option value="{{ code }}" lang="{{ code }}" dir="auto"{% if pref.language == code %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
       <small class="muted">{{ tr('Translations are bundled with ServiceOps and work offline. Text without a translation appears in English, and record content stays in the language it was written in.') }}</small>
       {% endif %}
-      <fieldset class="theme-picker"><legend>{{ tr('Theme') }}</legend>
+      <div class="theme-preview-feedback"><p id="theme-preview-status" role="status" aria-live="polite" data-saved-message="{{ tr('Showing your saved theme.') }}" data-preview-message="{{ tr('Previewing {theme}. Save preferences to keep this theme.', theme='{theme}') }}">{{ tr('Showing your saved theme.') }}</p><button type="button" data-theme-reset hidden>{{ tr('Reset preview') }}</button></div>
+      <fieldset class="theme-picker" aria-describedby="theme-preview-status"><legend>{{ tr('Theme') }}</legend>
         {% for value, name, description in [
           ('light', tr('Classic Light'), tr('ServiceOps teal with bright, clean surfaces.')),
           ('navy', tr('Executive Navy'), tr('Deep blue navigation with cool, understated accents.')),
           ('slate', tr('Slate'), tr('Neutral graphite with a crisp monochrome workspace.')),
           ('forest', tr('Forest'), tr('Muted evergreen with warm, calm surfaces.')),
+          ('ocean', tr('Ocean'), tr('Blue-green accents with a bright, focused workspace.')),
+          ('indigo', tr('Indigo'), tr('Refined indigo navigation with soft violet accents.')),
+          ('sandstone', tr('Sandstone'), tr('Warm stone surfaces with restrained bronze accents.')),
+          ('graphite', tr('Graphite'), tr('Charcoal surfaces with clear, cool accents.')),
+          ('midnight', tr('Midnight'), tr('Deep navy surfaces with crisp blue accents.')),
           ('dark', tr('Dark'), tr('Dim surfaces for working in low light.')),
           ('system', tr('Match system'), tr('Automatically follow your device light or dark setting.'))
         ] %}
-        <label class="theme-option"><input type="radio" name="theme" value="{{ value }}" {% if pref.theme == value or (value == 'light' and pref.theme not in ui_themes) %}checked{% endif %}><span class="theme-swatch theme-swatch-{{ value }}" aria-hidden="true"><i></i><i></i></span><span><strong>{{ name }}</strong><small>{{ description }}</small></span></label>
+        <label class="theme-option"><input type="radio" name="theme" value="{{ value }}" {% if pref.theme == value or (value == 'light' and pref.theme not in ui_themes) %}checked{% endif %}><span class="theme-swatch theme-swatch-{{ value }}" aria-hidden="true"><i></i><i></i></span><span><strong data-theme-label>{{ name }}</strong><small>{{ description }}</small></span></label>
         {% endfor %}
       </fieldset>
       <div class="preference-row"><div><strong>{{ tr('High contrast') }}</strong><small>{{ tr('Increase separation between controls and surfaces.') }}</small></div><label class="switch"><input type="checkbox" name="high_contrast" aria-label="{{ tr('High contrast') }}" {% if pref.high_contrast %}checked{% endif %}><span></span></label></div>

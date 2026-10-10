@@ -2638,7 +2638,8 @@ class RecentView(db.Model):
 
 
 # Per-user interface theme; "system" follows the device's light/dark setting.
-THEMES = ("light", "dark", "system", "navy", "slate", "forest")
+THEMES = ("light", "dark", "system", "navy", "slate", "forest", "ocean", "indigo", "sandstone", "graphite", "midnight")
+DARK_THEMES = ("dark", "graphite", "midnight")
 
 
 class UserPreference(db.Model):
@@ -3053,4 +3054,4 @@ class ContractCI(db.Model):
 
 
 __all__ += ["Supplier", "Contract", "ContractCI"]
-__all__ += ["THEMES"]
+__all__ += ["THEMES", "DARK_THEMES"]
