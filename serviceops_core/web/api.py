@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from datetime import timedelta
 from urllib.parse import urlparse
 
-from flask import abort, g, jsonify, render_template, request, Response
+from flask import abort, g, jsonify, render_template, request, Response, send_from_directory
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
@@ -209,6 +209,7 @@ def scim_transaction():
 def register(app):
     @app.get("/api/v1/openapi.json")
     def api_openapi():
+        from serviceops_core.ticket_details import TICKET_DETAIL_SCHEMAS
         return jsonify({
             "openapi": "3.1.0",
             "info": {
@@ -225,6 +226,7 @@ def register(app):
                 "url": "/api/v1/docs",
             },
             "components": {
+                "schemas": TICKET_DETAIL_SCHEMAS,
                 "securitySchemes": {
                     "bearerAuth": {
                         "type": "http", "scheme": "bearer",
@@ -312,7 +314,7 @@ def register(app):
                                     "schema": {"type": "string"}}],
                     "get": {
                         "summary": "Get a visible ticket",
-                        "description": "Requires tickets:read.",
+                        "description": "Requires tickets:read and ticket visibility. Includes details and configuration_items using the versioned TicketDetails schema; list responses remain compact.",
                     },
                     "patch": {
                         "summary": "Update an authorized owning-team ticket",
@@ -328,6 +330,19 @@ def register(app):
                         "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}],
                     },
                 },
+                "/tickets/{number}/details": {"get": {
+                    "summary": "Read the authorized Web UI ticket detail sections",
+                    "description": "Requires tickets:read and ticket visibility. Returns schema_version, configuration_items, sections, can_manage and allowed_states. CI links include primary, affected and impacted services, with tenant and CI-class filtering. Staff sections include record fields, governance, reviews, SLAs, approval history, work tasks, related records and event history. Requesters receive public record fields, service commitments and visible related records, with no internal sections or topology. The same details and configuration_items are included by GET /tickets/{number}; list responses remain compact.",
+                    "parameters": [{"name": "number", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "responses": {"200": {"description": "Authorized details", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TicketDetailsEnvelope"}}}}, "403": {"description": "Insufficient scope"}, "404": {"description": "Ticket absent or invisible"}},
+                }},
+                "/mobile/tickets/{number}/details": {"get": {
+                    "summary": "Alias of the ticket detail sections contract",
+                }},
+                "/mobile/tickets/{number}/rack-placements": {"get": {
+                    "summary": "Read linked ticket rack placements, primary CI first",
+                    "description": "Mobile session, tickets:read and agent role required. Returns data entries containing ci, relationship_role, rack and label; meta contains count and open_on_affected_cis. Missing placement values stay null. Cross-tenant and unreadable CI classes are excluded.",
+                }},
                 "/mcp": {
                     "post": {
                         "summary": "Model Context Protocol server (Streamable HTTP, JSON responses)",
@@ -862,7 +877,65 @@ def register(app):
         ).first()
         if not ticket:
             abort(404, description=tr("The requested ticket was not found."))
-        return jsonify({"data": api_ticket_document(ticket, g.api_user)})
+        try:
+            return jsonify({"data": api_ticket_document(ticket, g.api_user, include_details=True)})
+        except HTTPException:
+            raise
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Ticket detail lookup failed")
+            abort(500, description="Unable to load ticket details. Please try again.")
+
+    @app.get("/api/v1/tickets/<number>/details")
+    @app.get("/api/v1/mobile/tickets/<number>/details")
+    def api_ticket_details(number):
+        try:
+            require_api_scope("tickets:read")
+            ticket = visible_ticket_query(g.api_user).filter(
+                func.upper(Ticket.number) == number.upper()
+            ).first_or_404()
+            from serviceops_core.ticket_details import ticket_details
+            return jsonify({"data": ticket_details(ticket, g.api_user)})
+        except HTTPException:
+            raise
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Ticket context lookup failed")
+            abort(500, description="Unable to load ticket details. Please try again.")
+
+    @app.get("/api/v1/mobile/tickets/<number>/rack-placements")
+    def api_ticket_rack_placements(number):
+        try:
+            mobile_only()
+            require_api_scope("tickets:read")
+            if not role_at_least(g.api_user.effective_role, "agent"):
+                abort(403, description="Rack access requires the agent role.")
+            ticket = visible_ticket_query(g.api_user).filter(
+                func.upper(Ticket.number) == number.upper()
+            ).first_or_404()
+            from serviceops_core.ticket_details import ticket_details
+            from serviceops_core.rack_location import is_data_center_group
+            items = ticket_details(ticket, g.api_user, include_sections=False)["configuration_items"]
+            data, seen = [], set()
+            for ci in items:
+                rack = ci["rack"]
+                if not rack or ci["id"] in seen:
+                    continue
+                seen.add(ci["id"])
+                parts = [rack["name"]]
+                if rack["site"]:
+                    parts.append(rack["site"])
+                if rack["position"] is not None:
+                    parts.append(f'U{rack["position"]:g}' + (f', {rack["face"]}' if rack["face"] else ""))
+                data.append({"ci": {key: ci[key] for key in ("id", "name", "ci_class", "status", "ip_address")},
+                             "relationship_role": ci["relationship_role"], "rack": rack, "label": " · ".join(parts)})
+            return jsonify({"data": data, "meta": {"count": len(data), "open_on_affected_cis": bool(data) and is_data_center_group(core.ticket_owning_group(ticket))}})
+        except HTTPException:
+            raise
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Ticket rack placement lookup failed")
+            abort(500, description="Unable to load ticket rack locations. Please try again.")
 
     @app.get("/api/v1/mobile/tickets/<number>/attachments")
     @app.get("/api/v1/tickets/<number>/attachments")
@@ -1012,7 +1085,7 @@ def register(app):
             "ticket", ticket.id, "Record created",
             details=f"{ticket.number} created through REST API and assigned to {group.name}.",
         )
-        document = {"data": api_ticket_document(ticket, g.api_user)}
+        document = {"data": api_ticket_document(ticket, g.api_user, include_details=True)}
         store_api_idempotency(key, request_hash, document, 201)
         audit(
             "api create", ticket.number, mobile_client_details(g.api_client),
@@ -1091,7 +1164,7 @@ def register(app):
             "closure category": ticket.closure_category or "",
             "closure subcategory": ticket.closure_subcategory or "",
         }, event="REST API update")
-        document = {"data": api_ticket_document(ticket, g.api_user)}
+        document = {"data": api_ticket_document(ticket, g.api_user, include_details=True)}
         store_api_idempotency(key, request_hash, document, 200)
         audit(
             "api update", ticket.number, mobile_client_details(g.api_client),
@@ -1256,7 +1329,8 @@ def register(app):
         ).count()
         return jsonify({"data": {
             "user": {"id": g.api_user.id, "username": g.api_user.username,
-                     "name": g.api_user.name, "role": g.api_user.effective_role},
+                     "name": g.api_user.name, "role": g.api_user.effective_role,
+                     "has_avatar": bool(g.api_user.avatar_path)},
             "assignment_groups": [{"id": row.id, "name": row.name} for row in groups],
             "counts": {"pending_approvals": pending, "unread_notifications": unread},
             "capabilities": {
@@ -1265,6 +1339,25 @@ def register(app):
                 "view_cmdb": role_at_least(g.api_user.effective_role, "agent"),
             },
         }})
+
+    @app.get("/api/v1/mobile/profile/avatar")
+    def api_mobile_profile_avatar():
+        """The signed-in user's own profile picture for the mobile app. The web
+        /profile/avatar route needs a browser session, so bearer-token clients
+        use this route instead. 404 when no picture has been uploaded."""
+        try:
+            mobile_only()
+            if not g.api_user.avatar_path:
+                abort(404, description=tr("No profile picture has been uploaded."))
+            avatar_dir = os.path.join(app.config["UPLOAD_FOLDER"], "avatars")
+            response = send_from_directory(avatar_dir, g.api_user.avatar_path)
+            response.headers["Cache-Control"] = "private, max-age=300"
+            return response
+        except HTTPException:
+            raise
+        except Exception:
+            app.logger.exception("Mobile profile picture lookup failed")
+            abort(500, description="Unable to load the profile picture. Please try again.")
 
     @app.post("/api/v1/mobile/push-devices")
     def api_mobile_push_register():

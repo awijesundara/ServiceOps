@@ -5,28 +5,28 @@
       "allowed_fields": [
         "id", "number", "type", "title", "description", "state", "priority",
         "category", "subcategory", "closure_category", "closure_subcategory",
-          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal"
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items"
       ],
       "audiences": {
         "requester": [
           "id", "number", "type", "title", "description", "state", "priority",
           "category", "subcategory", "closure_category", "closure_subcategory",
-          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments"
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "details", "configuration_items"
         ],
         "agent": [
           "id", "number", "type", "title", "description", "state", "priority",
           "category", "subcategory", "closure_category", "closure_subcategory",
-          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal"
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items"
         ],
         "manager": [
           "id", "number", "type", "title", "description", "state", "priority",
           "category", "subcategory", "closure_category", "closure_subcategory",
-          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal"
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items"
         ],
         "admin": [
           "id", "number", "type", "title", "description", "state", "priority",
           "category", "subcategory", "closure_category", "closure_subcategory",
-          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal"
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items"
         ]
       }
     },
