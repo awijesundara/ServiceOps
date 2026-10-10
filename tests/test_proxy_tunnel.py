@@ -179,6 +179,7 @@ def test_https_proxy_supports_verified_outer_and_destination_tls(tmp_path, monke
     server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     server_context.load_cert_chain(cert_file, key_file)
     client_context = ssl.create_default_context(cafile=str(cert_file))
+    client_context.minimum_version = ssl.TLSVersion.TLSv1_2
     monkeypatch.setattr(tunnel.ssl, 'create_default_context', lambda: client_context)
     listener = socket.socket()
     listener.bind(('127.0.0.1', 0))

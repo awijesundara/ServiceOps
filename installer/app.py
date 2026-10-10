@@ -68,6 +68,13 @@ def _atomic_state_write(name, content):
                 logger.error("Installer temporary state cleanup failed")
 
 
+def http_url(value):
+    """The URL when it is http(s); None otherwise. urllib also opens file://
+    and ftp:// URLs, which a connection check must never read."""
+    url = clean(value)
+    return url if urlsplit(url).scheme in {"http", "https"} and urlsplit(url).netloc else None
+
+
 def result(ok, message, details=""):
     return {"ok": bool(ok), "message": message, "details": details}
 
@@ -125,7 +132,9 @@ def test_ldap(config):
 def test_keycloak(config):
     if not config.get("keycloak_enabled"):
         return result(True, tr("Keycloak is disabled"))
-    discovery = clean(config.get("keycloak_discovery_url"))
+    discovery = http_url(config.get("keycloak_discovery_url"))
+    if not discovery:
+        return result(False, tr("Keycloak discovery URL must be an http(s) URL"))
     try:
         context = ssl.create_default_context()
         with urllib.request.urlopen(discovery, timeout=8, context=context) as response:
@@ -173,6 +182,8 @@ def test_ipfs(config):
     api_url = clean(config.get("ipfs_api_url"))
     if not api_url:
         return result(False, tr("IPFS API URL is required for an external node"))
+    if not http_url(api_url):
+        return result(False, tr("IPFS API URL must be an http(s) URL"))
     try:
         request_obj = urllib.request.Request(api_url.rstrip("/") + "/api/v0/id", method="POST")
         context = ssl.create_default_context()

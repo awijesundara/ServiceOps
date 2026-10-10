@@ -71,6 +71,7 @@ from serviceops_models import (
     User,
 )
 from serviceops_core.localization import tr
+from serviceops_core.safe_redirect import redirect_to_referrer
 
 
 def register(app):
@@ -178,10 +179,7 @@ def register(app):
             ),
         )
         db.session.commit()
-        destination = request.referrer
-        if destination and destination.startswith(request.host_url):
-            return redirect(destination)
-        return redirect(url_for("approval_chains"))
+        return redirect_to_referrer(url_for("approval_chains"))
 
     @app.get("/approval-chains")
     @login_required
@@ -582,10 +580,7 @@ def register(app):
         except HTTPException as error:
             db.session.rollback()
             flash(error.description or tr("That change could not be made."), "error")
-            destination = request.referrer
-            if destination and destination.startswith(request.host_url):
-                return redirect(destination)
-            return redirect(url_for("request_detail", request_id=task.requested_item.request_id))
+            return redirect_to_referrer(url_for("request_detail", request_id=task.requested_item.request_id))
         task.work_notes = request.form.get("work_notes", "")
         task.assignee_id = current_user.id
         ritm = task.requested_item

@@ -4109,6 +4109,9 @@
    "id": "IPFS API URL is required for an external node"
   },
   {
+   "id": "IPFS API URL must be an http(s) URL"
+  },
+  {
    "id": "IPFS is the authoritative encrypted store for application records and attachments. Dashboard, ticketing, administration, audit, session revocation, rate limits, workflows, CMDB, client management, and background processing use the standard ServiceOps experience."
   },
   {
@@ -4554,6 +4557,9 @@
   },
   {
    "id": "Keycloak discovery URL"
+  },
+  {
+   "id": "Keycloak discovery URL must be an http(s) URL"
   },
   {
    "id": "Keycloak discovery failed"

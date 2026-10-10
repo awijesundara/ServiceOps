@@ -41,7 +41,6 @@ from app import (
     find_record_by_number,
     follow_ticket,
     is_following_ticket,
-    is_safe_internal_path,
     log_field_changes,
     log_history,
     next_enterprise_number,
@@ -155,6 +154,7 @@ from serviceops_models import (
     UserWorkspaceLayout,
 )
 from serviceops_core.localization import tr, tr_value
+from serviceops_core.safe_redirect import redirect_internal
 
 
 def register(app):
@@ -2153,10 +2153,7 @@ def register(app):
         audit("create", item.number, item.title)
         db.session.commit()
         flash(tr("{number} raised as a continual-improvement item.", number=item.number), "success")
-        redirect_to = request.form.get("redirect_to")
-        if is_safe_internal_path(redirect_to):
-            return redirect(redirect_to)
-        return redirect(url_for("improvement_detail", item_id=item.id))
+        return redirect_internal(request.form.get("redirect_to"), url_for("improvement_detail", item_id=item.id))
 
     @app.get("/improvement/<int:item_id>")
     @roles("agent", "manager", "admin")

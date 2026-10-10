@@ -21,7 +21,6 @@ from app import (
     create_notification,
     effective_role_has_action,
     ExternalIdentityLinkRefused,
-    hash_backup_code,
     is_safe_internal_path,
     ldap_authenticate,
     mapped_roles,
@@ -34,9 +33,10 @@ from app import (
     user_is_local,
     verify_cloudflare_access_jwt,
 )
-from serviceops_core.security import hash_password, verify_and_upgrade_password
+from serviceops_core.security import consume_backup_code, hash_password, verify_and_upgrade_password
 from serviceops_models import db, now, PasswordResetToken, settings_cipher, User, UserPreference, UserSession
 from serviceops_core.localization import tr
+from serviceops_core.safe_redirect import redirect_to_referrer
 from serviceops_core.public_url import public_url_for
 
 
@@ -336,10 +336,8 @@ def register(app):
                 totp = pyotp.TOTP(secret)
                 verified = totp.verify(code.replace(" ", ""), valid_window=1)
             if not verified and code and user.mfa_backup_codes_json:
-                remaining = json.loads(user.mfa_backup_codes_json)
-                code_hash = hash_backup_code(code.strip().lower())
-                if code_hash in remaining:
-                    remaining.remove(code_hash)
+                remaining = consume_backup_code(json.loads(user.mfa_backup_codes_json), code)
+                if remaining is not None:
                     user.mfa_backup_codes_json = json.dumps(remaining)
                     verified = True
                     backup_used = True
@@ -454,18 +452,13 @@ def register(app):
         effective_role, so switching to a lower role genuinely blocks
         higher-privilege routes/actions until switched back."""
         requested = request.form.get("role", "")
-        destination = request.referrer
-        safe_target = (
-            destination if destination and destination.startswith(request.host_url)
-            else url_for("dashboard")
-        )
         if not requested:
             session.pop("_acting_role", None)
-            return redirect(safe_target)
+            return redirect_to_referrer(url_for("dashboard"))
         if requested not in current_user.granted_roles:
             abort(403, description=tr("You do not currently hold that role."))
         session["_acting_role"] = requested
-        return redirect(safe_target)
+        return redirect_to_referrer(url_for("dashboard"))
 
     @app.post("/sessions/<int:session_record_id>/revoke")
     @login_required

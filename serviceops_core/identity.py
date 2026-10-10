@@ -8,7 +8,8 @@ import re
 
 from serviceops_models import ROLE_RANK
 
-_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Dot-separated, non-empty domain labels: unambiguous, so matching is linear.
+_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+$")
 
 
 def normalize_email(value):
