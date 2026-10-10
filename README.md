@@ -32,7 +32,7 @@ infrastructure.
 - CMDB with asset and service-map ownership, NetBox sync
 - Manager / CI-owner / CCB approval chains with reapproval on material change
 - SLAs, escalations, workflow automation, in-app + email + chat notifications
-- Optional AI assistant (role-scoped chat, cited incident investigations, generated resolution/closure notes and suggested replies) with administrator enable/disable and self-hosted or external inference; every write stays a human-reviewed proposal, never autonomous ([setup](https://github.com/awijesundara/serviceops-notes/blob/main/docs/OPERATIONS_MANUAL.md#section-ai_operations))
+- Optional AI assistant (role-scoped chat, cited incident investigations, generated resolution/closure notes and suggested replies) with administrator enable/disable and self-hosted or external inference; every write stays a human-reviewed proposal, never autonomous ([setup](https://github.com/awijesundara/ServiceOps/wiki/Operations-Manual#section-ai_operations))
 - Threaded ticket comments, @mentions, and follow/watch
 - Drag-and-drop and paste ticket attachments with role-based deletion
 - Per-user light, dark, or match-system theme
@@ -58,8 +58,8 @@ setup — for production, use one of the options below.
 
 | Target | Guide |
 |---|---|
-| Single server (RPM) | [Install guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md#section-deployment--rpm-packaging-linux-distribution) |
-| Kubernetes (HA) | [Install guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md#section-deployment--kubernetes-production-deployment) |
+| Single server (RPM) | [Install guide](https://github.com/awijesundara/ServiceOps/wiki/Deployment-and-Recovery#section-deployment--rpm-packaging-linux-distribution) |
+| Kubernetes (HA) | [Install guide](https://github.com/awijesundara/ServiceOps/wiki/Deployment-and-Recovery#section-deployment--kubernetes-production-deployment) |
 | Air-gapped | [Offline bundle](tools/offline/README.md) |
 
 RPM builds are published for EL8/EL9/EL10 and Fedora 43/44 on every
@@ -74,7 +74,7 @@ sudo serviceops setup --mode bundled --yes
 Production installs get automated health checks, daily verified backups, and
 a `serviceops` CLI (`status`, `health`, `backup`, `update`, `logs`). Full
 walkthrough, including HTTPS and firewall setup, is in the
-[deployment guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md#section-deployment).
+[deployment guide](https://github.com/awijesundara/ServiceOps/wiki/Deployment-and-Recovery#section-deployment).
 
 ## Architecture
 
@@ -94,10 +94,10 @@ flowchart LR
 
 ## Docs
 
-- [Deployment & operations guide](https://github.com/awijesundara/serviceops-notes/blob/main/docs/DEPLOYMENT.md#section-deployment) — install, upgrade, backup/restore, scaling
+- [Deployment & operations guide](https://github.com/awijesundara/ServiceOps/wiki/Deployment-and-Recovery#section-deployment) — install, upgrade, backup/restore, scaling
 - [REST API reference](docs/API_REFERENCE.md) — also served at `/api/v1/docs`
 - [Platform manual (PDF)](docs/ServiceOps_Complete_Platform_Manual.pdf)
-- [Engineering notes](https://github.com/awijesundara/serviceops-notes) — architecture decisions, release process
+- [Engineering reference](https://github.com/awijesundara/ServiceOps/wiki/Engineering-Reference) — architecture decisions, release process
 
 ## Development
 
