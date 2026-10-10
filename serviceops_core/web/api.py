@@ -662,10 +662,8 @@ def register(app):
 
     @app.get("/api/v1/docs")
     def api_docs():
-        # Self-contained so the reference never depends on the private
-        # serviceops-notes repo (not publicly reachable) or a copy of
-        # API_REFERENCE.md baked into this repo's git history, which
-        # CLAUDE.md's documentation-control policy keeps out of here.
+        # Self-contained so the reference never depends on the wiki or any
+        # other external documentation being reachable from the deployment.
         # Renders the always-in-sync /api/v1/openapi.json via Swagger UI,
         # vendored (no CDN) so it also works with no internet egress.
         return render_template("api_docs.html", app_version=display_version())

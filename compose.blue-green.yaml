@@ -9,8 +9,8 @@
 # pointed at the old slot. Requires SERVICEOPS_IMAGE_BLUE,
 # SERVICEOPS_IMAGE_GREEN, and ACTIVE_APP_SLOT (blue|green) in .env --
 # `./serviceops deploy` bootstraps these from a plain compose.yaml install
-# on first use. See serviceops-notes/docs/DEPLOYMENT.md for the full
-# walkthrough.
+# on first use. See the Operations Manual in the wiki (https://github.com/awijesundara/ServiceOps/wiki/Operations-Manual)
+# for the full walkthrough.
 name: serviceops
 
 x-app-env: &app-env

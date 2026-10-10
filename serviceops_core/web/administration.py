@@ -240,10 +240,8 @@ def register(app):
     @roles("admin")
     @require_action("security_administer")
     def users():
-        tenant_group_ids = [
-            group.id for group in tenant_query(SupportGroup).all()
-        ]
-        tenant_user_ids = [user.id for user in tenant_query(User).all()]
+        tenant_group_ids = tenant_query(SupportGroup).with_entities(SupportGroup.id).order_by(None)
+        tenant_user_ids = tenant_query(User).with_entities(User.id).order_by(None)
         memberships = GroupMember.query.filter(
             GroupMember.group_id.in_(tenant_group_ids),
             GroupMember.user_id.in_(tenant_user_ids),
