@@ -18,10 +18,10 @@ from app import (
     account_usable,
     align_tz,
     audit,
+    consume_backup_code_hash,
     create_notification,
     effective_role_has_action,
     ExternalIdentityLinkRefused,
-    hash_backup_code,
     is_safe_internal_path,
     ldap_authenticate,
     mapped_roles,
@@ -337,9 +337,7 @@ def register(app):
                 verified = totp.verify(code.replace(" ", ""), valid_window=1)
             if not verified and code and user.mfa_backup_codes_json:
                 remaining = json.loads(user.mfa_backup_codes_json)
-                code_hash = hash_backup_code(code.strip().lower())
-                if code_hash in remaining:
-                    remaining.remove(code_hash)
+                if consume_backup_code_hash(remaining, code):
                     user.mfa_backup_codes_json = json.dumps(remaining)
                     verified = True
                     backup_used = True

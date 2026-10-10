@@ -1,6 +1,8 @@
 import json
+import ipaddress
 import os
 import logging
+import re
 import tempfile
 import socket
 import ssl
@@ -27,6 +29,30 @@ STATE = Path(os.getenv("INSTALLER_STATE_DIR", "/config"))
 
 def clean(value):
     return str(value or "").replace("\r", "").replace("\n", "").strip()
+
+
+_LDAP_DN = re.compile(r"(?i)^\s*[a-z][a-z0-9-]*=[^,=+#\"<>;\\]+(?:\s*,\s*[a-z][a-z0-9-]*=[^,=+#\"<>;\\]+)*\s*$")
+
+
+def _safe_outbound_url(value, *, schemes):
+    url = clean(value)
+    parsed = urlsplit(url)
+    if parsed.scheme not in schemes or not parsed.hostname:
+        raise ValueError(tr("Enter a full URL with an allowed scheme and hostname."))
+    if parsed.username or parsed.password or parsed.fragment:
+        raise ValueError(tr("URLs with credentials or fragments are not allowed."))
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        for family, kind, protocol, _canonname, address in socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM):
+            if kind != socket.SOCK_STREAM:
+                continue
+            host = address[0].split("%", 1)[0]
+            ip = ipaddress.ip_address(host)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                raise ValueError(tr("Only publicly routable hosts are allowed for this URL."))
+    except OSError as error:
+        raise ValueError(tr("The host in this URL could not be resolved.")) from error
+    return parsed._replace(fragment="").geturl()
 
 
 def load_json(name, default):
@@ -112,7 +138,10 @@ def test_ldap(config):
             return result(False, tr("LDAP StartTLS failed"), str(connection.result))
         if not connection.bind():
             return result(False, tr("LDAP bind failed"), str(connection.result))
-        if not connection.search(clean(config.get("ldap_base_dn")), "(objectClass=*)",
+        base_dn = clean(config.get("ldap_base_dn"))
+        if not _LDAP_DN.fullmatch(base_dn):
+            return result(False, tr("LDAP base DN is invalid"))
+        if not connection.search(base_dn, "(objectClass=*)",
                                  attributes=["distinguishedName"], size_limit=1):
             return result(False, tr("LDAP base search failed"), str(connection.result))
         connection.unbind()
@@ -125,7 +154,10 @@ def test_ldap(config):
 def test_keycloak(config):
     if not config.get("keycloak_enabled"):
         return result(True, tr("Keycloak is disabled"))
-    discovery = clean(config.get("keycloak_discovery_url"))
+    try:
+        discovery = _safe_outbound_url(config.get("keycloak_discovery_url"), schemes={"https"})
+    except ValueError as exc:
+        return result(False, tr("Keycloak discovery URL is invalid"), str(exc))
     try:
         context = ssl.create_default_context()
         with urllib.request.urlopen(discovery, timeout=8, context=context) as response:
@@ -170,7 +202,10 @@ def test_ipfs(config):
     if config.get("ipfs_mode", "bundled") == "bundled":
         return result(True, tr("Bundled IPFS node is selected"),
                       "The IPFS node container will be verified during deployment.")
-    api_url = clean(config.get("ipfs_api_url"))
+    try:
+        api_url = _safe_outbound_url(config.get("ipfs_api_url"), schemes={"http", "https"})
+    except ValueError as exc:
+        return result(False, tr("IPFS API URL is invalid"), str(exc))
     if not api_url:
         return result(False, tr("IPFS API URL is required for an external node"))
     try:

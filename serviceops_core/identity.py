@@ -4,12 +4,7 @@ interface pattern already established by serviceops_core.security. Anything
 here that needs a live setting value, an LDAP connection, or the database
 stays a thin wrapper in app.py that calls into this module.
 """
-import re
-
 from serviceops_models import ROLE_RANK
-
-_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
 
 def normalize_email(value):
     """Canonical stored form of an email address: trimmed and lowercased,
@@ -20,7 +15,12 @@ def normalize_email(value):
     own UNIQUE constraint is case-sensitive and cannot catch it.
     """
     email = (value or "").strip().lower()
-    if not email or len(email) > 160 or not _EMAIL_PATTERN.match(email):
+    if not email or len(email) > 160 or any(char.isspace() for char in email):
+        return None
+    local, separator, domain = email.partition("@")
+    if not separator or not local or not domain or "." not in domain:
+        return None
+    if domain.startswith(".") or domain.endswith(".") or ".." in domain:
         return None
     return email
 

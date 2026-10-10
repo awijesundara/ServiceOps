@@ -141,9 +141,11 @@ def _operating_system(user_agent, hints):
     match = re.search(r"Android (\d+(?:\.\d+)?)", user_agent)
     if match:
         return f"Android {platform_version.split('.')[0] or match.group(1)}"
-    match = re.search(r"(iPhone|iPad)[^)]*OS (\d+)[_.](\d+)", user_agent)
-    if match:
-        return f"{'iOS' if match.group(1) == 'iPhone' else 'iPadOS'} {match.group(2)}.{match.group(3)}"
+    if "iPhone" in user_agent or "iPad" in user_agent:
+        os_match = re.search(r"OS (\d+)[_.](\d+)", user_agent)
+        if os_match:
+            platform = "iOS" if "iPhone" in user_agent else "iPadOS"
+            return f"{platform} {os_match.group(1)}.{os_match.group(2)}"
     match = re.search(r"Mac OS X (\d+)[_.](\d+)", user_agent)
     if match:
         return f"macOS {platform_version or match.group(1) + '.' + match.group(2)}".strip()
@@ -162,9 +164,13 @@ def describe_device(headers):
     label = f"{_browser(user_agent, hints)} on {_operating_system(user_agent, hints)}"
     model = hints["Sec-CH-UA-Model"].strip('"')
     if not model:
-        match = re.search(r"Android [^;)]*; ([^;)]+?)(?: Build/[^;)]*)?\)", user_agent)
-        if match and match.group(1).strip() not in {"K", "wv"}:
-            model = match.group(1).strip()
+        if "Android " in user_agent and "; " in user_agent:
+            segment = user_agent.split("Android ", 1)[1].split(")", 1)[0]
+            parts = segment.split("; ", 1)
+            if len(parts) == 2:
+                candidate = parts[1].split(" Build/", 1)[0].strip()
+                if candidate not in {"K", "wv"}:
+                    model = candidate
         elif "iPhone" in user_agent:
             model = "iPhone"
         elif "iPad" in user_agent:

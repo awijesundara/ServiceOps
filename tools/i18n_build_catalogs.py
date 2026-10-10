@@ -80,7 +80,11 @@ def extract(root=ROOT):
             errors.append(f"{location}: {error}")
             continue
         # Inline page scripts call the same tr(); their messages ship to the browser.
-        for script in re.finditer(r"<script(?![^>]*application/json)[^>]*>(.*?)</script>", source, re.S):
+        for script in re.finditer(
+            r"<script(?![^>]*application/json)[^>]*>(.*?)</script(?:\s+[^>]*)?>",
+            source,
+            re.S | re.IGNORECASE,
+        ):
             for match in JS_CALL.finditer(script.group(1)):
                 raw = match.group(1) if match.group(1) is not None else match.group(2)
                 try:

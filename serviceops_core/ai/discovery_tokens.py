@@ -1,6 +1,5 @@
 """Signed, short-lived discovery previews; never trust browser-provided model limits."""
 import hashlib
-import hmac
 
 from flask import current_app
 from itsdangerous import URLSafeTimedSerializer, BadSignature
@@ -10,7 +9,12 @@ from serviceops_core.localization import tr
 
 
 def binding(config, key):
-    digest = hmac.new(current_app.secret_key.encode(), key.encode(), hashlib.sha256).hexdigest()
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        key.encode(),
+        current_app.secret_key.encode(),
+        200000,
+    ).hex()
     return [config.provider, config.endpoint, digest]
 
 

@@ -74,4 +74,16 @@ def readable_references(text, sources):
         position = match.end()
     pieces.append(tokens.sub(resolve, text[position:]))
     result = "".join(pieces)
-    return re.sub(r"(\[[^\]\n]+\]\([^\s()]+\))\s+\1", r"\1", result)
+    deduped = []
+    previous_link = None
+    for fragment in re.split(r"(\s+)", result):
+        if not fragment:
+            continue
+        if LINK.fullmatch(fragment):
+            if fragment == previous_link:
+                continue
+            previous_link = fragment
+        elif not fragment.isspace():
+            previous_link = None
+        deduped.append(fragment)
+    return "".join(deduped)

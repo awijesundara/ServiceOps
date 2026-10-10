@@ -67,7 +67,7 @@ from serviceops_core.log_storage import DatabaseLogHandler, report_diagnostic_fa
 # this file's own body references. A static per-file unused-import check
 # (this repo's ruff config deliberately doesn't run one -- see CI) cannot
 # see that cross-module use and would flag this as dead.
-from werkzeug.security import generate_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
@@ -1039,9 +1039,7 @@ def verify_mfa_code(user, code):
         verified = pyotp.TOTP(secret).verify(code.replace(" ", ""), valid_window=1)
     if not verified and code and user.mfa_backup_codes_json:
         remaining = json.loads(user.mfa_backup_codes_json)
-        code_hash = hash_backup_code(code.lower())
-        if code_hash in remaining:
-            remaining.remove(code_hash)
+        if consume_backup_code_hash(remaining, code):
             user.mfa_backup_codes_json = json.dumps(remaining)
             return True, True
     return verified, False
@@ -1168,7 +1166,27 @@ def generate_mfa_backup_codes(count=10):
 
 
 def hash_backup_code(code):
-    return hashlib.sha256(code.encode()).hexdigest()
+    return generate_password_hash(str(code or "").strip().lower(), method="pbkdf2:sha256:600000")
+
+
+def verify_backup_code_hash(stored_hash, code):
+    if not isinstance(stored_hash, str):
+        return False
+    normalized = str(code or "").strip().lower()
+    if not normalized:
+        return False
+    try:
+        return check_password_hash(stored_hash, normalized)
+    except ValueError:
+        return False
+
+
+def consume_backup_code_hash(hashes, code):
+    for index, stored_hash in enumerate(hashes):
+        if verify_backup_code_hash(stored_hash, code):
+            del hashes[index]
+            return True
+    return False
 
 
 _request_metric_buffer = {}
@@ -7964,4 +7982,8 @@ if __name__ == "__main__":
     # module so they share its state instead of loading a second copy of it.
     import app as _serviceops_app
 
-    _serviceops_app.create_app().run(host="0.0.0.0", port=8080, debug=True)
+    _serviceops_app.create_app().run(
+        host="0.0.0.0",
+        port=8080,
+        debug=os.getenv("FLASK_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"},
+    )

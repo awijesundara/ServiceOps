@@ -136,7 +136,10 @@ def _load_catalog(code):
     empty = MappingProxyType({"messages": MappingProxyType({}), "calendar": MappingProxyType({})})
     if code == SOURCE_LANGUAGE:
         return empty
-    path = LOCALES / "messages" / f"{code}.json"
+    catalog_root = (LOCALES / "messages").resolve()
+    path = (catalog_root / f"{code}.json").resolve()
+    if path.parent != catalog_root:
+        return empty
     if not path.is_file():
         return empty
     try:

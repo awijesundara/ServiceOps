@@ -100,15 +100,17 @@ def scan(text, config, kind=None):
     organization's own support number or mail domain) is set aside before any
     check; an administrator's "sensitive" pattern always marks the text."""
     text = str(text or "")
+    scanned = text[:PATTERN_SCAN_LIMIT]
     found = set()
     sensitive_patterns, _ = parse_patterns(getattr(config, "sensitive_patterns", ""))
-    if any(p.search(text[:PATTERN_SCAN_LIMIT]) for p in sensitive_patterns):
+    if any(p.search(scanned) for p in sensitive_patterns):
         found.add("custom")
     for pattern in parse_patterns(getattr(config, "safe_patterns", ""))[0]:
-        text = pattern.sub(" ", text[:PATTERN_SCAN_LIMIT]) + text[PATTERN_SCAN_LIMIT:]
+        scanned = pattern.sub(" ", scanned)
+    text = scanned + text[PATTERN_SCAN_LIMIT:]
     # Published knowledge is written by the organization; its contact numbers are not personal details.
     if getattr(config, "detect_personal", True) and kind != "knowledge":
-        if EMAIL_PATTERN.search(text) or _SSN.search(text) or any(p.search(text) for p in PHONE_PATTERNS):
+        if EMAIL_PATTERN.search(scanned) or _SSN.search(scanned) or any(p.search(scanned) for p in PHONE_PATTERNS):
             found.add("personal")
     if getattr(config, "detect_credentials", True):
         if _SECRET_ASSIGNMENT.search(text) or any(p.search(text) for p in _SECRET_SHAPES):
