@@ -1612,6 +1612,7 @@ def register(app):
             return jsonify({"data": [{"id": row.id, "body": row.body, "author": row.author.name,
                                       "parent_id": row.parent_id,
                                       "deleted_attachments": deleted.get(row.id, []),
+                                      "source_platform": row.source_platform, "ai_assisted": row.ai_assisted,
                                       "created_at": row.created_at.isoformat()} for row in ticket.comments]})
         except HTTPException:
             raise
@@ -1647,6 +1648,7 @@ def register(app):
         row = post_ticket_comment(ticket, g.api_user, body, parent_id=parent_id)
         log_history("ticket", ticket.id, "Comment added", details=f"Mobile app · {g.api_user.name}")
         document = {"data": {"id": row.id, "body": row.body, "author": g.api_user.name,
+                              "source_platform": row.source_platform, "ai_assisted": row.ai_assisted,
                               "created_at": row.created_at.isoformat()}}
         store_api_idempotency(key, request_hash, document, 201)
         audit("mobile comment", ticket.number, mobile_client_details(g.api_client),

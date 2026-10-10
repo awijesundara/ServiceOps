@@ -116,6 +116,7 @@ def ticket_details(ticket, user, *, include_sections=True):
         sections.append({"id": "history", "title": "Event history", "entries": [
             {"id": str(row.id), "title": row.event, "fields": [
                 {"label": "At", "value": row.created_at.isoformat()},
+                {"label": "Source", "value": row.source_platform},
                 {"label": "Actor", "value": row.actor.name if row.actor and row.actor.tenant_id == tenant else None},
                 {"label": "Field", "value": row.field_name}, {"label": "Before", "value": row.old_value if row.event != "Attachment deleted" else None},
                 {"label": "After", "value": row.new_value}, {"label": "Details", "value": row.details},

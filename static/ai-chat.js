@@ -137,11 +137,20 @@
     const draft = route && route.draft;
     if (draft && draft.url) {
       const card = element("div", "ai-draft");
-      card.appendChild(element("p", "ai-draft-label", tr("Draft {kind} ready for you", { kind: tr(draft.kind) })));
+      card.appendChild(element("p", "ai-draft-label", draft.missing_fields && draft.missing_fields.length
+        ? tr("Draft {kind} needs more details", { kind: tr(draft.kind) })
+        : tr("Draft {kind} ready for you", { kind: tr(draft.kind) })));
       card.appendChild(element("strong", "", draft.title));
       card.appendChild(element("p", "ai-draft-body", draft.description));
       card.appendChild(element("p", "ai-draft-meta", tr("Impact {impact} · Urgency {urgency} · {category}",
         { impact: tr(draft.impact), urgency: tr(draft.urgency), category: draft.category })));
+      if (draft.missing_fields && draft.missing_fields.length) {
+        const labels = { group_id: tr("Owning IT team"), ci_ids: tr("Configuration items"),
+          planned_start: tr("Planned start"), planned_end: tr("Planned end"),
+          implementation_plan: tr("Implementation plan"), test_plan: tr("Test plan"), backout_plan: tr("Backout plan") };
+        card.appendChild(element("p", "ai-draft-meta", tr("Complete these fields before submitting: {fields}",
+          { fields: draft.missing_fields.map(field => labels[field] || field).join(", ") })));
+      }
       const open = element("a", "primary ai-draft-open", tr("Review and create"));
       open.href = draft.url;
       card.appendChild(open);

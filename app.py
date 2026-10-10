@@ -2484,9 +2484,14 @@ def next_operational_task_number(task_kind):
 
 def log_history(target_type, target_id, event, field_name=None, old_value=None,
                 new_value=None, details="", actor_id=None):
-    if actor_id is None and current_user and current_user.is_authenticated:
-        actor_id = current_user.id
+    if actor_id is None:
+        if has_request_context() and getattr(g, "api_user", None):
+            actor_id = g.api_user.id
+        elif current_user and current_user.is_authenticated:
+            actor_id = current_user.id
+    from serviceops_core.activity_origin import activity_origin
     row = TaskHistory(
+        source_platform=activity_origin(),
         target_type=target_type, target_id=target_id, actor_id=actor_id,
         event=event, field_name=field_name,
         old_value="" if old_value is None else str(old_value),
@@ -3628,8 +3633,9 @@ def post_ticket_comment(ticket, author, body, parent_id=None, ai_assisted=False)
         # reply therefore joins the same top-level thread instead of creating
         # a hidden/deceptive deeper hierarchy through the API.
         parent_id = parent.parent_id or parent.id
+    from serviceops_core.activity_origin import activity_origin
     comment = Comment(ticket_id=ticket.id, user_id=author.id, body=body, tenant_id=ticket.tenant_id,
-                      parent_id=parent_id, ai_assisted=ai_assisted)
+                      parent_id=parent_id, ai_assisted=ai_assisted, source_platform=activity_origin())
     db.session.add(comment)
     db.session.flush()
     follow_ticket(ticket, author)
