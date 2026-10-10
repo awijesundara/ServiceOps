@@ -349,26 +349,23 @@ def manager_portal_context():
 
     sla_at_risk_hours = setting_int("SLA_AT_RISK_HOURS", 4)
     breach_horizon = now() + timedelta(hours=sla_at_risk_hours)
-    all_open_ticket_ids = [row[0] for row in open_ticket_rows]
     sla_breached_by_member = Counter()
     sla_at_risk_by_member = Counter()
-    if all_open_ticket_ids:
-        ticket_to_member = {
-            ticket_id: assignee_id for ticket_id, assignee_id, _ in open_ticket_rows
-        }
-        sla_rows = TaskSLA.query.filter(
-            TaskSLA.target_type == "ticket",
-            TaskSLA.target_id.in_(all_open_ticket_ids),
+    if open_ticket_rows:
+        # Joined to the same open-ticket filter instead of binding every open
+        # ticket id (PostgreSQL caps a statement at 65,535 parameters).
+        sla_rows = db.session.query(Ticket.assignee_id, TaskSLA.breached, TaskSLA.breach_at).join(
+            TaskSLA, (TaskSLA.target_type == "ticket") & (TaskSLA.target_id == Ticket.id),
+        ).filter(
+            Ticket.assignee_id.in_(member_ids),
+            Ticket.state.notin_(TERMINAL_TICKET_STATES),
             TaskSLA.stage == "In Progress",
         ).all()
-        for row in sla_rows:
-            assignee_id = ticket_to_member.get(row.target_id)
-            if assignee_id is None:
-                continue
-            if row.breached:
+        for assignee_id, breached, breach_at in sla_rows:
+            if breached:
                 sla_breached_by_member[assignee_id] += 1
             else:
-                breach_at = row.breach_at if row.breach_at.tzinfo else row.breach_at.replace(tzinfo=timezone.utc)
+                breach_at = breach_at if breach_at.tzinfo else breach_at.replace(tzinfo=timezone.utc)
                 if breach_at <= breach_horizon:
                     sla_at_risk_by_member[assignee_id] += 1
 
@@ -671,7 +668,9 @@ def analytics_kpis():
     # blended into what's reported as the business's own SLA performance.
     sla_breached_open = sla_at_risk_open = 0
     if open_count:
-        for row in TaskSLA.query.join(SLADefinition, TaskSLA.definition_id == SLADefinition.id).filter(
+        for row in db.session.query(TaskSLA.breached, TaskSLA.breach_at).join(
+            SLADefinition, TaskSLA.definition_id == SLADefinition.id,
+        ).filter(
             TaskSLA.target_type == "ticket", TaskSLA.target_id.in_(open_ticket_ids),
             TaskSLA.stage == "In Progress", SLADefinition.agreement_type == "SLA",
         ).all():
@@ -692,10 +691,14 @@ def analytics_kpis():
         Ticket.id, Ticket.kind, Ticket.priority, Ticket.created_at, Ticket.updated_at, Ticket.resolved_at,
         Ticket.category, Ticket.closure_category,
     ).all()
-    resolved_30d_ids = [row.id for row in resolved_30d]
+    resolved_30d_ids = ticket_query.filter(
+        Ticket.state.in_(TERMINAL_TICKET_STATES), resolved_time >= thirty_days_ago,
+    ).with_entities(Ticket.id).order_by(None)
     sla_by_ticket = defaultdict(bool)
-    if resolved_30d_ids:
-        for row in TaskSLA.query.join(SLADefinition, TaskSLA.definition_id == SLADefinition.id).filter(
+    if resolved_30d:
+        for row in db.session.query(TaskSLA.target_id, TaskSLA.breached).join(
+            SLADefinition, TaskSLA.definition_id == SLADefinition.id,
+        ).filter(
             TaskSLA.target_type == "ticket", TaskSLA.target_id.in_(resolved_30d_ids),
             SLADefinition.agreement_type == "SLA",
         ).all():

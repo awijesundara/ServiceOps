@@ -2276,34 +2276,42 @@ def register(app):
         lane_limit = 60 if scope == "focus" else 100
         at_risk_horizon = current + timedelta(hours=setting_int("SLA_AT_RISK_HOURS", 4))
 
-        visible_ids = [row[0] for row in query.with_entities(Ticket.id).all()]
-        active_slas = TaskSLA.query.filter(
+        # Ticket ids stay in the database (a subquery, not a bound id list,
+        # which PostgreSQL caps at 65,535 parameters), and SLA rows are read
+        # as plain tuples rather than ORM objects.
+        visible_ids = query.with_entities(Ticket.id).order_by(None).statement
+        active_slas = db.session.query(
+            TaskSLA.target_id, TaskSLA.breached, TaskSLA.breach_at,
+        ).filter(
             TaskSLA.target_type == "ticket",
-            TaskSLA.target_id.in_(visible_ids or [-1]),
+            TaskSLA.target_id.in_(visible_ids),
             TaskSLA.stage == "In Progress",
-        ).order_by(TaskSLA.breach_at).all()
+        ).all()
         sla_by_ticket = defaultdict(list)
         urgent_ticket_ids = set()
-        for task_sla in active_slas:
-            sla_by_ticket[task_sla.target_id].append(task_sla)
-            breach_at = align_tz(task_sla.breach_at, current)
-            if task_sla.breached or breach_at <= at_risk_horizon:
-                urgent_ticket_ids.add(task_sla.target_id)
+        for target_id, breached, breach_at in active_slas:
+            breach_at = align_tz(breach_at, current)
+            sla_by_ticket[target_id].append((breached, breach_at))
+            if breached or breach_at <= at_risk_horizon:
+                urgent_ticket_ids.add(target_id)
 
         priority_rank = {"P1": 0, "P2": 1, "P3": 2, "P4": 3}
         sla_rank = {"breached": 0, "at-risk": 1, "healthy": 2, "none": 3}
 
-        def board_sla(ticket):
-            rows = sla_by_ticket.get(ticket.id, [])
+        def sla_state(ticket_id):
+            rows = sla_by_ticket.get(ticket_id)
             if not rows:
+                return "none", None
+            due = min(breach_at for _, breach_at in rows)
+            if any(breached or breach_at <= current for breached, breach_at in rows):
+                return "breached", due
+            return ("at-risk" if due <= at_risk_horizon else "healthy"), due
+
+        def board_sla(ticket_id):
+            state, due = sla_state(ticket_id)
+            if state == "none":
                 return {"state": "none", "label": "No active SLA", "due": None}
-            due = min(align_tz(row.breach_at, current) for row in rows)
-            if any(row.breached or align_tz(row.breach_at, current) <= current for row in rows):
-                state, label = "breached", "SLA exceeded"
-            elif due <= at_risk_horizon:
-                state, label = "at-risk", "SLA at risk"
-            else:
-                state, label = "healthy", "SLA on track"
+            label = {"breached": "SLA exceeded", "at-risk": "SLA at risk", "healthy": "SLA on track"}[state]
             seconds = int((due - current).total_seconds())
             magnitude = abs(seconds)
             if magnitude < 3600:
@@ -2333,16 +2341,24 @@ def register(app):
                     Ticket.assignee_id == current_user.id,
                     Ticket.updated_at >= focus_cutoff,
                 ))
-            lane_tickets = state_query.options(selectinload(Ticket.assignee)).all()
-            for ticket in lane_tickets:
-                ticket_sla[ticket.id] = board_sla(ticket)
-            lane_tickets.sort(key=lambda ticket: (
-                sla_rank[ticket_sla[ticket.id]["state"]],
-                priority_rank.get(ticket.priority, 9),
-                -align_tz(ticket.updated_at, current).timestamp(),
+            # Rank every ticket in the lane from three columns, then build
+            # full objects only for the cards actually shown.
+            ranked = state_query.with_entities(Ticket.id, Ticket.priority, Ticket.updated_at).order_by(None).all()
+            ranked.sort(key=lambda row: (
+                sla_rank[sla_state(row.id)[0]],
+                priority_rank.get(row.priority, 9),
+                -align_tz(row.updated_at, current).timestamp(),
             ))
-            total = len(lane_tickets)
-            tickets_by_state[state] = lane_tickets[:lane_limit]
+            shown_ids = [row.id for row in ranked[:lane_limit]]
+            loaded = {
+                ticket.id: ticket for ticket in Ticket.query.filter(Ticket.id.in_(shown_ids or [-1]))
+                .options(selectinload(Ticket.assignee)).all()
+            }
+            lane_tickets = [loaded[ticket_id] for ticket_id in shown_ids if ticket_id in loaded]
+            for ticket in lane_tickets:
+                ticket_sla[ticket.id] = board_sla(ticket.id)
+            total = len(ranked)
+            tickets_by_state[state] = lane_tickets
             board_meta[state] = {"total": total, "hidden": max(0, total - lane_limit)}
         manageable_ticket_ids = {
             ticket.id for tickets in tickets_by_state.values() for ticket in tickets

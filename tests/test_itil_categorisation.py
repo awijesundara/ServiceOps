@@ -1,6 +1,6 @@
 """ITIL categorisation model: category at logging vs closure, resolution data,
-change classification and taxonomy administration (docs/ITIL_V5_CATEGORISATION.md
-in serviceops-notes)."""
+change classification and taxonomy administration (the wiki's
+Engineering-Reference, "ITIL categorisation standard")."""
 from app import APIClient, Ticket, TicketCategory, TicketSubcategory, User, create_api_token, db, seed_itil
 from tests.test_app import app, client, group_id, login  # noqa: F401  (pytest fixtures)
 

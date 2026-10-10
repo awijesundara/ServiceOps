@@ -160,7 +160,7 @@ def display_version():
     # which one they're looking at without checking STORAGE_MODE directly.
     return f"{APP_VERSION}-ipfs" if ipfs_enabled() else APP_VERSION
 
-# The adopted ITIL category model (serviceops-notes docs/ITIL_V5_CATEGORISATION.md):
+# The adopted ITIL category model (wiki: Engineering-Reference, "ITIL categorisation standard"):
 # two levels, categorised by the affected service or CI rather than by the
 # fix, at most about ten options per level. Seeded for a tenant that has no
 # categories yet (seed_itil()); existing tenants were aligned by migration
