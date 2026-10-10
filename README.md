@@ -2,7 +2,7 @@
 
 Self-hosted IT service management for incidents, requests, changes, assets and approvals.
 
-[![Version](https://img.shields.io/badge/version-1.113.25-003E4C)](VERSION)
+[![Version](https://img.shields.io/badge/version-1.113.26-003E4C)](VERSION)
 
 **[Documentation and visual app guide](https://github.com/awijesundara/ServiceOps/wiki)**
 
