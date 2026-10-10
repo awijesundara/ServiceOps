@@ -17,6 +17,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from webauthn.helpers import base64url_to_bytes
+from werkzeug.exceptions import HTTPException
 
 import app as core
 from app import (
@@ -90,6 +91,7 @@ from serviceops_models import (
     ApprovalGate,
     ApprovalVote,
     ConfigurationItem,
+    Rack,
     db,
     EnterpriseRecord,
     ExternalIdentity,
@@ -1427,23 +1429,55 @@ def register(app):
 
     @app.get("/api/v1/mobile/cmdb")
     def api_mobile_cmdb():
-        mobile_only()
-        if not role_at_least(g.api_user.effective_role, "agent"):
-            abort(403, description=tr("CMDB mobile access requires the agent role."))
-        q = str(request.args.get("q", "")).strip()
-        query = restrict_ci_query_to_readable_classes(
-            ConfigurationItem.query.filter_by(tenant_id=g.api_user.tenant_id),
-            g.api_user.tenant_id, g.api_user.effective_role,
-        )
-        if q:
-            pattern = f"%{escape_like(q)}%"
-            query = query.filter(or_(ConfigurationItem.name.ilike(pattern, escape="\\"),
-                                     ConfigurationItem.ip_address.ilike(pattern, escape="\\"),
-                                     ConfigurationItem.serial_number.ilike(pattern, escape="\\")))
-        rows = query.order_by(ConfigurationItem.name).limit(100).all()
-        return jsonify({"data": [{"id": row.id, "name": row.name, "ci_class": row.ci_class,
-                                  "environment": row.environment, "status": row.operational_status,
-                                  "ip_address": row.ip_address} for row in rows]})
+        try:
+            mobile_only()
+            if not role_at_least(g.api_user.effective_role, "agent"):
+                abort(403, description=tr("CMDB mobile access requires the agent role."))
+            tenant_id = g.api_user.tenant_id
+            q = str(request.args.get("q", "")).strip()
+            query = restrict_ci_query_to_readable_classes(
+                ConfigurationItem.query.filter_by(tenant_id=tenant_id),
+                tenant_id, g.api_user.effective_role,
+            ).options(selectinload(ConfigurationItem.rack), selectinload(ConfigurationItem.owner),
+                      selectinload(ConfigurationItem.support_group))
+            if q:
+                pattern = f"%{escape_like(q)}%"
+                query = query.filter(or_(
+                    ConfigurationItem.name.ilike(pattern, escape="\\"),
+                    ConfigurationItem.ip_address.ilike(pattern, escape="\\"),
+                    ConfigurationItem.serial_number.ilike(pattern, escape="\\"),
+                    ConfigurationItem.location.ilike(pattern, escape="\\"),
+                    ConfigurationItem.rack.has((Rack.tenant_id == tenant_id) & or_(
+                        Rack.name.ilike(pattern, escape="\\"), Rack.site.ilike(pattern, escape="\\"))),
+                ))
+            rows = query.order_by(ConfigurationItem.name, ConfigurationItem.id).limit(100).all()
+            data = []
+            for row in rows:
+                rack = row.rack if row.rack and row.rack.tenant_id == tenant_id else None
+                owner = row.owner if row.owner and row.owner.tenant_id == tenant_id else None
+                group = row.support_group if row.support_group and row.support_group.tenant_id == tenant_id else None
+                data.append({
+                    "id": row.id, "name": row.name, "ci_class": row.ci_class,
+                    "environment": row.environment, "status": row.operational_status,
+                    "ip_address": row.ip_address, "description": row.description,
+                    "location": row.location, "serial_number": row.serial_number,
+                    "vendor": row.vendor, "model": row.model, "lifecycle_state": row.lifecycle_state,
+                    "business_criticality": row.business_criticality,
+                    "owner": owner.name if owner else None,
+                    "support_group": group.name if group else None,
+                    "install_date": row.install_date.isoformat() if row.install_date else None,
+                    "warranty_expiry_date": row.warranty_expiry_date.isoformat() if row.warranty_expiry_date else None,
+                    "updated_at": row.updated_at.isoformat(),
+                    "rack": {"name": rack.name, "site": rack.site, "position": row.rack_position,
+                             "u_height": row.rack_u_height, "face": row.rack_face} if rack else None,
+                })
+            return jsonify({"data": data, "meta": {"limit": 100, "returned": len(data)}})
+        except HTTPException:
+            raise
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Mobile CMDB lookup failed")
+            abort(500, description=tr("Unable to load assets. Please try again."))
 
     @app.get("/api/v1/tickets/<number>/comments")
     def api_ticket_comments(number):
