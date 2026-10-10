@@ -11491,3 +11491,36 @@ def test_mobile_rack_view_is_tenant_and_class_scoped(client, app):
     assert response.json["meta"]["truncated"] is False
     assert client.get(f"/api/v1/mobile/racks/{foreign_id}", headers=headers).status_code == 404
     assert client.get(f"/api/v1/mobile/racks/{rack_id}").status_code == 401
+
+
+def test_mobile_profile_avatar_is_served_to_the_signed_in_user(client, app):
+    mobile_headers = {
+        "X-ServiceOps-App-Version": "1.3.0", "X-ServiceOps-App-Build": "5",
+        "X-ServiceOps-Platform": "iOS", "X-ServiceOps-Device": "iPhone17,1",
+    }
+    signed_in = client.post("/api/v1/auth/mobile/login", headers=mobile_headers, json={
+        "username": "admin", "password": "Admin123!", "provider": "local",
+    })
+    headers = {"Authorization": f"Bearer {signed_in.json['access_token']}"}
+
+    bootstrap = client.get("/api/v1/mobile/bootstrap", headers=headers)
+    assert bootstrap.json["data"]["user"]["has_avatar"] is False
+    assert client.get("/api/v1/mobile/profile/avatar", headers=headers).status_code == 404
+
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+    with app.app_context():
+        avatar_dir = os.path.join(app.config["UPLOAD_FOLDER"], "avatars")
+        os.makedirs(avatar_dir, exist_ok=True)
+        with open(os.path.join(avatar_dir, "mobile-test-avatar.png"), "wb") as handle:
+            handle.write(png)
+        admin = User.query.filter_by(username="admin").one()
+        admin.avatar_path = "mobile-test-avatar.png"
+        db.session.commit()
+
+    bootstrap = client.get("/api/v1/mobile/bootstrap", headers=headers)
+    assert bootstrap.json["data"]["user"]["has_avatar"] is True
+    avatar = client.get("/api/v1/mobile/profile/avatar", headers=headers)
+    assert avatar.status_code == 200
+    assert avatar.data == png
+    assert avatar.headers["Cache-Control"] == "private, max-age=300"
+    assert client.get("/api/v1/mobile/profile/avatar").status_code == 401

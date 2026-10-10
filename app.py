@@ -1310,7 +1310,7 @@ def require_api_scope(scope):
         abort(403, description=tr("The API client lacks scope {scope}.", scope=scope))
 
 
-def api_ticket_document(ticket, user):
+def api_ticket_document(ticket, user, *, include_details=False):
     document = {
         "id": ticket.id,
         "number": ticket.number,
@@ -1339,6 +1339,10 @@ def api_ticket_document(ticket, user):
             if ticket.assignee else None
         ),
     }
+    if include_details:
+        from serviceops_core.ticket_details import ticket_details
+        document["details"] = ticket_details(ticket, user)
+        document["configuration_items"] = document["details"]["configuration_items"]
     return project_document("ticket", user.role, document)
 
 
