@@ -1229,6 +1229,9 @@
    "id": "Automatically apply an action to a customer ticket when it's created, updated, or its status changes and one condition matches."
   },
   {
+   "id": "Automatically follow your device light or dark setting."
+  },
+  {
    "id": "Automatically required and locked on for Production, any Management-class CI, or Critical business criticality. For other CIs (Dev/UAT/Staging), check this box for custom cases that still need board sign-off."
   },
   {
@@ -1401,9 +1404,6 @@
   },
   {
    "id": "Breaching within {count} hours"
-  },
-  {
-   "id": "Bright surfaces with dark text."
   },
   {
    "id": "Bronze Silver Gold"
@@ -1917,6 +1917,9 @@
   },
   {
    "id": "Class"
+  },
+  {
+   "id": "Classic Light"
   },
   {
    "id": "Classification"
@@ -2794,6 +2797,9 @@
    "javascript": true
   },
   {
+   "id": "Deep blue navigation with cool, understated accents."
+  },
+  {
    "id": "Default density"
   },
   {
@@ -2942,7 +2948,7 @@
    "javascript": true
   },
   {
-   "id": "Dim surfaces that are easier on the eyes in low light."
+   "id": "Dim surfaces for working in low light."
   },
   {
    "id": "Direct reports"
@@ -3488,6 +3494,9 @@
    "id": "Executive (CEO) approval authority must be configured (itil_admin's Executive approval section) before a non-standard change requiring CCB authorization can be submitted."
   },
   {
+   "id": "Executive Navy"
+  },
+  {
    "id": "Executive approval"
   },
   {
@@ -3665,9 +3674,6 @@
    "id": "Follow nested AD groups (member of a group inside a mapped group)"
   },
   {
-   "id": "Follow your device setting and switch automatically."
-  },
-  {
    "id": "Follow-up actions"
   },
   {
@@ -3699,6 +3705,9 @@
   },
   {
    "id": "Forbidden"
+  },
+  {
+   "id": "Forest"
   },
   {
    "id": "Forget everything",
@@ -4800,9 +4809,6 @@
    "id": "Lifecycle status"
   },
   {
-   "id": "Light"
-  },
-  {
    "id": "Limit to first N new tickets (leave blank for all — recommended for your first preview)"
   },
   {
@@ -5199,6 +5205,9 @@
    "id": "Mute specific notifications"
   },
   {
+   "id": "Muted evergreen with warm, calm surfaces."
+  },
+  {
    "id": "My Telegram"
   },
   {
@@ -5362,6 +5371,9 @@
   },
   {
    "id": "Network switch"
+  },
+  {
+   "id": "Neutral graphite with a crisp monochrome workspace."
   },
   {
    "id": "Never"
@@ -7243,6 +7255,9 @@
    "id": "Rack face{src}"
   },
   {
+   "id": "Rack mobile access requires the agent role."
+  },
+  {
    "id": "Rack name is required."
   },
   {
@@ -8899,6 +8914,9 @@
    "id": "ServiceOps records each successful backup your backup job reports. This creates the credential that job uses, sets how old the latest backup may be, and shows the exact command to run. Replacing the token stops the old one from working."
   },
   {
+   "id": "ServiceOps teal with bright, clean surfaces."
+  },
+  {
    "id": "ServiceOps team"
   },
   {
@@ -9091,6 +9109,9 @@
   },
   {
    "id": "Slack"
+  },
+  {
+   "id": "Slate"
   },
   {
    "id": "Slower, sometimes better. The thinking itself is never shown or kept."
@@ -10319,6 +10340,9 @@
   },
   {
    "id": "Unable to load assets. Please try again."
+  },
+  {
+   "id": "Unable to load the rack. Please try again."
   },
   {
    "id": "Unable to resolve at this time.",

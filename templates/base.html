@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png', v=app_version) }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png', v=app_version) }}">
   <meta name="theme-color" content="{{ brand_teal|css_color('#003e4c') }}">
-  <meta name="color-scheme" content="{{ 'dark' if ui_theme == 'dark' else ('light dark' if ui_theme == 'system' else 'light') }}">
+  <meta name="color-scheme" content="{{ {'light': 'light', 'navy': 'light', 'slate': 'light', 'forest': 'light', 'dark': 'dark', 'system': 'light dark'}[ui_theme] }}">
   <meta charset="utf-8">
   {# Per-request values (brand colors, font scale) as a nonce'd block: the CSP allows no inline style attributes. #}
   <style nonce="{{ csp_nonce() }}">:root{--brand-primary:{{ brand_teal|css_color('#003e4c') }};--brand-accent:{{ brand_amber|css_color('#f9aa3c') }}}{% if current_user.is_authenticated %}body{--font-scale:{{ ui_preference.font_scale / 100 }}}{% endif %}</style>

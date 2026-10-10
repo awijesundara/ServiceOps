@@ -16,14 +16,14 @@
       {% endif %}
       <fieldset class="theme-picker"><legend>{{ tr('Theme') }}</legend>
         {% for value, name, description in [
-          ('light', 'Classic Light', 'ServiceOps teal with bright, clean surfaces.'),
-          ('navy', 'Executive Navy', 'Deep blue navigation with cool, understated accents.'),
-          ('slate', 'Slate', 'Neutral graphite with a crisp monochrome workspace.'),
-          ('forest', 'Forest', 'Muted evergreen with warm, calm surfaces.'),
-          ('dark', 'Dark', 'Dim surfaces for working in low light.'),
-          ('system', 'Match system', 'Automatically follow your device light or dark setting.')
+          ('light', tr('Classic Light'), tr('ServiceOps teal with bright, clean surfaces.')),
+          ('navy', tr('Executive Navy'), tr('Deep blue navigation with cool, understated accents.')),
+          ('slate', tr('Slate'), tr('Neutral graphite with a crisp monochrome workspace.')),
+          ('forest', tr('Forest'), tr('Muted evergreen with warm, calm surfaces.')),
+          ('dark', tr('Dark'), tr('Dim surfaces for working in low light.')),
+          ('system', tr('Match system'), tr('Automatically follow your device light or dark setting.'))
         ] %}
-        <label class="theme-option"><input type="radio" name="theme" value="{{ value }}" {% if pref.theme == value or (value == 'light' and pref.theme not in ui_themes) %}checked{% endif %}><span class="theme-swatch theme-swatch-{{ value }}" aria-hidden="true"><i></i><i></i></span><span><strong>{{ tr(name) }}</strong><small>{{ tr(description) }}</small></span></label>
+        <label class="theme-option"><input type="radio" name="theme" value="{{ value }}" {% if pref.theme == value or (value == 'light' and pref.theme not in ui_themes) %}checked{% endif %}><span class="theme-swatch theme-swatch-{{ value }}" aria-hidden="true"><i></i><i></i></span><span><strong>{{ name }}</strong><small>{{ description }}</small></span></label>
         {% endfor %}
       </fieldset>
       <div class="preference-row"><div><strong>{{ tr('High contrast') }}</strong><small>{{ tr('Increase separation between controls and surfaces.') }}</small></div><label class="switch"><input type="checkbox" name="high_contrast" aria-label="{{ tr('High contrast') }}" {% if pref.high_contrast %}checked{% endif %}><span></span></label></div>
