@@ -15,9 +15,16 @@
       <small class="muted">{{ tr('Translations are bundled with ServiceOps and work offline. Text without a translation appears in English, and record content stays in the language it was written in.') }}</small>
       {% endif %}
       <fieldset class="theme-picker"><legend>{{ tr('Theme') }}</legend>
-        <label class="theme-option"><input type="radio" name="theme" value="light" {% if pref.theme not in ('dark', 'system') %}checked{% endif %}><span class="theme-swatch theme-swatch-light" aria-hidden="true"><i></i><i></i></span><span><strong>{{ tr('Light') }}</strong><small>{{ tr('Bright surfaces with dark text.') }}</small></span></label>
-        <label class="theme-option"><input type="radio" name="theme" value="dark" {% if pref.theme == 'dark' %}checked{% endif %}><span class="theme-swatch theme-swatch-dark" aria-hidden="true"><i></i><i></i></span><span><strong>{{ tr('Dark') }}</strong><small>{{ tr('Dim surfaces that are easier on the eyes in low light.') }}</small></span></label>
-        <label class="theme-option"><input type="radio" name="theme" value="system" {% if pref.theme == 'system' %}checked{% endif %}><span class="theme-swatch theme-swatch-system" aria-hidden="true"><i></i><i></i></span><span><strong>{{ tr('Match system') }}</strong><small>{{ tr('Follow your device setting and switch automatically.') }}</small></span></label>
+        {% for value, name, description in [
+          ('light', 'Classic Light', 'ServiceOps teal with bright, clean surfaces.'),
+          ('navy', 'Executive Navy', 'Deep blue navigation with cool, understated accents.'),
+          ('slate', 'Slate', 'Neutral graphite with a crisp monochrome workspace.'),
+          ('forest', 'Forest', 'Muted evergreen with warm, calm surfaces.'),
+          ('dark', 'Dark', 'Dim surfaces for working in low light.'),
+          ('system', 'Match system', 'Automatically follow your device light or dark setting.')
+        ] %}
+        <label class="theme-option"><input type="radio" name="theme" value="{{ value }}" {% if pref.theme == value or (value == 'light' and pref.theme not in ui_themes) %}checked{% endif %}><span class="theme-swatch theme-swatch-{{ value }}" aria-hidden="true"><i></i><i></i></span><span><strong>{{ tr(name) }}</strong><small>{{ tr(description) }}</small></span></label>
+        {% endfor %}
       </fieldset>
       <div class="preference-row"><div><strong>{{ tr('High contrast') }}</strong><small>{{ tr('Increase separation between controls and surfaces.') }}</small></div><label class="switch"><input type="checkbox" name="high_contrast" aria-label="{{ tr('High contrast') }}" {% if pref.high_contrast %}checked{% endif %}><span></span></label></div>
       <div class="preference-row"><div><strong>{{ tr('Accessible tooltips') }}</strong><small>{{ tr('Show explanatory help for unfamiliar controls.') }}</small></div><label class="switch"><input type="checkbox" name="accessible_tooltips" aria-label="{{ tr('Accessible tooltips') }}" {% if pref.accessible_tooltips %}checked{% endif %}><span></span></label></div>

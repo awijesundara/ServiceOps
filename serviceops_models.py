@@ -2636,7 +2636,7 @@ class RecentView(db.Model):
 
 
 # Per-user interface theme; "system" follows the device's light/dark setting.
-THEMES = ("light", "dark", "system")
+THEMES = ("light", "dark", "system", "navy", "slate", "forest")
 
 
 class UserPreference(db.Model):
