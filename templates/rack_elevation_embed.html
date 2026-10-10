@@ -1,17 +1,18 @@
-{% set ui_theme = ui_preference.theme if current_user.is_authenticated and ui_preference.theme in ('dark', 'system') else 'light' %}
+{% set ui_theme = ui_preference.theme if current_user.is_authenticated and ui_preference.theme in ui_themes else 'light' %}
 <!doctype html>
-<html lang="{{ ui_language }}" dir="{{ ui_direction }}"{% if ui_theme != 'light' %} class="theme-dark"{% endif %}>
+<html lang="{{ ui_language }}" dir="{{ ui_direction }}"{% if ui_theme in ui_dark_themes or ui_theme == 'system' %} class="theme-dark"{% endif %}>
 <head>
 <meta charset="utf-8">
 <title>{{ rack.name }}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=app_version) }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='utilities.css', v=app_version) }}">
-{% if ui_theme != 'light' %}<link rel="stylesheet" href="{{ url_for('static', filename='dark.css', v=app_version) }}"{% if ui_theme == 'system' %} media="(prefers-color-scheme: dark)"{% endif %}>{% endif %}
+{% if ui_theme in ui_dark_themes or ui_theme == 'system' %}<link rel="stylesheet" href="{{ url_for('static', filename='dark.css', v=app_version) }}"{% if ui_theme == 'system' %} media="(prefers-color-scheme: dark)"{% endif %}>{% endif %}
 <link rel="stylesheet" href="{{ url_for('static', filename='rack-embed.css', v=app_version) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='themes.css', v=app_version) }}">
 <script type="application/json" id="serviceops-i18n">{{ ui_javascript_catalog|tojson }}</script>
 <script src="{{ url_for('static', filename='i18n.js', v=app_version) }}"></script>
 </head>
-<body>
+<body class="theme-{{ ui_theme }}">
 <div id="rack-elevation-root" data-rack="{{ rack_json }}">
   <div class="rack-embed-panels">
     <div><h3>{{ tr('Front') }}</h3><svg id="rack-elevation-front" data-face="front"></svg></div>

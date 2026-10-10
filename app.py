@@ -7726,6 +7726,8 @@ def create_app(test_config=None):
     def ui_context():
         platform_context = {
             "nav_active": nav_active,
+            "ui_themes": THEMES,
+            "ui_dark_themes": DARK_THEMES,
             "instance_name": setting_value("INSTANCE_NAME", "ServiceOps"),
             "company_name": setting_value("COMPANY_NAME", "Your Company"),
             "brand_teal": setting_value("BRAND_TEAL", "#003e4c"),

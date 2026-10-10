@@ -11,3 +11,42 @@ body:is(.theme-navy,.theme-slate,.theme-forest).high-contrast{--ink:#111b22;--mu
 .theme-swatch-navy{--sw-bg:#f3f6fa;--sw-nav:#172f48;--sw-card:#fff;--sw-bar:#24496b;--sw-line:#d4dee8}
 .theme-swatch-slate{--sw-bg:#f5f6f8;--sw-nav:#283441;--sw-card:#fff;--sw-bar:#445365;--sw-line:#d8dde3}
 .theme-swatch-forest{--sw-bg:#f5f7f3;--sw-nav:#193d34;--sw-card:#fff;--sw-bar:#285b4d;--sw-line:#d4dfd6}
+
+/* Additional account palettes. Status/priority colors retain their meanings. */
+body.theme-ocean{--brand-teal:#17627b;--brand-teal-strong:#123c50;--brand-teal-soft:#e8f3f6;--brand-amber:#bc913e;--brand-amber-soft:#faf2df;--bg:#f1f7f9;--ink:#193441;--muted:#4e6874;--line:#cfdee5}
+body.theme-indigo{--brand-teal:#49477d;--brand-teal-strong:#2d2b51;--brand-teal-soft:#efedf8;--brand-amber:#bd9145;--brand-amber-soft:#faf3e5;--bg:#f6f5fa;--ink:#292940;--muted:#625f78;--line:#dcdae8}
+body.theme-sandstone{--brand-teal:#735b42;--brand-teal-strong:#44382d;--brand-teal-soft:#f2ece4;--brand-amber:#b18a42;--brand-amber-soft:#f8f0df;--bg:#f8f6f2;--ink:#352e27;--muted:#6b6258;--line:#e0d9cf}
+body:is(.theme-navy,.theme-slate,.theme-forest,.theme-ocean,.theme-indigo,.theme-sandstone){--nav:var(--brand-teal-strong);--green:var(--brand-teal);--green-dark:var(--brand-teal-strong);--surface:#fff;--surface-subtle:var(--brand-teal-soft);--shadow:0 2px 8px rgba(20,35,45,.08)}
+body:is(.theme-ocean,.theme-indigo,.theme-sandstone) .global-search input{background:var(--brand-teal-soft)}
+body:is(.theme-ocean,.theme-indigo,.theme-sandstone) th{background:var(--brand-teal-soft);color:var(--muted);border-bottom-color:var(--line)}
+body:is(.theme-ocean,.theme-indigo,.theme-sandstone) tbody tr:hover{background:var(--brand-teal-soft)}
+html.theme-dark body.theme-graphite{--brand-teal:#293b49;--brand-teal-strong:#18232d;--brand-teal-soft:#25343f;--bg:#15191f;--white:#20262e;--surface:#20262e;--surface-subtle:#29323c;--ink:#edf2f7;--muted:#b8c5d1;--line:#4b5968;--nav:#111820;--green:#34566d;--green-dark:#294459;--dk-accent:#82c8ed;--dk-accent-strong:#acdfff;--brand-amber:#ecc58a;--brand-amber-soft:#40352b;--shadow:0 2px 10px rgba(0,0,0,.2)}
+html.theme-dark body.theme-midnight{--brand-teal:#233e63;--brand-teal-strong:#14243e;--brand-teal-soft:#213553;--bg:#0f1828;--white:#19263b;--surface:#19263b;--surface-subtle:#22344f;--ink:#edf3ff;--muted:#b7c7e0;--line:#485d7b;--nav:#0b1322;--green:#315a88;--green-dark:#27496f;--dk-accent:#91caff;--dk-accent-strong:#badfff;--brand-amber:#ecc58a;--brand-amber-soft:#40352b;--shadow:0 2px 10px rgba(0,0,0,.2)}
+html.theme-dark body:is(.theme-graphite,.theme-midnight) :is(.panel,.stats>*,.list-workspace,.unified-nav,.preferences-workspace,.theme-option,.module-grid>.panel,.article-grid>.panel,.catalog-grid>.panel,.ci-browser-modal){background:var(--surface);border-color:var(--line)}
+html.theme-dark body:is(.theme-graphite,.theme-midnight) :is(input,select,textarea){background:var(--surface);color:var(--ink);border-color:var(--line);color-scheme:dark}
+html.theme-dark body:is(.theme-graphite,.theme-midnight) :is(.preferences-nav,.list-toolbar,.record-section-tabs,th,.global-search input){background:var(--surface-subtle);border-color:var(--line)}
+html.theme-dark body:is(.theme-graphite,.theme-midnight) :is(.primary,.preferences-nav button.active){background:var(--green);color:#fff}
+.theme-swatch-ocean{--sw-bg:#f1f7f9;--sw-nav:#123c50;--sw-card:#fff;--sw-bar:#17627b;--sw-line:#cfdee5}
+.theme-swatch-indigo{--sw-bg:#f6f5fa;--sw-nav:#2d2b51;--sw-card:#fff;--sw-bar:#49477d;--sw-line:#dcdae8}
+.theme-swatch-sandstone{--sw-bg:#f8f6f2;--sw-nav:#44382d;--sw-card:#fff;--sw-bar:#735b42;--sw-line:#e0d9cf}
+.theme-swatch-graphite{--sw-bg:#15191f;--sw-nav:#111820;--sw-card:#20262e;--sw-bar:#34566d;--sw-line:#4b5968}
+.theme-swatch-midnight{--sw-bg:#0f1828;--sw-nav:#0b1322;--sw-card:#19263b;--sw-bar:#315a88;--sw-line:#485d7b}
+/* Shared interaction polish: clear boundaries, stable controls and keyboard focus. */
+.theme-preview-feedback{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;margin:0 0 14px;background:var(--brand-teal-soft);border:1px solid var(--line);border-radius:8px}
+.theme-preview-feedback p{margin:0;color:var(--ink);font-size:13px;line-height:1.5}.theme-preview-feedback button{flex-shrink:0}
+body .theme-option:has(input:checked)::after{content:'✓';position:absolute;inset-block-start:7px;inset-inline-end:7px;display:grid;place-items:center;width:22px;height:22px;background:var(--green);color:#fff;border-radius:50%;font-weight:700}
+body .theme-option input{width:1px;height:1px;margin:0}
+body .theme-swatch{height:72px}
+body :is(a,button,input,select,textarea,summary):focus-visible{outline:2px solid var(--green);outline-offset:3px}
+html.theme-dark body :is(a,button,input,select,textarea,summary):focus-visible{outline-color:var(--dk-accent)}
+body .preferences-content{box-sizing:border-box;min-width:0;max-width:1100px;width:100%}
+body .preferences-content footer{gap:16px;flex-wrap:wrap}
+body .theme-option{min-width:0;align-content:start}
+body .theme-option small{overflow-wrap:anywhere}
+body:is(.theme-ocean,.theme-indigo,.theme-sandstone).high-contrast{--ink:#111b22;--muted:#293b45;--line:#657780;--green:#003e4c;--green-dark:#002f3a}
+html.theme-dark body:is(.theme-graphite,.theme-midnight).high-contrast{--bg:#05080a;--white:#0f1519;--surface:#0f1519;--surface-subtle:#19232d;--ink:#fff;--muted:#d0dade;--line:#7d8d95;--dk-accent:#b7e4ff;--dk-accent-strong:#d2eeff}
+@media(max-width:700px){body .preferences-content{padding:20px 16px}.theme-preview-feedback{align-items:flex-start;flex-direction:column}body .theme-swatch{height:62px}body .preferences-nav button{padding:14px 18px}}
+body:is(.theme-navy,.theme-slate,.theme-forest,.theme-ocean,.theme-indigo,.theme-sandstone) :is(.preferences-nav,.list-toolbar,.record-section-tabs){background:var(--surface-subtle);border-color:var(--line)}
+body:is(.theme-navy,.theme-slate,.theme-forest,.theme-ocean,.theme-indigo,.theme-sandstone) .preferences-nav button.active{background:var(--green);color:#fff}
+body:is(.theme-navy,.theme-slate,.theme-forest,.theme-ocean,.theme-indigo,.theme-sandstone) .record-section-tabs a:is(.active,:hover){background:var(--surface);color:var(--green-dark)}
+body .sidebar :is(a,button,input,summary):focus-visible{outline-color:#fff;outline-offset:2px}

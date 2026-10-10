@@ -1380,6 +1380,9 @@
    "id": "Blade chassis"
   },
   {
+   "id": "Blue-green accents with a bright, focused workspace."
+  },
+  {
    "id": "Board scope"
   },
   {
@@ -1832,6 +1835,9 @@
   },
   {
    "id": "Channels"
+  },
+  {
+   "id": "Charcoal surfaces with clear, cool accents."
   },
   {
    "id": "Chat"
@@ -2843,6 +2849,9 @@
   },
   {
    "id": "Deep blue navigation with cool, understated accents."
+  },
+  {
+   "id": "Deep navy surfaces with crisp blue accents."
   },
   {
    "id": "Default density"
@@ -3949,6 +3958,9 @@
    "id": "Granted roles"
   },
   {
+   "id": "Graphite"
+  },
+  {
    "id": "Groq"
   },
   {
@@ -4386,6 +4398,9 @@
   },
   {
    "id": "Index"
+  },
+  {
+   "id": "Indigo"
   },
   {
    "id": "Individual decisions on {number}"
@@ -5204,6 +5219,9 @@
   },
   {
    "id": "Microsoft Teams"
+  },
+  {
+   "id": "Midnight"
   },
   {
    "id": "Minimize interface animation."
@@ -6253,6 +6271,9 @@
    "id": "ORGANIZATIONS"
   },
   {
+   "id": "Ocean"
+  },
+  {
    "id": "Ollama"
   },
   {
@@ -7025,6 +7046,9 @@
    "id": "Preview {id} found"
   },
   {
+   "id": "Previewing {theme}. Save preferences to keep this theme."
+  },
+  {
    "id": "Primary"
   },
   {
@@ -7583,6 +7607,9 @@
    "id": "Referrer: {referrer}"
   },
   {
+   "id": "Refined indigo navigation with soft violet accents."
+  },
+  {
    "id": "Refresh the page before starting an investigation."
   },
   {
@@ -7909,6 +7936,9 @@
   },
   {
    "id": "Reset password · {instance_name}"
+  },
+  {
+   "id": "Reset preview"
   },
   {
    "id": "Reset to default"
@@ -8343,6 +8373,9 @@
   },
   {
    "id": "Sample devices as they would appear in the CMDB:"
+  },
+  {
+   "id": "Sandstone"
   },
   {
    "id": "Save"
@@ -9149,6 +9182,9 @@
   },
   {
    "id": "Showing the first {relationships} of {relationships_total} relationships. Open a configuration item or the"
+  },
+  {
+   "id": "Showing your saved theme."
   },
   {
    "id": "Sibling Catalog Tasks"
@@ -10936,6 +10972,9 @@
   },
   {
    "id": "Waiting for your decision"
+  },
+  {
+   "id": "Warm stone surfaces with restrained bronze accents."
   },
   {
    "id": "Warnings"
