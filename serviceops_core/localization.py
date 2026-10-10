@@ -101,6 +101,9 @@ def _load_source():
 
 
 LANGUAGES = _load_index()
+# Catalog files exist only for indexed languages; lookups go through this
+# table so a file path is never built from a caller-supplied code.
+_CATALOG_PATHS = MappingProxyType({code: LOCALES / "messages" / f"{code}.json" for code in LANGUAGES})
 SOURCE_MESSAGES, JAVASCRIPT_MESSAGES = _load_source()
 
 
@@ -136,10 +139,8 @@ def _load_catalog(code):
     empty = MappingProxyType({"messages": MappingProxyType({}), "calendar": MappingProxyType({})})
     # Only codes named by the bundled index (each validated by _CODE) ever
     # become a file name, whatever the caller passes.
-    if code == SOURCE_LANGUAGE or code not in LANGUAGES:
-        return empty
-    path = LOCALES / "messages" / f"{code}.json"
-    if not path.is_file():
+    path = _CATALOG_PATHS.get(code)
+    if code == SOURCE_LANGUAGE or path is None or not path.is_file():
         return empty
     try:
         raw = _read_json(path)
