@@ -7105,6 +7105,12 @@
    "id": "Pub/Sub subscription ID (Chat API -> Configuration -> Connection settings -> Cloud Pub/Sub topic)"
   },
   {
+   "id": "Public URL"
+  },
+  {
+   "id": "Public URL must be an https:// origin such as https://servicedesk.example.com"
+  },
+  {
    "id": "Public reply"
   },
   {
@@ -9706,6 +9712,9 @@
    "id": "The CMDB holds {cmdb_total} configuration items, {cmdb_from_snipeit} of them from Snipe-IT."
   },
   {
+   "id": "The HTTPS address people use to reach ServiceOps. Password-reset emails link here instead of trusting request headers."
+  },
+  {
    "id": "The SCIM client must act as a security administrator."
   },
   {
@@ -11361,6 +11370,9 @@
   },
   {
    "id": "https://docs.google.com/spreadsheets/d/…"
+  },
+  {
+   "id": "https://servicedesk.example.com"
   },
   {
    "id": "https://sso.example.com/realms/company/.well-known/openid-configuration"

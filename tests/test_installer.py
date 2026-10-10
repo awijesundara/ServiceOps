@@ -112,3 +112,21 @@ def test_installer_rejects_cross_site_posts(tmp_path, monkeypatch):
     assert foreign.status_code == 403
     same_origin = client.post("/api/validate", json={}, headers={"Origin": "http://localhost"})
     assert same_origin.status_code == 200
+
+
+def test_public_url_must_be_an_https_origin_and_is_written_to_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setattr("installer.app.load_json",
+                        lambda *_: {"ok": True, "message": "Host passed"})
+    base = {
+        "db_mode": "bundled", "bind_address": "127.0.0.1", "app_port": "0",
+        "admin_password": "strong-production-password",
+        "ldap_enabled": False, "keycloak_enabled": False,
+    }
+    for rejected in ("http://desk.example.com", "https://desk.example.com/path", "desk.example.com"):
+        assert not validate({**base, "public_base_url": rejected})["security"]["ok"], rejected
+    assert validate({**base, "public_base_url": "https://desk.example.com/"})["security"]["ok"]
+    assert validate(base)["security"]["ok"]
+
+    monkeypatch.setattr("installer.app.STATE", tmp_path)
+    write_environment({**base, "public_base_url": "https://desk.example.com/"})
+    assert 'PUBLIC_BASE_URL="https://desk.example.com"' in (tmp_path / "serviceops.env").read_text()

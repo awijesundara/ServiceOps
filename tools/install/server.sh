@@ -9,6 +9,7 @@ MODE=""
 APP_PORT="8080"
 BIND_ADDRESS="127.0.0.1"
 DATABASE_URL=""
+PUBLIC_BASE_URL=""
 ASSUME_YES=0
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; RESET='\033[0m'
@@ -35,6 +36,8 @@ Usage: ./serviceops install server [options]
   --port PORT
   --bind 127.0.0.1|0.0.0.0|IP
   --database-url URL       Required for external mode
+  --public-url URL         Public HTTPS origin, e.g. https://servicedesk.example.com
+                           (used for emailed password-reset links; strongly recommended)
   --yes                    Non-interactive confirmation
   --help
 EOF
@@ -46,6 +49,7 @@ while (($#)); do
     --port) APP_PORT="${2:-}"; shift 2 ;;
     --bind) BIND_ADDRESS="${2:-}"; shift 2 ;;
     --database-url) DATABASE_URL="${2:-}"; shift 2 ;;
+    --public-url) PUBLIC_BASE_URL="${2:-}"; shift 2 ;;
     --yes) ASSUME_YES=1; shift ;;
     --help|-h) usage; exit 0 ;;
     *) die "Unknown option: $1" ;;
@@ -59,6 +63,8 @@ docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required."
 docker info >/dev/null 2>&1 || die "Docker daemon is not running or your user cannot access it."
 ((APP_PORT >= 1 && APP_PORT <= 65535)) || die "Port must be between 1 and 65535."
 [[ "$BIND_ADDRESS" != *$'\n'* && "$BIND_ADDRESS" != *" "* ]] || die "Invalid bind address."
+[[ -z "$PUBLIC_BASE_URL" || "$PUBLIC_BASE_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$ ]] || die "--public-url must be an https:// origin such as https://servicedesk.example.com."
+[[ -n "$PUBLIC_BASE_URL" ]] || warn "No --public-url given: password-reset links will use the request host. Set PUBLIC_BASE_URL in .env."
 AVAILABLE_KB="$(df -Pk "$ROOT_DIR" | awk 'NR==2 {print $4}')"
 ((AVAILABLE_KB >= 2097152)) || die "At least 2 GB free disk space is required."
 
@@ -120,6 +126,7 @@ umask 077
   printf "DEPLOYMENT_MODE=%s\n" "$MODE"
   printf "APP_PORT=%s\n" "$APP_PORT"
   printf "BIND_ADDRESS=%s\n" "$BIND_ADDRESS"
+  printf "PUBLIC_BASE_URL=%s\n" "${PUBLIC_BASE_URL%/}"
   printf "SECRET_KEY=%s\n" "$SECRET_KEY"
   printf "ADMIN_PASSWORD=%s\n" "$ADMIN_PASSWORD"
   printf "SETTINGS_ENCRYPTION_KEY=%s\n" "$SETTINGS_ENCRYPTION_KEY"
