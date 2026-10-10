@@ -101,42 +101,78 @@ def test_developer_and_ci_commands_never_suppress_failures():
     assert "pytest -q || true" not in workflows
 
 
-def test_release_commit_is_created_by_the_api_and_tagged_only_after_it_lands(monkeypatch, tmp_path):
-    import json
+FAKE_SIGNING_KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----"
+
+
+def load_release_commit():
     import sys
 
     sys.path.insert(0, str(ROOT / "tools"))
     import release_commit
+    return release_commit
 
-    calls = []
 
-    def fake_api(method, path, payload):
+def test_release_commit_is_created_by_the_api_and_signed_tag_pushed_after_it_lands(monkeypatch, tmp_path):
+    release_commit = load_release_commit()
+    calls, git_calls = [], []
+
+    def fake_api(method, path, payload=None):
         calls.append((method, path, payload))
         if path == "/graphql":
             return {"data": {"createCommitOnBranch": {"commit": {"oid": "c0ffee"}}}}
-        if path.endswith("/git/tags"):
-            return {"sha": "7a9"}
-        return {}
+        if "/git/ref/tags/" in path:
+            return {"object": {"sha": "7a9"}}
+        if path.endswith("/git/tags/7a9"):
+            return {"verification": {"verified": True, "reason": "valid"}}
+        raise AssertionError(path)
+
+    def fake_git(*args):
+        git_calls.append(args)
+        if args[0] == "diff":
+            return "VERSION"
+        if args[-2:] == ("v1.110.0", "c0ffee"):
+            key_arg = next(a for a in args if a.startswith("user.signingkey="))
+            assert open(key_arg.split("=", 1)[1]).read().startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
+        return "abc123"
 
     (tmp_path / "VERSION").write_text("1.110.0\n")
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RELEASE_TAG_SIGNING_KEY", FAKE_SIGNING_KEY)
     monkeypatch.setattr(release_commit, "api", fake_api)
-    monkeypatch.setattr(release_commit, "git", lambda *args: "VERSION" if args[0] == "diff" else "abc123")
+    monkeypatch.setattr(release_commit, "git", fake_git)
     assert release_commit.release("v1.110.0", "owner/ServiceOps") == "c0ffee"
-    (_, path, payload), (_, tag_path, tag_payload), (_, ref_path, ref_payload) = calls
-    commit_input = payload["variables"]["input"]
-    assert path == "/graphql" and commit_input["expectedHeadOid"] == "abc123"
+
+    commit_input = calls[0][2]["variables"]["input"]
+    assert calls[0][1] == "/graphql" and commit_input["expectedHeadOid"] == "abc123"
     assert commit_input["message"]["headline"] == "chore(release): 1.110.0"
     assert [item["path"] for item in commit_input["fileChanges"]["additions"]] == ["VERSION"]
-    assert tag_path == "/repos/owner/ServiceOps/git/tags" and tag_payload["object"] == "c0ffee"
-    assert ref_path == "/repos/owner/ServiceOps/git/refs" and ref_payload == {"ref": "refs/tags/v1.110.0", "sha": "7a9"}
+    assert not any(path.endswith("/git/tags") or path.endswith("/git/refs") for _, path, _ in calls)
+    tag_call = next(args for args in git_calls if "tag" in args)
+    assert "-s" in tag_call and "gpg.format=ssh" in tag_call
+    assert "user.email=anushka@wijesundara.com" in tag_call
+    assert ("push", "origin", "refs/tags/v1.110.0") in git_calls
+
+
+def test_release_refuses_to_start_without_the_tag_signing_key(monkeypatch):
+    release_commit = load_release_commit()
+    monkeypatch.delenv("RELEASE_TAG_SIGNING_KEY", raising=False)
+    monkeypatch.setattr(release_commit, "api", lambda *a, **k: pytest.fail("nothing may be created"))
+    monkeypatch.setattr(release_commit, "git", lambda *a: pytest.fail("nothing may be created"))
+    with pytest.raises(SystemExit, match="refusing to create an unsigned release tag"):
+        release_commit.release("v1.110.0", "owner/ServiceOps")
+
+
+def test_release_fails_when_github_does_not_verify_the_tag(monkeypatch):
+    release_commit = load_release_commit()
+    monkeypatch.setattr(release_commit.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(release_commit, "api", lambda method, path, payload=None: (
+        {"object": {"sha": "7a9"}} if "/git/ref/" in path else {"verification": {"verified": False}}
+    ))
+    assert release_commit.tag_is_verified("v1.110.0", "owner/ServiceOps", attempts=2) is False
 
 
 def test_release_commit_refuses_unexpected_changes(monkeypatch):
-    import sys
-
-    sys.path.insert(0, str(ROOT / "tools"))
-    import release_commit
+    release_commit = load_release_commit()
 
     monkeypatch.setattr(release_commit, "git", lambda *args: "VERSION\napp.py")
     with pytest.raises(SystemExit, match="unexpected changes: app.py"):
@@ -146,5 +182,6 @@ def test_release_commit_refuses_unexpected_changes(monkeypatch):
 def test_release_workflow_signs_through_the_api_and_skips_taken_tags():
     release_workflow = (ROOT / ".github/workflows/release.yml").read_text()
     assert 'run: python3 tools/release_commit.py "$TAG"' in release_workflow
+    assert "RELEASE_TAG_SIGNING_KEY: ${{ secrets.RELEASE_TAG_SIGNING_KEY }}" in release_workflow
     assert "git push origin HEAD:main" not in release_workflow
     assert 'while git rev-parse -q --verify "refs/tags/v${version}"' in release_workflow
