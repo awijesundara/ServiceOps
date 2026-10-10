@@ -1,19 +1,19 @@
-const CACHE_NAME = "serviceops-shell-v1.113.20";
+const CACHE_NAME = "serviceops-shell-v1.113.21";
 const SHELL_ASSETS = [
-  "/static/platform.css?v=1.113.20",
-  "/static/task-board.css?v=1.113.20",
-  "/static/status-page.css?v=1.113.20",
-  "/static/app.css?v=1.113.20",
-  "/static/enterprise.css?v=1.113.20",
-  "/static/brand.css?v=1.113.20",
-  "/static/itil.css?v=1.113.20",
-  "/static/platform.js?v=1.113.20",
-  "/static/admin-workspace.css?v=1.113.20",
-  "/static/utilities.css?v=1.113.20",
-  "/static/dark.css?v=1.113.20",
-  "/static/lookup.js?v=1.113.20",
-  "/static/icons/serviceops-icon-192.png?v=1.113.20",
-  "/static/icons/serviceops-icon-512.png?v=1.113.20"
+  "/static/platform.css?v=1.113.21",
+  "/static/task-board.css?v=1.113.21",
+  "/static/status-page.css?v=1.113.21",
+  "/static/app.css?v=1.113.21",
+  "/static/enterprise.css?v=1.113.21",
+  "/static/brand.css?v=1.113.21",
+  "/static/itil.css?v=1.113.21",
+  "/static/platform.js?v=1.113.21",
+  "/static/admin-workspace.css?v=1.113.21",
+  "/static/utilities.css?v=1.113.21",
+  "/static/dark.css?v=1.113.21",
+  "/static/lookup.js?v=1.113.21",
+  "/static/icons/serviceops-icon-192.png?v=1.113.21",
+  "/static/icons/serviceops-icon-512.png?v=1.113.21"
 ];
 
 self.addEventListener("install", (event) => {
