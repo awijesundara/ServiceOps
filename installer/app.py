@@ -1,4 +1,5 @@
 import json
+import re
 import os
 import logging
 import tempfile
@@ -229,6 +230,9 @@ def validate(config):
             clean(config.get("ldap_uri")).startswith("ldaps://") or config.get("ldap_start_tls")
         ):
         checks["security"] = result(False, tr("LDAP must use LDAPS or StartTLS"))
+    elif clean(config.get("public_base_url")) and not re.fullmatch(
+            r"https://[A-Za-z0-9.-]+(?::\d{1,5})?/?", clean(config.get("public_base_url"))):
+        checks["security"] = result(False, tr("Public URL must be an https:// origin such as https://servicedesk.example.com"))
     elif config.get("keycloak_enabled") and not clean(
             config.get("keycloak_discovery_url")
         ).startswith("https://"):
@@ -274,6 +278,7 @@ def write_environment(config):
         env_line("BRAND_AMBER", config.get("brand_amber", "#f9aa3c")),
         env_line("APP_PORT", config.get("app_port", "8080")),
         env_line("BIND_ADDRESS", config.get("bind_address", "127.0.0.1")),
+        env_line("PUBLIC_BASE_URL", clean(config.get("public_base_url")).rstrip("/")),
         env_line("POSTGRES_DB", config.get("postgres_db", "serviceops")),
         env_line("POSTGRES_USER", config.get("postgres_user", "serviceops")),
         env_line("POSTGRES_PASSWORD", config.get("postgres_password", "")),

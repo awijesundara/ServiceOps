@@ -17,6 +17,7 @@
       <div class="grid">
         <label>{{ tr('Platform name') }}<input name="instance_name" value="ServiceOps"><small>{{ tr('The product name shown in navigation and browser titles.') }}</small></label>
         <label>{{ tr('Company name') }}<input name="company_name" value="Your Company"></label>
+        <label class="wide">{{ tr('Public URL') }}<input name="public_base_url" type="url" placeholder="{{ tr('https://servicedesk.example.com') }}"><small>{{ tr('The HTTPS address people use to reach ServiceOps. Password-reset emails link here instead of trusting request headers.') }}</small></label>
         <label>{{ tr('Primary color') }}<input name="brand_teal" type="color" value="#003e4c"></label>
         <label>{{ tr('Accent color') }}<input name="brand_amber" type="color" value="#f9aa3c"></label>
         <label class="wide">{{ tr('Company logo (PNG)') }}<input name="company_logo" type="file" accept="image/png"><small>{{ tr('Optional. Transparent PNG recommended, maximum 5 MB.') }}</small></label>
