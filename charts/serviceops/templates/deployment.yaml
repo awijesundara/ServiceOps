@@ -90,11 +90,13 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - {name: http, containerPort: 8080, protocol: TCP}
+            - {name: probe-http, containerPort: 8082, protocol: TCP}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: ["ALL"]}
           env:
+            - {name: GUNICORN_HEALTH_PORT, value: "8082"}
             - {name: GUNICORN_WORKERS, value: {{ .Values.web.workers | quote }}}
             - {name: GUNICORN_THREADS, value: {{ .Values.web.threads | quote }}}
             - {name: DEPLOYMENT_PROFILE, value: {{ .Values.deploymentProfile | quote }}}
@@ -141,16 +143,16 @@ spec:
             - {name: ldap-ca, mountPath: /etc/serviceops/ldap, readOnly: true}
             {{- end }}
           startupProbe:
-            httpGet: {path: /live, port: http}
+            httpGet: {path: /live, port: probe-http}
             failureThreshold: 30
             periodSeconds: 5
           readinessProbe:
-            httpGet: {path: /ready, port: http}
+            httpGet: {path: /ready, port: probe-http}
             periodSeconds: 10
             timeoutSeconds: {{ .Values.web.probes.readinessTimeoutSeconds }}
             failureThreshold: {{ .Values.web.probes.readinessFailureThreshold }}
           livenessProbe:
-            httpGet: {path: /live, port: http}
+            httpGet: {path: /live, port: probe-http}
             periodSeconds: 20
             timeoutSeconds: {{ .Values.web.probes.livenessTimeoutSeconds }}
             failureThreshold: {{ .Values.web.probes.livenessFailureThreshold }}
