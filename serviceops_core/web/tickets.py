@@ -2423,10 +2423,9 @@ def register(app):
             total = len(ranked)
             tickets_by_state[state] = lane_tickets
             board_meta[state] = {"total": total, "hidden": max(0, total - lane_limit)}
-        manageable_ticket_ids = {
-            ticket.id for tickets in tickets_by_state.values() for ticket in tickets
-            if user_can_manage_ticket(current_user, ticket)
-        }
+        manageable_ticket_ids = core.manageable_ticket_ids(
+            current_user, [ticket for tickets in tickets_by_state.values() for ticket in tickets],
+        )
         return render_template(
             "task_board.html", tickets_by_state=tickets_by_state,
             manageable_ticket_ids=manageable_ticket_ids,
