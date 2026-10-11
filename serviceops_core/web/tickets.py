@@ -159,6 +159,20 @@ from serviceops_core.localization import tr, tr_value
 from serviceops_core.safe_redirect import redirect_internal
 
 
+ENTERPRISE_PRIORITIES = ("P1", "P2", "P3", "P4")
+ENTERPRISE_RISKS = ("Low", "Medium", "High", "Critical")
+
+
+def enterprise_assignable_users(tenant_id):
+    """Active fulfiller-level users of the record's own tenant: the assignee
+    choices on an enterprise record, and the only accepted assignee ids."""
+    return User.query.filter(
+        User.tenant_id == tenant_id,
+        User.role.in_(["agent", "manager", "admin", "superadmin"]),
+        User.active.is_(True),
+    ).order_by(User.name)
+
+
 def register(app):
     @app.get("/work/open")
     @login_required
@@ -1963,16 +1977,27 @@ def register(app):
                     "risk": record.risk,
                     "assigned to": record.assignee.name if record.assignee else "Unassigned",
                 }
+                priority = request.form.get("priority", record.priority)
+                risk = request.form.get("risk", record.risk)
+                if priority not in ENTERPRISE_PRIORITIES or risk not in ENTERPRISE_RISKS:
+                    abort(400, description=tr("Select a valid priority and risk."))
+                raw_assignee = request.form.get("assignee_id", "").strip()
+                assignee = None
+                if raw_assignee:
+                    assignee = (
+                        enterprise_assignable_users(record.tenant_id).filter(User.id == int(raw_assignee)).first()
+                        if raw_assignee.isdigit() else None
+                    )
+                    if not assignee:
+                        abort(400, description=tr("Select a valid assignee."))
                 try:
                     transition_enterprise(record, request.form["state"])
                 except HTTPException as error:
                     db.session.rollback()
                     flash(error.description or tr("That change could not be made."), "error")
                     return redirect(url_for("enterprise_detail", record_id=record.id))
-                record.priority = request.form["priority"]
-                record.risk = request.form["risk"]
-                record.assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
-                assignee = db.session.get(User, record.assignee_id) if record.assignee_id else None
+                record.priority, record.risk = priority, risk
+                record.assignee_id = assignee.id if assignee else None
                 log_field_changes("enterprise", record.id, before, {
                     "state": record.state,
                     "priority": record.priority,
@@ -2012,7 +2037,7 @@ def register(app):
                 audit(action, record.number)
             db.session.commit()
             return redirect(url_for("enterprise_detail", record_id=record.id))
-        agents = User.query.filter(User.role.in_(["agent", "manager", "admin", "superadmin"]), User.active.is_(True)).all()
+        agents = enterprise_assignable_users(record.tenant_id).all()
         work_tasks = OperationalTask.query.filter_by(
             parent_type="enterprise", parent_id=record.id
         ).order_by(OperationalTask.sequence, OperationalTask.id).all()

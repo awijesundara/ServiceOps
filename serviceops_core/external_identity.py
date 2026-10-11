@@ -198,6 +198,16 @@ def provision_external_user(
             )
     if not existing_user and base and provider == "ldap":
         existing_user = User.query.filter_by(username=base).first()
+        # A bare username match is enough to adopt an imported placeholder,
+        # never an administrator account: a directory entry that happens to
+        # be called "admin" must not inherit the local bootstrap
+        # administrator. Adopting one of those needs a matching email.
+        if existing_user and ROLE_RANK.get(existing_user.granted_roles[0], -1) >= ROLE_RANK["admin"]:
+            current_app.logger.warning(
+                "LDAP login did not adopt administrator account %s by username alone.",
+                existing_user.username,
+            )
+            existing_user = None
     if existing_user and not ExternalIdentity.query.filter_by(
         provider=provider, user_id=existing_user.id
     ).first():
@@ -422,7 +432,7 @@ _cloudflare_access_jwks_cache = {"fetched_at": 0.0, "key_set": None}
 _cloudflare_access_jwks_lock = threading.Lock()
 
 
-def _cloudflare_access_key_set():
+def _cloudflare_access_key_set(refresh=False):
     """Fetches (and caches for 1 hour, per worker process) Cloudflare
     Access's RS256 public keys for this team as a joserfc KeySet.
 
@@ -432,8 +442,13 @@ def _cloudflare_access_key_set():
     lock is held only around the check-refresh, never across a verified
     JWT's own signature check."""
     with _cloudflare_access_jwks_lock:
-        if time_module.monotonic() - _cloudflare_access_jwks_cache["fetched_at"] < 3600 and _cloudflare_access_jwks_cache["key_set"] is not None:
-            return _cloudflare_access_jwks_cache["key_set"]
+        age = time_module.monotonic() - _cloudflare_access_jwks_cache["fetched_at"]
+        cached = _cloudflare_access_jwks_cache["key_set"]
+        # `refresh` (a token signed by a key we do not hold, i.e. Access
+        # rotated its keys) refetches at most once a minute, so a stream of
+        # forged tokens cannot turn into a stream of requests to Cloudflare.
+        if cached is not None and (age < 60 or (age < 3600 and not refresh)):
+            return cached
         team_domain = current_app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]
         response = requests.get(f"https://{team_domain}/cdn-cgi/access/certs", timeout=5,
                                 proxies=core_app.resolve_component_proxies("CLOUDFLARE_ACCESS"))
@@ -456,8 +471,10 @@ def verify_cloudflare_access_jwt(token):
     if not team_domain or not aud or not token:
         return None
     try:
-        key_set = _cloudflare_access_key_set()
-        decoded = jwt.decode(token, key_set, algorithms=["RS256"])
+        try:
+            decoded = jwt.decode(token, _cloudflare_access_key_set(), algorithms=["RS256"])
+        except Exception:
+            decoded = jwt.decode(token, _cloudflare_access_key_set(refresh=True), algorithms=["RS256"])
         claims_registry = JWTClaimsRegistry(
             aud={"essential": True, "value": aud},
             iss={"essential": True, "value": f"https://{team_domain}"},
