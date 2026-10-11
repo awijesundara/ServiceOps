@@ -10,6 +10,10 @@ else
   PRELOAD_FLAG="--preload"
 fi
 
+if [ -n "${GUNICORN_HEALTH_PORT:-}" ]; then
+  python -m tools.health_probe &
+fi
+
 exec gunicorn \
   --config /app/gunicorn.conf.py \
   ${PRELOAD_FLAG} \

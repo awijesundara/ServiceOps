@@ -783,7 +783,7 @@ def audit_security_context():
         "client_language": request.headers.get("Accept-Language", "")[:120] or None,
         "client_hostname": (
             getattr(session_record, "client_hostname", None)
-            or verified_client_hostname(request.remote_addr)
+            or verified_client_hostname(request.remote_addr, wait=False)
         ),
         "device": (
             getattr(session_record, "device_label", None)
@@ -6642,6 +6642,7 @@ def user_is_local(user):
 _hostname_cache = {}
 _hostname_cache_lock = threading.Lock()
 _hostname_pool = None
+_hostname_inflight = {}
 
 
 def _lookup_verified_hostname(address):
@@ -6656,38 +6657,50 @@ def _lookup_verified_hostname(address):
     return hostname[:255] if normalized in resolved else None
 
 
-def verified_client_hostname(address):
-    """Best-effort forward-confirmed reverse DNS, never a trusted identity.
+def verified_client_hostname(address, *, wait=True):
+    """Best-effort forward-confirmed DNS, with bounded background enrichment.
 
-    A PTR name is kept only when resolving it forward includes the same source
-    address, so an arbitrary PTR record cannot pose as the client's name. On a
-    corporate network whose DNS registers workstations this is the device's
-    hostname (e.g. LAPTOP-7Q2.corp.example); for internet clients it is the
-    provider's name for their public address. Lookups are capped at one second
-    and cached for 15 minutes per address, so a slow resolver never stalls a
-    request. Administrators can turn it off (CLIENT_HOSTNAME_LOOKUP).
+    Logs use wait=False so slow DNS cannot hold a user request open. Session
+    creation can wait at most one second; completed lookups enrich later logs.
     """
     global _hostname_pool
     if not address or not setting_bool("CLIENT_HOSTNAME_LOOKUP", True):
         return None
     current = time_module.monotonic()
+    created = False
     with _hostname_cache_lock:
         cached = _hostname_cache.get(address)
         if cached and cached[0] > current:
             return cached[1]
-        if _hostname_pool is None:
-            from concurrent.futures import ThreadPoolExecutor
-            _hostname_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="client-dns")
-    future = _hostname_pool.submit(_lookup_verified_hostname, address)
+        future = _hostname_inflight.get(address)
+        if future is None:
+            if len(_hostname_inflight) >= 32:
+                return None
+            if _hostname_pool is None:
+                from concurrent.futures import ThreadPoolExecutor
+                _hostname_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="client-dns")
+            try:
+                future = _hostname_pool.submit(_lookup_verified_hostname, address)
+            except RuntimeError:  # executor shutting down: diagnostics must not fail requests
+                return None
+            _hostname_inflight[address] = future
+            created = True
+    if created:
+        def remember(completed):
+            try:
+                hostname = completed.result()
+            except Exception:
+                hostname = None
+            with _hostname_cache_lock:
+                _hostname_inflight.pop(address, None)
+                if len(_hostname_cache) >= 5000:
+                    _hostname_cache.clear()
+                _hostname_cache[address] = (time_module.monotonic() + 900, hostname)
+        future.add_done_callback(remember)
     try:
-        hostname = future.result(timeout=1.0)
-    except Exception:  # noqa: BLE001 - timeout or resolver failure: no name
-        hostname = None
-    with _hostname_cache_lock:
-        if len(_hostname_cache) > 5000:
-            _hostname_cache.clear()
-        _hostname_cache[address] = (current + 900, hostname)
-    return hostname
+        return future.result(timeout=1.0 if wait else 0)
+    except Exception:  # timeout or resolver failure: no name yet
+        return None
 
 
 # External identity (SSO/LDAP provisioning, LDAP login bind, Cloudflare
@@ -7431,7 +7444,7 @@ def create_app(test_config=None):
                 provider=session.get("_auth_provider", "local"),
                 ip_address=(request.remote_addr or "")[:64],
                 user_agent=request.headers.get("User-Agent", "")[:500],
-                client_hostname=verified_client_hostname(request.remote_addr),
+                client_hostname=verified_client_hostname(request.remote_addr, wait=False),
                 device_label=describe_device(request.headers),
                 client_language=request.headers.get("Accept-Language", "")[:120],
                 expires_at=now() + app.config["PERMANENT_SESSION_LIFETIME"],
@@ -7563,7 +7576,7 @@ def create_app(test_config=None):
                 "tenant_id": tenant_id,
                 "remote_addr": request.remote_addr,
                 **({} if request.endpoint == "static" else {
-                    "client_hostname": verified_client_hostname(request.remote_addr),
+                    "client_hostname": verified_client_hostname(request.remote_addr, wait=False),
                     "client_device": describe_device(request.headers),
                     "client_location": client_location(request.headers),
                     "cf_ray": (request.headers.get("CF-Ray") or "")[:64] or None,
