@@ -2025,6 +2025,11 @@ class ApprovalAuthorityGroup(db.Model):
     __table_args__ = (
         db.UniqueConstraint("tenant_id", "authority", "subject_group_id", "group_id",
                             name="uq_approval_authority_group"),
+        # NULLs are distinct in the constraint above, so tenant-wide links
+        # (subject_group_id NULL) need their own partial unique index.
+        db.Index("uq_approval_authority_group_tenant_wide", "tenant_id", "authority", "group_id",
+                 unique=True, sqlite_where=db.text("subject_group_id IS NULL"),
+                 postgresql_where=db.text("subject_group_id IS NULL")),
     )
 
 

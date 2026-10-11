@@ -83,9 +83,11 @@ def google_chat_handle_command(command, args, record, actor):
         if command == "escalate":
             if not args:
                 return "Usage: /escalate <team name>"
-            group = SupportGroup.query.filter(
+            # Only teams can own work, as on the web reassignment form;
+            # governance groups (CCB, Executive Office) are never offered.
+            group = core_app.team_groups(record.tenant_id).filter(
                 func.lower(SupportGroup.name) == args.strip().lower(),
-                SupportGroup.tenant_id == record.tenant_id, SupportGroup.active.is_(True),
+                SupportGroup.active.is_(True),
             ).first()
             if not group:
                 return f'No active team named "{args}" was found.'
@@ -108,6 +110,10 @@ def google_chat_handle_command(command, args, record, actor):
                     "ticket", record.id, "Reassigned to another team via Google Chat", "owning team",
                     current_group.name if current_group else "Unassigned", group.name, actor_id=actor.id,
                 )
+                if record.kind == "change":
+                    # The owning team is a material change field: approvals
+                    # granted to the old team no longer apply.
+                    core_app.supersede_change_approval(record, ["owning team"])
             else:
                 if record.support_group_id == group.id:
                     return f"{record.number} is already owned by {group.name}."

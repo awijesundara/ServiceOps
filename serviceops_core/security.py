@@ -193,6 +193,9 @@ def verify_password(password_hash, password):
     return _werkzeug_check_password_hash(password_hash, password)
 
 
+BACKUP_CODE_PATTERN = re.compile(r"[0-9a-f]{10}")
+
+
 def _normalized_backup_code(code):
     return (code or "").replace(" ", "").strip().lower()
 
@@ -214,7 +217,10 @@ def consume_backup_code(stored_hashes, code):
     """Return `stored_hashes` without the entry matching `code`, or None when
     nothing matches. Accepts Argon2id entries and legacy SHA-256 entries."""
     normalized = _normalized_backup_code(code)
-    if not normalized or not isinstance(stored_hashes, list):
+    # Codes are always 10 hex characters (generate_mfa_backup_codes). Checking
+    # the shape first keeps a mistyped TOTP code from costing one Argon2
+    # verification per stored code.
+    if not BACKUP_CODE_PATTERN.fullmatch(normalized) or not isinstance(stored_hashes, list):
         return None
     for index, stored in enumerate(stored_hashes):
         if not isinstance(stored, str):
