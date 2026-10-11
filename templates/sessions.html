@@ -6,7 +6,7 @@
   <table class="record-list"><thead><tr>{% if admin_view %}<th>{{ tr('User') }}</th>{% endif %}<th>{{ tr('Device') }}</th><th>{{ tr('Network') }}</th><th>{{ tr('Provider') }}</th><th>{{ tr('Last seen') }}</th><th>{{ tr('Expires') }}</th><th>{{ tr('Status') }}</th><th></th></tr></thead><tbody>
   {% for row in sessions %}
     <tr>
-      {% if admin_view %}<td><strong>{{ row.user.name }}</strong><br><small>{{ row.user.username }}</small></td>{% endif %}
+      {% if admin_view %}<td><strong>{{ user_link(row.user) }}</strong><br><small>{{ row.user.username }}</small></td>{% endif %}
       <td><strong>{{ row.device_label or tr('Unknown device') }}</strong>{% if row.session_id == session.get('_session_id') %} <span class="badge">{{ tr('This session') }}</span>{% endif %}<br><small title="{{ row.user_agent or '' }}">{{ row.client_language or tr('Language not reported') }}</small></td>
       <td>{{ row.ip_address or '—' }}{% if row.client_hostname %}<br><small>{{ row.client_hostname }}</small>{% else %}<br><small>{{ tr('Hostname unavailable or not verified') }}</small>{% endif %}</td><td>{{ row.provider }}</td>
       <td>{{ row.last_seen_at|usertime('%Y-%m-%d %H:%M:%S') }}</td><td>{{ row.expires_at|usertime('%Y-%m-%d %H:%M:%S') }}</td>

@@ -20,7 +20,7 @@ RUN find /etc/apt -type f \( -name "*.list" -o -name "*.sources" \) -print0 | xa
         -e "s|https\?://deb.debian.org/debian\([[:space:]]\|$\)|${APT_MIRROR}\\1|g" \
     && if apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update \
         && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 upgrade -y \
-        && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends libpq5; then \
+        && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends libpq5 nginx-light; then \
             echo "APT security update + libpq5 install succeeded"; \
         else \
             echo "WARNING: APT mirror is unreachable; continuing with wheel-bundled runtime libs for offline build"; \

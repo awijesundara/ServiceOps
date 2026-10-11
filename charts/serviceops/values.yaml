@@ -260,3 +260,19 @@ ai:
   hostedStallSeconds: 30
   # Narrow destination/port rules for private model endpoints (web probes + AI worker).
   extraEgress: []
+
+# Separate web capacity from background-worker resources.
+web:
+  workers: 2
+  threads: 4
+  resources: {}  # falls back to resources when unset
+  probes:
+    readinessTimeoutSeconds: 5
+    readinessFailureThreshold: 3
+    livenessTimeoutSeconds: 10
+    livenessFailureThreshold: 6
+  staticOffload:
+    enabled: false
+    resources:
+      requests: {cpu: 50m, memory: 32Mi}
+      limits: {cpu: 250m, memory: 128Mi}

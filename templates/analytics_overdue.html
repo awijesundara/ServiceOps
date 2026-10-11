@@ -6,7 +6,7 @@
 {% if overdue_truncated %}<p class="muted">{{ tr('Showing the first {overdue_records} overdue records.', overdue_records=(overdue_records|length)) }}</p>{% endif %}
 {% if overdue_records %}
 <table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Module') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Priority') }}</th><th>{{ tr('Due') }}</th><th>{{ tr('Assignee') }}</th></tr></thead>
-<tbody>{% for r in overdue_records %}<tr><td><a href="{{ url_for('enterprise_detail', record_id=r.id) }}">{{ r.number }}</a></td><td>{{ modules[r.domain].name }}</td><td>{{ r.title }}</td><td><span class="badge">{{ tr_value(r.state) }}</span></td><td><span class="priority {{ r.priority|lower }}">{{ tr_value(r.priority) }}</span></td><td>{{ (r.due_at|usertime('%b %d, %H:%M')) }}</td><td>{{ r.assignee.name if r.assignee else tr('Unassigned') }}</td></tr>{% endfor %}</tbody></table>
+<tbody>{% for r in overdue_records %}<tr><td><a href="{{ url_for('enterprise_detail', record_id=r.id) }}">{{ r.number }}</a></td><td>{{ modules[r.domain].name }}</td><td>{{ r.title }}</td><td><span class="badge">{{ tr_value(r.state) }}</span></td><td><span class="priority {{ r.priority|lower }}">{{ tr_value(r.priority) }}</span></td><td>{{ (r.due_at|usertime('%b %d, %H:%M')) }}</td><td>{{ user_link(r.assignee, tr('Unassigned')) }}</td></tr>{% endfor %}</tbody></table>
 {% else %}<div class="empty"><h3>{{ tr('Nothing overdue') }}</h3><p>{{ tr('Every open enterprise record is within its due date.') }}</p></div>{% endif %}
 </section>
 {% endblock %}

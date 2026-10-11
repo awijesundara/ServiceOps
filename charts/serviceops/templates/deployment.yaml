@@ -95,6 +95,8 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: {drop: ["ALL"]}
           env:
+            - {name: GUNICORN_WORKERS, value: {{ .Values.web.workers | quote }}}
+            - {name: GUNICORN_THREADS, value: {{ .Values.web.threads | quote }}}
             - {name: DEPLOYMENT_PROFILE, value: {{ .Values.deploymentProfile | quote }}}
             - {name: DEPLOYMENT_MODE, value: "kubernetes"}
             - {name: UPLOAD_FOLDER, value: /app/uploads}
@@ -124,7 +126,7 @@ spec:
             - {name: APPLE_PASSKEY_APP_ID, value: {{ .Values.auth.passkeys.appleAppId | quote }}}
             - {name: TRUST_PROXY_HEADERS, value: {{ .Values.proxy.trustHeaders | quote }}}
             - {name: PUBLIC_BASE_URL, value: {{ include "serviceops.publicBaseUrl" . | quote }}}
-            - {name: TRUST_CLOUDFLARE_PROXY, value: {{ .Values.proxy.trustCloudflare | default true | quote }}}
+            - {name: TRUST_CLOUDFLARE_PROXY, value: {{ .Values.proxy.trustCloudflare | quote }}}
             - {name: TRUSTED_PROXY_CIDRS, value: {{ .Values.proxy.trustedCidrs | default "" | quote }}}
             - {name: CLIENT_IP_HEADER, value: {{ .Values.proxy.clientIpHeader | default "" | quote }}}
             - {name: ENABLE_HSTS, value: {{ .Values.proxy.enableHsts | quote }}}
@@ -145,17 +147,49 @@ spec:
           readinessProbe:
             httpGet: {path: /ready, port: http}
             periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 3
+            timeoutSeconds: {{ .Values.web.probes.readinessTimeoutSeconds }}
+            failureThreshold: {{ .Values.web.probes.readinessFailureThreshold }}
           livenessProbe:
             httpGet: {path: /live, port: http}
             periodSeconds: 20
-            timeoutSeconds: 3
-            failureThreshold: 5
+            timeoutSeconds: {{ .Values.web.probes.livenessTimeoutSeconds }}
+            failureThreshold: {{ .Values.web.probes.livenessFailureThreshold }}
           lifecycle:
             preStop: {exec: {command: ["/bin/sh", "-c", "sleep {{ .Values.rollingUpdate.preStopDelaySeconds }}"]}}
-          resources: {{- toYaml .Values.resources | nindent 12 }}
+          resources: {{- toYaml (default .Values.resources .Values.web.resources) | nindent 12 }}
+        {{- if .Values.web.staticOffload.enabled }}
+        - name: static-edge
+          image: {{ include "serviceops.imageRef" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["nginx", "-c", "/app/nginx/kubernetes.conf", "-g", "daemon off;"]
+          ports:
+            - {name: edge-http, containerPort: 8081, protocol: TCP}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources: {{- toYaml .Values.web.staticOffload.resources | nindent 12 }}
+          volumeMounts:
+            - {name: edge-tmp, mountPath: /tmp}
+          startupProbe:
+            httpGet: {path: /edge-live, port: edge-http}
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /edge-live, port: edge-http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: {path: /edge-live, port: edge-http}
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
+        {{- end }}
       volumes:
+        {{- if .Values.web.staticOffload.enabled }}
+        - name: edge-tmp
+          emptyDir: {}
+        {{- end }}
         - name: tmp
           emptyDir: {sizeLimit: 128Mi}
         - name: uploads

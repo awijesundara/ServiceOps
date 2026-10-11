@@ -3,7 +3,7 @@
   <h3>{{ tr('Users with authority') }}</h3>
   <ul class="approval-group-list">
     {% for user in authority_users if user.id in assigned %}
-    <li><span><strong>{{ user.name }}</strong> <small class="muted">{{ user.username }} · {{ tr_value(user.role) }}{% if not user.active %} · {{ tr('Inactive') }}{% endif %}</small></span>
+    <li><span><strong>{{ user_link(user) }}</strong> <small class="muted">{{ user.username }} · {{ tr_value(user.role) }}{% if not user.active %} · {{ tr('Inactive') }}{% endif %}</small></span>
       <form method="post" action="{{ post_url }}">
     <input type="hidden" name="return_section" value="{{ section }}">
         <input type="hidden" name="action" value="set_{{ authority }}_authority">
@@ -154,7 +154,7 @@
       {% for team in teams %}
       <tr>
         <td><a href="{{ url_for('group_edit', group_id=team.id) }}">{{ team.name }}</a>{% if not team.active %} <small class="muted">({{ tr('inactive') }})</small>{% endif %}</td>
-        <td>{{ team.manager.name if team.manager else tr('Unassigned') }}</td>
+        <td>{{ user_link(team.manager, tr('Unassigned')) }}</td>
         <td>
           <form method="post" action="{{ post_url }}" class="inline-form">
     <input type="hidden" name="return_section" value="{{ section }}">
@@ -266,7 +266,7 @@
       <tbody>
         {% for member in group.members %}
         <tr>
-          <td><strong>{{ member.user.name }}</strong></td>
+          <td><strong>{{ user_link(member.user) }}</strong></td>
           <td>{{ member.user.username }}</td>
           <td>{{ tr_value(member.role) }}</td>
           <td>{% if (group.id, member.user_id) in directory_managed_member_keys %}<span class="badge">{{ tr('AD-managed') }}</span>{% else %}<span class="muted">{{ tr('Manual') }}</span>{% endif %}</td>
@@ -345,7 +345,7 @@
         <td><strong>{{ window.title }}</strong>{% if window.starts_at <= now() <= window.ends_at %}<br><span class="badge">{{ tr('Active now') }}</span>{% endif %}</td>
         <td>{{ (window.starts_at|usertime('%b %d, %Y %H:%M')) }} – {{ (window.ends_at|usertime('%b %d, %Y %H:%M')) }}</td>
         <td>{{ window.reason or '—' }}</td>
-        <td>{{ window.created_by.name if window.created_by else tr('System') }}</td>
+        <td>{{ user_link(window.created_by, tr('System')) }}</td>
         <td>
           <form method="post" action="{{ post_url }}">
     <input type="hidden" name="return_section" value="{{ section }}">
@@ -369,7 +369,7 @@
       <div class="u-row-between">
         <div><strong>{{ service.name }}</strong><small>{{ tr('{criticality} criticality · {status}', criticality=(service.criticality), status=(tr_value(service.status))) }}</small></div>
         <div class="u-row-center-10">
-          <span>{{ service.owner.name }}</span>
+          <span>{{ user_link(service.owner) }}</span>
           <form method="post" action="{{ post_url }}" class="inline-form">
     <input type="hidden" name="return_section" value="{{ section }}"><input type="hidden" name="action" value="toggle_service_status_page_visibility"><input type="hidden" name="service_offering_id" value="{{ service.id }}"><button class="badge u-plain-button" title="{{ tr('Hide from the public status page') if service.status_page_visible else tr('Publish on the public status page') }}">{{ ('● ' ~ tr('On status page')) if service.status_page_visible else ('○ ' ~ tr('Not on status page')) }}</button></form>
         </div>

@@ -9,7 +9,7 @@
 <div class="detail-grid">
 <section class="panel"><h2>{{ tr('Clients') }}</h2>
 <table><thead><tr><th>{{ tr('Name') }}</th><th>{{ tr('Acting user') }}</th><th>{{ tr('Scopes') }}</th><th>{{ tr('Last used') }}</th><th>{{ tr('Status') }}</th><th></th></tr></thead><tbody>
-{% for client in clients %}<tr><td><strong>{{ client.name }}</strong><small>{{ client.token_prefix }}…</small></td><td>{{ client.acting_user.name }}</td><td>{{ client.scopes|sort|join(', ') }}</td><td>{{ (client.last_used_at|usertime('%Y-%m-%d %H:%M')) if client.last_used_at else tr('Never') }}</td><td>{{ tr('Active') if client.active else tr('Revoked') }}</td><td>{% if client.active %}<form method="post" action="{{ url_for('api_client_revoke', client_id=client.id) }}"><button>{{ tr('Revoke') }}</button></form>{% endif %}</td></tr>
+{% for client in clients %}<tr><td><strong>{{ client.name }}</strong><small>{{ client.token_prefix }}…</small></td><td>{{ user_link(client.acting_user) }}</td><td>{{ client.scopes|sort|join(', ') }}</td><td>{{ (client.last_used_at|usertime('%Y-%m-%d %H:%M')) if client.last_used_at else tr('Never') }}</td><td>{{ tr('Active') if client.active else tr('Revoked') }}</td><td>{% if client.active %}<form method="post" action="{{ url_for('api_client_revoke', client_id=client.id) }}"><button>{{ tr('Revoke') }}</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="6">{{ tr('No API clients.') }}</td></tr>{% endfor %}
 </tbody></table></section>
 <aside class="panel"><h2>{{ tr('Create client') }}</h2><form method="post" class="stack">

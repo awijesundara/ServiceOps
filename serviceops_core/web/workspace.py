@@ -459,11 +459,38 @@ def register(app):
     @app.get("/profile/avatar/<int:user_id>")
     @login_required
     def profile_avatar(user_id):
+        from serviceops_core.public_profile import photo_visible
         user = tenant_query(User).filter_by(id=user_id).first_or_404()
-        if not user.avatar_path:
+        # A picture its owner made private is served only to them (and to
+        # administrators, who moderate pictures from the user page).
+        if not photo_visible(user, current_user):
             abort(404)
         avatar_dir = os.path.join(app.config["UPLOAD_FOLDER"], "avatars")
         return send_from_directory(avatar_dir, user.avatar_path)
+
+    @app.get("/people/<int:user_id>")
+    @login_required
+    def people_profile(user_id):
+        from serviceops_core.public_profile import PROFILE_FIELDS, can_view_profile, public_profile
+        subject = tenant_query(User).filter_by(id=user_id).first_or_404()
+        if not can_view_profile(current_user, subject):
+            abort(404)
+        return render_template(
+            "people_profile.html", profile=public_profile(subject, current_user),
+            is_self=subject.id == current_user.id, profile_fields=PROFILE_FIELDS,
+        )
+
+    @app.post("/profile/visibility")
+    @login_required
+    def profile_visibility():
+        from serviceops_core.public_profile import save_visibility
+        user = tenant_query(User).filter_by(id=current_user.id).first_or_404()
+        chosen = save_visibility(user, request.form)
+        audit("update", user.username, "Public profile visibility: " + ", ".join(
+            f"{key}={'public' if value else 'private'}" for key, value in sorted(chosen.items())))
+        db.session.commit()
+        flash(tr("Public profile settings saved."), "success")
+        return redirect(url_for("people_profile", user_id=user.id))
 
     @app.get("/profile/sessions")
     @login_required

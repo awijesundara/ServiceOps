@@ -34,7 +34,7 @@
     <div class="record-grid">
       <label><span>{{ tr('Number') }}</span><input value="{{ ticket.number }}" disabled></label>
       <label><span>{{ tr('State') }}</span><select name="state" {% if not can_manage_ticket %}disabled{% endif %}>{% for state in ticket_state_options %}<option {% if ticket.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select></label>
-      <label class="required-field"><span>{{ tr('Requested by') }}</span><input value="{{ ticket.requester.name }} · {{ ticket.requester.email }}" title="{{ ticket.requester.name }} · {{ ticket.requester.email }}" disabled></label>
+      <label class="required-field"><span>{{ tr('Requested by') }}</span><output class="readonly-field">{{ user_link(ticket.requester) }} · {{ ticket.requester.email }}</output></label>
       <label><span>{{ tr('Impact') }}</span><select name="impact" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label><span>{{ tr('Change model') }}</span><input value="{{ ticket.change_governance.change_type if ticket.change_governance else tr('Not set') }}" disabled></label>
       <label><span>{{ tr('Urgency') }}</span><select name="urgency" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.urgency==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
@@ -43,8 +43,8 @@
       <label><span>{{ tr('CI owning team') }}</span><input value="{{ display_ci.support_group.name if display_ci and display_ci.support_group else tr('Unassigned') }}" disabled></label>
       <div class="record-grid-trio">
         <label class="required-field"><span>{{ tr('Assignment group') }}</span><input value="{{ owning_group.name if owning_group else tr('Not assigned') }}" disabled></label>
-        <label><span>{{ tr('Team manager') }}</span><input value="{{ owning_group.manager.name if owning_group and owning_group.manager else tr('Not assigned') }}" disabled></label>
-        <label><span>{{ tr('Assigned to') }}</span><select name="assignee_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">{{ tr('Unassigned') }}</option>{% for user in agents %}<option value="{{ user.id }}" {% if ticket.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+        <label><span>{{ tr('Team manager') }}</span><output class="readonly-field">{{ user_link(owning_group.manager if owning_group else none, tr('Not assigned')) }}</output></label>
+        <label><span>{{ tr('Assigned to') }}</span><select name="assignee_id" {% if not can_manage_ticket %}disabled{% endif %}><option value="">{{ tr('Unassigned') }}</option>{% for user in agents %}<option value="{{ user.id }}" {% if ticket.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select>{% if ticket.assignee %}<small class="field-person">{{ user_link(ticket.assignee) }}</small>{% endif %}</label>
       </div>
     </div>
     <div class="record-long-fields">
@@ -122,12 +122,12 @@
     {% for event in history %}
     <article class="event-entry">
       {{ user_avatar(event.actor, 'event-marker') }}
-      <div class="event-body"><div><strong>{{ event.event }}{% if event.source_platform %} <span class="ai-collab-tag">{{ event.source_platform }}</span>{% endif %}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ event.actor.name if event.actor else tr('System') }}</small>
+      <div class="event-body"><div><strong>{{ event.event }}{% if event.source_platform %} <span class="ai-collab-tag">{{ event.source_platform }}</span>{% endif %}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ user_link(event.actor, tr('System')) }}</small>
       {% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span aria-hidden="true">→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}
       {% if event.details %}<p>{{ event.details }}</p>{% endif %}</div>
     </article>
     {% endfor %}
-    <article class="event-entry">{{ user_avatar(ticket.requester, 'event-marker') }}<div class="event-body"><div><strong>{{ tr('Opened') }}</strong><time>{{ (ticket.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ ticket.requester.name }}</small><p>{{ tr('{kind} {number} opened as {priority} · {impact} impact.', kind=(tr_value(ticket.kind|title)), number=(ticket.number), priority=(tr_value(ticket.priority)), impact=(tr_value(ticket.impact))) }}</p></div></article>
+    <article class="event-entry">{{ user_avatar(ticket.requester, 'event-marker') }}<div class="event-body"><div><strong>{{ tr('Opened') }}</strong><time>{{ (ticket.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ user_link(ticket.requester) }}</small><p>{{ tr('{kind} {number} opened as {priority} · {impact} impact.', kind=(tr_value(ticket.kind|title)), number=(ticket.number), priority=(tr_value(ticket.priority)), impact=(tr_value(ticket.impact))) }}</p></div></article>
   </div>
 </section>
 {% endif %}
@@ -208,7 +208,7 @@
 <section class="panel" id="major-incident">
   <header class="section-heading"><div><h2>{{ tr('Major incident coordination') }}</h2></div></header>
   {% set major = ticket.major_incident_profile %}
-  {% if major %}<dl class="governance-grid"><dt>{{ tr('Status') }}</dt><dd>{{ tr_value(major.status) }}</dd><dt>{{ tr('Coordinator') }}</dt><dd>{{ major.coordinator.name if major.coordinator else tr('Not assigned') }}</dd><dt>{{ tr('Business impact') }}</dt><dd>{{ major.business_impact or tr('Not documented') }}</dd><dt>{{ tr('Communications') }}</dt><dd>{{ major.communications or tr('Not documented') }}</dd></dl>{% else %}<p class="muted">{{ tr('This remains a standard INC. Major incident status has not been proposed.') }}</p>{% endif %}
+  {% if major %}<dl class="governance-grid"><dt>{{ tr('Status') }}</dt><dd>{{ tr_value(major.status) }}</dd><dt>{{ tr('Coordinator') }}</dt><dd>{{ user_link(major.coordinator, tr('Not assigned')) }}</dd><dt>{{ tr('Business impact') }}</dt><dd>{{ major.business_impact or tr('Not documented') }}</dd><dt>{{ tr('Communications') }}</dt><dd>{{ major.communications or tr('Not documented') }}</dd></dl>{% else %}<p class="muted">{{ tr('This remains a standard INC. Major incident status has not been proposed.') }}</p>{% endif %}
   {% if can_manage_ticket %}<details><summary>{{ tr('{value} major incident', value=(tr('Update') if major else tr('Propose'))) }}</summary><form method="post" action="{{ url_for('major_incident_update', ticket_id=ticket.id) }}" class="form-grid"><label>{{ tr('Status') }}<select name="status">{% for value in ['Proposed','Accepted','Rejected','Resolved'] %}<option {% if major and major.status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label><label class="wide">{{ tr('Business impact') }}<textarea name="business_impact" rows="3">{{ major.business_impact if major else '' }}</textarea></label><label class="wide">{{ tr('Coordination and communications') }}<textarea name="communications" rows="3">{{ major.communications if major else '' }}</textarea></label><div class="wide actions"><button>{{ tr('Save major incident status') }}</button></div></form></details>{% endif %}
 </section>
 {% endif %}
@@ -254,7 +254,7 @@
   {% set pir = ticket.post_implementation_review %}
   <dl class="governance-grid">
     <dt>{{ tr('Outcome') }}</dt><dd>{{ tr_value(pir.outcome) }}</dd>
-    <dt>{{ tr('Reviewed by') }}</dt><dd>{{ pir.reviewed_by.name }} · {{ (pir.reviewed_at|usertime('%b %d, %Y · %H:%M')) }}</dd>
+    <dt>{{ tr('Reviewed by') }}</dt><dd>{{ user_link(pir.reviewed_by) }} · {{ (pir.reviewed_at|usertime('%b %d, %Y · %H:%M')) }}</dd>
   </dl>
   <p>{{ pir.summary }}</p>
   {% if pir.follow_up_actions %}<p><b>{{ tr('Follow-up actions:') }}</b> {{ pir.follow_up_actions }}</p>{% endif %}
@@ -318,7 +318,7 @@
   <div class="task-list-scroll"><table><thead><tr><th>{{ tr('State') }}</th><th>{{ tr('Approver') }}</th><th>{{ tr('Gate') }}</th><th>{{ tr('Comments') }}</th><th>{{ tr('Created') }}</th></tr></thead><tbody>
     {% for chain, gate, vote in approver_votes %}<tr>
       <td><span class="badge">{{ tr_value(vote.state) }}</span></td>
-      <td>{{ vote.approver.name }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}" class="approval-actions"><input name="comments" placeholder="{{ tr('Decision comments') }}"><button name="decision" value="Rejected">{{ tr('Reject') }}</button><button class="primary" name="decision" value="Approved">{{ tr('Approve') }}</button></form>{% endif %}</td>
+      <td>{{ user_link(vote.approver) }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}" class="approval-actions"><input name="comments" placeholder="{{ tr('Decision comments') }}"><button name="decision" value="Rejected">{{ tr('Reject') }}</button><button class="primary" name="decision" value="Approved">{{ tr('Approve') }}</button></form>{% endif %}</td>
       <td>{{ gate.sequence }}. {{ gate.name }}</td>
       <td>{{ vote.comments or '—' }}</td>
       <td>{{ (chain.created_at|usertime('%m-%d-%Y %I:%M %p')) }}</td>
@@ -336,7 +336,7 @@
       <td>{{ task.title }}</td>
       <td><span class="badge">{{ tr_value(task.state) }}</span></td>
       <td>{{ task.assignment_group.name }}</td>
-      <td>{{ task.assignee.name if task.assignee else tr('Unassigned') }}</td>
+      <td>{{ user_link(task.assignee, tr('Unassigned')) }}</td>
       <td>{{ (task.planned_start|usertime('%b %d %H:%M')) if task.planned_start else '—' }} → {{ (task.planned_end|usertime('%b %d %H:%M')) if task.planned_end else '—' }}</td>
       <td>{{ tr('Yes') if task.required else tr('No') }}</td>
     </tr>

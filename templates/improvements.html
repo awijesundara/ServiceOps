@@ -23,7 +23,7 @@
         <td><span class="truncate" title="{{ item.title }}">{{ item.title }}</span></td>
         <td>{{ item.source_type|title if item.source_type else tr('Manual') }}</td>
         <td>{{ status_badge(item.status) }}</td>
-        <td><span class="truncate" title="{{ item.owner.name if item.owner else tr('Unassigned') }}">{{ item.owner.name if item.owner else tr('Unassigned') }}</span></td>
+        <td><span class="truncate" title="{{ item.owner.name if item.owner else tr('Unassigned') }}">{{ user_link(item.owner, tr('Unassigned')) }}</span></td>
         <td>{{ (item.created_at|usertime('%b %d, %Y')) }}</td>
       </tr>
       {% else %}<tr><td colspan="6" class="empty-table">{{ tr('No improvement items yet.') }}</td></tr>{% endfor %}

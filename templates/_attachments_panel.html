@@ -20,7 +20,7 @@
     <li class="attachment-item">
       {% if attachment.mime_type in IMAGE_ATTACHMENT_TYPES %}<img class="attachment-thumb" src="{{ view_url }}" alt="" data-lightbox-src="{{ view_url }}" data-lightbox-title="{{ attachment.original_name }}">
       {% else %}<span class="attachment-type attachment-type-{{ type_kinds.get(ext, 'file') }}" aria-hidden="true">{{ (ext or 'file')[:4]|upper }}</span>{% endif %}
-      <div class="attachment-meta"><a class="attachment-name" href="{{ download_url }}">{{ attachment.original_name }}</a><small>{{ attachment.size_bytes|filesizeformat }} · {{ attachment.uploaded_by.name }} · {{ attachment.created_at|usertime('%b %d, %Y %H:%M') }}</small></div>
+      <div class="attachment-meta"><a class="attachment-name" href="{{ download_url }}">{{ attachment.original_name }}</a><small>{{ attachment.size_bytes|filesizeformat }} · {{ user_link(attachment.uploaded_by) }} · {{ attachment.created_at|usertime('%b %d, %Y %H:%M') }}</small></div>
       <div class="attachment-actions">
         {% if attachment.mime_type in PREVIEWABLE_ATTACHMENT_TYPES %}<a href="{{ view_url }}" data-lightbox-src="{{ view_url }}" data-lightbox-title="{{ attachment.original_name }}"{% if attachment.mime_type not in IMAGE_ATTACHMENT_TYPES %} data-lightbox-type="pdf"{% endif %}>{{ tr('Preview') }}</a>{% endif %}
         <a href="{{ download_url }}">{{ tr('Download') }}</a>

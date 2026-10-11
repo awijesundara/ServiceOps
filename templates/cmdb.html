@@ -89,7 +89,7 @@
       <td data-col="model"><span class="truncate" title="{{ ci.model or '' }}">{{ ci.model or '—' }}</span></td>
       <td data-col="cost_center">{{ ci.cost_center or '—' }}</td>
       <td data-col="discovery_source">{{ ci.discovery_source }}</td>
-      <td data-col="owner"><span class="truncate" title="{{ ci.owner.name if ci.owner else '' }}">{{ ci.owner.name if ci.owner else '—' }}</span></td>
+      <td data-col="owner"><span class="truncate" title="{{ ci.owner.name if ci.owner else '' }}">{{ user_link(ci.owner, '—') }}</span></td>
       <td data-col="install_date">{{ ci.install_date.strftime('%Y-%m-%d') if ci.install_date else '—' }}</td>
       <td data-col="warranty_expiry_date">{{ ci.warranty_expiry_date.strftime('%Y-%m-%d') if ci.warranty_expiry_date else '—' }}</td>
       {% for key in extra_attribute_keys %}<td data-col="attr:{{ key }}">{{ (ci.attributes or {}).get(key) or '—' }}</td>{% endfor %}

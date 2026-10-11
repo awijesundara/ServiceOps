@@ -39,7 +39,7 @@
   {% for task in ritm.tasks %}
   <article class="catalog-task">
     <div><strong><a href="{{ url_for('catalog_task_detail', task_id=task.id) }}">{{ task.number }}</a> · {{ task.title }}</strong>
-      <p>{{ task.assignment_group.name if task.assignment_group else tr('Unassigned group') }} · {{ task.assignee.name if task.assignee else tr('Unassigned') }}{% if task.flow_control %} · {{ task.flow_control.execution_mode }}{% if task.flow_control.predecessor %} {{ tr('after {number}', number=(task.flow_control.predecessor.number)) }}{% endif %}{% endif %}</p>
+      <p>{{ task.assignment_group.name if task.assignment_group else tr('Unassigned group') }} · {{ user_link(task.assignee, tr('Unassigned')) }}{% if task.flow_control %} · {{ task.flow_control.execution_mode }}{% if task.flow_control.predecessor %} {{ tr('after {number}', number=(task.flow_control.predecessor.number)) }}{% endif %}{% endif %}</p>
     </div>
     {% if catalog_task_permissions[task.id] %}<form method="post" action="{{ url_for('catalog_task_update', task_id=task.id) }}"><select name="state">{% for state in task_state_options[task.id] %}<option {% if task.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select><input name="work_notes" value="{{ task.work_notes }}" placeholder="{{ tr('Work notes') }}"><button class="primary">{{ tr('Update') }}</button></form>{% else %}<span class="badge">{{ tr_value(task.state) }}</span>{% endif %}
   </article>
@@ -51,7 +51,7 @@
   <header class="section-heading"><div><h2>{{ tr('Approvals') }}</h2></div></header>
   {% for chain in chains %}<div class="chain"><strong>{{ chain.name }}</strong> · {{ tr_value(chain.state) }}
     {% for gate in chain.gates %}<div class="gate"><b>{{ gate.sequence }}. {{ gate.name }}</b> — {{ tr_value(gate.state) }}
-      {% for vote in gate.votes %}<div class="vote">{{ vote.approver.name }}: {{ tr_value(vote.state) }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}"><input name="comments" placeholder="{{ tr('Comments') }}"><button name="decision" value="Rejected">{{ tr('Reject') }}</button><button class="primary" name="decision" value="Approved">{{ tr('Approve') }}</button></form>{% endif %}</div>{% endfor %}
+      {% for vote in gate.votes %}<div class="vote">{{ user_link(vote.approver) }}: {{ tr_value(vote.state) }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}"><input name="comments" placeholder="{{ tr('Comments') }}"><button name="decision" value="Rejected">{{ tr('Reject') }}</button><button class="primary" name="decision" value="Approved">{{ tr('Approve') }}</button></form>{% endif %}</div>{% endfor %}
     </div>{% endfor %}
   </div>{% else %}<p class="muted">{{ tr('No approval chain required.') }}</p>{% endfor %}
 </section>
@@ -82,7 +82,7 @@
       <td>{{ event.field_name or '—' }}</td>
       <td>{{ event.old_value or '—' }}</td>
       <td>{{ event.new_value or '—' }}</td>
-      <td>{{ event.actor.name if event.actor else tr('System') }}</td>
+      <td>{{ user_link(event.actor, tr('System')) }}</td>
       <td>{{ (event.created_at|usertime('%b %d, %H:%M:%S')) }}</td>
     </tr>{% else %}<tr><td colspan="6" class="empty">{{ tr('No recorded history.') }}</td></tr>{% endfor %}
   </tbody></table>

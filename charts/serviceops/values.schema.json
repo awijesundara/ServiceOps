@@ -3,6 +3,60 @@
   "type": "object",
   "required": ["replicaCount", "image", "deploymentProfile", "database", "existingSecret", "existingBootstrapSecret", "healthTest"],
   "properties": {
+    "web": {
+      "type": "object",
+      "properties": {
+        "workers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "threads": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "resources": {
+          "type": "object"
+        },
+        "probes": {
+          "type": "object",
+          "properties": {
+            "readinessTimeoutSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 120
+            },
+            "readinessFailureThreshold": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 120
+            },
+            "livenessTimeoutSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 120
+            },
+            "livenessFailureThreshold": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 120
+            }
+          }
+        },
+        "staticOffload": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "resources": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
     "replicaCount": {"type": "integer", "minimum": 1},
     "allowSingleReplica": {"type": "boolean"},
     "deploymentProfile": {"type": "string", "const": "production"},

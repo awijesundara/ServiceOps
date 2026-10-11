@@ -8,6 +8,6 @@ spec:
   ports:
     - name: http
       port: {{ .Values.service.port }}
-      targetPort: http
+      targetPort: {{ ternary "edge-http" "http" .Values.web.staticOffload.enabled }}
       protocol: TCP
   selector: {{- include "serviceops.webSelectorLabels" . | nindent 4 }}

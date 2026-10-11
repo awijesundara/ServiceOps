@@ -55,7 +55,7 @@
 <div class="incident-support-grid" id="task-activity">
   <section class="panel">
     <header class="section-heading"><div><h2>{{ tr('Activity / Worknotes') }}</h2></div></header>
-    {% for note in notes %}<article class="comment">{{ user_avatar(note.author) }}<div><strong>{{ note.author.name }}</strong><small>{{ (note.created_at|usertime('%b %d, %H:%M')) }}</small><p>{{ note.body }}</p></div></article>{% else %}<p class="muted">{{ tr('No activity yet.') }}</p>{% endfor %}
+    {% for note in notes %}<article class="comment">{{ user_avatar(note.author) }}<div><strong>{{ user_link(note.author) }}</strong><small>{{ (note.created_at|usertime('%b %d, %H:%M')) }}</small><p>{{ note.body }}</p></div></article>{% else %}<p class="muted">{{ tr('No activity yet.') }}</p>{% endfor %}
     {% if can_edit %}<form method="post" action="{{ url_for('operational_task_note_add', task_id=task.id) }}" class="comment-box"><textarea name="body" rows="3" placeholder="{{ tr('Add a work note…') }}" required></textarea><button class="primary">{{ tr('Post') }}</button></form>{% endif %}
   </section>
 </div>
@@ -68,7 +68,7 @@
       <td>{{ sibling.title }}</td>
       <td>{{ tr_value(sibling.state) }}</td>
       <td>{{ sibling.assignment_group.name if sibling.assignment_group else '—' }}</td>
-      <td>{{ sibling.assignee.name if sibling.assignee else tr('Unassigned') }}</td>
+      <td>{{ user_link(sibling.assignee, tr('Unassigned')) }}</td>
     </tr>{% else %}<tr><td colspan="5" class="empty">{{ tr('No sibling tasks on this record.') }}</td></tr>{% endfor %}
   </tbody></table>
 </section>
@@ -85,7 +85,7 @@
   <header class="section-heading"><div><h2>{{ tr('Approvers') }}</h2><p>{{ tr("From the parent change's approval chain") }}</p></div><span>{{ tr('{approval_votes} votes', approval_votes=(approval_votes|length)) }}</span></header>
   <table><thead><tr><th>{{ tr('Approver') }}</th><th>{{ tr('Gate') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Decided') }}</th></tr></thead><tbody>
     {% for vote in approval_votes %}<tr>
-      <td>{{ vote.approver.name }}</td>
+      <td>{{ user_link(vote.approver) }}</td>
       <td>{{ vote.gate.name }}</td>
       <td>{{ tr_value(vote.state) }}</td>
       <td>{{ (vote.decided_at|usertime('%b %d, %Y %H:%M')) if vote.decided_at else '—' }}</td>
@@ -102,7 +102,7 @@
       <td>{{ row.field_name or '—' }}</td>
       <td>{{ row.old_value or '—' }}</td>
       <td>{{ row.new_value or '—' }}</td>
-      <td>{{ row.actor.name if row.actor else tr('System') }}</td>
+      <td>{{ user_link(row.actor, tr('System')) }}</td>
       <td>{{ (row.created_at|usertime('%b %d, %Y %H:%M')) }}</td>
     </tr>{% else %}<tr><td colspan="6" class="empty">{{ tr('No history recorded for this task.') }}</td></tr>{% endfor %}
   </tbody></table>

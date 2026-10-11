@@ -163,3 +163,40 @@ ul.org2-tree,.org2-children{list-style:none;margin:0;padding:0}
 .comment-attach-chip.is-too-large{background:#fdf1f0;color:var(--red)}
 .comment-attach-chip[hidden]{display:none}
 @media(max-width:560px){.state-track{margin-inline:0;overflow-x:auto;padding-bottom:4px}.state-track-step{flex:0 0 auto;min-width:88px}}
+/* People: names and pictures link to the person's public profile */
+.person-link{color:inherit;font-weight:inherit;text-decoration:none;border-bottom:1px dotted currentColor}
+.person-link:hover,.person-link:focus-visible{color:var(--green-dark);border-bottom-style:solid}
+td a.person-link{font-weight:inherit;color:inherit}
+.person-avatar-link{display:inline-flex;flex-shrink:0;border-radius:50%;text-decoration:none}
+.person-avatar-link:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.people-profile{display:grid;gap:20px;max-width:1100px}
+.people-profile-head{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.people-profile-photo{width:96px;height:96px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.people-profile-initial{display:grid;place-items:center;background:#dceeea;color:var(--green-dark);font-size:38px;font-weight:700}
+.people-profile-identity{flex:1;min-width:200px}
+.people-profile-identity h1{margin:0;font-size:26px}
+.people-profile-identity p{margin:4px 0 0;color:var(--muted)}
+.people-profile-actions{display:flex;gap:10px;flex-wrap:wrap}
+.people-profile-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;align-items:start}
+.people-profile-grid h2,.people-profile-privacy h2{font-size:17px;margin:0 0 14px}
+.people-profile-grid h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 8px}
+.people-profile-grid h3:first-of-type{margin-top:0}
+.people-profile-facts{display:grid;grid-template-columns:minmax(120px,max-content) 1fr;gap:10px 18px;margin:0}
+.people-profile-facts dt{color:var(--muted)}
+.people-profile-facts dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.people-profile-person{display:flex;align-items:center;gap:10px;margin:0}
+.people-profile-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.people-profile-switches{list-style:none;margin:0 0 6px;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:4px 24px}
+.people-profile-switches .switch-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.people-profile-switches input{width:auto}
+.people-profile-switches small{margin-left:auto}
+@media(max-width:560px){.people-profile-head{gap:14px}.people-profile-photo{width:72px;height:72px}.people-profile-facts{grid-template-columns:1fr;gap:2px 0}.people-profile-facts dd{margin-bottom:10px}}
+.readonly-field{display:block;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);font-size:13px;font-weight:400;overflow-wrap:anywhere}
+.field-person{font-weight:400}
+.org2-edit{font-size:11px;font-weight:600;margin-left:6px}
+a.mention{text-decoration:none}a.mention:hover,a.mention:focus-visible{text-decoration:underline}
+.people-profile-facts a{color:var(--green-dark);text-decoration:none;font-weight:600}
+.people-profile-facts a:hover,.people-profile-facts a:focus-visible{text-decoration:underline}
+.people-profile-identity .tag{margin-left:4px;vertical-align:middle}
+.readonly-field{text-align:left;min-height:38px;line-height:1.5}
+.record-grid label>.field-person,.form-grid label>.field-person{grid-column:2;text-align:left;margin-top:-8px;font-size:12px}

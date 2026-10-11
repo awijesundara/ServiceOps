@@ -7675,16 +7675,46 @@ def create_app(test_config=None):
             return {}
         return parsed if isinstance(parsed, dict) else {}
 
-    def user_avatar_html(user, css_class="avatar"):
+    def profile_url(user):
+        """The public profile of a real, same-tenant account, else None."""
+        if not isinstance(user, User) or not user.id or not current_user.is_authenticated:
+            return None
+        if user.tenant_id != current_user.tenant_id:
+            return None
+        return url_for("people_profile", user_id=user.id)
+
+    def user_avatar_html(user, css_class="avatar", link=True):
+        """A person's picture (or initial), linking to their public profile.
+        A picture its owner made private shows as the initial to others."""
+        from serviceops_core.public_profile import photo_visible
         if user is None:
             return Markup(f'<div class="{escape(css_class)}" title="System">S</div>')
-        if getattr(user, "avatar_path", None):
-            return Markup(
+        if photo_visible(user):
+            face = Markup(
                 f'<img class="{escape(css_class)}" src="{escape(url_for("profile_avatar", user_id=user.id))}" '
                 f'alt="{escape(user.name)}" title="{escape(user.name)}">'
             )
-        initial = escape(user.name[0].upper()) if user.name else "?"
-        return Markup(f'<div class="{escape(css_class)}" title="{escape(user.name)}">{initial}</div>')
+        else:
+            initial = escape(user.name[0].upper()) if user.name else "?"
+            face = Markup(f'<div class="{escape(css_class)}" title="{escape(user.name)}">{initial}</div>')
+        href = profile_url(user) if link else None
+        if not href:
+            return face
+        return Markup(
+            f'<a class="person-avatar-link" href="{escape(href)}" '
+            f'aria-label="{escape(tr("View profile of {name}", name=user.name))}">{face}</a>'
+        )
+
+    def user_link_html(user, fallback="", css_class="person-link"):
+        """A person's name linking to their public profile; `fallback` (plain
+        text such as "Unassigned") when there is no person."""
+        if user is None:
+            return escape(fallback)
+        name = escape(user.name or user.username)
+        href = profile_url(user)
+        if not href:
+            return name
+        return Markup(f'<a class="{escape(css_class)}" href="{escape(href)}">{name}</a>')
 
     def mentions_html(body):
         """Escapes comment body text (user input) then wraps each
@@ -7694,9 +7724,25 @@ def create_app(test_config=None):
         containing HTML-looking text."""
         pieces = []
         last_end = 0
-        for match in MENTION_PATTERN.finditer(body):
+        matches = list(MENTION_PATTERN.finditer(body))
+        people = {}
+        if matches and current_user.is_authenticated:
+            wanted = {match.group(1).lower() for match in matches}
+            people = {
+                row.username.lower(): row for row in User.query.filter(
+                    func.lower(User.username).in_(wanted), User.tenant_id == current_user.tenant_id,
+                ).all()
+            }
+        for match in matches:
             pieces.append(escape(body[last_end:match.start()]))
-            pieces.append(Markup(f'<span class="mention">@{escape(match.group(1))}</span>'))
+            person = people.get(match.group(1).lower())
+            if person:
+                pieces.append(Markup(
+                    f'<a class="mention" href="{escape(url_for("people_profile", user_id=person.id))}">'
+                    f'@{escape(match.group(1))}</a>'
+                ))
+            else:
+                pieces.append(Markup(f'<span class="mention">@{escape(match.group(1))}</span>'))
             last_end = match.end()
         pieces.append(escape(body[last_end:]))
         return Markup("").join(pieces)
@@ -7714,6 +7760,8 @@ def create_app(test_config=None):
 
     app.jinja_env.globals["ai_note_html"] = ai_note_html
     app.jinja_env.globals["user_avatar"] = user_avatar_html
+    app.jinja_env.globals["user_link"] = user_link_html
+    app.jinja_env.globals["profile_url"] = profile_url
     app.jinja_env.globals["PREVIEWABLE_ATTACHMENT_TYPES"] = PREVIEWABLE_ATTACHMENT_TYPES
     app.jinja_env.globals["IMAGE_ATTACHMENT_TYPES"] = IMAGE_ATTACHMENT_TYPES
     app.jinja_env.globals["now"] = now

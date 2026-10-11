@@ -354,6 +354,9 @@
    "id": "ARCHIVED"
   },
   {
+   "id": "About"
+  },
+  {
    "id": "About a knowledge article"
   },
   {
@@ -394,6 +397,9 @@
   },
   {
    "id": "Accessible tooltips"
+  },
+  {
+   "id": "Account disabled"
   },
   {
    "id": "Account status"
@@ -2954,6 +2960,9 @@
    "id": "Department"
   },
   {
+   "id": "Department and division"
+  },
+  {
    "id": "Depends on"
   },
   {
@@ -3241,6 +3250,9 @@
    "id": "Email"
   },
   {
+   "id": "Email address"
+  },
+  {
    "id": "Email addresses, phone numbers, ID numbers."
   },
   {
@@ -3254,6 +3266,9 @@
   },
   {
    "id": "Email provider"
+  },
+  {
+   "id": "Employee ID"
   },
   {
    "id": "Employee/agent identity and contact details."
@@ -3521,6 +3536,9 @@
   },
   {
    "id": "Every {schedule_interval_minutes} min"
+  },
+  {
+   "id": "Everyone signed in to this organization can open your profile. Your name and role are always shown. Choose which other details are public; the rest stay private to you."
   },
   {
    "id": "Everything except requests marked sensitive."
@@ -4968,6 +4986,12 @@
    "javascript": true
   },
   {
+   "id": "Local time"
+  },
+  {
+   "id": "Local time and timezone"
+  },
+  {
    "id": "Location"
   },
   {
@@ -5089,6 +5113,9 @@
   },
   {
    "id": "Manage team members. Directory-managed memberships are marked."
+  },
+  {
+   "id": "Manage user"
   },
   {
    "id": "Managed by Active Directory"
@@ -7166,6 +7193,9 @@
    "id": "Profile picture must be smaller than 5 MB."
   },
   {
+   "id": "Profile picture of {name}"
+  },
+  {
    "id": "Profile updated."
   },
   {
@@ -7236,10 +7266,16 @@
    "id": "Pub/Sub subscription ID (Chat API -> Configuration -> Connection settings -> Cloud Pub/Sub topic)"
   },
   {
+   "id": "Public"
+  },
+  {
    "id": "Public URL"
   },
   {
    "id": "Public URL must be an https:// origin such as https://servicedesk.example.com"
+  },
+  {
+   "id": "Public profile settings saved."
   },
   {
    "id": "Public reply"
@@ -8487,6 +8523,9 @@
   },
   {
    "id": "Save view"
+  },
+  {
+   "id": "Save visibility"
   },
   {
    "id": "Save your backup codes"
@@ -10916,6 +10955,9 @@
    "id": "View only: you can see this record but not change it."
   },
   {
+   "id": "View profile of {name}"
+  },
+  {
    "id": "View queue"
   },
   {
@@ -11026,6 +11068,9 @@
   },
   {
    "id": "What may go to an outside service"
+  },
+  {
+   "id": "What others can see"
   },
   {
    "id": "What the assistant will do"
@@ -12383,6 +12428,9 @@
   },
   {
    "id": "{name} has no active fulfillment route and no active Service Desk fallback."
+  },
+  {
+   "id": "{name} has not shared any other details."
   },
   {
    "id": "{name} has {active_subs} active subcategories; the model recommends no more than {category_option_limit}."

@@ -58,7 +58,7 @@
 <div class="incident-support-grid" id="task-activity">
   <section class="panel">
     <header class="section-heading"><div><h2>{{ tr('Activity / Worknotes') }}<span class="info-tip" tabindex="0" data-tip="Internal notes visible only to fulfillment staff, not the requester.">i</span></h2></div></header>
-    {% for note in internal_notes %}<article class="comment">{{ user_avatar(note.author) }}<div><strong>{{ note.author.name }}</strong><small>{{ (note.created_at|usertime('%b %d, %H:%M')) }}</small><p>{{ note.body }}</p></div></article>{% else %}<p class="muted">{{ tr('No internal notes yet.') }}</p>{% endfor %}
+    {% for note in internal_notes %}<article class="comment">{{ user_avatar(note.author) }}<div><strong>{{ user_link(note.author) }}</strong><small>{{ (note.created_at|usertime('%b %d, %H:%M')) }}</small><p>{{ note.body }}</p></div></article>{% else %}<p class="muted">{{ tr('No internal notes yet.') }}</p>{% endfor %}
     <form method="post" action="{{ url_for('catalog_task_note_add', task_id=task.id) }}" class="comment-box"><input type="hidden" name="visibility" value="internal"><textarea name="body" rows="3" placeholder="{{ tr('Work notes') }}" required></textarea><button class="primary">{{ tr('Post') }}</button></form>
   </section>
 </div>
@@ -67,7 +67,7 @@
 <div class="incident-support-grid" id="task-ritm-comments">
   <section class="panel">
     <header class="section-heading"><div><h2>{{ tr('RITM Comments (Customer Visible)') }}</h2><p>{{ tr('Posted to {number}; the requester is notified.', number=(ritm.number)) }}</p></div></header>
-    {% for note in ritm_comments %}<article class="comment">{{ user_avatar(note.author) }}<div><strong>{{ note.author.name }}</strong><small>{{ (note.created_at|usertime('%b %d, %H:%M')) }}</small><p>{{ note.body }}</p></div></article>{% else %}<p class="muted">{{ tr('No customer-visible comments yet.') }}</p>{% endfor %}
+    {% for note in ritm_comments %}<article class="comment">{{ user_avatar(note.author) }}<div><strong>{{ user_link(note.author) }}</strong><small>{{ (note.created_at|usertime('%b %d, %H:%M')) }}</small><p>{{ note.body }}</p></div></article>{% else %}<p class="muted">{{ tr('No customer-visible comments yet.') }}</p>{% endfor %}
     <form method="post" action="{{ url_for('catalog_task_note_add', task_id=task.id) }}" class="comment-box"><input type="hidden" name="visibility" value="customer"><p class="muted">{{ tr('Click Save to post to {number}. The requester will get a notification.', number=(ritm.number)) }}</p><textarea name="body" rows="3" placeholder="{{ tr('Additional comments') }}" required></textarea><button class="primary">{{ tr('Save') }}</button></form>
   </section>
 </div>
@@ -105,7 +105,7 @@
   <header class="section-heading"><div><h2>{{ tr('Approvers') }}</h2><p>{{ tr('Individual decisions on {number}', number=(ritm.number)) }}</p></div><span>{{ tr('{approval_votes} votes', approval_votes=(approval_votes|length)) }}</span></header>
   <table><thead><tr><th>{{ tr('Approver') }}</th><th>{{ tr('Gate') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Decided') }}</th></tr></thead><tbody>
     {% for vote in approval_votes %}<tr>
-      <td>{{ vote.approver.name }}</td>
+      <td>{{ user_link(vote.approver) }}</td>
       <td>{{ vote.gate.name }}</td>
       <td>{{ tr_value(vote.state) }}</td>
       <td>{{ (vote.decided_at|usertime('%b %d, %Y %H:%M')) if vote.decided_at else '—' }}</td>
