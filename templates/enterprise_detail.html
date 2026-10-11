@@ -13,7 +13,7 @@
     <div class="record-grid">
       <label><span>{{ tr('Number') }}</span><input value="{{ record.number }}" disabled></label>
       <label><span>{{ tr('State') }}</span><select name="state" {% if not can_manage_record %}disabled{% endif %}>{% for state in record_state_options %}<option {% if record.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select></label>
-      <label class="required-field"><span>{{ tr('Requested by') }}</span><input value="{{ record.requester.name }} · {{ record.requester.email }}" title="{{ record.requester.name }} · {{ record.requester.email }}" disabled></label>
+      <label class="required-field"><span>{{ tr('Requested by') }}</span><output class="readonly-field">{{ user_link(record.requester) }} · {{ record.requester.email }}</output></label>
       <label><span>{{ tr('Priority') }}</span><select name="priority" {% if not can_manage_record %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option value="{{ priority }}" {% if record.priority==priority %}selected{% endif %}>{{ tr_value(priority) }}</option>{% endfor %}</select></label>
       <label><span>{{ tr('Record type') }}</span><input value="{{ record.record_type }}" disabled></label>
       {% if record.external_id %}<label><span>{{ tr('Source ticket #') }}</span><input value="{{ record.external_source|upper }} #{{ record.external_id }}" disabled></label>{% endif %}
@@ -21,7 +21,7 @@
       <label><span>{{ tr('Risk') }}</span><select name="risk" {% if not can_manage_record %}disabled{% endif %}>{% for risk in ['Low','Medium','High','Critical'] %}<option value="{{ risk }}" {% if record.risk==risk %}selected{% endif %}>{{ tr_value(risk) }}</option>{% endfor %}</select></label>
       <label><span>{{ tr('Configuration item') }}</span><input value="{{ primary_ci_link.ci.name if primary_ci_link else tr('Not selected') }}" disabled></label>
       <label><span>{{ tr('CI owning team') }}</span><input value="{{ primary_ci_link.ci.support_group.name if primary_ci_link and primary_ci_link.ci.support_group else tr('Unassigned') }}" disabled></label>
-      <label><span>{{ tr('Assigned to') }}</span><select name="assignee_id" {% if not can_manage_record %}disabled{% endif %}><option value="">{{ tr('Unassigned') }}</option>{% for user in agents %}<option value="{{ user.id }}" {% if record.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+      <label><span>{{ tr('Assigned to') }}</span><select name="assignee_id" {% if not can_manage_record %}disabled{% endif %}><option value="">{{ tr('Unassigned') }}</option>{% for user in agents %}<option value="{{ user.id }}" {% if record.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select>{% if record.assignee %}<small class="field-person">{{ user_link(record.assignee) }}</small>{% endif %}</label>
       <label><span>{{ tr('Opened') }}</span><input value="{{ (record.created_at|usertime('%b %d, %Y · %H:%M')) }}" disabled></label>
       <label><span>{{ tr('Due') }}</span><input value="{{ (record.due_at|usertime('%b %d, %Y · %H:%M')) if record.due_at else tr('Not set') }}" disabled></label>
     </div>
@@ -57,7 +57,7 @@
     </form>
   </details>
   {% endif %}
-  <div class="event-stream">{% for event in history %}<article class="event-entry">{{ user_avatar(event.actor, 'event-marker') }}<div class="event-body"><div><strong>{{ event.event }}{% if event.source_platform %} <span class="ai-collab-tag">{{ event.source_platform }}</span>{% endif %}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ event.actor.name if event.actor else tr('System') }}</small>{% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span>→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}{% if event.details %}<p>{{ event.details }}</p>{% endif %}</div></article>{% endfor %}<article class="event-entry">{{ user_avatar(record.requester, 'event-marker') }}<div class="event-body"><div><strong>{{ tr('Opened') }}</strong><time>{{ (record.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ record.requester.name }}</small><p>{{ tr('{record_type} {number} opened as {priority} · {risk} risk.', record_type=(record.record_type), number=(record.number), priority=(tr_value(record.priority)), risk=(tr_value(record.risk))) }}</p></div></article></div>
+  <div class="event-stream">{% for event in history %}<article class="event-entry">{{ user_avatar(event.actor, 'event-marker') }}<div class="event-body"><div><strong>{{ event.event }}{% if event.source_platform %} <span class="ai-collab-tag">{{ event.source_platform }}</span>{% endif %}</strong><time>{{ (event.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ user_link(event.actor, tr('System')) }}</small>{% if event.field_name %}<p><b>{{ event.field_name }}</b><span class="event-old">{{ event.old_value or '—' }}</span><span>→</span><span class="event-new">{{ event.new_value or '—' }}</span></p>{% endif %}{% if event.details %}<p>{{ event.details }}</p>{% endif %}</div></article>{% endfor %}<article class="event-entry">{{ user_avatar(record.requester, 'event-marker') }}<div class="event-body"><div><strong>{{ tr('Opened') }}</strong><time>{{ (record.created_at|usertime('%b %d, %Y · %H:%M:%S')) }}</time></div><small>{{ user_link(record.requester) }}</small><p>{{ tr('{record_type} {number} opened as {priority} · {risk} risk.', record_type=(record.record_type), number=(record.number), priority=(tr_value(record.priority)), risk=(tr_value(record.risk))) }}</p></div></article></div>
 </section>
 
 <section class="panel incident-related-panel" id="related-records">
@@ -103,7 +103,7 @@
   {% endif %}
 
   <hr><h3>{{ tr('Problem tasks (PTASK)') }}</h3>
-  {% for task in work_tasks %}<article class="timeline"><strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · {{ tr('Required') }}{% endif %}</strong><span class="badge">{{ tr_value(task.state) }}</span><p>{{ task.title }}</p><small>{{ task.assignment_group.name }} · {{ task.assignee.name if task.assignee else tr('Unassigned') }}</small>
+  {% for task in work_tasks %}<article class="timeline"><strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · {{ tr('Required') }}{% endif %}</strong><span class="badge">{{ tr_value(task.state) }}</span><p>{{ task.title }}</p><small>{{ task.assignment_group.name }} · {{ user_link(task.assignee, tr('Unassigned')) }}</small>
   {% if task_permissions[task.id] %}<form method="post" action="{{ url_for('operational_task_update', task_id=task.id) }}" class="form-grid">
     <label>{{ tr('State') }}<select name="state">{% for state in work_task_states[task.state] %}<option {% if task.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select></label>
     <label>{{ tr('Assigned to') }}<select name="assignee_id"><option value="">{{ tr('Unassigned') }}</option>{% for user in task_agents[task.id] %}<option value="{{ user.id }}" {% if task.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
@@ -116,7 +116,7 @@
   </form></details>{% endif %}
 {% else %}
   <header class="section-heading"><div><h2>{{ tr('Fulfillment tasks') }}</h2></div></header>
-  {% for task in work_tasks %}<article class="timeline"><strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · {{ tr('Required') }}{% endif %}</strong><span class="badge">{{ tr_value(task.state) }}</span><p>{{ task.title }}</p><small>{{ task.assignment_group.name }} · {{ task.assignee.name if task.assignee else tr('Unassigned') }}</small>
+  {% for task in work_tasks %}<article class="timeline"><strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · {{ tr('Required') }}{% endif %}</strong><span class="badge">{{ tr_value(task.state) }}</span><p>{{ task.title }}</p><small>{{ task.assignment_group.name }} · {{ user_link(task.assignee, tr('Unassigned')) }}</small>
   {% if task_permissions[task.id] %}<form method="post" action="{{ url_for('operational_task_update', task_id=task.id) }}" class="form-grid">
     <label>{{ tr('State') }}<select name="state">{% for state in work_task_states[task.state] %}<option {% if task.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select></label>
     <label>{{ tr('Assigned to') }}<select name="assignee_id"><option value="">{{ tr('Unassigned') }}</option>{% for user in task_agents[task.id] %}<option value="{{ user.id }}" {% if task.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
@@ -128,7 +128,7 @@
 {% if record.approvals %}
 <section class="panel" id="approvals">
   <header class="section-heading"><div><h2>{{ tr('Approval history') }}</h2></div></header>
-  {% for approval in record.approvals %}<article class="timeline"><strong>{{ tr_value(approval.state) }}</strong><span>{{ approval.approver.name }}</span><p>{{ approval.comments or tr('No decision comments.') }}</p>
+  {% for approval in record.approvals %}<article class="timeline"><strong>{{ tr_value(approval.state) }}</strong><span>{{ user_link(approval.approver) }}</span><p>{{ approval.comments or tr('No decision comments.') }}</p>
   {% if approval.state=='Requested' and approval.approver_id==current_user.id %}<form method="post" class="approval-actions"><input type="hidden" name="approval_id" value="{{ approval.id }}"><input name="comments" placeholder="{{ tr('Decision comments') }}"><button name="action" value="reject">{{ tr('Reject') }}</button><button class="primary" name="action" value="approve">{{ tr('Approve') }}</button></form>{% endif %}
   </article>{% endfor %}
 </section>

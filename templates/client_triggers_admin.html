@@ -33,7 +33,7 @@
   {% if groups or agents %}
   <details><summary>{{ tr('Team and agent IDs for assign actions') }}</summary>
     <p class="muted">{{ tr('Teams:') }} {% for group in groups %}{{ group.name }} = {{ group.id }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
-    <p class="muted">{{ tr('Agents:') }} {% for agent in agents %}{{ agent.name }} = {{ agent.id }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    <p class="muted">{{ tr('Agents:') }} {% for agent in agents %}{{ user_link(agent) }} = {{ agent.id }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
   </details>
   {% endif %}
 </section>

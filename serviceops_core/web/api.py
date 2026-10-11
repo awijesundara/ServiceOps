@@ -8,12 +8,12 @@ import os
 import re
 import secrets
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from flask import abort, g, jsonify, render_template, request, Response, send_from_directory
 from flask_login import current_user, login_required
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from webauthn.helpers import base64url_to_bytes
@@ -75,6 +75,7 @@ from app import (
     visible_ticket_query,
 )
 from serviceops_core import mcp as mcp_protocol
+from serviceops_core.mobile_pagination import paginate
 from serviceops_core.ci_class_policy import ci_class_action_allowed, restrict_ci_query_to_readable_classes
 from serviceops_core.mcp_tools import TOOLS as MCP_TOOLS
 from serviceops_core.passkeys import (
@@ -88,6 +89,7 @@ from serviceops_core.web.common import mobile_only, require_scim_admin, scim_use
 from serviceops_models import (
     APIClient,
     ApprovalChain,
+    ApprovalDelegation,
     ApprovalGate,
     ApprovalVote,
     ConfigurationItem,
@@ -1413,14 +1415,15 @@ def register(app):
     @app.get("/api/v1/mobile/notifications")
     def api_mobile_notifications():
         mobile_only()
-        rows = Notification.query.filter_by(
+        rows, meta = paginate(Notification.query.filter_by(
             tenant_id=g.api_user.tenant_id, user_id=g.api_user.id,
-        ).order_by(Notification.created_at.desc()).limit(100).all()
+        ), [(Notification.created_at, True, lambda row: row.created_at, datetime),
+            (Notification.id, True, lambda row: row.id, int)])
         return jsonify({"data": [{
             "id": row.id, "title": row.title, "body": row.body, "read": row.read,
             "created_at": row.created_at.isoformat(), "target_type": row.target_type,
             "target_id": row.target_id,
-        } for row in rows]})
+        } for row in rows], "meta": meta})
 
     @app.post("/api/v1/mobile/notifications/<int:notification_id>/read")
     def api_mobile_notification_read(notification_id):
@@ -1444,13 +1447,28 @@ def register(app):
     @app.get("/api/v1/mobile/approvals")
     def api_mobile_approvals():
         mobile_only()
-        direct_rows = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
-            ApprovalVote.approver_id == g.api_user.id,
+        delegated = ApprovalDelegation.query.filter(
+            ApprovalDelegation.to_user_id == g.api_user.id,
+            ApprovalDelegation.tenant_id == g.api_user.tenant_id,
+            ApprovalDelegation.active.is_(True),
+            ApprovalDelegation.starts_at <= now(),
+            ApprovalDelegation.ends_at >= now(),
+            ApprovalDelegation.from_user_id == ApprovalVote.approver_id,
+        ).exists()
+        query = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
+            ApprovalVote.tenant_id == g.api_user.tenant_id,
+            ApprovalGate.tenant_id == g.api_user.tenant_id,
             ApprovalChain.tenant_id == g.api_user.tenant_id,
-        ).order_by(ApprovalVote.id.desc()).limit(100).all()
-        delegated_rows = delegated_pending_votes(g.api_user)
-        rows = list({row.id: row for row in direct_rows + delegated_rows}.values())
-        rows.sort(key=lambda row: row.id, reverse=True)
+            or_(ApprovalVote.approver_id == g.api_user.id,
+                (ApprovalVote.state == "Requested") & delegated),
+        ).options(selectinload(ApprovalVote.gate).selectinload(ApprovalGate.chain),
+                  selectinload(ApprovalVote.approver))
+        # Keep actionable decisions ahead of completed and future-stage votes.
+        rank = case((ApprovalVote.state == "Requested", 0), else_=1)
+        rows, meta = paginate(query, [
+            (rank, False, lambda row: 0 if row.state == "Requested" else 1, int),
+            (ApprovalVote.id, True, lambda row: row.id, int),
+        ])
         return jsonify({"data": [{
             "id": row.id, "state": row.state, "comments": row.comments or "",
             "gate": row.gate.name, "chain": row.gate.chain.name,
@@ -1458,7 +1476,7 @@ def register(app):
             "delegated_for": (
                 row.approver.name if row.approver_id != g.api_user.id else None
             ),
-        } for row in rows[:100]]})
+        } for row in rows], "meta": meta})
 
     @app.post("/api/v1/mobile/approvals/<int:vote_id>/decide")
     def api_mobile_approval_decide(vote_id):
@@ -1514,9 +1532,12 @@ def register(app):
         if q:
             pattern = f"%{escape_like(q)}%"
             query = query.filter(or_(Knowledge.title.ilike(pattern, escape="\\"), Knowledge.body.ilike(pattern, escape="\\")))
-        rows = query.order_by(Knowledge.created_at.desc()).limit(100).all()
+        rows, meta = paginate(query, [
+            (Knowledge.created_at, True, lambda row: row.created_at, datetime),
+            (Knowledge.id, True, lambda row: row.id, int),
+        ])
         return jsonify({"data": [{"id": row.id, "title": row.title, "category": row.category,
-                                  "body": row.body, "created_at": row.created_at.isoformat()} for row in rows]})
+                                  "body": row.body, "created_at": row.created_at.isoformat()} for row in rows], "meta": meta})
 
     @app.get("/api/v1/mobile/cmdb")
     def api_mobile_cmdb():
@@ -1541,7 +1562,10 @@ def register(app):
                     ConfigurationItem.rack.has((Rack.tenant_id == tenant_id) & or_(
                         Rack.name.ilike(pattern, escape="\\"), Rack.site.ilike(pattern, escape="\\"))),
                 ))
-            rows = query.order_by(ConfigurationItem.name, ConfigurationItem.id).limit(100).all()
+            rows, meta = paginate(query, [
+                (ConfigurationItem.name, False, lambda row: row.name, str),
+                (ConfigurationItem.id, False, lambda row: row.id, int),
+            ])
             data = []
             for row in rows:
                 rack = row.rack if row.rack and row.rack.tenant_id == tenant_id else None
@@ -1563,7 +1587,7 @@ def register(app):
                              "name": rack.name, "site": rack.site, "position": row.rack_position,
                              "u_height": row.rack_u_height, "face": row.rack_face} if rack else None,
                 })
-            return jsonify({"data": data, "meta": {"limit": 100, "returned": len(data)}})
+            return jsonify({"data": data, "meta": meta})
         except HTTPException:
             raise
         except Exception:

@@ -8,7 +8,7 @@
     <div class="org2-card">
       {{ user_avatar(user, 'org2-avatar') }}
       <div class="org2-info">
-        {% if can_edit %}<a href="{{ url_for('user_edit', user_id=user.id) }}">{{ user.name }}</a>{% else %}<strong>{{ user.name }}</strong>{% endif %}
+        <strong>{{ user_link(user) }}</strong>{% if can_edit %} <a class="org2-edit" href="{{ url_for('user_edit', user_id=user.id) }}">{{ tr('Edit') }}</a>{% endif %}
         <small>{{ user.title or user.role|capitalize }}{% if user.department %} · {{ user.department }}{% endif %}</small>
       </div>
       {% if children.get(user.id) %}<span class="org2-count">{{ trn(children[user.id]|length, '{count} report', '{count} reports') }}</span>{% endif %}

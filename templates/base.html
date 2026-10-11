@@ -157,7 +157,7 @@
   <div class="profile">
     <div class="profile-row">
       {{ user_avatar(current_user) }}
-      <a class="profile-identity" href="{{ url_for('profile') }}"><strong>{{ current_user.name }}</strong><small>{{ tr_value(current_user.effective_role) }}</small></a>
+      <a class="profile-identity" href="{{ url_for('people_profile', user_id=current_user.id) }}"><strong>{{ current_user.name }}</strong><small>{{ tr_value(current_user.effective_role) }}</small></a>
     </div>
     {% if current_user.granted_roles|length > 1 %}
     <details data-nav-menu="acting-role" class="role-switcher">

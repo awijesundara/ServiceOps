@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% set person = profile.user %}
+{% block title %}{{ person.name }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<section class="people-profile">
+  <header class="people-profile-head panel">
+    {% if profile.photo %}<img class="people-profile-photo" src="{{ url_for('profile_avatar', user_id=person.id) }}" alt="{{ tr('Profile picture of {name}', name=person.name) }}">
+    {% else %}<div class="people-profile-photo people-profile-initial" aria-hidden="true">{{ (person.name or person.username)[0]|upper }}</div>{% endif %}
+    <div class="people-profile-identity">
+      <h1>{{ person.name }}</h1>
+      {% set job_title = (profile.fields|selectattr('key', 'equalto', 'title')|map(attribute='value')|first) or '' %}
+      <p>{% if job_title %}{{ job_title }} {% endif %}{% if job_title|lower != person.role|lower %}<span class="tag">{{ tr_value(person.role) }}</span>{% endif %}</p>
+      {% if not person.active %}<span class="badge archived">{{ tr('Account disabled') }}</span>{% endif %}
+    </div>
+    <div class="people-profile-actions">
+      {% if is_self %}<a class="button" href="{{ url_for('profile') }}">{{ tr('Edit profile') }}</a>{% endif %}
+      {% if not is_self and current_user.effective_role in ('admin', 'superadmin') %}<a class="button" href="{{ url_for('user_edit', user_id=person.id) }}">{{ tr('Manage user') }}</a>{% endif %}
+    </div>
+  </header>
+
+  <div class="people-profile-grid">
+    <section class="panel">
+      <h2>{{ tr('About') }}</h2>
+      {% set details = profile.fields|rejectattr('key', 'equalto', 'title')|list %}
+      {% if details or profile.local_time %}
+      <dl class="people-profile-facts">
+        {% for field in details %}
+        <dt>{{ tr(field.label) }}</dt>
+        <dd>{% if field.key == 'email' %}<a href="mailto:{{ field.value }}">{{ field.value }}</a>{% elif field.key in ('business_phone', 'mobile_phone') %}<a href="tel:{{ field.value|replace(' ', '') }}">{{ field.value }}</a>{% else %}{{ field.value }}{% endif %}</dd>
+        {% endfor %}
+        {% if profile.local_time %}<dt>{{ tr('Local time') }}</dt><dd>{{ profile.local_time }} <small class="muted">{{ profile.timezone }}</small></dd>{% endif %}
+      </dl>
+      {% else %}<p class="muted">{{ tr('{name} has not shared any other details.', name=person.name) }}</p>{% endif %}
+    </section>
+
+    {% if profile.manager or profile.teams or profile.direct_reports %}
+    <section class="panel">
+      <h2>{{ tr('Organization') }}</h2>
+      {% if profile.manager %}<h3>{{ tr('Manager') }}</h3><p class="people-profile-person">{{ user_avatar(profile.manager) }}{{ user_link(profile.manager) }}</p>{% endif %}
+      {% if profile.teams %}<h3>{{ tr('Teams') }}</h3><p>{% for team in profile.teams %}<span class="tag">{{ team.name }}</span> {% endfor %}</p>{% endif %}
+      {% if profile.direct_reports %}<h3>{{ tr('Direct reports') }}</h3>
+      <ul class="people-profile-list">{% for report in profile.direct_reports %}<li class="people-profile-person">{{ user_avatar(report) }}{{ user_link(report) }}</li>{% endfor %}</ul>{% endif %}
+    </section>
+    {% endif %}
+  </div>
+
+  {% if is_self %}
+  <section class="panel people-profile-privacy">
+    <h2>{{ tr('What others can see') }}</h2>
+    <p class="muted">{{ tr('Everyone signed in to this organization can open your profile. Your name and role are always shown. Choose which other details are public; the rest stay private to you.') }}</p>
+    <form method="post" action="{{ url_for('profile_visibility') }}">
+      <ul class="people-profile-switches">
+        {% for key, label, default in profile_fields %}
+        <li><label class="switch-row"><input type="checkbox" name="public_{{ key }}" {% if profile.visibility[key] %}checked{% endif %}> <span>{{ tr(label) }}</span><small class="muted">{{ tr('Public') if profile.visibility[key] else tr('Private') }}</small></label></li>
+        {% endfor %}
+      </ul>
+      <div class="actions"><button class="primary">{{ tr('Save visibility') }}</button></div>
+    </form>
+  </section>
+  {% endif %}
+</section>
+{% endblock %}

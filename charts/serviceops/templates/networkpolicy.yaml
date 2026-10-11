@@ -29,6 +29,9 @@ spec:
         {{- end }}
       ports:
         - {port: 8080, protocol: TCP}
+        {{- if .Values.web.staticOffload.enabled }}
+        - {port: 8081, protocol: TCP}
+        {{- end }}
   egress:
     - ports:
         - {port: 53, protocol: UDP}

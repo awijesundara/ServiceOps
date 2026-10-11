@@ -457,6 +457,17 @@ html.theme-dark .comment-attach-chip button{border:0;background:transparent;colo
 html.theme-dark .comment-attach-chip button:hover{color:var(--red)}
 html.theme-dark .comment-attach-hint{color:var(--muted)}
 html.theme-dark .comment-attach-chip.is-too-large{background:#201817;color:var(--red)}
+html.theme-dark .person-link{color:inherit;border-bottom:1px dotted currentColor}
+html.theme-dark .person-link:hover,html.theme-dark .person-link:focus-visible{color:var(--dk-accent-strong)}
+html.theme-dark td a.person-link{color:inherit}
+html.theme-dark .person-avatar-link:focus-visible{outline:2px solid var(--dk-accent)}
+html.theme-dark .people-profile-initial{background:#172522;color:var(--dk-accent-strong)}
+html.theme-dark .people-profile-identity p{color:var(--muted)}
+html.theme-dark .people-profile-grid h3{color:var(--muted)}
+html.theme-dark .people-profile-facts dt{color:var(--muted)}
+html.theme-dark .people-profile-switches .switch-row{border-bottom:1px solid var(--line)}
+html.theme-dark .readonly-field{border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+html.theme-dark .people-profile-facts a{color:var(--dk-accent-strong)}
 /* platform.css */
 html.theme-dark .unified-nav{background:#182128;border-bottom:1px solid var(--line)}
 html.theme-dark .nav-toggle,html.theme-dark .nav-icon{border:0;background:transparent}

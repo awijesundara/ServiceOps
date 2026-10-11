@@ -22,7 +22,7 @@
       {% for ticket in tickets %}{% set sla = ticket_sla[ticket.id] %}<article class="board-card sla-{{ sla.state }}" draggable="{{ 'true' if ticket.id in manageable_ticket_ids else 'false' }}" data-ticket="{{ ticket.id }}">
         <div class="board-card-top"><span class="priority {{ ticket.priority|lower }}">{{ tr_value(ticket.priority) }}</span>{% if sla.state != 'none' %}<span class="board-sla-status">{{ tr_value(sla.label) }}</span>{% endif %}</div>
         <a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a><strong>{{ ticket.title }}</strong>
-        <div class="board-card-meta">{% if sla.due %}<span class="board-sla-time">{{ sla.due }}</span>{% endif %}<small>{{ ticket.assignee.name if ticket.assignee else tr('Unassigned') }}{% if ticket.id not in manageable_ticket_ids %} · {{ tr('Read only') }}{% endif %}</small></div>
+        <div class="board-card-meta">{% if sla.due %}<span class="board-sla-time">{{ sla.due }}</span>{% endif %}<small>{{ user_link(ticket.assignee, tr('Unassigned')) }}{% if ticket.id not in manageable_ticket_ids %} · {{ tr('Read only') }}{% endif %}</small></div>
       </article>{% else %}<p class="board-empty">{{ tr('No matching work') }}</p>{% endfor %}
     </div>
     {% if board_meta[state].hidden %}<a class="board-hidden" href="{{ url_for('tickets', kind='incident') }}">{{ tr('{board_meta} more in ticket lists', board_meta=(board_meta[state].hidden)) }}</a>{% endif %}

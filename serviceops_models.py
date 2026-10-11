@@ -2663,6 +2663,9 @@ class UserPreference(db.Model):
     compact_dates = db.Column(db.Boolean, nullable=False, default=False)
     keyboard_shortcuts = db.Column(db.Boolean, nullable=False, default=True)
     date_time_display = db.Column(db.String(20), nullable=False, default="both")
+    # {field: bool} switches for the public profile (serviceops_core/public_profile.py);
+    # null means every field keeps its default.
+    profile_visibility_json = db.Column(db.Text, nullable=True)
     user = db.relationship("User")
 
 

@@ -31,7 +31,7 @@
     <thead><tr><th>{{ tr('Version') }}</th><th>{{ tr('Title') }}</th><th>{{ tr('Author') }}</th><th>{{ tr('Published') }}</th></tr></thead>
     <tbody>
       {% for h in history %}
-      <tr><td><a href="{{ url_for('knowledge_detail', article_id=h.id) }}">KB{{ '%07d'|format(h.id) }}</a></td><td>{{ h.title }}</td><td>{{ h.author.name }}</td><td>{{ (h.created_at|usertime('%b %d, %Y')) }}</td></tr>
+      <tr><td><a href="{{ url_for('knowledge_detail', article_id=h.id) }}">KB{{ '%07d'|format(h.id) }}</a></td><td>{{ h.title }}</td><td>{{ user_link(h.author) }}</td><td>{{ (h.created_at|usertime('%b %d, %Y')) }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

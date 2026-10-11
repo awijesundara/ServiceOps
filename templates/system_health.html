@@ -35,7 +35,7 @@
   <h2>{{ tr('Currently active users') }}</h2>
   <table><thead><tr><th>{{ tr('User') }}</th><th>{{ tr('Role') }}</th><th>{{ tr('Connection') }}</th><th>{{ tr('Last seen') }}</th></tr></thead><tbody>
     {% for user in active_users %}
-    <tr><td>{{ user.name }}<small> {{ user.username }}</small></td><td><span class="tag">{{ tr_value(user.role) }}</span></td><td>{% if user.id in active_mobile_user_ids %}<span class="badge">{{ tr('Mobile') }}</span>{% else %}<span class="muted">{{ tr('Web') }}</span>{% endif %}</td><td>{{ (user.last_seen_at|usertime('%Y-%m-%d %H:%M:%S')) }}</td></tr>
+    <tr><td>{{ user_link(user) }}<small> {{ user.username }}</small></td><td><span class="tag">{{ tr_value(user.role) }}</span></td><td>{% if user.id in active_mobile_user_ids %}<span class="badge">{{ tr('Mobile') }}</span>{% else %}<span class="muted">{{ tr('Web') }}</span>{% endif %}</td><td>{{ (user.last_seen_at|usertime('%Y-%m-%d %H:%M:%S')) }}</td></tr>
     {% else %}
     <tr><td colspan="4" class="empty">{{ tr('No users active in the last 15 minutes.') }}</td></tr>
     {% endfor %}

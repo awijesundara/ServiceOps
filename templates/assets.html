@@ -29,7 +29,7 @@
   <div class="list-breadcrumb"><span>▽</span> {{ tr('All') }}{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › {{ tr('Search contains “{q}”', q=(q)) }}{% endif %}</div>
   <div class="task-list-scroll">
   <table class="task-list"><thead><tr><th>{{ tr('Asset tag') }}</th><th>{{ tr('Name') }}</th><th>{{ tr('Type') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Owner') }}</th><th>{{ tr('Serial') }}</th></tr></thead><tbody>
-    {% for a in assets %}<tr><td><strong>{{ a.asset_tag }}</strong></td><td><span class="truncate" title="{{ a.name }}">{{ a.name }}</span></td><td>{{ a.asset_type }}</td><td><span class="badge">{{ tr_value(a.status) }}</span></td><td><span class="truncate" title="{{ a.owner.name if a.owner else tr('Unassigned') }}">{{ a.owner.name if a.owner else tr('Unassigned') }}</span></td><td>{{ a.serial_number or '—' }}</td></tr>
+    {% for a in assets %}<tr><td><strong>{{ a.asset_tag }}</strong></td><td><span class="truncate" title="{{ a.name }}">{{ a.name }}</span></td><td>{{ a.asset_type }}</td><td><span class="badge">{{ tr_value(a.status) }}</span></td><td><span class="truncate" title="{{ a.owner.name if a.owner else tr('Unassigned') }}">{{ user_link(a.owner, tr('Unassigned')) }}</span></td><td>{{ a.serial_number or '—' }}</td></tr>
     {% else %}<tr><td colspan="6" class="empty">{{ tr('No matching assets.') }}</td></tr>{% endfor %}
   </tbody></table>
   </div>
