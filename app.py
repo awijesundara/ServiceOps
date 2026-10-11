@@ -3466,6 +3466,31 @@ def user_can_manage_ticket(user, ticket):
     return GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first() is not None
 
 
+def manageable_ticket_ids(user, tickets):
+    """The ids among `tickets` that user_can_manage_ticket() allows, decided
+    with three queries instead of three per ticket (the task board shows up
+    to 100 cards per lane). Same rules: an active same-tenant user who is an
+    administrator, or the manager or a member of the ticket's owning team
+    (a change's ownership team when it has one, otherwise its assignment)."""
+    if not user.is_authenticated or not user.active:
+        return set()
+    tickets = [ticket for ticket in tickets if ticket.tenant_id == user.tenant_id]
+    if user.role == "admin":
+        return {ticket.id for ticket in tickets}
+    ids = [ticket.id for ticket in tickets]
+    if not ids:
+        return set()
+    owning = dict(db.session.query(TicketAssignmentGroup.ticket_id, TicketAssignmentGroup.group_id)
+                  .filter(TicketAssignmentGroup.ticket_id.in_(ids)).all())
+    change_ids = [ticket.id for ticket in tickets if ticket.kind == "change"]
+    if change_ids:
+        owning.update(db.session.query(ChangeOwnership.ticket_id, ChangeOwnership.group_id)
+                      .filter(ChangeOwnership.ticket_id.in_(change_ids)).all())
+    own_groups = {row[0] for row in db.session.query(GroupMember.group_id).filter_by(user_id=user.id).all()}
+    own_groups |= {row[0] for row in db.session.query(SupportGroup.id).filter_by(manager_id=user.id).all()}
+    return {ticket_id for ticket_id in ids if owning.get(ticket_id) in own_groups}
+
+
 def user_is_executive(user):
     """True for the tenant's designated executives: the Executive Office
     group's manager and its active "executive approver" members (the same
