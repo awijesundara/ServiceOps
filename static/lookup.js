@@ -94,13 +94,15 @@ function initLookup(container) {
     container.appendChild(browseButton);
   }
   if (url.includes("/lookup/cis") && hidden) {
-    // Inside a form row (<label><span>…</span>control</label>) the owning team
-    // is its own read-only field beside the CI, laid out like every other
-    // field; elsewhere it is a line under the picker.
+    // A record's main CI picker (data-owning-team-field on the hidden input,
+    // inside a <label><span>…</span>control</label> row) shows the owning team
+    // as its own read-only field beside the CI, laid out like every other
+    // field. Every other picker -- including ones on pages that already render
+    // that field -- keeps a line under the picker.
     const row = container.closest("label");
     let owningTeamHint;
     let setOwningTeam;
-    if (row && row.parentElement) {
+    if (row && row.parentElement && hidden.dataset.owningTeamField !== undefined) {
       owningTeamHint = document.createElement("label");
       owningTeamHint.className = "ci-owning-team-field";
       const caption = document.createElement("span");
@@ -123,12 +125,19 @@ function initLookup(container) {
       setOwningTeam(owningTeam);
       owningTeamHint.hidden = false;
     };
+    // The server-rendered rack location bar describes the saved CI; hide it
+    // while a different (unsaved) CI is picked so it never shows a stale rack.
+    const rackLocation = row ? row.querySelector(".ci-rack-location") : null;
+    const savedCi = hidden.value;
     hidden.addEventListener("lookup:change", (event) => {
       const item = event.detail;
       if (item && (item.owning_team || item.value)) {
         showOwningTeam(item.owning_team);
       } else {
         owningTeamHint.hidden = true;
+      }
+      if (rackLocation) {
+        rackLocation.hidden = !item || String(item.value || "") !== savedCi;
       }
     });
     // A CI already selected when the page loaded (editing an existing
