@@ -213,3 +213,19 @@ def test_single_replica_production_requires_an_explicit_opt_in(tmp_path):
     budgets = [re.search(r"^metadata:\n  name: (\S+)", doc, re.M).group(1)
                for doc in allowed.stdout.split("\n---") if "\nkind: PodDisruptionBudget" in doc]
     assert "serviceops" not in budgets
+
+
+def test_image_uses_the_compiled_psycopg_driver_against_debian_libpq():
+    # The pure-Python psycopg fallback more than doubled CPU per request in
+    # the 2026-10-12 load test; the binary wheel's bundled libraries fail the
+    # vulnerability gate. A build stage compiles psycopg-c against Debian's
+    # libpq, and the image build fails if the C driver is not the one in use.
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    builder, final = dockerfile.split("\nFROM ", 1)
+    assert " AS psycopg-c" in builder.splitlines()[0]
+    assert "libpq-dev" in builder and '--no-binary=psycopg-c "psycopg-c==${version}"' in builder
+    assert "s/^psycopg\\[binary\\]==" in builder  # same version as requirements.txt
+    assert "COPY --from=psycopg-c /wheels /tmp/psycopg-wheels" in final
+    assert "assert psycopg.pq.__impl__ == 'c'" in final
+    assert "rm -rf /tmp/psycopg-wheels" in final
+    assert "libpq-dev" not in final and "gcc" not in final
