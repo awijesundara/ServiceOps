@@ -898,6 +898,9 @@
    "id": "An active, same-tenant line manager must be assigned to the requested-for user before an approval-required item can be submitted."
   },
   {
+   "id": "An asset tag and a name are required."
+  },
+  {
    "id": "Analytics"
   },
   {
@@ -1113,6 +1116,9 @@
   },
   {
    "id": "Asset tag"
+  },
+  {
+   "id": "Asset tag {tag} is already in use."
   },
   {
    "id": "Assets"
@@ -1938,6 +1944,9 @@
    "id": "Choose a valid {label}."
   },
   {
+   "id": "Choose an active agent in this organisation as the owner."
+  },
+  {
    "id": "Choose an active team to receive backup failure alerts."
   },
   {
@@ -1957,6 +1966,9 @@
   },
   {
    "id": "Choose only the activity this destination needs. Changes apply to future events."
+  },
+  {
+   "id": "Choose or enter {field}."
   },
   {
    "id": "Choose the executives who can approve Normal and Emergency changes."
@@ -3492,6 +3504,9 @@
    "id": "Escalation hours must be a number."
   },
   {
+   "id": "Escalation team"
+  },
+  {
    "id": "Estimated delivery: {delivery_days} business day"
   },
   {
@@ -4626,6 +4641,9 @@
    "id": "JavaScript is required for the chat assistant."
   },
   {
+   "id": "Job"
+  },
+  {
    "id": "Job title"
   },
   {
@@ -4932,6 +4950,9 @@
   },
   {
    "id": "Limit to first N new tickets (leave blank for all — recommended for your first preview)"
+  },
+  {
+   "id": "Link"
   },
   {
    "id": "Link CIs"
@@ -5264,6 +5285,9 @@
   },
   {
    "id": "Message"
+  },
+  {
+   "id": "Message thread ID"
   },
   {
    "id": "Message visibility"
@@ -8655,6 +8679,9 @@
    "id": "Schedule holiday added."
   },
   {
+   "id": "Schedule interval"
+  },
+  {
    "id": "Schedule interval must be 1-525600 minutes."
   },
   {
@@ -9474,6 +9501,9 @@
    "id": "Source priority and field mapping"
   },
   {
+   "id": "Source record"
+  },
+  {
    "id": "Source rules saved. They apply from the next import."
   },
   {
@@ -9921,6 +9951,9 @@
    "id": "Temporary password"
   },
   {
+   "id": "Tenant"
+  },
+  {
    "id": "Tenant \"{name}\" created."
   },
   {
@@ -9967,6 +10000,9 @@
   },
   {
    "id": "Text"
+  },
+  {
+   "id": "Text size"
   },
   {
    "id": "Text to match; omit to list recent tickets."
@@ -10220,6 +10256,9 @@
   },
   {
    "id": "The recovery point objective must be between 1 and 168 hours."
+  },
+  {
+   "id": "The request contains a character that is not allowed (NUL)."
   },
   {
    "id": "The requested ticket was not found."
@@ -10832,6 +10871,9 @@
    "id": "Use a proxy for this model"
   },
   {
+   "id": "Use at most 80 characters for the asset tag and 160 for the name."
+  },
+  {
    "id": "Use global search for tickets, knowledge, enterprise records, configuration items, and menu destinations. Open the star menu to save the current page to Favorites, or the clock menu to jump back to a Recently viewed page."
   },
   {
@@ -11128,6 +11170,9 @@
   },
   {
    "id": "Warranty expiry"
+  },
+  {
+   "id": "Warranty expiry date"
   },
   {
    "id": "Warranty expiry{src}"
@@ -12386,7 +12431,19 @@
    "id": "{errors} error(s)"
   },
   {
+   "id": "{field} is too long: use at most {limit} characters."
+  },
+  {
+   "id": "{field} must be a date (YYYY-MM-DD)."
+  },
+  {
    "id": "{field} must be a string."
+  },
+  {
+   "id": "{field} must be a whole number."
+  },
+  {
+   "id": "{field} must be between {minimum} and {maximum}."
   },
   {
    "id": "{field} must not exceed {maximum} characters."

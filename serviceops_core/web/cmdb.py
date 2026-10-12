@@ -27,7 +27,6 @@ from app import (
     integration_endpoint_valid,
     log_field_changes,
     normalize_environment,
-    parse_form_date,
     parse_list_filter_param,
     require_action,
     require_install_settings_authority,
@@ -76,6 +75,7 @@ from serviceops_models import (
     User,
 )
 from serviceops_core.localization import tr, tr_value
+from serviceops_core.request_values import form_int, parse_date
 
 
 # An import must follow a preview reviewed this recently.
@@ -173,9 +173,19 @@ def register(app):
     @roles("admin")
     def asset_new():
         if request.method == "POST":
-            asset = Asset(asset_tag=request.form["asset_tag"], name=request.form["name"],
-                          asset_type=request.form["asset_type"], status=request.form["status"],
-                          serial_number=request.form.get("serial_number"))
+            asset_tag = request.form.get("asset_tag", "").strip()
+            name = request.form.get("name", "").strip()
+            if not asset_tag or not name:
+                abort(400, description=tr("An asset tag and a name are required."))
+            if len(asset_tag) > 80 or len(name) > 160:
+                abort(400, description=tr("Use at most 80 characters for the asset tag and 160 for the name."))
+            # asset_tag is unique across the installation, not per tenant.
+            if Asset.query.filter(func.lower(Asset.asset_tag) == asset_tag.casefold()).first():
+                abort(409, description=tr("Asset tag {tag} is already in use.", tag=asset_tag))
+            asset = Asset(asset_tag=asset_tag, name=name,
+                          asset_type=request.form.get("asset_type", "").strip()[:80] or "Hardware",
+                          status=request.form.get("status", "").strip()[:40] or "In stock",
+                          serial_number=(request.form.get("serial_number") or "").strip()[:120] or None)
             db.session.add(asset)
             audit("create", asset.asset_tag, asset.name)
             db.session.commit()
@@ -353,8 +363,8 @@ def register(app):
                 location=form_text("location"),
                 cost_center=form_text("cost_center"),
                 discovery_source=request.form.get("discovery_source", "Manual"),
-                install_date=parse_form_date(install_date),
-                warranty_expiry_date=parse_form_date(warranty_expiry_date),
+                install_date=parse_date(install_date, "install_date"),
+                warranty_expiry_date=parse_date(warranty_expiry_date, "warranty_expiry_date"),
                 support_group_id=support_group_id,
                 owner_id=current_user.id,
                 attributes=_ci_attributes_from_form(),
@@ -433,8 +443,8 @@ def register(app):
             ci.location = form_text("location")
             ci.cost_center = form_text("cost_center")
             ci.discovery_source = request.form.get("discovery_source", ci.discovery_source)
-            ci.install_date = parse_form_date(request.form.get("install_date") or None)
-            ci.warranty_expiry_date = parse_form_date(request.form.get("warranty_expiry_date") or None)
+            ci.install_date = parse_date(request.form.get("install_date"), "install_date")
+            ci.warranty_expiry_date = parse_date(request.form.get("warranty_expiry_date"), "warranty_expiry_date")
             ci.support_group_id = support_group_id
             ci.owner_id = owner_id
             ci.attributes = _ci_attributes_from_form(ci.attributes)
@@ -1060,7 +1070,7 @@ def register(app):
     @app.post("/cmdb/relationships")
     @roles("agent", "manager", "admin")
     def ci_relationship_add():
-        parent = tenant_record_or_404(ConfigurationItem, int(request.form["parent_id"]))
+        parent = tenant_record_or_404(ConfigurationItem, form_int("parent_id", required=True))
         if not ci_class_action_allowed(
             current_user.tenant_id, parent.ci_class, current_user.effective_role, "update",
         ):
@@ -1146,9 +1156,9 @@ def register(app):
         target = DiscoveryTarget(
             name=name, target_type=target_type, address=address,
             snmp_version=request.form.get("snmp_version", "2c"),
-            snmp_port=int(request.form.get("snmp_port") or 161),
+            snmp_port=form_int("snmp_port", default=161),
             schedule_enabled=request.form.get("schedule_enabled") == "on",
-            schedule_interval_minutes=max(int(request.form.get("schedule_interval_minutes") or 1440), 5),
+            schedule_interval_minutes=max(form_int("schedule_interval_minutes", default=1440), 5),
             created_by_id=current_user.id,
         )
         target.community = community

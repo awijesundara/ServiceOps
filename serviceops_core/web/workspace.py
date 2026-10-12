@@ -29,6 +29,7 @@ from flask_login import current_user, login_required
 import app as core
 from serviceops_core.identity import normalize_email
 from serviceops_core.localization import tr
+from serviceops_core.request_values import form_int
 from app import (
     email_taken_by_other,
     escape_like,
@@ -1059,7 +1060,7 @@ def register(app):
             g.pop("serviceops_language", None)
             pref.theme = request.form.get("theme") if request.form.get("theme") in THEMES else "light"
             pref.density = request.form.get("density", "comfortable")
-            pref.font_scale = max(80, min(140, int(request.form.get("font_scale", 100))))
+            pref.font_scale = max(80, min(140, form_int("font_scale", default=100)))
             pref.high_contrast = bool(request.form.get("high_contrast"))
             pref.reduced_motion = bool(request.form.get("reduced_motion"))
             pref.nav_pinned = bool(request.form.get("nav_pinned"))

@@ -71,6 +71,7 @@ from serviceops_models import (
     User,
 )
 from serviceops_core.localization import tr
+from serviceops_core.request_values import form_int
 from serviceops_core.safe_redirect import redirect_to_referrer
 
 
@@ -375,7 +376,7 @@ def register(app):
             abort(409, description=tr("Items cannot be added to a completed request."))
         if not user_can_add_request_item(current_user, req):
             abort(403, description=tr("Only request participants or an administrator can add items."))
-        item = tenant_record_or_404(CatalogItem, int(request.form["catalog_item_id"]))
+        item = tenant_record_or_404(CatalogItem, form_int("catalog_item_id", required=True))
         approval_stages = None
         if item.approval_required:
             try:
@@ -422,7 +423,7 @@ def register(app):
         chain = approval_chain_for("ritm", ritm.id)
         if chain and chain.state != "Approved":
             abort(409, description=tr("Catalog tasks cannot be added until the RITM is approved."))
-        group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
+        group = tenant_record_or_404(SupportGroup, form_int("group_id", required=True))
         if not is_team_group(group):
             abort(400, description=tr("Catalog tasks require an active team."))
         def build_task():

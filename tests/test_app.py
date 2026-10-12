@@ -9736,7 +9736,8 @@ def test_ticket_list_truncates_long_free_text_columns_instead_of_wrapping(client
     ellipsis, full text on hover) instead of being left to wrap however the
     browser lays out the row."""
     login(client)
-    long_title = "A " + "very " * 40 + "long change title that would otherwise wrap onto two lines"
+    # Long enough to wrap, within the 180-character title column.
+    long_title = "A " + "very " * 20 + "long change title that would otherwise wrap onto two lines"
     created = client.post("/tickets/new/change", data={
         "title": long_title, "description": "Long title truncation regression",
         "category": "Software", "priority": "P3", "change_type": "Normal",

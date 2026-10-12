@@ -48,6 +48,14 @@ _SECRET_SHAPES = (
 )
 
 
+def _token_count(value):
+    """A provider-reported token count, or 0 when it is missing or not a
+    number: one malformed usage record must not break quota routing."""
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
 def _luhn(number):
     digits = [int(c) for c in number if c.isdigit()]
     if not 13 <= len(digits) <= 19:
@@ -301,8 +309,11 @@ def usage_today(tenant_id):
             data = json.loads(usage or "{}")
         except ValueError:
             data = {}
-        tokens = int(data.get("total_tokens") or 0) or int(data.get("prompt_tokens") or data.get("input_tokens") or 0) + int(
-            data.get("completion_tokens") or data.get("output_tokens") or 0)
+        if not isinstance(data, dict):
+            data = {}
+        tokens = _token_count(data.get("total_tokens")) or (
+            _token_count(data.get("prompt_tokens") or data.get("input_tokens"))
+            + _token_count(data.get("completion_tokens") or data.get("output_tokens")))
         slot = per.setdefault(connection_id, {"requests": 0, "tokens": 0})
         slot["requests"] += 1
         slot["tokens"] += tokens

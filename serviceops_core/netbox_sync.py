@@ -27,6 +27,14 @@ VMS_PATH = "/api/virtualization/virtual-machines/"
 RACKS_PATH = "/api/dcim/racks/"
 
 
+def _reported_count(payload, key):
+    """The server's record count, or 0 when the response is not shaped as
+    expected (a proxy error page, a different API version)."""
+    try:
+        return max(0, int((payload or {}).get(key) or 0))
+    except (AttributeError, TypeError, ValueError):
+        return 0
+
 def _format_interface(record):
     label = record.get("name") or "?"
     bits = []
@@ -819,7 +827,7 @@ def probe_netbox(tenant_id, session_factory=_netbox_session):
             row = {"key": key, "label": label, "required": required, "count": None, "readable": False}
             try:
                 payload = _get(session, base_url, path, params={"limit": 1, "brief": 1})
-                row["count"], row["readable"] = int(payload.get("count") or 0), True
+                row["count"], row["readable"] = _reported_count(payload, "count"), True
             except requests.RequestException as error:
                 code = getattr(getattr(error, "response", None), "status_code", None)
                 if code in (401, 403):

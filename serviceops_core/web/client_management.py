@@ -68,6 +68,7 @@ from serviceops_models import (
     User,
 )
 from serviceops_core.localization import tr, tr_value
+from serviceops_core.request_values import parse_int
 
 
 def register(app):
@@ -530,8 +531,9 @@ def register(app):
                     except ValueError:
                         flash(tr("Escalation hours must be a number."), "error")
                         return redirect(url_for("client_organization_detail", organization_id=organization.id))
-                    tenant_record_or_404(SupportGroup, int(escalation_group_id))
-                    notification = {"escalation_hours": hours_value, "escalation_group_id": int(escalation_group_id)}
+                    escalation_group = parse_int(escalation_group_id, "escalation_group_id", required=True)
+                    tenant_record_or_404(SupportGroup, escalation_group)
+                    notification = {"escalation_hours": hours_value, "escalation_group_id": escalation_group}
                 settings["notification"] = notification
                 organization.settings = settings
                 audit("client organization notification policy updated", organization.name, "")

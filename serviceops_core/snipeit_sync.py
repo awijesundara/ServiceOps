@@ -90,6 +90,14 @@ class SnipeitSyncError(RuntimeError):
     """Raised for conditions that must abort the whole sync (e.g. not configured)."""
 
 
+def _reported_count(payload, key):
+    """The server's record count, or 0 when the response is not shaped as
+    expected (a proxy error page, a different API version)."""
+    try:
+        return max(0, int((payload or {}).get(key) or 0))
+    except (AttributeError, TypeError, ValueError):
+        return 0
+
 def _snipeit_session(base_url, token):
     """A requests.Session for the Snipe-IT API, isolated so tests can replace
     it. Certificate trust and egress follow the same rules as the NetBox
@@ -690,7 +698,7 @@ def _configured_connection():
 
 def _count(session, base_url, path):
     payload = _get(session, base_url, path, params={"limit": 1, "offset": 0})
-    return int(payload.get("total") or 0)
+    return _reported_count(payload, "total")
 
 
 PROBE_ENDPOINTS = (
