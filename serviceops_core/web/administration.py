@@ -151,6 +151,7 @@ from serviceops_models import (
     WorkflowSchedule,
 )
 from serviceops_core.localization import tr, tr_value
+from serviceops_core.request_values import form_int, parse_int
 from serviceops_core.itam.registry import record_id
 
 # Audit wording for each approval authority (serviceops_core/approval_groups.py).
@@ -421,7 +422,7 @@ def register(app):
             user.calendar_integration = request.form.get("calendar_integration", "None")[:40]
             manager_raw = request.form.get("manager_id", "")
             if manager_raw:
-                manager_id = int(manager_raw)
+                manager_id = parse_int(manager_raw, "manager_id")
                 if manager_id == user.id:
                     flash(tr("A user cannot be their own manager."), "error")
                     return redirect(url_for("user_edit", user_id=user.id))
@@ -849,7 +850,7 @@ def register(app):
                 audit("create", f"Tenant {slug}", name)
                 flash(tr("Tenant \"{name}\" created.", name=name), "success")
             elif action == "set_tenant_active":
-                tenant = Tenant.query.filter_by(id=int(request.form["tenant_id"])).first_or_404()
+                tenant = Tenant.query.filter_by(id=form_int("tenant_id", required=True)).first_or_404()
                 if tenant.id == current_user.tenant_id and not request.form.get("active"):
                     flash(tr("You cannot deactivate the tenant your own account belongs to."), "error")
                     return redirect(url_for("platform_tenants"))
@@ -970,7 +971,7 @@ def register(app):
                         "protect_content": request.form.get("protect_content") == "on",
                     }
                     if thread_id:
-                        configuration["message_thread_id"] = int(thread_id)
+                        configuration["message_thread_id"] = parse_int(thread_id, "message_thread_id")
                 interactive_google_chat = (
                     kind == "google_chat" and request.form.get("delivery_mode") == "interactive"
                 )
@@ -1153,7 +1154,7 @@ def register(app):
             elif action == "create_monitoring_source":
                 name = request.form.get("name", "").strip()
                 group = tenant_record_or_404(
-                    SupportGroup, int(request.form.get("group_id", "0"))
+                    SupportGroup, form_int("group_id", default=0)
                 )
                 if not name or len(name) > 160 or not core.is_team_group(group):
                     abort(400, description=(
@@ -1249,7 +1250,7 @@ def register(app):
                 db.session.commit()
             elif action == "manual_trigger":
                 ticket = tenant_record_or_404(
-                    Ticket, int(request.form.get("ticket_id", ""))
+                    Ticket, form_int("ticket_id", required=True)
                 )
                 context = ticket_workflow_context(ticket)
                 context["triggered_by"] = current_user.username
@@ -1263,7 +1264,7 @@ def register(app):
                 return redirect(url_for("workflows_admin"))
             elif action == "replay_dead":
                 job = tenant_record_or_404(
-                    WorkflowJob, int(request.form.get("job_id", ""))
+                    WorkflowJob, form_int("job_id", required=True)
                 )
                 if job.state != "Dead":
                     abort(409, description=tr("Only dead workflow jobs can be replayed."))
@@ -1311,7 +1312,7 @@ def register(app):
                 return _admin_referrer_redirect("workflows_admin")
             elif action == "toggle_schedule":
                 schedule = tenant_record_or_404(
-                    WorkflowSchedule, int(request.form.get("schedule_id", ""))
+                    WorkflowSchedule, form_int("schedule_id", required=True)
                 )
                 schedule.active = not schedule.active
                 if schedule.active and schedule.next_run_at < now():
@@ -2134,7 +2135,7 @@ def register(app):
                 audit("create", f"Ticket category: {name}", "")
                 flash(tr("Category {name} created.", name=name), "success")
             elif action == "update_ticket_category":
-                category = tenant_record_or_404(TicketCategory, int(request.form["category_id"]))
+                category = tenant_record_or_404(TicketCategory, form_int("category_id", required=True))
                 name = request.form.get("name", "").strip()
                 if not name or len(name) > 80:
                     abort(400, description=tr("Category name must contain 1 to 80 characters."))
@@ -2158,7 +2159,7 @@ def register(app):
                       f"{before} -> active={category.active}; tickets relabelled={relabelled}")
                 flash(tr("Category {name} updated.", name=name), "success")
             elif action == "create_ticket_subcategory":
-                category = tenant_record_or_404(TicketCategory, int(request.form["category_id"]))
+                category = tenant_record_or_404(TicketCategory, form_int("category_id", required=True))
                 name = request.form.get("name", "").strip()
                 if not name or len(name) > 80:
                     abort(400, description=tr("Subcategory name must contain 1 to 80 characters."))
@@ -2169,7 +2170,7 @@ def register(app):
                     abort(409, description=tr("That category already has a subcategory with this name."))
                 offering_id = request.form.get("default_service_offering_id") or None
                 if offering_id:
-                    tenant_record_or_404(ServiceOffering, int(offering_id))
+                    tenant_record_or_404(ServiceOffering, parse_int(offering_id, "default_service_offering_id", required=True))
                 subcategory = TicketSubcategory(category_id=category.id, name=name, active=True,
                                                 default_service_offering_id=offering_id, tenant_id=current_user.tenant_id)
                 db.session.add(subcategory)
@@ -2177,7 +2178,7 @@ def register(app):
                 audit("create", f"Ticket subcategory: {category.name} / {name}", "")
                 flash(tr("Subcategory {name} created under {name2}.", name=name, name2=category.name), "success")
             elif action == "update_ticket_subcategory":
-                subcategory = tenant_record_or_404(TicketSubcategory, int(request.form["subcategory_id"]))
+                subcategory = tenant_record_or_404(TicketSubcategory, form_int("subcategory_id", required=True))
                 name = request.form.get("name", "").strip()
                 if not name or len(name) > 80:
                     abort(400, description=tr("Subcategory name must contain 1 to 80 characters."))
@@ -2189,7 +2190,7 @@ def register(app):
                     abort(409, description=tr("That category already has a subcategory with this name."))
                 offering_id = request.form.get("default_service_offering_id") or None
                 if offering_id:
-                    tenant_record_or_404(ServiceOffering, int(offering_id))
+                    tenant_record_or_404(ServiceOffering, parse_int(offering_id, "default_service_offering_id", required=True))
                 before = f"{subcategory.name}; active={subcategory.active}"
                 if name != subcategory.name:
                     category_name = subcategory.category.name
@@ -2207,7 +2208,7 @@ def register(app):
                 flash(tr("Subcategory {name} updated.", name=name), "success")
             elif action == "add_support_group_alias":
                 alias = request.form.get("alias", "").strip()
-                group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
+                group = tenant_record_or_404(SupportGroup, form_int("group_id", required=True))
                 if not alias or len(alias) > 160:
                     abort(400)
                 existing = SupportGroupAlias.query.filter(
@@ -2240,7 +2241,7 @@ def register(app):
                 else:
                     flash(tr("\"{alias}\" now resolves to {name}.", alias=alias, name=group.name), "success")
             elif action == "delete_support_group_alias":
-                group_alias = tenant_record_or_404(SupportGroupAlias, int(request.form["alias_id"]))
+                group_alias = tenant_record_or_404(SupportGroupAlias, form_int("alias_id", required=True))
                 audit("delete", "Team name alias", group_alias.alias)
                 db.session.delete(group_alias)
                 flash(tr("Team name alias removed."), "success")
@@ -2321,7 +2322,7 @@ def register(app):
                 audit("configure", "Executive approval", f"mode={mode}; users={','.join(map(str, selected_ids))}")
                 flash(tr("Executive approvers updated."), "success")
             elif action == "set_manager":
-                group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
+                group = tenant_record_or_404(SupportGroup, form_int("group_id", required=True))
                 if group.group_type == "CCB Approval" or group.name in core.GOVERNANCE_GROUP_NAMES:
                     abort(400)
                 old_manager_id = group.manager_id
@@ -2386,7 +2387,7 @@ def register(app):
                 authority = request.form.get("authority", "")
                 subject_group_id = None
                 if authority == "team_manager":
-                    subject = tenant_record_or_404(SupportGroup, int(request.form.get("subject_group_id") or 0))
+                    subject = tenant_record_or_404(SupportGroup, form_int("subject_group_id", default=0))
                     if not core.is_team_group(subject, current_user.tenant_id):
                         abort(400)
                     subject_group_id = subject.id
@@ -2435,8 +2436,8 @@ def register(app):
                 # indirectly (AD group sync, or the separate manager/CCB
                 # controls). This gives admins the same full manual liberty
                 # AD-driven membership already has.
-                group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
-                user = tenant_record_or_404(User, int(request.form["user_id"]))
+                group = tenant_record_or_404(SupportGroup, form_int("group_id", required=True))
+                user = tenant_record_or_404(User, form_int("user_id", required=True))
                 if not user.active:
                     abort(400, description=tr("Only active users can be added to a group."))
                 existing = GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first()
@@ -2450,7 +2451,7 @@ def register(app):
                 else:
                     flash(tr("{name} is already a member of {name2}.", name=user.name, name2=group.name), "error")
             elif action == "remove_group_member":
-                membership = tenant_record_or_404(GroupMember, int(request.form["member_id"]))
+                membership = tenant_record_or_404(GroupMember, form_int("member_id", required=True))
                 group = db.session.get(SupportGroup, membership.group_id)
                 user = membership.user
                 if membership.role in ("manager", "CCB approver", "executive approver"):
@@ -2507,8 +2508,8 @@ def register(app):
                       f"priority={priority}; synchronize child incidents={values['SYNC_CHILD_INCIDENT_STATES']}")
                 flash(tr("Ticket defaults updated."), "success")
             elif action == "set_catalog_route":
-                item = tenant_record_or_404(CatalogItem, int(request.form["catalog_item_id"]))
-                group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
+                item = tenant_record_or_404(CatalogItem, form_int("catalog_item_id", required=True))
+                group = tenant_record_or_404(SupportGroup, form_int("group_id", required=True))
                 if not core.is_team_group(group):
                     abort(400, description=(
                         tr("Catalog items can route only to an active team.")
@@ -2551,7 +2552,7 @@ def register(app):
                         tr("Catalog items can route only to an active team.")
                     ))
                 item_id = (
-                    int(request.form["catalog_item_id"])
+                    form_int("catalog_item_id", required=True)
                     if action == "update_catalog_item" else None
                 )
                 duplicate = CatalogItem.query.filter(
@@ -2629,7 +2630,7 @@ def register(app):
                 flash(tr("Business schedule {name} created.", name=name), "success")
             elif action == "add_schedule_holiday":
                 schedule = tenant_record_or_404(
-                    BusinessSchedule, int(request.form["schedule_id"])
+                    BusinessSchedule, form_int("schedule_id", required=True)
                 )
                 holiday_name = request.form.get("name", "").strip()
                 try:
@@ -2706,12 +2707,12 @@ def register(app):
                 audit("create", f"Change freeze: {title}", f"{starts_at.isoformat()} – {ends_at.isoformat()}")
                 flash(tr("Change freeze \"{title}\" created. Standard/Normal changes cannot be scheduled inside it.", title=title), "success")
             elif action == "delete_change_freeze":
-                window = tenant_record_or_404(ChangeFreezeWindow, int(request.form["window_id"]))
+                window = tenant_record_or_404(ChangeFreezeWindow, form_int("window_id", required=True))
                 audit("delete", f"Change freeze: {window.title}")
                 db.session.delete(window)
                 flash(tr("Change freeze removed."), "success")
             elif action == "link_service_ci":
-                service = tenant_record_or_404(ServiceOffering, int(request.form["service_offering_id"]))
+                service = tenant_record_or_404(ServiceOffering, form_int("service_offering_id", required=True))
                 role = request.form.get("relationship_role", "Supporting")
                 if role not in ("Primary", "Supporting"):
                     abort(400)
@@ -2738,7 +2739,7 @@ def register(app):
                       f"{role}: {', '.join(linked_names)}")
                 flash(tr("{linked_names} linked to {name}.", linked_names=', '.join(linked_names), name=service.name), "success")
             elif action == "unlink_service_ci":
-                link = db.get_or_404(ServiceOfferingCI, int(request.form["link_id"]))
+                link = db.get_or_404(ServiceOfferingCI, form_int("link_id", required=True))
                 if link.tenant_id != current_user.tenant_id:
                     abort(404)
                 audit("configure", f"{link.service_offering.name} service mapping",
@@ -2746,7 +2747,7 @@ def register(app):
                 db.session.delete(link)
                 flash(tr("{name} unlinked from {name2}.", name=link.ci.name, name2=link.service_offering.name), "success")
             elif action == "toggle_service_status_page_visibility":
-                service = tenant_record_or_404(ServiceOffering, int(request.form["service_offering_id"]))
+                service = tenant_record_or_404(ServiceOffering, form_int("service_offering_id", required=True))
                 service.status_page_visible = not service.status_page_visible
                 audit("configure", f"{service.name} status page visibility",
                       "visible" if service.status_page_visible else "hidden")

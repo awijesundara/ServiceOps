@@ -156,6 +156,7 @@ from serviceops_models import (
     UserWorkspaceLayout,
 )
 from serviceops_core.localization import tr, tr_value
+from serviceops_core.request_values import form_int, parse_int
 from serviceops_core.safe_redirect import redirect_internal
 
 
@@ -526,7 +527,7 @@ def register(app):
             offering = None
             if request.form.get("service_offering_id"):
                 offering = tenant_query(ServiceOffering).filter_by(
-                    id=int(request.form["service_offering_id"])
+                    id=form_int("service_offering_id", required=True)
                 ).first()
                 if not offering:
                     return render_form("Select a valid service offering.")
@@ -972,7 +973,7 @@ def register(app):
                     ticket.notify = notify
                     offering_id = request.form.get("service_offering_id", "")
                     offering = (
-                        tenant_record_or_404(ServiceOffering, int(offering_id))
+                        tenant_record_or_404(ServiceOffering, parse_int(offering_id, "service_offering_id", required=True))
                         if offering_id else None
                     )
                     if offering and offering.status != "Operational":
@@ -987,7 +988,7 @@ def register(app):
                         existing_primary.ci.name if existing_primary else "Not selected"
                     )
                     if ci_id:
-                        ci = tenant_record_or_404(ConfigurationItem, int(ci_id))
+                        ci = tenant_record_or_404(ConfigurationItem, parse_int(ci_id, "ci_id", required=True))
                         if not existing_primary:
                             existing_primary = TaskCI(
                                 target_type="ticket", target_id=ticket.id,
@@ -1667,7 +1668,7 @@ def register(app):
             abort(409, description=(
                 tr("{number} is {state}; change tasks cannot be added to a closed-out change.", number=ticket.number, state=ticket.state)
             ))
-        group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
+        group = tenant_record_or_404(SupportGroup, form_int("group_id", required=True))
         if not core.is_team_group(group):
             abort(400, description=tr("Change tasks require an active team."))
         task_type = request.form.get("task_type")
@@ -1815,7 +1816,7 @@ def register(app):
             abort(403, description=(
                 tr("Only active members of {name} can update {number}.", name=task.assignment_group.name, number=task.number)
             ))
-        assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
+        assignee_id = form_int("assignee_id")
         if assignee_id:
             assignee = db.session.get(User, assignee_id)
             if not assignee or not user_in_group(assignee, task.assignment_group):
@@ -1985,7 +1986,7 @@ def register(app):
                 assignee = None
                 if raw_assignee:
                     assignee = (
-                        enterprise_assignable_users(record.tenant_id).filter(User.id == int(raw_assignee)).first()
+                        enterprise_assignable_users(record.tenant_id).filter(User.id == parse_int(raw_assignee, "assignee_id")).first()
                         if raw_assignee.isdigit() else None
                     )
                     if not assignee:
@@ -2006,7 +2007,7 @@ def register(app):
                 })
                 audit("update", record.number, f"{record.state}, {record.priority}, risk {record.risk}")
             elif action in ("approve", "reject"):
-                approval = Approval.query.filter_by(id=int(request.form["approval_id"]),
+                approval = Approval.query.filter_by(id=form_int("approval_id", required=True),
                                                     enterprise_record_id=record.id,
                                                     approver_id=current_user.id, state="Requested").first_or_404()
                 approval.state = "Approved" if action == "approve" else "Rejected"
@@ -2110,7 +2111,7 @@ def register(app):
             "permanent fix": profile.fix_notes,
             "primary CI": profile.primary_ci.name if profile.primary_ci else "",
         }
-        ci_id = int(request.form["primary_ci_id"]) if request.form.get("primary_ci_id") else None
+        ci_id = form_int("primary_ci_id")
         selected_ci = (
             tenant_query(ConfigurationItem).filter(ConfigurationItem.id == ci_id).first()
             if ci_id else None
@@ -2144,7 +2145,7 @@ def register(app):
             abort(404)
         if not user_can_manage_enterprise_record(current_user, record):
             abort(403)
-        group = tenant_record_or_404(SupportGroup, int(request.form["group_id"]))
+        group = tenant_record_or_404(SupportGroup, form_int("group_id", required=True))
         if not core.is_team_group(group):
             abort(400, description=tr("Problem tasks require an active team."))
         sequence = OperationalTask.query.filter_by(
@@ -2198,7 +2199,7 @@ def register(app):
         if not title:
             abort(400, description=tr("A title is required."))
         source_type = request.form.get("source_type") or None
-        source_id = request.form.get("source_id") or None
+        source_id = parse_int(request.form.get("source_id"), "source_id")
         def build():
             item = ImprovementItem(
                 number=sequence_number(ImprovementItem, "IMP"),
@@ -2206,7 +2207,7 @@ def register(app):
                 description=request.form.get("description", "").strip(),
                 expected_outcome=request.form.get("expected_outcome", "").strip(),
                 source_type=source_type,
-                source_id=int(source_id) if source_id else None,
+                source_id=source_id,
                 owner_id=current_user.id,
                 created_by_id=current_user.id,
             )
@@ -2244,8 +2245,13 @@ def register(app):
         item.status = new_status
         item.expected_outcome = request.form.get("expected_outcome", item.expected_outcome)
         item.measured_result = request.form.get("measured_result", item.measured_result)
-        owner_id = request.form.get("owner_id")
-        item.owner_id = int(owner_id) if owner_id else None
+        owner_id = parse_int(request.form.get("owner_id"), "owner_id")
+        if owner_id is not None and not tenant_query(User).filter(
+            User.id == owner_id, User.active.is_(True),
+            User.role.in_(["agent", "manager", "admin", "superadmin"]),
+        ).first():
+            abort(400, description=tr("Choose an active agent in this organisation as the owner."))
+        item.owner_id = owner_id
         after = {
             "status": item.status,
             "owner": item.owner.name if item.owner else "Unassigned",

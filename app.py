@@ -805,7 +805,8 @@ def audit_security_context():
 
 def _support_group_ids_for_target(target, tenant_id):
     """Resolve only explicit record ownership; unknown targets remain unscoped."""
-    reference = str(target or "").split()[0].strip("#:;,()")[:30]
+    words = str(target or "").split()
+    reference = words[0].strip("#:;,()")[:30] if words else ""
     if not reference:
         return []
     group_ids = set()

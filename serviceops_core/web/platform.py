@@ -25,6 +25,7 @@ from app import (
     env_bool,
     service_availability_pct,
 )
+from serviceops_core.input_limits import reject_nul_characters
 from serviceops_core.web.common import _recovery_set_status
 from serviceops_models import (
     ApplicationLog,
@@ -44,6 +45,8 @@ from serviceops_core.localization import tr
 
 
 def register(app):
+    app.before_request(reject_nul_characters)
+
     @app.after_request
     def private_responses_are_not_stored(response):
         """Pages and API answers for a signed-in user or API client carry
