@@ -132,6 +132,9 @@ MSG
 %config(noreplace) %{_sysconfdir}/logrotate.d/serviceops
 
 %changelog
+* Mon Oct 12 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.113.38-1
+- Publish governed release artifacts with synchronized installation documentation.
+
 * Mon Oct 12 2026 ServiceOps Maintainer <serviceops-maintainer@users.noreply.github.com> - 1.113.37-1
 - Publish governed release artifacts with synchronized installation documentation.
 
