@@ -180,3 +180,109 @@ def test_administrators_can_choose_the_data_center_group_type(app, client):
     login(client)
     form = client.get(f"/admin/groups/{ids['unix']}").get_data(as_text=True)
     assert '<option value="Data Center"' in form
+
+
+def change_with_governance(app):
+    ids = app.config["IDS"]
+    with app.app_context():
+        change = create_ticket_with_unique_number(
+            "change", title="Replace PSU in db-prod-07", description="Swap PSU 1.", priority="P3",
+            requester_id=ids["admin"])
+        db.session.flush()
+        db.session.add(ChangeGovernance(ticket_id=change.id, change_type="Normal", impact="Medium",
+                                        ci_id=ids["mounted"], implementation_plan="Swap", test_plan="Check",
+                                        backout_plan="Revert"))
+        db.session.add(ChangeOwnership(ticket_id=change.id, group_id=ids["dc"]))
+        db.session.add(ChangeRevision(ticket_id=change.id, revision=1))
+        db.session.commit()
+        return change.id
+
+
+def test_only_the_main_ci_pickers_ask_for_the_owning_team_field(app, client):
+    # The field is opt-in: the incident form and the new-ticket form ask for
+    # it; pickers on pages that already render it (change governance) or in
+    # unrelated forms keep the one-line hint.
+    login(client)
+    html = page(client, incident(app))
+    assert html.count("data-owning-team-field") == 1
+    assert re.search(r'<input type="hidden" name="ci_id" value="\d+" data-owning-team-field', html)
+    html = page(client, change_with_governance(app))
+    assert "data-owning-team-field" not in html
+    assert html.count("<span>CI owning team</span>") == 1
+    new_ticket = client.get("/tickets/new/incident").get_data(as_text=True)
+    assert '<input type="hidden" name="ci_id" data-owning-team-field>' in new_ticket
+    assert "data-owning-team-field" not in client.get("/cmdb").get_data(as_text=True)
+
+
+@pytest.mark.skipif(os.getenv("RUN_RACK_LOCATION_BROWSER") != "1",
+                    reason="RUN_RACK_LOCATION_BROWSER=1 enables real local browser checks")
+@pytest.mark.parametrize("width,height", [(1440, 1000), (390, 844)])
+def test_owning_team_field_and_location_bar_in_a_browser(app, width, height):
+    import threading
+
+    from playwright.sync_api import expect, sync_playwright
+    from werkzeug.serving import make_server
+
+    ids = app.config["IDS"]
+    with app.app_context():
+        db.session.get(ConfigurationItem, ids["mounted"]).support_group_id = ids["dc"]
+        db.session.commit()
+    incident_id, change_id = incident(app), change_with_governance(app)
+    app.config.update(CSRF_ENABLED=True, SESSION_COOKIE_SECURE=False)
+    server = make_server("127.0.0.1", 0, app, threaded=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            context = browser.new_context(viewport={"width": width, "height": height}, reduced_motion="reduce")
+            page_ = context.new_page()
+            errors = []
+            page_.on("pageerror", lambda error: errors.append(str(error)))
+            page_.goto(base + "/login")
+            page_.locator('input[name="username"]').fill("admin")
+            page_.locator('input[name="password"]').fill("Admin123!")
+            page_.locator("button.primary").click()
+            page_.wait_for_load_state("networkidle")
+
+            page_.goto(f"{base}/ticket/{incident_id}")
+            owning = page_.get_by_role("textbox", name="CI owning team")
+            expect(owning).to_have_count(1)
+            expect(owning).to_have_value("Data Center Operations")
+            bar = page_.locator("a.ci-rack-location")
+            expect(bar).to_be_visible()
+            # Picking another CI updates the owning team and hides the saved
+            # CI's rack location; picking the saved CI again restores it.
+            search = page_.locator('.lookup:has(input[name="ci_id"]) .lookup-search')
+            search.fill("payroll")
+            page_.locator(".lookup-result", has_text="payroll-api").click()
+            expect(owning).to_have_value("Unassigned")
+            expect(bar).to_be_hidden()
+            search.fill("db-prod")
+            page_.locator(".lookup-result", has_text="db-prod-07").click()
+            expect(owning).to_have_value("Data Center Operations")
+            expect(bar).to_be_visible()
+            assert page_.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
+
+            page_.goto(f"{base}/ticket/{change_id}")
+            expect(page_.get_by_role("textbox", name="CI owning team")).to_have_count(1)
+            expect(page_.locator(".ci-owning-team-field")).to_have_count(0)
+
+            page_.goto(f"{base}/tickets/new/incident")
+            expect(page_.locator(".ci-owning-team-field")).to_be_hidden()
+            page_.locator('.lookup:has(input[name="ci_id"]) .lookup-search').fill("db-prod")
+            page_.locator(".lookup-result", has_text="db-prod-07").click()
+            expect(page_.get_by_role("textbox", name="CI owning team")).to_have_value("Data Center Operations")
+
+            axe = os.getenv("AXE_CORE_PATH")
+            assert axe and os.path.isfile(axe), "AXE_CORE_PATH required for accessibility acceptance"
+            page_.goto(f"{base}/ticket/{incident_id}")
+            page_.evaluate(open(axe, encoding="utf-8").read())
+            violations = page_.evaluate("async () => (await axe.run(document, {runOnly: {type:'tag',"
+                                        "values:['wcag2a','wcag2aa','wcag21aa']}})).violations")
+            assert not violations, [(v["id"], v["help"], [n["html"][:200] for n in v["nodes"]]) for v in violations]
+            assert not errors, errors
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
