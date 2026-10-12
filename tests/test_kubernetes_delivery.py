@@ -64,6 +64,14 @@ def test_webhook_delivering_workloads_receive_the_internal_webhook_hosts():
     assert f"{{name: WEBHOOK_INTERNAL_HOSTS, value: {value}}}" in outbox
 
 
+
+def test_every_workload_builds_links_from_the_configured_public_origin():
+    # Workers send notifications without a request, so they need the public
+    # origin too; otherwise they log a warning and links fall back to headers.
+    entry = '{name: PUBLIC_BASE_URL, value: {{ include "serviceops.publicBaseUrl" . | quote }}}'
+    for name in ("deployment.yaml", "worker.yaml", "ai-worker.yaml"):
+        assert entry in (ROOT / "charts/serviceops/templates" / name).read_text(), name
+
 def test_safe_update_changes_the_governed_digest_and_is_atomic():
     script = (ROOT / "tools/safe_update_k8s.sh").read_text()
     assert 'TARGET_DIGEST="${2:-}"' in script

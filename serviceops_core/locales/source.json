@@ -176,6 +176,9 @@
    "javascript": true
   },
   {
+   "id": "A rack and the readable equipment mounted in it"
+  },
+  {
    "id": "A rack with that name already exists."
   },
   {
@@ -506,6 +509,9 @@
    "id": "Add a class not yet in use"
   },
   {
+   "id": "Add a comment to a ticket"
+  },
+  {
    "id": "Add a discovery target"
   },
   {
@@ -771,6 +777,12 @@
    "id": "Alias"
   },
   {
+   "id": "Alias of /tickets/{number}/attachments for the mobile app"
+  },
+  {
+   "id": "Alias of /tickets/{number}/attachments/{attachment_id}/download"
+  },
+  {
    "id": "Alias of the ticket detail sections contract"
   },
   {
@@ -1019,6 +1031,9 @@
    "id": "Approval requested"
   },
   {
+   "id": "Approval requests waiting for the signed-in user, including delegated ones"
+  },
+  {
    "id": "Approval required"
   },
   {
@@ -1047,6 +1062,9 @@
   },
   {
    "id": "Approve for {name}"
+  },
+  {
+   "id": "Approve or reject an approval request"
   },
   {
    "id": "Approved"
@@ -4943,10 +4961,16 @@
    "id": "List attachments on a visible ticket"
   },
   {
+   "id": "List comments on a visible ticket"
+  },
+  {
    "id": "List each source exactly once."
   },
   {
    "id": "List the authenticated mobile user's passkeys"
+  },
+  {
+   "id": "List the change tasks (CTASKs) of a visible change"
   },
   {
    "id": "List visible incidents and changes"
@@ -5190,7 +5214,13 @@
    "id": "Mapped dependencies"
   },
   {
+   "id": "Mark all of the user's notifications read"
+  },
+  {
    "id": "Mark all read"
+  },
+  {
+   "id": "Mark one of the user's notifications read"
   },
   {
    "id": "Match system"
@@ -5276,6 +5306,36 @@
   },
   {
    "id": "Mobile phone"
+  },
+  {
+   "id": "Mobile session and agent role required. Up to 1000 devices; meta.truncated reports more."
+  },
+  {
+   "id": "Mobile session and agent role required; CI-class read policy applies. Optional q; cursor-paginated."
+  },
+  {
+   "id": "Mobile session required."
+  },
+  {
+   "id": "Mobile session required. 404 when no picture has been uploaded."
+  },
+  {
+   "id": "Mobile session required. Body: token (APNs device token), device_id and environment (sandbox or production)."
+  },
+  {
+   "id": "Mobile session required. Cursor-paginated."
+  },
+  {
+   "id": "Mobile session required. Cursor-paginated; meta has limit, returned, has_more and next_cursor."
+  },
+  {
+   "id": "Mobile session required. Optional q; cursor-paginated."
+  },
+  {
+   "id": "Mobile session required. Returns user, assignment_groups, counts (pending_approvals, unread_notifications) and capabilities."
+  },
+  {
+   "id": "Mobile session required; the user must be the approver or an active delegate. Body: decision (Approved or Rejected) and optional comments (up to 2000 characters). Idempotency-Key is optional here."
   },
   {
    "id": "Mobile session, tickets:read and agent role required. Returns data entries containing ci, relationship_role, rack and label; meta contains count and open_on_affected_cis. Missing placement values stay null. Cross-tenant and unreadable CI classes are excluded."
@@ -6172,6 +6232,9 @@
   },
   {
    "id": "Not started"
+  },
+  {
+   "id": "Not supported by the stateless transport (405)"
   },
   {
    "id": "Not tested yet",
@@ -7661,6 +7724,9 @@
    "id": "Regional data note"
   },
   {
+   "id": "Register this device for push notifications (APNs)"
+  },
+  {
    "id": "Regular expressions, one per line, for text that only looks sensitive, such as your own support number or mail domain. Matching text is ignored by the checks above."
   },
   {
@@ -7953,10 +8019,22 @@
    "id": "Requires tickets:read and ticket visibility. Returns schema_version, configuration_items, sections, can_manage and allowed_states. CI links include primary, affected and impacted services, with tenant and CI-class filtering. Staff sections include record fields, governance, reviews, SLAs, approval history, work tasks, related records and event history. Requesters receive public record fields, service commitments and visible related records, with no internal sections or topology. The same details and configuration_items are included by GET /tickets/{number}; list responses remain compact."
   },
   {
+   "id": "Requires tickets:read. 400 for a ticket that is not a change."
+  },
+  {
    "id": "Requires tickets:read. Cursor limit is 1-100."
   },
   {
+   "id": "Requires tickets:read. Each comment has id, body, author, parent_id, deleted_attachments, source_platform, ai_assisted and created_at."
+  },
+  {
    "id": "Requires tickets:read. Returns mobile-compatible metadata and an authenticated relative downloadURL for each file."
+  },
+  {
+   "id": "Requires tickets:update and an acting user who can manage the parent change."
+  },
+  {
+   "id": "Requires tickets:update and an acting user who can manage the ticket. Body: body (1-10000 characters) and optional parent_id to reply. Idempotency-Key is optional here."
   },
   {
    "id": "Requires tickets:update and an acting user with update, assign, transition, and owning-team authority. Fields: state, priority, assigned_to_id, resolution_notes, closure_category and closure_subcategory (incidents; the categorisation at closure, kept separate from the logging category). Resolution fields are applied before the state change; when omitted on resolution the closure category defaults to the logging category."
@@ -8662,6 +8740,9 @@
    "id": "Search configuration items"
   },
   {
+   "id": "Search configuration items the user may read"
+  },
+  {
    "id": "Search contains “{q}”"
   },
   {
@@ -8686,6 +8767,9 @@
   {
    "id": "Search is unavailable right now. Please try again.",
    "javascript": true
+  },
+  {
+   "id": "Search knowledge articles the user may read"
   },
   {
    "id": "Search logs"
@@ -9271,6 +9355,9 @@
    "id": "Signed webhook"
   },
   {
+   "id": "Signed-in mobile user, assignment groups, counts and capabilities"
+  },
+  {
    "id": "Signing secret"
   },
   {
@@ -9509,6 +9596,9 @@
   },
   {
    "id": "Stop getting notified about new comments on this ticket"
+  },
+  {
+   "id": "Stop push notifications to this device"
   },
   {
    "id": "Stopped",
@@ -10165,6 +10255,12 @@
    "id": "The service rejected the access key. Check it, and that it may use this model."
   },
   {
+   "id": "The signed-in user's notifications, newest first"
+  },
+  {
+   "id": "The signed-in user's own profile picture"
+  },
+  {
    "id": "The synchronization job limit must be between 1 and 100."
   },
   {
@@ -10631,6 +10727,9 @@
   },
   {
    "id": "Update"
+  },
+  {
+   "id": "Update a change task"
   },
   {
    "id": "Update an authorized owning-team ticket"
@@ -11745,6 +11844,9 @@
   },
   {
    "id": "never"
+  },
+  {
+   "id": "next_cursor from the previous page; signed and bound to this user, path and query."
   },
   {
    "id": "nightly snapshots, last 30 days"

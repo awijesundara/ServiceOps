@@ -258,6 +258,9 @@ class User(UserMixin, db.Model):
     mfa_enabled = db.Column(db.Boolean, nullable=False, default=False)
     mfa_enrolled_at = db.Column(db.DateTime(timezone=True))
     mfa_backup_codes_json = db.Column(db.Text)
+    # Last accepted TOTP time step (time // 30); a code for this step or an
+    # earlier one is refused so an observed code cannot be replayed.
+    mfa_last_totp_step = db.Column(db.BigInteger)
     # Updated at most once/minute per user (see track_last_seen) -- backs
     # the System Health "currently active users" count, not an exact
     # per-request timestamp.

@@ -46,6 +46,8 @@ progressiveDelivery:
 
 serviceAccount:
   create: true
+  # Informational: every ServiceOps pod sets automountServiceAccountToken: false
+  # because none of them calls the Kubernetes API. Changing this has no effect.
   automountServiceAccountToken: false
   annotations: {}
   name: ""
