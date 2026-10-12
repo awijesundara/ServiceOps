@@ -11,7 +11,7 @@ from alembic.config import Config as AlembicConfig
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from flask import abort, jsonify, redirect, render_template, request, Response, send_from_directory, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 from sqlalchemy import func
 
 import app as core
@@ -44,6 +44,18 @@ from serviceops_core.localization import tr
 
 
 def register(app):
+    @app.after_request
+    def private_responses_are_not_stored(response):
+        """Pages and API answers for a signed-in user or API client carry
+        record data: browsers and proxies must not keep them, or the back
+        button shows them again after sign-out on a shared device. Responses
+        that set their own Cache-Control (attachments, static assets) keep it."""
+        if request.endpoint == "static" or "Cache-Control" in response.headers:
+            return response
+        if current_user.is_authenticated or request.path.startswith(("/api/", "/scim/")):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.get("/status")
     def status_page_default():
         """Convenience entry point for the common self-hosted case: exactly

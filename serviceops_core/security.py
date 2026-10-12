@@ -5,6 +5,7 @@ import hmac
 import json
 import logging
 import re
+import secrets
 from functools import lru_cache
 from pathlib import Path
 
@@ -234,6 +235,23 @@ def consume_backup_code(stored_hashes, code):
     return None
 
 
+_DUMMY_HASH = (None, None)
+
+
+def burn_password_check(password):
+    """Spend as long as a real Argon2id verification when there is no stored
+    hash to check (unknown username, directory-only account), so response
+    time does not reveal which usernames exist."""
+    global _DUMMY_HASH
+    if _DUMMY_HASH[0] is not _ARGON2_HASHER:
+        _DUMMY_HASH = (_ARGON2_HASHER, _ARGON2_HASHER.hash(secrets.token_urlsafe(16)))
+    try:
+        _ARGON2_HASHER.verify(_DUMMY_HASH[1], password or "")
+    except (VerifyMismatchError, InvalidHashError):
+        pass
+    return False
+
+
 def verify_and_upgrade_password(password_hash, password):
     """Verify a password against whichever hash scheme is stored, and
     return `(is_valid, upgraded_hash_or_None)`. Callers should persist
@@ -241,7 +259,7 @@ def verify_and_upgrade_password(password_hash, password):
     is the lazy-migration path off PBKDF2 onto Argon2id, so no bulk data
     migration or forced password reset is required."""
     if not password_hash:
-        return False, None
+        return burn_password_check(password), None
     if is_argon2_hash(password_hash):
         try:
             valid = _ARGON2_HASHER.verify(password_hash, password)

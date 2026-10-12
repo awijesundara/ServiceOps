@@ -58,6 +58,9 @@ spec:
             - {name: AUTO_MIGRATE, value: "false"}
             - {name: UPLOAD_FOLDER, value: /tmp/uploads}
             - {name: LOG_DIR, value: /tmp/logs}
+            # Links in notifications and AI answers come from the configured
+            # public origin, never from request headers (there is no request here).
+            - {name: PUBLIC_BASE_URL, value: {{ include "serviceops.publicBaseUrl" . | quote }}}
           envFrom:
             - configMapRef: {name: {{ include "serviceops.fullname" . }}-config}
             - secretRef: {name: {{ include "serviceops.secretName" . }}}

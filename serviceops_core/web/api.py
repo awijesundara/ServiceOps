@@ -71,7 +71,6 @@ from app import (
     transition_ticket,
     UNCATEGORISED,
     user_can_manage_ticket,
-    verify_mfa_code,
     visible_ticket_query,
 )
 from serviceops_core import mcp as mcp_protocol
@@ -84,7 +83,8 @@ from serviceops_core.passkeys import (
     verify_registration as verify_passkey_registration,
 )
 from serviceops_core.projections import project_document
-from serviceops_core.security import hash_password, verify_and_upgrade_password
+from serviceops_core.mfa import record_second_factor_failure, verify_second_factor
+from serviceops_core.security import burn_password_check, hash_password, verify_and_upgrade_password
 from serviceops_core.web.common import mobile_only, require_scim_admin, scim_user_document
 from serviceops_models import (
     APIClient,
@@ -244,6 +244,15 @@ def register(app):
                         "name": "X-Request-ID", "in": "header", "required": False,
                         "schema": {"type": "string", "format": "uuid"},
                     },
+                    "Limit": {
+                        "name": "limit", "in": "query", "required": False,
+                        "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 100},
+                    },
+                    "Cursor": {
+                        "name": "cursor", "in": "query", "required": False,
+                        "description": "next_cursor from the previous page; signed and bound to this user, path and query.",
+                        "schema": {"type": "string", "maxLength": 4096},
+                    },
                     "IdempotencyKey": {
                         "name": "Idempotency-Key", "in": "header", "required": True,
                         "schema": {
@@ -346,6 +355,8 @@ def register(app):
                     "description": "Mobile session, tickets:read and agent role required. Returns data entries containing ci, relationship_role, rack and label; meta contains count and open_on_affected_cis. Missing placement values stay null. Cross-tenant and unreadable CI classes are excluded.",
                 }},
                 "/mcp": {
+                    "get": {"summary": "Not supported by the stateless transport (405)"},
+                    "delete": {"summary": "Not supported by the stateless transport (405)"},
                     "post": {
                         "summary": "Model Context Protocol server (Streamable HTTP, JSON responses)",
                         "description": (
@@ -381,6 +392,107 @@ def register(app):
                             "object, or IPFS storage with private no-store caching."
                         ),
                     },
+                },
+                "/tickets/{number}/comments": {
+                    "parameters": [{"name": "number", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "get": {
+                        "summary": "List comments on a visible ticket",
+                        "description": "Requires tickets:read. Each comment has id, body, author, parent_id, deleted_attachments, source_platform, ai_assisted and created_at.",
+                    },
+                    "post": {
+                        "summary": "Add a comment to a ticket",
+                        "description": "Requires tickets:update and an acting user who can manage the ticket. Body: body (1-10000 characters) and optional parent_id to reply. Idempotency-Key is optional here.",
+                        "parameters": [{"name": "Idempotency-Key", "in": "header", "required": False,
+                                        "schema": {"type": "string", "minLength": 1, "maxLength": 128,
+                                                   "pattern": "^[A-Za-z0-9._:-]+$"}}],
+                    },
+                },
+                "/tickets/{number}/ctasks": {
+                    "parameters": [{"name": "number", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "get": {
+                        "summary": "List the change tasks (CTASKs) of a visible change",
+                        "description": "Requires tickets:read. 400 for a ticket that is not a change.",
+                    },
+                },
+                "/tickets/{number}/ctasks/{ctask_number}": {
+                    "parameters": [{"name": "number", "in": "path", "required": True, "schema": {"type": "string"}},
+                                   {"name": "ctask_number", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "patch": {
+                        "summary": "Update a change task",
+                        "description": "Requires tickets:update and an acting user who can manage the parent change.",
+                        "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}],
+                    },
+                },
+                "/mobile/bootstrap": {"get": {
+                    "summary": "Signed-in mobile user, assignment groups, counts and capabilities",
+                    "description": "Mobile session required. Returns user, assignment_groups, counts (pending_approvals, unread_notifications) and capabilities.",
+                }},
+                "/mobile/profile/avatar": {"get": {
+                    "summary": "The signed-in user's own profile picture",
+                    "description": "Mobile session required. 404 when no picture has been uploaded.",
+                }},
+                "/mobile/push-devices": {"post": {
+                    "summary": "Register this device for push notifications (APNs)",
+                    "description": "Mobile session required. Body: token (APNs device token), device_id and environment (sandbox or production).",
+                }},
+                "/mobile/push-devices/{device_id}": {
+                    "parameters": [{"name": "device_id", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "delete": {"summary": "Stop push notifications to this device", "description": "Mobile session required."},
+                },
+                "/mobile/notifications": {"get": {
+                    "summary": "The signed-in user's notifications, newest first",
+                    "description": "Mobile session required. Cursor-paginated; meta has limit, returned, has_more and next_cursor.",
+                    "parameters": [{"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"}],
+                }},
+                "/mobile/notifications/{notification_id}/read": {
+                    "parameters": [{"name": "notification_id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                    "post": {"summary": "Mark one of the user's notifications read", "description": "Mobile session required."},
+                },
+                "/mobile/notifications/read-all": {"post": {
+                    "summary": "Mark all of the user's notifications read", "description": "Mobile session required.",
+                }},
+                "/mobile/approvals": {"get": {
+                    "summary": "Approval requests waiting for the signed-in user, including delegated ones",
+                    "description": "Mobile session required. Cursor-paginated.",
+                    "parameters": [{"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"}],
+                }},
+                "/mobile/approvals/{vote_id}/decide": {
+                    "parameters": [{"name": "vote_id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                    "post": {
+                        "summary": "Approve or reject an approval request",
+                        "description": "Mobile session required; the user must be the approver or an active delegate. Body: decision (Approved or Rejected) and optional comments (up to 2000 characters). Idempotency-Key is optional here.",
+                        "parameters": [{"name": "Idempotency-Key", "in": "header", "required": False,
+                                        "schema": {"type": "string", "minLength": 1, "maxLength": 128,
+                                                   "pattern": "^[A-Za-z0-9._:-]+$"}}],
+                    },
+                },
+                "/mobile/knowledge": {"get": {
+                    "summary": "Search knowledge articles the user may read",
+                    "description": "Mobile session required. Optional q; cursor-paginated.",
+                    "parameters": [{"name": "q", "in": "query", "required": False, "schema": {"type": "string"}},
+                                   {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"}],
+                }},
+                "/mobile/cmdb": {"get": {
+                    "summary": "Search configuration items the user may read",
+                    "description": "Mobile session and agent role required; CI-class read policy applies. Optional q; cursor-paginated.",
+                    "parameters": [{"name": "q", "in": "query", "required": False, "schema": {"type": "string"}},
+                                   {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"}],
+                }},
+                "/mobile/racks/{rack_id}": {
+                    "parameters": [{"name": "rack_id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                    "get": {
+                        "summary": "A rack and the readable equipment mounted in it",
+                        "description": "Mobile session and agent role required. Up to 1000 devices; meta.truncated reports more.",
+                    },
+                },
+                "/mobile/tickets/{number}/attachments": {
+                    "parameters": [{"name": "number", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "get": {"summary": "Alias of /tickets/{number}/attachments for the mobile app"},
+                },
+                "/mobile/tickets/{number}/attachments/{attachment_id}/download": {
+                    "parameters": [{"name": "number", "in": "path", "required": True, "schema": {"type": "string"}},
+                                   {"name": "attachment_id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                    "get": {"summary": "Alias of /tickets/{number}/attachments/{attachment_id}/download"},
                 },
                 "/tickets/{number}/workflow-events": {
                     "parameters": [{"name": "number", "in": "path", "required": True,
@@ -460,6 +572,8 @@ def register(app):
             except Exception:
                 app.logger.exception("Mobile LDAP authentication failed")
         elif provider == "local" and setting_bool("LOCAL_AUTH_ENABLED", True):
+            if not candidate:
+                burn_password_check(password)  # same timing for unknown usernames
             if candidate:
                 valid, upgraded = verify_and_upgrade_password(candidate.password_hash, password)
                 if valid:
@@ -478,10 +592,19 @@ def register(app):
                     audit("login_failed", candidate.username, f"provider=mobile; attempts={candidate.failed_login_count}", user_id=candidate.id, tenant_id=candidate.tenant_id)
                 db.session.commit()
             abort(401, description=tr("Invalid username or password."))
-        verified, backup_used = verify_mfa_code(user, body.get("mfa_code"))
+        mfa_code = str(body.get("mfa_code") or "").strip()
+        verified, backup_used = verify_second_factor(user, mfa_code)
         if not verified:
-            audit("login_failed", user.username, "provider=mobile; reason=mfa_required_or_invalid", user_id=user.id, tenant_id=user.tenant_id)
-            db.session.commit()
+            if mfa_code:
+                # A supplied wrong code counts toward lockout; a missing code
+                # (the app asking whether MFA is needed) does not.
+                locked = record_second_factor_failure(user, "mobile")
+                db.session.commit()
+                if locked:
+                    abort(423, description=tr("This account is temporarily locked."))
+            else:
+                audit("login_failed", user.username, "provider=mobile; reason=mfa_required", user_id=user.id, tenant_id=user.tenant_id)
+                db.session.commit()
             abort(401, description=tr("A valid MFA or backup code is required."))
         user.failed_login_count = 0
         user.locked_until = None
@@ -681,7 +804,8 @@ def register(app):
     def api_docs():
         # Self-contained so the reference never depends on the wiki or any
         # other external documentation being reachable from the deployment.
-        # Renders the always-in-sync /api/v1/openapi.json via Swagger UI,
+        # Renders /api/v1/openapi.json via Swagger UI (the schema is written by
+        # hand; test_openapi_covers_every_api_route keeps it complete),
         # vendored (no CDN) so it also works with no internet egress.
         return render_template("api_docs.html", app_version=display_version())
 
@@ -1651,10 +1775,10 @@ def register(app):
         ticket = visible_ticket_query(g.api_user).filter(func.upper(Ticket.number) == number.upper()).first_or_404()
         if not user_can_manage_ticket(g.api_user, ticket):
             abort(403, description=tr("The acting user cannot comment on this ticket."))
-        # Optional, not required: unlike the mutating endpoints below whose
-        # OpenAPI contract already documents Idempotency-Key as required,
-        # this endpoint's contract never has, so an already-shipped client
-        # can't be assumed to send one (see api_idempotency_context).
+        # Optional, not required: unlike the other mutating endpoints, whose
+        # OpenAPI contract documents Idempotency-Key as required, comments
+        # shipped without one, so an existing client can't be assumed to
+        # send it (see api_idempotency_context).
         key, request_hash, replay = api_idempotency_context(required=False)
         if replay:
             return replay

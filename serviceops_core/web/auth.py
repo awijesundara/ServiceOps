@@ -8,7 +8,6 @@ import os
 import secrets
 from datetime import timedelta
 
-import pyotp
 from flask import abort, current_app, flash, make_response, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy import func
@@ -33,8 +32,9 @@ from app import (
     user_is_local,
     verify_cloudflare_access_jwt,
 )
-from serviceops_core.security import consume_backup_code, hash_password, verify_and_upgrade_password
-from serviceops_models import db, now, PasswordResetToken, settings_cipher, User, UserPreference, UserSession
+from serviceops_core.mfa import account_locked, record_second_factor_failure, verify_second_factor
+from serviceops_core.security import burn_password_check, hash_password, verify_and_upgrade_password
+from serviceops_models import db, now, PasswordResetToken, User, UserPreference, UserSession
 from serviceops_core.localization import tr
 from serviceops_core.safe_redirect import redirect_to_referrer
 from serviceops_core.public_url import public_url_for
@@ -153,6 +153,8 @@ def register(app):
                     app.logger.exception("LDAP authentication failed")
             elif setting_bool("LOCAL_AUTH_ENABLED", True):
                 candidate = User.query.filter_by(username=username).first()
+                if not candidate:
+                    burn_password_check(password)  # same timing for unknown usernames
                 if candidate:
                     valid, upgraded_hash = verify_and_upgrade_password(
                         candidate.password_hash, password
@@ -172,9 +174,9 @@ def register(app):
                 # do not issue a session yet. Stash the authenticated-but-
                 # not-yet-MFA'd user id in a short-lived, server-signed
                 # session value; /login/mfa completes the login only after a
-                # valid TOTP code or backup code is presented.
-                user.failed_login_count = 0
-                user.locked_until = None
+                # valid TOTP code or backup code is presented. The failure
+                # count is kept until then: wrong codes count toward lockout,
+                # and re-entering the password must not wipe them.
                 db.session.commit()
                 session["_mfa_pending_user_id"] = user.id
                 session["_mfa_pending_auth_version"] = user.auth_version
@@ -328,24 +330,22 @@ def register(app):
             if not (mfa_ip_ok and mfa_user_ok):
                 flash(tr("Too many verification attempts. Please wait a moment and try again."), "error")
                 return render_template("login_mfa.html"), 429
-            code = request.form.get("code", "").strip()
-            verified = False
-            backup_used = False
-            if code and user.mfa_secret_encrypted:
-                secret = settings_cipher().decrypt(user.mfa_secret_encrypted.encode()).decode()
-                totp = pyotp.TOTP(secret)
-                verified = totp.verify(code.replace(" ", ""), valid_window=1)
-            if not verified and code and user.mfa_backup_codes_json:
-                remaining = consume_backup_code(json.loads(user.mfa_backup_codes_json), code)
-                if remaining is not None:
-                    user.mfa_backup_codes_json = json.dumps(remaining)
-                    verified = True
-                    backup_used = True
+            if account_locked(user):
+                for key in ("_mfa_pending_user_id", "_mfa_pending_auth_version",
+                            "_mfa_pending_provider", "_mfa_pending_started_at"):
+                    session.pop(key, None)
+                audit("login_blocked", user.username, "reason=locked; step=mfa")
+                db.session.commit()
+                flash(tr("This account is temporarily locked due to repeated failed sign-ins. Try again later."), "error")
+                return redirect(url_for("login"))
+            verified, backup_used = verify_second_factor(user, request.form.get("code", ""))
             if verified:
                 session.pop("_mfa_pending_user_id", None)
                 session.pop("_mfa_pending_auth_version", None)
                 session.pop("_mfa_pending_started_at", None)
                 provider = session.pop("_mfa_pending_provider", "local")
+                user.failed_login_count = 0
+                user.locked_until = None
                 login_user(user)
                 session.permanent = True
                 session["_auth_version"] = user.auth_version
@@ -363,8 +363,17 @@ def register(app):
                 if not is_safe_internal_path(start_page):
                     start_page = url_for("dashboard")
                 return redirect(start_page)
-            audit("login_failed", user.username, "reason=invalid_mfa_code")
+            if not request.form.get("code", "").strip():
+                flash(tr("Invalid verification code."), "error")
+                return render_template("login_mfa.html")
+            locked = record_second_factor_failure(user, session.get("_mfa_pending_provider", "local"))
             db.session.commit()
+            if locked:
+                for key in ("_mfa_pending_user_id", "_mfa_pending_auth_version",
+                            "_mfa_pending_provider", "_mfa_pending_started_at"):
+                    session.pop(key, None)
+                flash(tr("This account is temporarily locked due to repeated failed sign-ins. Try again later."), "error")
+                return redirect(url_for("login"))
             flash(tr("Invalid verification code."), "error")
         return render_template("login_mfa.html")
 
