@@ -143,3 +143,33 @@ def test_openapi_covers_every_api_route(app, client):
             if (method, path) not in documented:
                 missing.append(f"{method} {rule.rule}")
     assert not missing, missing
+
+
+def test_a_code_claimed_by_a_concurrent_sign_in_is_refused(app, secret):
+    # This request loaded the user before another sign-in claimed the step.
+    import time
+    from sqlalchemy import text
+    from serviceops_core.mfa import verify_second_factor
+    with app.app_context():
+        user = User.query.filter_by(username="admin").one()
+        assert user.mfa_last_totp_step is None
+        step = int(time.time() // 30)
+        with db.engine.begin() as other:
+            other.execute(text('UPDATE "user" SET mfa_last_totp_step = :s WHERE id = :i'), {"s": step + 1, "i": user.id})
+        assert verify_second_factor(user, pyotp.TOTP(secret).now()) == (False, False)
+        db.session.rollback()
+
+
+def test_enrolling_a_new_secret_resets_the_replay_guard(app, client):
+    client.post("/login", data={"username": "admin", "password": "Admin123!"})
+    client.get("/settings/mfa")
+    with client.session_transaction() as sess:
+        pending = sess["_mfa_pending_secret"]
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        admin.mfa_last_totp_step = 10 ** 9  # left over from a previous secret
+        db.session.commit()
+    client.post("/settings/mfa", data={"action": "enable", "code": pyotp.TOTP(pending).now()})
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        assert admin.mfa_enabled and admin.mfa_last_totp_step is None

@@ -14,8 +14,10 @@ from datetime import timedelta
 
 import pyotp
 
+from sqlalchemy import or_
+
 from serviceops_core.security import consume_backup_code
-from serviceops_models import now, settings_cipher
+from serviceops_models import User, db, now, settings_cipher
 
 TOTP_PERIOD_SECONDS = 30
 
@@ -38,6 +40,20 @@ def _totp_step(user, code, at=None):
     return None
 
 
+def _claim_step(user, step):
+    """Record `step` as used only if no request has used it or a later one:
+    a conditional UPDATE, so two simultaneous sign-ins with the same code
+    cannot both succeed (the second waits on the row lock, then matches no
+    row)."""
+    claimed = User.query.filter(
+        User.id == user.id,
+        or_(User.mfa_last_totp_step.is_(None), User.mfa_last_totp_step < step),
+    ).update({User.mfa_last_totp_step: step}, synchronize_session=False)
+    if claimed:
+        db.session.expire(user, ["mfa_last_totp_step"])
+    return bool(claimed)
+
+
 def verify_second_factor(user, code, at=None):
     """`(verified, backup_used)` for a TOTP or backup code. A user without MFA
     passes. On success the caller commits: the TOTP step or the consumed
@@ -48,8 +64,7 @@ def verify_second_factor(user, code, at=None):
     if not code:
         return False, False
     step = _totp_step(user, code, at)
-    if step is not None:
-        user.mfa_last_totp_step = step
+    if step is not None and _claim_step(user, step):
         return True, False
     if user.mfa_backup_codes_json:
         remaining = consume_backup_code(json.loads(user.mfa_backup_codes_json), code)

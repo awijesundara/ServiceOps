@@ -7,7 +7,7 @@ and `_check_lengths` runs before every flush made while serving a request
 (background jobs keep their own handling).
 """
 from flask import abort, has_request_context, request
-from sqlalchemy import String, event
+from sqlalchemy import String, event, inspect
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import BadRequest
 
@@ -53,11 +53,17 @@ def _check_lengths(session, flush_context, instances):
         table = getattr(obj, "__table__", None)
         if table is None:
             continue
+        state = inspect(obj)
         for column in table.columns:
             limit = getattr(column.type, "length", None)
-            if not limit or not isinstance(column.type, String):
+            if not limit or not isinstance(column.type, String) or column.key not in state.attrs:
                 continue
-            value = getattr(obj, column.key, None) if hasattr(obj, column.key) else None
+            # Only values being written: an existing row that already holds a
+            # longer value (SQLite and IPFS mode do not enforce lengths) must
+            # stay editable in its other fields.
+            if not state.pending and not state.attrs[column.key].history.has_changes():
+                continue
+            value = state.attrs[column.key].value
             if isinstance(value, str) and len(value) > limit:
                 label = column.key.replace("_", " ")
                 raise ValueTooLong(description=tr("{field} is too long: use at most {limit} characters.",

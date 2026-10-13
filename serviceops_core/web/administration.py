@@ -187,6 +187,7 @@ def register(app):
                     abort(400, description=tr("MFA is required for your role by administrator policy and cannot be disabled."))
                 current_user.mfa_enabled = False
                 current_user.mfa_secret_encrypted = None
+                current_user.mfa_last_totp_step = None
                 current_user.mfa_backup_codes_json = None
                 current_user.mfa_enrolled_at = None
                 audit("mfa disable", current_user.username)
@@ -211,6 +212,7 @@ def register(app):
                 flash(tr("Invalid verification code. Scan the QR code again and try once more."), "error")
                 return redirect(url_for("settings_mfa"))
             current_user.mfa_secret_encrypted = settings_cipher().encrypt(pending_secret.encode()).decode()
+            current_user.mfa_last_totp_step = None  # steps of the previous secret do not apply
             current_user.mfa_enabled = True
             current_user.mfa_enrolled_at = now()
             backup_codes = generate_mfa_backup_codes()
