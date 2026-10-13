@@ -164,8 +164,8 @@ ul.org2-tree,.org2-children{list-style:none;margin:0;padding:0}
 .comment-attach-chip[hidden]{display:none}
 @media(max-width:560px){.state-track{margin-inline:0;overflow-x:auto;padding-bottom:4px}.state-track-step{flex:0 0 auto;min-width:88px}}
 /* People: names and pictures link to the person's public profile */
-.person-link{color:inherit;font-weight:inherit;text-decoration:none;border-bottom:1px dotted currentColor}
-.person-link:hover,.person-link:focus-visible{color:var(--green-dark);border-bottom-style:solid}
+.person-link{color:inherit;font-weight:inherit;text-decoration:none}
+.person-link:hover,.person-link:focus-visible{color:var(--green-dark);text-decoration:underline}
 td a.person-link{font-weight:inherit;color:inherit}
 .person-avatar-link{display:inline-flex;flex-shrink:0;border-radius:50%;text-decoration:none}
 .person-avatar-link:focus-visible{outline:2px solid var(--green);outline-offset:2px}
@@ -177,7 +177,7 @@ td a.person-link{font-weight:inherit;color:inherit}
 .people-profile-identity h1{margin:0;font-size:26px}
 .people-profile-identity p{margin:4px 0 0;color:var(--muted)}
 .people-profile-actions{display:flex;gap:10px;flex-wrap:wrap}
-.people-profile-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;align-items:start}
+.people-profile-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;align-items:stretch}.people-profile-grid>.panel+.panel{margin-top:0}
 .people-profile-grid h2,.people-profile-privacy h2{font-size:17px;margin:0 0 14px}
 .people-profile-grid h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 8px}
 .people-profile-grid h3:first-of-type{margin-top:0}
@@ -200,3 +200,7 @@ a.mention{text-decoration:none}a.mention:hover,a.mention:focus-visible{text-deco
 .people-profile-identity .tag{margin-left:4px;vertical-align:middle}
 .readonly-field{text-align:left;min-height:38px;line-height:1.5}
 .record-grid label>.field-person,.form-grid label>.field-person{grid-column:2;text-align:left;margin-top:-8px;font-size:12px}
+
+/* Assigned to: a small profile picture beside the dropdown opens the person's profile */
+.field-with-profile{display:flex;align-items:center;gap:8px;min-width:0}.field-with-profile select{flex:1;min-width:0}.field-with-profile .person-avatar-link .field-profile-avatar{width:26px;height:26px;font-size:12px}
+.record-grid label>.ci-rack-location,.form-grid label>.ci-rack-location{grid-column:2}

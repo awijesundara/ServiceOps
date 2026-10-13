@@ -332,11 +332,9 @@ def register(app):
             assigned_to_me.extend(
                 row_for(task, kind_label or task.task_kind.upper()) for task in mine
             )
-            if role_at_least(current_user.effective_role, "admin"):
-                team_query = open_tasks(model).join(
-                    SupportGroup, model.assignment_group_id == SupportGroup.id
-                ).filter(SupportGroup.tenant_id == current_user.tenant_id)
-            elif group_ids:
+            # "My teams" means the teams the user belongs to or manages, for
+            # every role: administrators used to get every team's tasks here.
+            if group_ids:
                 team_query = open_tasks(model).filter(model.assignment_group_id.in_(group_ids))
             else:
                 team_query = None
