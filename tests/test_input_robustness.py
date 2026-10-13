@@ -136,3 +136,23 @@ def test_malformed_provider_and_inventory_counts_read_as_zero():
     assert _token_count({"nested": 1}) == 0 and _token_count("abc") == 0 and _token_count("12") == 12
     assert netbox_count({"count": "many"}, "count") == 0 and netbox_count("<html>", "count") == 0
     assert snipeit_count({"total": 7}, "total") == 7
+
+
+def test_a_row_with_a_legacy_overlong_value_stays_editable(app):
+    # SQLite (and IPFS mode) never enforced lengths, so old rows may exceed them.
+    from sqlalchemy import text
+    from serviceops_core.input_limits import ValueTooLong
+    with app.app_context():
+        tenant_id = User.query.filter_by(username="admin").one().tenant_id
+        db.session.add(Asset(asset_tag="LEGACY-1", name="x", asset_type="Laptop", status="In stock", tenant_id=tenant_id))
+        db.session.commit()
+        db.session.execute(text("UPDATE asset SET name = :n WHERE asset_tag = 'LEGACY-1'"), {"n": "N" * 300})
+        db.session.commit()
+    with app.test_request_context():
+        asset = Asset.query.filter_by(asset_tag="LEGACY-1").one()
+        asset.status = "In use"
+        db.session.flush()  # the untouched long name is not re-validated
+        asset.name = "M" * 200
+        with pytest.raises(ValueTooLong):
+            db.session.flush()
+        db.session.rollback()
