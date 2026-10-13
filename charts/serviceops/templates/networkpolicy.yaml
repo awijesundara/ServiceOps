@@ -47,6 +47,15 @@ spec:
         - {port: 389, protocol: TCP}
         - {port: 636, protocol: TCP}
         - {port: 443, protocol: TCP}
+    {{- if .Values.events.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: events
+      ports:
+        - {port: 8090, protocol: TCP}
+    {{- end }}
     {{- with .Values.ai.extraEgress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}

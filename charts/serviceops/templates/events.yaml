@@ -73,6 +73,28 @@ spec:
   selector:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: events
+---
+# The web pods' edge sidecar forwards /events/stream here, so the stream is
+# reachable through whatever already routes to the web Service (for example
+# a Cloudflare tunnel rule for the whole host).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "serviceops.fullname" . }}-edge-routes
+  labels: {{- include "serviceops.labels" . | nindent 4 }}
+data:
+  events.conf: |
+    location /events/stream {
+        proxy_pass http://{{ include "serviceops.fullname" . }}-events.{{ .Release.Namespace }}.svc.cluster.local:80;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
 {{- if .Values.networkPolicy.enabled }}
 ---
 apiVersion: networking.k8s.io/v1

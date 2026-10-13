@@ -173,6 +173,9 @@ spec:
           resources: {{- toYaml .Values.web.staticOffload.resources | nindent 12 }}
           volumeMounts:
             - {name: edge-tmp, mountPath: /tmp}
+            {{- if .Values.events.enabled }}
+            - {name: edge-routes, mountPath: /etc/serviceops-edge, readOnly: true}
+            {{- end }}
           startupProbe:
             httpGet: {path: /edge-live, port: edge-http}
             periodSeconds: 5
@@ -191,6 +194,10 @@ spec:
         {{- if .Values.web.staticOffload.enabled }}
         - name: edge-tmp
           emptyDir: {}
+        {{- if .Values.events.enabled }}
+        - name: edge-routes
+          configMap: {name: {{ include "serviceops.fullname" . }}-edge-routes}
+        {{- end }}
         {{- end }}
         - name: tmp
           emptyDir: {sizeLimit: 128Mi}
