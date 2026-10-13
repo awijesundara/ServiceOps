@@ -27,10 +27,19 @@ def _global_unique_constraints(bind):
             if c["column_names"] == ["asset_tag"]]
 
 
+def _index_exists(bind):
+    # Read the catalogue: SQLAlchemy does not reflect expression indexes on
+    # SQLite, and a fresh schema (baseline revision) already has this one.
+    if bind.dialect.name == "sqlite":
+        sql = "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = :name"
+    else:
+        sql = "SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = :name"
+    return bind.execute(sa.text(sql), {"name": INDEX}).first() is not None
+
+
 def upgrade():
     bind = op.get_bind()
-    inspector = sa.inspect(bind)
-    if INDEX in {index["name"] for index in inspector.get_indexes("asset")}:
+    if _index_exists(bind):
         return
     if bind.dialect.name == "sqlite":
         # SQLite cannot drop a constraint: rebuild the table without it. A
