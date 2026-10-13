@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ tr('My tasks · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
-{% block content %}
+{% block content %}<span hidden data-live-watch="tickets"></span>
 <header class="page-head"><div><p class="eyebrow">{{ tr('WORK QUEUE') }}</p><h1>{{ tr('My tasks') }}</h1><p>{{ tr('Change, problem, event, and service catalog tasks assigned to you or your teams.') }}</p></div></header>
 
 <section class="panel table-panel">

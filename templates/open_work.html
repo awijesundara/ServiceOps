@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ tr('Open work · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
-{% block content %}
+{% block content %}<span hidden data-live-watch="tickets"></span>
 <header class="page-head"><div><p class="eyebrow">{{ tr('NEEDS ATTENTION') }}</p><h1>{{ tr('Open work') }}</h1><p>{% if priority %}{{ tr('Open incidents and changes at priority {priority}.', priority=(tr_value(priority))) }}{% else %}{{ tr("Every incident, change, and service request that isn't resolved or closed yet.") }}{% endif %}</p></div>{% if priority %}<a class="button" href="{{ url_for('open_work') }}">{{ tr('Clear filter') }}</a>{% endif %}</header>
 {% set csv_url = url_for('open_work_export', priority=priority) %}
 {% include "_export_toolbar.html" %}

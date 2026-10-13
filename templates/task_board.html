@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ tr('Visual task board · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
-{% block content %}
+{% block content %}<span hidden data-live-watch="tickets"></span>
 <header class="page-head task-board-head">
   <div><p class="eyebrow">{{ tr('VISUAL TASK BOARD') }}</p><h1>{{ tr('Service work board') }}</h1><p>{{ tr('Prioritized operational work with SLA urgency. Completed records roll off automatically but remain available in ticket lists and search.') }}</p></div>
   <a class="button" href="{{ url_for('tickets', kind='incident') }}">{{ tr('Open ticket list') }}</a>

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from '_status_badge.html' import status_badge %}
 {% block title %}{{ tr('Changes') if kind == 'change' else tr('Incidents') }} · {{ instance_name }}{% endblock %}
-{% block content %}
+{% block content %}<span hidden data-live-watch="tickets"></span>
 <section class="list-workspace">
   <header class="list-toolbar">
     <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Changes') if kind == 'change' else tr('Incidents') }}</strong><small>{{ tr('{total} records', total=(total)) }}</small></div></div>

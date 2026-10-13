@@ -79,9 +79,16 @@ class Hub:
         elif event.get("type") == "ticket":
             key = f"ticket:{event.get('id')}"
             frame = sse("ticket", {"id": event.get("id"), "actor": event.get("actor")})
+            # Work lists learn only that something changed, not which ticket
+            # (the list may not show it), and whether it was their own change.
+            list_frames = {own: sse("tickets", {"self": own}) for own in (True, False)}
             for stream in self.streams:
-                if stream.tenant_id == tenant and key in stream.watch:
+                if stream.tenant_id != tenant:
+                    continue
+                if key in stream.watch:
                     stream.offer(frame)
+                if "tickets" in stream.watch:
+                    stream.offer(list_frames[event.get("actor") == stream.user_id])
 
     def broadcast(self, frame):
         for stream in self.streams:

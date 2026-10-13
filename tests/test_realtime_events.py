@@ -50,6 +50,30 @@ def test_events_auth_names_the_user_and_only_visible_watched_records(app, client
     assert data["user_id"] == admin_id and data["watch"] == [f"ticket:{ticket_id}"]
 
 
+def test_only_agents_may_watch_work_lists(app, client):
+    login(client)
+    assert client.get("/events/auth?watch=tickets").get_json()["watch"] == ["tickets"]
+    client.post("/logout")
+    login(client, "employee", "Employee123!")
+    assert client.get("/events/auth?watch=tickets").get_json()["watch"] == []
+
+
+def test_work_lists_hear_that_a_ticket_changed_but_not_which():
+    from tools.events_server import Hub, Stream
+    hub = Hub()
+    board = Stream(None, 1, 7, ["tickets"], False, {})
+    mine_elsewhere = Stream(None, 2, 7, ["tickets"], False, {})
+    other_tenant = Stream(None, 3, 8, ["tickets"], False, {})
+    record = Stream(None, 2, 7, ["ticket:42"], False, {})
+    hub.streams.update({board, mine_elsewhere, other_tenant, record})
+    hub.dispatch(json.dumps({"type": "ticket", "tenant": 7, "id": 42, "actor": 2}))
+    frame = board.queue.get_nowait().decode()
+    assert frame.startswith("event: tickets") and '"self":false' in frame and "42" not in frame
+    assert '"self":true' in mine_elsewhere.queue.get_nowait().decode()
+    assert other_tenant.queue.empty()
+    assert record.queue.get_nowait().decode().startswith("event: ticket\n")
+
+
 def test_signals_are_a_no_op_on_sqlite(app):
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
@@ -226,6 +250,15 @@ def test_events_service_delivers_to_the_right_streams(pg_app, monkeypatch):
         assert stream.read_until(b"event: ticket")
         assert f'"id":{ticket_id}'.encode() in stream.buffer and f'"actor":{other_id}'.encode() in stream.buffer
         stream.close()
+
+        board = _Stream(port, "/events/stream?watch=tickets&notifications=0", cookie)
+        assert board.read_until(b"event: hello") and b'"tickets"' in board.buffer
+        with pg_app.app_context():
+            db.session.add(Comment(ticket_id=ticket_id, user_id=other_id, body="list", tenant_id=tenant_id))
+            db.session.commit()
+        assert board.read_until(b"event: tickets")
+        assert b'"self":false' in board.buffer and f'"id":{ticket_id}'.encode() not in board.buffer
+        board.close()
     finally:
         loop.call_soon_threadsafe(stop.set)
         thread.join(timeout=5)
