@@ -853,11 +853,16 @@ def register(app):
                 words = [w for w in q.split() if w][:6]
                 return db.and_(*[db.or_(*[c.ilike(f"%{w}%") for c in columns]) for w in words])
 
-            commented_ticket_ids = db.session.query(Comment.ticket_id).filter(
-                Comment.tenant_id == current_user.tenant_id, Comment.body.ilike(pattern))
-            for row in Ticket.query.filter(Ticket.id.in_(visible_ticket_ids), db.or_(
-                                                   all_terms([Ticket.number, Ticket.title, Ticket.description]),
-                                                   Ticket.id.in_(commented_ticket_ids))).limit(20):
+            # Two separate branches so PostgreSQL can answer each from its
+            # trigram indexes; one OR across them forced a scan of every
+            # ticket and comment.
+            matching_ticket_ids = db.session.query(Ticket.id).filter(
+                Ticket.tenant_id == current_user.tenant_id,
+                all_terms([Ticket.number, Ticket.title, Ticket.description]),
+            ).union(db.session.query(Comment.ticket_id).filter(
+                Comment.tenant_id == current_user.tenant_id, Comment.body.ilike(pattern)))
+            for row in Ticket.query.filter(Ticket.id.in_(visible_ticket_ids),
+                                           Ticket.id.in_(matching_ticket_ids)).limit(20):
                 results.append({"type": row.kind.title(), "label": f"{row.number} · {row.title}",
                                 "url": url_for("ticket_detail", ticket_id=row.id), "meta": row.state})
             for row in visible_knowledge_query(current_user).filter(all_terms(
