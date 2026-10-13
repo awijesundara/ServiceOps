@@ -1031,22 +1031,6 @@ def mobile_client_details(client):
     )
 
 
-def verify_mfa_code(user, code):
-    code = str(code or "").strip()
-    if not user.mfa_enabled:
-        return True, False
-    verified = False
-    if code and user.mfa_secret_encrypted:
-        secret = settings_cipher().decrypt(user.mfa_secret_encrypted.encode()).decode()
-        verified = pyotp.TOTP(secret).verify(code.replace(" ", ""), valid_window=1)
-    if not verified and code and user.mfa_backup_codes_json:
-        remaining = consume_backup_code(json.loads(user.mfa_backup_codes_json), code)
-        if remaining is not None:
-            user.mfa_backup_codes_json = json.dumps(remaining)
-            return True, True
-    return verified, False
-
-
 def authenticate_api_request():
     authorization = request.headers.get("Authorization", "")
     if not authorization.startswith("Bearer "):
