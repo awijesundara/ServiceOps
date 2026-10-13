@@ -67,12 +67,15 @@ def register(app):
         browser's own cookie when a live stream opens and every few minutes
         after: who is signed in, and which records the stream may watch.
         Every sign-in rule of a normal page applies (session inventory,
-        tenant, account state)."""
-        from app import Ticket, user_can_view_ticket
+        tenant, account state). "tickets" (work lists) is for agents and
+        above: it signals that some ticket in the tenant changed, never which."""
+        from app import Ticket, role_at_least, user_can_view_ticket
         watch = []
         for item in request.args.get("watch", "").split(",")[:5]:
             kind, _, raw_id = item.partition(":")
-            if kind == "ticket" and raw_id.isdigit():
+            if item == "tickets" and role_at_least(current_user.effective_role, "agent"):
+                watch.append("tickets")
+            elif kind == "ticket" and raw_id.isdigit():
                 ticket = core.tenant_query(Ticket).filter_by(id=int(raw_id)).first()
                 if ticket and user_can_view_ticket(current_user, ticket):
                     watch.append(f"ticket:{ticket.id}")

@@ -7844,6 +7844,10 @@
    "id": "Refined indigo navigation with soft violet accents."
   },
   {
+   "id": "Refresh",
+   "javascript": true
+  },
+  {
    "id": "Refresh the page before starting an investigation."
   },
   {
@@ -10636,6 +10640,10 @@
   },
   {
    "id": "Ticket state entry"
+  },
+  {
+   "id": "Tickets in this list have changed.",
+   "javascript": true
   },
   {
    "id": "Time"

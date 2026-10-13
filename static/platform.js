@@ -547,18 +547,17 @@ document.addEventListener("DOMContentLoaded", () => {
   // can say when someone else changes it.
   const liveWatch = document.querySelector("[data-live-watch]")?.dataset.liveWatch || "";
   let myUserId = null;
-  function showRecordUpdated(data) {
-    if (!liveWatch || liveWatch !== `ticket:${data.id}` || (data.actor && data.actor === myUserId)) return;
+  function showLiveBanner(message, action) {
     if (document.querySelector(".live-update-banner")) return;
     const banner = document.createElement("div");
     banner.className = "live-update-banner";
     banner.setAttribute("role", "status");
     const text = document.createElement("span");
-    text.textContent = tr("Someone else just updated this record.");
+    text.textContent = message;
     const reload = document.createElement("button");
     reload.type = "button";
     reload.className = "button primary";
-    reload.textContent = tr("Reload to see it");
+    reload.textContent = action;
     reload.addEventListener("click", () => window.location.reload());
     const dismiss = document.createElement("button");
     dismiss.type = "button";
@@ -567,6 +566,20 @@ document.addEventListener("DOMContentLoaded", () => {
     dismiss.addEventListener("click", () => banner.remove());
     banner.append(text, reload, dismiss);
     document.body.appendChild(banner);
+  }
+
+  function showRecordUpdated(data) {
+    if (!liveWatch || liveWatch !== `ticket:${data.id}` || (data.actor && data.actor === myUserId)) return;
+    showLiveBanner(tr("Someone else just updated this record."), tr("Reload to see it"));
+  }
+
+  // Work lists hear only that some ticket changed; a burst of changes
+  // (bulk updates, imports) shows one banner after it settles.
+  let listChangeTimer = null;
+  function showListUpdated(data) {
+    if (liveWatch !== "tickets" || data.self) return;
+    clearTimeout(listChangeTimer);
+    listChangeTimer = setTimeout(() => showLiveBanner(tr("Tickets in this list have changed."), tr("Refresh")), 1500);
   }
 
   const notificationMenu = document.querySelector(".notification-menu[data-poll-url]");
@@ -715,6 +728,7 @@ document.addEventListener("DOMContentLoaded", () => {
         source.addEventListener("resync", () => pollNotifications());
       }
       source.addEventListener("ticket", event => showRecordUpdated(JSON.parse(event.data)));
+      source.addEventListener("tickets", event => showListUpdated(JSON.parse(event.data)));
       source.addEventListener("signed-out", () => { source.close(); live = false; });
       source.addEventListener("error", () => {
         // CONNECTING: the browser retries by itself. CLOSED: the server

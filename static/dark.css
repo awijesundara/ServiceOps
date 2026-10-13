@@ -528,6 +528,7 @@ html.theme-dark .notification-count{background:#c0392b}
 html.theme-dark .notification-count.severity-warning{background:#5e3c0b;color:#d9c59f}
 html.theme-dark .notification-count.severity-info{background:#0c6b5e}
 html.theme-dark .live-update-banner{border:1px solid var(--line);background:#182128;box-shadow:0 12px 32px rgba(0,0,0,0.476)}
+html.theme-dark .live-update-banner .link-button{color:var(--dk-accent)}
 /* rtl.css */
 html.theme-dark[dir="rtl"] .sidebar{border-left:1px solid var(--border, #32383d);border-right:0}
 html.theme-dark[dir="rtl"] .flash{border-left:0;border-right:4px solid var(--dk-accent)}
