@@ -33,7 +33,7 @@ body[data-tour-route="tickets"] .task-list :is(th,td):is(:nth-child(2),:nth-chil
 .status-badge.rejected,.status-badge.closed-incomplete,.status-badge.closed-skipped,.status-badge.cancelled,.status-badge.failed{background:#fbe0dd;color:#9d2a22}
 .status-badge.superseded,.status-badge.inactive,.status-badge.no-longer-required{background:#ecedee;color:#5c6870}
 .status-badge.closed{background:#3f5157;color:#fff}
-.approval-history-toggle{border:0;background:transparent;color:var(--muted);font-size:11px;cursor:pointer;padding:2px 6px}
+.approval-history-toggle{display:inline-flex;align-items:center;gap:4px;margin-top:6px;padding:3px 10px 3px 6px;border:1px solid var(--line);border-radius:99px;background:#fff;color:var(--green-dark);font-size:12px;font-weight:600;cursor:pointer}.approval-history-toggle:hover{background:#eef7f5;border-color:var(--green)}.approval-history-toggle:focus-visible{outline:2px solid var(--green);outline-offset:2px}.approval-history-toggle .icon{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.2;transition:transform .15s ease}.approval-history-toggle[aria-expanded=true] .icon{transform:rotate(90deg)}.reduced-motion .approval-history-toggle .icon{transition:none}.approval-target{display:grid;gap:1px;text-decoration:none}.approval-target>span{font-weight:700;color:var(--green-dark)}.approval-target>small{color:var(--muted);max-width:280px}.approval-target:hover>span{text-decoration:underline}
 .approval-history-row td{padding:0 12px 14px}
 .approval-history-table{width:100%;border-collapse:collapse;background:#fafcfc;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 .approval-history-table th{text-align:left;padding:8px 12px;font-size:11px;color:var(--muted);background:#f2f5f6;border-bottom:1px solid var(--line)}
@@ -204,3 +204,12 @@ a.mention{text-decoration:none}a.mention:hover,a.mention:focus-visible{text-deco
 /* Assigned to: a small profile picture beside the dropdown opens the person's profile */
 .field-with-profile{display:flex;align-items:center;gap:8px;min-width:0}.field-with-profile select{flex:1;min-width:0}.field-with-profile .person-avatar-link .field-profile-avatar{width:26px;height:26px;font-size:12px}
 .record-grid label>.ci-rack-location,.form-grid label>.ci-rack-location{grid-column:2}
+
+/* RT reference on changes */
+.rt-link-field{display:grid;gap:6px}.rt-link-field>label>span{font-weight:600}
+.rt-link-input{display:flex;gap:8px;max-width:420px}.rt-link-input input{flex:1;min-width:0}
+.rt-link-status{margin:0;font-size:12.5px}.rt-link-status[data-kind=error]{color:#b42318}.rt-link-status[data-kind=ok]{color:var(--green-dark)}
+.rt-ref{display:inline-flex;align-items:center;gap:6px}.rt-ref a{font-weight:600}
+.rt-link-form{display:flex;gap:8px;align-items:center;margin-top:6px}.rt-link-form input{max-width:140px}
+.record-grid .record-field{display:grid;grid-template-columns:145px minmax(0,1fr);align-items:center;gap:14px;min-width:0;font-weight:500;color:#43545b}.record-grid .record-field>span:first-child{text-align:right}
+@media(max-width:650px){.record-grid .record-field{grid-template-columns:1fr;gap:5px}.record-grid .record-field>span:first-child{text-align:left}}

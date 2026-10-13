@@ -50,6 +50,13 @@
 <div class="flash warning"><strong>{{ trn(change_freeze_windows|length, 'Active or upcoming change freeze', 'Active or upcoming change freezes') }}</strong>{{ tr("Standard and Normal changes can't be scheduled inside these windows — only Emergency changes are exempt.") }}<ul>{% for window in change_freeze_windows %}<li>{{ window.title }}: {{ window.starts_at|l10n_strftime('%b %d, %Y %H:%M') }} – {{ window.ends_at|l10n_strftime('%b %d, %Y %H:%M') }}{% if window.reason %} — {{ window.reason }}{% endif %}</li>{% endfor %}</ul></div>
 {% endif %}
 <form method="post" class="panel form-grid" data-track-dirty>
+  {% if rt_link_enabled %}
+  <div class="wide rt-link-field" data-rt-preview-url="{{ url_for('change_rt_preview') }}">
+    <label for="rt-ticket-id"><span>{{ tr('RT ticket (optional)') }}</span></label>
+    <div class="rt-link-input"><input id="rt-ticket-id" name="rt_ticket_id" inputmode="numeric" placeholder="{{ tr('e.g. 12345') }}" value="{{ f.get('rt_ticket_id','') if f else '' }}" autocomplete="off"><button type="button" class="button" data-rt-fetch>{{ tr('Fetch from RT') }}</button></div>
+    <p class="rt-link-status muted" role="status" aria-live="polite">{{ tr('Fills the short description, description and owning team from the RT ticket. You can edit everything before submitting.') }}</p>
+  </div>
+  {% endif %}
   <label class="wide required-field"><span>{{ tr('Short description') }}</span><input name="title" maxlength="180" required autofocus value="{{ f.get('title','') if f else '' }}"></label>
   <label class="required-field"><span>{{ tr('Impact') }}</span><select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('impact')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
   <label class="required-field"><span>{{ tr('Urgency') }}<span class="info-tip" tabindex="0" data-tip="Priority is calculated automatically from impact and urgency.">i</span></span><select name="urgency" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('urgency')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>

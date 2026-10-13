@@ -278,3 +278,15 @@ web:
     resources:
       requests: {cpu: 50m, memory: 32Mi}
       limits: {cpu: 250m, memory: 128Mi}
+
+# Live events: browsers receive notifications and record updates over
+# Server-Sent Events (tools/events_server.py) instead of polling. Needs
+# PostgreSQL; browsers fall back to timed checks when it is unavailable.
+events:
+  enabled: true
+  replicas: 1
+  maxConnections: 5000
+  maxPerUser: 20
+  resources:
+    requests: {cpu: 20m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}

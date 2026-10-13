@@ -26,6 +26,7 @@ from app import (
     service_availability_pct,
 )
 from serviceops_core.input_limits import reject_nul_characters
+from serviceops_core import realtime  # noqa: F401 - registers the LISTEN/NOTIFY signal hooks
 from serviceops_core.web.common import _recovery_set_status
 from serviceops_models import (
     ApplicationLog,
@@ -58,6 +59,25 @@ def register(app):
         if current_user.is_authenticated or request.path.startswith(("/api/", "/scim/")):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    @app.get("/events/auth")
+    @login_required
+    def events_auth():
+        """Called by the events service (tools/events_server.py) with the
+        browser's own cookie when a live stream opens and every few minutes
+        after: who is signed in, and which records the stream may watch.
+        Every sign-in rule of a normal page applies (session inventory,
+        tenant, account state)."""
+        from app import Ticket, user_can_view_ticket
+        watch = []
+        for item in request.args.get("watch", "").split(",")[:5]:
+            kind, _, raw_id = item.partition(":")
+            if kind == "ticket" and raw_id.isdigit():
+                ticket = core.tenant_query(Ticket).filter_by(id=int(raw_id)).first()
+                if ticket and user_can_view_ticket(current_user, ticket):
+                    watch.append(f"ticket:{ticket.id}")
+        return jsonify({"user_id": current_user.id, "tenant_id": current_user.tenant_id, "watch": watch,
+                        "revalidate_seconds": 300})
 
     @app.get("/status")
     def status_page_default():

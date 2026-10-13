@@ -297,25 +297,75 @@ document.addEventListener("DOMContentLoaded", () => {
       showToast(tr("Removed from favorites."), "success");
     }
   });
+  // Task board: the card moves at once (optimistic), shows "saving" until
+  // the server answers, and goes back with a message if it refuses. Lane
+  // counts and the empty-lane placeholder follow every move.
   let dragged = null;
+  const board = document.querySelector(".task-board");
+  function refreshLane(lane, delta) {
+    const cards = lane.querySelector(".board-cards");
+    const empty = cards.querySelector(".board-empty");
+    if (empty) {
+      empty.hidden = Boolean(cards.querySelector(".board-card"));
+      cards.appendChild(empty);  // keep the placeholder last
+    }
+    const count = lane.querySelector(".board-count");
+    if (count && delta) {
+      const value = Math.max(0, Number(count.dataset.count || 0) + delta);
+      count.dataset.count = String(value);
+      count.textContent = String(value);
+    }
+  }
   document.querySelectorAll(".board-card[draggable=true]").forEach(card => {
-    card.addEventListener("dragstart", () => { dragged = card; card.classList.add("dragging"); });
-    card.addEventListener("dragend", () => card.classList.remove("dragging"));
+    card.addEventListener("dragstart", event => {
+      dragged = card;
+      card.classList.add("dragging");
+      board?.classList.add("is-dragging");
+      if (event.dataTransfer) { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", card.dataset.ticket); }
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      board?.classList.remove("is-dragging");
+      document.querySelectorAll(".board-lane.drop-target").forEach(lane => lane.classList.remove("drop-target"));
+    });
   });
   document.querySelectorAll(".board-lane").forEach(lane => {
-    lane.addEventListener("dragover", event => event.preventDefault());
-    lane.addEventListener("drop", async () => {
-      if (!dragged) return;
+    lane.addEventListener("dragover", event => { event.preventDefault(); lane.classList.add("drop-target"); });
+    lane.addEventListener("dragleave", event => {
+      if (!lane.contains(event.relatedTarget)) lane.classList.remove("drop-target");
+    });
+    lane.addEventListener("drop", async event => {
+      event.preventDefault();
+      lane.classList.remove("drop-target");
+      const card = dragged;
+      dragged = null;
+      if (!card) return;
+      const source = card.closest(".board-lane");
+      if (source === lane) return;
+      const before = card.nextSibling;
+      lane.querySelector(".board-cards").prepend(card);
+      card.classList.add("is-saving");
+      refreshLane(lane, 1);
+      refreshLane(source, -1);
+      const undo = message => {
+        source.querySelector(".board-cards").insertBefore(card, before && before.parentNode ? before : null);
+        refreshLane(source, 1);
+        refreshLane(lane, -1);
+        showToast(message, "error");
+      };
       const data = new URLSearchParams({state: lane.dataset.state});
       let response;
       try {
-        response = await fetch(`/task-board/${dragged.dataset.ticket}/move`, {method: "POST", headers: csrfHeaders, body: data});
+        response = await fetch(`/task-board/${card.dataset.ticket}/move`, {method: "POST", headers: csrfHeaders, body: data});
       } catch (error) {
-        showToast(tr("Could not reach the server. The card was not moved."), "error");
+        card.classList.remove("is-saving");
+        undo(tr("Could not reach the server. The card was not moved."));
         return;
       }
+      card.classList.remove("is-saving");
       if (response.ok) {
-        lane.querySelector(".board-cards").appendChild(dragged);
+        const number = card.querySelector("a")?.textContent || "";
+        showToast(tr("{number} moved to {state}.", {number, state: lane.querySelector("h2")?.textContent || lane.dataset.state}), "success");
       } else {
         let message = tr("Could not move this card. Please try again.");
         try {
@@ -323,7 +373,7 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (error) {
           // Not a JSON refusal; keep the generic message.
         }
-        showToast(message, "error");
+        undo(message);
       }
     });
   });
@@ -487,14 +537,38 @@ document.addEventListener("DOMContentLoaded", () => {
       const expanded = button.getAttribute("aria-expanded") === "true";
       row.hidden = expanded;
       button.setAttribute("aria-expanded", String(!expanded));
-      button.textContent = expanded ? "▸" : "▾";
     });
   });
 
-  // Notification bell: poll for newly-arrived notifications and ring/
-  // recolor the bell when the latest notification id changes. Polling
-  // (not SSE/websockets) matches this app's existing architecture -- there
-  // is no other real-time push channel on the page to piggyback on.
+  // Notification bell: ring/recolor when the latest notification changes.
+  // Updates arrive over the live event stream (tools/events_server.py) when
+  // it is available, with a slower check as the fallback.
+  // A record page names what it shows (data-live-watch) so the live stream
+  // can say when someone else changes it.
+  const liveWatch = document.querySelector("[data-live-watch]")?.dataset.liveWatch || "";
+  let myUserId = null;
+  function showRecordUpdated(data) {
+    if (!liveWatch || liveWatch !== `ticket:${data.id}` || (data.actor && data.actor === myUserId)) return;
+    if (document.querySelector(".live-update-banner")) return;
+    const banner = document.createElement("div");
+    banner.className = "live-update-banner";
+    banner.setAttribute("role", "status");
+    const text = document.createElement("span");
+    text.textContent = tr("Someone else just updated this record.");
+    const reload = document.createElement("button");
+    reload.type = "button";
+    reload.className = "button primary";
+    reload.textContent = tr("Reload to see it");
+    reload.addEventListener("click", () => window.location.reload());
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.className = "link-button";
+    dismiss.textContent = tr("Dismiss");
+    dismiss.addEventListener("click", () => banner.remove());
+    banner.append(text, reload, dismiss);
+    document.body.appendChild(banner);
+  }
+
   const notificationMenu = document.querySelector(".notification-menu[data-poll-url]");
   if (notificationMenu) {
     const pollUrl = notificationMenu.dataset.pollUrl;
@@ -572,39 +646,115 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
+    // One tab per browser leads (Web Locks): it holds the live event stream
+    // and does the periodic check, and shares every result with the other
+    // tabs (BroadcastChannel). The stream makes the bell instant; checks
+    // run every 25 s only without it (60 s after 5 idle minutes, 2 min as
+    // a safety net while it is up) and send the last ETag, so an unchanged
+    // bell costs a bodiless 304.
+    const streamUrl = notificationMenu.dataset.streamUrl;
+    const channel = "BroadcastChannel" in window ? new BroadcastChannel("serviceops-notifications") : null;
+    let etag = null;
+    let live = false;
+    let lastActivity = Date.now();
+    ["pointerdown", "keydown", "scroll"].forEach(name => window.addEventListener(name, () => { lastActivity = Date.now(); }, {passive: true}));
+
+    function applyNotifications(data) {
+      if (notificationMenu.dataset.submitting === "true" || notificationMenu.open) return;
+      if (data.latest_id && data.latest_id !== latestId) {
+        const isNewArrival = data.latest_id > latestId;
+        latestId = data.latest_id;
+        if (isNewArrival) {
+          notificationMenu.classList.remove("ringing");
+          // Force reflow so re-adding the class restarts the animation
+          // even if a previous ring is still settling.
+          void notificationMenu.offsetWidth;
+          notificationMenu.classList.add("ringing");
+        }
+      }
+      renderNotifications(data);
+    }
+
     async function pollNotifications() {
       // Skip while a form submit inside the popover (mark-as-read) is
       // navigating -- avoids clobbering that in-flight state change.
-      if (
-        document.visibilityState !== "visible" ||
-        notificationMenu.dataset.submitting === "true" ||
-        notificationMenu.open ||
-        notificationMenu.contains(document.activeElement)
-      ) return;
+      if (notificationMenu.dataset.submitting === "true" || notificationMenu.contains(document.activeElement)) return;
       try {
-        const response = await fetch(pollUrl, {headers: {Accept: "application/json"}});
-        if (!response.ok) return;
+        const headers = {Accept: "application/json"};
+        if (etag) headers["If-None-Match"] = etag;
+        const response = await fetch(pollUrl, {headers, cache: "no-store"});
+        if (response.status === 304 || !response.ok) return;
+        etag = response.headers.get("ETag");
         const data = await response.json();
-        if (data.latest_id && data.latest_id !== latestId) {
-          const isNewArrival = data.latest_id > latestId;
-          latestId = data.latest_id;
-          if (isNewArrival) {
-            notificationMenu.classList.remove("ringing");
-            // Force reflow so re-adding the class restarts the animation
-            // even if a previous ring is still settling.
-            void notificationMenu.offsetWidth;
-            notificationMenu.classList.add("ringing");
-          }
-        }
-        renderNotifications(data);
+        applyNotifications(data);
+        channel?.postMessage({type: "notifications", data});
       } catch (error) {
         // A transient network hiccup shouldn't spam the console on a
         // background poll; the next tick tries again.
       }
     }
+
+    function nextCheckDelay() {
+      if (live) return 120000;
+      if (document.visibilityState !== "visible" || Date.now() - lastActivity > 300000) return 60000;
+      return 25000;
+    }
+
+    let watchStream = null;
+    function openStream({notifications}) {
+      if (!streamUrl || !("EventSource" in window)) return null;
+      const params = new URLSearchParams({notifications: notifications ? "1" : "0"});
+      if (liveWatch) params.set("watch", liveWatch);
+      const source = new EventSource(`${streamUrl}?${params}`);
+      source.addEventListener("hello", event => {
+        try { myUserId = JSON.parse(event.data).user_id; } catch (error) { /* ignore */ }
+        if (notifications) live = true;
+      });
+      if (notifications) {
+        source.addEventListener("notification", () => pollNotifications());
+        source.addEventListener("resync", () => pollNotifications());
+      }
+      source.addEventListener("ticket", event => showRecordUpdated(JSON.parse(event.data)));
+      source.addEventListener("signed-out", () => { source.close(); live = false; });
+      source.addEventListener("error", () => {
+        // CONNECTING: the browser retries by itself. CLOSED: the server
+        // answered without a stream (no events service): stay on checks.
+        if (notifications) live = false;
+      });
+      return source;
+    }
+
+    function lead() {
+      watchStream?.close();
+      openStream({notifications: true});
+      const loop = () => pollNotifications().finally(() => setTimeout(loop, nextCheckDelay()));
+      setTimeout(loop, nextCheckDelay());
+      channel && (channel.onmessage = event => {
+        if (event.data?.type === "refresh") pollNotifications();
+      });
+      return new Promise(() => {});  // keep the lock for this tab's lifetime
+    }
+
+    channel?.addEventListener("message", event => {
+      if (event.data?.type === "notifications") applyNotifications(event.data.data);
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") channel?.postMessage({type: "refresh"});
+    });
     notificationMenu.addEventListener("animationend", () => notificationMenu.classList.remove("ringing"));
     notificationMenu.addEventListener("submit", () => { notificationMenu.dataset.submitting = "true"; });
-    setInterval(pollNotifications, 25000);
+    if (navigator.locks?.request) {
+      navigator.locks.request("serviceops-notifications", {ifAvailable: true}, lock => {
+        if (lock) return lead();
+        // Another tab leads: watch this page's record only, and take over
+        // when the leading tab closes.
+        if (liveWatch) watchStream = openStream({notifications: false});
+        navigator.locks.request("serviceops-notifications", () => lead());
+        return null;
+      });
+    } else {
+      lead();
+    }
   }
 
   const commentForm = document.getElementById("comment-form");
@@ -712,3 +862,110 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 });
+
+/* Change form: fetch an RT ticket and prefill the change (RT page setting). */
+(function () {
+  const field = document.querySelector(".rt-link-field");
+  if (!field) return;
+  const input = field.querySelector("input[name=rt_ticket_id]");
+  const button = field.querySelector("[data-rt-fetch]");
+  const status = field.querySelector(".rt-link-status");
+  const form = field.closest("form");
+  const setStatus = (text, kind) => { status.textContent = text; status.dataset.kind = kind || ""; };
+  async function fetchRt() {
+    const id = input.value.trim().replace(/^#/, "");
+    if (!/^\d+$/.test(id)) { setStatus(tr("Enter an RT ticket number."), "error"); input.focus(); return; }
+    button.disabled = true;
+    setStatus(tr("Fetching RT #{id}…", {id}), "busy");
+    try {
+      const response = await fetch(`${field.dataset.rtPreviewUrl}?rt_id=${encodeURIComponent(id)}`, {headers: {Accept: "application/json"}});
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) { setStatus(data.error || tr("Could not fetch the RT ticket."), "error"); return; }
+      if (data.linked_change) { setStatus(tr("RT #{id} is already linked to {number}.", {id, number: data.linked_change.number}), "error"); return; }
+      const title = form.querySelector("[name=title]");
+      const description = form.querySelector("[name=description]");
+      const replace = (element, value) => {
+        if (!element || !value) return;
+        if (element.value.trim() && element.value.trim() !== value && !window.confirm(tr("Replace the current {field} with the RT ticket's?", {field: element.closest("label")?.querySelector("span")?.textContent || ""}))) return;
+        element.value = value;
+        element.dispatchEvent(new Event("input", {bubbles: true}));
+      };
+      replace(title, (data.subject || "").slice(0, 180));
+      replace(description, data.description || "");
+      const team = form.querySelector("[name=group_id]");
+      let teamNote = "";
+      if (team && data.team_id) {
+        const option = team.querySelector(`option[value="${data.team_id}"]`);
+        if (option && !option.disabled) { team.value = String(data.team_id); team.dispatchEvent(new Event("change", {bubbles: true})); teamNote = " " + tr("Owning team set to {team}.", {team: data.team_name}); }
+      }
+      setStatus(tr("Filled from RT #{id}: {subject}", {id, subject: data.subject || ""}) + teamNote, "ok");
+    } catch (error) {
+      setStatus(tr("Could not reach the server. Try again."), "error");
+    } finally {
+      button.disabled = false;
+    }
+  }
+  button.addEventListener("click", fetchRt);
+  input.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); fetchRt(); } });
+})();
+
+/* Preferences: desktop notifications (Web Push) for this browser. */
+(function () {
+  const row = document.querySelector("[data-web-push]");
+  if (!row || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return;
+  const button = row.querySelector("[data-web-push-toggle]");
+  const csrfHeaders = {"X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || ""};
+  const status = row.querySelector("[data-web-push-status]");
+  const toKey = text => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - text.length % 4) % 4)), c => c.charCodeAt(0));
+  let config = null;
+  async function current() {
+    const registration = await navigator.serviceWorker.ready;
+    return registration.pushManager.getSubscription();
+  }
+  async function render() {
+    const subscription = await current();
+    button.textContent = subscription ? tr("Turn off") : tr("Turn on");
+    button.dataset.on = subscription ? "1" : "";
+    if (Notification.permission === "denied") {
+      status.textContent = tr("This browser blocks notifications for ServiceOps. Allow them in the browser's site settings.");
+      button.disabled = true;
+    } else {
+      status.textContent = subscription ? tr("On for this browser.") : tr("Show ServiceOps notifications on this computer even when no ServiceOps tab is open.");
+    }
+  }
+  async function toggle() {
+    button.disabled = true;
+    try {
+      const subscription = await current();
+      if (subscription) {
+        await fetch("/push/subscriptions", {method: "DELETE", headers: {...csrfHeaders, "Content-Type": "application/json"}, body: JSON.stringify({endpoint: subscription.endpoint})});
+        await subscription.unsubscribe();
+        showToast(tr("Desktop notifications turned off for this browser."), "success");
+      } else {
+        if (await Notification.requestPermission() !== "granted") { await render(); return; }
+        const registration = await navigator.serviceWorker.ready;
+        const created = await registration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: toKey(config.public_key)});
+        const response = await fetch("/push/subscriptions", {method: "POST", headers: {...csrfHeaders, "Content-Type": "application/json"}, body: JSON.stringify(created.toJSON())});
+        if (!response.ok) {
+          await created.unsubscribe();
+          const detail = await response.json().catch(() => ({}));
+          showToast(detail.error?.detail || detail.description || tr("Could not turn on desktop notifications."), "error");
+        } else {
+          showToast(tr("Desktop notifications are on for this browser."), "success");
+        }
+      }
+    } catch (error) {
+      showToast(tr("Could not change desktop notifications in this browser."), "error");
+    } finally {
+      button.disabled = false;
+      await render();
+    }
+  }
+  fetch("/push/config", {headers: {Accept: "application/json"}}).then(r => r.ok ? r.json() : null).then(data => {
+    if (!data?.enabled || !data.public_key) return;
+    config = data;
+    row.hidden = false;
+    button.addEventListener("click", toggle);
+    render();
+  }).catch(() => {});
+})();

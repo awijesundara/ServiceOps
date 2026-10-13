@@ -12,6 +12,7 @@ from flask_login import current_user, login_required
 from sqlalchemy.orm import selectinload
 from werkzeug.exceptions import HTTPException
 
+import app as core
 from app import (
     active_approval_delegation,
     approval_chain_for,
@@ -226,6 +227,7 @@ def register(app):
                 chain for chain in chains
                 if needle in chain.name.lower()
                 or needle in f"{chain.target_type} #{chain.target_id}".lower()
+                or needle in (core.record_number(core.record_reference(chain.target_type, chain.target_id)) or "").lower()
             ]
         # A material change to an approved change ticket doesn't edit the old
         # ApprovalChain -- it creates a whole new one against the same
@@ -266,6 +268,12 @@ def register(app):
         pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, pages)
         page_groups = groups[(page - 1) * per_page: page * per_page]
+        # Each row links to the record it approves: its number, title and URL.
+        for group in page_groups:
+            record = core.record_reference(group["target_type"], group["target_id"])
+            group["target_number"] = core.record_number(record) if record else None
+            group["target_title"] = getattr(record, "title", None) if record else None
+            group["target_url"] = core.record_url(record) if record else None
         return render_template(
             "approval_chains.html", groups=page_groups, pending=pending,
             delegated_pending=delegated_pending, q=q, page=page, pages=pages, total=total,

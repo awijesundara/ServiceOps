@@ -17,13 +17,14 @@
 {% if scope == 'focus' %}<p class="board-scope-note"><strong>{{ tr('Operational focus') }}</strong> {{ tr('includes P1/P2, SLA-exposed, assigned-to-you, and recently updated open work. Resolved cards remain for 7 days; closed cards for 2 days.') }}</p>{% else %}<p class="board-scope-note"><strong>{{ tr('All current work') }}</strong> {{ tr('includes every visible open record, capped at 100 cards per lane. Use the ticket list for the complete backlog.') }}</p>{% endif %}
 <section class="task-board" aria-label="{{ tr('Ticket lifecycle board') }}" tabindex="0">
   {% for state, tickets in tickets_by_state.items() %}<div class="board-lane" data-state="{{ state }}">
-    <header><h2>{{ tr_value(state) }}</h2><span aria-label="{{ tr('{board_meta} tickets', board_meta=(board_meta[state].total)) }}">{{ board_meta[state].total }}</span></header>
+    <header><h2>{{ tr_value(state) }}</h2><span class="board-count" data-count="{{ board_meta[state].total }}" aria-label="{{ tr('{board_meta} tickets', board_meta=(board_meta[state].total)) }}">{{ board_meta[state].total }}</span></header>
     <div class="board-cards">
       {% for ticket in tickets %}{% set sla = ticket_sla[ticket.id] %}<article class="board-card sla-{{ sla.state }}" draggable="{{ 'true' if ticket.id in manageable_ticket_ids else 'false' }}" data-ticket="{{ ticket.id }}">
         <div class="board-card-top"><span class="priority {{ ticket.priority|lower }}">{{ tr_value(ticket.priority) }}</span>{% if sla.state != 'none' %}<span class="board-sla-status">{{ tr_value(sla.label) }}</span>{% endif %}</div>
         <a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a><strong>{{ ticket.title }}</strong>
         <div class="board-card-meta">{% if sla.due %}<span class="board-sla-time">{{ sla.due }}</span>{% endif %}<small>{{ user_link(ticket.assignee, tr('Unassigned')) }}{% if ticket.id not in manageable_ticket_ids %} · {{ tr('Read only') }}{% endif %}</small></div>
-      </article>{% else %}<p class="board-empty">{{ tr('No matching work') }}</p>{% endfor %}
+      </article>{% endfor %}
+      <p class="board-empty" {% if tickets %}hidden{% endif %}><span class="board-empty-idle">{{ tr('No matching work') }}</span><span class="board-empty-drop">{{ tr('Drop here to move the card') }}</span></p>
     </div>
     {% if board_meta[state].hidden %}<a class="board-hidden" href="{{ url_for('tickets', kind='incident') }}">{{ tr('{board_meta} more in ticket lists', board_meta=(board_meta[state].hidden)) }}</a>{% endif %}
   </div>{% endfor %}

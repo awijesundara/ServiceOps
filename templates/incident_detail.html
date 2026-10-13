@@ -2,7 +2,7 @@
 {% from "_ticket_category_fields.html" import category_field, subcategory_field with context %}
 {% from "_rack_pin.html" import rack_pin %}
 {% block title %}{{ tr('{number} · Incident · {instance_name}', number=(ticket.number), instance_name=(instance_name)) }}{% endblock %}
-{% block content %}
+{% block content %}<span hidden data-live-watch="ticket:{{ ticket.id }}"></span>
 {% set primary_ci_link = (ci_links|selectattr('relationship_role','equalto','Primary CI')|first) %}
 <section class="record-shell">
   <header class="record-toolbar">

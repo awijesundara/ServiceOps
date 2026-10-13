@@ -16,14 +16,14 @@
     </nav>
   </header>
   <div class="task-list-scroll">
-  <table class="task-list"><thead><tr><th></th><th>{{ tr('Chain') }}</th><th>{{ tr('Target') }}</th><th>{{ tr('Current stage') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Created') }}</th></tr></thead><tbody>{% for group in groups %}{% set chain = group.latest %}<tr>
-    <td>{% if group.history %}<button type="button" class="link-button approval-history-toggle" data-approval-history-toggle="{{ chain.id }}" aria-expanded="false" aria-label="{{ tr('Show {history} earlier version{value}', history=(group.history|length), value=('' if group.history|length == 1 else 's')) }}">▸</button>{% endif %}</td>
-    <td><strong class="truncate" title="{{ group.display_name }}">{{ group.display_name }}</strong></td>
-    <td>{{ chain.target_type|upper }} #{{ chain.target_id }}</td>
+  <table class="task-list"><thead><tr><th>{{ tr('Chain') }}</th><th>{{ tr('Record') }}</th><th>{{ tr('Current stage') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Created') }}</th></tr></thead><tbody>{% for group in groups %}{% set chain = group.latest %}<tr>
+    <td><strong class="truncate" title="{{ group.display_name }}">{% if group.target_url %}<a href="{{ group.target_url }}">{{ group.display_name }}</a>{% else %}{{ group.display_name }}{% endif %}</strong>
+      {% if group.history %}<button type="button" class="approval-history-toggle" data-approval-history-toggle="{{ chain.id }}" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>{{ tr('{count} earlier version', count=group.history|length) if group.history|length == 1 else tr('{count} earlier versions', count=group.history|length) }}</button>{% endif %}</td>
+    <td>{% if group.target_url %}<a class="approval-target" href="{{ group.target_url }}"><span>{{ group.target_number }}</span>{% if group.target_title %}<small class="truncate" title="{{ group.target_title }}">{{ group.target_title }}</small>{% endif %}</a>{% else %}<span class="muted">{{ chain.target_type|upper }} #{{ chain.target_id }}</span>{% endif %}</td>
     <td>{{ chain.current_stage }} / {{ chain.gates|length }}</td>
     <td>{{ status_badge(chain.state) }}</td>
     <td>{{ (chain.created_at|usertime('%b %d, %H:%M')) }}</td>
-  </tr>{% if group.history %}<tr class="approval-history-row" data-approval-history="{{ chain.id }}" hidden><td></td><td colspan="5">
+  </tr>{% if group.history %}<tr class="approval-history-row" data-approval-history="{{ chain.id }}" hidden><td colspan="5">
     <table class="approval-history-table">
       <thead><tr><th>{{ tr('Version') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Stage') }}</th><th>{{ tr('Created') }}</th></tr></thead>
       <tbody>{% for previous in group.history %}<tr>
@@ -33,6 +33,6 @@
         <td>{{ (previous.created_at|usertime('%b %d, %H:%M')) }}</td>
       </tr>{% endfor %}</tbody>
     </table>
-  </td></tr>{% endif %}{% else %}<tr><td colspan="6" class="empty">{{ tr('No matching approval chains.') }}</td></tr>{% endfor %}</tbody></table>
+  </td></tr>{% endif %}{% else %}<tr><td colspan="5" class="empty">{{ tr('No matching approval chains.') }}</td></tr>{% endfor %}</tbody></table>
   </div>
 </section>{% endblock %}

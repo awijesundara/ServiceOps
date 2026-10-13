@@ -165,6 +165,9 @@ SETTING_DEFINITIONS = {
         {"key": "APNS_BUNDLE_ID", "label": "iOS bundle identifier", "type": "text", "default": "wijesundara.com.ServiceOps", "live": True},
         {"key": "APNS_PRIVATE_KEY", "label": "APNs private key", "type": "secret", "default": "", "live": True},
         *proxy_policy_settings("APNS", "iOS push notification"),
+        {"key": "WEB_PUSH_ENABLED", "label": "Enable browser desktop notifications (Web Push)", "type": "bool", "default": "false", "live": True},
+        {"key": "WEB_PUSH_CONTACT", "label": "Web Push contact email (shared with browser push services)", "type": "email", "default": "", "live": True},
+        *proxy_policy_settings("WEB_PUSH", "browser push notification"),
         {"key": "SMTP_PORT", "label": "SMTP port", "type": "int", "default": "587", "min": 1, "max": 65535, "live": True},
         {"key": "SMTP_SECURITY", "label": "SMTP transport security", "type": "choice", "choices": ["starttls", "tls", "none"], "default": "starttls", "live": True},
         {"key": "SMTP_STARTTLS", "label": "Require SMTP STARTTLS (legacy)", "type": "bool", "default": "true", "live": True},
@@ -270,6 +273,10 @@ SETTING_DEFINITIONS = {
         {
             "key": "RT_TLS_INSECURE", "type": "bool", "default": "false", "live": True,
             "label": "Skip RT TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
+        },
+        {
+            "key": "RT_CHANGE_LINK_ENABLED", "type": "bool", "default": "false", "live": True,
+            "label": "Let changes reference an RT ticket (fetch its details into the change)",
         },
         *proxy_policy_settings("RT", "Request Tracker"),
     ],

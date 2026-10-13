@@ -4525,8 +4525,9 @@ def test_material_change_edit_supersedes_approvals_and_notifies_approvers(client
     client.post("/logout")
     login(client)
     chains_page = client.get("/approval-chains").data.decode()
-    assert f"{ticket_number} change authorization</strong>" in chains_page
-    assert f"{ticket_number} change authorization v2</strong>" not in chains_page
+    # The chain name links to the change it approves.
+    assert f"{ticket_number} change authorization</a></strong>" in chains_page
+    assert f"{ticket_number} change authorization v2</a></strong>" not in chains_page
     assert f"{ticket_number} change authorization v1" in chains_page
     assert 'data-approval-history-toggle="' in chains_page
 

@@ -156,6 +156,7 @@ from serviceops_models import (
     UserWorkspaceLayout,
 )
 from serviceops_core.localization import tr, tr_value
+from serviceops_core import rt_link
 from serviceops_core.request_values import form_int, parse_int
 from serviceops_core.safe_redirect import redirect_internal
 
@@ -494,6 +495,7 @@ def register(app):
                 teams_query = teams_query.filter(SupportGroup.id.in_(team_ids or {-1}))
             return render_template(
                 "ticket_form.html", kind=kind, teams=teams_query.all(),
+                rt_link_enabled=(kind == "change" and rt_link.enabled()),
                 state_track=build_state_track(kind, "New"),
                 default_priority=core.setting_value("DEFAULT_TICKET_PRIORITY", "P3"),
                 service_offerings=tenant_query(ServiceOffering).filter_by(
@@ -644,6 +646,17 @@ def register(app):
                 priority = calculate_priority(impact, urgency)
             except ValueError as error:
                 return render_form(str(error))
+            # Optional RT reference (RT page setting): validated before the change exists.
+            rt_id = None
+            if kind == "change" and request.form.get("rt_ticket_id", "").strip():
+                if not rt_link.enabled():
+                    return render_form(tr("Referencing RT tickets from changes is turned off."))
+                rt_id = rt_link.parse_rt_id(request.form.get("rt_ticket_id"))
+                if not rt_id:
+                    return render_form(tr("Enter an RT ticket number."))
+                already = rt_link.linked_change(rt_id, current_user.tenant_id)
+                if already:
+                    return render_form(tr("RT #{id} is already linked to {number}.", id=rt_id, number=already.number))
             # Changes are classified by change model plus the affected CI/service,
             # not by the incident/request symptom tree.
             if kind == "change":
@@ -686,7 +699,11 @@ def register(app):
                 db.session.flush()
                 db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=owning_group.id))
                 db.session.add(ChangeRevision(ticket_id=ticket.id, revision=1))
+                if rt_id:
+                    ticket.external_source, ticket.external_id = "rt", rt_id
                 db.session.flush()
+                if rt_id:
+                    log_history("ticket", ticket.id, "RT ticket linked", details=f"References RT #{rt_id}.")
                 for additional_ci_id in additional_ci_ids:
                     db.session.add(TaskCI(
                         target_type="ticket", target_id=ticket.id,
@@ -1129,6 +1146,8 @@ def register(app):
         return render_template(
             "incident_detail.html" if ticket.kind == "incident" else "ticket_detail.html",
             ticket=ticket, agents=agents, chains=chains, slas=slas,
+            rt_url=rt_link.rt_web_url(ticket.external_id) if ticket.external_source == "rt" else None,
+            rt_link_enabled=(ticket.kind == "change" and rt_link.enabled()),
             state_track=build_state_track(ticket.kind, ticket.state),
             ticket_state_options=allowed_ticket_states(ticket), owning_group=owning_group,
             can_manage_ticket=can_manage_ticket, ticket_locked=ticket_locked, can_reopen=can_reopen,
@@ -2259,6 +2278,48 @@ def register(app):
         db.session.commit()
         flash(tr("{number} updated.", number=item.number), "success")
         return redirect(url_for("improvement_detail", item_id=item.id))
+
+    @app.get("/changes/rt-preview")
+    @roles("agent", "manager", "admin")
+    def change_rt_preview():
+        """JSON for the change form: an RT ticket's summary and the prefilled
+        change description."""
+        try:
+            summary = rt_link.fetch_summary(request.args.get("rt_id", ""), current_user.tenant_id)
+        except rt_link.RTLinkError as error:
+            return jsonify({"error": str(error)}), 400
+        summary["description"] = rt_link.change_description(summary)
+        return jsonify(summary)
+
+    @app.post("/ticket/<int:ticket_id>/rt-link")
+    @login_required
+    def change_rt_link(ticket_id):
+        """Reference an RT ticket from an existing change. The change's own
+        fields stay as they are (no re-approval); RT's summary is added as a
+        work note."""
+        ticket = tenant_record_or_404(Ticket, ticket_id)
+        if ticket.kind != "change":
+            abort(404)
+        if not user_can_manage_ticket(current_user, ticket):
+            abort(403)
+        if ticket.external_source == "rt":
+            abort(409, description=tr("This change already references RT #{id}.", id=ticket.external_id))
+        try:
+            summary = rt_link.fetch_summary(request.form.get("rt_ticket_id", ""), current_user.tenant_id)
+        except rt_link.RTLinkError as error:
+            flash(str(error), "error")
+            return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+        if summary["linked_change"]:
+            flash(tr("RT #{id} is already linked to {number}.", id=summary["id"], number=summary["linked_change"]["number"]), "error")
+            return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+        ticket.external_source, ticket.external_id = "rt", summary["id"]
+        note = f"Linked RT #{summary['id']}: {summary['subject']}\n\n{rt_link.change_description(summary)}"
+        post_ticket_comment(ticket, current_user, note[:10000])
+        log_history("ticket", ticket.id, "RT ticket linked", details=f"References RT #{summary['id']}.")
+        audit("update", ticket.number, f"rt_ticket={summary['id']}")
+        db.session.commit()
+        flash(tr("RT #{id} linked; its details were added as a work note.", id=summary["id"]), "success")
+        return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
     @app.route("/tickets/import/rt", methods=["GET", "POST"])
     @roles("admin")

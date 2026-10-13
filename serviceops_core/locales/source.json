@@ -2468,7 +2468,15 @@
    "id": "Could not allocate a unique record number; please try again."
   },
   {
+   "id": "Could not change desktop notifications in this browser.",
+   "javascript": true
+  },
+  {
    "id": "Could not connect to {name}: {error}"
+  },
+  {
+   "id": "Could not fetch the RT ticket.",
+   "javascript": true
   },
   {
    "id": "Could not fetch the sheet: {error}"
@@ -2490,6 +2498,9 @@
    "javascript": true
   },
   {
+   "id": "Could not reach RT. Try again in a moment."
+  },
+  {
    "id": "Could not reach the server. Check the address and that it is running."
   },
   {
@@ -2498,6 +2509,14 @@
   },
   {
    "id": "Could not reach the server. The card was not moved.",
+   "javascript": true
+  },
+  {
+   "id": "Could not reach the server. Try again.",
+   "javascript": true
+  },
+  {
+   "id": "Could not turn on desktop notifications.",
    "javascript": true
   },
   {
@@ -2700,6 +2719,9 @@
   },
   {
    "id": "Custom Snipe-IT proxy (HTTP/HTTPS, used only when the mode above is custom)"
+  },
+  {
+   "id": "Custom browser push notification proxy (HTTP/HTTPS, used only when the mode above is custom)"
   },
   {
    "id": "Custom email delivery proxy (used only when the mode above is Custom)"
@@ -3028,6 +3050,17 @@
    "id": "Deselect filtered"
   },
   {
+   "id": "Desktop notifications are on for this browser.",
+   "javascript": true
+  },
+  {
+   "id": "Desktop notifications on this browser"
+  },
+  {
+   "id": "Desktop notifications turned off for this browser.",
+   "javascript": true
+  },
+  {
    "id": "Detailed logs · {instance_name}"
   },
   {
@@ -3212,6 +3245,9 @@
    "javascript": true
   },
   {
+   "id": "Drop here to move the card"
+  },
+  {
    "id": "Due"
   },
   {
@@ -3337,6 +3373,9 @@
    "id": "Enable Snipe-IT sync"
   },
   {
+   "id": "Enable browser desktop notifications (Web Push)"
+  },
+  {
    "id": "Enable channel"
   },
   {
@@ -3416,6 +3455,10 @@
   },
   {
    "id": "Enter a valid syslog port."
+  },
+  {
+   "id": "Enter an RT ticket number.",
+   "javascript": true
   },
   {
    "id": "Enter the 6-digit code from your authenticator app, or one of your backup codes."
@@ -3717,6 +3760,13 @@
    "id": "Favorites"
   },
   {
+   "id": "Fetch from RT"
+  },
+  {
+   "id": "Fetching RT #{id}…",
+   "javascript": true
+  },
+  {
    "id": "Field"
   },
   {
@@ -3740,6 +3790,13 @@
   },
   {
    "id": "Fields where two sources disagree. The higher-priority source wins."
+  },
+  {
+   "id": "Filled from RT #{id}: {subject}",
+   "javascript": true
+  },
+  {
+   "id": "Fills the short description, description and owning team from the RT ticket. You can edit everything before submitting."
   },
   {
    "id": "Filter"
@@ -4931,6 +4988,9 @@
    "id": "Legal holds"
   },
   {
+   "id": "Let changes reference an RT ticket (fetch its details into the change)"
+  },
+  {
    "id": "Let investigations think longer"
   },
   {
@@ -4956,6 +5016,9 @@
   },
   {
    "id": "Link CIs"
+  },
+  {
+   "id": "Link RT ticket"
   },
   {
    "id": "Link affected CIs"
@@ -6205,6 +6268,9 @@
    "id": "Not imported:"
   },
   {
+   "id": "Not linked"
+  },
+  {
    "id": "Not mapped"
   },
   {
@@ -6328,6 +6394,9 @@
    "id": "Notice period"
   },
   {
+   "id": "Notification"
+  },
+  {
    "id": "Notification & escalation policy"
   },
   {
@@ -6389,6 +6458,10 @@
   },
   {
    "id": "Ollama"
+  },
+  {
+   "id": "On for this browser.",
+   "javascript": true
   },
   {
    "id": "On status page"
@@ -6769,6 +6842,10 @@
   },
   {
    "id": "Owning team"
+  },
+  {
+   "id": "Owning team set to {team}.",
+   "javascript": true
   },
   {
    "id": "Owning team: {team}",
@@ -7440,6 +7517,16 @@
    "id": "RPO {backup_rpo_hours}h"
   },
   {
+   "id": "RT #{id} is already linked to {number}.",
+   "javascript": true
+  },
+  {
+   "id": "RT #{id} linked; its details were added as a work note."
+  },
+  {
+   "id": "RT #{id} was not found."
+  },
+  {
    "id": "RT API token"
   },
   {
@@ -7447,6 +7534,9 @@
   },
   {
    "id": "RT Queue maps to an owning team (matched by name, or created if none matches). RT Requestor/Owner map to ServiceOps users by email (auto-created if not found); a ticket whose Requestor has no usable email is credited to a placeholder \"RT Import (unresolved requester)\" account rather than to whoever ran the import. RT Status/Priority map to the closest ServiceOps equivalent — an unrecognized status is reported as an error rather than silently guessed. Every correspondence message, status change, and file attachment from RT's full history is imported, in order: messages and status changes as a dated log folded into the description, and attachments as real downloadable files (subject to the same file-type allowlist and malware scan a normal upload gets — a rejected one is still noted by filename in the description log). The RT ticket number is kept as a \"Source ticket #\" and is searchable from the relevant list's search box. A ticket already imported (matched by its RT ticket ID) is always skipped, never duplicated — safe to re-run after fixing a mapping problem, though an already-imported record won't be retroactively corrected by a later re-run; fix it by hand or delete and re-import it. Historical changes are inserted as already-decided records — no CCB/approval tasks are spun up for them, since those already happened in RT."
+  },
+  {
+   "id": "RT answered with an error ({status})."
   },
   {
    "id": "RT base URL"
@@ -7476,7 +7566,25 @@
    "id": "RT import queued (job #{id}). This runs in the background."
   },
   {
+   "id": "RT is not configured: set the RT base URL and API token on the RT page."
+  },
+  {
+   "id": "RT number"
+  },
+  {
+   "id": "RT refused the request: check the API token's rights."
+  },
+  {
    "id": "RT search query (RT's TicketSQL, e.g."
+  },
+  {
+   "id": "RT ticket"
+  },
+  {
+   "id": "RT ticket (optional)"
+  },
+  {
+   "id": "RT ticket number"
   },
   {
    "id": "RT tickets import as \"IT operations events\" (not Incidents), except a \"[CR]\"-tagged Subject, which imports as a Change instead."
@@ -7727,6 +7835,9 @@
    "javascript": true
   },
   {
+   "id": "Referencing RT tickets from changes is turned off."
+  },
+  {
    "id": "Referrer: {referrer}"
   },
   {
@@ -7788,6 +7899,10 @@
   },
   {
    "id": "Reload the page and try again."
+  },
+  {
+   "id": "Reload to see it",
+   "javascript": true
   },
   {
    "id": "Remember",
@@ -7875,6 +7990,10 @@
   },
   {
    "id": "Reopen"
+  },
+  {
+   "id": "Replace the current {field} with the RT ticket's?",
+   "javascript": true
   },
   {
    "id": "Replay"
@@ -9310,6 +9429,10 @@
    "id": "Show SLA breached / at-risk widgets"
   },
   {
+   "id": "Show ServiceOps notifications on this computer even when no ServiceOps tab is open.",
+   "javascript": true
+  },
+  {
    "id": "Show errors"
   },
   {
@@ -9320,9 +9443,6 @@
   },
   {
    "id": "Show raw snapshot values"
-  },
-  {
-   "id": "Show {history} earlier version{value}"
   },
   {
    "id": "Showing the first {open_requests} open requests."
@@ -9474,6 +9594,10 @@
   },
   {
    "id": "Some services are degraded"
+  },
+  {
+   "id": "Someone else just updated this record.",
+   "javascript": true
   },
   {
    "id": "Something else"
@@ -10246,6 +10370,9 @@
    "id": "The proposed ticket update is not valid."
   },
   {
+   "id": "The push subscription keys are invalid."
+  },
+  {
    "id": "The question and required instructions exceed this model's context. Shorten the question or select a larger-context model."
   },
   {
@@ -10378,6 +10505,16 @@
   },
   {
    "id": "This attachment could not be verified as safe and is temporarily unavailable. Please contact an administrator."
+  },
+  {
+   "id": "This browser blocks notifications for ServiceOps. Allow them in the browser's site settings.",
+   "javascript": true
+  },
+  {
+   "id": "This browser's push service is not supported."
+  },
+  {
+   "id": "This change already references RT #{id}."
   },
   {
    "id": "This contact is under an active legal hold and cannot be erased."
@@ -10631,7 +10768,15 @@
    "id": "Turn AI on for this organization"
   },
   {
+   "id": "Turn off",
+   "javascript": true
+  },
+  {
    "id": "Turn off to stop receiving any email for your notifications; you'll still see them in your in-app inbox."
+  },
+  {
+   "id": "Turn on",
+   "javascript": true
   },
   {
    "id": "Turn this off and hosted services are never used, whatever else is set. An outside service receives the question and the records needed to answer it, never the asker's name or email. Use a plan whose terms do not keep or train on what it receives: free tiers (Google AI Studio's, for example) may use it to improve the provider's products."
@@ -11187,6 +11332,9 @@
    "id": "Web"
   },
   {
+   "id": "Web Push contact email (shared with browser push services)"
+  },
+  {
    "id": "Webhook"
   },
   {
@@ -11592,6 +11740,9 @@
    "id": "bool"
   },
   {
+   "id": "browser push notification proxy"
+  },
+  {
    "id": "by {name}"
   },
   {
@@ -11661,6 +11812,9 @@
   },
   {
    "id": "dismissed"
+  },
+  {
+   "id": "e.g. 12345"
   },
   {
    "id": "e.g. Account tier"
@@ -11915,6 +12069,9 @@
    "id": "not yet enforced"
   },
   {
+   "id": "notification"
+  },
+  {
    "id": "object storage proxy"
   },
   {
@@ -12126,6 +12283,9 @@
    "id": "through {egress}"
   },
   {
+   "id": "ticket"
+  },
+  {
    "id": "time"
   },
   {
@@ -12301,6 +12461,12 @@
   },
   {
    "id": "{count} devices"
+  },
+  {
+   "id": "{count} earlier version"
+  },
+  {
+   "id": "{count} earlier versions"
   },
   {
    "id": "{count} files"
@@ -12700,6 +12866,10 @@
   },
   {
    "id": "{number} is {state}; change tasks cannot be added to a closed-out change."
+  },
+  {
+   "id": "{number} moved to {state}.",
+   "javascript": true
   },
   {
    "id": "{number} raised as a continual-improvement item."
