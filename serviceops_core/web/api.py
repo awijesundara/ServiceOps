@@ -122,6 +122,10 @@ from serviceops_models import (
 from serviceops_core.localization import tr
 
 
+# Largest SCIM list page; clients follow startIndex for the rest.
+SCIM_PAGE_SIZE = 200
+
+
 def scim_error(status, detail, scim_type="invalidValue"):
     abort(Response(json.dumps({
         "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
@@ -1815,9 +1819,19 @@ def register(app):
                 abort(400, description=tr("Only the SCIM filter userName eq \"value\" is supported."))
             if match:
                 query = query.filter(func.lower(User.username) == match.group(1).lower())
-            rows = query.order_by(User.id).all()
+            # RFC 7644 3.4.2.4 paging: 1-based startIndex, count capped so a
+            # large directory never answers in one response.
+            def page_arg(name, default):
+                try:
+                    return int(request.args.get(name, default))
+                except (TypeError, ValueError):
+                    scim_error(400, f"{name} must be an integer.")
+            start_index = max(1, page_arg("startIndex", 1))
+            count = min(max(0, page_arg("count", SCIM_PAGE_SIZE)), SCIM_PAGE_SIZE)
+            total = query.count()
+            rows = query.order_by(User.id).offset(start_index - 1).limit(count).all() if count else []
             return jsonify(schemas=["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-                           totalResults=len(rows), startIndex=1,
+                           totalResults=total, startIndex=start_index,
                            itemsPerPage=len(rows), Resources=[scim_user_document(user) for user in rows])
         body = scim_body()
         values = scim_attributes(body)

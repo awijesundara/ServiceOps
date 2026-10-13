@@ -174,3 +174,25 @@ def test_provisioning_requires_authorized_administrator(client, app, scim_header
         api_client.acting_user_id = user_id
         db.session.commit()
     assert client.delete(f"/scim/v2/Users/{user_id}", headers=scim_headers).status_code == 403
+
+
+def test_user_list_pages_with_start_index_and_count(client, app, scim_headers):
+    from serviceops_core.web import api as api_module
+    with app.app_context():
+        tenant = User.query.filter_by(username="admin").one().tenant_id
+        for n in range(6):
+            db.session.add(User(username=f"scim.page{n}", name=f"Page {n}", email=f"scim.page{n}@test.invalid",
+                                role="requester", password_hash="x", tenant_id=tenant))
+        db.session.commit()
+        total = User.query.filter_by(tenant_id=tenant).count()
+        ordered = [u.username for u in User.query.filter_by(tenant_id=tenant).order_by(User.id)]
+    page = client.get("/scim/v2/Users?startIndex=2&count=3", headers=scim_headers).json
+    assert page["totalResults"] == total and page["startIndex"] == 2 and page["itemsPerPage"] == 3
+    assert [r["userName"] for r in page["Resources"]] == ordered[1:4]
+    assert client.get("/scim/v2/Users?count=0", headers=scim_headers).json["Resources"] == []
+    beyond = client.get(f"/scim/v2/Users?startIndex={total + 5}", headers=scim_headers).json
+    assert beyond["Resources"] == [] and beyond["totalResults"] == total
+    assert client.get("/scim/v2/Users?count=abc", headers=scim_headers).status_code == 400
+    # The default and the largest page are capped.
+    capped = client.get("/scim/v2/Users?count=100000", headers=scim_headers).json
+    assert capped["itemsPerPage"] == min(total, api_module.SCIM_PAGE_SIZE)
