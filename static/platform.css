@@ -19,3 +19,8 @@
 .notification-bell-icon{transform-origin:50% 0;display:block}
 .notification-menu.ringing .notification-bell-icon{animation:notification-bell-ring .8s ease-in-out 1}
 @media(prefers-reduced-motion:reduce){.notification-menu.ringing .notification-bell-icon{animation:none}}
+
+/* Live updates: someone else changed the record on screen */
+.live-update-banner{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:70;display:flex;align-items:center;gap:12px;max-width:calc(100vw - 32px);padding:10px 12px 10px 16px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:0 12px 32px rgba(20,35,45,.18);font-size:14px}
+.live-update-banner .button{white-space:nowrap}
+@media(max-width:560px){.live-update-banner{flex-wrap:wrap;bottom:12px}}

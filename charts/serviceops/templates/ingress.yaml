@@ -17,6 +17,14 @@ spec:
     - host: {{ .host | quote }}
       http:
         paths:
+          {{- if $.Values.events.enabled }}
+          - path: /events/stream
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "serviceops.fullname" $ }}-events
+                port: {name: http}
+          {{- end }}
           {{- range .paths }}
           - path: {{ .path }}
             pathType: {{ .pathType }}

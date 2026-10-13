@@ -25,7 +25,7 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
-from sqlalchemy import func
+from sqlalchemy import case, func
 
 import app as core
 from serviceops_core.identity import normalize_email
@@ -513,8 +513,19 @@ def register(app):
         already renders from (recent rows + unread count/severity) so the
         client can re-render with one code path instead of two."""
         query = tenant_query(Notification).filter_by(user_id=current_user.id)
+        # One small query fingerprints the bell's state; an unchanged bell
+        # answers 304 with no body (the browser sends the last ETag).
+        latest, total, unread = query.with_entities(
+            func.max(Notification.id), func.count(Notification.id),
+            func.sum(case((Notification.read.is_(False), 1), else_=0)),
+        ).one()
+        etag = f'"n{current_user.id}-{latest or 0}-{total}-{unread or 0}"'
+        if request.headers.get("If-None-Match") == etag:
+            response = Response(status=304)
+            response.headers["ETag"] = etag
+            return response
         recent = query.order_by(Notification.created_at.desc()).limit(6).all()
-        return jsonify({
+        response = jsonify({
             "unread_count": query.filter_by(read=False).count(),
             "severity": highest_notification_severity(query),
             "latest_id": recent[0].id if recent else None,
@@ -536,6 +547,65 @@ def register(app):
                 for row in recent
             ],
         })
+        response.headers["ETag"] = etag
+        return response
+
+    @app.get("/push/config")
+    @login_required
+    def web_push_config():
+        """Whether desktop notifications are available, and the key the
+        browser subscribes with."""
+        from serviceops_core import webpush
+        enabled = core.setting_bool("WEB_PUSH_ENABLED")
+        key = webpush.public_key() if enabled else None
+        db.session.commit()  # the key pair is created on first use
+        return jsonify({"enabled": enabled, "public_key": key})
+
+    @app.post("/push/subscriptions")
+    @login_required
+    def web_push_subscribe():
+        import hashlib
+        from serviceops_core import webpush
+        from serviceops_models import WebPushSubscription
+        if not core.setting_bool("WEB_PUSH_ENABLED"):
+            abort(404)
+        body = request.get_json(silent=True) or {}
+        endpoint = str(body.get("endpoint") or "")
+        keys = body.get("keys") if isinstance(body.get("keys"), dict) else {}
+        if not webpush.endpoint_allowed(endpoint):
+            abort(400, description=tr("This browser's push service is not supported."))
+        try:
+            p256dh, auth = webpush.b64url_decode(keys.get("p256dh")), webpush.b64url_decode(keys.get("auth"))
+        except (ValueError, TypeError):
+            p256dh, auth = b"", b""
+        if len(p256dh) != 65 or p256dh[:1] != b"\x04" or len(auth) != 16:
+            abort(400, description=tr("The push subscription keys are invalid."))
+        digest = hashlib.sha256(endpoint.encode()).hexdigest()
+        row = WebPushSubscription.query.filter_by(endpoint_hash=digest).first()
+        if row is None:
+            row = WebPushSubscription(endpoint=endpoint, endpoint_hash=digest)
+            db.session.add(row)
+        # The same browser may sign in as someone else: it now belongs to them.
+        row.user_id, row.tenant_id = current_user.id, current_user.tenant_id
+        row.keys_encrypted = settings_cipher().encrypt(json.dumps(
+            {"p256dh": keys["p256dh"], "auth": keys["auth"]}).encode()).decode()
+        row.user_agent = (request.headers.get("User-Agent") or "")[:200]
+        audit("update", current_user.username, "desktop notifications enabled for a browser")
+        db.session.commit()
+        return jsonify({"subscribed": True}), 201
+
+    @app.delete("/push/subscriptions")
+    @login_required
+    def web_push_unsubscribe():
+        import hashlib
+        from serviceops_models import WebPushSubscription
+        body = request.get_json(silent=True) or {}
+        digest = hashlib.sha256(str(body.get("endpoint") or "").encode()).hexdigest()
+        removed = WebPushSubscription.query.filter_by(endpoint_hash=digest, user_id=current_user.id).delete()
+        if removed:
+            audit("update", current_user.username, "desktop notifications disabled for a browser")
+        db.session.commit()
+        return jsonify({"removed": bool(removed)})
 
     @app.get("/notifications")
     @login_required

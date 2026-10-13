@@ -48,3 +48,18 @@
   .board-filters { align-items: stretch; flex-direction: column; }
   .board-filters label { min-width: 0; }
 }
+
+/* Drag and drop: the lane under the pointer highlights; an empty lane turns into a drop zone */
+.board-lane{transition:background .12s ease,border-color .12s ease}
+.task-board.is-dragging .board-lane{border-style:dashed}
+.board-lane.drop-target{background:#e3f1ee;border-color:var(--green)}
+.board-empty .board-empty-drop{display:none}
+.task-board.is-dragging .board-empty{display:flex;align-items:center;justify-content:center;min-height:96px;margin:0;border:2px dashed #b9c9cd;border-radius:8px;background:rgba(255,255,255,.55)}
+.task-board.is-dragging .board-empty[hidden]{display:none}
+.task-board.is-dragging .board-empty .board-empty-idle{display:none}
+.task-board.is-dragging .board-empty .board-empty-drop{display:inline}
+.board-lane.drop-target .board-empty{border-color:var(--green);color:var(--green-dark);font-weight:650}
+.board-card.is-saving{opacity:.7;pointer-events:none}
+.board-card.is-saving::after{content:"";height:3px;border-radius:2px;background:linear-gradient(90deg,var(--green) 30%,transparent 30%) 0 0/200% 100%;animation:board-saving 1s linear infinite}
+@keyframes board-saving{to{background-position:-200% 0}}
+.reduced-motion .board-card.is-saving::after{animation:none}

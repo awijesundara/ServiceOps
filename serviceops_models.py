@@ -107,6 +107,7 @@ __all__ = [
     "NotificationPreference",
     "NotificationTemplate",
     "MobilePushDevice",
+    "WebPushSubscription",
     "SupportGroup",
     "GroupMember",
     "DirectoryGroupMapping",
@@ -1837,6 +1838,22 @@ class NotificationTemplate(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     __table_args__ = (db.UniqueConstraint("tenant_id", "event_type", name="uq_notification_template_tenant_event"),)
+
+
+class WebPushSubscription(db.Model):
+    """A browser's Web Push subscription for one signed-in user. The
+    subscription keys are encrypted at rest; endpoint_hash is the lookup
+    key so the endpoint URL itself never needs an index."""
+    id = db.Column(db.Integer, primary_key=True)
+    endpoint = db.Column(db.Text, nullable=False)
+    endpoint_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    keys_encrypted = db.Column(db.Text, nullable=False)
+    user_agent = db.Column(db.String(200), nullable=False, default="")
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    last_used_at = db.Column(db.DateTime(timezone=True))
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    user = db.relationship("User")
 
 
 class MobilePushDevice(db.Model):

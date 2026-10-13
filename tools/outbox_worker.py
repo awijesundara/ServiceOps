@@ -16,6 +16,36 @@ from app import (
 )
 
 running = True
+_listener = None
+
+
+def wait_for_work(seconds):
+    """Sleep until an outbox event is queued (PostgreSQL NOTIFY on
+    serviceops_outbox, see serviceops_core/realtime.py) or `seconds` pass.
+    Emails, Teams/Chat messages, webhooks and push notifications go out
+    within moments of being queued instead of on the next timed pass. Any
+    other database, or a lost listener, falls back to a plain sleep."""
+    global _listener
+    if db.engine.dialect.name != "postgresql":
+        time.sleep(seconds)
+        return
+    try:
+        if _listener is None or _listener.closed:
+            import psycopg
+            dsn = db.engine.url.set(drivername="postgresql").render_as_string(hide_password=False)
+            _listener = psycopg.connect(dsn, autocommit=True)
+            _listener.execute("LISTEN serviceops_outbox")
+        for _ in _listener.notifies(timeout=seconds, stop_after=1):
+            break
+    except Exception:
+        app.logger.warning("Outbox wake-up listener unavailable; using timed checks", exc_info=True)
+        try:
+            if _listener is not None:
+                _listener.close()
+        except Exception:
+            pass
+        _listener = None
+        time.sleep(seconds)
 
 
 def stop(_signum, _frame):
@@ -80,4 +110,6 @@ with app.app_context():
             app.logger.exception("Could not complete the GitHub update check")
             db.session.rollback()
         if not processed:
-            time.sleep(5)
+            # At most 10 s, so the heartbeat above stays well inside the
+            # 30 s readiness window.
+            wait_for_work(10)

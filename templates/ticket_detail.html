@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_rack_pin.html" import rack_pin %}
 {% block title %}{{ ticket.number }} · {{ ticket.title }} · {{ instance_name }}{% endblock %}
-{% block content %}
+{% block content %}<span hidden data-live-watch="ticket:{{ ticket.id }}"></span>
 {% set primary_ci_link = (ci_links|selectattr('relationship_role','equalto','Primary CI')|first) %}
 {% set display_ci = ticket.change_governance.ci if ticket.change_governance and ticket.change_governance.ci else (primary_ci_link.ci if primary_ci_link else None) %}
 <section class="record-shell task-record-shell">
@@ -38,6 +38,11 @@
       <label class="required-field"><span>{{ tr('Requested by') }}</span><output class="readonly-field">{{ user_link(ticket.requester) }} · {{ ticket.requester.email }}</output></label>
       <label><span>{{ tr('Impact') }}</span><select name="impact" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.impact==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label><span>{{ tr('Change model') }}</span><input value="{{ ticket.change_governance.change_type if ticket.change_governance else tr('Not set') }}" disabled></label>
+      {% if rt_url or rt_link_enabled %}<div class="record-field rt-ref-field"><span>{{ tr('RT ticket') }}</span>
+        {% if rt_url %}<span class="rt-ref"><a href="{{ rt_url }}" target="_blank" rel="noopener noreferrer">RT #{{ ticket.external_id }} ↗</a></span>
+        {% elif ticket.external_source == 'rt' %}<span class="rt-ref">RT #{{ ticket.external_id }}</span>
+        {% elif can_manage_ticket %}<span class="rt-link-form"><input form="rt-link-form" name="rt_ticket_id" inputmode="numeric" placeholder="{{ tr('RT number') }}" aria-label="{{ tr('RT ticket number') }}" required><button form="rt-link-form" class="button">{{ tr('Link RT ticket') }}</button></span>
+        {% else %}<span class="muted">{{ tr('Not linked') }}</span>{% endif %}</div>{% endif %}
       <label><span>{{ tr('Urgency') }}</span><select name="urgency" {% if not can_manage_ticket %}disabled{% endif %}>{% for value in ['Critical','High','Medium','Low'] %}<option {% if ticket.urgency==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label><span>{{ tr('Priority') }}</span><select name="priority" {% if not can_manage_ticket %}disabled{% endif %}>{% for priority in ['P1','P2','P3','P4'] %}<option {% if ticket.priority==priority %}selected{% endif %}>{{ tr_value(priority) }}</option>{% endfor %}</select></label>
       <label><span>{{ tr('Configuration item') }}</span><input value="{{ display_ci.name if display_ci else tr('Not selected') }}" disabled>{% if display_ci and rack_labels.get(display_ci.id) %}<a class="ci-rack-location" href="#{{ 'gov-affected-cis' if ticket.change_governance else 'affected-cis' }}" title="{{ tr('Rack {location}', location=rack_labels[display_ci.id]) }}" aria-label="{{ tr('View location: {location}', location=tr('Rack {location}', location=rack_labels[display_ci.id])) }}">{{ rack_pin() }}<span>{{ tr('View location') }}</span></a>{% endif %}</label>
@@ -410,4 +415,5 @@
 {% if not internal_view and can_manage_ticket and reassignable_teams %}
 <details class="panel incident-reassign"><summary>{{ tr('Reassign to another team') }}</summary><form method="post" class="inline-form"><input type="hidden" name="action" value="reassign_team"><select name="new_group_id" required><option value="">{{ tr('Select a team') }}</option>{% for team in reassignable_teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select><button>{{ tr('Send to team') }}</button></form></details>
 {% endif %}
+{% if rt_link_enabled and not ticket.external_source and can_manage_ticket %}<form id="rt-link-form" method="post" action="{{ url_for('change_rt_link', ticket_id=ticket.id) }}" hidden></form>{% endif %}
 {% endblock %}

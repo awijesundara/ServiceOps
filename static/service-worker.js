@@ -78,3 +78,28 @@ self.addEventListener("fetch", (event) => {
       .catch(() => caches.match(event.request))
   );
 });
+
+// Web Push: show the notification the server sent (encrypted end to end),
+// and open its record when clicked.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (error) { data = {body: event.data ? event.data.text() : ""}; }
+  event.waitUntil(self.registration.showNotification(data.title || "ServiceOps", {
+    body: data.body || "", tag: data.tag, data: {url: data.url || "/notifications"},
+    icon: "/static/icons/serviceops-icon-192.png", badge: "/static/icons/serviceops-icon-192.png",
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || "/notifications", self.location.origin);
+  if (target.origin !== self.location.origin) return;
+  event.waitUntil(self.clients.matchAll({type: "window", includeUncontrolled: true}).then((windows) => {
+    for (const client of windows) {
+      if (client.url.startsWith(self.location.origin) && "focus" in client) {
+        return client.navigate(target.href).then((c) => (c || client).focus());
+      }
+    }
+    return self.clients.openWindow(target.href);
+  }));
+});
