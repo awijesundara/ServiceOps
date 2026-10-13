@@ -179,8 +179,9 @@ def register(app):
                 abort(400, description=tr("An asset tag and a name are required."))
             if len(asset_tag) > 80 or len(name) > 160:
                 abort(400, description=tr("Use at most 80 characters for the asset tag and 160 for the name."))
-            # asset_tag is unique across the installation, not per tenant.
-            if Asset.query.filter(func.lower(Asset.asset_tag) == asset_tag.casefold()).first():
+            # Unique per tenant, ignoring case (uq_asset_tenant_tag).
+            if Asset.query.filter(Asset.tenant_id == current_user.tenant_id,
+                                  func.lower(Asset.asset_tag) == asset_tag.casefold()).first():
                 abort(409, description=tr("Asset tag {tag} is already in use.", tag=asset_tag))
             asset = Asset(asset_tag=asset_tag, name=name,
                           asset_type=request.form.get("asset_type", "").strip()[:80] or "Hardware",

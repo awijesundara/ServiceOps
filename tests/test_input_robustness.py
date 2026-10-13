@@ -156,3 +156,21 @@ def test_a_row_with_a_legacy_overlong_value_stays_editable(app):
         with pytest.raises(ValueTooLong):
             db.session.flush()
         db.session.rollback()
+
+
+def test_asset_tags_are_unique_per_tenant_not_across_tenants(app, client):
+    with app.app_context():
+        other = Tenant(slug="asset-tags-b", name="Asset tags B")
+        db.session.add(other)
+        db.session.flush()
+        db.session.add(User(username="tags.admin", name="Tags Admin", email="tags.admin@b.invalid", role="admin",
+                            password_hash=generate_password_hash("TagsAdmin123!"), tenant_id=other.id))
+        db.session.commit()
+    data = {"asset_tag": "LAP-100", "name": "Laptop", "asset_type": "Laptop", "status": "In stock"}
+    assert client.post("/assets/new", data=data).status_code == 302
+    client.post("/logout")
+    assert client.post("/login", data={"username": "tags.admin", "password": "TagsAdmin123!"}).status_code in (302, 303)
+    assert client.post("/assets/new", data={**data, "asset_tag": "lap-100"}).status_code == 302  # other tenant
+    assert client.post("/assets/new", data=data).status_code == 409  # same tenant, any case
+    with app.app_context():
+        assert Asset.query.filter(db.func.lower(Asset.asset_tag) == "lap-100").count() == 2

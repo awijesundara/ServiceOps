@@ -619,8 +619,10 @@ class Knowledge(db.Model):
 
 
 class Asset(db.Model):
+    # Tags are unique within a tenant, ignoring case (migration 20261013_0124).
+    __table_args__ = (db.Index("uq_asset_tenant_tag", "tenant_id", db.text("lower(asset_tag)"), unique=True),)
     id = db.Column(db.Integer, primary_key=True)
-    asset_tag = db.Column(db.String(80), unique=True, nullable=False)
+    asset_tag = db.Column(db.String(80), nullable=False)
     name = db.Column(db.String(160), nullable=False)
     asset_type = db.Column(db.String(80), nullable=False)
     status = db.Column(db.String(40), nullable=False, default="In stock")
