@@ -265,7 +265,9 @@ def test_approved_ticket_comment_action_requires_exact_browser_review(ai_browser
     app, base, ticket_id = ai_browser_server
     monkeypatch.setenv("AI_SELF_HOSTED_ENDPOINTS", ENDPOINT)
     enable_ai(app, actions_enabled=True)
-    answer = "Check the VPN gateway and client logs [S1]."
+    # Only the "Draft operator response" section becomes the comment draft.
+    reply = "We are checking the VPN gateway and client logs."
+    answer = f"Summary:\nVPN unavailable for one operator [S1].\n\nDraft operator response:\n{reply}\n\nNext checks:\nGateway health."
     monkeypatch.setattr(service, "generate_stream", lambda config, messages, on_delta, thinking=None: (
         on_delta("content", answer), (answer, "", {"completion_tokens": 8}))[1])
 
@@ -280,18 +282,19 @@ def test_approved_ticket_comment_action_requires_exact_browser_review(ai_browser
         page.wait_for_selector("[data-ai-status]")
         start_worker(app).join(timeout=10)
         wait_for(lambda: page.locator("[data-ai-status]").inner_text().strip() == "Complete")
-        page.get_by_role("button", name="Prepare as ticket comment").click()
+        page.get_by_role("button", name="Review comment draft").click()
         page.wait_for_load_state("networkidle")
-        assert page.get_by_role("heading", name="Exact proposed change").is_visible()
-        assert page.locator(".detail-list dd").inner_text() == answer
+        # The comment draft is shown in full and editable before anything is posted.
+        assert page.get_by_role("heading", name="Review your comment").is_visible()
+        assert page.locator("#ai-comment-body").input_value() == reply
         assert not axe_violations(page)
-        page.get_by_role("button", name="Approve and apply").click()
+        page.get_by_role("button", name="Post comment").click()
         page.wait_for_load_state("networkidle")
         assert "Approved and applied to the ticket" in page.inner_text("body")
         with app.app_context():
             comments = Comment.query.filter_by(ticket_id=ticket_id).order_by(Comment.id).all()
             assert len(comments) == before + 1
-            assert comments[-1].body == answer
+            assert comments[-1].body == reply
         browser.close()
 
 
@@ -600,11 +603,11 @@ def test_chat_reappears_without_a_flash_or_replayed_entrance_across_a_page_navig
         wait_for(lambda: page.locator("[data-chat]").is_visible())
         assert page.locator(".ai-avatar").count() == 1  # the redesigned header
         # The floating surface follows the supplied compact-chat reference:
-        # narrow card, blue gradient header, presence strip and circular send control.
+        # narrow frosted-glass card, presence strip and circular send control.
         page.wait_for_timeout(250)  # measure after the 180 ms entrance animation settles
-        geometry = page.locator("[data-chat]").evaluate("e => { const r=e.getBoundingClientRect(), h=getComputedStyle(e.querySelector('.ai-chat-head')), s=e.querySelector('[data-chat-send]').getBoundingClientRect(); return {width:r.width,height:r.height,background:h.backgroundImage,send:[s.width,s.height]}; }")
+        geometry = page.locator("[data-chat]").evaluate("e => { const r=e.getBoundingClientRect(), c=getComputedStyle(e), s=e.querySelector('[data-chat-send]').getBoundingClientRect(); return {width:r.width,height:r.height,glass:c.backdropFilter||c.webkitBackdropFilter,send:[s.width,s.height]}; }")
         assert 340 <= geometry["width"] <= 360 and geometry["height"] <= 590
-        assert "linear-gradient" in geometry["background"]
+        assert "blur" in geometry["glass"]
         assert geometry["send"] == [46, 46]
         assert page.locator(".ai-presence").is_visible()
         assert page.get_by_label("Chat options").is_visible()
