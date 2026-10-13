@@ -36,7 +36,7 @@
     {% if profile.manager or profile.teams or profile.direct_reports %}
     <section class="panel">
       <h2>{{ tr('Organization') }}</h2>
-      {% if profile.manager %}<h3>{{ tr('Manager') }}</h3><p class="people-profile-person">{{ user_avatar(profile.manager) }}{{ user_link(profile.manager) }}</p>{% endif %}
+      {% if profile.manager %}<h3>{{ tr('Manager') }}</h3><div class="people-profile-person">{{ user_avatar(profile.manager) }}{{ user_link(profile.manager) }}</div>{% endif %}
       {% if profile.teams %}<h3>{{ tr('Teams') }}</h3><p>{% for team in profile.teams %}<span class="tag">{{ team.name }}</span> {% endfor %}</p>{% endif %}
       {% if profile.direct_reports %}<h3>{{ tr('Direct reports') }}</h3>
       <ul class="people-profile-list">{% for report in profile.direct_reports %}<li class="people-profile-person">{{ user_avatar(report) }}{{ user_link(report) }}</li>{% endfor %}</ul>{% endif %}
