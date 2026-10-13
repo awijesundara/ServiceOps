@@ -7807,6 +7807,10 @@ def create_app(test_config=None):
         return Markup("").join(pieces)
 
     app.jinja_env.globals["mentions_html"] = mentions_html
+    # Pages open the live event stream only where a deployment routes
+    # /events/stream to the events service (the Helm chart sets this);
+    # elsewhere they use timed checks without a failing request.
+    app.jinja_env.globals["live_events_enabled"] = env_bool("LIVE_EVENTS_ENABLED")
     app.jinja_env.globals["csp_nonce"] = csp_nonce
     app.jinja_env.globals["attachment_supported_types"] = attachment_supported_types
     app.jinja_env.globals["can_delete_attachment"] = lambda attachment: user_can_delete_attachment(current_user, attachment)
