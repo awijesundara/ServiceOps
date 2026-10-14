@@ -146,7 +146,9 @@ def register(app):
             lanes = [(None, items)]
         columns = [{"status": status, "lanes": [[item for item in rows if item.status_id == status.id]
                                                for _, rows in lanes]} for status in statuses]
-        counts = service.status_counts(project)
+        # Column counts are the cards this board shows (same filters, no
+        # epics), counted in SQL so a column beyond the card limit is right.
+        counts = dict(query.with_entities(WorkItem.status_id, db.func.count()).group_by(WorkItem.status_id).all())
         return dict(filters=filters, swimlane=swimlane, lane_titles=[title for title, _ in lanes], columns=columns,
                     counts=counts, members=service.assignable_users(project), labels=service.project_labels(project),
                     epics=service.epics(project))
