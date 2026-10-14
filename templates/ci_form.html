@@ -96,7 +96,7 @@
   {% endif %}
   <h3>{{ tr('Hostname resolution') }}</h3>
   <div id="ci-form-dns" class="muted" data-ci-id="{{ ci.id }}">{{ tr('Looking up…') }}</div>
-  <script src="{{ url_for('static', filename='ci-form-dns.js', v=app_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='ci-form-dns.js', v=asset_version) }}" defer></script>
   {% if discovered.lldp_neighbors %}
   <h3>{{ tr('LLDP neighbors') }}<span class="badge">{{ discovered.lldp_neighbors|length }}</span></h3>
   <div class="task-list-scroll"><table><thead><tr><th>{{ tr("This device's port") }}</th><th>{{ tr('Neighbor') }}</th><th>{{ tr("Neighbor's port") }}</th><th>{{ tr('CMDB match') }}</th></tr></thead><tbody>

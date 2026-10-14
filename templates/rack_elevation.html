@@ -31,5 +31,5 @@
   <section class="panel rack-equipment-inventory"><h2>{{ tr('Equipment inventory') }}</h2><p class="muted">{{ tr('Model images are used when available. Type illustrations represent the identified equipment category. Select equipment to view or update its details.') }}</p><div id="rack-equipment-list" class="rack-equipment-grid"></div></section>
   <p id="rack-elevation-empty" class="muted" hidden>{{ tr('Nothing mounted in this rack yet.') }}</p>
 </div>
-<script src="{{ url_for('static', filename='rack-elevation.js', v=app_version) }}" defer></script>
+<script src="{{ url_for('static', filename='rack-elevation.js', v=asset_version) }}" defer></script>
 {% endblock %}

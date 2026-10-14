@@ -181,5 +181,5 @@
 
   <script type="application/json" id="ai-data">{{ {"services": services, "modes": modes}|tojson }}</script>
 </div>
-<script src="{{ url_for('static', filename='ai-settings.js', v=app_version) }}" defer></script>
+<script src="{{ url_for('static', filename='ai-settings.js', v=asset_version) }}" defer></script>
 {% endblock %}

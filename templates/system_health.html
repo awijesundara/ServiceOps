@@ -146,5 +146,5 @@ helm upgrade serviceops charts/serviceops -n operations --reuse-values \
     <button class="button">{{ tr('Clear error log') }}</button>
   </form>
 </section>
-<script src="{{ url_for('static', filename='performance-chart.js', v=app_version) }}"></script>
+<script src="{{ url_for('static', filename='performance-chart.js', v=asset_version) }}"></script>
 {% endblock %}

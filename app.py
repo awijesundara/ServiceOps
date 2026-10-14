@@ -152,6 +152,29 @@ APP_VERSION = (Path(__file__).resolve().parent / "VERSION").read_text().strip()
 APP_START_MONOTONIC = time_module.monotonic()
 
 
+_asset_fingerprints = {}
+
+
+def static_asset_version(static_folder):
+    """The app version plus a short fingerprint of the static files, used in
+    every ?v= asset URL and in the service worker's cache name. Assets are
+    served as immutable for a year, so a deploy that changes a stylesheet or
+    script without a new release version must still change the URL, or
+    browsers keep the old file. Computed once per process."""
+    if static_folder not in _asset_fingerprints:
+        digest = hashlib.sha256()
+        for root, dirs, files in os.walk(static_folder):
+            dirs.sort()
+            for name in sorted(files):
+                path = os.path.join(root, name)
+                digest.update(os.path.relpath(path, static_folder).encode())
+                with open(path, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(1 << 20), b""):
+                        digest.update(chunk)
+        _asset_fingerprints[static_folder] = digest.hexdigest()[:10]
+    return f"{APP_VERSION}-{_asset_fingerprints[static_folder]}"
+
+
 def display_version():
     # STORAGE_MODE=ipfs is a database-less deployment with real, disclosed
     # operating-boundary differences from the default PostgreSQL mode (see
@@ -7752,6 +7775,7 @@ def create_app(test_config=None):
             "has_company_logo": os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png")),
             "test_fixture_active": setting_bool("TEST_FIXTURE_ACTIVE"),
             "app_version": display_version(),
+            "asset_version": static_asset_version(app.static_folder),
             "ldap_username_placeholder": ldap_username_placeholder(),
         }
         if not current_user.is_authenticated:

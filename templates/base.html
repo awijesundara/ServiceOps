@@ -7,8 +7,8 @@
 <html lang="{{ ui_language }}" dir="{{ ui_direction }}"{% if html_classes %} class="{{ html_classes|join(' ') }}"{% endif %}>
 <head>
   <link rel="manifest" href="{{ url_for('pwa_manifest') }}">
-  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png', v=app_version) }}">
-  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png', v=app_version) }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png', v=asset_version) }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png', v=asset_version) }}">
   <meta name="theme-color" content="{{ brand_teal|css_color('#003e4c') }}">
   <meta name="color-scheme" content="{{ theme_color_scheme }}">
   <meta charset="utf-8">
@@ -17,53 +17,53 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ instance_name|default('ServiceOps') }}{% endblock %}</title>
   <script type="application/json" id="serviceops-i18n">{{ ui_javascript_catalog|tojson }}</script>
-  <script src="{{ url_for('static', filename='i18n.js', v=app_version) }}"></script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=app_version) }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v=app_version) }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v=app_version) }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v=app_version) }}">
-  {% if ui_direction == 'rtl' %}<link rel="stylesheet" href="{{ url_for('static', filename='rtl.css', v=app_version) }}">{% endif %}
-  {% if request.endpoint == 'task_board' %}<link rel="stylesheet" href="{{ url_for('static', filename='task-board.css', v=app_version) }}">{% endif %}
-  {% if request.blueprint == 'projects' %}<link rel="stylesheet" href="{{ url_for('static', filename='projects.css', v=app_version) }}">{% endif %}
-  {% if request.endpoint in ['status_page', 'status_page_default'] %}<link rel="stylesheet" href="{{ url_for('static', filename='status-page.css', v=app_version) }}">{% endif %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v=app_version) }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v=app_version) }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='utilities.css', v=app_version) }}">
-  {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='notification-audiences.css', v=app_version) }}">{% endif %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='client-management.css', v=app_version) }}">
-  {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css', v=app_version) }}">{% endif %}
-  <script src="{{ url_for('static', filename='platform.js', v=app_version) }}" defer></script>
-  <script src="{{ url_for('static', filename='lookup.js', v=app_version) }}" defer></script>
-  <script src="{{ url_for('static', filename='select-enhance.js', v=app_version) }}" defer></script>
-  <script src="{{ url_for('static', filename='ticket-category.js', v=app_version) }}" defer></script>
-  <script src="{{ url_for('static', filename='list-filter.js', v=app_version) }}" defer></script>
-  <script src="{{ url_for('static', filename='columns-picker.js', v=app_version) }}" defer></script>
-  <script src="{{ url_for('static', filename='admin-nav.js', v=app_version) }}" defer></script>
-  <script src="{{ url_for('static', filename='admin-context.js', v=app_version) }}" defer></script>
-  {% if request.endpoint == 'ticket_detail' %}<script src="{{ url_for('static', filename='attachment-drop.js', v=app_version) }}" defer></script>{% endif %}
-  {% if request.blueprint == 'projects' %}<script src="{{ url_for('static', filename='projects.js', v=app_version) }}" defer></script>{% endif %}
-  {% if current_user.is_authenticated %}<script src="{{ url_for('static', filename='guided-tour.js', v=app_version) }}" defer></script>{% endif %}
+  <script src="{{ url_for('static', filename='i18n.js', v=asset_version) }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='enterprise.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='itil.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v=asset_version) }}">
+  {% if ui_direction == 'rtl' %}<link rel="stylesheet" href="{{ url_for('static', filename='rtl.css', v=asset_version) }}">{% endif %}
+  {% if request.endpoint == 'task_board' %}<link rel="stylesheet" href="{{ url_for('static', filename='task-board.css', v=asset_version) }}">{% endif %}
+  {% if request.blueprint == 'projects' %}<link rel="stylesheet" href="{{ url_for('static', filename='projects.css', v=asset_version) }}">{% endif %}
+  {% if request.endpoint in ['status_page', 'status_page_default'] %}<link rel="stylesheet" href="{{ url_for('static', filename='status-page.css', v=asset_version) }}">{% endif %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='utilities.css', v=asset_version) }}">
+  {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='notification-audiences.css', v=asset_version) }}">{% endif %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='client-management.css', v=asset_version) }}">
+  {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css', v=asset_version) }}">{% endif %}
+  <script src="{{ url_for('static', filename='platform.js', v=asset_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='lookup.js', v=asset_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='select-enhance.js', v=asset_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='ticket-category.js', v=asset_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='list-filter.js', v=asset_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='columns-picker.js', v=asset_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='admin-nav.js', v=asset_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='admin-context.js', v=asset_version) }}" defer></script>
+  {% if request.endpoint == 'ticket_detail' %}<script src="{{ url_for('static', filename='attachment-drop.js', v=asset_version) }}" defer></script>{% endif %}
+  {% if request.blueprint == 'projects' %}<script src="{{ url_for('static', filename='projects.js', v=asset_version) }}" defer></script>{% endif %}
+  {% if current_user.is_authenticated %}<script src="{{ url_for('static', filename='guided-tour.js', v=asset_version) }}" defer></script>{% endif %}
   {% if current_user.is_authenticated and ((request.endpoint or '').startswith('ai.') or ai_chat_available(current_user)) %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='ai-chat.css', v=app_version) }}">
-  {% if ai_chat_available(current_user) %}<script src="{{ url_for('static', filename='ai-chat-boot.js', v=app_version) }}"></script>{% endif %}
-  <script src="{{ url_for('static', filename='ai-render.js', v=app_version) }}" defer></script>
-  <script src="{{ url_for('static', filename='ai-chat.js', v=app_version) }}" defer></script>
-  <script src="{{ url_for('static', filename='ai-chat-panel.js', v=app_version) }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='ai-chat.css', v=asset_version) }}">
+  {% if ai_chat_available(current_user) %}<script src="{{ url_for('static', filename='ai-chat-boot.js', v=asset_version) }}"></script>{% endif %}
+  <script src="{{ url_for('static', filename='ai-render.js', v=asset_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='ai-chat.js', v=asset_version) }}" defer></script>
+  <script src="{{ url_for('static', filename='ai-chat-panel.js', v=asset_version) }}" defer></script>
   {% endif %}
   {# Last, so its html.theme-dark rules follow every light stylesheet. "system" lets the browser apply it only while the device is in dark mode. #}
-  {% if request.endpoint == 'preferences' or ui_theme in ui_dark_themes or ui_theme == 'system' %}<link id="serviceops-dark-theme" rel="stylesheet" href="{{ url_for('static', filename='dark.css', v=app_version) }}" media="{{ theme_dark_media }}">{% endif %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='themes.css', v=app_version) }}">
-  {% if request.endpoint == 'preferences' %}<script src="{{ url_for('static', filename='theme-preview.js', v=app_version) }}" defer></script>{% endif %}
+  {% if request.endpoint == 'preferences' or ui_theme in ui_dark_themes or ui_theme == 'system' %}<link id="serviceops-dark-theme" rel="stylesheet" href="{{ url_for('static', filename='dark.css', v=asset_version) }}" media="{{ theme_dark_media }}">{% endif %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='themes.css', v=asset_version) }}">
+  {% if request.endpoint == 'preferences' %}<script src="{{ url_for('static', filename='theme-preview.js', v=asset_version) }}" defer></script>{% endif %}
 </head>
 <body class="{% if current_user.is_authenticated %}theme-{{ ui_theme }} density-{{ ui_preference.density }}{% if ui_preference.high_contrast %} high-contrast{% endif %}{% if ui_preference.reduced_motion %} reduced-motion{% endif %}{% endif %}" {% if current_user.is_authenticated %}data-tour-route="{{ request.endpoint }}"{% endif %}>
 {% from '_admin_icons.html' import admin_icon %}
 <a class="skip-link" href="#main-content">{{ tr('Skip to main content') }}</a>
 {% if current_user.is_authenticated %}
 {% set admin_endpoints = ['admin_home','admin_section','itil_admin','approval_policies_admin','system_settings_category','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin','data_governance_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
-<script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
+<script src="{{ url_for('static', filename='nav-init.js', v=asset_version) }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">{{ tr('NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active') }}</div>{% endif %}
 <aside class="sidebar">
-  <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ tr('{company_name} logo', company_name=(company_name)) }}"><span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span>{% else %}<img class="serviceops-mark" src="{{ url_for('static', filename='brand/serviceops-mark.png', v=app_version) }}" alt=""><span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span>{% endif %}</a>
+  <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ tr('{company_name} logo', company_name=(company_name)) }}"><span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span>{% else %}<img class="serviceops-mark" src="{{ url_for('static', filename='brand/serviceops-mark.png', v=asset_version) }}" alt=""><span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span>{% endif %}</a>
   <nav class="application-nav" aria-label="{{ tr('Application navigation') }}" data-application-nav>
     <label class="nav-filter"><span aria-hidden="true">⌕</span><input type="search" placeholder="{{ tr('Find menu') }}" aria-label="{{ tr('Find a menu item') }}" data-nav-filter></label>
     <a class="nav-home{% if nav_active('dashboard') %} active{% endif %}" href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">⌂</span><span>{{ tr('Home') }}</span></a>
@@ -168,7 +168,7 @@
     {% endif %}
     <p class="nav-filter-empty" data-nav-filter-empty hidden>{{ tr('No matching menu items') }}</p>
   </nav>
-  <script src="{{ url_for('static', filename='nav-init.js', v=app_version) }}"></script>
+  <script src="{{ url_for('static', filename='nav-init.js', v=asset_version) }}"></script>
   <div class="profile">
     <div class="profile-row">
       {{ user_avatar(current_user) }}
