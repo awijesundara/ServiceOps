@@ -1,0 +1,13 @@
+/* Printable work item view (B-449): plain, black on white. */
+body.wi-print{font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:#111;background:#fff;margin:24px auto;max-width:860px;padding:0 16px}
+.wi-print h1{font-size:22px;margin:4px 0 16px}
+.wi-print header p{margin:0;color:#555}
+.wi-print h2{font-size:16px;margin:22px 0 8px;border-bottom:1px solid #ccc;padding-bottom:4px}
+.wi-print-fields{width:100%;border-collapse:collapse}
+.wi-print-fields th,.wi-print-fields td{text-align:left;padding:6px 8px;border:1px solid #ddd;vertical-align:top}
+.wi-print-fields th{width:18%;background:#f4f4f4;font-weight:600}
+.wi-print-comment{border-top:1px solid #eee;padding:6px 0}
+.wi-print pre{white-space:pre-wrap;background:#f6f6f6;padding:8px}
+.wi-print table:not(.wi-print-fields){border-collapse:collapse}
+.wi-print td,.wi-print th{border:1px solid #ddd;padding:4px 6px}
+@media print{body.wi-print{margin:0}}

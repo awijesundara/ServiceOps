@@ -3092,8 +3092,10 @@ __all__ += ["THEMES", "DARK_THEMES"]
 # models join db.metadata and `from app import Project, ...` works as for
 # every other model.
 from serviceops_core.projects.models import (  # noqa: E402,F401 -- re-exported via __all__
-    Project, ProjectMember, ProjectStatus, WorkItem, WorkItemAssignee, WorkItemComment, WorkItemHistory,
-    WorkItemLabel, WorkItemLink, WorkItemWatcher,
+    Project, ProjectComponent, ProjectMember, ProjectStar, ProjectStatus, ProjectVersion, WorkItem,
+    WorkItemAffectsVersion, WorkItemAssignee, WorkItemComment, WorkItemCommentReaction, WorkItemComponent,
+    WorkItemFixVersion, WorkItemHistory, WorkItemKeyAlias, WorkItemLabel, WorkItemLink, WorkItemLinkType,
+    WorkItemResolution, WorkItemView, WorkItemVote, WorkItemWatcher, WorkItemWorklog,
 )
 from serviceops_core.projects.models import MODEL_NAMES as _PROJECT_MODEL_NAMES  # noqa: E402
 

@@ -7,15 +7,20 @@
   <label>{{ tr('Type') }}<select name="item_type" data-wi-type>{% for t in item_types %}<option value="{{ t }}" {% if t == item_type %}selected{% endif %}>{{ tr(item_type_labels[t]) }}</option>{% endfor %}</select></label>
   <label>{{ tr('Status') }}<select name="status_id">{% for status in project.statuses %}<option value="{{ status.id }}">{{ status.name }}</option>{% endfor %}</select></label>
   <label class="wide">{{ tr('Summary') }}<input name="title" required maxlength="255" autofocus></label>
-  <label class="wide">{{ tr('Description') }}<textarea name="description" rows="6" maxlength="50000" placeholder="{{ tr('What needs to be done, and how will we know it is done?') }}"></textarea></label>
+  <label class="wide">{{ tr('Description') }}<textarea name="description" rows="6" maxlength="50000" data-markdown placeholder="{{ tr('What needs to be done, and how will we know it is done? Markdown is supported.') }}"></textarea></label>
   <label>{{ tr('Parent') }}<select name="parent_id"><option value="">{{ tr('None') }}</option>{% for p in parents %}<option value="{{ p.id }}" {% if parent and parent.id == p.id %}selected{% endif %}>{{ p.key }} · {{ p.title }} ({{ tr(item_type_labels[p.item_type]) }})</option>{% endfor %}</select></label>
   <label>{{ tr('Priority') }}<select name="priority">{% for p in priorities %}<option value="{{ p }}" {% if p == 'medium' %}selected{% endif %}>{{ tr(priority_labels[p]) }}</option>{% endfor %}</select></label>
   <label>{{ tr('Assignees') }}<select name="assignee_ids" multiple size="4" data-people-picker>{% for user in members %}<option value="{{ user.id }}">{{ user.name }}</option>{% endfor %}</select></label>
   <label>{{ tr('Labels') }}<input name="labels" maxlength="1200" placeholder="{{ tr('frontend, release-2') }}"></label>
   <label>{{ tr('Start date') }}<input type="date" name="start_date"></label>
   <label>{{ tr('Due date') }}<input type="date" name="due_date"></label>
+  {% if components %}<label>{{ tr('Components') }}<input type="hidden" name="component_ids_present" value="1"><select name="component_ids" multiple size="3" data-people-picker data-picker-placeholder="{{ tr('Add a component…') }}" data-picker-empty="{{ tr('No matching components') }}">{% for row in components %}<option value="{{ row.id }}">{{ row.name }}</option>{% endfor %}</select></label>{% endif %}
+  {% if versions %}<label>{{ tr('Fix versions') }}<select name="fix_version_ids" multiple size="3" data-people-picker data-picker-placeholder="{{ tr('Add a version…') }}" data-picker-empty="{{ tr('No matching versions') }}">{% for row in versions if not row.released %}<option value="{{ row.id }}">{{ row.name }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Affects versions') }}<select name="affects_version_ids" multiple size="3" data-people-picker data-picker-placeholder="{{ tr('Add a version…') }}" data-picker-empty="{{ tr('No matching versions') }}">{% for row in versions %}<option value="{{ row.id }}">{{ row.name }}</option>{% endfor %}</select></label>{% endif %}
   <label>{{ tr('Story points') }}<input type="number" name="story_points" min="0" max="1000" step="0.5"></label>
-  <label>{{ tr('Estimate (hours)') }}<input type="number" name="estimate_hours" min="0" max="16000" step="0.25"></label>
+  <label>{{ tr('Original estimate') }}<input name="estimate" maxlength="40" placeholder="{{ tr('1d 4h') }}" aria-describedby="estimate-help"></label>
+  <p class="wide muted form-help" id="estimate-help">{{ tr('Use w (weeks), d (days), h (hours) and m (minutes), for example 1d 4h.') }}</p>
+  <label class="wide">{{ tr('Environment') }}<textarea name="environment" rows="2" maxlength="10000" placeholder="{{ tr('Browser, device, version…') }}"></textarea></label>
   <div class="wide actions"><a class="button" href="{{ url_for('projects.board', key=project.key) }}">{{ tr('Cancel') }}</a><button class="button" name="another" value="1">{{ tr('Create and add another') }}</button><button class="primary">{{ tr('Create') }}</button></div>
 </form>
 {% endblock %}

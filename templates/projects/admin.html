@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('Project settings for the organisation · {instance_name}', instance_name=instance_name) }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('projects.index') }}">{{ tr('PROJECTS') }}</a></p><h1>{{ tr('Project settings for the organisation') }}</h1><p>{{ tr('Resolutions, link types and working time apply to every project.') }}</p></div></header>
+<div class="project-settings">
+  <section class="panel" id="resolutions" aria-labelledby="res-title">
+    <h2 id="res-title">{{ tr('Resolutions') }}</h2>
+    <p class="muted">{{ tr('A resolution records why work reached a done status. The default is used when nobody chooses one.') }}</p>
+    <div class="table-scroll"><table><thead><tr><th scope="col">{{ tr('Name') }}</th><th scope="col">{{ tr('Description') }}</th><th scope="col">{{ tr('Default') }}</th><th scope="col"><span class="visually-hidden">{{ tr('Actions') }}</span></th></tr></thead>
+    <tbody>{% for row in resolutions %}<tr><td colspan="3"><form method="post" class="status-edit"><input type="hidden" name="action" value="save_resolution"><input type="hidden" name="section" value="resolutions"><input type="hidden" name="resolution_id" value="{{ row.id }}">
+      <label><span class="visually-hidden">{{ tr('Name') }}</span><input name="name" value="{{ row.name }}" required maxlength="60"></label>
+      <label><span class="visually-hidden">{{ tr('Description') }}</span><input name="description" value="{{ row.description }}" maxlength="255"></label>
+      <label class="check"><input type="checkbox" name="is_default" value="1" {% if row.is_default %}checked{% endif %}> {{ tr('Default') }}</label>
+      <button class="button">{{ tr('Save') }}</button></form></td>
+      <td>{% if resolutions|length > 1 %}<details class="status-delete"><summary class="button">{{ tr('Delete') }}</summary><form method="post"><input type="hidden" name="action" value="delete_resolution"><input type="hidden" name="section" value="resolutions"><input type="hidden" name="resolution_id" value="{{ row.id }}"><label>{{ tr('Use instead') }}<select name="replacement_id">{% for other in resolutions if other.id != row.id %}<option value="{{ other.id }}">{{ other.name }}</option>{% endfor %}</select></label><button class="button danger">{{ tr('Delete {name}', name=row.name) }}</button></form></details>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+    <form method="post" class="project-inline-add"><input type="hidden" name="action" value="save_resolution"><input type="hidden" name="section" value="resolutions">
+      <label>{{ tr('New resolution') }}<input name="name" required maxlength="60"></label><label>{{ tr('Description') }}<input name="description" maxlength="255"></label><button class="primary">{{ tr('Add resolution') }}</button></form>
+  </section>
+  <section class="panel" id="link-types" aria-labelledby="lt-title">
+    <h2 id="lt-title">{{ tr('Link types') }}</h2>
+    <p class="muted">{{ tr('Each link type reads one way from the source work item (outward) and the other way from the target (inward).') }}</p>
+    <div class="table-scroll"><table><thead><tr><th scope="col">{{ tr('Name, outward and inward') }}</th><th scope="col"><span class="visually-hidden">{{ tr('Actions') }}</span></th></tr></thead>
+    <tbody>{% for row in link_types %}<tr><td><form method="post" class="status-edit"><input type="hidden" name="action" value="save_link_type"><input type="hidden" name="section" value="link-types"><input type="hidden" name="link_type_id" value="{{ row.id }}">
+      <label><span class="visually-hidden">{{ tr('Name') }}</span><input name="name" value="{{ row.name }}" required maxlength="40"></label>
+      <label><span class="visually-hidden">{{ tr('Outward description') }}</span><input name="outward" value="{{ row.outward }}" required maxlength="60"></label>
+      <label><span class="visually-hidden">{{ tr('Inward description') }}</span><input name="inward" value="{{ row.inward }}" required maxlength="60"></label>
+      <button class="button">{{ tr('Save') }}</button></form></td>
+      <td><form method="post" data-confirm="{{ tr('Delete {name}? Links of this type are removed.', name=row.name) }}"><input type="hidden" name="action" value="delete_link_type"><input type="hidden" name="section" value="link-types"><input type="hidden" name="link_type_id" value="{{ row.id }}"><button class="button danger">{{ tr('Delete') }}</button></form></td></tr>{% endfor %}</tbody></table></div>
+    <form method="post" class="project-inline-add"><input type="hidden" name="action" value="save_link_type"><input type="hidden" name="section" value="link-types">
+      <label>{{ tr('Name') }}<input name="name" required maxlength="40"></label><label>{{ tr('Outward') }}<input name="outward" required maxlength="60" placeholder="{{ tr('tests') }}"></label><label>{{ tr('Inward') }}<input name="inward" required maxlength="60" placeholder="{{ tr('is tested by') }}"></label><button class="primary">{{ tr('Add link type') }}</button></form>
+  </section>
+  <section class="panel" id="time-tracking" aria-labelledby="tt-title">
+    <h2 id="tt-title">{{ tr('Time tracking') }}</h2>
+    <p class="muted">{{ tr('Durations such as 1d or 1w use the working day and week set here.') }}</p>
+    <form method="post" class="project-inline-add"><input type="hidden" name="action" value="time_tracking"><input type="hidden" name="section" value="time-tracking">
+      <label>{{ tr('Working hours per day') }}<input type="number" name="PROJECTS_HOURS_PER_DAY" min="1" max="24" value="{{ hours_per_day }}" required></label>
+      <label>{{ tr('Working days per week') }}<input type="number" name="PROJECTS_DAYS_PER_WEEK" min="1" max="7" value="{{ days_per_week }}" required></label>
+      <button class="primary">{{ tr('Save') }}</button></form>
+  </section>
+</div>
+{% endblock %}

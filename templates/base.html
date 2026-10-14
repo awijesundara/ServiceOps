@@ -99,7 +99,10 @@
       <summary><span class="nav-symbol" aria-hidden="true">▤</span><span>{{ tr('Projects') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items">
         <a href="{{ url_for('projects.index') }}" {% if request.endpoint == 'projects.index' %}class="active" aria-current="page"{% endif %}>{{ tr('All projects') }}</a>
+        <a href="{{ url_for('projects.your_work') }}" {% if request.endpoint == 'projects.your_work' %}class="active" aria-current="page"{% endif %}>{{ tr('Your work') }}</a>
         <a href="{{ url_for('projects.my_items') }}" {% if request.endpoint == 'projects.my_items' %}class="active" aria-current="page"{% endif %}>{{ tr('My work items') }}</a>
+        <a href="{{ url_for('projects.global_create') }}" {% if request.endpoint == 'projects.global_create' %}class="active" aria-current="page"{% endif %}>{{ tr('Create work item') }}</a>
+        {% if role_at_least(current_user.effective_role, 'admin') %}<a href="{{ url_for('projects.projects_admin') }}" {% if request.endpoint == 'projects.projects_admin' %}class="active" aria-current="page"{% endif %}>{{ tr('Project settings') }}</a>{% endif %}
       </div>
     </details>
     {% endif %}

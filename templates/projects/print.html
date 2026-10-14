@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ item.key }} · {{ item.title }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='projects-print.css', v=app_version) }}"></head>
+<body class="wi-print">
+<header><p>{{ project.name }} · {{ tr(item_type_labels[item.item_type]) }}</p><h1>[{{ item.key }}] {{ item.title }}</h1></header>
+<table class="wi-print-fields"><tbody>
+  <tr><th>{{ tr('Status') }}</th><td>{{ item.status.name }}{% if item.resolution %} ({{ item.resolution.name }}){% endif %}</td><th>{{ tr('Priority') }}</th><td>{{ tr(priority_labels[item.priority]) }}</td></tr>
+  <tr><th>{{ tr('Assignees') }}</th><td>{{ item.assignees|map(attribute='name')|join(', ') or tr('Unassigned') }}</td><th>{{ tr('Reporter') }}</th><td>{{ item.reporter.name if item.reporter else '' }}</td></tr>
+  <tr><th>{{ tr('Components') }}</th><td>{{ item.components|map(attribute='name')|join(', ') or '—' }}</td><th>{{ tr('Fix versions') }}</th><td>{{ item.fix_versions|map(attribute='name')|join(', ') or '—' }}</td></tr>
+  <tr><th>{{ tr('Labels') }}</th><td>{{ item.labels|map(attribute='label')|join(', ') or '—' }}</td><th>{{ tr('Due date') }}</th><td>{{ item.due_date.isoformat() if item.due_date else '—' }}</td></tr>
+  <tr><th>{{ tr('Original estimate') }}</th><td>{{ fmt(time.estimate) or '—' }}</td><th>{{ tr('Time spent') }}</th><td>{{ fmt(time.spent) }}</td></tr>
+  <tr><th>{{ tr('Created') }}</th><td>{{ item.created_at|usertime }}</td><th>{{ tr('Updated') }}</th><td>{{ item.updated_at|usertime }}</td></tr>
+</tbody></table>
+<h2>{{ tr('Description') }}</h2><div class="md">{{ rich_text(item.description) if item.description else tr('No description yet.') }}</div>
+{% if item.environment %}<h2>{{ tr('Environment') }}</h2><div class="md">{{ rich_text(item.environment) }}</div>{% endif %}
+{% if links %}<h2>{{ tr('Links') }}</h2><ul>{% for link in links %}<li>{{ link.relation }} {{ link.label }} {{ link.title }}</li>{% endfor %}</ul>{% endif %}
+{% if comments %}<h2>{{ tr('Comments') }}</h2>{% for comment in comments %}<div class="wi-print-comment"><p><strong>{{ comment.author.name }}</strong> · {{ comment.created_at|usertime }}</p><div class="md">{{ rich_text(comment.body) }}</div></div>{% endfor %}{% endif %}
+</body></html>

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "projects/_macros.html" import type_icon, priority_icon, status_pill, assignee_faces with context %}
+{% block title %}{{ version.name }} · {{ project.key }} · {{ instance_name }}{% endblock %}
+{% block content %}
+{% include "projects/_header.html" %}
+<section class="panel">
+  <div class="panel-head"><div><p class="eyebrow"><a href="{{ url_for('projects.project_releases', key=project.key) }}">{{ tr('RELEASES') }}</a></p><h2>{{ version.name }} {% if version.released %}<span class="wi-status wi-status-done">{{ tr('Released') }}</span>{% else %}<span class="wi-status wi-status-in_progress">{{ tr('Unreleased') }}</span>{% endif %}</h2>
+    <p>{% if version.start_date %}{{ tr('Start') }} {{ version.start_date.isoformat() }} · {% endif %}{% if version.release_date %}{{ tr('Release') }} {{ version.release_date.isoformat() }}{% endif %}</p></div></div>
+  {% if version.description %}<p>{{ version.description }}</p>{% endif %}
+  <div class="overview-figures">
+    <div class="overview-figure"><strong>{{ progress.total }}</strong><span>{{ tr('Work items') }}</span></div>
+    <div class="overview-figure overview-done"><strong>{{ progress.done }}</strong><span>{{ tr('Done') }}</span></div>
+    <div class="overview-figure overview-in_progress"><strong>{{ progress.in_progress }}</strong><span>{{ tr('In progress') }}</span></div>
+    <div class="overview-figure overview-todo"><strong>{{ progress.todo }}</strong><span>{{ tr('To do') }}</span></div>
+  </div>
+</section>
+<section class="panel" aria-labelledby="release-items"><h2 id="release-items">{{ tr('Work items') }}</h2>
+  {% if items %}<div class="table-scroll"><table class="wi-table"><thead><tr><th scope="col">{{ tr('Type') }}</th><th scope="col">{{ tr('Key') }}</th><th scope="col">{{ tr('Summary') }}</th><th scope="col">{{ tr('Status') }}</th><th scope="col">{{ tr('Assignees') }}</th><th scope="col">{{ tr('Priority') }}</th></tr></thead>
+  <tbody>{% for item in items %}<tr><td>{{ type_icon(item.item_type) }}</td><td class="wi-key-cell"><a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.key }}</a></td><td class="wi-summary"><a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.title }}</a></td><td>{{ status_pill(item.status) }}</td><td>{{ assignee_faces(item.assignees) }}</td><td>{{ priority_icon(item.priority) }} {{ tr(priority_labels[item.priority]) }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}<p class="muted">{{ tr('No work items have this fix version.') }}</p>{% endif %}
+</section>
+<section class="panel" aria-labelledby="release-notes"><h2 id="release-notes">{{ tr('Release notes') }}</h2>
+  {% if notes %}{% for item_type in item_types if notes.get(item_type) %}<h3 class="wi-subheading">{{ tr(item_type_labels[item_type]) }}</h3><ul>{% for item in notes[item_type] %}<li>[{{ item.key }}] {{ item.title }}</li>{% endfor %}</ul>{% endfor %}
+  {% else %}<p class="muted">{{ tr('Release notes list the finished work items of this version.') }}</p>{% endif %}
+</section>
+{% endblock %}

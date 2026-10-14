@@ -13,7 +13,21 @@ VISIBILITIES = ("private", "open")
 STATUS_CATEGORIES = ("todo", "in_progress", "done")
 ITEM_TYPES = ("epic", "story", "task", "bug", "subtask")
 PRIORITIES = ("highest", "high", "medium", "low", "lowest")
-LINK_TYPES = ("blocks", "relates", "duplicates")
+LINK_TYPES = ("blocks", "relates", "duplicates")  # phase 1 names; WorkItemLinkType holds the full set
+DEFAULT_LINK_TYPES = (  # (name, outward, inward) as in Jira
+    ("blocks", "blocks", "is blocked by"),
+    ("clones", "clones", "is cloned by"),
+    ("duplicates", "duplicates", "is duplicated by"),
+    ("relates", "relates to", "relates to"),
+    ("causes", "causes", "is caused by"),
+)
+DEFAULT_RESOLUTIONS = (("Done", "Work has been completed."), ("Won't do", "This will not be worked on."),
+                       ("Duplicate", "The problem is a duplicate of an existing work item."),
+                       ("Cannot reproduce", "The problem could not be reproduced."))
+DEFAULT_ASSIGNEE_CHOICES = ("unassigned", "project_lead")
+COMPONENT_ASSIGNEE_CHOICES = ("project_default", "component_lead", "project_lead", "unassigned")
+COMMENT_VISIBILITY = (None, "admin", "member")  # None: everyone who can see the work item
+REACTIONS = ("👍", "👎", "😄", "🎉", "❤️", "👀")
 DEFAULT_STATUSES = (("To do", "todo"), ("In progress", "in_progress"), ("In review", "in_progress"), ("Done", "done"))
 
 
@@ -33,6 +47,9 @@ class Project(db.Model):
     # Next work item number; taken under a row lock so numbers never repeat.
     next_number = db.Column(db.Integer, nullable=False, default=1)
     archived_at = db.Column(db.DateTime(timezone=True))
+    category = db.Column(db.String(60))
+    # Who new work items go to when nobody is chosen (Jira's default assignee).
+    default_assignee = db.Column(db.String(20), nullable=False, default="unassigned", server_default="unassigned")
     created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
@@ -85,7 +102,12 @@ class WorkItem(db.Model):
     start_date = db.Column(db.Date)
     due_date = db.Column(db.Date, index=True)
     story_points = db.Column(db.Float)
-    estimate_minutes = db.Column(db.Integer)
+    estimate_minutes = db.Column(db.Integer)  # original estimate
+    remaining_minutes = db.Column(db.Integer)
+    spent_minutes = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    environment = db.Column(db.Text, nullable=False, default="", server_default="")
+    resolution_id = db.Column(db.Integer, db.ForeignKey("work_item_resolution.id"))
+    flagged = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     resolved_at = db.Column(db.DateTime(timezone=True))
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
@@ -96,6 +118,13 @@ class WorkItem(db.Model):
     assignees = db.relationship("User", secondary="work_item_assignee", lazy="selectin", order_by="User.name")
     labels = db.relationship("WorkItemLabel", lazy="selectin", cascade="all, delete-orphan",
                              order_by="WorkItemLabel.label")
+    resolution = db.relationship("WorkItemResolution")
+    components = db.relationship("ProjectComponent", secondary="work_item_component", lazy="selectin",
+                                 order_by="ProjectComponent.name")
+    fix_versions = db.relationship("ProjectVersion", secondary="work_item_fix_version", lazy="selectin",
+                                   order_by="ProjectVersion.position")
+    affects_versions = db.relationship("ProjectVersion", secondary="work_item_affects_version", lazy="selectin",
+                                       order_by="ProjectVersion.position")
     __table_args__ = (
         db.UniqueConstraint("project_id", "number", name="uq_work_item_project_number"),
         db.Index("ix_work_item_project_status_rank", "project_id", "status_id", "rank"),
@@ -130,6 +159,8 @@ class WorkItemComment(db.Model):
     work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     body = db.Column(db.Text, nullable=False)
+    # Restrict to a project role ("admin" or "member"); None: everyone who can see the item.
+    visibility = db.Column(db.String(10))
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
     edited_at = db.Column(db.DateTime(timezone=True))
     author = db.relationship("User")
@@ -165,7 +196,135 @@ class WorkItemLink(db.Model):
     )
 
 
+class WorkItemResolution(db.Model):
+    """Why a work item reached a done status (Jira's resolution), per tenant."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    name = db.Column(db.String(60), nullable=False)
+    description = db.Column(db.String(255), nullable=False, default="")
+    position = db.Column(db.Integer, nullable=False, default=0)
+    is_default = db.Column(db.Boolean, nullable=False, default=False)
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_work_item_resolution_name"),)
+
+
+class WorkItemLinkType(db.Model):
+    """A named link with its outward and inward wording, per tenant."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    name = db.Column(db.String(40), nullable=False)
+    outward = db.Column(db.String(60), nullable=False)
+    inward = db.Column(db.String(60), nullable=False)
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_work_item_link_type_name"),)
+
+
+class ProjectComponent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    project_id = db.Column(db.Integer, db.ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=False, default="")
+    lead_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    default_assignee = db.Column(db.String(20), nullable=False, default="project_default")
+    lead = db.relationship("User")
+    __table_args__ = (db.UniqueConstraint("project_id", "name", name="uq_project_component_name"),)
+
+
+class ProjectVersion(db.Model):
+    """A release (Jira's version)."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    project_id = db.Column(db.Integer, db.ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=False, default="")
+    start_date = db.Column(db.Date)
+    release_date = db.Column(db.Date)
+    released = db.Column(db.Boolean, nullable=False, default=False)
+    released_at = db.Column(db.DateTime(timezone=True))
+    archived = db.Column(db.Boolean, nullable=False, default=False)
+    position = db.Column(db.Integer, nullable=False, default=0)
+    __table_args__ = (db.UniqueConstraint("project_id", "name", name="uq_project_version_name"),)
+
+
+class WorkItemComponent(db.Model):
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="CASCADE"), primary_key=True)
+    component_id = db.Column(db.Integer, db.ForeignKey("project_component.id", ondelete="CASCADE"),
+                             primary_key=True, index=True)
+    tenant_id = _tenant_column()
+
+
+class WorkItemFixVersion(db.Model):
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="CASCADE"), primary_key=True)
+    version_id = db.Column(db.Integer, db.ForeignKey("project_version.id", ondelete="CASCADE"),
+                           primary_key=True, index=True)
+    tenant_id = _tenant_column()
+
+
+class WorkItemAffectsVersion(db.Model):
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="CASCADE"), primary_key=True)
+    version_id = db.Column(db.Integer, db.ForeignKey("project_version.id", ondelete="CASCADE"),
+                           primary_key=True, index=True)
+    tenant_id = _tenant_column()
+
+
+class WorkItemWorklog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="CASCADE"), nullable=False, index=True)
+    author_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    started_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    minutes = db.Column(db.Integer, nullable=False)
+    comment = db.Column(db.Text, nullable=False, default="")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    updated_at = db.Column(db.DateTime(timezone=True))
+    author = db.relationship("User")
+
+
+class WorkItemVote(db.Model):
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="CASCADE"), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), primary_key=True, index=True)
+    tenant_id = _tenant_column()
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+
+
+class ProjectStar(db.Model):
+    """A user's starred project or work item (target_type "project" or "work_item")."""
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), primary_key=True)
+    target_type = db.Column(db.String(12), primary_key=True)
+    target_id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+
+
+class WorkItemView(db.Model):
+    """When a user last opened a work item (Your work → Viewed)."""
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), primary_key=True)
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="CASCADE"), primary_key=True)
+    tenant_id = _tenant_column()
+    viewed_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, index=True)
+
+
+class WorkItemCommentReaction(db.Model):
+    comment_id = db.Column(db.Integer, db.ForeignKey("work_item_comment.id", ondelete="CASCADE"), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), primary_key=True)
+    emoji = db.Column(db.String(16), primary_key=True)
+    tenant_id = _tenant_column()
+
+
+class WorkItemKeyAlias(db.Model):
+    """A key a work item had before it moved to another project, so old
+    links keep working (Jira redirects moved keys)."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    project_key = db.Column(db.String(10), nullable=False)
+    number = db.Column(db.Integer, nullable=False)
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="CASCADE"), nullable=False)
+    __table_args__ = (db.UniqueConstraint("tenant_id", "project_key", "number", name="uq_work_item_key_alias"),)
+
+
 MODEL_NAMES = [
     "Project", "ProjectMember", "ProjectStatus", "WorkItem", "WorkItemAssignee", "WorkItemWatcher",
     "WorkItemLabel", "WorkItemComment", "WorkItemHistory", "WorkItemLink",
+    "WorkItemResolution", "WorkItemLinkType", "ProjectComponent", "ProjectVersion", "WorkItemComponent",
+    "WorkItemFixVersion", "WorkItemAffectsVersion", "WorkItemWorklog", "WorkItemVote", "ProjectStar",
+    "WorkItemView", "WorkItemCommentReaction", "WorkItemKeyAlias",
 ]

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('Create work item · {instance_name}', instance_name=instance_name) }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">{{ tr('PROJECTS') }}</p><h1>{{ tr('Create work item') }}</h1><p>{{ tr('Choose the project the work belongs to.') }}</p></div></header>
+<section class="panel">
+  {% if projects %}<form method="get" class="project-inline-add"><label>{{ tr('Project') }}<select name="project" required>{% for project in projects %}<option value="{{ project.key }}">{{ project.name }} ({{ project.key }})</option>{% endfor %}</select></label>
+    <label>{{ tr('Type') }}<select name="type">{% for t in item_types if t != 'subtask' %}<option value="{{ t }}" {% if t == 'task' %}selected{% endif %}>{{ tr(item_type_labels[t]) }}</option>{% endfor %}</select></label>
+    <button class="primary">{{ tr('Continue') }}</button></form>
+  {% else %}<div class="empty-state"><h3>{{ tr('No project to add work to') }}</h3><p>{{ tr('Ask a project administrator to add you as a member.') }}</p></div>{% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('{key} releases · {instance_name}', key=project.key, instance_name=instance_name) }}{% endblock %}
+{% block content %}
+{% include "projects/_header.html" %}
+<section class="panel" aria-labelledby="releases-title">
+  <div class="panel-head"><div><h2 id="releases-title">{{ tr('Releases') }}</h2><p>{{ tr('Versions group the work shipped together. Set a fix version on work items, then release the version when it ships.') }}</p></div></div>
+  {% set active = versions|rejectattr('archived')|list %}{% set archived_rows = versions|selectattr('archived')|list %}
+  {% if versions %}
+  <div class="table-scroll"><table class="release-table">
+    <thead><tr><th scope="col">{{ tr('Version') }}</th><th scope="col">{{ tr('Status') }}</th><th scope="col">{{ tr('Progress') }}</th><th scope="col">{{ tr('Start date') }}</th><th scope="col">{{ tr('Release date') }}</th><th scope="col">{{ tr('Description') }}</th>{% if can_admin %}<th scope="col"><span class="visually-hidden">{{ tr('Actions') }}</span></th>{% endif %}</tr></thead>
+    <tbody>{% for version in active + archived_rows %}{% set p = progress[version.id] %}<tr{% if version.archived %} class="is-archived"{% endif %}>
+      <td><a href="{{ url_for('projects.project_release', key=project.key, version_id=version.id) }}"><strong>{{ version.name }}</strong></a></td>
+      <td>{% if version.archived %}<span class="badge">{{ tr('Archived') }}</span>{% elif version.released %}<span class="wi-status wi-status-done">{{ tr('Released') }}</span>{% elif version.release_date and version.release_date < now().date() %}<span class="wi-status release-overdue">{{ tr('Overdue') }}</span>{% else %}<span class="wi-status wi-status-in_progress">{{ tr('Unreleased') }}</span>{% endif %}</td>
+      <td><div class="release-progress" role="img" aria-label="{{ tr('{done} of {total} done', done=p.done, total=p.total) }}">{% if p.total %}<span class="release-seg release-done wi-progress-{{ (p.done / p.total * 20)|round|int * 5 }}"></span><span class="release-seg release-doing wi-progress-{{ (p.in_progress / p.total * 20)|round|int * 5 }}"></span>{% endif %}</div><small class="muted">{{ tr('{done} of {total} done', done=p.done, total=p.total) }}</small></td>
+      <td>{{ version.start_date.isoformat() if version.start_date else '—' }}</td>
+      <td>{{ version.release_date.isoformat() if version.release_date else '—' }}</td>
+      <td class="release-description">{{ version.description }}</td>
+      {% if can_admin %}<td class="release-actions"><details class="wi-dialog wi-more"><summary class="button">{{ tr('Actions') }} ▾</summary><div class="wi-dialog-body wi-menu">
+        {% if not version.released %}
+        <details><summary>{{ tr('Release') }}</summary><form method="post" class="stack"><input type="hidden" name="action" value="release"><input type="hidden" name="version_id" value="{{ version.id }}">
+          <label>{{ tr('Release date') }}<input type="date" name="release_date" value="{{ (version.release_date or now().date()).isoformat() }}"></label>
+          {% if p.total - p.done %}<label>{{ tr('{count} work items are not done. Move them to', count=p.total - p.done) }}<select name="move_to"><option value="">{{ tr('Keep them in this version') }}</option>{% for other in active if not other.released and other.id != version.id %}<option value="{{ other.id }}">{{ other.name }}</option>{% endfor %}</select></label>{% endif %}
+          <button class="primary">{{ tr('Release') }}</button></form></details>
+        {% else %}
+        <form method="post"><input type="hidden" name="action" value="unrelease"><input type="hidden" name="version_id" value="{{ version.id }}"><button class="link-button">{{ tr('Unrelease') }}</button></form>
+        {% endif %}
+        <details><summary>{{ tr('Edit') }}</summary><form method="post" class="stack"><input type="hidden" name="action" value="save"><input type="hidden" name="version_id" value="{{ version.id }}">
+          <label>{{ tr('Name') }}<input name="name" value="{{ version.name }}" required maxlength="100"></label>
+          <label>{{ tr('Start date') }}<input type="date" name="start_date" value="{{ version.start_date.isoformat() if version.start_date else '' }}"></label>
+          <label>{{ tr('Release date') }}<input type="date" name="release_date" value="{{ version.release_date.isoformat() if version.release_date else '' }}"></label>
+          <label>{{ tr('Description') }}<textarea name="description" rows="2" maxlength="5000">{{ version.description }}</textarea></label>
+          <button class="primary">{{ tr('Save') }}</button></form></details>
+        <form method="post"><input type="hidden" name="action" value="{{ 'restore' if version.archived else 'archive' }}"><input type="hidden" name="version_id" value="{{ version.id }}"><button class="link-button">{{ tr('Restore') if version.archived else tr('Archive') }}</button></form>
+        <form method="post" class="inline-form"><input type="hidden" name="action" value="move"><input type="hidden" name="version_id" value="{{ version.id }}"><button class="link-button" name="direction" value="up">{{ tr('Move up') }}</button><button class="link-button" name="direction" value="down">{{ tr('Move down') }}</button></form>
+        {% if versions|length > 1 %}<details><summary>{{ tr('Merge into another version') }}</summary><form method="post" class="stack" data-confirm="{{ tr('Merge {name}? It will be deleted.', name=version.name) }}"><input type="hidden" name="action" value="merge"><input type="hidden" name="version_id" value="{{ version.id }}">
+          <label>{{ tr('Merge into') }}<select name="target_id" required>{% for other in versions if other.id != version.id %}<option value="{{ other.id }}">{{ other.name }}</option>{% endfor %}</select></label><button class="primary">{{ tr('Merge') }}</button></form></details>{% endif %}
+        <details><summary>{{ tr('Delete') }}</summary><form method="post" class="stack" data-confirm="{{ tr('Delete {name}?', name=version.name) }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="version_id" value="{{ version.id }}">
+          <label>{{ tr('Fix version becomes') }}<select name="fix_target_id"><option value="">{{ tr('Remove it') }}</option>{% for other in versions if other.id != version.id %}<option value="{{ other.id }}">{{ other.name }}</option>{% endfor %}</select></label>
+          <label>{{ tr('Affects version becomes') }}<select name="affects_target_id"><option value="">{{ tr('Remove it') }}</option>{% for other in versions if other.id != version.id %}<option value="{{ other.id }}">{{ other.name }}</option>{% endfor %}</select></label>
+          <button class="button danger">{{ tr('Delete version') }}</button></form></details>
+      </div></details></td>{% endif %}
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="empty-state"><h3>{{ tr('No releases yet') }}</h3><p>{{ tr('Create a version to plan what ships together.') }}</p></div>{% endif %}
+  {% if can_admin %}
+  <form method="post" class="project-inline-add"><input type="hidden" name="action" value="save">
+    <label>{{ tr('New version') }}<input name="name" required maxlength="100" placeholder="{{ tr('1.0') }}"></label>
+    <label>{{ tr('Start date') }}<input type="date" name="start_date"></label>
+    <label>{{ tr('Release date') }}<input type="date" name="release_date"></label>
+    <label>{{ tr('Description') }}<input name="description" maxlength="5000"></label>
+    <button class="primary">{{ tr('Create version') }}</button>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

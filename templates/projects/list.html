@@ -7,14 +7,28 @@
 {% include "projects/_filters.html" %}
 <section class="panel project-list" data-project-list>
   <p class="muted project-list-count">{{ tr('{count} work items', count=total) }}</p>
+  {% if can_edit and total %}
+  <form method="post" action="{{ url_for('projects.project_bulk', key=project.key) }}" id="bulk-form" class="bulk-bar" data-bulk-bar hidden>
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <span class="bulk-count" data-bulk-count></span>
+    <label><span class="visually-hidden">{{ tr('Bulk action') }}</span><select name="action" data-bulk-action required>
+      <option value="">{{ tr('Choose an action') }}</option><option value="status">{{ tr('Change status') }}</option><option value="assign">{{ tr('Assign') }}</option><option value="priority">{{ tr('Change priority') }}</option><option value="add_label">{{ tr('Add label') }}</option><option value="watch">{{ tr('Watch') }}</option><option value="unwatch">{{ tr('Stop watching') }}</option>{% if can_admin %}<option value="delete">{{ tr('Delete') }}</option>{% endif %}</select></label>
+    <label data-bulk-value="status" hidden><span class="visually-hidden">{{ tr('Status') }}</span><select name="value" disabled>{% for status in project.statuses %}<option value="{{ status.id }}">{{ status.name }}</option>{% endfor %}</select></label>
+    <label data-bulk-value="assign" hidden><span class="visually-hidden">{{ tr('Assignee') }}</span><select name="value" disabled><option value="none">{{ tr('Unassigned') }}</option>{% for user in members %}<option value="{{ user.id }}">{{ user.name }}</option>{% endfor %}</select></label>
+    <label data-bulk-value="priority" hidden><span class="visually-hidden">{{ tr('Priority') }}</span><select name="value" disabled>{% for p in priorities %}<option value="{{ p }}">{{ tr(priority_labels[p]) }}</option>{% endfor %}</select></label>
+    <label data-bulk-value="add_label" hidden><span class="visually-hidden">{{ tr('Label') }}</span><input name="value" maxlength="60" disabled></label>
+    <button class="primary" data-confirm-delete="{{ tr('Delete the selected work items? This cannot be undone.') }}">{{ tr('Apply') }}</button>
+  </form>
+  {% endif %}
   {% if total %}
   {% for title, items in groups %}
   {% if title %}<h2 class="project-group-title">{{ title }} <span class="badge">{{ items|length }}</span></h2>{% endif %}
   <div class="table-scroll"><table class="wi-table">
-    <thead><tr><th scope="col">{{ tr('Type') }}</th><th scope="col">{{ tr('Key') }}</th><th scope="col">{{ tr('Summary') }}</th><th scope="col">{{ tr('Status') }}</th><th scope="col">{{ tr('Assignees') }}</th><th scope="col">{{ tr('Priority') }}</th><th scope="col">{{ tr('Points') }}</th><th scope="col">{{ tr('Due') }}</th></tr></thead>
+    <thead><tr>{% if can_edit %}<th scope="col" class="wi-select-cell"><input type="checkbox" data-select-all aria-label="{{ tr('Select all work items on this page') }}"></th>{% endif %}<th scope="col" class="col-type">{{ tr('Type') }}</th><th scope="col" class="col-key">{{ tr('Key') }}</th><th scope="col">{{ tr('Summary') }}</th><th scope="col" class="col-status">{{ tr('Status') }}</th><th scope="col" class="col-assignees">{{ tr('Assignees') }}</th><th scope="col" class="col-priority">{{ tr('Priority') }}</th><th scope="col" class="col-points">{{ tr('Points') }}</th><th scope="col" class="col-due">{{ tr('Due') }}</th></tr></thead>
     <tbody>
     {% for item in items %}<tr>
-      <td>{{ type_icon(item.item_type) }}</td>
+      {% if can_edit %}<td class="wi-select-cell"><input type="checkbox" name="item_ids" value="{{ item.id }}" form="bulk-form" data-bulk-item aria-label="{{ tr('Select {key}', key=item.key) }}"></td>{% endif %}
+      <td>{{ type_icon(item.item_type) }}{% if item.flagged %} <span class="wi-flag" title="{{ tr('Flagged') }}">⚑</span>{% endif %}</td>
       <td class="wi-key-cell"><a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.key }}</a></td>
       <td class="wi-summary"><a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.title }}</a>{% for label in item.labels[:3] %} <span class="wi-label">{{ label.label }}</span>{% endfor %}</td>
       <td>{% if can_edit %}<select class="wi-inline-status" data-item-key="{{ item.key }}" aria-label="{{ tr('Status of {key}', key=item.key) }}">{% for status in project.statuses %}<option value="{{ status.id }}" {% if status.id == item.status_id %}selected{% endif %}>{{ status.name }}</option>{% endfor %}</select>{% else %}{{ status_pill(item.status) }}{% endif %}</td>
