@@ -136,7 +136,7 @@ def test_project_pages_have_no_accessibility_violations(server, width, theme):
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         _sign_in(page, base)
-        for path in ("/projects", "/projects/new", "/projects/WEB/board", "/projects/WEB/board?swimlane=epic",
+        for path in ("/projects", "/projects/new", "/projects/WEB/overview", "/projects/WEB/board", "/projects/WEB/board?swimlane=epic",
                      "/projects/WEB/list?group=status", "/work-items/WEB-2", "/work-items/WEB-1",
                      "/projects/WEB/items/new", "/projects/WEB/settings", "/my/work-items"):
             page.goto(base + path)

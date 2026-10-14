@@ -224,3 +224,28 @@
 /* Visually hidden text is absolutely positioned: keep it inside its scroll
    container, or it widens the page on phones. */
 .project-board,.project-column-body,.table-scroll,.wi-priority,.wi-faces{position:relative}
+
+/* Overview */
+.project-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.project-overview .panel h2{font-size:15px;margin:0 0 12px}
+.overview-progress{grid-column:1/-1}
+.overview-figures{display:flex;flex-wrap:wrap;gap:12px;margin:8px 0 14px}
+.overview-figure{display:grid;min-width:110px;padding:10px 14px;border:1px solid var(--line);border-radius:8px}
+.overview-figure strong{font-size:24px}
+.overview-figure span{font-size:12px;color:var(--muted)}
+.overview-todo strong{color:#44525d}.overview-in_progress strong{color:#1f5f9e}.overview-done strong{color:#1d7a46}
+.overview-bars,.overview-tally{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.overview-bars li{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(60px,1fr) auto;align-items:center;gap:10px}
+.overview-label{display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.overview-bar{height:8px;border-radius:99px;background:#e6ecef;overflow:hidden}
+.overview-bar-fill{display:block;height:100%;border-radius:99px;background:#3b82c4}
+.overview-bar-done{background:#2e9e5b}
+.overview-bar-muted{background:#9aa9b2}
+.overview-count{font-weight:700;font-size:13px;min-width:28px;text-align:right}
+.overview-split{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.overview-tally li{display:flex;align-items:center;gap:8px}
+.overview-tally li span:last-child{margin-left:auto;font-weight:700}
+@media(max-width:900px){.project-overview{grid-template-columns:1fr}}
+.project-overview a,.wi-history a{color:var(--ink);font-weight:600;text-decoration:none}
+.project-overview a:hover,.wi-history a:hover{text-decoration:underline}
+.project-overview section:last-child{grid-column:1/-1}

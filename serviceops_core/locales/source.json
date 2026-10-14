@@ -3710,6 +3710,9 @@
    "id": "Epic"
   },
   {
+   "id": "Epics"
+  },
+  {
    "id": "Equipment inventory"
   },
   {
@@ -6221,6 +6224,9 @@
    "id": "No epic"
   },
   {
+   "id": "No epics yet. Epics group stories, tasks and bugs into larger pieces of work."
+  },
+  {
    "id": "No events"
   },
   {
@@ -6395,6 +6401,9 @@
   },
   {
    "id": "No open work assigned to a team yet."
+  },
+  {
+   "id": "No open work."
   },
   {
    "id": "No organization or team channels configured."
@@ -6730,6 +6739,9 @@
    "id": "Nothing overdue"
   },
   {
+   "id": "Nothing overdue."
+  },
+  {
    "id": "Nothing pending review for this target. Run it again from the discovery page."
   },
   {
@@ -7021,6 +7033,12 @@
    "id": "Open work"
   },
   {
+   "id": "Open work by person"
+  },
+  {
+   "id": "Open work by type and priority"
+  },
+  {
    "id": "Open work items"
   },
   {
@@ -7180,6 +7198,9 @@
   },
   {
    "id": "Outside services"
+  },
+  {
+   "id": "Overdue"
   },
   {
    "id": "Overdue investigations"
@@ -7762,6 +7783,9 @@
    "id": "Profile updated."
   },
   {
+   "id": "Progress"
+  },
+  {
    "id": "Progress temporarily unavailable; retrying.",
    "javascript": true
   },
@@ -8156,6 +8180,9 @@
   },
   {
    "id": "Receive ticket, approval, and security-event notifications when Apple push credentials are configured by an administrator and the device grants notification access."
+  },
+  {
+   "id": "Recent activity"
   },
   {
    "id": "Recent automation activity"
@@ -12388,6 +12415,9 @@
    "id": "changed {field}"
   },
   {
+   "id": "changed {field} on"
+  },
+  {
    "id": "chat"
   },
   {
@@ -12420,6 +12450,9 @@
   },
   {
    "id": "cost centre"
+  },
+  {
+   "id": "created"
   },
   {
    "id": "created this {type}"
@@ -13348,6 +13381,9 @@
   },
   {
    "id": "{key} must be a string."
+  },
+  {
+   "id": "{key} overview · {instance_name}"
   },
   {
    "id": "{key} settings · {instance_name}"

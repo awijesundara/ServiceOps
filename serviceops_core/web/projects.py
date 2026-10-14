@@ -153,6 +153,12 @@ def register(app):
                     counts=counts, members=service.assignable_users(project), labels=service.project_labels(project),
                     epics=service.epics(project))
 
+    @blueprint.get("/projects/<key>/overview")
+    def overview(key):
+        project = service.project_or_404(current_user, key)
+        return page("projects/overview.html", project, tab="overview",
+                    stats=service.overview(project, core.now().date()))
+
     @blueprint.get("/projects/<key>/board")
     def board(key):
         project = service.project_or_404(current_user, key)
