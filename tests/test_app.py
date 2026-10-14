@@ -2445,6 +2445,10 @@ def test_cloudflare_access_sso_verifies_signature_audience_and_expiry(app, clien
         assert b"Recently updated" in response.data
 
         client.post("/logout")
+        # Signing out turns the shortcut off for this browser session (tested
+        # separately); clear it so the rejections below are really exercised.
+        with client.session_transaction() as flask_session:
+            flask_session.pop("_sso_signed_out", None)
 
         # Wrong audience must be rejected even with a valid signature
         response = client.get("/login", headers={"Cf-Access-Jwt-Assertion": make_token(aud="some-other-app")})
@@ -11551,3 +11555,34 @@ def test_mobile_profile_avatar_is_served_to_the_signed_in_user(client, app):
     assert avatar.data == png
     assert avatar.headers["Cache-Control"] == "private, max-age=300"
     assert client.get("/api/v1/mobile/profile/avatar").status_code == 401
+
+
+def test_signing_out_keeps_cloudflare_access_from_signing_straight_back_in(app, client):
+    """After an explicit sign-out the login form is shown (so another account
+    can sign in); the "continue" link turns the Access shortcut back on."""
+    from joserfc.jwk import RSAKey, KeySet
+    from joserfc import jwt as joserfc_jwt
+    import app as app_module
+
+    key = RSAKey.generate_key(2048, parameters={"kid": "test-kid"}, private=True)
+    token = joserfc_jwt.encode({"alg": "RS256", "kid": "test-kid"},
+                               {"email": "admin@example.local", "aud": "test-aud", "exp": 9999999999,
+                                "iss": "https://test.cloudflareaccess.com"}, key)
+    headers = {"Cf-Access-Jwt-Assertion": token}
+    app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = "test.cloudflareaccess.com"
+    app.config["CLOUDFLARE_ACCESS_AUD"] = "test-aud"
+    app_module._cloudflare_access_jwks_cache["key_set"] = KeySet([key])
+    app_module._cloudflare_access_jwks_cache["fetched_at"] = app_module.time_module.monotonic()
+    try:
+        assert client.get("/login", headers=headers).status_code == 302
+        client.post("/logout")
+        page = client.get("/login", headers=headers)
+        assert page.status_code == 200 and b'name="username"' in page.data
+        assert b"Continue as your Cloudflare Access identity" in page.data
+        # Another account signs in with its password.
+        assert login(client, "employee", "Employee123!").status_code == 200
+        client.post("/logout")
+        assert client.get("/login?sso=1", headers=headers).status_code == 302
+    finally:
+        app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = ""
+        app.config["CLOUDFLARE_ACCESS_AUD"] = ""

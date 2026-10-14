@@ -2843,6 +2843,9 @@
    "id": "Continue"
   },
   {
+   "id": "Continue as your Cloudflare Access identity"
+  },
+  {
    "id": "Continue with Keycloak"
   },
   {

@@ -35,6 +35,9 @@
   {% endif %}
   </form>
   {% endif %}
+  {% if cloudflare_sso_resumable %}
+  <p class="muted"><a href="{{ url_for('login', sso=1) }}">{{ tr('Continue as your Cloudflare Access identity') }}</a></p>
+  {% endif %}
   <div class="login-version muted">v{{ app_version }}</div>
 </section>
 {% endblock %}
