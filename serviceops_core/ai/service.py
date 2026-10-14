@@ -420,7 +420,8 @@ def _finish(run_id, prepared, steps, content, reasoning, usage, sanitize, featur
     if run.kind == "chat":
         from serviceops_core.ai import context
         scope_now = access.build_scope(user, run.actor_role)
-        extras = access.extract_extras(content, context.may_raise_change(scope_now), tenant_id=scope_now.tenant_id)
+        extras = access.extract_extras(content, context.may_raise_change(scope_now), tenant_id=scope_now.tenant_id,
+                                        timezone_name=getattr(scope_now.identity, "timezone", None))
         from serviceops_core.ai import actions
         if extras.get("draft"):
             from serviceops_core.ai.ticket_drafts import bind_draft

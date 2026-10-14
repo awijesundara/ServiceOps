@@ -192,3 +192,18 @@ def test_complete_change_draft_browser(app, client, world, width):
     finally:
         server.shutdown()
         thread.join(timeout=5)
+
+
+def test_planned_times_without_an_offset_are_read_in_the_requesters_zone(app):
+    """Models often drop the offset even when told the person's zone; reading the time in that zone keeps the
+    schedule instead of silently discarding it."""
+    with app.app_context():
+        fields = draft_fields()
+        fields.update(planned_start='2030-11-02T08:00', planned_end='2030-11-02T09:00')
+        draft = access.extract_extras('[[TICKET]] ' + json.dumps(fields), may_raise_change=True, tenant_id=1,
+                                      timezone_name='Asia/Tokyo')['draft']
+        assert (draft['planned_start'], draft['planned_end']) == ('2030-11-01T23:00', '2030-11-02T00:00')
+        fields.update(planned_start='tomorrow 8am')
+        unreadable = access.extract_extras('[[TICKET]] ' + json.dumps(fields), may_raise_change=True, tenant_id=1,
+                                           timezone_name='Asia/Tokyo')['draft']
+        assert 'planned_start' not in unreadable

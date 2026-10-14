@@ -668,7 +668,7 @@ def extract_generated_draft(text, scope, grounded_identifiers):
     return result
 
 
-def extract_extras(text, may_raise_change=False, tenant_id=None):
+def extract_extras(text, may_raise_change=False, tenant_id=None, timezone_name=None):
     """Pull the machine-readable tail (ticket draft, follow-up questions) out of an answer.
 
     The draft is only ever a suggestion for the person to review in the normal ticket form; every field is
@@ -696,7 +696,7 @@ def extract_extras(text, may_raise_change=False, tenant_id=None):
                                    "urgency": pick(data.get("urgency"), _LEVELS, "Medium"),
                                    "category": pick(data.get("category"), categories, "")}
                 from serviceops_core.ai.ticket_drafts import additional_fields
-                extras["draft"].update(additional_fields(data))
+                extras["draft"].update(additional_fields(data, timezone_name))
     note = re.search(r"\[\[\s*REMEMBER\s*\]\]\s*(.+?)\s*(?:\[\[|$)", text, re.I | re.S)
     if note:
         candidate = " ".join(note.group(1).split()).strip(" \"'")[:240]
