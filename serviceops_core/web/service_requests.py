@@ -144,7 +144,7 @@ def register(app):
             EnterpriseRecord.tenant_id == current_user.tenant_id
         )
         if not role_at_least(current_user.effective_role, "admin"):
-            query = query.filter_by(approver_id=current_user.id)
+            query = query.filter(Approval.approver_id == current_user.id)
         return render_template("approvals.html", approvals=query.order_by(Approval.id.desc()).all())
 
     @app.post("/approval-votes/<int:vote_id>/decide")
