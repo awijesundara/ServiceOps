@@ -2622,6 +2622,11 @@ def register(app):
         elif attachment.client_ticket_id:
             if not visible_client_ticket_query(current_user).filter_by(id=attachment.client_ticket_id).first():
                 abort(404)
+        elif attachment.work_item_id:
+            from serviceops_core.projects import service as projects
+            item = db.session.get(core.WorkItem, attachment.work_item_id)
+            if not item or not projects.enabled() or not projects.can_view(current_user, item.project):
+                abort(404)
         elif not user_can_view_ticket(current_user, attachment.ticket):
             abort(403)
         # Only the handful of types a browser renders safely natively

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('Projects · {instance_name}', instance_name=instance_name) }}{% endblock %}
+{% block content %}
+{% with color_projects = projects %}{% include "projects/_colors.html" %}{% endwith %}
+<header class="page-head">
+  <div><p class="eyebrow">{{ tr('PROJECT MANAGEMENT') }}</p><h1>{{ tr('Projects') }}</h1><p>{{ tr('Plan, track and deliver work with boards, lists and work items linked to your service records.') }}</p></div>
+  {% if can_create %}<a class="primary" href="{{ url_for('projects.new_project') }}">{{ tr('Create project') }}</a>{% endif %}
+</header>
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>{{ tr('Your projects') }}</h2><p>{{ tr('Projects you belong to and projects open to your organisation.') }}</p></div>
+    <a class="button" href="{{ url_for('projects.index', archived='0' if show_archived else '1') }}">{{ tr('Hide archived') if show_archived else tr('Show archived') }}</a>
+  </div>
+  {% if projects %}
+  <div class="table-scroll"><table class="project-table">
+    <thead><tr><th>{{ tr('Project') }}</th><th>{{ tr('Key') }}</th><th>{{ tr('Lead') }}</th><th>{{ tr('Open work items') }}</th><th>{{ tr('Members') }}</th><th>{{ tr('Access') }}</th></tr></thead>
+    <tbody>
+    {% for project in projects %}<tr{% if project.archived_at %} class="is-archived"{% endif %}>
+      <td><a class="project-name" href="{{ url_for('projects.board', key=project.key) }}"><span class="project-badge small project-c-{{ project.id }}" aria-hidden="true">{{ project.key[:2] }}</span>{{ project.name }}</a>{% if project.archived_at %} <span class="badge">{{ tr('Archived') }}</span>{% endif %}</td>
+      <td>{{ project.key }}</td>
+      <td>{{ user_link(project.lead, tr('No lead')) }}</td>
+      <td>{{ open_counts.get(project.id, 0) }}</td>
+      <td>{{ member_counts.get(project.id, 0) }}</td>
+      <td><span class="badge">{{ tr('Open to the organisation') if project.visibility == 'open' else tr('Private') }}</span></td>
+    </tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <div class="empty-state">
+    <h3>{{ tr('No projects yet') }}</h3>
+    <p>{{ tr('Create a project to plan work on a board, or ask a project administrator to add you.') if can_create else tr('Ask a project administrator to add you to a project.') }}</p>
+    {% if can_create %}<a class="primary" href="{{ url_for('projects.new_project') }}">{{ tr('Create project') }}</a>{% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

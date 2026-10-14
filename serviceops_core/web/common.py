@@ -927,6 +927,14 @@ def save_ticket_attachment(ticket, upload, comment_id=None):
     failure -- callers flash the message and redirect. Shared by the
     dedicated attachment-upload route and the comment-with-attachment
     flow so both get identical malware scanning and type validation."""
+    return save_record_attachment(ticket.number, ticket.tenant_id, upload,
+                                  {"ticket_id": ticket.id, "comment_id": comment_id})
+
+
+def save_record_attachment(label, tenant_id, upload, parent_fields):
+    """save_ticket_attachment for any parent record: `label` (a record
+    number) names it in audit and logs, `parent_fields` sets the parent
+    column (ticket_id and comment_id, or work_item_id)."""
     if not upload or not upload.filename:
         return None, "Choose a file to upload."
     original = secure_filename(upload.filename)
@@ -945,10 +953,10 @@ def save_ticket_attachment(ticket, upload, comment_id=None):
     scan_status = core.scan_attachment(path)
     if scan_status == "infected":
         os.remove(path)
-        audit("attach-blocked", ticket.number, f"{original} (malware scan positive)")
+        audit("attach-blocked", label, f"{original} (malware scan positive)")
         current_app.logger.warning(
             "Rejected infected attachment upload: ticket=%s file=%s user=%s",
-            ticket.number, original, current_user.id,
+            label, original, current_user.id,
         )
         return None, "That file was rejected by malware scanning and was not attached."
     sha256 = hashlib.sha256()
@@ -974,7 +982,7 @@ def save_ticket_attachment(ticket, upload, comment_id=None):
             os.remove(path)
             current_app.logger.warning(
                 "Object storage upload failed: ticket=%s file=%s user=%s",
-                ticket.number, original, current_user.id,
+                label, original, current_user.id,
             )
             return None, "Attachment storage is temporarily unavailable. Please try again shortly."
         os.remove(path)
@@ -987,16 +995,16 @@ def save_ticket_attachment(ticket, upload, comment_id=None):
             os.remove(path)
             current_app.logger.warning(
                 "IPFS attachment upload failed: ticket=%s file=%s user=%s",
-                ticket.number, original, current_user.id,
+                label, original, current_user.id,
             )
             return None, "Attachment storage is temporarily unavailable. Please try again shortly."
         os.remove(path)
     attachment = FileAttachment(
-        ticket_id=ticket.id, comment_id=comment_id, uploaded_by_id=current_user.id,
+        **parent_fields, uploaded_by_id=current_user.id,
         original_name=original, stored_name=stored, ipfs_cid=ipfs_cid,
         mime_type=verified_mime_type, size_bytes=file_size,
-        sha256=sha256.hexdigest(), scan_status=scan_status, tenant_id=ticket.tenant_id,
+        sha256=sha256.hexdigest(), scan_status=scan_status, tenant_id=tenant_id,
     )
     db.session.add(attachment)
-    audit("attach", ticket.number, original)
+    audit("attach", label, original)
     return attachment, None

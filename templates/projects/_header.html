@@ -1,0 +1,19 @@
+{% with color_projects = [project] %}{% include "projects/_colors.html" %}{% endwith %}
+{# Project title, tabs and the create button shared by the board, list and settings. #}
+<header class="page-head project-head">
+  <div class="project-title">
+    <span class="project-badge project-c-{{ project.id }}" aria-hidden="true">{{ project.key[:2] }}</span>
+    <div>
+      <p class="eyebrow"><a href="{{ url_for('projects.index') }}">{{ tr('PROJECTS') }}</a> · {{ project.key }}{% if project.archived_at %} · {{ tr('Archived') }}{% endif %}</p>
+      <h1>{{ project.name }}</h1>
+    </div>
+  </div>
+  <div class="project-head-actions">
+    {% if can_edit %}<a class="primary" href="{{ url_for('projects.new_item', key=project.key) }}">{{ tr('Create work item') }}</a>{% endif %}
+  </div>
+</header>
+<nav class="project-tabs" aria-label="{{ tr('Project views') }}">
+  <a href="{{ url_for('projects.board', key=project.key) }}" {% if tab == 'board' %}aria-current="page"{% endif %}>{{ tr('Board') }}</a>
+  <a href="{{ url_for('projects.item_list', key=project.key) }}" {% if tab == 'list' %}aria-current="page"{% endif %}>{{ tr('List') }}</a>
+  {% if can_admin %}<a href="{{ url_for('projects.settings', key=project.key) }}" {% if tab == 'settings' %}aria-current="page"{% endif %}>{{ tr('Settings') }}</a>{% endif %}
+</nav>

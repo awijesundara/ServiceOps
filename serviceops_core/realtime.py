@@ -9,6 +9,9 @@ change commits and never for a rollback:
   "id": ticket_id, "actor": user_id}`` when a ticket, its comments or its
   history change. The events service (tools/events_server.py) forwards them
   to the browsers that may see them.
+  Project pages get ``{"type": "watch", "tenant": t, "key": "project:N" or
+  "work_item:N", "actor": user_id}`` when a work item, its comments or its
+  history change; streams watching that key are told something changed.
 - ``serviceops_outbox``: an empty signal when an outbox event is queued, so
   the background worker starts delivering at once instead of on its next
   timed pass.
@@ -39,9 +42,22 @@ def _actor_id():
 
 
 def _collect(session):
-    from serviceops_models import Comment, Notification, OutboxEvent, TaskHistory, Ticket
+    from serviceops_models import (Comment, Notification, OutboxEvent, TaskHistory, Ticket, WorkItem,
+                                   WorkItemComment, WorkItemHistory)
     pending = session.info.setdefault(_PENDING, {"events": set(), "outbox": False})
     actor = _actor_id()
+
+    def watch(tenant, key):
+        pending["events"].add(("watch", tenant, key, actor))
+
+    for obj in list(session.new) + list(session.dirty) + list(session.deleted):
+        if isinstance(obj, WorkItem) and obj.id:
+            watch(obj.tenant_id, f"project:{obj.project_id}")
+            watch(obj.tenant_id, f"work_item:{obj.id}")
+        elif isinstance(obj, (WorkItemComment, WorkItemHistory)) and obj.work_item_id and obj in session.new:
+            # Field changes also mark the work item itself dirty, which
+            # signals its project; comments and attachments concern the item.
+            watch(obj.tenant_id, f"work_item:{obj.work_item_id}")
     for obj in session.new:
         if isinstance(obj, Notification) and obj.user_id:
             pending["events"].add(("notification", obj.tenant_id, obj.user_id, None))
@@ -90,7 +106,12 @@ def _before_commit(session):
             if tenant is None:
                 continue
             payload = {"type": kind, "tenant": tenant}
-            payload.update({"user": target} if kind == "notification" else {"id": target, "actor": actor})
+            if kind == "notification":
+                payload["user"] = target
+            elif kind == "watch":
+                payload.update({"key": target, "actor": actor})
+            else:
+                payload.update({"id": target, "actor": actor})
             session.execute(text("SELECT pg_notify(:channel, :payload)"),
                             {"channel": EVENTS_CHANNEL, "payload": json.dumps(payload, separators=(",", ":"))})
         if pending["outbox"]:

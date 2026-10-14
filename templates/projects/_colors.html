@@ -1,0 +1,3 @@
+{# Project colours: inline style attributes are blocked by the CSP, so each
+   colour is a class in a nonce'd style block. Colours are validated #rrggbb. #}
+<style nonce="{{ csp_nonce() }}">{% for p in color_projects %}.project-c-{{ p.id }}{--project-color:{{ p.color }}}{% endfor %}</style>

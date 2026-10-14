@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('Create work item · {key} · {instance_name}', key=project.key, instance_name=instance_name) }}{% endblock %}
+{% block content %}
+{% include "projects/_header.html" %}
+<form method="post" class="panel form-grid wi-form">
+  <h2 class="wide">{{ tr('Create work item') }}</h2>
+  <label>{{ tr('Type') }}<select name="item_type" data-wi-type>{% for t in item_types %}<option value="{{ t }}" {% if t == item_type %}selected{% endif %}>{{ tr(item_type_labels[t]) }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Status') }}<select name="status_id">{% for status in project.statuses %}<option value="{{ status.id }}">{{ status.name }}</option>{% endfor %}</select></label>
+  <label class="wide">{{ tr('Summary') }}<input name="title" required maxlength="255" autofocus></label>
+  <label class="wide">{{ tr('Description') }}<textarea name="description" rows="6" maxlength="50000" placeholder="{{ tr('What needs to be done, and how will we know it is done?') }}"></textarea></label>
+  <label>{{ tr('Parent') }}<select name="parent_id"><option value="">{{ tr('None') }}</option>{% for p in parents %}<option value="{{ p.id }}" {% if parent and parent.id == p.id %}selected{% endif %}>{{ p.key }} · {{ p.title }} ({{ tr(item_type_labels[p.item_type]) }})</option>{% endfor %}</select></label>
+  <label>{{ tr('Priority') }}<select name="priority">{% for p in priorities %}<option value="{{ p }}" {% if p == 'medium' %}selected{% endif %}>{{ tr(priority_labels[p]) }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Assignees') }}<select name="assignee_ids" multiple size="4" data-people-picker>{% for user in members %}<option value="{{ user.id }}">{{ user.name }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Labels') }}<input name="labels" maxlength="1200" placeholder="{{ tr('frontend, release-2') }}"></label>
+  <label>{{ tr('Start date') }}<input type="date" name="start_date"></label>
+  <label>{{ tr('Due date') }}<input type="date" name="due_date"></label>
+  <label>{{ tr('Story points') }}<input type="number" name="story_points" min="0" max="1000" step="0.5"></label>
+  <label>{{ tr('Estimate (hours)') }}<input type="number" name="estimate_hours" min="0" max="16000" step="0.25"></label>
+  <div class="wide actions"><a class="button" href="{{ url_for('projects.board', key=project.key) }}">{{ tr('Cancel') }}</a><button class="button" name="another" value="1">{{ tr('Create and add another') }}</button><button class="primary">{{ tr('Create') }}</button></div>
+</form>
+{% endblock %}

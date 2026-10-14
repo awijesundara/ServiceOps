@@ -65,6 +65,9 @@
    "id": ") blocks externally-hosted images, and there's no file upload/storage for one built yet."
   },
   {
+   "id": "+ Add a work item"
+  },
+  {
    "id": "+{count} more",
    "javascript": true
   },
@@ -78,10 +81,16 @@
    "id": "10.0.1.1 or 10.0.1.0/24"
   },
   {
+   "id": "2 to 10 letters or digits, starting with a letter."
+  },
+  {
    "id": "24x7 wall clock"
   },
   {
    "id": "A JSON object is required."
+  },
+  {
+   "id": "A JSON object with a body string is required."
   },
   {
    "id": "A Pinata JWT is required (get one free at pinata.cloud)"
@@ -172,6 +181,15 @@
    "id": "A passkey credential object with a response object is required."
   },
   {
+   "id": "A project key has 2 to 10 letters or digits and starts with a letter."
+  },
+  {
+   "id": "A project needs at least one administrator."
+  },
+  {
+   "id": "A project needs at least one status."
+  },
+  {
    "id": "A proxy is saved. Leave blank to keep it. Credentials are never shown again.",
    "javascript": true
   },
@@ -198,6 +216,12 @@
   },
   {
    "id": "A status update message is required."
+  },
+  {
+   "id": "A subtask belongs to a story, task or bug."
+  },
+  {
+   "id": "A subtask needs a parent work item."
   },
   {
    "id": "A summary is required for the post-implementation review."
@@ -243,6 +267,24 @@
   },
   {
    "id": "A visual map of configuration items and how they connect."
+  },
+  {
+   "id": "A work item can have at most 20 labels."
+  },
+  {
+   "id": "A work item can have at most {count} assignees."
+  },
+  {
+   "id": "A work item cannot be its own parent."
+  },
+  {
+   "id": "A work item cannot link to itself."
+  },
+  {
+   "id": "A work-in-progress limit is a whole number."
+  },
+  {
+   "id": "A work-in-progress limit is between 1 and 999."
   },
   {
    "id": "A {label} synchronization is already queued or running."
@@ -375,6 +417,9 @@
    "id": "Accepted"
   },
   {
+   "id": "Access"
+  },
+  {
    "id": "Access for users in no mapped group"
   },
   {
@@ -468,6 +513,9 @@
    "id": "Active users were seen in the last 15 minutes."
   },
   {
+   "id": "Activity"
+  },
+  {
    "id": "Activity & logs"
   },
   {
@@ -512,6 +560,9 @@
    "id": "Add a comment to a ticket"
   },
   {
+   "id": "Add a comment. Type @username to mention someone."
+  },
+  {
    "id": "Add a discovery target"
   },
   {
@@ -527,7 +578,15 @@
    "id": "Add a member manually…"
   },
   {
+   "id": "Add a person",
+   "javascript": true
+  },
+  {
    "id": "Add a personal chat destination"
+  },
+  {
+   "id": "Add a person…",
+   "javascript": true
   },
   {
    "id": "Add a schedule"
@@ -620,6 +679,9 @@
    "id": "Add organization"
   },
   {
+   "id": "Add person"
+  },
+  {
    "id": "Add problem task"
   },
   {
@@ -634,6 +696,9 @@
   {
    "id": "Add selected",
    "javascript": true
+  },
+  {
+   "id": "Add status"
   },
   {
    "id": "Add step"
@@ -737,6 +802,9 @@
    "id": "Administrators can create organization or team channels here."
   },
   {
+   "id": "Administrators manage settings, members and statuses. Members create and edit work items. Viewers read and comment. Organisation administrators can always manage every project."
+  },
+  {
    "id": "Administrators may prepare state, priority, assignment and exact-comment changes from chat. Incident investigations may prepare an answer as a comment. A person must review and approve every exact change before it is applied."
   },
   {
@@ -810,7 +878,13 @@
    "id": "All environments"
   },
   {
+   "id": "All epics"
+  },
+  {
    "id": "All investigations for this incident"
+  },
+  {
+   "id": "All labels"
   },
   {
    "id": "All levels"
@@ -820,6 +894,9 @@
   },
   {
    "id": "All priorities"
+  },
+  {
+   "id": "All projects"
   },
   {
    "id": "All roles"
@@ -835,6 +912,9 @@
   },
   {
    "id": "All tenants"
+  },
+  {
+   "id": "All types"
   },
   {
    "id": "All unsolved tickets"
@@ -901,6 +981,9 @@
    "id": "An asset tag and a name are required."
   },
   {
+   "id": "An epic cannot have a parent."
+  },
+  {
    "id": "Analytics"
   },
   {
@@ -930,6 +1013,9 @@
   },
   {
    "id": "Any status"
+  },
+  {
+   "id": "Anyone"
   },
   {
    "id": "Anything not sensitive"
@@ -1091,10 +1177,19 @@
    "id": "Archive"
   },
   {
+   "id": "Archive project"
+  },
+  {
+   "id": "Archive {name}?"
+  },
+  {
    "id": "Archived"
   },
   {
    "id": "Archives this article. It will no longer appear in knowledge search, but its content and audit history are preserved."
+  },
+  {
+   "id": "Archiving makes the project read-only and hides it from the project list. Nothing is deleted."
   },
   {
    "id": "Article archived. It no longer appears in knowledge search but its history is preserved."
@@ -1104,6 +1199,9 @@
   },
   {
    "id": "Ask AI · {instance_name}"
+  },
+  {
+   "id": "Ask a project administrator to add you to a project."
   },
   {
    "id": "Assessed"
@@ -1151,6 +1249,9 @@
    "id": "Assignee"
   },
   {
+   "id": "Assignees"
+  },
+  {
    "id": "Assignment & purchase"
   },
   {
@@ -1170,6 +1271,9 @@
   },
   {
    "id": "At once"
+  },
+  {
+   "id": "Attach"
   },
   {
    "id": "Attach a file to this note (optional)"
@@ -1413,6 +1517,9 @@
    "id": "Blue-green accents with a bright, focused workspace."
   },
   {
+   "id": "Board"
+  },
+  {
    "id": "Board scope"
   },
   {
@@ -1467,11 +1574,17 @@
    "id": "Breaching within {count} hours"
   },
   {
+   "id": "Breadcrumb"
+  },
+  {
    "id": "Bronze Silver Gold"
   },
   {
    "id": "Browse configuration items",
    "javascript": true
+  },
+  {
+   "id": "Browse projects"
   },
   {
    "id": "Bundled IPFS node"
@@ -1840,6 +1953,9 @@
    "id": "Change tasks require an active team."
   },
   {
+   "id": "Change the filters, or create the first work item."
+  },
+  {
    "id": "Change this from Team managers / Approval authority"
   },
   {
@@ -1923,10 +2039,25 @@
    "id": "Choice"
   },
   {
+   "id": "Choose To do, In progress or Done."
+  },
+  {
    "id": "Choose a file"
   },
   {
+   "id": "Choose a link type."
+  },
+  {
    "id": "Choose a new password"
+  },
+  {
+   "id": "Choose a person"
+  },
+  {
+   "id": "Choose a priority."
+  },
+  {
+   "id": "Choose a status."
   },
   {
    "id": "Choose a supported provider."
@@ -1938,10 +2069,19 @@
    "id": "Choose a team…"
   },
   {
+   "id": "Choose a user."
+  },
+  {
    "id": "Choose a user…"
   },
   {
    "id": "Choose a valid {label}."
+  },
+  {
+   "id": "Choose a work item type."
+  },
+  {
+   "id": "Choose admin, member or viewer."
   },
   {
    "id": "Choose an active agent in this organisation as the owner."
@@ -1951,6 +2091,9 @@
   },
   {
    "id": "Choose an organization-wide operational feed or one support group's chat room. Users add private destinations in their own preferences."
+  },
+  {
+   "id": "Choose another status for the work items in {name}."
   },
   {
    "id": "Choose channels, select event categories, and review delivery health."
@@ -1969,6 +2112,9 @@
   },
   {
    "id": "Choose or enter {field}."
+  },
+  {
+   "id": "Choose private or open visibility."
   },
   {
    "id": "Choose the executives who can approve Normal and Emergency changes."
@@ -2131,6 +2277,9 @@
   {
    "id": "Collected evidence",
    "javascript": true
+  },
+  {
+   "id": "Colour"
   },
   {
    "id": "Columns"
@@ -2548,6 +2697,9 @@
    "id": "Create a new backup reporting token? The previous one stops working."
   },
   {
+   "id": "Create a project to plan work on a board, or ask a project administrator to add you."
+  },
+  {
    "id": "Create a tour"
   },
   {
@@ -2558,6 +2710,9 @@
   },
   {
    "id": "Create an incident or service request to get started."
+  },
+  {
+   "id": "Create and add another"
   },
   {
    "id": "Create and reveal token"
@@ -2602,6 +2757,12 @@
    "id": "Create organization"
   },
   {
+   "id": "Create project"
+  },
+  {
+   "id": "Create project · {instance_name}"
+  },
+  {
    "id": "Create rack"
   },
   {
@@ -2623,6 +2784,9 @@
    "id": "Create tenant"
   },
   {
+   "id": "Create the first work item to get started."
+  },
+  {
    "id": "Create the secret, then enable the chart backup job with it:"
   },
   {
@@ -2633,6 +2797,12 @@
   },
   {
    "id": "Create user"
+  },
+  {
+   "id": "Create work item"
+  },
+  {
+   "id": "Create work item · {key} · {instance_name}"
   },
   {
    "id": "Create {kind}"
@@ -2967,6 +3137,9 @@
    "id": "Delete view"
   },
   {
+   "id": "Delete {key}? This cannot be undone."
+  },
+  {
    "id": "Delete {name}"
   },
   {
@@ -3004,6 +3177,9 @@
   },
   {
    "id": "Delivery target must be between 1 and 365 days."
+  },
+  {
+   "id": "Delivery work linked to this record"
   },
   {
    "id": "Density"
@@ -3243,6 +3419,9 @@
   {
    "id": "Drop files to attach them to {number}",
    "javascript": true
+  },
+  {
+   "id": "Drop here"
   },
   {
    "id": "Drop here to move the card"
@@ -3507,6 +3686,9 @@
    "id": "Environment{src}"
   },
   {
+   "id": "Epic"
+  },
+  {
    "id": "Equipment inventory"
   },
   {
@@ -3548,6 +3730,15 @@
   },
   {
    "id": "Escalation team"
+  },
+  {
+   "id": "Estimate"
+  },
+  {
+   "id": "Estimate (hours)"
+  },
+  {
+   "id": "Estimate must be a number of hours."
   },
   {
    "id": "Estimated delivery: {delivery_days} business day"
@@ -3792,6 +3983,9 @@
    "id": "Fields where two sources disagree. The higher-priority source wins."
   },
   {
+   "id": "File"
+  },
+  {
    "id": "Filled from RT #{id}: {subject}",
    "javascript": true
   },
@@ -3809,6 +4003,12 @@
   },
   {
    "id": "Filter team members"
+  },
+  {
+   "id": "Filter work items"
+  },
+  {
+   "id": "Filters"
   },
   {
    "id": "Find a menu item"
@@ -4078,10 +4278,16 @@
    "id": "Group approvals"
   },
   {
+   "id": "Group by"
+  },
+  {
    "id": "Group name"
   },
   {
    "id": "Group name must contain 1 to 120 characters."
+  },
+  {
+   "id": "Group rows by"
   },
   {
    "id": "Group to add as {legend}"
@@ -4155,6 +4361,9 @@
   },
   {
    "id": "Hi there"
+  },
+  {
+   "id": "Hide archived"
   },
   {
    "id": "Hide from the public status page"
@@ -4882,6 +5091,12 @@
    "id": "Label"
   },
   {
+   "id": "Labels"
+  },
+  {
+   "id": "Labels have no spaces or commas and at most 60 characters."
+  },
+  {
    "id": "Language"
   },
   {
@@ -4946,6 +5161,9 @@
   },
   {
    "id": "Latest result"
+  },
+  {
+   "id": "Lead"
   },
   {
    "id": "Learn {instance_name}"
@@ -5021,6 +5239,9 @@
    "id": "Link RT ticket"
   },
   {
+   "id": "Link added."
+  },
+  {
    "id": "Link affected CIs"
   },
   {
@@ -5036,10 +5257,19 @@
    "id": "Link record"
   },
   {
+   "id": "Link type"
+  },
+  {
    "id": "Linked to {number}"
   },
   {
+   "id": "Linked work and records"
+  },
+  {
    "id": "Linked {name} to {linked_names}."
+  },
+  {
+   "id": "List"
   },
   {
    "id": "List attachments on a visible ticket"
@@ -5325,6 +5555,9 @@
    "id": "Maximum upload size (MB)"
   },
   {
+   "id": "Me"
+  },
+  {
    "id": "Mean time to resolve"
   },
   {
@@ -5468,6 +5701,18 @@
    "id": "Monitoring sources"
   },
   {
+   "id": "Move its work items to"
+  },
+  {
+   "id": "Move or remove this item's children before changing its type."
+  },
+  {
+   "id": "Move {name} left"
+  },
+  {
+   "id": "Move {name} right"
+  },
+  {
    "id": "Mute specific notifications"
   },
   {
@@ -5517,6 +5762,12 @@
   },
   {
    "id": "My work"
+  },
+  {
+   "id": "My work items"
+  },
+  {
+   "id": "My work items · {instance_name}"
   },
   {
    "id": "NEEDS ATTENTION"
@@ -5678,6 +5929,9 @@
    "id": "New chat"
   },
   {
+   "id": "New comment on {key}"
+  },
+  {
    "id": "New configuration item"
   },
   {
@@ -5705,6 +5959,9 @@
    "id": "New record"
   },
   {
+   "id": "New status"
+  },
+  {
    "id": "New subcategory name"
   },
   {
@@ -5712,6 +5969,9 @@
   },
   {
    "id": "New user"
+  },
+  {
+   "id": "New work item in {status}"
   },
   {
    "id": "New work uses the selected timezone-aware calendar. Existing running SLA targets are preserved."
@@ -5840,6 +6100,9 @@
    "id": "No changes to save."
   },
   {
+   "id": "No changes yet."
+  },
+  {
    "id": "No channel deliveries yet. Send a test or wait for a subscribed event."
   },
   {
@@ -5886,6 +6149,9 @@
    "id": "No decision comments."
   },
   {
+   "id": "No description yet."
+  },
+  {
    "id": "No devices selected -- nothing was added."
   },
   {
@@ -5905,6 +6171,9 @@
   },
   {
    "id": "No duplicate team names found."
+  },
+  {
+   "id": "No epic"
   },
   {
    "id": "No events"
@@ -5927,6 +6196,9 @@
   },
   {
    "id": "No fulfillment tasks. Automation may fulfill this item."
+  },
+  {
+   "id": "No grouping"
   },
   {
    "id": "No groups added."
@@ -5980,10 +6252,16 @@
    "id": "No known errors documented yet — mark a problem's root-cause analysis as a known error to have it show up here."
   },
   {
+   "id": "No lead"
+  },
+  {
    "id": "No limit"
   },
   {
    "id": "No linked problems."
+  },
+  {
+   "id": "No links. Link related work items, or incidents, problems and changes this work belongs to."
   },
   {
    "id": "No macros defined yet."
@@ -6028,6 +6306,10 @@
   },
   {
    "id": "No matching menu items"
+  },
+  {
+   "id": "No matching people",
+   "javascript": true
   },
   {
    "id": "No matching records."
@@ -6086,6 +6368,9 @@
   },
   {
    "id": "No profile picture has been uploaded."
+  },
+  {
+   "id": "No projects yet"
   },
   {
    "id": "No proxy (direct connection)"
@@ -6223,6 +6508,15 @@
    "id": "No widgets selected. Use \"Customize\" below to add some."
   },
   {
+   "id": "No work item or record {number} that you can see."
+  },
+  {
+   "id": "No work items"
+  },
+  {
+   "id": "No work items match"
+  },
+  {
    "id": "No workflow executions."
   },
   {
@@ -6239,6 +6533,9 @@
   },
   {
    "id": "None recorded"
+  },
+  {
+   "id": "None yet."
   },
   {
    "id": "Normal"
@@ -6260,6 +6557,9 @@
   },
   {
    "id": "Not documented"
+  },
+  {
+   "id": "Not done"
   },
   {
    "id": "Not enough snapshots yet for a trend line."
@@ -6348,6 +6648,9 @@
   },
   {
    "id": "Nothing"
+  },
+  {
+   "id": "Nothing assigned to you"
   },
   {
    "id": "Nothing assigned to you right now."
@@ -6557,6 +6860,9 @@
    "id": "Only future matching events are delivered to this channel."
   },
   {
+   "id": "Only project administrators can change project settings."
+  },
+  {
    "id": "Only published knowledge"
   },
   {
@@ -6570,6 +6876,9 @@
   },
   {
    "id": "Only the fulfillment team can add tasks to this requested item."
+  },
+  {
+   "id": "Only the reporter or a project administrator can delete a work item."
   },
   {
    "id": "Only the view's creator or an admin can delete it."
@@ -6652,10 +6961,19 @@
    "id": "Open to all SysOps members"
   },
   {
+   "id": "Open to the organisation"
+  },
+  {
    "id": "Open volume"
   },
   {
    "id": "Open work"
+  },
+  {
+   "id": "Open work items"
+  },
+  {
+   "id": "Open work items assigned to you in every project, soonest due first."
   },
   {
    "id": "Open work · {instance_name}"
@@ -6663,6 +6981,9 @@
   {
    "id": "Open {page}",
    "javascript": true
+  },
+  {
+   "id": "Open: everyone in the organisation can view"
   },
   {
    "id": "OpenAI"
@@ -6870,6 +7191,12 @@
    "id": "PROBLEM MANAGEMENT"
   },
   {
+   "id": "PROJECT MANAGEMENT"
+  },
+  {
+   "id": "PROJECTS"
+  },
+  {
    "id": "Pacific time (Google)"
   },
   {
@@ -6877,6 +7204,9 @@
   },
   {
    "id": "Page {page} of {pages} · {total} total"
+  },
+  {
+   "id": "Pages"
   },
   {
    "id": "Pagination"
@@ -6887,6 +7217,9 @@
   {
    "id": "Parameters: ",
    "javascript": true
+  },
+  {
+   "id": "Parent"
   },
   {
    "id": "Parent CI"
@@ -7018,6 +7351,9 @@
    "id": "Permissions"
   },
   {
+   "id": "Person"
+  },
+  {
    "id": "Personal channel status updated."
   },
   {
@@ -7066,6 +7402,9 @@
    "id": "Placement"
   },
   {
+   "id": "Plan, track and deliver work with boards, lists and work items linked to your service records."
+  },
+  {
    "id": "Planned"
   },
   {
@@ -7108,6 +7447,9 @@
   },
   {
    "id": "Platform tenants · {instance_name}"
+  },
+  {
+   "id": "Points"
   },
   {
    "id": "Policy"
@@ -7240,6 +7582,9 @@
    "id": "Previewing {theme}. Save preferences to keep this theme."
   },
   {
+   "id": "Previous"
+  },
+  {
    "id": "Primary"
   },
   {
@@ -7298,6 +7643,9 @@
   {
    "id": "Private · {model}",
    "javascript": true
+  },
+  {
+   "id": "Private: members only"
   },
   {
    "id": "Problem"
@@ -7365,6 +7713,39 @@
   {
    "id": "Progress temporarily unavailable; retrying.",
    "javascript": true
+  },
+  {
+   "id": "Project"
+  },
+  {
+   "id": "Project board"
+  },
+  {
+   "id": "Project lead"
+  },
+  {
+   "id": "Project name"
+  },
+  {
+   "id": "Project settings saved."
+  },
+  {
+   "id": "Project views"
+  },
+  {
+   "id": "Project work items"
+  },
+  {
+   "id": "Project {key} created."
+  },
+  {
+   "id": "Projects"
+  },
+  {
+   "id": "Projects you belong to and projects open to your organisation."
+  },
+  {
+   "id": "Projects · {instance_name}"
   },
   {
    "id": "Propose"
@@ -7943,6 +8324,12 @@
    "id": "Remove grant"
   },
   {
+   "id": "Remove link"
+  },
+  {
+   "id": "Remove link to {label}"
+  },
+  {
    "id": "Remove mailbox {name}? This deletes its stored credentials."
   },
   {
@@ -7978,6 +8365,9 @@
   {
    "id": "Remove {name}",
    "javascript": true
+  },
+  {
+   "id": "Remove {name} from this project?"
   },
   {
    "id": "Remove {name} from {name2}"
@@ -8019,6 +8409,9 @@
   },
   {
    "id": "Report an incident"
+  },
+  {
+   "id": "Reporter"
   },
   {
    "id": "Reporting hierarchy across the organization, based on each user's manager."
@@ -8250,6 +8643,9 @@
    "id": "Restart required"
   },
   {
+   "id": "Restore project"
+  },
+  {
    "id": "Restrict visibility"
   },
   {
@@ -8405,6 +8801,9 @@
   },
   {
    "id": "Role mappings (JSON)"
+  },
+  {
+   "id": "Role of {name}"
   },
   {
    "id": "Role protected and audited"
@@ -8682,6 +9081,9 @@
   },
   {
    "id": "Save data region"
+  },
+  {
+   "id": "Save details"
   },
   {
    "id": "Save event choices"
@@ -9437,6 +9839,9 @@
    "javascript": true
   },
   {
+   "id": "Show archived"
+  },
+  {
    "id": "Show errors"
   },
   {
@@ -9604,11 +10009,18 @@
    "javascript": true
   },
   {
+   "id": "Someone else just updated this work item.",
+   "javascript": true
+  },
+  {
    "id": "Something else"
   },
   {
    "id": "Something went wrong. Please try again.",
    "javascript": true
+  },
+  {
+   "id": "Sort by"
   },
   {
    "id": "Source"
@@ -9690,6 +10102,9 @@
    "id": "Standard and Normal changes can't be scheduled inside these windows — only Emergency changes are exempt."
   },
   {
+   "id": "Start date"
+  },
+  {
    "id": "Start guided tour"
   },
   {
@@ -9726,10 +10141,19 @@
    "id": "Status labels → lifecycle:"
   },
   {
+   "id": "Status name"
+  },
+  {
+   "id": "Status of {key}"
+  },
+  {
    "id": "Status update posted."
   },
   {
    "id": "Status/priority value, group or user ID, tag text, or message body depending on the action above"
+  },
+  {
+   "id": "Statuses are the board columns, left to right. Each belongs to a category used for progress and reports. A work-in-progress limit marks the column when exceeded."
   },
   {
    "id": "Step added."
@@ -9759,6 +10183,9 @@
    "id": "Stop push notifications to this device"
   },
   {
+   "id": "Stop watching"
+  },
+  {
    "id": "Stopped",
    "javascript": true
   },
@@ -9774,6 +10201,12 @@
   },
   {
    "id": "Storage backend"
+  },
+  {
+   "id": "Stories, tasks and bugs can only belong to an epic."
+  },
+  {
+   "id": "Story points"
   },
   {
    "id": "Stream audit events to SIEM"
@@ -9828,6 +10261,9 @@
   },
   {
    "id": "Subscribed events"
+  },
+  {
+   "id": "Subtasks"
   },
   {
    "id": "Successful"
@@ -10167,7 +10603,13 @@
    "id": "That email address is already used by another account."
   },
   {
+   "id": "That link already exists."
+  },
+  {
    "id": "That sheet URL could not be reached safely."
+  },
+  {
+   "id": "That status does not belong to this project."
   },
   {
    "id": "The API client lacks scope {scope}."
@@ -10262,6 +10704,10 @@
    "id": "The category/subcategory taxonomy offered on the ticket form"
   },
   {
+   "id": "The change could not be saved.",
+   "javascript": true
+  },
+  {
    "id": "The configured outbound proxy URL is invalid."
   },
   {
@@ -10274,6 +10720,9 @@
    "id": "The directory could not be reached: {error}"
   },
   {
+   "id": "The due date cannot be before the start date."
+  },
+  {
    "id": "The end date must be on or after the start date."
   },
   {
@@ -10281,6 +10730,12 @@
   },
   {
    "id": "The installed version and build are shown inside the app under More → Settings so support teams can identify the exact client in use."
+  },
+  {
+   "id": "The key is part of every work item number and cannot change."
+  },
+  {
+   "id": "The key prefixes every work item number, for example WEB-12. It cannot be changed later."
   },
   {
    "id": "The latest customer-support conversations"
@@ -10332,6 +10787,9 @@
    "id": "The owning team requires an active manager or approval group."
   },
   {
+   "id": "The parent must be a work item in this project."
+  },
+  {
    "id": "The passkey challenge belongs to another identity."
   },
   {
@@ -10351,6 +10809,9 @@
   },
   {
    "id": "The product name shown in navigation and browser titles."
+  },
+  {
+   "id": "The project key {key} is already in use."
   },
   {
    "id": "The proposed article is no longer valid."
@@ -10561,6 +11022,12 @@
    "id": "This passkey is already registered."
   },
   {
+   "id": "This project already has a status called {name}."
+  },
+  {
+   "id": "This project is archived: it is read-only and hidden from the project list."
+  },
+  {
    "id": "This proposal cannot be executed."
   },
   {
@@ -10659,6 +11126,9 @@
   },
   {
    "id": "Title is required."
+  },
+  {
+   "id": "Title, description or key"
   },
   {
    "id": "To"
@@ -10886,6 +11356,9 @@
   },
   {
    "id": "Unknown record type."
+  },
+  {
+   "id": "Unknown settings action."
   },
   {
    "id": "Unlink {name}"
@@ -11294,6 +11767,12 @@
    "id": "Votes"
   },
   {
+   "id": "WEB-12, CHG0001234, INC0004567…"
+  },
+  {
+   "id": "WIP limit"
+  },
+  {
    "id": "WORK QUEUE"
   },
   {
@@ -11334,6 +11813,9 @@
    "id": "Warranty expiry{src}"
   },
   {
+   "id": "Watch"
+  },
+  {
    "id": "We are investigating an issue"
   },
   {
@@ -11371,6 +11853,9 @@
   },
   {
    "id": "What may go to an outside service"
+  },
+  {
+   "id": "What needs to be done, and how will we know it is done?"
   },
   {
    "id": "What others can see"
@@ -11442,6 +11927,31 @@
    "id": "Work in Progress"
   },
   {
+   "id": "Work in progress limit {limit}"
+  },
+  {
+   "id": "Work item key or record number"
+  },
+  {
+   "id": "Work items"
+  },
+  {
+   "id": "Work items assigned to you in any project appear here."
+  },
+  {
+   "id": "Work items in this epic"
+  },
+  {
+   "id": "Work items in this project have changed.",
+   "javascript": true
+  },
+  {
+   "id": "Work items in this status"
+  },
+  {
+   "id": "Work items link to other work items, incidents, changes and problems."
+  },
+  {
    "id": "Work notes"
   },
   {
@@ -11479,6 +11989,9 @@
   },
   {
    "id": "Workflow schedule {name} created."
+  },
+  {
+   "id": "Workflow statuses"
   },
   {
    "id": "Working",
@@ -11530,6 +12043,9 @@
    "id": "You already have an AI investigation in progress."
   },
   {
+   "id": "You are not allowed to create projects."
+  },
+  {
    "id": "You are not involved in this catalog task or its fulfillment."
   },
   {
@@ -11558,6 +12074,12 @@
   },
   {
    "id": "You are sending messages too quickly. Wait a moment."
+  },
+  {
+   "id": "You can read this project but not comment on it."
+  },
+  {
+   "id": "You can view this project but not change its work items."
   },
   {
    "id": "You cannot deactivate the tenant your own account belongs to."
@@ -11644,6 +12166,9 @@
    "id": "Your password is managed by your organization's login provider, not ServiceOps."
   },
   {
+   "id": "Your projects"
+  },
+  {
    "id": "Your question"
   },
   {
@@ -11726,6 +12251,9 @@
    "id": "assigned_to_id must be an integer or null."
   },
   {
+   "id": "assignee_ids must be a list of user ids."
+  },
+  {
    "id": "assignment_group_id is required."
   },
   {
@@ -11733,6 +12261,9 @@
   },
   {
    "id": "at"
+  },
+  {
+   "id": "attached {name}"
   },
   {
    "id": "before",
@@ -11743,6 +12274,9 @@
   },
   {
    "id": "billing, onboarding, priority-client"
+  },
+  {
+   "id": "blocks"
   },
   {
    "id": "bool"
@@ -11762,6 +12296,9 @@
   {
    "id": "change",
    "javascript": true
+  },
+  {
+   "id": "changed {field}"
   },
   {
    "id": "chat"
@@ -11798,6 +12335,9 @@
    "id": "cost centre"
   },
   {
+   "id": "created this {type}"
+  },
+  {
    "id": "customized"
   },
   {
@@ -11816,10 +12356,16 @@
    "id": "decision must be Approved or Rejected."
   },
   {
+   "id": "deleted attachment {name}"
+  },
+  {
    "id": "discord"
   },
   {
    "id": "dismissed"
+  },
+  {
+   "id": "duplicates"
   },
   {
    "id": "e.g. 12345"
@@ -11905,6 +12451,9 @@
   },
   {
    "id": "from"
+  },
+  {
+   "id": "frontend, release-2"
   },
   {
    "id": "grants."
@@ -12113,6 +12662,9 @@
    "id": "parent_id must be an integer comment identifier."
   },
   {
+   "id": "parent_key must be a work item in this project."
+  },
+  {
    "id": "payroll acquisition"
   },
   {
@@ -12181,6 +12733,9 @@
   },
   {
    "id": "ref"
+  },
+  {
+   "id": "relates to"
   },
   {
    "id": "release update check proxy"
@@ -12486,6 +13041,9 @@
    "id": "{count} incidents resolved in this window."
   },
   {
+   "id": "{count} linked"
+  },
+  {
    "id": "{count} member"
   },
   {
@@ -12574,6 +13132,9 @@
    "id": "{count} warnings"
   },
   {
+   "id": "{count} work items"
+  },
+  {
    "id": "{created} to create, {updated} to update"
   },
   {
@@ -12602,10 +13163,16 @@
    "id": "{devices}, {virtual_machines} and {racks}"
   },
   {
+   "id": "{done} of {total} done"
+  },
+  {
    "id": "{duration_minutes} minutes"
   },
   {
    "id": "{errors} error(s)"
+  },
+  {
+   "id": "{field} has the wrong type."
   },
   {
    "id": "{field} is too long: use at most {limit} characters."
@@ -12662,10 +13229,35 @@
    "id": "{items} items"
   },
   {
+   "id": "{key} board · {instance_name}"
+  },
+  {
+   "id": "{key} created."
+  },
+  {
+   "id": "{key} deleted."
+  },
+  {
+   "id": "{key} moved to {status}"
+  },
+  {
+   "id": "{key} moved to {status}.",
+   "javascript": true
+  },
+  {
    "id": "{key} must be a boolean."
   },
   {
    "id": "{key} must be a string."
+  },
+  {
+   "id": "{key} settings · {instance_name}"
+  },
+  {
+   "id": "{key} updated."
+  },
+  {
+   "id": "{key} work items · {instance_name}"
   },
   {
    "id": "{kind} sections"
@@ -12677,6 +13269,15 @@
    "id": "{label} added."
   },
   {
+   "id": "{label} can have at most {limit} characters."
+  },
+  {
+   "id": "{label} is not a valid user."
+  },
+  {
+   "id": "{label} is not an active user in this organisation."
+  },
+  {
    "id": "{label} is now {value}."
   },
   {
@@ -12684,6 +13285,9 @@
   },
   {
    "id": "{label} must be a date (YYYY-MM-DD)."
+  },
+  {
+   "id": "{label} must be a number."
   },
   {
    "id": "{label} must be a whole number."
@@ -12696,6 +13300,9 @@
   },
   {
    "id": "{label} must be between 0 and 999,999,999,999."
+  },
+  {
+   "id": "{label} must be between 0 and {maximum}."
   },
   {
    "id": "{label} must be between {low} and {high}."
@@ -12747,6 +13354,12 @@
    "id": "{name} already has this {value} — resolve the conflict before saving."
   },
   {
+   "id": "{name} assigned {key} to you"
+  },
+  {
+   "id": "{name} attached."
+  },
+  {
    "id": "{name} cannot be requested yet: {error} Contact an administrator."
   },
   {
@@ -12775,6 +13388,9 @@
    "id": "{name} is already a member of {name2}."
   },
   {
+   "id": "{name} is not a member who can work on this project."
+  },
+  {
    "id": "{name} is now {value} the public status page."
   },
   {
@@ -12782,6 +13398,12 @@
   },
   {
    "id": "{name} manager updated."
+  },
+  {
+   "id": "{name} mentioned you in {key}"
+  },
+  {
+   "id": "{name} moved {key} from {old} to {new}."
   },
   {
    "id": "{name} must be between {low} and {high}."

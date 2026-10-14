@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "projects/_macros.html" import type_icon, priority_icon, status_pill with context %}
+{% block title %}{{ tr('My work items · {instance_name}', instance_name=instance_name) }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">{{ tr('PROJECTS') }}</p><h1>{{ tr('My work items') }}</h1><p>{{ tr('Open work items assigned to you in every project, soonest due first.') }}</p></div></header>
+<section class="panel">
+  {% if items %}
+  <div class="table-scroll"><table class="wi-table">
+    <thead><tr><th scope="col">{{ tr('Type') }}</th><th scope="col">{{ tr('Key') }}</th><th scope="col">{{ tr('Summary') }}</th><th scope="col">{{ tr('Project') }}</th><th scope="col">{{ tr('Status') }}</th><th scope="col">{{ tr('Priority') }}</th><th scope="col">{{ tr('Due') }}</th></tr></thead>
+    <tbody>{% for item in items %}<tr>
+      <td>{{ type_icon(item.item_type) }}</td>
+      <td class="wi-key-cell"><a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.key }}</a></td>
+      <td class="wi-summary"><a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.title }}</a></td>
+      <td><a href="{{ url_for('projects.board', key=item.project.key) }}">{{ item.project.name }}</a></td>
+      <td>{{ status_pill(item.status) }}</td>
+      <td>{{ priority_icon(item.priority) }} {{ tr(priority_labels[item.priority]) }}</td>
+      <td>{% if item.due_date %}<span class="wi-due{% if item.due_date < now().date() %} overdue{% endif %}">{{ item.due_date.isoformat() }}</span>{% else %}—{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}
+  <div class="empty-state"><h3>{{ tr('Nothing assigned to you') }}</h3><p>{{ tr('Work items assigned to you in any project appear here.') }}</p><a class="button" href="{{ url_for('projects.index') }}">{{ tr('Browse projects') }}</a></div>
+  {% endif %}
+</section>
+{% endblock %}

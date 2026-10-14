@@ -1,0 +1,13 @@
+{# Small building blocks shared by project pages. #}
+{% macro type_icon(item_type) -%}
+<span class="wi-type wi-type-{{ item_type }}" title="{{ tr(item_type_labels[item_type]) }}"><span class="visually-hidden">{{ tr(item_type_labels[item_type]) }}</span></span>
+{%- endmacro %}
+{% macro priority_icon(priority) -%}
+<span class="wi-priority wi-priority-{{ priority }}" title="{{ tr('Priority') }}: {{ tr(priority_labels[priority]) }}"><span class="visually-hidden">{{ tr(priority_labels[priority]) }}</span></span>
+{%- endmacro %}
+{% macro status_pill(status) -%}
+<span class="wi-status wi-status-{{ status.category }}">{{ status.name }}</span>
+{%- endmacro %}
+{% macro assignee_faces(users, limit=3) -%}
+<span class="wi-faces">{% for user in users[:limit] %}{{ user_avatar(user, 'avatar wi-face', link=False) }}{% endfor %}{% if users|length > limit %}<span class="wi-face-more">+{{ users|length - limit }}</span>{% endif %}</span>
+{%- endmacro %}

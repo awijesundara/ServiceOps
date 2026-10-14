@@ -306,6 +306,63 @@ def register(app):
                 "/docs": {
                     "get": {"summary": "Complete Markdown API guide", "security": []}
                 },
+                "/projects": {"get": {
+                    "summary": "List projects the acting user can see",
+                    "description": "Requires projects:read and project management enabled.",
+                    "parameters": [{"$ref": "#/components/parameters/RequestId"}],
+                }},
+                "/projects/{key}": {
+                    "parameters": [{"name": "key", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "get": {"summary": "One project with its statuses", "description": "Requires projects:read."},
+                },
+                "/projects/{key}/work-items": {
+                    "parameters": [{"name": "key", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "get": {
+                        "summary": "List a project's work items",
+                        "description": "Requires projects:read. Filters: q, type, status (id), category "
+                                       "(todo, in_progress, done, open), priority, assignee (user id, me, none), "
+                                       "label, epic (id). Cursor is the last work item number; limit 1-200.",
+                        "parameters": [
+                            {"name": name, "in": "query", "schema": {"type": "string"}}
+                            for name in ("q", "type", "status", "category", "priority", "assignee", "label", "epic")
+                        ] + [
+                            {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1,
+                                                                        "maximum": 200, "default": 50}},
+                            {"name": "cursor", "in": "query", "schema": {"type": "integer", "minimum": 0}},
+                        ],
+                    },
+                    "post": {
+                        "summary": "Create a work item",
+                        "description": "Requires projects:write and the Idempotency-Key header. Body fields: "
+                                       "title (required), description, type (epic, story, task, bug, subtask), "
+                                       "status_id, priority (highest, high, medium, low, lowest), assignee_ids, "
+                                       "labels, parent_key, start_date, due_date, story_points, estimate_minutes.",
+                        "parameters": [{"name": "Idempotency-Key", "in": "header", "required": True,
+                                        "schema": {"type": "string"}}],
+                        "requestBody": {"required": True, "content": {"application/json": {
+                            "schema": {"type": "object", "required": ["title"]}}}},
+                    },
+                },
+                "/work-items/{key}": {
+                    "parameters": [{"name": "key", "in": "path", "required": True,
+                                    "schema": {"type": "string", "example": "WEB-12"}}],
+                    "get": {"summary": "One work item with its comments", "description": "Requires projects:read."},
+                    "patch": {
+                        "summary": "Change a work item",
+                        "description": "Requires projects:write. Accepts the create fields; only those sent change.",
+                        "requestBody": {"required": True, "content": {"application/json": {
+                            "schema": {"type": "object"}}}},
+                    },
+                },
+                "/work-items/{key}/comments": {
+                    "parameters": [{"name": "key", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "post": {
+                        "summary": "Comment on a work item",
+                        "description": "Requires projects:write. Body: {\"body\": \"text\"}; @username mentions notify.",
+                        "requestBody": {"required": True, "content": {"application/json": {
+                            "schema": {"type": "object", "required": ["body"]}}}},
+                    },
+                },
                 "/tickets": {"get": {
                     "summary": "List visible incidents and changes",
                     "description": "Requires tickets:read. Cursor limit is 1-100.",

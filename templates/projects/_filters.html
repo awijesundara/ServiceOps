@@ -1,0 +1,14 @@
+{# Filters shared by the board and the list (GET form; values echo back). #}
+<details class="project-filters-wrap" open data-collapse-on-phone="{{ 'false' if filters else 'true' }}">
+<summary class="button project-filters-toggle">{{ tr('Filters') }}{% if filters %} <span class="badge">{{ filters|length }}</span>{% endif %}</summary>
+<form method="get" class="panel project-filters" aria-label="{{ tr('Filter work items') }}">
+  <label class="project-filter-search"><span>{{ tr('Search') }}</span><input type="search" name="q" value="{{ filters.q or '' }}" placeholder="{{ tr('Title, description or key') }}"></label>
+  <label><span>{{ tr('Assignee') }}</span><select name="assignee"><option value="">{{ tr('Anyone') }}</option><option value="me" {% if filters.assignee == 'me' %}selected{% endif %}>{{ tr('Me') }}</option><option value="none" {% if filters.assignee == 'none' %}selected{% endif %}>{{ tr('Unassigned') }}</option>{% for user in members %}<option value="{{ user.id }}" {% if filters.assignee == user.id|string %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+  <label><span>{{ tr('Type') }}</span><select name="type"><option value="">{{ tr('All types') }}</option>{% for t in item_types %}<option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ tr(item_type_labels[t]) }}</option>{% endfor %}</select></label>
+  <label><span>{{ tr('Priority') }}</span><select name="priority"><option value="">{{ tr('All priorities') }}</option>{% for p in priorities %}<option value="{{ p }}" {% if filters.priority == p %}selected{% endif %}>{{ tr(priority_labels[p]) }}</option>{% endfor %}</select></label>
+  {% if epics %}<label><span>{{ tr('Epic') }}</span><select name="epic"><option value="">{{ tr('All epics') }}</option>{% for epic in epics %}<option value="{{ epic.id }}" {% if filters.epic == epic.id|string %}selected{% endif %}>{{ epic.key }} · {{ epic.title }}</option>{% endfor %}</select></label>{% endif %}
+  {% if labels %}<label><span>{{ tr('Label') }}</span><select name="label"><option value="">{{ tr('All labels') }}</option>{% for label in labels %}<option {% if (filters.label or '')|lower == label|lower %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+  {{ filter_extra|default('') }}
+  <div class="project-filter-actions"><button class="primary" type="submit">{{ tr('Apply') }}</button>{% if filters %}<a class="button" href="{{ request.path }}">{{ tr('Reset') }}</a>{% endif %}</div>
+</form>
+</details>

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% from "projects/_macros.html" import type_icon, priority_icon, status_pill, assignee_faces with context %}
+{% block title %}{{ item.key }} · {{ item.title }} · {{ instance_name }}{% endblock %}
+{% block content %}<span hidden data-live-watch="work_item:{{ item.id }}"></span>
+{% with color_projects = [project] %}{% include "projects/_colors.html" %}{% endwith %}
+<nav class="wi-breadcrumb" aria-label="{{ tr('Breadcrumb') }}">
+  <a href="{{ url_for('projects.index') }}">{{ tr('Projects') }}</a> /
+  <a href="{{ url_for('projects.board', key=project.key) }}"><span class="project-badge small project-c-{{ project.id }}" aria-hidden="true">{{ project.key[:2] }}</span>{{ project.name }}</a>
+  {% if item.parent %}/ <a href="{{ url_for('projects.item_detail', item_key=item.parent.key) }}">{{ type_icon(item.parent.item_type) }} {{ item.parent.key }}</a>{% endif %}
+  / <span aria-current="page">{{ type_icon(item.item_type) }} {{ item.key }}</span>
+</nav>
+<div class="wi-layout">
+  <article class="wi-main">
+    <header class="wi-title">
+      <h1>{{ item.title }}</h1>
+      {% if can_edit %}<details class="wi-edit-text"><summary class="button">{{ tr('Edit') }}</summary>
+        <form method="post" action="{{ url_for('projects.item_edit', item_key=item.key) }}" class="stack wi-text-form">
+          <label>{{ tr('Summary') }}<input name="title" value="{{ item.title }}" required maxlength="255"></label>
+          <label>{{ tr('Description') }}<textarea name="description" rows="8" maxlength="50000">{{ item.description }}</textarea></label>
+          <div class="actions"><button class="primary">{{ tr('Save') }}</button></div>
+        </form>
+      </details>{% endif %}
+    </header>
+    <section class="panel wi-section" aria-labelledby="wi-description">
+      <h2 id="wi-description">{{ tr('Description') }}</h2>
+      {% if item.description %}<div class="pre wi-description">{{ mentions_html(item.description) }}</div>{% else %}<p class="muted">{{ tr('No description yet.') }}</p>{% endif %}
+    </section>
+
+    {% if item.item_type != 'subtask' %}
+    <section class="panel wi-section" aria-labelledby="wi-children">
+      <div class="wi-section-head"><h2 id="wi-children">{{ tr('Work items in this epic') if item.item_type == 'epic' else tr('Subtasks') }}</h2>
+        {% if can_edit %}<a class="button" href="{{ url_for('projects.new_item', key=project.key, parent=item.id, type='story' if item.item_type == 'epic' else 'subtask') }}">{{ tr('Add') }}</a>{% endif %}</div>
+      {% if children %}
+      {% set done = children|selectattr('status.category', 'equalto', 'done')|list|length %}
+      <div class="wi-progress" role="img" aria-label="{{ tr('{done} of {total} done', done=done, total=children|length) }}"><span class="wi-progress-bar"><span class="wi-progress-fill wi-progress-{{ ((done / children|length) * 20)|round|int * 5 }}"></span></span><small>{{ tr('{done} of {total} done', done=done, total=children|length) }}</small></div>
+      <ul class="wi-child-list">{% for child in children %}<li>{{ type_icon(child.item_type) }}<a href="{{ url_for('projects.item_detail', item_key=child.key) }}">{{ child.key }}</a><span class="wi-child-title">{{ child.title }}</span>{{ assignee_faces(child.assignees, 2) }}{{ status_pill(child.status) }}</li>{% endfor %}</ul>
+      {% else %}<p class="muted">{{ tr('None yet.') }}</p>{% endif %}
+    </section>
+    {% endif %}
+
+    <section class="panel wi-section" id="links" aria-labelledby="wi-links">
+      <h2 id="wi-links">{{ tr('Linked work and records') }}</h2>
+      {% if links %}<ul class="wi-link-list">{% for link in links %}<li><span class="wi-link-relation">{{ tr(link.relation) }}</span><a href="{{ link.url }}">{{ link.label }}</a><span class="wi-child-title">{{ link.title }}</span><span class="badge">{{ link.state }}</span>
+        {% if can_edit %}<form method="post" action="{{ url_for('projects.item_unlink', item_key=item.key, link_id=link.id) }}" class="inline-form"><button class="link-button wi-remove" aria-label="{{ tr('Remove link to {label}', label=link.label) }}" title="{{ tr('Remove link') }}">×</button></form>{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="muted">{{ tr('No links. Link related work items, or incidents, problems and changes this work belongs to.') }}</p>{% endif %}
+      {% if can_edit %}<form method="post" action="{{ url_for('projects.item_link', item_key=item.key) }}" class="wi-link-form">
+        <label><span class="visually-hidden">{{ tr('Link type') }}</span><select name="link_type"><option value="relates">{{ tr('relates to') }}</option><option value="blocks">{{ tr('blocks') }}</option><option value="duplicates">{{ tr('duplicates') }}</option></select></label>
+        <label><span class="visually-hidden">{{ tr('Work item key or record number') }}</span><input name="target" required maxlength="40" placeholder="{{ tr('WEB-12, CHG0001234, INC0004567…') }}"></label>
+        <button class="button">{{ tr('Link') }}</button>
+      </form>{% endif %}
+    </section>
+
+    <section class="panel wi-section" id="attachments" aria-labelledby="wi-attachments">
+      <h2 id="wi-attachments">{{ tr('Attachments') }}</h2>
+      {% if attachments %}<ul class="wi-attachment-list">{% for file in attachments %}<li><a href="{{ url_for('attachment_download', attachment_id=file.id) }}">{{ file.original_name }}</a><small class="muted">{{ (file.size_bytes / 1024)|round(1) }} KB · {{ file.created_at|usertime }}</small>
+        {% if can_edit %}<form method="post" action="{{ url_for('projects.item_attachment_delete', item_key=item.key, attachment_id=file.id) }}" class="inline-form" data-confirm="{{ tr('Delete {name}?', name=file.original_name) }}"><button class="link-button wi-remove" aria-label="{{ tr('Delete {name}', name=file.original_name) }}" title="{{ tr('Delete') }}">×</button></form>{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="muted">{{ tr('No attachments.') }}</p>{% endif %}
+      {% if can_edit %}<form method="post" action="{{ url_for('projects.item_attach', item_key=item.key) }}" enctype="multipart/form-data" class="wi-upload-form"><label><span class="visually-hidden">{{ tr('File') }}</span><input type="file" name="file" required></label><button class="button">{{ tr('Attach') }}</button></form>{% endif %}
+    </section>
+
+    <section class="panel wi-section" id="comments" aria-labelledby="wi-activity">
+      <h2 id="wi-activity">{{ tr('Activity') }}</h2>
+      <div class="wi-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected="true" aria-controls="wi-comments-panel" id="wi-comments-tab" data-wi-tab>{{ tr('Comments') }} <span class="badge">{{ comments|length }}</span></button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="wi-history-panel" id="wi-history-tab" data-wi-tab>{{ tr('History') }}</button>
+      </div>
+      <div id="wi-comments-panel" role="tabpanel" aria-labelledby="wi-comments-tab">
+        {% for comment in comments %}<div class="comment wi-comment">{{ user_avatar(comment.author) }}<div><strong>{{ user_link(comment.author) }}</strong> <small>{{ comment.created_at|usertime }}</small><p class="pre">{{ mentions_html(comment.body) }}</p></div></div>{% else %}<p class="muted">{{ tr('No comments yet.') }}</p>{% endfor %}
+        {% if can_comment %}<form method="post" action="{{ url_for('projects.item_comment', item_key=item.key) }}" class="comment-box"><label class="visually-hidden" for="wi-comment-body">{{ tr('Comment') }}</label><textarea id="wi-comment-body" name="body" rows="3" required maxlength="20000" placeholder="{{ tr('Add a comment. Type @username to mention someone.') }}"></textarea><button class="primary">{{ tr('Comment') }}</button></form>{% endif %}
+      </div>
+      <div id="wi-history-panel" role="tabpanel" aria-labelledby="wi-history-tab" hidden>
+        <ul class="wi-history">{% for row in history %}<li><strong>{{ row.actor.name if row.actor else tr('System') }}</strong>
+          {% if row.field == 'created' %}{{ tr('created this {type}', type=tr(item_type_labels.get(row.new_value, row.new_value))|lower) }}
+          {% elif row.field == 'attachment' %}{{ tr('attached {name}', name=row.new_value) if row.new_value else tr('deleted attachment {name}', name=row.old_value) }}
+          {% else %}{{ tr('changed {field}', field=tr(row.field.replace('_', ' '))) }}{% if row.old_value or row.new_value %}: <span class="wi-old">{{ row.old_value or '—' }}</span> → <span class="wi-new">{{ row.new_value or '—' }}</span>{% endif %}{% endif %}
+          <small class="muted">{{ row.created_at|usertime }}</small></li>{% else %}<li class="muted">{{ tr('No changes yet.') }}</li>{% endfor %}</ul>
+      </div>
+    </section>
+  </article>
+
+  <aside class="wi-side">
+    <form method="post" action="{{ url_for('projects.item_edit', item_key=item.key) }}" class="panel wi-details" data-wi-details>
+      <div class="wi-side-head">
+        <h2>{{ tr('Details') }}</h2>
+        <span class="wi-status-current">{{ status_pill(item.status) }}</span>
+      </div>
+      {% if can_edit %}
+      <input type="hidden" name="assignee_ids_present" value="1">
+      <label>{{ tr('Status') }}<select name="status_id" data-autosave>{% for status in statuses %}<option value="{{ status.id }}" {% if status.id == item.status_id %}selected{% endif %}>{{ status.name }}</option>{% endfor %}</select></label>
+      <label>{{ tr('Assignees') }}<select name="assignee_ids" multiple size="4" data-people-picker>{% for user in members %}<option value="{{ user.id }}" {% if user in item.assignees %}selected{% endif %}>{{ user.name }}</option>{% endfor %}{% for user in item.assignees if user not in members %}<option value="{{ user.id }}" selected>{{ user.name }}</option>{% endfor %}</select></label>
+      <label>{{ tr('Priority') }}<select name="priority">{% for p in priorities %}<option value="{{ p }}" {% if p == item.priority %}selected{% endif %}>{{ tr(priority_labels[p]) }}</option>{% endfor %}</select></label>
+      <label>{{ tr('Type') }}<select name="item_type">{% for t in item_types %}<option value="{{ t }}" {% if t == item.item_type %}selected{% endif %}>{{ tr(item_type_labels[t]) }}</option>{% endfor %}</select></label>
+      <label>{{ tr('Parent') }}<select name="parent_id"><option value="">{{ tr('None') }}</option>{% for p in parents if p.id != item.id %}<option value="{{ p.id }}" {% if item.parent_id == p.id %}selected{% endif %}>{{ p.key }} · {{ p.title }}</option>{% endfor %}</select></label>
+      <label>{{ tr('Labels') }}<input name="labels" value="{{ item.labels|map(attribute='label')|join(', ') }}" maxlength="1200"></label>
+      <label>{{ tr('Start date') }}<input type="date" name="start_date" value="{{ item.start_date.isoformat() if item.start_date else '' }}"></label>
+      <label>{{ tr('Due date') }}<input type="date" name="due_date" value="{{ item.due_date.isoformat() if item.due_date else '' }}"></label>
+      <label>{{ tr('Story points') }}<input type="number" name="story_points" min="0" max="1000" step="0.5" value="{{ item.story_points|round(1)|string|replace('.0', '') if item.story_points is not none else '' }}"></label>
+      <label>{{ tr('Estimate (hours)') }}<input type="number" name="estimate_hours" min="0" max="16000" step="0.25" value="{{ (item.estimate_minutes / 60)|round(2) if item.estimate_minutes is not none else '' }}"></label>
+      <div class="actions"><button class="primary">{{ tr('Save details') }}</button></div>
+      {% else %}
+      <dl class="wi-readonly">
+        <dt>{{ tr('Assignees') }}</dt><dd>{% for user in item.assignees %}{{ user_link(user) }}{% if not loop.last %}, {% endif %}{% else %}{{ tr('Unassigned') }}{% endfor %}</dd>
+        <dt>{{ tr('Priority') }}</dt><dd>{{ priority_icon(item.priority) }} {{ tr(priority_labels[item.priority]) }}</dd>
+        <dt>{{ tr('Labels') }}</dt><dd>{{ item.labels|map(attribute='label')|join(', ') or '—' }}</dd>
+        <dt>{{ tr('Due date') }}</dt><dd>{{ item.due_date.isoformat() if item.due_date else '—' }}</dd>
+        <dt>{{ tr('Story points') }}</dt><dd>{{ item.story_points if item.story_points is not none else '—' }}</dd>
+      </dl>
+      {% endif %}
+      <dl class="wi-readonly wi-meta">
+        <dt>{{ tr('Reporter') }}</dt><dd>{{ user_link(item.reporter, tr('Unknown')) }}</dd>
+        <dt>{{ tr('Created') }}</dt><dd>{{ item.created_at|usertime }}</dd>
+        <dt>{{ tr('Updated') }}</dt><dd>{{ item.updated_at|usertime }}</dd>
+        {% if item.resolved_at %}<dt>{{ tr('Resolved') }}</dt><dd>{{ item.resolved_at|usertime }}</dd>{% endif %}
+      </dl>
+    </form>
+    <div class="panel wi-side-actions">
+      <form method="post" action="{{ url_for('projects.item_watch', item_key=item.key) }}"><input type="hidden" name="watch" value="{{ '0' if watching else '1' }}"><button class="button">{{ tr('Stop watching') if watching else tr('Watch') }}</button></form>
+      {% if can_admin or (can_edit and item.reporter_id == current_user.id) %}<form method="post" action="{{ url_for('projects.item_delete', item_key=item.key) }}" data-confirm="{{ tr('Delete {key}? This cannot be undone.', key=item.key) }}"><button class="button danger">{{ tr('Delete') }}</button></form>{% endif %}
+    </div>
+  </aside>
+</div>
+{% endblock %}

@@ -939,6 +939,9 @@ API_SCOPES = {
     "cmdb:read",
     "knowledge:read",
     "approvals:read",
+    # Project management (B-443).
+    "projects:read",
+    "projects:write",
 }
 
 
@@ -7904,6 +7907,7 @@ def create_app(test_config=None):
         itam,
         knowledge,
         platform,
+        projects,
         service_requests,
         tickets,
         workspace,
@@ -7921,6 +7925,7 @@ def create_app(test_config=None):
     cmdb.register(app)
     client_management.register(app)
     service_requests.register(app)
+    projects.register(app)
 
     @app.after_request
     def security_headers(response):
