@@ -20,7 +20,7 @@
 {% if current_user.effective_role in ['agent','manager','admin','superadmin'] and not article.archived %}
 <section class="panel actions">
   <a class="button" href="{{ url_for('knowledge_edit', article_id=article.id) }}">{{ tr('Review and publish') if not article.published else tr('Publish updated version') }}</a>
-  <form method="post" action="{{ url_for('knowledge_archive', article_id=article.id) }}"><button class="button" title="{{ tr('Archives this article. It will no longer appear in knowledge search, but its content and audit history are preserved.') }}">{{ tr('Archive') }}</button></form>
+  {% if can_archive %}<form method="post" action="{{ url_for('knowledge_archive', article_id=article.id) }}"><button class="button" title="{{ tr('Archives this article. It will no longer appear in knowledge search, but its content and audit history are preserved.') }}">{{ tr('Archive') }}</button></form>{% endif %}
 </section>
 {% endif %}
 

@@ -3126,6 +3126,10 @@ def cancel_approval_chain(chain):
 
 def allowed_ticket_states(ticket):
     chain = approval_chain_for("ticket", ticket.id)
+    if ticket.kind == "change" and chain is None and ticket.state not in ("Closed", "Cancelled", "Rejected"):
+        # Every change is submitted with its approval chain; one that has none
+        # (created outside the change form) must never reach implementation.
+        return (ticket.state, "Cancelled")
     if ticket.kind == "change" and chain:
         if chain.state == "Running":
             return (ticket.state, "Cancelled")

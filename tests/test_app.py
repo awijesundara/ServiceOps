@@ -10913,6 +10913,8 @@ def test_change_state_transition_emits_change_state_changed_webhook_event(app):
         db.session.add(change)
         db.session.flush()
         db.session.add(ChangeOwnership(ticket_id=change.id, group_id=unix.id))
+        db.session.add(ApprovalChain(name="Approved test change", target_type="ticket",
+                                     target_id=change.id, state="Approved", tenant_id=change.tenant_id))
         db.session.commit()
         transition_ticket(change, "In Progress")
         db.session.commit()

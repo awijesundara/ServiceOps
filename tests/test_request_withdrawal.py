@@ -1,5 +1,7 @@
 """B-461: requesters withdraw catalog requests -- approval chains stop,
 fulfilment tasks are skipped, the REQ settles, outsiders are refused."""
+import pytest
+
 from app import ApprovalChain, CatalogItem, CatalogRequest, CatalogTask, Notification, RequestedItem, TaskHistory, db
 from tests.test_app import app, client, login
 
@@ -96,3 +98,23 @@ def test_waiting_approvals_link_to_the_record_being_approved(client, app):
     with app.app_context():
         number = db.session.get(RequestedItem, ritm_id).number
     assert f'href="/ritm/{ritm_id}"' in box and number in box and "Linked approval item" in box
+
+
+@pytest.mark.parametrize("state", ["New", "Approved", "In Progress", "Resolved"])
+def test_a_change_without_an_approval_chain_cannot_start(app, state):
+    """Defence in depth: changes are always submitted with a chain, but one
+    inserted any other way must not reach implementation."""
+    from werkzeug.exceptions import HTTPException
+    from app import Ticket, User, transition_ticket
+    with app.test_request_context():
+        requester = User.query.filter_by(username="admin").one()
+        change = Ticket(number="CHG9900001", kind="change", title="Unapproved", description="d", state=state,
+                        requester_id=requester.id, tenant_id=requester.tenant_id)
+        db.session.add(change)
+        db.session.flush()
+        with pytest.raises(HTTPException) as refused:
+            transition_ticket(change, "Resolved" if state == "In Progress" else "Closed" if state == "Resolved" else "In Progress")
+        assert refused.value.code == 409
+        transition_ticket(change, "Cancelled")
+        assert change.state == "Cancelled"
+        db.session.rollback()
