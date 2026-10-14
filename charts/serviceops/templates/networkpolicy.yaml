@@ -85,4 +85,8 @@ spec:
             matchLabels: {{- include "serviceops.webSelectorLabels" . | nindent 14 }}
       ports:
         - {port: 8080, protocol: TCP}
+        {{- if .Values.web.staticOffload.enabled }}
+        # The Service targets the static edge when it is enabled.
+        - {port: 8081, protocol: TCP}
+        {{- end }}
 {{- end }}
