@@ -13,7 +13,18 @@ TEXT_LIMITS = {'title': 180, 'description': 10000, 'impact': 10, 'urgency': 10,
                'test_plan': 10000, 'backout_plan': 10000, 'group_name': 180}
 
 
-def additional_fields(data):
+def _zone(name):
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    try:
+        return ZoneInfo(name) if name else None
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
+
+
+def additional_fields(data, zone_name=None):
+    """Validated change fields. A planned time without an offset is read in the requester's own time zone
+    (the prompt tells the model to use it); without a known zone such a time is ambiguous and dropped."""
+    zone = _zone(zone_name)
     try:
         result = {key: redact(str(data[key]).strip())[:limit] for key, limit in TEXT_LIMITS.items()
                   if key not in {'title', 'description', 'impact', 'urgency', 'category'} and data.get(key)}
@@ -27,7 +38,9 @@ def additional_fields(data):
                 try:
                     moment = datetime.fromisoformat(raw.replace('Z', '+00:00'))
                     if moment.tzinfo is None:
-                        raise ValueError('timezone required')
+                        if zone is None:
+                            raise ValueError('timezone required')
+                        moment = moment.replace(tzinfo=zone)
                     result[key] = moment.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M')
                 except ValueError:
                     current_app.logger.warning('AI draft contained an invalid or ambiguous %s', key)
