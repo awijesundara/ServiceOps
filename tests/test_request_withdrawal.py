@@ -78,3 +78,10 @@ def test_only_the_requester_or_an_administrator_can_withdraw(client, app):
     assert client.post(f"/request/{request_id}/withdraw", data={"reason": "Admin clean-up"}).status_code == 302
     with app.app_context():
         assert db.session.get(RequestedItem, ritm_id).state == "Cancelled"
+
+
+def test_record_approvals_page_lists_only_the_callers_approvals(client, app):
+    """/approvals filtered with filter_by() after joining EnterpriseRecord,
+    which has no approver_id: every non-administrator got a 500."""
+    login(client, "employee", "Employee123!")
+    assert client.get("/approvals").status_code == 200
