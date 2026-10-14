@@ -22,7 +22,8 @@ PRIORITY_LABELS = {"highest": "Highest", "high": "High", "medium": "Medium", "lo
 CATEGORY_LABELS = {"todo": "To do", "in_progress": "In progress", "done": "Done"}
 ROLE_LABELS = {"admin": "Administrator", "member": "Member", "viewer": "Viewer", "reader": "Reader"}
 LIST_PAGE = 100
-BOARD_LIMIT = 200
+BOARD_COLUMN_LIMIT = 50
+CHILD_LIMIT = 50
 
 
 def _wants_json():
@@ -122,11 +123,18 @@ def register(app):
         swimlane = request.args.get("swimlane", "none")
         swimlane = swimlane if swimlane in ("none", "assignee", "epic") else "none"
         statuses = list(project.statuses)
+        # Loaded first so each card's epic comes from the session, not a query.
+        project_epics = service.epics(project)
         query = service.item_query(project, filters, current_user)
         if not filters.get("type"):
             # Epics are planned on the list; the board shows the work itself.
             query = query.filter(WorkItem.item_type != "epic")
-        items = service.sorted_query(query, "rank").limit(BOARD_LIMIT * max(len(statuses), 1)).all()
+        # The first cards of each column by rank; the rest are one click away
+        # on the list (a column of thousands of cards helps nobody).
+        items = []
+        for status in statuses:
+            items += service.sorted_query(query.filter(WorkItem.status_id == status.id), "rank").limit(
+                BOARD_COLUMN_LIMIT).all()
         lanes = []
         if swimlane == "assignee":
             people = {}
@@ -149,9 +157,12 @@ def register(app):
         # Column counts are the cards this board shows (same filters, no
         # epics), counted in SQL so a column beyond the card limit is right.
         counts = dict(query.with_entities(WorkItem.status_id, db.func.count()).group_by(WorkItem.status_id).all())
+        hidden = {status.id: max(0, counts.get(status.id, 0) - BOARD_COLUMN_LIMIT) for status in statuses}
+        more_urls = {status.id: url_for("projects.item_list", key=project.key, **{**filters, "status": status.id})
+                     for status in statuses if hidden[status.id]}
         return dict(filters=filters, swimlane=swimlane, lane_titles=[title for title, _ in lanes], columns=columns,
-                    counts=counts, members=service.assignable_users(project), labels=service.project_labels(project),
-                    epics=service.epics(project))
+                    counts=counts, hidden=hidden, more_urls=more_urls, members=service.assignable_users(project),
+                    labels=service.project_labels(project), epics=project_epics)
 
     @blueprint.get("/projects/<key>/overview")
     def overview(key):
@@ -271,11 +282,18 @@ def register(app):
         comments = WorkItemComment.query.filter_by(work_item_id=item.id).order_by(WorkItemComment.created_at).all()
         history = WorkItemHistory.query.filter_by(work_item_id=item.id).order_by(
             WorkItemHistory.created_at.desc(), WorkItemHistory.id.desc()).limit(200).all()
-        children = WorkItem.query.filter_by(parent_id=item.id).order_by(WorkItem.rank, WorkItem.id).all()
+        # Progress counts every child; the page lists the first 50 (an epic
+        # can hold hundreds), the rest are on the filtered list.
+        from serviceops_core.projects.models import ProjectStatus
+        child_query = WorkItem.query.filter_by(parent_id=item.id)
+        child_total = child_query.count()
+        child_done = child_query.join(ProjectStatus, ProjectStatus.id == WorkItem.status_id).filter(
+            ProjectStatus.category == "done").count()
+        children = child_query.order_by(WorkItem.rank, WorkItem.id).limit(CHILD_LIMIT).all()
         attachments = core.FileAttachment.query.filter_by(work_item_id=item.id).order_by(
             core.FileAttachment.created_at).all()
         return page("projects/item.html", project, item=item, comments=comments, history=history,
-                    children=children, links=service.links_for(current_user, item), attachments=attachments,
+                    children=children, child_total=child_total, child_done=child_done, links=service.links_for(current_user, item), attachments=attachments,
                     watching=service.is_watching(item, current_user), members=service.assignable_users(project),
                     parents=_parent_choices(project), statuses=list(project.statuses))
 

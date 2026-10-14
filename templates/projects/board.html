@@ -37,6 +37,7 @@
         {% endfor %}
         <p class="project-empty" {% if items %}hidden{% endif %}><span class="project-empty-idle">{{ tr('No work items') }}</span><span class="project-empty-drop">{{ tr('Drop here') }}</span></p>
       </div>
+      {% if lane_index == lane_titles|length - 1 and hidden[status.id] %}<a class="project-more" href="{{ more_urls[status.id] }}">{{ tr('{count} more in the list', count=hidden[status.id]) }}</a>{% endif %}
       {% if can_edit and lane_index == 0 %}
       <form method="post" action="{{ url_for('projects.new_item', key=project.key) }}" class="project-quick-add">
         <input type="hidden" name="status_id" value="{{ status.id }}"><input type="hidden" name="return" value="board">
