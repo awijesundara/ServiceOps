@@ -16,8 +16,8 @@ import requests
 from serviceops_core import rt_import
 from serviceops_core.localization import tr
 
-RT_ID = re.compile(r"^\s*#?\s*(\d{1,10})\s*$")
-_HTML_TAG = re.compile(r"<[^>]+>")
+RT_ID = re.compile(r"#? *(\d{1,10})")
+_HTML_TAG = re.compile(r"<[^<>]+>")  # excluding "<" keeps stripping linear on unclosed tags
 
 
 class RTLinkError(RuntimeError):
@@ -31,7 +31,7 @@ def enabled():
 
 def parse_rt_id(value):
     """'1234', '#1234' or ' 1234 ' -> '1234'; anything else -> None."""
-    match = RT_ID.match(str(value or ""))
+    match = RT_ID.fullmatch(" ".join(str(value or "").split()))
     return match.group(1) if match else None
 
 

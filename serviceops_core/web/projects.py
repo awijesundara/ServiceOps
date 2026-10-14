@@ -12,6 +12,7 @@ from werkzeug.exceptions import HTTPException
 
 import app as core
 from serviceops_core.localization import tr
+from serviceops_core.safe_redirect import redirect_internal
 from markupsafe import escape
 
 from serviceops_core.projects import catalog, markdown, operations, releases, service, tracking
@@ -570,8 +571,7 @@ def register(app):
         project = service.project_or_404(current_user, key)
         service.toggle_star(current_user, "project", project)
         db.session.commit()
-        return redirect(request.form.get("next") if (request.form.get("next") or "").startswith("/")
-                        and not (request.form.get("next") or "").startswith("//") else url_for("projects.index"))
+        return redirect_internal(request.form.get("next"), url_for("projects.index"))
 
     @blueprint.post("/work-items/<item_key>/flag")
     def item_flag(item_key):
@@ -794,9 +794,7 @@ def register(app):
                                          request.form.get("action"), request.form.get("value"))
         db.session.commit()
         flash(tr("{count} work items changed.", count=changed), "success")
-        target = request.form.get("next") or ""
-        return redirect(target if target.startswith("/") and not target.startswith("//")
-                        else url_for("projects.item_list", key=project.key))
+        return redirect_internal(request.form.get("next"), url_for("projects.item_list", key=project.key))
 
     # --- your work, global create, organisation settings --------------------------------------
 

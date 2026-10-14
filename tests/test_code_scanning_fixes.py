@@ -9,6 +9,7 @@ from serviceops_core.ai.references import _collapse_repeated_links
 from serviceops_core.client_identity import describe_device
 from serviceops_core.identity import normalize_email
 from serviceops_core.safe_redirect import redirect_internal, redirect_to_referrer
+from tests.test_app import app, client  # noqa: F401
 from serviceops_core.security import (
     EMAIL_PATTERN, consume_backup_code, hash_backup_code, is_argon2_hash, use_fast_password_hashing,
 )
@@ -87,3 +88,47 @@ def test_installer_connection_checks_refuse_non_http_urls():
     assert keycloak["ok"] is False and "http(s)" in keycloak["message"]
     ipfs = test_ipfs({"storage_mode": "ipfs", "ipfs_mode": "external", "ipfs_api_url": "ftp://node.internal"})
     assert ipfs["ok"] is False and "http(s)" in ipfs["message"]
+
+
+def test_project_durations_parse_as_before_in_linear_time(app):
+    from werkzeug.exceptions import BadRequest
+    from serviceops_core.projects.tracking import parse_duration
+    with app.test_request_context("/"):
+        assert parse_duration("2h 30m") == 150
+        assert parse_duration("1.5") == 90
+        assert parse_duration(" 1d\t2h ") == parse_duration("1d 2h")
+        for bad in ("2x", "1 2h", "h", "2h 3"):
+            with pytest.raises(BadRequest):
+                parse_duration(bad)
+        for hostile in ("1" * 50000, "1h" + " " * 50000 + "x", "1 " * 25000):
+            started = time.perf_counter()
+            with pytest.raises(BadRequest):
+                parse_duration(hostile)
+            assert time.perf_counter() - started < 1.0
+
+
+def test_rt_ids_and_html_stripping_stay_linear():
+    from serviceops_core.rt_link import _HTML_TAG, parse_rt_id
+    assert [parse_rt_id(v) for v in ("1234", "#1234", " # 1234 ", "12a", "")] == ["1234", "1234", "1234", None, None]
+    assert _runs_quickly(parse_rt_id, " " * 50000 + "x")
+    assert _HTML_TAG.sub("", "<p>Hello <b>RT</b></p>") == "Hello RT"
+    assert _runs_quickly(_HTML_TAG.sub, "", "<" * 50000)
+
+
+def test_project_return_paths_cannot_leave_the_application(app, client):
+    from app import PlatformSetting, User, db
+    from serviceops_core.projects import service
+    from tests.test_app import login
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        db.session.merge(PlatformSetting(key="PROJECTS_ENABLED", value="true", tenant_id=admin.tenant_id))
+        db.session.commit()
+        service.create_project(User.query.filter_by(username="database.manager").one(), "SAFE", "Redirect check",
+                               visibility="open")
+        db.session.commit()
+    login(client)
+    for target, expected in (("/\\evil.example", "/projects"), ("//evil.example", "/projects"),
+                             ("/projects/SAFE/board", "/projects/SAFE/board")):
+        response = client.post("/projects/SAFE/star", data={"next": target})
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith(expected), (target, response.headers["Location"])

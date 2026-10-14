@@ -17,7 +17,8 @@ from serviceops_core.projects import service
 from serviceops_core.projects.models import WorkItem, WorkItemWorklog
 from serviceops_models import db, now
 
-DURATION_PART = re.compile(r"(\d+(?:\.\d+)?)\s*([wdhm])", re.IGNORECASE)
+# Bounded digits: an unbounded number became float("inf") and crashed round() with a 500.
+DURATION_TOKEN = re.compile(r"(\d{1,9}(?:\.\d{1,6})?)\s*([wdhm])\s*")
 MAX_MINUTES = 10 ** 7
 REMAINING_MODES = ("auto", "leave", "new", "reduce")
 
@@ -40,10 +41,17 @@ def parse_duration(text, label=None):
         return None
     if re.fullmatch(r"\d+(?:\.\d+)?", text):
         text += "h"
-    if not re.fullmatch(r"(\s*\d+(?:\.\d+)?\s*[wdhm]\s*)+", text):
-        abort(400, description=tr("{label}: write a duration such as 2h 30m, 1d or 1w.", label=label))
+    # Walk the parts anchored at the current position: linear time, where a repeated group with optional
+    # spaces on both sides backtracked polynomially on long input.
+    parts, position = [], 0
+    while position < len(text):
+        part = DURATION_TOKEN.match(text, position)
+        if not part:
+            abort(400, description=tr("{label}: write a duration such as 2h 30m, 1d or 1w.", label=label))
+        parts.append((part.group(1), part.group(2)))
+        position = part.end()
     unit = {"m": 1, "h": 60, "d": 60 * hours_per_day(), "w": 60 * hours_per_day() * days_per_week()}
-    minutes = round(sum(float(amount) * unit[kind] for amount, kind in DURATION_PART.findall(text)))
+    minutes = round(sum(float(amount) * unit[kind] for amount, kind in parts))
     if minutes > MAX_MINUTES:
         abort(400, description=tr("{label} is too long.", label=label))
     return minutes
