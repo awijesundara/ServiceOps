@@ -358,7 +358,7 @@ def register(app):
                     "parameters": [{"name": "key", "in": "path", "required": True, "schema": {"type": "string"}}],
                     "post": {
                         "summary": "Comment on a work item",
-                        "description": "Requires projects:write. Body: {\"body\": \"text\"}; @username mentions notify.",
+                        "description": "Requires projects:write. Body: a JSON object with a body string; @username mentions notify.",
                         "requestBody": {"required": True, "content": {"application/json": {
                             "schema": {"type": "object", "required": ["body"]}}}},
                     },

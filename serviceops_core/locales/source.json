@@ -808,6 +808,9 @@
    "id": "Administrators may prepare state, priority, assignment and exact-comment changes from chat. Incident investigations may prepare an answer as a comment. A person must review and approve every exact change before it is applied."
   },
   {
+   "id": "Administrators only"
+  },
+  {
    "id": "Advanced model",
    "javascript": true
   },
@@ -834,6 +837,9 @@
   },
   {
    "id": "Agentless discovery"
+  },
+  {
+   "id": "Agents and above"
   },
   {
    "id": "Agents:"
@@ -1587,6 +1593,9 @@
    "id": "Browse projects"
   },
   {
+   "id": "Bug"
+  },
+  {
    "id": "Bundled IPFS node"
   },
   {
@@ -1894,6 +1903,9 @@
   },
   {
    "id": "Change Tasks ({work_tasks})"
+  },
+  {
+   "id": "Change a work item"
   },
   {
    "id": "Change approval policy"
@@ -2295,6 +2307,9 @@
   },
   {
    "id": "Comment"
+  },
+  {
+   "id": "Comment on a work item"
   },
   {
    "id": "Comments"
@@ -2701,6 +2716,9 @@
   },
   {
    "id": "Create a tour"
+  },
+  {
+   "id": "Create a work item"
   },
   {
    "id": "Create agreement"
@@ -3570,6 +3588,9 @@
    "id": "Enable or disable AI, configure providers and usage limits"
   },
   {
+   "id": "Enable project management (projects, boards, work items)"
+  },
+  {
    "id": "Enable scheduled LDAP directory sync"
   },
   {
@@ -3803,6 +3824,9 @@
   },
   {
    "id": "Every {schedule_interval_minutes} min"
+  },
+  {
+   "id": "Everyone"
   },
   {
    "id": "Everyone signed in to this organization can open your profile. Your name and role are always shown. Choose which other details are public; the rest stay private to you."
@@ -4379,6 +4403,9 @@
    "id": "Higher gets more requests (Spread the load)."
   },
   {
+   "id": "Highest"
+  },
+  {
    "id": "Historical"
   },
   {
@@ -4651,7 +4678,13 @@
    "id": "In order"
   },
   {
+   "id": "In progress"
+  },
+  {
    "id": "In repair"
+  },
+  {
+   "id": "In review"
   },
   {
    "id": "In stock"
@@ -5272,6 +5305,9 @@
    "id": "List"
   },
   {
+   "id": "List a project's work items"
+  },
+  {
    "id": "List attachments on a visible ticket"
   },
   {
@@ -5279,6 +5315,9 @@
   },
   {
    "id": "List each source exactly once."
+  },
+  {
+   "id": "List projects the acting user can see"
   },
   {
    "id": "List the authenticated mobile user's passkeys"
@@ -5387,6 +5426,9 @@
    "id": "Lowercase letters, numbers, underscores. Used internally and cannot be changed later."
   },
   {
+   "id": "Lowest"
+  },
+  {
    "id": "MAC address"
   },
   {
@@ -5484,6 +5526,9 @@
   },
   {
    "id": "Manager: {name} · {members}"
+  },
+  {
+   "id": "Managers and administrators"
   },
   {
    "id": "Manages: {managed_teams}"
@@ -6794,6 +6839,12 @@
    "id": "One place for IT services, support, and operations."
   },
   {
+   "id": "One project with its statuses"
+  },
+  {
+   "id": "One work item with its comments"
+  },
+  {
    "id": "One-click bulk actions and canned replies agents can apply to a customer ticket."
   },
   {
@@ -8067,6 +8118,9 @@
    "id": "Read this incident and its recent comments."
   },
   {
+   "id": "Reader"
+  },
+  {
    "id": "Reads every hardware asset and works out each create and update, then discards it. Writes nothing."
   },
   {
@@ -8548,6 +8602,24 @@
   },
   {
    "id": "Requires incidents:create."
+  },
+  {
+   "id": "Requires projects:read and project management enabled."
+  },
+  {
+   "id": "Requires projects:read."
+  },
+  {
+   "id": "Requires projects:read. Filters: q, type, status (id), category (todo, in_progress, done, open), priority, assignee (user id, me, none), label, epic (id). Cursor is the last work item number; limit 1-200."
+  },
+  {
+   "id": "Requires projects:write and the Idempotency-Key header. Body fields: title (required), description, type (epic, story, task, bug, subtask), status_id, priority (highest, high, medium, low, lowest), assignee_ids, labels, parent_key, start_date, due_date, story_points, estimate_minutes."
+  },
+  {
+   "id": "Requires projects:write. Accepts the create fields; only those sent change."
+  },
+  {
+   "id": "Requires projects:write. Body: a JSON object with a body string; @username mentions notify."
   },
   {
    "id": "Requires tickets:read and streams the file from local, object, or IPFS storage with private no-store caching."
@@ -10206,6 +10278,9 @@
    "id": "Stories, tasks and bugs can only belong to an epic."
   },
   {
+   "id": "Story"
+  },
+  {
    "id": "Story points"
   },
   {
@@ -10261,6 +10336,9 @@
   },
   {
    "id": "Subscribed events"
+  },
+  {
+   "id": "Subtask"
   },
   {
    "id": "Subtasks"
@@ -11140,6 +11218,9 @@
    "id": "To date/time"
   },
   {
+   "id": "To do"
+  },
+  {
    "id": "To update"
   },
   {
@@ -11743,6 +11824,9 @@
    "id": "View {name} elevation"
   },
   {
+   "id": "Viewer"
+  },
+  {
    "id": "Views"
   },
   {
@@ -11901,6 +11985,9 @@
   },
   {
    "id": "While a window is active, Standard and Normal changes can't be scheduled or approved inside it — only Emergency changes are exempt. This actually blocks submission/approval, unlike a banner."
+  },
+  {
+   "id": "Who can create projects"
   },
   {
    "id": "Who can use it"
@@ -12536,7 +12623,13 @@
    "id": "is automatically enforced this pass (see the worker job's own disclosure) — records inactive past the window are erased (GDPR Art. 17 style scrub, same as an admin-triggered erasure), unless under a policy-level or per-record legal hold. Other record types can still be configured for documentation purposes."
   },
   {
+   "id": "is blocked by"
+  },
+  {
    "id": "is displayed once and cannot be recovered."
+  },
+  {
+   "id": "is duplicated by"
   },
   {
    "id": "is empty",
@@ -12682,6 +12775,9 @@
   {
    "id": "problem",
    "javascript": true
+  },
+  {
+   "id": "project"
   },
   {
    "id": "provider must be local or ldap."
@@ -12907,6 +13003,9 @@
   },
   {
    "id": "v{app_version} · up since {value}"
+  },
+  {
+   "id": "watch"
   },
   {
    "id": "webhook"

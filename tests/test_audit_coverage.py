@@ -15,7 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 # Routes live in serviceops_core/web/ and the helpers they call mostly in
 # app.py, so both are parsed into one call graph.
-SOURCE_FILES = [ROOT / "app.py", *sorted((ROOT / "serviceops_core" / "web").glob("*.py"))]
+SOURCE_FILES = [ROOT / "app.py", *sorted((ROOT / "serviceops_core" / "web").glob("*.py")),
+                # Project routes delegate to their rules module (B-443).
+                ROOT / "serviceops_core" / "projects" / "service.py"]
 
 ALLOWLIST = {
     "notification_mark_read": "marks the caller's own notification read; no shared record changes",
@@ -29,10 +31,11 @@ ALLOWLIST = {
     "guided_tours_progress": "records the caller's own dismiss/completion state for a guided tour; no shared record changes",
     "my_workspace": "saves/resets the caller's own personal workspace widget layout; no shared record changes",
     "api_passkey_registration_options": "creates a short-lived one-time protocol challenge; successful credential registration is audited on completion",
+    "item_watch": "starts or stops the caller's own notifications for a work item; no shared record changes",
     "api_passkey_authentication_options": "creates an unauthenticated short-lived one-time protocol challenge; successful login is audited on completion",
 }
 
-LOGGING_CALLS = {"audit", "log_history", "log_field_changes"}
+LOGGING_CALLS = {"audit", "log_history", "log_field_changes", "log_work_item_history"}
 
 
 def _decorator_call_name(dec):
