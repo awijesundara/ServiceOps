@@ -7510,6 +7510,9 @@
    "id": "Only the SCIM filter userName eq \"value\" is supported."
   },
   {
+   "id": "Only the article's author, a manager or an administrator can archive it."
+  },
+  {
    "id": "Only the author or a project administrator can change this comment."
   },
   {

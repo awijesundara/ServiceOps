@@ -4,9 +4,15 @@ Moved from app.create_app(); endpoint names are unchanged."""
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from app import audit, roles, tenant_query, visible_knowledge_query
+from app import audit, role_at_least, roles, tenant_query, visible_knowledge_query
 from serviceops_models import db, Knowledge
 from serviceops_core.localization import tr
+
+
+def can_archive(user, article):
+    """Archiving preserves the article and audit history. Only its author,
+    managers and administrators may retire it; agents may publish a new version."""
+    return article.author_id == user.id or role_at_least(user.effective_role, "manager")
 
 
 def register(app):
@@ -39,7 +45,8 @@ def register(app):
     def knowledge_detail(article_id):
         article = visible_knowledge_query(current_user).filter_by(id=article_id).first_or_404()
         history = tenant_query(Knowledge).filter_by(superseded_by_id=article.id).order_by(Knowledge.created_at.desc()).all()
-        return render_template("knowledge_detail.html", article=article, history=history)
+        return render_template("knowledge_detail.html", article=article, history=history,
+                               can_archive=can_archive(current_user, article))
 
     @app.route("/knowledge/<int:article_id>/edit", methods=["GET", "POST"])
     @roles("agent", "manager", "admin")
@@ -81,6 +88,8 @@ def register(app):
     @roles("agent", "manager", "admin")
     def knowledge_archive(article_id):
         article = tenant_query(Knowledge).filter_by(id=article_id).first_or_404()
+        if not can_archive(current_user, article):
+            abort(403, description=tr("Only the article's author, a manager or an administrator can archive it."))
         article.archived = True
         article.published = False
         audit("archive", f"KB{article.id:06d}", article.title)
