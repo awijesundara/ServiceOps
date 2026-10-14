@@ -21,7 +21,7 @@ def configure(app, **overrides):
         db.session.add(config)
         user = User.query.filter_by(username="admin").one()
         ticket = Ticket(number="INC-AI-001", kind="incident", title="VPN connection fails", description="VPN failure password=hidden",
-                        requester_id=user.id, tenant_id=1)
+                        requester_id=user.id, assignee_id=user.id, tenant_id=1)
         db.session.add(ticket)
         db.session.commit()
         return ticket.id
@@ -434,3 +434,26 @@ def test_slow_self_hosted_model_needs_a_long_enough_timeout(app, monkeypatch):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_only_the_assignee_or_assigned_team_can_investigate(app, client):
+    """Seeing an incident is not enough: the button and the investigation are
+    for its assignee and the manager or members of its assignment group."""
+    from app import SupportGroup, TicketAssignmentGroup
+    ticket_id = configure(app)
+    with app.app_context():
+        db.session.get(Ticket, ticket_id).assignee_id = None
+        db.session.commit()
+    login(client)
+    assert b"Investigate with AI" not in client.get(f"/ticket/{ticket_id}").data
+    assert client.get(f"/incidents/{ticket_id}/ai").status_code == 403
+    assert client.post(f"/incidents/{ticket_id}/ai", data={"request_key": str(uuid.uuid4())}).status_code == 403
+    with app.app_context():
+        assert AIRun.query.filter_by(ticket_id=ticket_id).count() == 0
+        database = SupportGroup.query.filter_by(name="Database").one()
+        db.session.add(TicketAssignmentGroup(ticket_id=ticket_id, group_id=database.id))
+        db.session.commit()
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+    assert b"Investigate with AI" in client.get(f"/ticket/{ticket_id}").data
+    assert client.get(f"/incidents/{ticket_id}/ai").status_code == 200

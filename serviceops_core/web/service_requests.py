@@ -275,9 +275,19 @@ def register(app):
             group["target_number"] = core.record_number(record) if record else None
             group["target_title"] = getattr(record, "title", None) if record else None
             group["target_url"] = core.record_url(record) if record else None
+        # The decision boxes link each request to the record being approved.
+        vote_targets = {}
+        for vote in list(pending) + list(delegated_pending):
+            chain = vote.gate.chain
+            record = core.record_reference(chain.target_type, chain.target_id)
+            if record is not None:
+                vote_targets[vote.id] = {"number": core.record_number(record), "title": getattr(record, "title", None)
+                                         or (record.item.name if chain.target_type == "ritm" and record.item else None),
+                                         "url": core.record_url(record)}
         return render_template(
             "approval_chains.html", groups=page_groups, pending=pending,
             delegated_pending=delegated_pending, q=q, page=page, pages=pages, total=total,
+            vote_targets=vote_targets,
         )
 
     @app.get("/requests")

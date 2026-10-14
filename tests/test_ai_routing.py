@@ -296,6 +296,7 @@ def test_investigations_are_routed_too(app, client, ai, monkeypatch):
         add_service("Cloud", "openai_compatible")
         user = User.query.filter_by(username="admin").one()
         ticket = Ticket(number="INC-R-1", kind="incident", title="VPN down", requester_id=user.id, tenant_id=1,
+                        assignee_id=user.id,
                         description="Customer anna@corp.example cannot connect")
         db.session.add(ticket)
         db.session.commit()

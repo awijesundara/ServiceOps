@@ -73,7 +73,8 @@ from serviceops_core.navigation import navigation_entries
 from serviceops_core.notification_templates import NON_MUTABLE_EVENT_TYPES, NOTIFICATION_EVENT_TYPES
 from serviceops_core.projections import project_document
 from serviceops_core.security import hash_password, verify_password
-from serviceops_core.web.common import analytics_kpis, manager_portal_context, usertime_filter, visible_tickets
+from serviceops_core.web.common import (analytics_kpis, manager_portal_context, ticket_list_url, usertime_filter,
+                                        visible_tickets)
 from serviceops_models import (
     THEMES,
     AIConnection,
@@ -216,7 +217,7 @@ def register(app):
         team_rows, member_rows_by_group = manager_portal_context()
         return render_template(
             "manager_portal.html", team_rows=team_rows,
-            member_rows_by_group=member_rows_by_group,
+            member_rows_by_group=member_rows_by_group, ticket_list_url=ticket_list_url,
         )
 
     @app.get("/manager/portal/export.csv")

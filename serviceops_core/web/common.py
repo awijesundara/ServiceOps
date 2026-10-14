@@ -3,6 +3,7 @@
 Hoisted verbatim from app.create_app(), where they were closures.
 """
 import hashlib
+import json
 import os
 import re
 import uuid
@@ -280,6 +281,54 @@ def ticket_group_filter_handler(kind):
     return handler
 
 
+def _int_value(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _assignee_filter(query, op, value):
+    user_id = _int_value(value)
+    return query.filter(Ticket.assignee_id == user_id) if op == "eq" and user_id is not None else query
+
+
+def _open_filter(query, op, value):
+    return query.filter(Ticket.state.notin_(TERMINAL_TICKET_STATES)) if op == "eq" and value == "1" else query
+
+
+def _resolved_within_filter(query, op, value):
+    days = _int_value(value)
+    if op != "eq" or days is None or not 0 < days <= 3650:
+        return query
+    return query.filter(Ticket.state.in_(TERMINAL_TICKET_STATES),
+                        func.coalesce(Ticket.resolved_at, Ticket.updated_at) >= now() - timedelta(days=days))
+
+
+def _sla_filter(query, op, value):
+    """Open tickets with a running SLA that is breached, or due to breach
+    within the at-risk window (the manager portal's two SLA columns)."""
+    if op != "eq" or value not in ("breached", "at_risk"):
+        return query
+    running = db.session.query(TaskSLA.target_id).filter(TaskSLA.target_type == "ticket",
+                                                         TaskSLA.stage == "In Progress")
+    if value == "breached":
+        running = running.filter(TaskSLA.breached.is_(True))
+    else:
+        horizon = now() + timedelta(hours=setting_int("SLA_AT_RISK_HOURS", 4))
+        running = running.filter(TaskSLA.breached.is_(False), TaskSLA.breach_at <= horizon)
+    return query.filter(Ticket.state.notin_(TERMINAL_TICKET_STATES), Ticket.id.in_(running))
+
+
+# Filters the manager portal links use; shown in the list's breadcrumb.
+TICKET_LINK_FILTERS = {
+    "assignee": {"label": "Assigned to", "type": "choice"},
+    "open": {"label": "Open", "type": "choice"},
+    "resolved_within_days": {"label": "Resolved within (days)", "type": "choice"},
+    "sla": {"label": "SLA", "type": "choice"},
+}
+
+
 def ticket_list_query(kind, q="", conditions=None):
     """Shared filtering for the ticket list view and its CSV export, so
     both stay consistent: free-text search plus the generic filter
@@ -289,9 +338,18 @@ def ticket_list_query(kind, q="", conditions=None):
         query = query.filter(db.or_(Ticket.number.ilike(f"%{q}%"), Ticket.title.ilike(f"%{q}%")))
     query = apply_filter_conditions(
         query, conditions or [], ticket_filter_field_spec(),
-        extra_handlers={"group": ticket_group_filter_handler(kind)},
+        extra_handlers={"group": ticket_group_filter_handler(kind), "assignee": _assignee_filter,
+                        "open": _open_filter, "resolved_within_days": _resolved_within_filter,
+                        "sla": _sla_filter},
     )
     return query
+
+
+def ticket_list_url(kind, user_id, **conditions):
+    """The ticket list filtered to one assignee plus the given conditions."""
+    rows = [{"field": "assignee", "op": "eq", "value": str(user_id)}]
+    rows += [{"field": field, "op": "eq", "value": str(value)} for field, value in conditions.items()]
+    return url_for("tickets", kind=kind, filter=json.dumps(rows, separators=(",", ":")))
 
 
 def manager_portal_groups():
@@ -325,16 +383,18 @@ def manager_portal_context():
             open_changes_by_member[assignee_id] += 1
 
     thirty_days_ago = now() - timedelta(days=30)
+    by_kind = Counter()  # (metric, member, ticket kind) -> count, for the per-kind links
     resolved_30d_by_member = Counter()
     if member_ids:
-        for assignee_id, count in db.session.query(
-            Ticket.assignee_id, func.count(Ticket.id)
+        for assignee_id, kind, count in db.session.query(
+            Ticket.assignee_id, Ticket.kind, func.count(Ticket.id)
         ).filter(
             Ticket.assignee_id.in_(member_ids),
             Ticket.state.in_(TERMINAL_TICKET_STATES),
             func.coalesce(Ticket.resolved_at, Ticket.updated_at) >= thirty_days_ago,
-        ).group_by(Ticket.assignee_id).all():
-            resolved_30d_by_member[assignee_id] = count
+        ).group_by(Ticket.assignee_id, Ticket.kind).all():
+            resolved_30d_by_member[assignee_id] += count
+            by_kind[("resolved_30d", assignee_id, kind)] += count
 
     open_tasks_by_member = Counter()
     if member_ids:
@@ -354,20 +414,22 @@ def manager_portal_context():
     if open_ticket_rows:
         # Joined to the same open-ticket filter instead of binding every open
         # ticket id (PostgreSQL caps a statement at 65,535 parameters).
-        sla_rows = db.session.query(Ticket.assignee_id, TaskSLA.breached, TaskSLA.breach_at).join(
+        sla_rows = db.session.query(Ticket.assignee_id, TaskSLA.breached, TaskSLA.breach_at, Ticket.kind).join(
             TaskSLA, (TaskSLA.target_type == "ticket") & (TaskSLA.target_id == Ticket.id),
         ).filter(
             Ticket.assignee_id.in_(member_ids),
             Ticket.state.notin_(TERMINAL_TICKET_STATES),
             TaskSLA.stage == "In Progress",
         ).all()
-        for assignee_id, breached, breach_at in sla_rows:
+        for assignee_id, breached, breach_at, kind in sla_rows:
             if breached:
                 sla_breached_by_member[assignee_id] += 1
+                by_kind[("sla_breached", assignee_id, kind)] += 1
             else:
                 breach_at = breach_at if breach_at.tzinfo else breach_at.replace(tzinfo=timezone.utc)
                 if breach_at <= breach_horizon:
                     sla_at_risk_by_member[assignee_id] += 1
+                    by_kind[("sla_at_risk", assignee_id, kind)] += 1
 
     team_rows = []
     member_rows_by_group = {}
@@ -389,6 +451,8 @@ def manager_portal_context():
                 "resolved_30d": resolved_30d_by_member.get(user.id, 0),
                 "sla_breached": sla_breached_by_member.get(user.id, 0),
                 "sla_at_risk": sla_at_risk_by_member.get(user.id, 0),
+                "by_kind": {metric: {kind: by_kind[(metric, user.id, kind)] for kind in ("incident", "change")}
+                            for metric in ("resolved_30d", "sla_breached", "sla_at_risk")},
             })
         member_rows_by_group[group.id] = member_rows
         team_rows.append({
