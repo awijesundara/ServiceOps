@@ -334,10 +334,13 @@ def register(app):
 
     @app.get("/service-worker.js")
     def pwa_service_worker():
-        response = send_from_directory(
-            app.static_folder, "service-worker.js",
-            mimetype="application/javascript", max_age=0,
-        )
+        # The file names the release version; serve it with the fingerprinted
+        # asset version instead, so a deploy that changes any static file
+        # installs a new worker, which drops the old cache.
+        with open(os.path.join(app.static_folder, "service-worker.js"), encoding="utf-8") as handle:
+            body = handle.read().replace(core.APP_VERSION, core.static_asset_version(app.static_folder))
+        response = app.response_class(body, mimetype="application/javascript")
+        response.headers["Cache-Control"] = "no-cache"
         response.headers["Service-Worker-Allowed"] = "/"
         return response
 

@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{ tr('ServiceOps REST API reference') }}</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='api-docs.css', v=app_version) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='api-docs.css', v=asset_version) }}">
 <script type="application/json" id="serviceops-i18n">{{ ui_javascript_catalog|tojson }}</script>
-<script src="{{ url_for('static', filename='i18n.js', v=app_version) }}"></script>
+<script src="{{ url_for('static', filename='i18n.js', v=asset_version) }}"></script>
 </head>
 <body>
 <h1>{{ tr('ServiceOps REST API reference') }}</h1>
@@ -15,6 +15,6 @@
 {{ tr('Requests are made with a') }} <code>sop_</code> {{ tr("API-client bearer token unless a path's security is explicitly overridden below.") }}</p>
 <div id="paths">{{ tr('Loading…') }}</div>
 <p id="error"></p>
-<script src="{{ url_for('static', filename='api-docs.js', v=app_version) }}"></script>
+<script src="{{ url_for('static', filename='api-docs.js', v=asset_version) }}"></script>
 </body>
 </html>
