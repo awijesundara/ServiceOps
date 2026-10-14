@@ -67,6 +67,33 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeLightbox();
 });
 
+// Dropdown menus are <details> whose panel floats over the page (top-bar
+// menus, "More" menus, pickers). Close them on a click anywhere outside, and
+// the innermost one on Escape. In-flow <details> -- sidebar groups, form
+// sections like "Edit stage" -- are disclosures, not menus, and stay as set.
+const isFloatingMenu = (details) => Array.from(details.children).some((child) => {
+  if (child.tagName === "SUMMARY") return false;
+  const position = getComputedStyle(child).position;
+  return position === "absolute" || position === "fixed";
+});
+const openFloatingMenus = () => Array.from(document.querySelectorAll("details[open]")).filter(isFloatingMenu);
+document.addEventListener("click", (event) => {
+  // The path is fixed when the click happens, so a button that removes itself
+  // (a "remove" × inside a menu) still counts as inside.
+  const path = event.composedPath();
+  openFloatingMenus().forEach((details) => {
+    if (!path.includes(details)) details.open = false;
+  });
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  const menus = openFloatingMenus();
+  const innermost = menus.find((details) => !menus.some((other) => other !== details && details.contains(other)));
+  if (!innermost) return;
+  innermost.open = false;
+  innermost.querySelector(":scope > summary")?.focus();
+});
+
 // Plain <form method="post"> submits reload the page and the browser resets
 // scroll to the top; on long admin/config pages with many independent forms
 // that means every save loses your place. Remember where you were per-page
