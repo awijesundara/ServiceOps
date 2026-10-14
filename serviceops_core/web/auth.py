@@ -113,7 +113,14 @@ def register(app):
             if not is_safe_internal_path(start_page):
                 start_page = url_for("dashboard")
             return redirect(start_page)
-        if not current_user.is_authenticated and app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]:
+        # After an explicit sign-out the Cloudflare Access shortcut stays off
+        # for this browser session, so the person can sign in as another
+        # account; "Continue as your Cloudflare Access identity" (?sso=1)
+        # turns it back on.
+        if request.method == "GET" and request.args.get("sso") == "1":
+            session.pop("_sso_signed_out", None)
+        if (not current_user.is_authenticated and app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]
+                and not session.get("_sso_signed_out")):
             access_claims = verify_cloudflare_access_jwt(request.headers.get("Cf-Access-Jwt-Assertion", ""))
             if access_claims and access_claims.get("email"):
                 # Exactly one match or none: emails are compared case-
@@ -266,7 +273,9 @@ def register(app):
         return render_template("login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
                                keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
                                local_enabled=setting_bool("LOCAL_AUTH_ENABLED", True),
-                               deployment_profile=app.config["DEPLOYMENT_PROFILE"])
+                               deployment_profile=app.config["DEPLOYMENT_PROFILE"],
+                               cloudflare_sso_resumable=bool(app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]
+                                                             and session.get("_sso_signed_out")))
 
     @app.route("/forgot-password", methods=["GET", "POST"])
     def forgot_password():
@@ -469,6 +478,8 @@ def register(app):
         db.session.commit()
         logout_user()
         session.clear()
+        if app.config["CLOUDFLARE_ACCESS_TEAM_DOMAIN"]:
+            session["_sso_signed_out"] = True
         return redirect(url_for("login"))
 
     @app.post("/session/acting-role")
