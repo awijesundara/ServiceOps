@@ -2,6 +2,7 @@
 {% block title %}{{ tr('{key} settings · {instance_name}', key=project.key, instance_name=instance_name) }}{% endblock %}
 {% block content %}
 {% include "projects/_header.html" %}
+<nav class="settings-sections" aria-label="{{ tr('Settings sections') }}"><a href="#details">{{ tr('Details') }}</a><a href="#members">{{ tr('Members') }}</a><a href="#statuses">{{ tr('Statuses') }}</a><a href="{{ url_for('projects.project_components', key=project.key) }}">{{ tr('Components') }}</a><a href="{{ url_for('projects.project_releases', key=project.key) }}">{{ tr('Releases') }}</a><a href="#archive">{{ tr('Archive') }}</a></nav>
 <div class="project-settings">
   <form method="post" class="panel form-grid" id="details">
     <input type="hidden" name="action" value="details"><input type="hidden" name="section" value="details">

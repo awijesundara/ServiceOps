@@ -3,7 +3,7 @@
 {% block title %}{{ tr('{key} board · {instance_name}', key=project.key, instance_name=instance_name) }}{% endblock %}
 {% block content %}<span hidden data-live-watch="project:{{ project.id }}"></span>
 {% include "projects/_header.html" %}
-{% set filter_extra %}<label><span>{{ tr('Group rows by') }}</span><select name="swimlane"><option value="none">{{ tr('No grouping') }}</option><option value="assignee" {% if swimlane == 'assignee' %}selected{% endif %}>{{ tr('Assignee') }}</option><option value="epic" {% if swimlane == 'epic' %}selected{% endif %}>{{ tr('Epic') }}</option></select></label>{% endset %}
+{% set filter_extra %}<label><span>{{ tr('Group rows by') }}</span><select name="swimlane"><option value="none">{{ tr('No grouping') }}</option><option value="assignee" {% if swimlane == 'assignee' %}selected{% endif %}>{{ tr('Rows by assignee') }}</option><option value="epic" {% if swimlane == 'epic' %}selected{% endif %}>{{ tr('Rows by epic') }}</option></select></label>{% endset %}
 {% include "projects/_filters.html" %}
 <section class="project-board" aria-label="{{ tr('Project board') }}" data-project-board data-project="{{ project.key }}" data-can-edit="{{ 'true' if can_edit else 'false' }}">
   <div class="project-board-columns project-board-heads">

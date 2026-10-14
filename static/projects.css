@@ -364,3 +364,94 @@
 .shortcut-help kbd{display:inline-block;min-width:22px;padding:2px 7px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;background:#f7f9fa;font:600 12px/1.4 ui-monospace,monospace;text-align:center}
 @media(max-width:560px){.wi-dialog-body{position:fixed;left:16px!important;right:16px!important;top:auto;bottom:16px;width:auto}}
 .project-head-actions{align-items:center}.project-head-actions .primary{white-space:nowrap}
+
+/* --- Consistency pass (project pages only; this file loads only there) ---- */
+/* Hidden means hidden, even where a class sets display. */
+[hidden]{display:none!important}
+
+/* Forms: labels above controls in a two-column grid (Jira's create dialog),
+   instead of the side-label rows used by administration forms. */
+.form-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 24px;align-items:start}
+.form-grid>h2{margin:0 0 4px;font-size:17px}
+.form-grid label,.form-grid label.check{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;padding:0;border:0;font-size:13px;font-weight:650;color:#33424e;align-items:start}
+.form-grid label input,.form-grid label select,.form-grid label textarea{max-width:none!important;width:100%}
+.form-grid label small,.form-grid label .md-toolbar,.form-grid label .people-picker{grid-column:1}
+.form-grid .form-help{margin:-10px 0 0;font-weight:400}
+.form-grid .actions{grid-column:1/-1;margin-top:4px}
+.form-grid input[type=color]{height:40px;padding:4px;width:72px!important}
+.form-grid input[disabled]{background:#f3f6f7;color:var(--muted)}
+.form-grid textarea{min-height:120px}
+
+/* One look for every dropdown: native selects get the same chevron as the
+   searchable ones. */
+select:not([multiple]){appearance:none;-webkit-appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23667582' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;background-size:12px}
+
+/* Compact filter bar: one row, applies on change. */
+.project-filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;margin-bottom:12px}
+.project-filters label{display:block;min-width:0;flex:0 0 auto}
+.project-filters label>span{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.project-filters .project-filter-search{flex:1 1 220px;position:relative}
+.project-filters .project-filter-search input{padding-left:32px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23667582' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='16.5' y1='16.5' x2='21' y2='21'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:10px center}
+.project-filters select,.project-filters input{height:34px;font-size:13px}
+.project-filters select{width:auto;max-width:190px}
+.project-filters .select-enhance{min-width:150px}
+.project-filter-actions{display:flex;gap:6px;margin-left:auto}
+.project-filter-actions .button,.project-filter-actions button{padding:7px 12px;font-size:13px}
+.project-filters-active{border-color:#b9d6d2}
+
+/* Lists: compact rows, status as a pill-shaped control. */
+.wi-table td,.wi-table th{padding:6px 10px}
+.wi-table tbody tr:hover td{background:#f7fafa}
+.wi-inline-status{width:auto;min-width:0;height:28px;padding:2px 26px 2px 10px;border-radius:4px;border:0;font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.04em;background-color:#e9edf0;color:#44525d;cursor:pointer;background-position:right 8px center}
+.wi-inline-status[data-category=in_progress]{background-color:#dceafb;color:#1f5f9e}
+.wi-inline-status[data-category=done]{background-color:#dcf2e5;color:#1d7a46}
+.project-group-title{margin:14px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#44525d}
+.project-list .wi-table thead th{background:transparent}
+
+/* Settings: inline avatars and compact controls. */
+.project-settings td .avatar,.project-settings td img.avatar{display:inline-grid;vertical-align:middle;margin-right:8px}
+.project-settings td select,.project-settings .status-edit select{width:auto;min-width:150px}
+.project-settings .project-inline-add label{flex:1 1 220px}
+.project-settings table td{vertical-align:middle}
+.form-grid .select-enhance,.form-grid .select-enhance input{width:100%;max-width:none!important}
+.form-grid textarea[name=environment]{min-height:64px}
+.project-filters label:not(.project-filter-search){flex:0 0 auto}
+.project-filters .select-enhance{min-width:0;width:140px}
+.project-filters .select-enhance input{width:100%}
+.project-filters select{max-width:150px}
+.project-filters .project-filter-search{flex:1 1 180px;min-width:160px}
+.project-list h2.project-group-title{font-size:12px;margin:16px 0 4px}
+/* Compact tables and in-table buttons on every project page. */
+.panel table td{padding:8px 11px}
+.panel td .button,.panel td button.button,.panel td summary.button{padding:6px 12px;font-size:13px}
+.panel td input,.panel td select{height:34px;font-size:13px}
+.settings-sections{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 14px}
+.settings-sections a{padding:6px 12px;border:1px solid var(--line);border-radius:99px;background:#fff;color:var(--ink);font-size:13px;font-weight:650;text-decoration:none}
+.settings-sections a:hover{border-color:#b9c7cc}
+.project-settings>section,.project-settings>form{scroll-margin-top:16px}
+.status-edit input[name=description]{flex:2 1 260px}
+.status-edit input[name=outward],.status-edit input[name=inward]{flex:1 1 160px}
+.status-edit input[name=name]{flex:1 1 150px}
+.status-delete>summary.button,.panel td form[data-confirm] .button.danger{color:var(--red);border-color:#f0c9c4}
+.project-inline-add input[type=number]{width:120px}
+.project-inline-add label:has(input[type=number]){flex:0 0 auto}
+/* Work item page: tighter rhythm, lighter toolbar, status as a pill. */
+.wi-main{gap:12px}
+.wi-section{padding:18px 20px}
+.wi-toolbar .button,.wi-toolbar summary.button{padding:7px 12px;font-size:13px}
+.wi-details{gap:8px;padding:18px}
+.wi-details label{gap:3px}
+.wi-details input,.wi-details select{height:34px;font-size:13px}
+.wi-details .wi-status-select{height:32px;width:auto;justify-self:start;border:0;border-radius:4px;padding:2px 28px 2px 10px;font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.04em;background-color:#e9edf0;color:#44525d}
+.wi-details .wi-status-select[data-category=in_progress]{background-color:#dceafb;color:#1f5f9e}
+.wi-details .wi-status-select[data-category=done]{background-color:#dcf2e5;color:#1d7a46}
+.wi-toolbar .button,.wi-toolbar summary.button{height:34px;display:inline-flex;align-items:center;gap:6px}
+.wi-toolbar .badge{padding:1px 7px}
+/* Phones: the list keeps type, key, summary and status, like Jira's mobile list. */
+@media(max-width:700px){
+  .project-list .wi-table{min-width:0;table-layout:auto}
+  .project-list .wi-table .col-assignees,.project-list .wi-table .col-priority,.project-list .wi-table .col-points,.project-list .wi-table .col-due{display:none}
+  .project-list .wi-summary{white-space:normal}
+  .project-list .wi-table .col-type{width:36px}
+  .project-list .wi-table .col-key{width:72px}
+}
