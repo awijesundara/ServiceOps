@@ -31,9 +31,9 @@
       <div class="wi-section-head"><h2 id="wi-children">{{ tr('Work items in this epic') if item.item_type == 'epic' else tr('Subtasks') }}</h2>
         {% if can_edit %}<a class="button" href="{{ url_for('projects.new_item', key=project.key, parent=item.id, type='story' if item.item_type == 'epic' else 'subtask') }}">{{ tr('Add') }}</a>{% endif %}</div>
       {% if children %}
-      {% set done = children|selectattr('status.category', 'equalto', 'done')|list|length %}
-      <div class="wi-progress" role="img" aria-label="{{ tr('{done} of {total} done', done=done, total=children|length) }}"><span class="wi-progress-bar"><span class="wi-progress-fill wi-progress-{{ ((done / children|length) * 20)|round|int * 5 }}"></span></span><small>{{ tr('{done} of {total} done', done=done, total=children|length) }}</small></div>
+      <div class="wi-progress" role="img" aria-label="{{ tr('{done} of {total} done', done=child_done, total=child_total) }}"><span class="wi-progress-bar"><span class="wi-progress-fill wi-progress-{{ ((child_done / child_total) * 20)|round|int * 5 }}"></span></span><small>{{ tr('{done} of {total} done', done=child_done, total=child_total) }}</small></div>
       <ul class="wi-child-list">{% for child in children %}<li>{{ type_icon(child.item_type) }}<a href="{{ url_for('projects.item_detail', item_key=child.key) }}">{{ child.key }}</a><span class="wi-child-title">{{ child.title }}</span>{{ assignee_faces(child.assignees, 2) }}{{ status_pill(child.status) }}</li>{% endfor %}</ul>
+      {% if child_total > children|length %}<a class="project-more" href="{{ url_for('projects.item_list', key=project.key, epic=item.id) }}">{{ tr('{count} more in the list', count=child_total - children|length) }}</a>{% endif %}
       {% else %}<p class="muted">{{ tr('None yet.') }}</p>{% endif %}
     </section>
     {% endif %}

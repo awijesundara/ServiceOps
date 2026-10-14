@@ -249,3 +249,4 @@
 .project-overview a,.wi-history a{color:var(--ink);font-weight:600;text-decoration:none}
 .project-overview a:hover,.wi-history a:hover{text-decoration:underline}
 .project-overview section:last-child{grid-column:1/-1}
+.project-more{display:block;padding:6px 4px;font-size:13px;font-weight:650;text-align:center}

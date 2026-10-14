@@ -13186,6 +13186,9 @@
    "javascript": true
   },
   {
+   "id": "{count} more in the list"
+  },
+  {
    "id": "{count} of {count2} shown · {count3} selected",
    "javascript": true
   },
