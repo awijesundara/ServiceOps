@@ -192,11 +192,11 @@
     <form method="post" action="{{ url_for('projects.item_edit', item_key=item.key) }}" class="panel wi-details" data-wi-details>
       <div class="wi-side-head">
         <h2>{{ tr('Details') }}</h2>
-        <span class="wi-status-current">{{ status_pill(item.status) }}{% if item.resolution %} <span class="wi-resolution">{{ item.resolution.name }}</span>{% endif %}</span>
+        {% if item.resolution %}<span class="wi-status-current"><span class="wi-resolution">{{ tr('Resolution') }}: {{ item.resolution.name }}</span></span>{% elif not can_edit %}<span class="wi-status-current">{{ status_pill(item.status) }}</span>{% endif %}
       </div>
       {% if can_edit %}
       <input type="hidden" name="assignee_ids_present" value="1"><input type="hidden" name="component_ids_present" value="1"><input type="hidden" name="fix_version_ids_present" value="1"><input type="hidden" name="affects_version_ids_present" value="1">
-      <label>{{ tr('Status') }}<select name="status_id" data-autosave>{% for status in statuses %}<option value="{{ status.id }}" {% if status.id == item.status_id %}selected{% endif %}>{{ status.name }}</option>{% endfor %}</select></label>
+      <label>{{ tr('Status') }}<select name="status_id" data-autosave data-plain class="wi-status-select" data-category="{{ item.status.category }}">{% for status in statuses %}<option value="{{ status.id }}" {% if status.id == item.status_id %}selected{% endif %}>{{ status.name }}</option>{% endfor %}</select></label>
       {% if item.status.category == 'done' %}<label>{{ tr('Resolution') }}<select name="resolution_id">{% for row in resolutions %}<option value="{{ row.id }}" {% if row.id == item.resolution_id %}selected{% endif %}>{{ row.name }}</option>{% endfor %}</select></label>{% endif %}
       <label>{{ tr('Assignees') }}<select name="assignee_ids" multiple size="4" data-people-picker>{% for user in members %}<option value="{{ user.id }}" {% if user in item.assignees %}selected{% endif %}>{{ user.name }}</option>{% endfor %}{% for user in item.assignees if user not in members %}<option value="{{ user.id }}" selected>{{ user.name }}</option>{% endfor %}</select></label>
       {% if can_admin %}<label>{{ tr('Reporter') }}<select name="reporter_id">{% for user in members %}<option value="{{ user.id }}" {% if user.id == item.reporter_id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}{% if item.reporter and item.reporter not in members %}<option value="{{ item.reporter.id }}" selected>{{ item.reporter.name }}</option>{% endif %}</select></label>{% endif %}

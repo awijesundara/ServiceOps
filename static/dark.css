@@ -1245,6 +1245,23 @@ html.theme-dark .your-work-project:hover{border-color:#434f54}
 html.theme-dark .shortcut-help{border:1px solid var(--line)}
 html.theme-dark .shortcut-help::backdrop{background:rgba(255,255,255,0.45)}
 html.theme-dark .shortcut-help kbd{border:1px solid var(--line);background:#12181c}
+html.theme-dark .form-grid label,html.theme-dark .form-grid label.check{border:0;color:#acbecc}
+html.theme-dark .form-grid input[disabled]{background:#141a1e;color:var(--muted)}
+html.theme-dark select:not([multiple]){background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23667582' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")}
+html.theme-dark .project-filters .project-filter-search input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23667582' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='16.5' y1='16.5' x2='21' y2='21'/%3E%3C/svg%3E")}
+html.theme-dark .project-filters-active{border-color:#304a47}
+html.theme-dark .wi-table tbody tr:hover td{background:#12181c}
+html.theme-dark .wi-inline-status{border:0;background-color:#1b2025;color:#a4b4c0}
+html.theme-dark .wi-inline-status[data-category=in_progress]{background-color:#19232f;color:#6faef3}
+html.theme-dark .wi-inline-status[data-category=done]{background-color:#13241b;color:#63b981}
+html.theme-dark .project-group-title{color:#a4b4c0}
+html.theme-dark .project-list .wi-table thead th{background:transparent}
+html.theme-dark .settings-sections a{border:1px solid var(--line);background:#182128;color:var(--ink)}
+html.theme-dark .settings-sections a:hover{border-color:#434f54}
+html.theme-dark .status-delete>summary.button,html.theme-dark .panel td form[data-confirm] .button.danger{color:var(--red);border-color:#543835}
+html.theme-dark .wi-details .wi-status-select{border:0;background-color:#1b2025;color:#a4b4c0}
+html.theme-dark .wi-details .wi-status-select[data-category=in_progress]{background-color:#19232f;color:#6faef3}
+html.theme-dark .wi-details .wi-status-select[data-category=done]{background-color:#13241b;color:#63b981}
 /* Theme tokens. The configured brand color stays the identity color of the
    sidebar and filled buttons; accents used as text are lifted toward white so
    they stay readable on dark surfaces whatever brand color is configured. */

@@ -6214,6 +6214,9 @@
    "id": "Name your view before saving it."
   },
   {
+   "id": "Name, description and default"
+  },
+  {
    "id": "Name, outward and inward"
   },
   {
@@ -9469,6 +9472,12 @@
    "id": "Rows"
   },
   {
+   "id": "Rows by assignee"
+  },
+  {
+   "id": "Rows by epic"
+  },
+  {
    "id": "Rule"
   },
   {
@@ -9862,7 +9871,8 @@
    "javascript": true
   },
   {
-   "id": "Search"
+   "id": "Search",
+   "javascript": true
   },
   {
    "id": "Search INC or RITM…"
@@ -10455,6 +10465,9 @@
    "id": "Settings"
   },
   {
+   "id": "Settings sections"
+  },
+  {
    "id": "Share"
   },
   {
@@ -10826,6 +10839,9 @@
   },
   {
    "id": "Status/priority value, group or user ID, tag text, or message body depending on the action above"
+  },
+  {
+   "id": "Statuses"
   },
   {
    "id": "Statuses are the board columns, left to right. Each belongs to a category used for progress and reports. A work-in-progress limit marks the column when exceeded."

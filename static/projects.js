@@ -142,6 +142,19 @@
     if (window.matchMedia("(max-width: 560px)").matches) details.open = false;
   });
 
+  // --- Filter bars apply as soon as a choice changes; Apply stays for
+  // typing a search and for pages without this script.
+  document.querySelectorAll("form[data-filter-form]").forEach(form => {
+    form.querySelectorAll("select").forEach(select => select.addEventListener("change", () => form.requestSubmit()));
+    const apply = form.querySelector("[data-filter-apply]");
+    const search = form.querySelector('input[name="q"]');
+    if (apply && search) {
+      apply.textContent = tr("Search");
+      apply.classList.remove("primary");
+      apply.classList.add("button");
+    }
+  });
+
   // --- Selects that save as soon as they change.
   document.querySelectorAll("select[data-autosubmit], select[data-autosave]").forEach(select => {
     select.addEventListener("change", () => select.form?.requestSubmit());
@@ -170,6 +183,7 @@
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || tr("The change could not be saved."));
         previous = select.value;
+        select.dataset.category = data.status.category;
         notify(tr("{key} moved to {status}.", {key: data.key, status: data.status.name}), "success");
       } catch (error) {
         select.value = previous;

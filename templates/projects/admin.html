@@ -2,11 +2,12 @@
 {% block title %}{{ tr('Project settings for the organisation · {instance_name}', instance_name=instance_name) }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('projects.index') }}">{{ tr('PROJECTS') }}</a></p><h1>{{ tr('Project settings for the organisation') }}</h1><p>{{ tr('Resolutions, link types and working time apply to every project.') }}</p></div></header>
+<nav class="settings-sections" aria-label="{{ tr('Settings sections') }}"><a href="#resolutions">{{ tr('Resolutions') }}</a><a href="#link-types">{{ tr('Link types') }}</a><a href="#time-tracking">{{ tr('Time tracking') }}</a></nav>
 <div class="project-settings">
   <section class="panel" id="resolutions" aria-labelledby="res-title">
     <h2 id="res-title">{{ tr('Resolutions') }}</h2>
     <p class="muted">{{ tr('A resolution records why work reached a done status. The default is used when nobody chooses one.') }}</p>
-    <div class="table-scroll"><table><thead><tr><th scope="col">{{ tr('Name') }}</th><th scope="col">{{ tr('Description') }}</th><th scope="col">{{ tr('Default') }}</th><th scope="col"><span class="visually-hidden">{{ tr('Actions') }}</span></th></tr></thead>
+    <div class="table-scroll"><table><thead><tr><th scope="col" colspan="3">{{ tr('Name, description and default') }}</th><th scope="col"><span class="visually-hidden">{{ tr('Actions') }}</span></th></tr></thead>
     <tbody>{% for row in resolutions %}<tr><td colspan="3"><form method="post" class="status-edit"><input type="hidden" name="action" value="save_resolution"><input type="hidden" name="section" value="resolutions"><input type="hidden" name="resolution_id" value="{{ row.id }}">
       <label><span class="visually-hidden">{{ tr('Name') }}</span><input name="name" value="{{ row.name }}" required maxlength="60"></label>
       <label><span class="visually-hidden">{{ tr('Description') }}</span><input name="description" value="{{ row.description }}" maxlength="255"></label>
