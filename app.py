@@ -7499,7 +7499,8 @@ def create_app(test_config=None):
             (request.path.startswith("/api/v1/") or request.path.startswith("/scim/v2/"))
             and request.endpoint not in {
                 "api_openapi", "api_docs", "monitoring_ingest", "monitoring_backup_report",
-                "api_mobile_login", "api_mobile_refresh",
+                "api_mobile_login", "api_mobile_refresh", "api_mobile_auth_methods",
+                "api_mobile_cloudflare_access", "api_mobile_keycloak_exchange",
                 "api_passkey_authentication_options", "api_passkey_authentication_complete",
                 "apple_app_site_association",
             }
@@ -7510,7 +7511,8 @@ def create_app(test_config=None):
     def verify_csrf():
         if (
             request.endpoint in {
-                "api_mobile_login", "api_mobile_refresh",
+                "api_mobile_login", "api_mobile_refresh", "api_mobile_auth_methods",
+                "api_mobile_cloudflare_access", "api_mobile_keycloak_exchange",
                 "api_passkey_authentication_options", "api_passkey_authentication_complete",
             }
             or

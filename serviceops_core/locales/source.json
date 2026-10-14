@@ -2449,6 +2449,9 @@
    "id": "Closure subcategory"
   },
   {
+   "id": "Cloudflare Access did not confirm your identity. Sign in to Access again."
+  },
+  {
    "id": "Cloudflare Access key download proxy"
   },
   {
@@ -4123,6 +4126,9 @@
   },
   {
    "id": "Exact state, e.g. 'In Progress' or 'Resolved'."
+  },
+  {
+   "id": "Exchange a verified Cloudflare Access token for a mobile session"
   },
   {
    "id": "Exclude date"
@@ -6452,6 +6458,9 @@
    "id": "No active SLA"
   },
   {
+   "id": "No active ServiceOps account matches your Cloudflare Access identity."
+  },
+  {
    "id": "No active administrator is configured to approve this record."
   },
   {
@@ -8746,6 +8755,9 @@
    "id": "Recurring rule runs on an interval for a selected ticket now have their own page."
   },
   {
+   "id": "Redeem a single-use Keycloak hand-off code with its PKCE verifier"
+  },
+  {
    "id": "Reduce by"
   },
   {
@@ -10181,6 +10193,9 @@
    "id": "Send test"
   },
   {
+   "id": "Send the CF_Authorization JWT as Cf-Access-Jwt-Assertion; exactly one active account must match its email; MFA applies as for password sign-in."
+  },
+  {
    "id": "Send to team"
   },
   {
@@ -10547,6 +10562,9 @@
    "id": "Sign-in and directory"
   },
   {
+   "id": "Sign-in methods this server offers the mobile app"
+  },
+  {
    "id": "Signed in with a backup code. Consider regenerating your backup codes."
   },
   {
@@ -10754,6 +10772,9 @@
   },
   {
    "id": "Start"
+  },
+  {
+   "id": "Start at /auth/keycloak/mobile/start with code_challenge (S256) and state; the browser returns to serviceops://keycloak with code and state."
   },
   {
    "id": "Start date"
@@ -11549,6 +11570,12 @@
    "id": "The service rejected the access key. Check it, and that it may use this model."
   },
   {
+   "id": "The sign-in code or verifier is missing."
+  },
+  {
+   "id": "The sign-in request from the app is incomplete. Try again."
+  },
+  {
    "id": "The signed-in user's notifications, newest first"
   },
   {
@@ -11727,6 +11754,12 @@
   },
   {
    "id": "This session"
+  },
+  {
+   "id": "This sign-in code is invalid or has expired. Sign in again."
+  },
+  {
+   "id": "This sign-in has expired. Start again from the app."
   },
   {
    "id": "This ticket isn't resolved yet."

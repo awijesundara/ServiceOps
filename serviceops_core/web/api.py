@@ -280,6 +280,22 @@ def register(app):
                 "/auth/mobile/logout": {"post": {
                     "summary": "Revoke the authenticated mobile session",
                 }},
+                "/auth/mobile/methods": {"get": {
+                    "summary": "Sign-in methods this server offers the mobile app",
+                    "security": [],
+                }},
+                "/auth/mobile/cloudflare-access": {"post": {
+                    "summary": "Exchange a verified Cloudflare Access token for a mobile session",
+                    "security": [],
+                    "description": "Send the CF_Authorization JWT as Cf-Access-Jwt-Assertion; exactly one active account "
+                                   "must match its email; MFA applies as for password sign-in.",
+                }},
+                "/auth/mobile/keycloak/exchange": {"post": {
+                    "summary": "Redeem a single-use Keycloak hand-off code with its PKCE verifier",
+                    "security": [],
+                    "description": "Start at /auth/keycloak/mobile/start with code_challenge (S256) and state; the "
+                                   "browser returns to serviceops://keycloak with code and state.",
+                }},
                 "/auth/passkeys/register/options": {"post": {
                     "summary": "Issue an authenticated mobile passkey registration challenge",
                 }},

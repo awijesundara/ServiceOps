@@ -35,12 +35,66 @@ from app import (
 from serviceops_core.mfa import account_locked, record_second_factor_failure, verify_second_factor
 from serviceops_core.security import burn_password_check, hash_password, verify_and_upgrade_password
 from serviceops_models import db, now, PasswordResetToken, User, UserPreference, UserSession
-from serviceops_core.localization import tr
+from serviceops_core.localization import tr, translatable
 from serviceops_core.safe_redirect import redirect_to_referrer
 from serviceops_core.public_url import public_url_for
 
 
+KEYCLOAK_REFUSALS = {
+    "mfa_assurance": translatable("Your identity provider did not confirm the required MFA assurance level."),
+    "link_refused": translatable("An account with this email already exists. Verify your email address with "
+                                 "your identity provider, or ask an administrator to link the account."),
+    "inactive": translatable("This account or its organization is not active."),
+}
+
+
+def resolve_keycloak_user(claims, platform="web"):
+    """(user, None) for a Keycloak identity ServiceOps accepts, else (None, reason) where reason is one of
+    invalid, mfa_assurance, link_refused or inactive. Shared by the web and iOS sign-in callbacks so both
+    apply the same assurance, account-linking and account-state rules."""
+    subject = claims.get("sub")
+    if not subject:
+        return None, "invalid"
+    suffix = "" if platform == "web" else f"; platform={platform}"
+    required_acr = os.getenv("KEYCLOAK_REQUIRED_ACR", "").strip()
+    if required_acr and claims.get("acr") != required_acr:
+        audit("login_blocked", str(claims.get("preferred_username", subject)),
+              f"provider=keycloak; required_acr={required_acr}{suffix}")
+        db.session.commit()
+        return None, "mfa_assurance"
+    realm_roles = claims.get("realm_access", {}).get("roles", [])
+    matched_roles = mapped_roles(realm_roles, "KEYCLOAK_ROLE_MAPPINGS")
+    try:
+        keycloak_attr_map = json.loads(core.setting_value("KEYCLOAK_ATTR_MAP", "{}"))
+    except (json.JSONDecodeError, TypeError):
+        keycloak_attr_map = {}
+    if not isinstance(keycloak_attr_map, dict):
+        keycloak_attr_map = {}
+    profile_attrs = {
+        field: claims.get(claim_name)
+        for field, claim_name in keycloak_attr_map.items()
+        if claims.get(claim_name)
+    }
+    try:
+        user = provision_external_user(
+            "keycloak", subject, claims.get("preferred_username", ""),
+            claims.get("name", ""), claims.get("email", ""), matched_roles,
+            profile_attrs=profile_attrs,
+            email_verified=claims.get("email_verified") is True)
+    except ExternalIdentityLinkRefused as refused:
+        db.session.rollback()
+        audit("login_blocked", str(claims.get("preferred_username", subject)), f"{refused}{suffix}")
+        db.session.commit()
+        return None, "link_refused"
+    if not account_usable(user):
+        return None, "inactive"
+    return user, None
+
+
 def register(app):
+    from serviceops_core.web import mobile_auth
+    mobile_auth.register(app)
+
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "GET" and current_user.is_authenticated:
@@ -388,45 +442,11 @@ def register(app):
         if not app.config["KEYCLOAK_ENABLED"]:
             abort(404)
         token = oauth.keycloak.authorize_access_token()
-        claims = token.get("userinfo") or {}
-        subject = claims.get("sub")
-        if not subject:
+        user, error = resolve_keycloak_user(token.get("userinfo") or {})
+        if error == "invalid":
             abort(401)
-        required_acr = os.getenv("KEYCLOAK_REQUIRED_ACR", "").strip()
-        if required_acr and claims.get("acr") != required_acr:
-            audit("login_blocked", str(claims.get("preferred_username", subject)),
-                  f"provider=keycloak; required_acr={required_acr}")
-            db.session.commit()
-            abort(403, description=tr("Your identity provider did not confirm the required MFA assurance level."))
-        realm_roles = claims.get("realm_access", {}).get("roles", [])
-        matched_roles = mapped_roles(realm_roles, "KEYCLOAK_ROLE_MAPPINGS")
-        try:
-            keycloak_attr_map = json.loads(core.setting_value("KEYCLOAK_ATTR_MAP", "{}"))
-        except (json.JSONDecodeError, TypeError):
-            keycloak_attr_map = {}
-        if not isinstance(keycloak_attr_map, dict):
-            keycloak_attr_map = {}
-        profile_attrs = {
-            field: claims.get(claim_name)
-            for field, claim_name in keycloak_attr_map.items()
-            if claims.get(claim_name)
-        }
-        try:
-            user = provision_external_user(
-                "keycloak", subject, claims.get("preferred_username", ""),
-                claims.get("name", ""), claims.get("email", ""), matched_roles,
-                profile_attrs=profile_attrs,
-                email_verified=claims.get("email_verified") is True)
-        except ExternalIdentityLinkRefused as refused:
-            db.session.rollback()
-            audit("login_blocked", str(claims.get("preferred_username", subject)), str(refused))
-            db.session.commit()
-            abort(403, description=tr(
-                "An account with this email already exists. Verify your email address with "
-                "your identity provider, or ask an administrator to link the account."
-            ))
-        if not account_usable(user):
-            abort(403, description=tr("This account or its organization is not active."))
+        if error:
+            abort(403, description=tr(KEYCLOAK_REFUSALS[error]))
         login_user(user)
         session.permanent = True
         session["_auth_version"] = user.auth_version
