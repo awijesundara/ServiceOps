@@ -356,7 +356,7 @@ def delete_status(actor, project, status, replacement):
 
 # --- work items ----------------------------------------------------------------------
 
-def _history(item, actor, field, old, new):
+def log_work_item_history(item, actor, field, old, new):
     db.session.add(WorkItemHistory(tenant_id=item.tenant_id, work_item_id=item.id,
                                    actor_id=actor.id if actor else None, field=field,
                                    old_value=None if old is None else str(old)[:4000],
@@ -524,7 +524,7 @@ def create_item(actor, project, title, item_type="task", description="", status_
     _watch(item, actor)
     for user in assignees:
         _watch(item, user)
-    _history(item, actor, "created", None, item_type)
+    log_work_item_history(item, actor, "created", None, item_type)
     db.session.flush()
     db.session.expire(item, ["assignees", "labels"])
     _notify(assignees, actor, item, tr("{name} assigned {key} to you", name=actor.name, key=item.key),
@@ -559,7 +559,7 @@ def update_item(actor, item, changes):
         parent = _validate_parent(project, item.item_type, changes["parent_id"], item)
         new_parent = parent.id if parent else None
         if new_parent != item.parent_id:
-            _history(item, actor, "parent", item.parent.key if item.parent else None, parent.key if parent else None)
+            log_work_item_history(item, actor, "parent", item.parent.key if item.parent else None, parent.key if parent else None)
             item.parent_id = new_parent
     if "priority" in changes:
         if changes["priority"] not in PRIORITIES:
@@ -568,7 +568,7 @@ def update_item(actor, item, changes):
     if "status_id" in changes:
         status = status_or_404(project, changes["status_id"])
         if status.id != item.status_id:
-            _history(item, actor, "status", item.status.name, status.name)
+            log_work_item_history(item, actor, "status", item.status.name, status.name)
             item.status_id = status.id
             item.status = status
             item.rank = _next_rank(project.id, status.id)
@@ -593,7 +593,7 @@ def update_item(actor, item, changes):
             WorkItemLabel.query.filter_by(work_item_id=item.id).delete()
             for label in labels:
                 db.session.add(WorkItemLabel(tenant_id=item.tenant_id, work_item_id=item.id, label=label))
-            _history(item, actor, "labels", ", ".join(old), ", ".join(labels))
+            log_work_item_history(item, actor, "labels", ", ".join(old), ", ".join(labels))
     added = []
     if "assignee_ids" in changes:
         assignees = _parse_assignees(changes["assignee_ids"], project) or []
@@ -604,7 +604,7 @@ def update_item(actor, item, changes):
             for user in assignees:
                 db.session.add(WorkItemAssignee(tenant_id=item.tenant_id, work_item_id=item.id, user_id=user.id))
                 _watch(item, user)
-            _history(item, actor, "assignees", ", ".join(sorted(u.name for u in item.assignees)),
+            log_work_item_history(item, actor, "assignees", ", ".join(sorted(u.name for u in item.assignees)),
                      ", ".join(sorted(u.name for u in assignees)))
             added = [user for user in assignees if user.id not in old_ids]
     item.updated_at = now()
@@ -623,7 +623,7 @@ def update_item(actor, item, changes):
 def _set(item, actor, field, value):
     old = getattr(item, field)
     if old != value:
-        _history(item, actor, field, old, value)
+        log_work_item_history(item, actor, field, old, value)
         setattr(item, field, value)
 
 
@@ -693,6 +693,7 @@ def add_comment(actor, item, body):
     _watch(item, actor)
     for user in mentioned:
         _watch(item, user)
+    core.audit("work item comment", item.key, f"comment={comment.id}", user_id=actor.id, tenant_id=item.tenant_id)
     _notify(mentioned, actor, item, tr("{name} mentioned you in {key}", name=actor.name, key=item.key), preview,
             "work_item.mentioned")
     mentioned_ids = {user.id for user in mentioned}
@@ -729,7 +730,7 @@ def add_link(actor, item, link_type, target_text):
     link = WorkItemLink(tenant_id=item.tenant_id, source_id=item.id, link_type=link_type, target_type=target_type,
                         target_id=target_id, created_by_id=actor.id)
     db.session.add(link)
-    _history(item, actor, "link", None, f"{link_type} {target_text.upper()}")
+    log_work_item_history(item, actor, "link", None, f"{link_type} {target_text.upper()}")
     return link
 
 
@@ -750,7 +751,7 @@ def remove_link(actor, item, link_id):
         if not incoming:
             abort(404)
         link = incoming
-    _history(item, actor, "link", f"{link.link_type} #{link.id}", None)
+    log_work_item_history(item, actor, "link", f"{link.link_type} #{link.id}", None)
     db.session.delete(link)
 
 

@@ -17,8 +17,9 @@ def route_handlers(path):
             for decorator in node.decorator_list:
                 target = decorator.func if isinstance(decorator, ast.Call) else decorator
                 if isinstance(target, ast.Attribute) and target.attr in ROUTE_DECORATORS \
-                        and isinstance(target.value, ast.Name) and target.value.id == "app":
-                    handlers.append(node.name)
+                        and isinstance(target.value, ast.Name) and target.value.id in ("app", "blueprint"):
+                    # A module's blueprint is named after the module ("projects.index").
+                    handlers.append(node.name if target.value.id == "app" else f"{path.stem}.{node.name}")
                     break
     return handlers
 

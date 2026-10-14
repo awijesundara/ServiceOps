@@ -54,6 +54,22 @@ import load_demo_dataset  # noqa: E402
 
 with app.app_context():
     load_demo_dataset.load_dataset()
+    # Project management (B-443): enable it and seed a small project so its
+    # pages, forms and API routes are exercised too.
+    from app import PlatformSetting, Ticket, User
+    from serviceops_core.projects import service as projects
+    fuzz_admin = User.query.filter_by(username="admin").one()
+    db.session.merge(PlatformSetting(key="PROJECTS_ENABLED", value="true", tenant_id=fuzz_admin.tenant_id))
+    fuzz_project = projects.create_project(fuzz_admin, "FZ", "Fuzz project", visibility="open")
+    fuzz_epic = projects.create_item(fuzz_admin, fuzz_project, "Fuzz epic", item_type="epic")
+    fuzz_story = projects.create_item(fuzz_admin, fuzz_project, "Fuzz story", item_type="story",
+                                      parent_id=fuzz_epic.id, assignee_ids=[fuzz_admin.id], labels="fuzz")
+    projects.create_item(fuzz_admin, fuzz_project, "Fuzz subtask", item_type="subtask", parent_id=fuzz_story.id)
+    projects.add_comment(fuzz_admin, fuzz_story, "Fuzz comment")
+    first_ticket = Ticket.query.first()
+    if first_ticket:
+        projects.add_link(fuzz_admin, fuzz_story, "relates", first_ticket.number)
+    db.session.commit()
     from sqlalchemy import inspect, text
     insp = inspect(db.engine)
     ids = defaultdict(list)
@@ -101,6 +117,7 @@ VALUES = all_ids[:3]
 def fill(rule, value):
     url = re.sub(r"<int:\w+>", str(value), rule)
     url = re.sub(r"<number>", numbers[0] if numbers else "INC0000001", url)
+    url = url.replace("<key>", "FZ").replace("<item_key>", "FZ-2")
     return re.sub(r"<(?:\w+:)?\w+>", "x", url)
 
 
