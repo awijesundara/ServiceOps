@@ -2800,6 +2800,8 @@ class FileAttachment(db.Model):
     # attachments land on the ticket directly (not per-message), matching
     # how ITIL ticket attachments already work.
     client_ticket_id = db.Column(db.Integer, db.ForeignKey("client_ticket.id"), nullable=True)
+    # A fifth: a project work item (B-443).
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="CASCADE"), nullable=True, index=True)
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     original_name = db.Column(db.String(255), nullable=False)
     stored_name = db.Column(db.String(255), unique=True, nullable=False)
@@ -3085,3 +3087,14 @@ class ContractCI(db.Model):
 
 __all__ += ["Supplier", "Contract", "ContractCI"]
 __all__ += ["THEMES", "DARK_THEMES"]
+
+# Project management (B-443). Kept in its own module; imported here so the
+# models join db.metadata and `from app import Project, ...` works as for
+# every other model.
+from serviceops_core.projects.models import (  # noqa: E402,F401 -- re-exported via __all__
+    Project, ProjectMember, ProjectStatus, WorkItem, WorkItemAssignee, WorkItemComment, WorkItemHistory,
+    WorkItemLabel, WorkItemLink, WorkItemWatcher,
+)
+from serviceops_core.projects.models import MODEL_NAMES as _PROJECT_MODEL_NAMES  # noqa: E402
+
+__all__ += _PROJECT_MODEL_NAMES
