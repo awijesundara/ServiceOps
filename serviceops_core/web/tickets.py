@@ -101,7 +101,6 @@ from app import (
     workspace_widget_enabled,
     WORKSPACE_WIDGET_REGISTRY,
 )
-from serviceops_core.approval_groups import authority_user_ids
 from serviceops_core.rack_location import is_data_center_group, rack_label, rack_mounted_cis
 from serviceops_core.config_schema import SETTING_DEFINITIONS
 from serviceops_core.priority import calculate_priority
@@ -1950,14 +1949,15 @@ def register(app):
             if domain == "problem":
                 db.session.add(ProblemProfile(enterprise_record_id=record.id))
             if request.form.get("approval_required") and current_user.effective_role != "requester":
-                # Members of the enterprise approval groups, if configured;
-                # otherwise the first active administrator. Any one decides.
-                approver_ids = sorted(authority_user_ids(record.tenant_id, "enterprise") - {current_user.id})
-                if not approver_ids:
-                    admin = tenant_query(User).filter(User.role.in_(["admin", "superadmin"]), User.active.is_(True)).first()
-                    if not admin:
-                        abort(409, description=tr("No active administrator is configured to approve this record."))
-                    approver_ids = [admin.id]
+                # Approvers come from the tenant's enterprise approval policy
+                # (B-460); its single stage decides who, and any one decides.
+                from serviceops_core import approval_policies
+                try:
+                    approver_ids = approval_policies.build_stages(
+                        approval_policies.default_policy(record.tenant_id, "enterprise"), {},
+                        exclude_user_ids={current_user.id})[0]["approver_ids"]
+                except approval_policies.ApprovalRouteError as error:
+                    abort(409, description=str(error))
                 for approver_id in approver_ids:
                     db.session.add(Approval(enterprise_record_id=record.id, approver_id=approver_id, tenant_id=record.tenant_id))
                     create_notification(

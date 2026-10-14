@@ -28,6 +28,13 @@ NOTIFICATION_EVENT_TYPES = {
         "default_subject": "Approval requested: ${gate_name}",
         "default_body": "Your decision is required for approval chain ${chain_name}.",
     },
+    "request.withdrawn": {
+        "label": "Request withdrawn",
+        "description": "Sent to pending approvers, fulfilment assignees and the requester when a catalog request is withdrawn.",
+        "variables": ["numbers", "name", "reason"],
+        "default_subject": "${numbers} withdrawn",
+        "default_body": "${name} withdrew ${numbers}: ${reason}",
+    },
     "client_ticket.escalated": {
         "label": "Client ticket escalated",
         "description": "Sent to a team manager when a client ticket breaches its organization's escalation threshold.",

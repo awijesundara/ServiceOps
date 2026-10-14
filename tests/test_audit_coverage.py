@@ -18,7 +18,9 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCE_FILES = [ROOT / "app.py", *sorted((ROOT / "serviceops_core" / "web").glob("*.py")),
                 # Project routes delegate to their rules modules (B-443, B-449).
                 *[ROOT / "serviceops_core" / "projects" / f"{name}.py"
-                  for name in ("service", "tracking", "operations", "releases", "catalog")]]
+                  for name in ("service", "tracking", "operations", "releases", "catalog")],
+                # Approval policies (B-460) and request withdrawal (B-461) audit in their rules modules.
+                ROOT / "serviceops_core" / "approval_policies.py", ROOT / "serviceops_core" / "request_withdrawal.py"]
 
 ALLOWLIST = {
     "notification_mark_read": "marks the caller's own notification read; no shared record changes",

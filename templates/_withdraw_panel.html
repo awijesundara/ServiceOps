@@ -1,0 +1,8 @@
+{# Requester withdrawal (B-461): expects withdraw_url and withdraw_title. #}
+<section class="panel withdraw-panel" id="withdraw-panel">
+  <header class="section-heading"><div><h2>{{ withdraw_title }}</h2><p class="muted">{{ tr('Pending approvals stop, open fulfilment tasks are skipped and everyone waiting on it is told. This cannot be undone; raise a new request if you need it again.') }}</p></div></header>
+  <form method="post" action="{{ withdraw_url }}" class="stack" data-confirm="{{ tr('Withdraw this request?') }}">
+    <label>{{ tr('Reason') }}<textarea name="reason" rows="2" maxlength="1000" required></textarea></label>
+    <div class="actions"><button type="submit" class="primary">{{ tr('Withdraw') }}</button></div>
+  </form>
+</section>

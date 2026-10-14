@@ -8,7 +8,7 @@
       <span class="record-type-icon" aria-hidden="true">R</span>
       <div><strong>{{ tr('Requested Item') }}</strong><small>{{ ritm.number }}</small></div>
     </div>
-    <div class="record-actions"><span class="badge">{{ tr_value(ritm.state) }}</span></div>
+    <div class="record-actions">{% if can_withdraw %}<a class="button" href="#withdraw-panel">{{ tr('Withdraw') }}</a>{% endif %}<span class="badge">{{ tr_value(ritm.state) }}</span></div>
   </header>
   {% include "_state_track.html" %}
   <div class="record-form">
@@ -24,6 +24,8 @@
     </div>
   </div>
 </section>
+
+{% if can_withdraw %}{% with withdraw_url=url_for('ritm_withdraw', ritm_id=ritm.id), withdraw_title=tr('Withdraw {number}', number=ritm.number) %}{% include "_withdraw_panel.html" %}{% endwith %}{% endif %}
 
 <nav class="record-section-tabs" aria-label="{{ tr('{number} sections', number=(ritm.number)) }}">
   <a class="active" href="#ritm-tasks">{{ tr('Fulfillment tasks (SCTASK)') }}</a>
