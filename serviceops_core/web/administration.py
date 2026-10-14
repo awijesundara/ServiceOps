@@ -2576,6 +2576,17 @@ def register(app):
                 item.description = description
                 item.delivery_days = delivery_days
                 item.approval_required = bool(request.form.get("approval_required"))
+                policy_value = (request.form.get("approval_policy_id") or "").strip()
+                if policy_value:
+                    from serviceops_models import ApprovalPolicy
+                    policy = ApprovalPolicy.query.filter_by(
+                        id=int(policy_value) if policy_value.isdigit() else 0,
+                        tenant_id=current_user.tenant_id, applies_to="catalog").first()
+                    if not policy:
+                        abort(400, description=tr("Choose an approval policy for catalog requests."))
+                    item.approval_policy_id = policy.id
+                elif "approval_policy_id" in request.form:
+                    item.approval_policy_id = None
                 item.active = bool(request.form.get("active"))
                 db.session.flush()
                 route = item.fulfillment_route
@@ -2852,6 +2863,7 @@ def register(app):
                 CatalogItem.category, CatalogItem.name
             ).all(),
             fulfillment_groups=fulfillment_groups,
+            **_catalog_policy_context(),
             change_freeze_windows=tenant_query(ChangeFreezeWindow).order_by(
                 ChangeFreezeWindow.starts_at.desc()
             ).all(),
@@ -2865,3 +2877,13 @@ def register(app):
                 "SYNC_CHILD_INCIDENT_STATES"
             ),
         )
+
+
+def _catalog_policy_context():
+    """Approval policies offered on catalog item forms (B-460)."""
+    from serviceops_core import approval_policies
+    rows = approval_policies.policies(current_user.tenant_id, "catalog")
+    db.session.commit()
+    return {"catalog_policies": rows,
+            "default_catalog_policy": next((row for row in rows if row.is_default), None),
+            "catalog_policy_names": {row.id: row.name for row in rows}}

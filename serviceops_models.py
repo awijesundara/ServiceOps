@@ -116,6 +116,8 @@ __all__ = [
     "UserRoleGrant",
     "ManagedRoleGrant",
     "ApprovalChain",
+    "ApprovalPolicy",
+    "ApprovalPolicyStage",
     "ApprovalGate",
     "ApprovalVote",
     "ServiceOffering",
@@ -1496,6 +1498,9 @@ class CatalogItem(db.Model):
     description = db.Column(db.Text, nullable=False)
     delivery_days = db.Column(db.Integer, nullable=False, default=3)
     approval_required = db.Column(db.Boolean, nullable=False, default=False)
+    # The approval policy for this item; None uses the tenant's default
+    # catalog policy (B-460).
+    approval_policy_id = db.Column(db.Integer, db.ForeignKey("approval_policy.id", ondelete="SET NULL"))
     active = db.Column(db.Boolean, nullable=False, default=True)
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
@@ -2029,6 +2034,51 @@ class ApprovalGate(db.Model):
     # remembering to join back through approval_chain.
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
     __table_args__ = (db.UniqueConstraint("chain_id", "sequence"),)
+
+
+class ApprovalPolicy(db.Model):
+    """An organisation's configurable approval route (B-460): who approves a
+    catalog request, a change or an enterprise record, stage by stage.
+    Nothing about approvers is fixed in code; defaults are created as
+    ordinary, editable policies the first time a tenant needs them."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.Text, nullable=False, default="")
+    # "catalog", "change" or "enterprise"
+    applies_to = db.Column(db.String(20), nullable=False)
+    is_default = db.Column(db.Boolean, nullable=False, default=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
+    stages = db.relationship("ApprovalPolicyStage", order_by="ApprovalPolicyStage.position",
+                             cascade="all, delete-orphan", back_populates="policy")
+    __table_args__ = (db.UniqueConstraint("tenant_id", "applies_to", "name", name="uq_approval_policy_name"),)
+
+
+class ApprovalPolicyStage(db.Model):
+    """One approval stage. `source` says where approvers come from (see
+    serviceops_core.approval_policies.SOURCES); `group_id`, `role_filter`,
+    `include_manager`, `authority` and `user_ids_json` refine it;
+    `condition` limits when the stage applies; `fallback` names who
+    approves when the source finds nobody."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    policy_id = db.Column(db.Integer, db.ForeignKey("approval_policy.id", ondelete="CASCADE"), nullable=False, index=True)
+    position = db.Column(db.Integer, nullable=False, default=0)
+    name = db.Column(db.String(160), nullable=False)
+    source = db.Column(db.String(40), nullable=False)
+    group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"))
+    role_filter = db.Column(db.String(60))
+    include_manager = db.Column(db.Boolean, nullable=False, default=False)
+    authority = db.Column(db.String(20))
+    user_ids_json = db.Column(db.Text, nullable=False, default="[]")
+    mode = db.Column(db.String(12), nullable=False, default="any")
+    condition = db.Column(db.String(40), nullable=False, default="always")
+    fallback = db.Column(db.String(30), nullable=False, default="none")
+    skip_duplicates = db.Column(db.Boolean, nullable=False, default=True)
+    policy = db.relationship("ApprovalPolicy", back_populates="stages")
+    group = db.relationship("SupportGroup")
 
 
 class ApprovalAuthorityGroup(db.Model):

@@ -3800,11 +3800,16 @@ def test_ci_lookup_includes_owning_team_for_ticket_form_confirmation(client, app
 
 
 def test_catalog_approval_chain_creates_fulfillment_task(client, app):
+    """Default catalog policy (B-460): line manager, then the fulfilment
+    team's manager. Here the employee's line manager also manages Windows,
+    the item's fulfilment team, so the second stage would ask the same
+    person again and is skipped."""
     login(client, "employee", "Employee123!")
     client.post("/catalog/1/order", data={"details": "Engineering laptop"}, follow_redirects=True)
     with app.app_context():
         ritm = RequestedItem.query.one()
         chain = ApprovalChain.query.filter_by(target_type="ritm", target_id=ritm.id).one()
+        assert [gate.name for gate in chain.gates] == ["Line manager approval"]
         first_vote = chain.gates[0].votes[0]
         ritm_id, first_vote_id = ritm.id, first_vote.id
     client.post("/logout")
@@ -3812,18 +3817,38 @@ def test_catalog_approval_chain_creates_fulfillment_task(client, app):
     client.post(f"/approval-votes/{first_vote_id}/decide",
                 data={"decision": "Approved", "comments": "Manager approved."})
     with app.app_context():
-        chain = ApprovalChain.query.filter_by(target_type="ritm", target_id=ritm_id).one()
-        manager_id = User.query.filter_by(username="database.manager").one().id
-        second_vote = next(vote for vote in chain.gates[1].votes if vote.approver_id == manager_id)
-        second_vote_id = second_vote.id
-    client.post(f"/approval-votes/{second_vote_id}/decide",
-                data={"decision": "Approved", "comments": "Fulfillment approved."})
-    with app.app_context():
         ritm = db.session.get(RequestedItem, ritm_id)
         assert ritm.state == "Approved"
         task = CatalogTask.query.filter_by(requested_item_id=ritm.id).one()
         assert task.assignment_group.name == "Windows"
         assert TaskSLA.query.filter_by(target_type="ritm", target_id=ritm.id).count() == 1
+
+
+def test_catalog_fulfilment_authorization_goes_to_the_items_own_team(client, app):
+    """The second stage is the routed team's manager, never a fixed Service
+    Desk group (the item below is fulfilled by Unix, managed by someone
+    other than the requester's line manager)."""
+    with app.app_context():
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        unix_lead = User(username="unix.lead", name="Unix Lead", email="unix.lead@test.invalid", role="manager",
+                         password_hash=generate_password_hash("UnixLead123!"))
+        db.session.add(unix_lead)
+        db.session.flush()
+        unix.manager_id = unix_lead.id
+        admin = User.query.filter_by(username="admin").one()
+        item = CatalogItem(name="Unix shell access", category="Access", description="x", approval_required=True)
+        db.session.add(item)
+        db.session.flush()
+        db.session.add(CatalogItemRouting(catalog_item_id=item.id, support_group_id=unix.id, updated_by_id=admin.id))
+        db.session.commit()
+        item_id, unix_lead_id = item.id, unix_lead.id
+    login(client, "employee", "Employee123!")
+    client.post(f"/catalog/{item_id}/order", data={"details": "Shell"}, follow_redirects=True)
+    with app.app_context():
+        ritm = RequestedItem.query.filter_by(catalog_item_id=item_id).one()
+        chain = ApprovalChain.query.filter_by(target_type="ritm", target_id=ritm.id).one()
+        assert [gate.name for gate in chain.gates] == ["Line manager approval", "Fulfilment team authorization"]
+        assert [vote.approver_id for vote in chain.gates[1].votes] == [unix_lead_id]
 
 
 def test_admin_can_route_future_catalog_items_to_any_fulfillment_team(client, app):

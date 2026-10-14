@@ -57,6 +57,7 @@ NAVIGATION_ENTRIES = (
     NavigationEntry("Catalog routing", "Fulfillment team catalog items Service configuration", "itil_admin_section", {"section": "catalog"}, "admin"),
     NavigationEntry("Team managers", "Support group manager assignment team name aliases People access", "itil_admin_section", {"section": "team-managers"}, "admin"),
     NavigationEntry("Governance groups", "CCB executive approval group setup People access", "itil_admin_section", {"section": "governance-groups"}, "admin"),
+    NavigationEntry("Approval policies", "Approval chain approvers stages line manager fulfilment team CCB executive Service configuration", "approval_policies_admin", minimum_role="admin"),
     NavigationEntry("Change approval policy", "Normal Standard change authorization Service configuration", "itil_admin_section", {"section": "change-approval-policy"}, "admin"),
     NavigationEntry("Change Control Board", "CCB membership approval Service configuration", "itil_admin_section", {"section": "ccb"}, "admin"),
     NavigationEntry("Executive approval authority", "Executive change sign-off People access", "itil_admin_section", {"section": "executive-approval"}, "admin"),

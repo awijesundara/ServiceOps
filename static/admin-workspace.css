@@ -77,3 +77,14 @@
 .approval-users .approval-group-list li{border-radius:8px;justify-content:space-between;min-width:0}
 .approval-users .approval-group-list li>span{min-width:0;overflow-wrap:anywhere}
 .approval-users .approval-group-list form{flex-shrink:0}
+/* Approval policies (B-460) */
+.approval-policy{border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin:0 0 12px}
+.approval-policy>summary{cursor:pointer}
+.approval-policy table{margin:10px 0}
+.approval-policy tr:not(.stage-edit-row)>td:last-child{white-space:nowrap;text-align:right}
+.approval-policy .inline-actions{display:inline-flex;gap:6px;margin:0 0 0 6px}
+.approval-policy .inline-actions button{padding:6px 10px}
+.approval-policy details,.admin-section>details{margin:8px 0}
+.approval-policy .record-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.withdraw-panel textarea{max-width:640px}
+.withdraw-panel:not(:target){display:none}

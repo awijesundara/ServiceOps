@@ -846,6 +846,7 @@ html.theme-dark .theme-swatch-system{background:linear-gradient(135deg,var(--sw-
 html.theme-dark .theme-swatch-system i:first-child{background:linear-gradient(135deg,var(--sw-ln) 50%,var(--sw-dn) 50%)}
 html.theme-dark .theme-swatch-system i:last-child{background:linear-gradient(135deg,var(--sw-lc) 50%,var(--sw-dc) 50%);box-shadow:none}
 html.theme-dark .admin-save-feedback{box-shadow:var(--shadow)}
+html.theme-dark .approval-policy{border:1px solid var(--line)}
 /* notification-audiences.css */
 html.theme-dark .personal-channel{border-bottom:1px solid var(--line)}
 html.theme-dark .personal-channel small{color:var(--muted)}

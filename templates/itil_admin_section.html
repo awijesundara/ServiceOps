@@ -94,6 +94,7 @@
       <label>{{ tr('Delivery target (days)') }}<input name="delivery_days" type="number" min="1" max="365" value="3" required></label>
       <label>{{ tr('Fulfillment team') }}<select name="group_id" required>{% for group in fulfillment_groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></label>
       <label class="check"><input type="checkbox" name="approval_required" value="1"> {{ tr('Approval required') }}</label>
+      <label>{{ tr('Approval policy') }}<select name="approval_policy_id"><option value="">{{ tr('Organisation default') }}{% if default_catalog_policy %} ({{ default_catalog_policy.name }}){% endif %}</option>{% for policy in catalog_policies if policy.active %}<option value="{{ policy.id }}">{{ policy.name }}</option>{% endfor %}</select></label>
       <label class="check"><input type="checkbox" name="active" value="1" checked> {{ tr('Available in catalog') }}</label>
       <div class="wide actions"><button class="primary">{{ tr('Create catalog item') }}</button></div>
     </form>
@@ -105,7 +106,7 @@
       <tr>
         <td><strong>{{ item.name }}</strong><small>{{ item.description }}</small></td>
         <td>{{ item.category }}</td>
-        <td>{{ tr('{delivery_days} days · {value} · {value2}', delivery_days=(item.delivery_days), value=(tr('Approval required') if item.approval_required else tr('No approval')), value2=(tr('Active') if item.active else tr('Inactive'))) }}</td>
+        <td>{{ tr('{delivery_days} days · {value} · {value2}', delivery_days=(item.delivery_days), value=(tr('Approval required') if item.approval_required else tr('No approval')), value2=(tr('Active') if item.active else tr('Inactive'))) }}{% if item.approval_required %}<small><a href="{{ url_for('approval_policies_admin') }}#policy-{{ item.approval_policy_id or (default_catalog_policy.id if default_catalog_policy else '') }}">{{ catalog_policy_names.get(item.approval_policy_id) or (default_catalog_policy.name if default_catalog_policy else '') }}</a></small>{% endif %}</td>
         <td>{{ item.fulfillment_route.support_group.name if item.fulfillment_route and item.fulfillment_route.active else tr('Service Desk fallback') }}</td>
         <td>
           <details><summary>{{ tr('Rename / settings') }}</summary>
@@ -119,6 +120,7 @@
               <label>{{ tr('Delivery days') }}<input name="delivery_days" type="number" min="1" max="365" value="{{ item.delivery_days }}" required></label>
               <label>{{ tr('Fulfillment team') }}<select name="group_id" required>{% for group in fulfillment_groups %}<option value="{{ group.id }}" {% if item.fulfillment_route and item.fulfillment_route.support_group_id == group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
               <label class="check"><input type="checkbox" name="approval_required" value="1" {% if item.approval_required %}checked{% endif %}> {{ tr('Approval required') }}</label>
+              <label>{{ tr('Approval policy') }}<select name="approval_policy_id"><option value="">{{ tr('Organisation default') }}{% if default_catalog_policy %} ({{ default_catalog_policy.name }}){% endif %}</option>{% for policy in catalog_policies if policy.active or policy.id == item.approval_policy_id %}<option value="{{ policy.id }}" {% if policy.id == item.approval_policy_id %}selected{% endif %}>{{ policy.name }}</option>{% endfor %}</select></label>
               <label class="check"><input type="checkbox" name="active" value="1" {% if item.active %}checked{% endif %}> {{ tr('Available in catalog') }}</label>
               <div class="wide actions"><button class="button">{{ tr('Save item') }}</button></div>
             </form>

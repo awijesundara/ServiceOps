@@ -1,0 +1,131 @@
+{% extends "base.html" %}{% block title %}{{ tr('Approval policies · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
+{% block content %}
+{% set admin_page_title = tr('Approval policies') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>{{ tr('Approval policies') }}</h1><p>{{ tr('Who approves catalog requests, changes and other enterprise records, stage by stage. Nothing here is fixed: edit the defaults or add your own policies, then choose a policy per catalog item.') }}</p></div></header>
+
+{% macro stage_fields(policy, stage=None) %}
+  <label>{{ tr('Stage name') }}<input name="name" maxlength="160" required value="{{ stage.name if stage else '' }}"><small>{{ tr('{placeholder} is replaced by the team name for team stages.', placeholder='{team}') }}</small></label>
+  <label>{{ tr('Approvers') }}<select name="source" required>
+    {% for key, meta in sources.items() if policy.applies_to in meta[1] %}<option value="{{ key }}" {% if stage and stage.source == key %}selected{% endif %}>{{ tr_value(meta[0]) }}</option>{% endfor %}
+  </select></label>
+  <label>{{ tr('Group') }}<select name="group_id"><option value="">{{ tr('Only for “Members of a chosen group”') }}</option>
+    {% for group in groups %}<option value="{{ group.id }}" {% if stage and stage.group_id == group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}
+  </select></label>
+  <label>{{ tr('Group role') }}<input name="role_filter" maxlength="60" value="{{ stage.role_filter or '' if stage else '' }}"><small>{{ tr('Optional: only members holding this group role, for example CCB approver.') }}</small></label>
+  <label>{{ tr('Approval authority') }}<select name="authority"><option value="">{{ tr('None') }}</option>
+    {% for key, label in authorities.items() %}<option value="{{ key }}" {% if stage and stage.authority == key %}selected{% endif %}>{{ tr_value(label) }}</option>{% endfor %}
+  </select><small>{{ tr('Adds the groups linked to this authority under Governance groups.') }}</small></label>
+  <label>{{ tr('People') }}<select name="user_ids" multiple size="4">
+    {% set chosen = stage_user_ids(stage) %}
+    {% for person in people %}<option value="{{ person.id }}" {% if person.id in chosen %}selected{% endif %}>{{ person.name }}</option>{% endfor %}
+  </select><small>{{ tr('Only for “Chosen people”.') }}</small></label>
+  <label>{{ tr('Decision') }}<select name="mode">
+    {% for key, label in modes.items() %}<option value="{{ key }}" {% if stage and stage.mode == key %}selected{% endif %}>{{ tr_value(label) }}</option>{% endfor %}
+  </select></label>
+  <label>{{ tr('Applies when') }}<select name="condition">
+    {% for key, meta in conditions.items() if policy.applies_to in meta[1] %}<option value="{{ key }}" {% if stage and stage.condition == key %}selected{% endif %}>{{ tr_value(meta[0]) }}</option>{% endfor %}
+  </select></label>
+  <label>{{ tr('If nobody qualifies') }}<select name="fallback">
+    {% for key, label in fallbacks.items() %}<option value="{{ key }}" {% if stage and stage.fallback == key %}selected{% endif %}>{{ tr_value(label) }}</option>{% endfor %}
+  </select></label>
+  <label class="check"><span><input type="checkbox" name="include_manager" value="1" {% if stage and stage.include_manager %}checked{% endif %}> {{ tr('Include the group’s manager') }}</span></label>
+  <label class="check"><span><input type="checkbox" name="skip_duplicates" value="1" {% if stage and stage.skip_duplicates %}checked{% endif %}> {{ tr('Skip this stage when an earlier stage already has exactly the same approvers') }}</span></label>
+{% endmacro %}
+
+{% for applies_to, label, rows in grouped %}
+<section class="panel admin-section" id="applies-{{ applies_to }}">
+  <div class="panel-head"><div><h2>{{ tr_value(label) }}</h2>
+    <p>{% if applies_to == 'catalog' %}{{ tr('Catalog items use their own policy, or the default when none is chosen (Catalog & fulfillment routing).') }}{% elif applies_to == 'change' %}{{ tr('Every Normal and Emergency change follows the default change policy; Standard changes are pre-authorized.') }}{% else %}{{ tr('Problems and other enterprise records follow the default policy.') }}{% endif %}</p></div></div>
+  {% for policy in rows %}
+  <details class="approval-policy" id="policy-{{ policy.id }}" {% if policy.is_default %}open{% endif %}>
+    <summary><strong>{{ policy.name }}</strong>
+      {% if policy.is_default %}<span class="badge">{{ tr('Default') }}</span>{% endif %}
+      {% if not policy.active %}<span class="badge archived">{{ tr('Inactive') }}</span>{% endif %}
+      {% if policy.description %}<br><small class="muted">{{ policy.description }}</small>{% endif %}</summary>
+    <table>
+      <thead><tr><th>#</th><th>{{ tr('Stage') }}</th><th>{{ tr('Approvers') }}</th><th>{{ tr('Decision') }}</th><th>{{ tr('Applies when') }}</th><th>{{ tr('If nobody qualifies') }}</th><th></th></tr></thead>
+      <tbody>
+      {% for stage in policy.stages %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td><strong>{{ stage.name }}</strong>{% if stage.skip_duplicates %}<br><small class="muted">{{ tr('Skipped when it repeats earlier approvers') }}</small>{% endif %}</td>
+          <td>{{ describe(stage) }}</td>
+          <td>{{ tr_value(modes.get(stage.mode, stage.mode)) }}</td>
+          <td>{{ tr_value(conditions.get(stage.condition, (stage.condition,))[0]) }}</td>
+          <td>{{ tr_value(fallbacks.get(stage.fallback, stage.fallback)) }}</td>
+          <td>
+            <form method="post" class="inline-actions">
+              <input type="hidden" name="policy_id" value="{{ policy.id }}"><input type="hidden" name="stage_id" value="{{ stage.id }}">
+              {% if not loop.first %}<button name="action" value="move_up" title="{{ tr('Move up') }}" aria-label="{{ tr('Move up') }}">↑</button>{% endif %}
+              {% if not loop.last %}<button name="action" value="move_down" title="{{ tr('Move down') }}" aria-label="{{ tr('Move down') }}">↓</button>{% endif %}
+            </form>
+            <form method="post" class="inline-actions" data-confirm="{{ tr('Remove this stage?') }}">
+              <input type="hidden" name="policy_id" value="{{ policy.id }}"><input type="hidden" name="stage_id" value="{{ stage.id }}">
+              <button name="action" value="delete_stage">{{ tr('Remove') }}</button>
+            </form>
+          </td>
+        </tr>
+        <tr class="stage-edit-row"><td></td><td colspan="6">
+          <details><summary>{{ tr('Edit stage') }}</summary>
+            <form method="post" class="form-grid">
+              <input type="hidden" name="policy_id" value="{{ policy.id }}"><input type="hidden" name="stage_id" value="{{ stage.id }}">
+              {{ stage_fields(policy, stage) }}
+              <div class="actions wide"><button name="action" value="update_stage" class="primary">{{ tr('Save stage') }}</button></div>
+            </form>
+          </details>
+        </td></tr>
+      {% else %}
+        <tr><td colspan="7" class="empty">{{ tr('No stages yet. Add one below.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if applies_to == 'catalog' %}
+    {% set used = items_using(policy) %}
+    <p class="muted">{{ tr('Used by catalog items:') }} {% for item in used %}{{ item.name }}{% if not loop.last %}, {% endif %}{% else %}{{ tr('none chosen explicitly') }}{% endfor %}{% if policy.is_default %} · {{ tr('also every item without its own policy') }}{% endif %}</p>
+    {% endif %}
+    {% if not (applies_to == 'enterprise' and policy.stages) %}
+    <details><summary>{{ tr('Add a stage') }}</summary>
+      <form method="post" class="form-grid">
+        <input type="hidden" name="policy_id" value="{{ policy.id }}">
+        {{ stage_fields(policy) }}
+        <div class="actions wide"><button name="action" value="add_stage" class="primary">{{ tr('Add stage') }}</button></div>
+      </form>
+    </details>
+    {% endif %}
+    <details><summary>{{ tr('Policy settings') }}</summary>
+      <form method="post" class="form-grid">
+        <input type="hidden" name="policy_id" value="{{ policy.id }}">
+        <label>{{ tr('Name') }}<input name="name" maxlength="120" required value="{{ policy.name }}"></label>
+        <label>{{ tr('Description') }}<textarea name="description" rows="2">{{ policy.description }}</textarea></label>
+        <div class="actions wide"><button name="action" value="update_policy" class="primary">{{ tr('Save policy') }}</button></div>
+      </form>
+      <div class="record-actions">
+        {% if not policy.is_default and policy.active %}<form method="post"><input type="hidden" name="policy_id" value="{{ policy.id }}"><button name="action" value="set_default">{{ tr('Make default') }}</button></form>{% endif %}
+        {% if not policy.is_default %}<form method="post"><input type="hidden" name="policy_id" value="{{ policy.id }}"><button name="action" value="{{ 'deactivate' if policy.active else 'activate' }}">{{ tr('Deactivate') if policy.active else tr('Activate') }}</button></form>
+        <form method="post" data-confirm="{{ tr('Delete this policy? Catalog items using it fall back to the default.') }}"><input type="hidden" name="policy_id" value="{{ policy.id }}"><button name="action" value="delete_policy">{{ tr('Delete policy') }}</button></form>{% endif %}
+      </div>
+    </details>
+  </details>
+  {% endfor %}
+  {% if applies_to == 'catalog' %}
+  <details><summary>{{ tr('New catalog policy') }}</summary>
+    <form method="post" class="form-grid">
+      <input type="hidden" name="applies_to" value="catalog">
+      <label>{{ tr('Name') }}<input name="name" maxlength="120" required></label>
+      <label>{{ tr('Description') }}<textarea name="description" rows="2"></textarea></label>
+      <div class="actions wide"><button name="action" value="create_policy" class="primary">{{ tr('Create policy') }}</button></div>
+    </form>
+  </details>
+  {% elif applies_to == 'change' %}
+  <details><summary>{{ tr('New change policy') }}</summary>
+    <form method="post" class="form-grid">
+      <input type="hidden" name="applies_to" value="change">
+      <label>{{ tr('Name') }}<input name="name" maxlength="120" required></label>
+      <label>{{ tr('Description') }}<textarea name="description" rows="2"></textarea></label>
+      <div class="actions wide"><button name="action" value="create_policy" class="primary">{{ tr('Create policy') }}</button></div>
+    </form>
+  </details>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

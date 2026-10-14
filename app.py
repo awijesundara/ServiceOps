@@ -3838,114 +3838,46 @@ def executive_office_group(tenant_id):
     return SupportGroup.query.filter_by(name="Executive Office", tenant_id=tenant_id).first()
 
 
-def team_assessment_stage(group, name):
-    """A team's manager assessment: its active manager, or any active member
-    of the groups linked to it as approval groups (serviceops_core.approval_groups).
-    None when the team has neither."""
-    from serviceops_core.approval_groups import authority_user_ids
-    approver_ids = set(authority_user_ids(group.tenant_id, "team_manager", group.id))
-    if group.manager and group.manager.active:
-        approver_ids.add(group.manager_id)
-    if not approver_ids:
-        return None
-    return {"name": name, "mode": "any" if len(approver_ids) > 1 else "all", "approver_ids": sorted(approver_ids)}
+def change_service_coowner_groups(ticket, scoped_cis):
+    """Teams owning other CIs that back the same business services as the
+    change's CIs: a shared load balancer's change matters to every team
+    whose application sits behind it."""
+    if not scoped_cis:
+        return []
+    service_ids = [
+        row[0] for row in db.session.query(ServiceOfferingCI.service_offering_id)
+        .filter(ServiceOfferingCI.ci_id.in_([ci.id for ci in scoped_cis]),
+                ServiceOfferingCI.tenant_id == ticket.tenant_id).all()
+    ]
+    if not service_ids:
+        return []
+    group_ids = {
+        row[0] for row in db.session.query(ConfigurationItem.support_group_id)
+        .join(ServiceOfferingCI, ServiceOfferingCI.ci_id == ConfigurationItem.id)
+        .filter(ServiceOfferingCI.service_offering_id.in_(service_ids),
+                ConfigurationItem.tenant_id == ticket.tenant_id,
+                ConfigurationItem.support_group_id.isnot(None)).all()
+    }
+    return [group for group in (db.session.get(SupportGroup, group_id) for group_id in sorted(group_ids)) if group]
 
 
 def change_approval_stages(ticket):
-    from serviceops_core.approval_groups import authority_user_ids
-    ownership = ticket.change_ownership
+    """The approval chain for a change, from the tenant's default change
+    approval policy (B-460). Which teams, boards and executives approve, and
+    under which conditions, is configured there, not here."""
+    from serviceops_core import approval_policies
     governance = ticket.change_governance
-    owner_stage = team_assessment_stage(ownership.group, f"{ownership.group.name} manager assessment") if ownership else None
-    if not owner_stage:
-        abort(409, description=tr("The owning team requires an active manager or approval group."))
-    stages = [owner_stage]
-    covered_group_ids = {ownership.group_id}
     scoped_cis = change_target_cis(ticket)
-    ci_groups = {}
-    for ci in scoped_cis:
-        if ci.support_group:
-            ci_groups.setdefault(ci.support_group.id, (ci.support_group, ci))
-    for group_id in sorted(set(ci_groups) - covered_group_ids):
-        ci_group, representative_ci = ci_groups[group_id]
-        stage = team_assessment_stage(ci_group, f"{ci_group.name} manager assessment (CI owner)") if ci_group.active else None
-        if not stage:
-            abort(409, description=tr("The {name} team (owner of {name2}) requires an active manager or approval group.", name=ci_group.name, name2=representative_ci.name))
-        stages.append(stage)
-        covered_group_ids.add(ci_group.id)
-    # If this change's CI backs a business service (ServiceOfferingCI) that is
-    # also backed by other CIs owned by different teams, each of those teams
-    # is exposed to the same change even though it's not "their" CI directly
-    # -- e.g. a shared load balancer's change plan matters to every team whose
-    # application sits behind it. Require each such team's manager too.
-    if scoped_cis:
-        service_ids = [
-            row[0] for row in db.session.query(ServiceOfferingCI.service_offering_id)
-            .filter(
-                ServiceOfferingCI.ci_id.in_([ci.id for ci in scoped_cis]),
-                ServiceOfferingCI.tenant_id == ticket.tenant_id,
-            ).all()
-        ]
-        if service_ids:
-            sibling_group_ids = {
-                row[0] for row in db.session.query(ConfigurationItem.support_group_id)
-                .join(ServiceOfferingCI, ServiceOfferingCI.ci_id == ConfigurationItem.id)
-                .filter(
-                    ServiceOfferingCI.service_offering_id.in_(service_ids),
-                    ConfigurationItem.tenant_id == ticket.tenant_id,
-                    ConfigurationItem.support_group_id.isnot(None),
-                ).all()
-            }
-            for group_id in sorted(sibling_group_ids - covered_group_ids):
-                sibling_group = db.session.get(SupportGroup, group_id)
-                if not sibling_group or not sibling_group.active:
-                    continue
-                stage = team_assessment_stage(sibling_group, f"{sibling_group.name} manager assessment (service co-owner)")
-                if not stage:
-                    abort(409, description=(
-                        tr("The {name} team (co-owner of a service this CI backs) requires an active manager or approval group.", name=sibling_group.name)
-                    ))
-                stages.append(stage)
-                covered_group_ids.add(group_id)
-    if governance.change_type != "Standard" and change_requires_ccb(governance, scoped_cis):
-        ccb = SupportGroup.query.filter_by(name="Change Control Board", tenant_id=ticket.tenant_id).first()
-        ccb_ids = sorted({
-            member.user_id for member in (ccb.members if ccb else [])
-            if member.role == "CCB approver" and member.user.active
-        } | authority_user_ids(ticket.tenant_id, "ccb"))
-        if not ccb_ids:
-            abort(409, description=(
-                tr("CCB membership must be configured before a non-standard change can be submitted.")
-            ))
-        # One active CCB approver authorizes -- not the whole board, and not
-        # a majority. Emergency changes already worked this way (an
-        # expedited/auditable route: CLAUDE.md "'Submitted late' is not an
-        # emergency justification" -- this only shortens quorum, it never
-        # skips CCB authorization or the audit trail); Normal changes now
-        # require the same single-approver quorum rather than a majority.
-        stages.append({
-            "name": (
-                "Emergency CCB authorization (expedited)"
-                if governance.change_type == "Emergency" else "CCB authorization"
-            ),
-            "mode": "any",
-            "approver_ids": ccb_ids,
-        })
-        executive = executive_office_group(ticket.tenant_id)
-        executive_ids = sorted({
-            member.user_id for member in (executive.members if executive and executive.active else [])
-            if member.role == "executive approver" and member.user.active
-        } | ({executive.manager_id} if executive and executive.active and executive.manager and executive.manager.active else set())
-          | (authority_user_ids(ticket.tenant_id, "executive") if executive and executive.active else set()))
-        if not executive_ids:
-            abort(409, description=(
-                tr("Executive (CEO) approval authority must be configured (itil_admin's Executive approval section) before a non-standard change requiring CCB authorization can be submitted.")
-            ))
-        stages.append({
-            "name": "Executive (CEO) approval",
-            "mode": executive.approval_mode if executive.approval_mode in {"all", "any"} else "all",
-            "approver_ids": executive_ids,
-        })
-    return stages
+    context = {
+        "ticket": ticket, "cis": scoped_cis,
+        "coowner_groups": change_service_coowner_groups(ticket, scoped_cis),
+        "change_type": governance.change_type if governance else "Normal",
+        "needs_ccb": bool(governance) and change_requires_ccb(governance, scoped_cis),
+    }
+    try:
+        return approval_policies.build_stages(approval_policies.default_policy(ticket.tenant_id, "change"), context)
+    except approval_policies.ApprovalRouteError as error:
+        abort(409, description=str(error))
 
 
 def supersede_change_approval(ticket, changed_fields):
@@ -4178,42 +4110,15 @@ def create_approval_chain(name, target_type, target_id, stages, first_gate_title
     return chain
 
 
-def catalog_approval_stages(requested_for):
-    """Build the governed catalog chain for the request beneficiary.
-
-    The first approver is deliberately resolved once, at submission time, and
-    persisted in ApprovalVote.  Later directory or org-chart changes therefore
-    affect future requests without silently rewriting an in-flight decision.
-    """
-    manager = requested_for.manager if requested_for else None
-    if (
-        not manager
-        or not manager.active
-        or manager.tenant_id != requested_for.tenant_id
-        or manager.id == requested_for.id
-    ):
-        raise ValueError(
-            tr("An active, same-tenant line manager must be assigned to the requested-for user before an approval-required item can be submitted.")
-        )
-
-    fulfillment = SupportGroup.query.filter_by(
-        tenant_id=requested_for.tenant_id, name="Service Desk", active=True
-    ).first()
-    fulfillment_approver_ids = sorted({
-        member.user_id
-        for member in fulfillment.members
-        if member.user and member.user.active
-        and member.user.tenant_id == requested_for.tenant_id
-    }) if fulfillment else []
-    if not fulfillment_approver_ids:
-        raise ValueError(
-            tr("At least one active, same-tenant Service Desk member must be configured for fulfillment authorization.")
-        )
-    return [
-        {"name": "Line manager approval", "mode": "all", "approver_ids": [manager.id]},
-        {"name": "Fulfillment authorization", "mode": "any",
-         "approver_ids": fulfillment_approver_ids},
-    ]
+def catalog_approval_stages(requested_for, item):
+    """The approval chain for a catalog request, from the item's approval
+    policy (or the tenant's default catalog policy). Approvers are resolved
+    once, at submission, and stored as votes: later directory or policy
+    changes affect future requests, never a decision in progress.
+    Raises ValueError (ApprovalRouteError) when the policy finds nobody."""
+    from serviceops_core import approval_policies
+    policy = approval_policies.policy_for_catalog_item(item)
+    return approval_policies.build_stages(policy, {"requested_for": requested_for, "item": item})
 
 
 def decide_vote(vote, decision, comments):
@@ -4316,7 +4221,15 @@ def sync_slas(target_type, target_id, state):
         if task_sla.stage in ("Completed", "Cancelled"):
             continue
         pause_states = {value.strip() for value in task_sla.definition.pause_states.split(",")}
-        if state in ("Resolved", "Closed", "Completed", "Closed Complete", "Solved"):
+        if state == "Cancelled":
+            task_sla.stage = "Cancelled"
+            task_sla.stopped_at = now()
+            db.session.add(SLAEvent(
+                task_sla_id=task_sla.id, event_type="Cancelled",
+                details="Stopped: the record was cancelled",
+                tenant_id=task_sla.definition.tenant_id,
+            ))
+        elif state in ("Resolved", "Closed", "Completed", "Closed Complete", "Solved"):
             task_sla.stage = "Completed"
             task_sla.stopped_at = now()
             db.session.add(SLAEvent(
@@ -7902,6 +7815,7 @@ def create_app(test_config=None):
     from serviceops_core.web import (
         administration,
         api,
+        approval_policies,
         auth,
         client_management,
         cmdb,
@@ -7920,6 +7834,7 @@ def create_app(test_config=None):
     auth.register(app)
     workspace.register(app)
     administration.register(app)
+    approval_policies.register(app)
     groups.register(app)
     itam.register(app)
     tickets.register(app)

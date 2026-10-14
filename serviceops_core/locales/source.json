@@ -35,7 +35,13 @@
    "id": "(inactive)"
   },
   {
+   "id": "(no group chosen)"
+  },
+  {
    "id": "(no matching user)"
+  },
+  {
+   "id": "(nobody chosen)"
   },
   {
    "id": "(outside your organization)"
@@ -205,6 +211,12 @@
    "id": "A passkey credential object with a response object is required."
   },
   {
+   "id": "A policy called {name} already exists."
+  },
+  {
+   "id": "A policy name has 1 to 120 characters."
+  },
+  {
    "id": "A project key has 2 to 10 letters or digits and starts with a letter."
   },
   {
@@ -252,6 +264,9 @@
   },
   {
    "id": "A small activity label appears while the assistant works and disappears when the answer is ready. Private model reasoning is not shown. It drafts advice for your review and makes no operational changes."
+  },
+  {
+   "id": "A stage name has 1 to 160 characters."
   },
   {
    "id": "A status update message is required."
@@ -531,6 +546,9 @@
    "id": "Activate"
   },
   {
+   "id": "Activate the policy before making it the default."
+  },
+  {
    "id": "Activated"
   },
   {
@@ -646,6 +664,9 @@
    "id": "Add a schedule"
   },
   {
+   "id": "Add a stage"
+  },
+  {
    "id": "Add a trigger"
   },
   {
@@ -672,6 +693,9 @@
   },
   {
    "id": "Add as many as you like: your own servers, and hosted services such as OpenAI or Claude."
+  },
+  {
+   "id": "Add at least one stage before making the policy the default."
   },
   {
    "id": "Add attachments",
@@ -770,6 +794,9 @@
    "javascript": true
   },
   {
+   "id": "Add stage"
+  },
+  {
    "id": "Add status"
   },
   {
@@ -814,6 +841,9 @@
   },
   {
    "id": "Address must be a valid IP address (host) or CIDR range (subnet)."
+  },
+  {
+   "id": "Adds the groups linked to this authority under Governance groups."
   },
   {
    "id": "Adjust automatically"
@@ -1165,6 +1195,9 @@
    "id": "Applies to deliveries sent to this channel from now on."
   },
   {
+   "id": "Applies when"
+  },
+  {
    "id": "Apply"
   },
   {
@@ -1189,6 +1222,9 @@
    "id": "Approval absence coverage is available only to a manager with an active direct report or managed team."
   },
   {
+   "id": "Approval authority"
+  },
+  {
    "id": "Approval chains"
   },
   {
@@ -1208,6 +1244,15 @@
   },
   {
    "id": "Approval history"
+  },
+  {
+   "id": "Approval policies"
+  },
+  {
+   "id": "Approval policies · {instance_name}"
+  },
+  {
+   "id": "Approval policy"
   },
   {
    "id": "Approval requested"
@@ -1367,9 +1412,6 @@
   },
   {
    "id": "At"
-  },
-  {
-   "id": "At least one active, same-tenant Service Desk member must be configured for fulfillment authorization."
   },
   {
    "id": "At once"
@@ -1764,9 +1806,6 @@
    "id": "CCB approver groups"
   },
   {
-   "id": "CCB membership must be configured before a non-standard change can be submitted."
-  },
-  {
    "id": "CHG number"
   },
   {
@@ -1945,6 +1984,9 @@
   },
   {
    "id": "Catalog items can route only to an active team."
+  },
+  {
+   "id": "Catalog items use their own policy, or the default when none is chosen (Catalog & fulfillment routing)."
   },
   {
    "id": "Catalog tasks cannot be added until the RITM is approved."
@@ -2183,7 +2225,16 @@
    "id": "Choose a different work item type."
   },
   {
+   "id": "Choose a fallback."
+  },
+  {
    "id": "Choose a file"
+  },
+  {
+   "id": "Choose a group of this organisation."
+  },
+  {
+   "id": "Choose a group."
   },
   {
    "id": "Choose a link type."
@@ -2195,6 +2246,9 @@
    "id": "Choose a person"
   },
   {
+   "id": "Choose a policy."
+  },
+  {
    "id": "Choose a priority."
   },
   {
@@ -2202,6 +2256,9 @@
   },
   {
    "id": "Choose a resolution."
+  },
+  {
+   "id": "Choose a stage."
   },
   {
    "id": "Choose a status."
@@ -2240,10 +2297,22 @@
    "id": "Choose an active team to receive backup failure alerts."
   },
   {
+   "id": "Choose an approval authority."
+  },
+  {
+   "id": "Choose an approval policy for catalog requests."
+  },
+  {
    "id": "Choose an organization-wide operational feed or one support group's chat room. Users add private destinations in their own preferences."
   },
   {
    "id": "Choose another component of this project."
+  },
+  {
+   "id": "Choose another default before deactivating this policy."
+  },
+  {
+   "id": "Choose another default before deleting this policy."
   },
   {
    "id": "Choose another resolution for the work items that use {name}."
@@ -2255,6 +2324,9 @@
    "id": "Choose another version of this project."
   },
   {
+   "id": "Choose at least one person."
+  },
+  {
    "id": "Choose channels, select event categories, and review delivery health."
   },
   {
@@ -2262,6 +2334,9 @@
   },
   {
    "id": "Choose executive approvers for Normal and Emergency changes"
+  },
+  {
+   "id": "Choose how approvers decide."
   },
   {
    "id": "Choose how to adjust the remaining estimate."
@@ -2292,6 +2367,15 @@
   },
   {
    "id": "Choose what shows in the table — CIs pulled from NetBox/CSV carry more fields than fit by default."
+  },
+  {
+   "id": "Choose what the policy applies to."
+  },
+  {
+   "id": "Choose when the stage applies."
+  },
+  {
+   "id": "Choose where this stage's approvers come from."
   },
   {
    "id": "Choose which AI service answers your next message"
@@ -2985,6 +3069,9 @@
    "id": "Create organization"
   },
   {
+   "id": "Create policy"
+  },
+  {
    "id": "Create project"
   },
   {
@@ -3306,6 +3393,9 @@
    "id": "Decimal"
   },
   {
+   "id": "Decision"
+  },
+  {
    "id": "Decision comments"
   },
   {
@@ -3371,6 +3461,9 @@
    "id": "Delete group {name}? Members lose the access it grants."
   },
   {
+   "id": "Delete policy"
+  },
+  {
    "id": "Delete target"
   },
   {
@@ -3381,6 +3474,9 @@
   },
   {
    "id": "Delete this comment?"
+  },
+  {
+   "id": "Delete this policy? Catalog items using it fall back to the default."
   },
   {
    "id": "Delete this rack? This cannot be undone."
@@ -3755,6 +3851,9 @@
    "id": "Edit reporting lines"
   },
   {
+   "id": "Edit stage"
+  },
+  {
    "id": "Edit {name}",
    "javascript": true
   },
@@ -3944,6 +4043,9 @@
    "id": "Enterprise record approval requested"
   },
   {
+   "id": "Enterprise record approvals have a single stage; edit the existing one."
+  },
+  {
    "id": "Enterprise records past their due date and still open."
   },
   {
@@ -4044,6 +4146,9 @@
    "id": "Event subscription"
   },
   {
+   "id": "Every Normal and Emergency change follows the default change policy; Standard changes are pre-authorized."
+  },
+  {
    "id": "Every active member of these teams is also a CCB approver. Any one CCB approver authorizes a change."
   },
   {
@@ -4135,9 +4240,6 @@
   },
   {
    "id": "Executive"
-  },
-  {
-   "id": "Executive (CEO) approval authority must be configured (itil_admin's Executive approval section) before a non-standard change requiring CCB authorization can be submitted."
   },
   {
    "id": "Executive Navy"
@@ -4603,6 +4705,9 @@
    "id": "Group name must contain 1 to 120 characters."
   },
   {
+   "id": "Group role"
+  },
+  {
    "id": "Group rows by"
   },
   {
@@ -4625,6 +4730,9 @@
   },
   {
    "id": "Groups"
+  },
+  {
+   "id": "Groups linked to {authority}"
   },
   {
    "id": "Groups, their AD/LDAP groups and the access they grant"
@@ -4884,6 +4992,9 @@
    "id": "If field"
   },
   {
+   "id": "If nobody qualifies"
+  },
+  {
    "id": "If that active local account exists, recovery instructions have been sent."
   },
   {
@@ -5034,6 +5145,9 @@
   },
   {
    "id": "Include subtasks"
+  },
+  {
+   "id": "Include the group’s manager"
   },
   {
    "id": "Incoming webhook (fire-and-forget)"
@@ -5809,6 +5923,9 @@
    "id": "Major incident coordination"
   },
   {
+   "id": "Make default"
+  },
+  {
    "id": "Manage contacts"
   },
   {
@@ -5949,6 +6066,9 @@
   },
   {
    "id": "Members and administrators"
+  },
+  {
+   "id": "Members of {group}"
   },
   {
    "id": "Memory"
@@ -6348,7 +6468,13 @@
    "id": "New backup codes generated. Save them now -- they will not be shown again."
   },
   {
+   "id": "New catalog policy"
+  },
+  {
    "id": "New category name"
+  },
+  {
+   "id": "New change policy"
   },
   {
    "id": "New chat"
@@ -6464,7 +6590,7 @@
    "id": "No active ServiceOps account matches your Cloudflare Access identity."
   },
   {
-   "id": "No active administrator is configured to approve this record."
+   "id": "No active approval policy is configured. An administrator can set one up under Approval policies."
   },
   {
    "id": "No active direct reports"
@@ -6920,6 +7046,9 @@
    "id": "No sources."
   },
   {
+   "id": "No stages yet. Add one below."
+  },
+  {
    "id": "No steps yet -- add one below."
   },
   {
@@ -7324,6 +7453,9 @@
    "id": "Only add_history compensation is supported."
   },
   {
+   "id": "Only administrators can change approval policies."
+  },
+  {
    "id": "Only administrators can change project settings for the organisation."
   },
   {
@@ -7346,6 +7478,12 @@
   },
   {
    "id": "Only dead workflow jobs can be replayed."
+  },
+  {
+   "id": "Only for “Chosen people”."
+  },
+  {
+   "id": "Only for “Members of a chosen group”"
   },
   {
    "id": "Only future matching events are delivered to this channel."
@@ -7379,6 +7517,9 @@
   },
   {
    "id": "Only the reporter or a project administrator can delete a work item."
+  },
+  {
+   "id": "Only the requester, the person it is for, or an administrator can withdraw an open request."
   },
   {
    "id": "Only the view's creator or an admin can delete it."
@@ -7549,6 +7690,9 @@
    "id": "Optional. Transparent PNG recommended, maximum 5 MB."
   },
   {
+   "id": "Optional: only members holding this group role, for example CCB approver."
+  },
+  {
    "id": "Options (one per line, only used for Select)"
   },
   {
@@ -7559,6 +7703,9 @@
   },
   {
    "id": "Org chart · {instance_name}"
+  },
+  {
+   "id": "Organisation default"
   },
   {
    "id": "Organization"
@@ -7830,6 +7977,9 @@
    "id": "Pending"
   },
   {
+   "id": "Pending approvals stop, open fulfilment tasks are skipped and everyone waiting on it is told. This cannot be undone; raise a new request if you need it again."
+  },
+  {
    "id": "Pending customer"
   },
   {
@@ -7974,6 +8124,24 @@
   },
   {
    "id": "Policy"
+  },
+  {
+   "id": "Policy activated."
+  },
+  {
+   "id": "Policy created. Add its stages next."
+  },
+  {
+   "id": "Policy deactivated."
+  },
+  {
+   "id": "Policy deleted. Catalog items that used it now follow the default."
+  },
+  {
+   "id": "Policy saved."
+  },
+  {
+   "id": "Policy settings"
   },
   {
    "id": "Ports",
@@ -8201,6 +8369,9 @@
   },
   {
    "id": "Problems / events past due"
+  },
+  {
+   "id": "Problems and other enterprise records follow the default policy."
   },
   {
    "id": "Problems with a documented root cause and workaround — check here before starting a fresh investigation."
@@ -8947,6 +9118,9 @@
    "id": "Remove this person's manager/CCB authority first, from Team managers or Approval authority, before removing their membership."
   },
   {
+   "id": "Remove this stage?"
+  },
+  {
    "id": "Remove {key}"
   },
   {
@@ -9045,6 +9219,9 @@
   },
   {
    "id": "Request services, equipment, access, and support."
+  },
+  {
+   "id": "Request withdrawn"
   },
   {
    "id": "Requested"
@@ -9773,6 +9950,9 @@
    "id": "Save source rules"
   },
   {
+   "id": "Save stage"
+  },
+  {
    "id": "Save ticket defaults"
   },
   {
@@ -9812,6 +9992,9 @@
   },
   {
    "id": "Saving publishes a new article version and archives KB{d}. The previous version is preserved, not deleted."
+  },
+  {
+   "id": "Say why the request is being withdrawn."
   },
   {
    "id": "Scan attachments with ClamAV"
@@ -10242,6 +10425,9 @@
    "id": "Sent to configured recipients when an SLA target is missed."
   },
   {
+   "id": "Sent to pending approvers, fulfilment assignees and the requester when a catalog request is withdrawn."
+  },
+  {
    "id": "Sent to the requester once their enterprise record approval is decided."
   },
   {
@@ -10615,7 +10801,13 @@
    "id": "Skip Snipe-IT TLS certificate verification (insecure — last resort, prefer the CA certificate above)"
   },
   {
+   "id": "Skip this stage when an earlier stage already has exactly the same approvers"
+  },
+  {
    "id": "Skip to main content"
+  },
+  {
+   "id": "Skipped when it repeats earlier approvers"
   },
   {
    "id": "Slack"
@@ -10767,6 +10959,21 @@
   },
   {
    "id": "Stage"
+  },
+  {
+   "id": "Stage added."
+  },
+  {
+   "id": "Stage name"
+  },
+  {
+   "id": "Stage order saved."
+  },
+  {
+   "id": "Stage removed."
+  },
+  {
+   "id": "Stage saved."
   },
   {
    "id": "Stage {sequence} · {name} · {mode}"
@@ -11370,6 +11577,9 @@
    "javascript": true
   },
   {
+   "id": "The approval policy {name} has no stage that applies here."
+  },
+  {
    "id": "The assignee must be an active member of the owning team."
   },
   {
@@ -11412,6 +11622,9 @@
   },
   {
    "id": "The day resets in"
+  },
+  {
+   "id": "The default policy needs at least one stage."
   },
   {
    "id": "The directory could not be reached: {error}"
@@ -11538,6 +11751,9 @@
    "id": "The question and required instructions exceed this model's context. Shorten the question or select a larger-context model."
   },
   {
+   "id": "The reason has at most {limit} characters."
+  },
+  {
    "id": "The record moves entirely to the selected team; the current assignee is cleared so the new team picks it up."
   },
   {
@@ -11551,6 +11767,9 @@
   },
   {
    "id": "The request contains a character that is not allowed (NUL)."
+  },
+  {
+   "id": "The request was withdrawn."
   },
   {
    "id": "The requested ticket was not found."
@@ -11617,6 +11836,9 @@
   },
   {
    "id": "The {name} team (owner of {name2}) requires an active manager or approval group."
+  },
+  {
+   "id": "The {team} team needs an active manager or approval group."
   },
   {
    "id": "Theme"
@@ -12076,6 +12298,9 @@
    "id": "Unknown CI class action: {action}"
   },
   {
+   "id": "Unknown action."
+  },
+  {
    "id": "Unknown checkpoint value type {kind}"
   },
   {
@@ -12288,6 +12513,9 @@
   },
   {
    "id": "Use w (weeks), d (days), h (hours) and m (minutes), for example 1d 4h."
+  },
+  {
+   "id": "Used by catalog items:"
   },
   {
    "id": "Used only when Custom is selected above."
@@ -12690,6 +12918,12 @@
    "id": "While a window is active, Standard and Normal changes can't be scheduled or approved inside it — only Emergency changes are exempt. This actually blocks submission/approval, unlike a banner."
   },
   {
+   "id": "Who approves catalog requests, changes and enterprise records, stage by stage"
+  },
+  {
+   "id": "Who approves catalog requests, changes and other enterprise records, stage by stage. Nothing here is fixed: edit the defaults or add your own policies, then choose a policy per catalog item."
+  },
+  {
    "id": "Who can create projects"
   },
   {
@@ -12706,6 +12940,18 @@
   },
   {
    "id": "Window"
+  },
+  {
+   "id": "Withdraw"
+  },
+  {
+   "id": "Withdraw this request?"
+  },
+  {
+   "id": "Withdraw {number}"
+  },
+  {
+   "id": "Withdrawn by {name}: {reason}"
   },
   {
    "id": "Work"
@@ -13060,6 +13306,9 @@
    "id": "alive"
   },
   {
+   "id": "also every item without its own policy"
+  },
+  {
    "id": "an administrator"
   },
   {
@@ -13067,6 +13316,9 @@
   },
   {
    "id": "and check the sample rows below before applying anything. RT is not modified in any way — this only reads from it."
+  },
+  {
+   "id": "and its manager"
   },
   {
    "id": "app_port must be an integer."
@@ -13480,6 +13732,9 @@
    "javascript": true
   },
   {
+   "id": "none chosen explicitly"
+  },
+  {
    "id": "not yet enforced"
   },
   {
@@ -13529,6 +13784,9 @@
   },
   {
    "id": "placeholders from the list below each one. Anything left unedited keeps its built-in default wording."
+  },
+  {
+   "id": "plus groups linked to {authority}"
   },
   {
    "id": "postgresql+psycopg://user:password@host:5432/serviceops?sslmode=verify-full"
@@ -13700,6 +13958,9 @@
    "id": "the assignment group"
   },
   {
+   "id": "the chosen group"
+  },
+  {
    "id": "the configured log file"
   },
   {
@@ -13788,6 +14049,9 @@
   },
   {
    "id": "with filters to see the rest."
+  },
+  {
+   "id": "with the role {role}"
   },
   {
    "id": "with this status"
@@ -14114,6 +14378,9 @@
    "id": "{items} items"
   },
   {
+   "id": "{item} has no fulfilment team."
+  },
+  {
    "id": "{key} board · {instance_name}"
   },
   {
@@ -14306,6 +14573,9 @@
    "id": "{name} is not a member who can work on this project."
   },
   {
+   "id": "{name} is now the default."
+  },
+  {
    "id": "{name} is now {value} the public status page."
   },
   {
@@ -14351,6 +14621,9 @@
    "id": "{name} will create fulfillment tasks for {name2}."
   },
   {
+   "id": "{name} withdrew {numbers}: {reason}"
+  },
+  {
    "id": "{name} · {size}",
    "javascript": true
   },
@@ -14360,6 +14633,9 @@
   },
   {
    "id": "{name}. Events without this exact assignment are rejected by the delivery worker."
+  },
+  {
+   "id": "{numbers} withdrawn"
   },
   {
    "id": "{number} added. Adding a task after submission is a material change — {number2} returned to Awaiting Approval and approvers were notified."
@@ -14441,6 +14717,9 @@
    "id": "{number} was deleted. It remains available for audit as a Cancelled change."
   },
   {
+   "id": "{number} withdrawn."
+  },
+  {
    "id": "{number} · Improvement · {instance_name}"
   },
   {
@@ -14464,6 +14743,9 @@
   {
    "id": "{period}: {used} of {limit}",
    "javascript": true
+  },
+  {
+   "id": "{placeholder} is replaced by the team name for team stages."
   },
   {
    "id": "{placeholder}'s personal data has been erased."
@@ -14541,7 +14823,22 @@
    "id": "{source}: {field}"
   },
   {
+   "id": "{stage} has an unknown approver source."
+  },
+  {
    "id": "{stage} · target {value}"
+  },
+  {
+   "id": "{stage}: no groups with active members are linked to this approval authority."
+  },
+  {
+   "id": "{stage}: nobody can approve. Add active members to {group} or link groups to its approval authority."
+  },
+  {
+   "id": "{stage}: none of the chosen people is an active user."
+  },
+  {
+   "id": "{stage}: there is no active administrator."
   },
   {
    "id": "{starts_at} to {ends_at} · {reason}"

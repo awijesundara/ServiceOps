@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from werkzeug.exceptions import HTTPException
 
 import app as core
+from serviceops_core import request_withdrawal
 from app import (
     active_approval_delegation,
     approval_chain_for,
@@ -96,7 +97,7 @@ def register(app):
         approval_stages = None
         if item.approval_required:
             try:
-                approval_stages = catalog_approval_stages(current_user)
+                approval_stages = catalog_approval_stages(current_user, item)
             except ValueError as error:
                 flash(
                     tr("{name} cannot be requested yet: {error} Contact an administrator.", name=item.name, error=error),
@@ -336,7 +337,42 @@ def register(app):
                 CatalogItem.category, CatalogItem.name
             ).all(),
             can_add_request_item=user_can_add_request_item(current_user, req),
+            can_withdraw=request_withdrawal.can_withdraw_request(current_user, req),
         )
+
+    @app.post("/request/<int:request_id>/withdraw")
+    @login_required
+    def request_withdraw(request_id):
+        req = tenant_record_or_404(CatalogRequest, request_id)
+        if not user_can_view_catalog_request(current_user, req):
+            abort(403, description=tr("You are not involved in this request or its fulfillment."))
+        try:
+            request_withdrawal.withdraw_request(current_user, req, request.form.get("reason"))
+        except HTTPException as error:
+            db.session.rollback()
+            flash(error.description or tr("That change could not be made."), "error")
+            return redirect(url_for("request_detail", request_id=req.id))
+        db.session.commit()
+        flash(tr("{number} withdrawn.", number=req.number), "success")
+        return redirect(url_for("request_detail", request_id=req.id))
+
+    @app.post("/ritm/<int:ritm_id>/withdraw")
+    @login_required
+    def ritm_withdraw(ritm_id):
+        ritm = db.get_or_404(RequestedItem, ritm_id)
+        if ritm.request.tenant_id != current_user.tenant_id:
+            abort(404)
+        if not user_can_view_catalog_request(current_user, ritm.request):
+            abort(403, description=tr("You are not involved in this request or its fulfillment."))
+        try:
+            request_withdrawal.withdraw_item(current_user, ritm, request.form.get("reason"))
+        except HTTPException as error:
+            db.session.rollback()
+            flash(error.description or tr("That change could not be made."), "error")
+            return redirect(url_for("ritm_detail", ritm_id=ritm.id))
+        db.session.commit()
+        flash(tr("{number} withdrawn.", number=ritm.number), "success")
+        return redirect(url_for("ritm_detail", ritm_id=ritm.id))
 
     @app.get("/ritm/<int:ritm_id>")
     @login_required
@@ -368,6 +404,7 @@ def register(app):
             task_state_options=task_state_options,
             catalog_task_permissions=catalog_task_permissions,
             can_manage=can_manage,
+            can_withdraw=request_withdrawal.can_withdraw_item(current_user, ritm),
             state_track=build_state_track("ritm", ritm.state),
             teams=team_groups().all(),
             related=related_records("ritm", ritm.id),
@@ -388,7 +425,7 @@ def register(app):
         approval_stages = None
         if item.approval_required:
             try:
-                approval_stages = catalog_approval_stages(req.requested_for)
+                approval_stages = catalog_approval_stages(req.requested_for, item)
             except ValueError as error:
                 abort(409, description=str(error))
         def build_ritm():
