@@ -56,7 +56,7 @@ def test_every_page_renders_for_a_member(pm, client):
                                                  "assignee_ids": [], "labels": "ui"})
     quick = client.post("/projects/WEB/items/new", data={"title": "Quick", "status_id": "2", "return": "board"})
     assert quick.headers["Location"].endswith("/projects/WEB/board")
-    for path in ("/projects", "/projects/WEB/board", "/projects/WEB/board?swimlane=assignee",
+    for path in ("/projects", "/projects/WEB/overview", "/projects/WEB/board", "/projects/WEB/board?swimlane=assignee",
                  "/projects/WEB/board?swimlane=epic", "/projects/WEB/list?group=epic&sort=priority",
                  "/projects/WEB/list?page=abc", "/work-items/WEB-2", "/work-items/web-2", "/my/work-items",
                  "/projects/WEB/items/new?parent=2", "/projects/WEB"):

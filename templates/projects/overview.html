@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "projects/_macros.html" import type_icon, priority_icon, status_pill with context %}
+{% block title %}{{ tr('{key} overview · {instance_name}', key=project.key, instance_name=instance_name) }}{% endblock %}
+{% block content %}<span hidden data-live-watch="project:{{ project.id }}"></span>
+{% include "projects/_header.html" %}
+{% set total = stats.total %}{% set done = stats.by_category.get('done', 0) %}
+<div class="project-overview">
+  <section class="panel overview-progress" aria-labelledby="ov-progress">
+    <h2 id="ov-progress">{{ tr('Progress') }}</h2>
+    {% if project.description %}<p class="muted pre">{{ project.description }}</p>{% endif %}
+    <div class="overview-figures">
+      {% for category in categories %}<div class="overview-figure overview-{{ category }}"><strong>{{ stats.by_category.get(category, 0) }}</strong><span>{{ tr(category_labels[category]) }}</span></div>{% endfor %}
+      <div class="overview-figure"><strong>{{ stats.overdue|length }}{% if stats.overdue|length == 10 %}+{% endif %}</strong><span>{{ tr('Overdue') }}</span></div>
+    </div>
+    <div class="wi-progress" role="img" aria-label="{{ tr('{done} of {total} done', done=done, total=total) }}"><span class="wi-progress-bar"><span class="wi-progress-fill wi-progress-{{ ((done / total * 20)|round|int * 5) if total else 0 }}"></span></span><small>{{ tr('{done} of {total} done', done=done, total=total) }}</small></div>
+  </section>
+
+  <section class="panel" aria-labelledby="ov-workload">
+    <h2 id="ov-workload">{{ tr('Open work by person') }}</h2>
+    {% if stats.workload or stats.unassigned %}<ul class="overview-bars">
+      {% set top = [stats.workload[0][1] if stats.workload else 0, stats.unassigned]|max %}
+      {% for user, count in stats.workload %}<li><span class="overview-label">{{ user_avatar(user, 'avatar wi-face', link=False) }} <a href="{{ url_for('projects.item_list', key=project.key, assignee=user.id, category='open') }}">{{ user.name }}</a></span><span class="overview-bar"><span class="overview-bar-fill wi-progress-{{ (count / top * 20)|round|int * 5 }}"></span></span><span class="overview-count">{{ count }}</span></li>{% endfor %}
+      {% if stats.unassigned %}<li><span class="overview-label"><a href="{{ url_for('projects.item_list', key=project.key, assignee='none', category='open') }}">{{ tr('Unassigned') }}</a></span><span class="overview-bar"><span class="overview-bar-fill overview-bar-muted wi-progress-{{ (stats.unassigned / top * 20)|round|int * 5 }}"></span></span><span class="overview-count">{{ stats.unassigned }}</span></li>{% endif %}
+    </ul>{% else %}<p class="muted">{{ tr('No open work.') }}</p>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="ov-types">
+    <h2 id="ov-types">{{ tr('Open work by type and priority') }}</h2>
+    <div class="overview-split">
+      <ul class="overview-tally">{% for t in item_types if stats.by_type.get(t) %}<li>{{ type_icon(t) }} <a href="{{ url_for('projects.item_list', key=project.key, type=t, category='open') }}">{{ tr(item_type_labels[t]) }}</a><span>{{ stats.by_type[t] }}</span></li>{% else %}<li class="muted">{{ tr('No open work.') }}</li>{% endfor %}</ul>
+      <ul class="overview-tally">{% for p in priorities if stats.by_priority.get(p) %}<li>{{ priority_icon(p) }} <a href="{{ url_for('projects.item_list', key=project.key, priority=p, category='open') }}">{{ tr(priority_labels[p]) }}</a><span>{{ stats.by_priority[p] }}</span></li>{% endfor %}</ul>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="ov-epics">
+    <h2 id="ov-epics">{{ tr('Epics') }}</h2>
+    {% if stats.epic_progress %}<ul class="overview-bars">{% for epic, count, finished in stats.epic_progress %}<li><span class="overview-label">{{ type_icon('epic') }} <a href="{{ url_for('projects.item_detail', item_key=epic.key) }}">{{ epic.title }}</a></span><span class="overview-bar"><span class="overview-bar-fill overview-bar-done wi-progress-{{ ((finished / count * 20)|round|int * 5) if count else 0 }}"></span></span><span class="overview-count">{{ finished }}/{{ count }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted">{{ tr('No epics yet. Epics group stories, tasks and bugs into larger pieces of work.') }}</p>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="ov-overdue">
+    <h2 id="ov-overdue">{{ tr('Overdue') }}</h2>
+    {% if stats.overdue %}<ul class="wi-child-list">{% for item in stats.overdue %}<li>{{ type_icon(item.item_type) }}<a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.key }}</a><span class="wi-child-title">{{ item.title }}</span><span class="wi-due overdue">{{ item.due_date.isoformat() }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted">{{ tr('Nothing overdue.') }}</p>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="ov-activity">
+    <h2 id="ov-activity">{{ tr('Recent activity') }}</h2>
+    {% if stats.activity %}<ul class="wi-history">{% for row, item in stats.activity %}<li><strong>{{ row.actor.name if row.actor else tr('System') }}</strong>
+      {% if row.field == 'created' %}{{ tr('created') }}{% else %}{{ tr('changed {field} on', field=tr(row.field.replace('_', ' '))) }}{% endif %}
+      <a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.key }}</a> {{ item.title }}<small class="muted">{{ row.created_at|usertime }}</small></li>{% endfor %}</ul>
+    {% else %}<p class="muted">{{ tr('No activity yet.') }}</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

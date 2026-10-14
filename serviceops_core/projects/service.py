@@ -916,3 +916,30 @@ def search(user, q, limit=20):
     for word in q.split()[:6]:
         query = query.filter(or_(WorkItem.title.ilike(f"%{word}%"), WorkItem.description.ilike(f"%{word}%")))
     return query.order_by(WorkItem.updated_at.desc()).limit(limit).all()
+
+
+def overview(project, today):
+    """Counts for the project overview, each computed in SQL."""
+    base = WorkItem.query.filter(WorkItem.project_id == project.id)
+    by_category = dict(base.join(ProjectStatus, ProjectStatus.id == WorkItem.status_id).with_entities(
+        ProjectStatus.category, func.count()).group_by(ProjectStatus.category).all())
+    open_items = base.join(ProjectStatus, ProjectStatus.id == WorkItem.status_id).filter(
+        ProjectStatus.category != "done")
+    by_type = dict(open_items.with_entities(WorkItem.item_type, func.count()).group_by(WorkItem.item_type).all())
+    by_priority = dict(open_items.with_entities(WorkItem.priority, func.count()).group_by(WorkItem.priority).all())
+    workload = open_items.join(WorkItemAssignee, WorkItemAssignee.work_item_id == WorkItem.id).join(
+        User, User.id == WorkItemAssignee.user_id).with_entities(User, func.count()).group_by(User.id).order_by(
+        func.count().desc(), User.name).limit(10).all()
+    unassigned = open_items.filter(~WorkItem.id.in_(db.session.query(WorkItemAssignee.work_item_id))).count()
+    overdue = open_items.filter(WorkItem.due_date < today).order_by(WorkItem.due_date).limit(10).all()
+    done_children = func.sum(db.case((ProjectStatus.category == "done", 1), else_=0))
+    epic_rows = db.session.query(WorkItem.parent_id, func.count(), done_children).join(
+        ProjectStatus, ProjectStatus.id == WorkItem.status_id).filter(
+        WorkItem.project_id == project.id, WorkItem.parent_id.isnot(None)).group_by(WorkItem.parent_id).all()
+    progress = {parent_id: (total, int(done or 0)) for parent_id, total, done in epic_rows}
+    epic_progress = [(epic, *progress.get(epic.id, (0, 0))) for epic in epics(project)]
+    activity = db.session.query(WorkItemHistory, WorkItem).join(WorkItem, WorkItem.id == WorkItemHistory.work_item_id).filter(
+        WorkItem.project_id == project.id).order_by(WorkItemHistory.created_at.desc(), WorkItemHistory.id.desc()).limit(15).all()
+    return {"by_category": by_category, "total": sum(by_category.values()), "by_type": by_type,
+            "by_priority": by_priority, "workload": workload, "unassigned": unassigned, "overdue": overdue,
+            "epic_progress": epic_progress, "activity": activity}

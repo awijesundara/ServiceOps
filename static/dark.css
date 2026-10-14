@@ -1188,6 +1188,16 @@ html.theme-dark .people-options li{color:var(--ink)}
 html.theme-dark .people-options li[aria-selected=true],html.theme-dark .people-options li:hover{background:#161c20}
 html.theme-dark .people-options .people-none{color:var(--muted)}
 html.theme-dark .wi-child-list a,html.theme-dark .wi-link-list a,html.theme-dark .wi-attachment-list a{color:var(--dk-accent-strong)}
+html.theme-dark .overview-figure{border:1px solid var(--line)}
+html.theme-dark .overview-figure span{color:var(--muted)}
+html.theme-dark .overview-todo strong{color:#a4b4c0}
+html.theme-dark .overview-in_progress strong{color:#6faef3}
+html.theme-dark .overview-done strong{color:#63b981}
+html.theme-dark .overview-bar{background:#1c2126}
+html.theme-dark .overview-bar-fill{background:#3b82c4}
+html.theme-dark .overview-bar-done{background:#2e9e5b}
+html.theme-dark .overview-bar-muted{background:#9aa9b2}
+html.theme-dark .project-overview a,html.theme-dark .wi-history a{color:var(--ink)}
 /* Theme tokens. The configured brand color stays the identity color of the
    sidebar and filled buttons; accents used as text are lifted toward white so
    they stay readable on dark surfaces whatever brand color is configured. */
