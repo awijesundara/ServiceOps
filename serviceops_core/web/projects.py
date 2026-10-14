@@ -28,6 +28,7 @@ ROLE_LABELS = {"admin": "Administrator", "member": "Member", "viewer": "Viewer",
 LIST_PAGE = 100
 BOARD_COLUMN_LIMIT = 50
 CHILD_LIMIT = 50
+RELEASE_ITEM_LIMIT = 100
 
 
 def _wants_json():
@@ -740,15 +741,21 @@ def register(app):
     def project_release(key, version_id):
         project = service.project_or_404(current_user, key)
         version = releases.version_or_404(project, version_id)
-        from serviceops_core.projects.models import WorkItemFixVersion
-        items = WorkItem.query.join(WorkItemFixVersion, WorkItemFixVersion.work_item_id == WorkItem.id).filter(
-            WorkItemFixVersion.version_id == version.id).order_by(WorkItem.item_type, WorkItem.number).limit(1000).all()
+        from serviceops_core.projects.models import ProjectStatus, WorkItemFixVersion
+        in_version = WorkItem.query.join(WorkItemFixVersion, WorkItemFixVersion.work_item_id == WorkItem.id).filter(
+            WorkItemFixVersion.version_id == version.id)
+        # The page lists the first 100; the rest are on the version-filtered list.
+        items = in_version.order_by(WorkItem.item_type, WorkItem.number).limit(RELEASE_ITEM_LIMIT).all()
+        # Release notes need only keys and titles of finished work.
         notes = {}
-        for item in items:
-            if item.status.category == "done":
-                notes.setdefault(item.item_type, []).append(item)
+        for item_type, number, title in in_version.join(ProjectStatus, ProjectStatus.id == WorkItem.status_id).filter(
+                ProjectStatus.category == "done").with_entities(WorkItem.item_type, WorkItem.number, WorkItem.title).order_by(
+                WorkItem.number).limit(5000):
+            notes.setdefault(item_type, []).append((f"{project.key}-{number}", title))
+        progress = releases.version_progress(version)
         return page("projects/release.html", project, tab="releases", version=version, items=items, notes=notes,
-                    progress=releases.version_progress(version))
+                    progress=progress, more=max(0, progress["total"] - len(items)),
+                    list_url=url_for("projects.item_list", key=project.key, version=version.id))
 
     @blueprint.route("/projects/<key>/components", methods=["GET", "POST"])
     def project_components(key):

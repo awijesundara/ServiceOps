@@ -17,10 +17,11 @@
 <section class="panel" aria-labelledby="release-items"><h2 id="release-items">{{ tr('Work items') }}</h2>
   {% if items %}<div class="table-scroll"><table class="wi-table"><thead><tr><th scope="col">{{ tr('Type') }}</th><th scope="col">{{ tr('Key') }}</th><th scope="col">{{ tr('Summary') }}</th><th scope="col">{{ tr('Status') }}</th><th scope="col">{{ tr('Assignees') }}</th><th scope="col">{{ tr('Priority') }}</th></tr></thead>
   <tbody>{% for item in items %}<tr><td>{{ type_icon(item.item_type) }}</td><td class="wi-key-cell"><a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.key }}</a></td><td class="wi-summary"><a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.title }}</a></td><td>{{ status_pill(item.status) }}</td><td>{{ assignee_faces(item.assignees) }}</td><td>{{ priority_icon(item.priority) }} {{ tr(priority_labels[item.priority]) }}</td></tr>{% endfor %}</tbody></table></div>
+  {% if more %}<a class="project-more" href="{{ list_url }}">{{ tr('{count} more in the list', count=more) }}</a>{% endif %}
   {% else %}<p class="muted">{{ tr('No work items have this fix version.') }}</p>{% endif %}
 </section>
 <section class="panel" aria-labelledby="release-notes"><h2 id="release-notes">{{ tr('Release notes') }}</h2>
-  {% if notes %}{% for item_type in item_types if notes.get(item_type) %}<h3 class="wi-subheading">{{ tr(item_type_labels[item_type]) }}</h3><ul>{% for item in notes[item_type] %}<li>[{{ item.key }}] {{ item.title }}</li>{% endfor %}</ul>{% endfor %}
+  {% if notes %}{% for item_type in item_types if notes.get(item_type) %}<h3 class="wi-subheading">{{ tr(item_type_labels[item_type]) }}</h3><ul>{% for key, title in notes[item_type] %}<li>[{{ key }}] {{ title }}</li>{% endfor %}</ul>{% endfor %}
   {% else %}<p class="muted">{{ tr('Release notes list the finished work items of this version.') }}</p>{% endif %}
 </section>
 {% endblock %}

@@ -13,7 +13,7 @@ Members and admins edit work items; viewers comment; readers only read.
 import re
 from datetime import date
 
-from flask import abort
+from flask import abort, g, has_request_context
 from sqlalchemy import func, or_
 
 import app as core
@@ -60,8 +60,31 @@ def _tenant_admin(user):
     return core.role_at_least(user.effective_role, "admin")
 
 
+def _role_cache():
+    """Per-request memo of project roles; pages check the same role many times."""
+    if not has_request_context():
+        return None
+    return g.setdefault("_project_roles", {})
+
+
+def _forget_roles():
+    if has_request_context():
+        g.pop("_project_roles", None)
+
+
 def project_role(user, project):
     """admin, member, viewer, reader (open project, not a member) or None."""
+    cache = _role_cache()
+    cache_key = (getattr(user, "id", None), project.id, project.visibility, getattr(user, "effective_role", None))
+    if cache is not None and cache_key in cache:
+        return cache[cache_key]
+    role = _project_role(user, project)
+    if cache is not None:
+        cache[cache_key] = role
+    return role
+
+
+def _project_role(user, project):
     if not user or not getattr(user, "is_authenticated", False) or not user.active:
         return None
     if project.tenant_id != user.tenant_id:
@@ -264,6 +287,7 @@ def set_member(actor, project, user_id, role):
         member.role = role
     else:
         db.session.add(ProjectMember(tenant_id=project.tenant_id, project_id=project.id, user_id=user.id, role=role))
+    _forget_roles()
     core.audit("project member set", project.key, f"user={user.username}; role={role}", user_id=actor.id,
                tenant_id=project.tenant_id)
     return user
@@ -279,6 +303,7 @@ def remove_member(actor, project, user_id):
         abort(409, description=tr("A project needs at least one administrator."))
     username = member.user.username
     db.session.delete(member)
+    _forget_roles()
     core.audit("project member removed", project.key, f"user={username}", user_id=actor.id,
                tenant_id=project.tenant_id)
 
