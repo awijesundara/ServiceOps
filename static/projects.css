@@ -220,3 +220,7 @@
 .project-filters-toggle{display:none;list-style:none;margin-bottom:10px}
 .project-filters-toggle::-webkit-details-marker{display:none}
 @media(max-width:560px){.project-filters-toggle{display:inline-flex;align-items:center;gap:6px}}
+
+/* Visually hidden text is absolutely positioned: keep it inside its scroll
+   container, or it widens the page on phones. */
+.project-board,.project-column-body,.table-scroll,.wi-priority,.wi-faces{position:relative}
