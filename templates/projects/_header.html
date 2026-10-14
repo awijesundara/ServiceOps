@@ -9,6 +9,7 @@
     </div>
   </div>
   <div class="project-head-actions">
+    <form method="post" action="{{ url_for('projects.project_star', key=project.key) }}" class="inline-form"><input type="hidden" name="next" value="{{ request.path }}">{% set project_starred = is_project_starred(project) %}<button class="button wi-star" aria-pressed="{{ 'true' if project_starred else 'false' }}" aria-label="{{ tr('Unstar project') if project_starred else tr('Star project') }}" title="{{ tr('Unstar project') if project_starred else tr('Star project') }}">{{ '★' if project_starred else '☆' }}</button></form>
     {% if can_edit %}<a class="primary" href="{{ url_for('projects.new_item', key=project.key) }}">{{ tr('Create work item') }}</a>{% endif %}
   </div>
 </header>
@@ -16,5 +17,7 @@
   <a href="{{ url_for('projects.overview', key=project.key) }}" {% if tab == 'overview' %}aria-current="page"{% endif %}>{{ tr('Overview') }}</a>
   <a href="{{ url_for('projects.board', key=project.key) }}" {% if tab == 'board' %}aria-current="page"{% endif %}>{{ tr('Board') }}</a>
   <a href="{{ url_for('projects.item_list', key=project.key) }}" {% if tab == 'list' %}aria-current="page"{% endif %}>{{ tr('List') }}</a>
+  <a href="{{ url_for('projects.project_releases', key=project.key) }}" {% if tab == 'releases' %}aria-current="page"{% endif %}>{{ tr('Releases') }}</a>
+  <a href="{{ url_for('projects.project_components', key=project.key) }}" {% if tab == 'components' %}aria-current="page"{% endif %}>{{ tr('Components') }}</a>
   {% if can_admin %}<a href="{{ url_for('projects.settings', key=project.key) }}" {% if tab == 'settings' %}aria-current="page"{% endif %}>{{ tr('Settings') }}</a>{% endif %}
 </nav>

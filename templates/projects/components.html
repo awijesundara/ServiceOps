@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('{key} components · {instance_name}', key=project.key, instance_name=instance_name) }}{% endblock %}
+{% block content %}
+{% include "projects/_header.html" %}
+{% set assignee_labels = {'project_default': tr('Project default'), 'component_lead': tr('Component lead'), 'project_lead': tr('Project lead'), 'unassigned': tr('Unassigned')} %}
+<section class="panel" aria-labelledby="components-title">
+  <div class="panel-head"><div><h2 id="components-title">{{ tr('Components') }}</h2><p>{{ tr('Components split a project into parts, each with an optional lead who can receive new work automatically.') }}</p></div></div>
+  {% if components %}
+  <div class="table-scroll"><table>
+    <thead><tr><th scope="col">{{ tr('Component') }}</th><th scope="col">{{ tr('Description') }}</th><th scope="col">{{ tr('Lead') }}</th><th scope="col">{{ tr('Default assignee') }}</th><th scope="col">{{ tr('Work items') }}</th>{% if can_admin %}<th scope="col"><span class="visually-hidden">{{ tr('Actions') }}</span></th>{% endif %}</tr></thead>
+    <tbody>{% for component in components %}<tr>
+      <td><a href="{{ url_for('projects.item_list', key=project.key) }}?component={{ component.id }}"><strong>{{ component.name }}</strong></a></td>
+      <td>{{ component.description }}</td><td>{{ user_link(component.lead, '—') }}</td><td>{{ assignee_labels[component.default_assignee] }}</td><td>{{ counts.get(component.id, 0) }}</td>
+      {% if can_admin %}<td><details class="wi-dialog wi-more"><summary class="button">{{ tr('Actions') }} ▾</summary><div class="wi-dialog-body wi-menu">
+        <details><summary>{{ tr('Edit') }}</summary><form method="post" class="stack"><input type="hidden" name="action" value="save"><input type="hidden" name="component_id" value="{{ component.id }}">
+          <label>{{ tr('Name') }}<input name="name" value="{{ component.name }}" required maxlength="100"></label>
+          <label>{{ tr('Description') }}<textarea name="description" rows="2" maxlength="5000">{{ component.description }}</textarea></label>
+          <label>{{ tr('Lead') }}<select name="lead_id"><option value="">{{ tr('No lead') }}</option>{% for user in users %}<option value="{{ user.id }}" {% if user.id == component.lead_id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+          <label>{{ tr('Default assignee') }}<select name="default_assignee">{% for choice in assignee_choices %}<option value="{{ choice }}" {% if choice == component.default_assignee %}selected{% endif %}>{{ assignee_labels[choice] }}</option>{% endfor %}</select></label>
+          <button class="primary">{{ tr('Save') }}</button></form></details>
+        <details><summary>{{ tr('Delete') }}</summary><form method="post" class="stack" data-confirm="{{ tr('Delete {name}?', name=component.name) }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="component_id" value="{{ component.id }}">
+          <label>{{ tr('Its work items move to') }}<select name="replacement_id"><option value="">{{ tr('No component') }}</option>{% for other in components if other.id != component.id %}<option value="{{ other.id }}">{{ other.name }}</option>{% endfor %}</select></label>
+          <button class="button danger">{{ tr('Delete component') }}</button></form></details>
+      </div></details></td>{% endif %}
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="empty-state"><h3>{{ tr('No components yet') }}</h3><p>{{ tr('Components such as Frontend or Billing help sort and route work.') }}</p></div>{% endif %}
+  {% if can_admin %}
+  <form method="post" class="project-inline-add"><input type="hidden" name="action" value="save">
+    <label>{{ tr('New component') }}<input name="name" required maxlength="100"></label>
+    <label>{{ tr('Lead') }}<select name="lead_id"><option value="">{{ tr('No lead') }}</option>{% for user in users %}<option value="{{ user.id }}">{{ user.name }}</option>{% endfor %}</select></label>
+    <label>{{ tr('Default assignee') }}<select name="default_assignee">{% for choice in assignee_choices %}<option value="{{ choice }}">{{ assignee_labels[choice] }}</option>{% endfor %}</select></label>
+    <button class="primary">{{ tr('Create component') }}</button>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

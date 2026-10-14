@@ -13,6 +13,9 @@
     <label>{{ tr('Access') }}<select name="visibility"><option value="private" {% if project.visibility == 'private' %}selected{% endif %}>{{ tr('Private: members only') }}</option><option value="open" {% if project.visibility == 'open' %}selected{% endif %}>{{ tr('Open: everyone in the organisation can view') }}</option></select></label>
     <label>{{ tr('Project lead') }}<select name="lead_id"><option value="">{{ tr('No lead') }}</option>{% for user in users %}<option value="{{ user.id }}" {% if user.id == project.lead_id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
     <label>{{ tr('Colour') }}<input type="color" name="color" value="{{ project.color }}"></label>
+    <label>{{ tr('Category') }}<input name="category" value="{{ project.category or '' }}" maxlength="60" list="project-categories"></label>
+    <datalist id="project-categories">{% for name in categories_in_use %}<option value="{{ name }}">{% endfor %}</datalist>
+    <label>{{ tr('Default assignee') }}<select name="default_assignee"><option value="unassigned" {% if project.default_assignee == 'unassigned' %}selected{% endif %}>{{ tr('Unassigned') }}</option><option value="project_lead" {% if project.default_assignee == 'project_lead' %}selected{% endif %}>{{ tr('Project lead') }}</option></select></label>
     <div class="wide actions"><button class="primary">{{ tr('Save details') }}</button></div>
   </form>
 

@@ -3,27 +3,108 @@
 {% block title %}{{ item.key }} · {{ item.title }} · {{ instance_name }}{% endblock %}
 {% block content %}<span hidden data-live-watch="work_item:{{ item.id }}"></span>
 {% with color_projects = [project] %}{% include "projects/_colors.html" %}{% endwith %}
+{% set assigned_to_me = current_user.id in item.assignees|map(attribute='id')|list %}
 <nav class="wi-breadcrumb" aria-label="{{ tr('Breadcrumb') }}">
   <a href="{{ url_for('projects.index') }}">{{ tr('Projects') }}</a> /
   <a href="{{ url_for('projects.board', key=project.key) }}"><span class="project-badge small project-c-{{ project.id }}" aria-hidden="true">{{ project.key[:2] }}</span>{{ project.name }}</a>
   {% if item.parent %}/ <a href="{{ url_for('projects.item_detail', item_key=item.parent.key) }}">{{ type_icon(item.parent.item_type) }} {{ item.parent.key }}</a>{% endif %}
   / <span aria-current="page">{{ type_icon(item.item_type) }} {{ item.key }}</span>
 </nav>
-<div class="wi-layout">
+<div class="wi-layout" data-work-item="{{ item.key }}">
   <article class="wi-main">
     <header class="wi-title">
       <h1>{{ item.title }}</h1>
-      {% if can_edit %}<details class="wi-edit-text"><summary class="button">{{ tr('Edit') }}</summary>
-        <form method="post" action="{{ url_for('projects.item_edit', item_key=item.key) }}" class="stack wi-text-form">
+    </header>
+    <div class="wi-toolbar" role="toolbar" aria-label="{{ tr('Work item actions') }}">
+      {% if can_edit %}
+      <details class="wi-dialog wi-edit-text"><summary class="button" data-shortcut="e">{{ tr('Edit') }}</summary>
+        <form method="post" action="{{ url_for('projects.item_edit', item_key=item.key) }}" class="stack wi-dialog-body">
           <label>{{ tr('Summary') }}<input name="title" value="{{ item.title }}" required maxlength="255"></label>
-          <label>{{ tr('Description') }}<textarea name="description" rows="8" maxlength="50000">{{ item.description }}</textarea></label>
+          <label>{{ tr('Description') }}<textarea name="description" rows="10" maxlength="50000" data-markdown>{{ item.description }}</textarea></label>
+          <label>{{ tr('Environment') }}<textarea name="environment" rows="2" maxlength="10000" placeholder="{{ tr('Browser, device, version…') }}">{{ item.environment }}</textarea></label>
           <div class="actions"><button class="primary">{{ tr('Save') }}</button></div>
         </form>
-      </details>{% endif %}
-    </header>
+      </details>
+      {% if not assigned_to_me %}<form method="post" action="{{ url_for('projects.item_assign_me', item_key=item.key) }}" class="inline-form"><button class="button" data-shortcut="i">{{ tr('Assign to me') }}</button></form>{% endif %}
+      <details class="wi-dialog"><summary class="button">{{ tr('Log work') }}</summary>
+        <form method="post" action="{{ url_for('projects.item_log_work', item_key=item.key) }}" class="stack wi-dialog-body wi-worklog-form">
+          <label>{{ tr('Time spent') }}<input name="spent" required maxlength="40" placeholder="{{ tr('2h 30m') }}" aria-describedby="duration-help-log"></label>
+          <p class="muted form-help" id="duration-help-log">{{ tr('Use w (weeks), d (days), h (hours) and m (minutes), for example 1d 4h.') }}</p>
+          <label>{{ tr('Date started') }}<input type="datetime-local" name="started" value="{{ now_local.strftime('%Y-%m-%dT%H:%M') }}"></label>
+          <fieldset><legend>{{ tr('Remaining estimate') }}</legend>
+            <label class="check"><input type="radio" name="remaining_mode" value="auto" checked> {{ tr('Adjust automatically') }}</label>
+            <label class="check"><input type="radio" name="remaining_mode" value="leave"> {{ tr('Leave unchanged') }}</label>
+            <label class="check"><input type="radio" name="remaining_mode" value="new"> {{ tr('Set to') }} <input name="new_remaining" maxlength="40" aria-label="{{ tr('New remaining estimate') }}"></label>
+            <label class="check"><input type="radio" name="remaining_mode" value="reduce"> {{ tr('Reduce by') }} <input name="reduce_by" maxlength="40" aria-label="{{ tr('Reduce remaining by') }}"></label>
+          </fieldset>
+          <label>{{ tr('Work description') }}<textarea name="comment" rows="3" maxlength="10000"></textarea></label>
+          <div class="actions"><button class="primary">{{ tr('Log work') }}</button></div>
+        </form>
+      </details>
+      {% endif %}
+      <form method="post" action="{{ url_for('projects.item_watch', item_key=item.key) }}" class="inline-form"><input type="hidden" name="watch" value="{{ '0' if watching else '1' }}"><button class="button" data-shortcut="w" aria-pressed="{{ 'true' if watching else 'false' }}">{{ tr('Watching') if watching else tr('Watch') }} <span class="badge">{{ watcher_list|length }}</span></button></form>
+      <form method="post" action="{{ url_for('projects.item_vote', item_key=item.key) }}" class="inline-form"><button class="button" aria-pressed="{{ 'true' if voted else 'false' }}" {% if item.reporter_id == current_user.id or (item.status.category == 'done' and not voted) %}disabled title="{{ tr('You cannot vote for work you reported or resolved work.') }}"{% endif %}>{{ tr('Voted') if voted else tr('Vote') }} <span class="badge">{{ voters|length }}</span></button></form>
+      <form method="post" action="{{ url_for('projects.item_star', item_key=item.key) }}" class="inline-form"><button class="button wi-star" aria-pressed="{{ 'true' if starred else 'false' }}" aria-label="{{ tr('Unstar') if starred else tr('Star') }}" title="{{ tr('Unstar') if starred else tr('Star') }}">{{ '★' if starred else '☆' }}</button></form>
+      {% if can_edit %}
+      <details class="wi-dialog"><summary class="button">{{ tr('Remove flag') if item.flagged else tr('Flag') }}</summary>
+        <form method="post" action="{{ url_for('projects.item_flag', item_key=item.key) }}" class="stack wi-dialog-body">
+          <label>{{ tr('Comment (optional)') }}<textarea name="comment" rows="3" maxlength="20000"></textarea></label>
+          <div class="actions"><button class="primary">{{ tr('Remove flag') if item.flagged else tr('Add flag') }}</button></div>
+        </form>
+      </details>
+      {% endif %}
+      <details class="wi-dialog wi-more"><summary class="button" aria-label="{{ tr('More actions') }}">{{ tr('More') }} ▾</summary>
+        <div class="wi-dialog-body wi-menu">
+          {% if can_edit %}
+          <details><summary>{{ tr('Clone') }}</summary>
+            <form method="post" action="{{ url_for('projects.item_clone', item_key=item.key) }}" class="stack">
+              <label>{{ tr('Summary') }}<input name="title" value="{{ tr('CLONE - {title}', title=item.title)[:255] }}" maxlength="255" required></label>
+              {% if item.item_type != 'epic' %}<label class="check"><input type="checkbox" name="subtasks" value="1"> {{ tr('Include subtasks') }}</label>{% endif %}
+              <label class="check"><input type="checkbox" name="links" value="1"> {{ tr('Include links') }}</label>
+              <label class="check"><input type="checkbox" name="attachments" value="1"> {{ tr('Include attachments') }}</label>
+              <button class="primary">{{ tr('Clone') }}</button>
+            </form>
+          </details>
+          {% if item.item_type != 'subtask' and move_targets %}
+          <details><summary>{{ tr('Move to another project') }}</summary>
+            <form method="post" action="{{ url_for('projects.item_move_project', item_key=item.key) }}" class="stack" data-move-form>
+              <label>{{ tr('Project') }}<select name="project" required data-move-project>{% for target in move_targets %}<option value="{{ target.key }}">{{ target.name }} ({{ target.key }})</option>{% endfor %}</select></label>
+              <label>{{ tr('Type') }}<select name="item_type">{% for t in item_types if t != 'subtask' %}<option value="{{ t }}" {% if t == item.item_type %}selected{% endif %}>{{ tr(item_type_labels[t]) }}</option>{% endfor %}</select></label>
+              <p class="muted">{{ tr('The work item gets a new key; links to the old key keep working. Subtasks move with it. Components and versions belong to this project and are removed.') }}</p>
+              <button class="primary">{{ tr('Move') }}</button>
+            </form>
+          </details>
+          {% endif %}
+          <details><summary>{{ tr('Convert to subtask') if item.item_type != 'subtask' else tr('Convert to standard type') }}</summary>
+            <form method="post" action="{{ url_for('projects.item_convert', item_key=item.key) }}" class="stack">
+              {% if item.item_type == 'subtask' %}
+              <label>{{ tr('Type') }}<select name="item_type">{% for t in item_types if t not in ('subtask', 'epic') %}<option value="{{ t }}">{{ tr(item_type_labels[t]) }}</option>{% endfor %}</select></label>
+              {% else %}
+              <input type="hidden" name="item_type" value="subtask">
+              <label>{{ tr('Parent') }}<select name="parent_id" required>{% for p in parents if p.id != item.id and p.item_type != 'epic' %}<option value="{{ p.id }}">{{ p.key }} · {{ p.title }}</option>{% endfor %}</select></label>
+              {% endif %}
+              <button class="primary">{{ tr('Convert') }}</button>
+            </form>
+          </details>
+          {% endif %}
+          <details><summary>{{ tr('Share') }}</summary>
+            <form method="post" action="{{ url_for('projects.item_share', item_key=item.key) }}" class="stack">
+              <label>{{ tr('People') }}<select name="user_ids" multiple size="4" data-people-picker>{% for user in members if user.id != current_user.id %}<option value="{{ user.id }}">{{ user.name }}</option>{% endfor %}</select></label>
+              <label>{{ tr('Message') }}<textarea name="message" rows="2" maxlength="1000"></textarea></label>
+              <button class="primary">{{ tr('Share') }}</button>
+            </form>
+          </details>
+          <a class="wi-menu-link" href="{{ url_for('projects.item_print', item_key=item.key) }}">{{ tr('Printable view') }}</a>
+          {% if can_admin or (can_edit and item.reporter_id == current_user.id) %}<form method="post" action="{{ url_for('projects.item_delete', item_key=item.key) }}" data-confirm="{{ tr('Delete {key}? This cannot be undone.', key=item.key) }}"><button class="link-button wi-menu-danger">{{ tr('Delete') }}</button></form>{% endif %}
+        </div>
+      </details>
+    </div>
+    {% if item.flagged %}<p class="wi-flag-banner" role="status">⚑ {{ tr('Flagged: this work item is blocked or needs attention.') }}</p>{% endif %}
+
     <section class="panel wi-section" aria-labelledby="wi-description">
       <h2 id="wi-description">{{ tr('Description') }}</h2>
-      {% if item.description %}<div class="pre wi-description">{{ mentions_html(item.description) }}</div>{% else %}<p class="muted">{{ tr('No description yet.') }}</p>{% endif %}
+      {% if item.description %}<div class="wi-description md">{{ rich_text(item.description) }}</div>{% else %}<p class="muted">{{ tr('No description yet.') }}</p>{% endif %}
+      {% if item.environment %}<h3 class="wi-subheading">{{ tr('Environment') }}</h3><div class="md">{{ rich_text(item.environment) }}</div>{% endif %}
     </section>
 
     {% if item.item_type != 'subtask' %}
@@ -40,11 +121,11 @@
 
     <section class="panel wi-section" id="links" aria-labelledby="wi-links">
       <h2 id="wi-links">{{ tr('Linked work and records') }}</h2>
-      {% if links %}<ul class="wi-link-list">{% for link in links %}<li><span class="wi-link-relation">{{ tr(link.relation) }}</span><a href="{{ link.url }}">{{ link.label }}</a><span class="wi-child-title">{{ link.title }}</span><span class="badge">{{ link.state }}</span>
+      {% if links %}<ul class="wi-link-list">{% for link in links %}<li><span class="wi-link-relation">{{ link.relation }}</span><a href="{{ link.url }}">{{ link.label }}</a><span class="wi-child-title">{{ link.title }}</span><span class="badge">{{ link.state }}</span>
         {% if can_edit %}<form method="post" action="{{ url_for('projects.item_unlink', item_key=item.key, link_id=link.id) }}" class="inline-form"><button class="link-button wi-remove" aria-label="{{ tr('Remove link to {label}', label=link.label) }}" title="{{ tr('Remove link') }}">×</button></form>{% endif %}</li>{% endfor %}</ul>
       {% else %}<p class="muted">{{ tr('No links. Link related work items, or incidents, problems and changes this work belongs to.') }}</p>{% endif %}
       {% if can_edit %}<form method="post" action="{{ url_for('projects.item_link', item_key=item.key) }}" class="wi-link-form">
-        <label><span class="visually-hidden">{{ tr('Link type') }}</span><select name="link_type"><option value="relates">{{ tr('relates to') }}</option><option value="blocks">{{ tr('blocks') }}</option><option value="duplicates">{{ tr('duplicates') }}</option></select></label>
+        <label><span class="visually-hidden">{{ tr('Link type') }}</span><select name="link_type">{% for row in link_types %}<option value="{{ row.name }}" {% if row.name == 'relates' %}selected{% endif %}>{{ row.outward }}</option>{% endfor %}</select></label>
         <label><span class="visually-hidden">{{ tr('Work item key or record number') }}</span><input name="target" required maxlength="40" placeholder="{{ tr('WEB-12, CHG0001234, INC0004567…') }}"></label>
         <button class="button">{{ tr('Link') }}</button>
       </form>{% endif %}
@@ -52,28 +133,57 @@
 
     <section class="panel wi-section" id="attachments" aria-labelledby="wi-attachments">
       <h2 id="wi-attachments">{{ tr('Attachments') }}</h2>
-      {% if attachments %}<ul class="wi-attachment-list">{% for file in attachments %}<li><a href="{{ url_for('attachment_download', attachment_id=file.id) }}">{{ file.original_name }}</a><small class="muted">{{ (file.size_bytes / 1024)|round(1) }} KB · {{ file.created_at|usertime }}</small>
+      {% if attachments %}<ul class="wi-attachment-list">{% for file in attachments %}<li>{% if (file.mime_type or '').startswith('image/') and file.mime_type != 'image/svg+xml' %}<img class="wi-thumb" src="{{ url_for('attachment_download', attachment_id=file.id, view=1) }}" alt="" loading="lazy">{% endif %}<a href="{{ url_for('attachment_download', attachment_id=file.id) }}">{{ file.original_name }}</a><small class="muted">{{ (file.size_bytes / 1024)|round(1) }} KB · {{ file.created_at|usertime }}</small>
         {% if can_edit %}<form method="post" action="{{ url_for('projects.item_attachment_delete', item_key=item.key, attachment_id=file.id) }}" class="inline-form" data-confirm="{{ tr('Delete {name}?', name=file.original_name) }}"><button class="link-button wi-remove" aria-label="{{ tr('Delete {name}', name=file.original_name) }}" title="{{ tr('Delete') }}">×</button></form>{% endif %}</li>{% endfor %}</ul>
       {% else %}<p class="muted">{{ tr('No attachments.') }}</p>{% endif %}
-      {% if can_edit %}<form method="post" action="{{ url_for('projects.item_attach', item_key=item.key) }}" enctype="multipart/form-data" class="wi-upload-form"><label><span class="visually-hidden">{{ tr('File') }}</span><input type="file" name="file" required></label><button class="button">{{ tr('Attach') }}</button></form>{% endif %}
+      {% if can_edit %}<form method="post" action="{{ url_for('projects.item_attach', item_key=item.key) }}" enctype="multipart/form-data" class="wi-upload-form" data-drop-upload><label class="wi-dropzone"><span>{{ tr('Drop a file here or choose one') }}</span><input type="file" name="file" required></label><button class="button">{{ tr('Attach') }}</button></form>{% endif %}
     </section>
 
-    <section class="panel wi-section" id="comments" aria-labelledby="wi-activity">
+    <section class="panel wi-section" id="activity" aria-labelledby="wi-activity">
       <h2 id="wi-activity">{{ tr('Activity') }}</h2>
       <div class="wi-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected="false" aria-controls="wi-all-panel" id="wi-all-tab" data-wi-tab>{{ tr('All') }}</button>
         <button type="button" role="tab" aria-selected="true" aria-controls="wi-comments-panel" id="wi-comments-tab" data-wi-tab>{{ tr('Comments') }} <span class="badge">{{ comments|length }}</span></button>
         <button type="button" role="tab" aria-selected="false" aria-controls="wi-history-panel" id="wi-history-tab" data-wi-tab>{{ tr('History') }}</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="wi-worklog-panel" id="wi-worklog-tab" data-wi-tab>{{ tr('Work log') }} <span class="badge">{{ worklogs|length }}</span></button>
+      </div>
+      {% macro history_line(row) %}<strong>{{ row.actor.name if row.actor else tr('System') }}</strong>
+        {% if row.field == 'created' %}{{ tr('created this {type}', type=tr(item_type_labels.get(row.new_value, row.new_value))|lower) }}
+        {% elif row.field == 'attachment' %}{{ tr('attached {name}', name=row.new_value) if row.new_value else tr('deleted attachment {name}', name=row.old_value) }}
+        {% else %}{{ tr('changed {field}', field=tr(row.field.replace('_', ' '))) }}{% if row.old_value or row.new_value %}: <span class="wi-old">{{ row.old_value or '—' }}</span> → <span class="wi-new">{{ row.new_value or '—' }}</span>{% endif %}{% endif %}
+        <small class="muted">{{ row.created_at|usertime }}</small>{% endmacro %}
+      {% macro worklog_line(row) %}<strong>{{ row.author.name }}</strong> {{ tr('logged {time}', time=fmt(row.minutes)) }} <small class="muted">{{ row.started_at|usertime }}</small>{% if row.comment %}<div class="md">{{ rich_text(row.comment) }}</div>{% endif %}{% endmacro %}
+      {% macro comment_block(comment) %}
+        <div class="comment wi-comment" id="comment-{{ comment.id }}">{{ user_avatar(comment.author) }}<div class="wi-comment-body">
+          <div class="wi-comment-head"><strong>{{ user_link(comment.author) }}</strong> <small>{{ comment.created_at|usertime }}{% if comment.edited_at %} · {{ tr('edited') }}{% endif %}</small>{% if comment.visibility %} <span class="badge wi-restricted" title="{{ tr('Visible to this project role and above') }}">🔒 {{ tr(role_labels[comment.visibility]) }}</span>{% endif %}</div>
+          <div class="md">{{ rich_text(comment.body) }}</div>
+          <div class="wi-reactions">
+            {% for emoji, count, mine in reactions.get(comment.id, []) %}<form method="post" action="{{ url_for('projects.item_comment_react', item_key=item.key, comment_id=comment.id) }}" class="inline-form"><input type="hidden" name="emoji" value="{{ emoji }}"><button class="wi-reaction{% if mine %} mine{% endif %}" aria-pressed="{{ 'true' if mine else 'false' }}" aria-label="{{ tr('{emoji} {count} reactions', emoji=emoji, count=count) }}">{{ emoji }} {{ count }}</button></form>{% endfor %}
+            <details class="wi-react-picker"><summary aria-label="{{ tr('Add reaction') }}" title="{{ tr('Add reaction') }}">☺+</summary><div>{% for emoji in reaction_choices %}<form method="post" action="{{ url_for('projects.item_comment_react', item_key=item.key, comment_id=comment.id) }}" class="inline-form"><input type="hidden" name="emoji" value="{{ emoji }}"><button class="wi-reaction" aria-label="{{ tr('React with {emoji}', emoji=emoji) }}">{{ emoji }}</button></form>{% endfor %}</div></details>
+            {% if comment.user_id == current_user.id or can_admin %}
+            <details class="wi-comment-edit"><summary>{{ tr('Edit') }}</summary><form method="post" action="{{ url_for('projects.item_comment_edit', item_key=item.key, comment_id=comment.id) }}" class="stack"><label class="visually-hidden" for="edit-{{ comment.id }}">{{ tr('Comment') }}</label><textarea id="edit-{{ comment.id }}" name="body" rows="3" maxlength="20000" required data-markdown>{{ comment.body }}</textarea><button class="primary">{{ tr('Save') }}</button></form></details>
+            <form method="post" action="{{ url_for('projects.item_comment_delete', item_key=item.key, comment_id=comment.id) }}" class="inline-form" data-confirm="{{ tr('Delete this comment?') }}"><button class="link-button wi-comment-delete">{{ tr('Delete') }}</button></form>
+            {% endif %}
+          </div>
+        </div></div>
+      {% endmacro %}
+      <div id="wi-all-panel" role="tabpanel" aria-labelledby="wi-all-tab" hidden>
+        <ul class="wi-history">{% for kind, when, row in timeline %}<li>{% if kind == 'comment' %}{{ comment_block(row) }}{% elif kind == 'history' %}{{ history_line(row) }}{% else %}{{ worklog_line(row) }}{% endif %}</li>{% else %}<li class="muted">{{ tr('No activity yet.') }}</li>{% endfor %}</ul>
       </div>
       <div id="wi-comments-panel" role="tabpanel" aria-labelledby="wi-comments-tab">
-        {% for comment in comments %}<div class="comment wi-comment">{{ user_avatar(comment.author) }}<div><strong>{{ user_link(comment.author) }}</strong> <small>{{ comment.created_at|usertime }}</small><p class="pre">{{ mentions_html(comment.body) }}</p></div></div>{% else %}<p class="muted">{{ tr('No comments yet.') }}</p>{% endfor %}
-        {% if can_comment %}<form method="post" action="{{ url_for('projects.item_comment', item_key=item.key) }}" class="comment-box"><label class="visually-hidden" for="wi-comment-body">{{ tr('Comment') }}</label><textarea id="wi-comment-body" name="body" rows="3" required maxlength="20000" placeholder="{{ tr('Add a comment. Type @username to mention someone.') }}"></textarea><button class="primary">{{ tr('Comment') }}</button></form>{% endif %}
+        {% for comment in comments %}{{ comment_block(comment) }}{% else %}<p class="muted">{{ tr('No comments yet.') }}</p>{% endfor %}
+        {% if can_comment %}<form method="post" action="{{ url_for('projects.item_comment', item_key=item.key) }}" class="comment-box wi-comment-form"><label class="visually-hidden" for="wi-comment-body">{{ tr('Comment') }}</label><textarea id="wi-comment-body" name="body" rows="3" required maxlength="20000" data-markdown data-shortcut-target="m" placeholder="{{ tr('Add a comment. Type @username to mention someone. Markdown is supported.') }}"></textarea>
+          <div class="wi-comment-actions"><label>{{ tr('Visible to') }} <select name="visibility"><option value="">{{ tr('Everyone who can see this') }}</option>{% if project_role in ('admin', 'member') %}<option value="member">{{ tr('Members and administrators') }}</option>{% endif %}{% if project_role == 'admin' %}<option value="admin">{{ tr('Administrators') }}</option>{% endif %}</select></label><button class="primary">{{ tr('Comment') }}</button></div></form>{% endif %}
       </div>
       <div id="wi-history-panel" role="tabpanel" aria-labelledby="wi-history-tab" hidden>
-        <ul class="wi-history">{% for row in history %}<li><strong>{{ row.actor.name if row.actor else tr('System') }}</strong>
-          {% if row.field == 'created' %}{{ tr('created this {type}', type=tr(item_type_labels.get(row.new_value, row.new_value))|lower) }}
-          {% elif row.field == 'attachment' %}{{ tr('attached {name}', name=row.new_value) if row.new_value else tr('deleted attachment {name}', name=row.old_value) }}
-          {% else %}{{ tr('changed {field}', field=tr(row.field.replace('_', ' '))) }}{% if row.old_value or row.new_value %}: <span class="wi-old">{{ row.old_value or '—' }}</span> → <span class="wi-new">{{ row.new_value or '—' }}</span>{% endif %}{% endif %}
-          <small class="muted">{{ row.created_at|usertime }}</small></li>{% else %}<li class="muted">{{ tr('No changes yet.') }}</li>{% endfor %}</ul>
+        <ul class="wi-history">{% for row in history %}<li>{{ history_line(row) }}</li>{% else %}<li class="muted">{{ tr('No changes yet.') }}</li>{% endfor %}</ul>
+      </div>
+      <div id="wi-worklog-panel" role="tabpanel" aria-labelledby="wi-worklog-tab" hidden>
+        <ul class="wi-history">{% for row in worklogs %}<li>{{ worklog_line(row) }}
+          {% if can_edit and (row.author_id == current_user.id or can_admin) %}<div class="wi-worklog-actions">
+            <details class="wi-comment-edit"><summary>{{ tr('Edit') }}</summary><form method="post" action="{{ url_for('projects.item_worklog_edit', item_key=item.key, worklog_id=row.id) }}" class="stack"><label>{{ tr('Time spent') }}<input name="spent" value="{{ fmt(row.minutes) }}" required maxlength="40"></label><label>{{ tr('Work description') }}<textarea name="comment" rows="2" maxlength="10000">{{ row.comment }}</textarea></label><button class="primary">{{ tr('Save') }}</button></form></details>
+            <form method="post" action="{{ url_for('projects.item_worklog_delete', item_key=item.key, worklog_id=row.id) }}" class="inline-form" data-confirm="{{ tr('Delete this work log?') }}"><button class="link-button wi-comment-delete">{{ tr('Delete') }}</button></form>
+          </div>{% endif %}</li>{% else %}<li class="muted">{{ tr('No work logged yet.') }}</li>{% endfor %}</ul>
       </div>
     </section>
   </article>
@@ -82,41 +192,57 @@
     <form method="post" action="{{ url_for('projects.item_edit', item_key=item.key) }}" class="panel wi-details" data-wi-details>
       <div class="wi-side-head">
         <h2>{{ tr('Details') }}</h2>
-        <span class="wi-status-current">{{ status_pill(item.status) }}</span>
+        <span class="wi-status-current">{{ status_pill(item.status) }}{% if item.resolution %} <span class="wi-resolution">{{ item.resolution.name }}</span>{% endif %}</span>
       </div>
       {% if can_edit %}
-      <input type="hidden" name="assignee_ids_present" value="1">
+      <input type="hidden" name="assignee_ids_present" value="1"><input type="hidden" name="component_ids_present" value="1"><input type="hidden" name="fix_version_ids_present" value="1"><input type="hidden" name="affects_version_ids_present" value="1">
       <label>{{ tr('Status') }}<select name="status_id" data-autosave>{% for status in statuses %}<option value="{{ status.id }}" {% if status.id == item.status_id %}selected{% endif %}>{{ status.name }}</option>{% endfor %}</select></label>
+      {% if item.status.category == 'done' %}<label>{{ tr('Resolution') }}<select name="resolution_id">{% for row in resolutions %}<option value="{{ row.id }}" {% if row.id == item.resolution_id %}selected{% endif %}>{{ row.name }}</option>{% endfor %}</select></label>{% endif %}
       <label>{{ tr('Assignees') }}<select name="assignee_ids" multiple size="4" data-people-picker>{% for user in members %}<option value="{{ user.id }}" {% if user in item.assignees %}selected{% endif %}>{{ user.name }}</option>{% endfor %}{% for user in item.assignees if user not in members %}<option value="{{ user.id }}" selected>{{ user.name }}</option>{% endfor %}</select></label>
+      {% if can_admin %}<label>{{ tr('Reporter') }}<select name="reporter_id">{% for user in members %}<option value="{{ user.id }}" {% if user.id == item.reporter_id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}{% if item.reporter and item.reporter not in members %}<option value="{{ item.reporter.id }}" selected>{{ item.reporter.name }}</option>{% endif %}</select></label>{% endif %}
       <label>{{ tr('Priority') }}<select name="priority">{% for p in priorities %}<option value="{{ p }}" {% if p == item.priority %}selected{% endif %}>{{ tr(priority_labels[p]) }}</option>{% endfor %}</select></label>
-      <label>{{ tr('Type') }}<select name="item_type">{% for t in item_types %}<option value="{{ t }}" {% if t == item.item_type %}selected{% endif %}>{{ tr(item_type_labels[t]) }}</option>{% endfor %}</select></label>
       <label>{{ tr('Parent') }}<select name="parent_id"><option value="">{{ tr('None') }}</option>{% for p in parents if p.id != item.id %}<option value="{{ p.id }}" {% if item.parent_id == p.id %}selected{% endif %}>{{ p.key }} · {{ p.title }}</option>{% endfor %}</select></label>
+      {% if components %}<label>{{ tr('Components') }}<select name="component_ids" multiple size="3" data-people-picker data-picker-placeholder="{{ tr('Add a component…') }}" data-picker-empty="{{ tr('No matching components') }}">{% for row in components %}<option value="{{ row.id }}" {% if row in item.components %}selected{% endif %}>{{ row.name }}</option>{% endfor %}</select></label>{% endif %}
+      {% if versions %}
+      <label>{{ tr('Fix versions') }}<select name="fix_version_ids" multiple size="3" data-people-picker data-picker-placeholder="{{ tr('Add a version…') }}" data-picker-empty="{{ tr('No matching versions') }}">{% for row in versions if not row.archived or row in item.fix_versions %}<option value="{{ row.id }}" {% if row in item.fix_versions %}selected{% endif %}>{{ row.name }}{% if row.released %} ({{ tr('released') }}){% endif %}</option>{% endfor %}</select></label>
+      <label>{{ tr('Affects versions') }}<select name="affects_version_ids" multiple size="3" data-people-picker data-picker-placeholder="{{ tr('Add a version…') }}" data-picker-empty="{{ tr('No matching versions') }}">{% for row in versions if not row.archived or row in item.affects_versions %}<option value="{{ row.id }}" {% if row in item.affects_versions %}selected{% endif %}>{{ row.name }}</option>{% endfor %}</select></label>
+      {% endif %}
       <label>{{ tr('Labels') }}<input name="labels" value="{{ item.labels|map(attribute='label')|join(', ') }}" maxlength="1200"></label>
       <label>{{ tr('Start date') }}<input type="date" name="start_date" value="{{ item.start_date.isoformat() if item.start_date else '' }}"></label>
       <label>{{ tr('Due date') }}<input type="date" name="due_date" value="{{ item.due_date.isoformat() if item.due_date else '' }}"></label>
       <label>{{ tr('Story points') }}<input type="number" name="story_points" min="0" max="1000" step="0.5" value="{{ item.story_points|round(1)|string|replace('.0', '') if item.story_points is not none else '' }}"></label>
-      <label>{{ tr('Estimate (hours)') }}<input type="number" name="estimate_hours" min="0" max="16000" step="0.25" value="{{ (item.estimate_minutes / 60)|round(2) if item.estimate_minutes is not none else '' }}"></label>
+      <label>{{ tr('Original estimate') }}<input name="estimate" maxlength="40" value="{{ fmt(item.estimate_minutes) }}" placeholder="{{ tr('1d 4h') }}"></label>
+      <label>{{ tr('Remaining estimate') }}<input name="remaining" maxlength="40" value="{{ fmt(item.remaining_minutes) }}" placeholder="{{ tr('4h') }}"></label>
       <div class="actions"><button class="primary">{{ tr('Save details') }}</button></div>
       {% else %}
       <dl class="wi-readonly">
         <dt>{{ tr('Assignees') }}</dt><dd>{% for user in item.assignees %}{{ user_link(user) }}{% if not loop.last %}, {% endif %}{% else %}{{ tr('Unassigned') }}{% endfor %}</dd>
         <dt>{{ tr('Priority') }}</dt><dd>{{ priority_icon(item.priority) }} {{ tr(priority_labels[item.priority]) }}</dd>
+        <dt>{{ tr('Components') }}</dt><dd>{{ item.components|map(attribute='name')|join(', ') or '—' }}</dd>
+        <dt>{{ tr('Fix versions') }}</dt><dd>{{ item.fix_versions|map(attribute='name')|join(', ') or '—' }}</dd>
+        <dt>{{ tr('Affects versions') }}</dt><dd>{{ item.affects_versions|map(attribute='name')|join(', ') or '—' }}</dd>
         <dt>{{ tr('Labels') }}</dt><dd>{{ item.labels|map(attribute='label')|join(', ') or '—' }}</dd>
         <dt>{{ tr('Due date') }}</dt><dd>{{ item.due_date.isoformat() if item.due_date else '—' }}</dd>
         <dt>{{ tr('Story points') }}</dt><dd>{{ item.story_points if item.story_points is not none else '—' }}</dd>
       </dl>
       {% endif %}
+      {% if time.has_any %}
+      <div class="wi-time" aria-label="{{ tr('Time tracking') }}">
+        <h3>{{ tr('Time tracking') }}</h3>
+        <div class="wi-time-row"><span>{{ tr('Estimated') }}</span><span class="wi-time-bar"><span class="wi-time-fill wi-time-estimate wi-progress-{{ (time.estimate_pct / 5)|round|int * 5 }}"></span></span><span>{{ fmt(time.estimate) or '—' }}</span></div>
+        <div class="wi-time-row"><span>{{ tr('Remaining') }}</span><span class="wi-time-bar"><span class="wi-time-fill wi-time-remaining wi-progress-{{ (time.remaining_pct / 5)|round|int * 5 }}"></span></span><span>{{ fmt(time.remaining) or '—' }}</span></div>
+        <div class="wi-time-row"><span>{{ tr('Logged') }}</span><span class="wi-time-bar"><span class="wi-time-fill wi-time-spent wi-progress-{{ (time.spent_pct / 5)|round|int * 5 }}"></span></span><span>{{ fmt(time.spent) }}</span></div>
+      </div>
+      {% endif %}
       <dl class="wi-readonly wi-meta">
         <dt>{{ tr('Reporter') }}</dt><dd>{{ user_link(item.reporter, tr('Unknown')) }}</dd>
+        <dt>{{ tr('Watchers') }}</dt><dd>{% for user in watcher_list[:5] %}{{ user_link(user) }}{% if not loop.last %}, {% endif %}{% endfor %}{% if watcher_list|length > 5 %} +{{ watcher_list|length - 5 }}{% endif %}{% if not watcher_list %}—{% endif %}</dd>
+        <dt>{{ tr('Votes') }}</dt><dd>{{ voters|length }}</dd>
         <dt>{{ tr('Created') }}</dt><dd>{{ item.created_at|usertime }}</dd>
         <dt>{{ tr('Updated') }}</dt><dd>{{ item.updated_at|usertime }}</dd>
         {% if item.resolved_at %}<dt>{{ tr('Resolved') }}</dt><dd>{{ item.resolved_at|usertime }}</dd>{% endif %}
       </dl>
     </form>
-    <div class="panel wi-side-actions">
-      <form method="post" action="{{ url_for('projects.item_watch', item_key=item.key) }}"><input type="hidden" name="watch" value="{{ '0' if watching else '1' }}"><button class="button">{{ tr('Stop watching') if watching else tr('Watch') }}</button></form>
-      {% if can_admin or (can_edit and item.reporter_id == current_user.id) %}<form method="post" action="{{ url_for('projects.item_delete', item_key=item.key) }}" data-confirm="{{ tr('Delete {key}? This cannot be undone.', key=item.key) }}"><button class="button danger">{{ tr('Delete') }}</button></form>{% endif %}
-    </div>
   </aside>
 </div>
 {% endblock %}

@@ -19,7 +19,7 @@ from sqlalchemy import func, or_
 import app as core
 from serviceops_core.localization import tr
 from serviceops_core.projects.models import (
-    DEFAULT_STATUSES, ITEM_TYPES, LINK_TYPES, PRIORITIES, PROJECT_ROLES, STATUS_CATEGORIES, VISIBILITIES,
+    DEFAULT_STATUSES, ITEM_TYPES, PRIORITIES, PROJECT_ROLES, STATUS_CATEGORIES, VISIBILITIES,
     Project, ProjectMember, ProjectStatus, WorkItem, WorkItemAssignee, WorkItemComment, WorkItemHistory,
     WorkItemLabel, WorkItemLink, WorkItemWatcher,
 )
@@ -211,9 +211,19 @@ def _clean_color(value):
     return value if re.fullmatch(r"#[0-9a-fA-F]{6}", value) else "#0f6e7a"
 
 
-def update_project(actor, project, name=None, description=None, visibility=None, lead_id=None, color=None):
+def update_project(actor, project, name=None, description=None, visibility=None, lead_id=None, color=None,
+                   category=None, default_assignee=None):
     require_admin(actor, project)
     changes = []
+    if category is not None:
+        project.category = _clean_text(category, 60, tr("Category")) or None
+        changes.append("category")
+    if default_assignee is not None:
+        from serviceops_core.projects.models import DEFAULT_ASSIGNEE_CHOICES
+        if default_assignee not in DEFAULT_ASSIGNEE_CHOICES:
+            abort(400, description=tr("Choose a default assignee."))
+        project.default_assignee = default_assignee
+        changes.append("default assignee")
     if name is not None:
         project.name = _clean_text(name, 160, tr("Project name"), required=True)
         changes.append("name")
@@ -395,7 +405,9 @@ def _notify(users, actor, item, title, body, event_type):
         if not can_view(user, item.project):
             continue
         core.create_notification(user.id, title, body, tenant_id=item.tenant_id, target_type="work_item",
-                                 target_id=item.id, event_type=event_type)
+                                 target_id=item.id, event_type=event_type,
+                                 template_vars={"key": item.key, "summary": item.title,
+                                                "actor": actor.name if actor else "", "project": item.project.name})
 
 
 def _parse_date(value, label):
@@ -455,6 +467,54 @@ def _parse_assignees(value, project):
     return users
 
 
+def _project_rows(model, project, raw, label):
+    """Components or versions of this project from a list of ids (or a
+    comma-separated string); unknown ids are refused."""
+    if raw is None:
+        return None
+    raw = raw if isinstance(raw, (list, tuple)) else [part for part in str(raw).split(",") if part.strip()]
+    rows = []
+    for value in raw:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            abort(400, description=tr("{label} is not valid.", label=label))
+        row = model.query.filter_by(id=value, project_id=project.id).first()
+        if not row:
+            abort(400, description=tr("{label} must belong to this project.", label=label))
+        if row not in rows:
+            rows.append(row)
+    return rows
+
+
+def _replace_links(model, item, column, rows, actor, field):
+    old = sorted(getattr(row, "name") for row in getattr(item, field))
+    new = sorted(row.name for row in rows)
+    if old != new:
+        model.query.filter_by(work_item_id=item.id).delete()
+        for row in rows:
+            db.session.add(model(tenant_id=item.tenant_id, work_item_id=item.id, **{column: row.id}))
+        log_work_item_history(item, actor, field.replace("_", " "), ", ".join(old), ", ".join(new))
+
+
+def _resolve(item, actor, status, resolution_id=None):
+    """Entering a done status sets a resolution (the chosen one or the
+    tenant default); leaving done clears it, as in Jira."""
+    from serviceops_core.projects import catalog
+    if status.category == "done":
+        resolution = (catalog.resolution_or_400(item.tenant_id, resolution_id) if resolution_id not in (None, "")
+                      else item.resolution or catalog.default_resolution(item.tenant_id))
+        if resolution and resolution.id != item.resolution_id:
+            log_work_item_history(item, actor, "resolution", item.resolution.name if item.resolution else None,
+                                  resolution.name)
+            item.resolution_id, item.resolution = resolution.id, resolution
+        item.resolved_at = item.resolved_at or now()
+    else:
+        if item.resolution_id:
+            log_work_item_history(item, actor, "resolution", item.resolution.name if item.resolution else None, None)
+        item.resolution_id, item.resolution, item.resolved_at = None, None, None
+
+
 def _validate_parent(project, item_type, parent_id, item=None):
     if parent_id in (None, ""):
         if item_type == "subtask":
@@ -488,7 +548,8 @@ def default_status(project):
 
 def create_item(actor, project, title, item_type="task", description="", status_id=None, priority="medium",
                 assignee_ids=None, labels=None, parent_id=None, start_date=None, due_date=None,
-                story_points=None, estimate_minutes=None):
+                story_points=None, estimate_minutes=None, component_ids=None, fix_version_ids=None,
+                affects_version_ids=None, environment="", resolution_id=None, flagged=False):
     require_edit(actor, project)
     if item_type not in ITEM_TYPES:
         abort(400, description=tr("Choose a work item type."))
@@ -500,6 +561,16 @@ def create_item(actor, project, title, item_type="task", description="", status_
     parent = _validate_parent(project, item_type, parent_id)
     assignees = _parse_assignees(assignee_ids, project) or []
     labels = _parse_labels(labels) or []
+    from serviceops_core.projects.models import (ProjectComponent, ProjectVersion, WorkItemAffectsVersion,
+                                                 WorkItemComponent, WorkItemFixVersion)
+    components = _project_rows(ProjectComponent, project, component_ids, tr("Component")) or []
+    fix_versions = _project_rows(ProjectVersion, project, fix_version_ids, tr("Fix version")) or []
+    affects_versions = _project_rows(ProjectVersion, project, affects_version_ids, tr("Affects version")) or []
+    if not assignees and assignee_ids is None:
+        from serviceops_core.projects import releases
+        assignees = [user for user in releases.default_assignees(project, components)
+                     if project_role(user, project) in EDIT_ROLES]
+    environment = _clean_text(environment, 10000, tr("Environment"))
     start, due = _parse_date(start_date, tr("Start date")), _parse_date(due_date, tr("Due date"))
     if start and due and due < start:
         abort(400, description=tr("The due date cannot be before the start date."))
@@ -514,9 +585,17 @@ def create_item(actor, project, title, item_type="task", description="", status_
                     rank=_next_rank(project.id, status.id), start_date=start, due_date=due,
                     story_points=_parse_number(story_points, tr("Story points"), maximum=1000),
                     estimate_minutes=_parse_number(estimate_minutes, tr("Estimate"), integer=True, maximum=10**6),
-                    resolved_at=now() if status.category == "done" else None)
+                    environment=environment, flagged=bool(flagged))
+    item.remaining_minutes = item.estimate_minutes
     db.session.add(item)
     db.session.flush()
+    for rows, model, column in ((components, WorkItemComponent, "component_id"),
+                                (fix_versions, WorkItemFixVersion, "version_id"),
+                                (affects_versions, WorkItemAffectsVersion, "version_id")):
+        for row in rows:
+            db.session.add(model(tenant_id=item.tenant_id, work_item_id=item.id, **{column: row.id}))
+    if status.category == "done":
+        _resolve(item, actor, status, resolution_id)
     for user in assignees:
         db.session.add(WorkItemAssignee(tenant_id=item.tenant_id, work_item_id=item.id, user_id=user.id))
     for label in labels:
@@ -526,14 +605,16 @@ def create_item(actor, project, title, item_type="task", description="", status_
         _watch(item, user)
     log_work_item_history(item, actor, "created", None, item_type)
     db.session.flush()
-    db.session.expire(item, ["assignees", "labels"])
+    db.session.expire(item, ["assignees", "labels", "components", "fix_versions", "affects_versions"])
     _notify(assignees, actor, item, tr("{name} assigned {key} to you", name=actor.name, key=item.key),
             item.title, "work_item.assigned")
     return item
 
 
 EDITABLE_FIELDS = ("title", "description", "item_type", "status_id", "priority", "assignee_ids", "labels",
-                   "parent_id", "start_date", "due_date", "story_points", "estimate_minutes")
+                   "parent_id", "start_date", "due_date", "story_points", "estimate_minutes", "remaining_minutes",
+                   "component_ids", "fix_version_ids", "affects_version_ids", "environment", "resolution_id",
+                   "reporter_id", "flagged")
 
 
 def update_item(actor, item, changes):
@@ -572,7 +653,36 @@ def update_item(actor, item, changes):
             item.status_id = status.id
             item.status = status
             item.rank = _next_rank(project.id, status.id)
-            item.resolved_at = now() if status.category == "done" else None
+            _resolve(item, actor, status, changes.get("resolution_id"))
+    elif changes.get("resolution_id") not in (None, "") and item.status.category == "done":
+        _resolve(item, actor, item.status, changes["resolution_id"])
+    if "environment" in changes:
+        _set(item, actor, "environment", _clean_text(changes["environment"], 10000, tr("Environment")))
+    if "reporter_id" in changes and changes["reporter_id"] not in (None, ""):
+        if not can_administer(actor, project):
+            abort(403, description=tr("Only project administrators can change the reporter."))
+        reporter = _active_tenant_user(changes["reporter_id"], project.tenant_id, tr("Reporter"))
+        if reporter.id != item.reporter_id:
+            log_work_item_history(item, actor, "reporter", item.reporter.name if item.reporter else None, reporter.name)
+            item.reporter_id = reporter.id
+    if "flagged" in changes:
+        flagged = str(changes["flagged"]).lower() in ("1", "true", "on", "yes")
+        if flagged != item.flagged:
+            log_work_item_history(item, actor, "flag", "Flagged" if item.flagged else None, "Flagged" if flagged else None)
+            item.flagged = flagged
+    if "remaining_minutes" in changes:
+        _set(item, actor, "remaining_minutes",
+             _parse_number(changes["remaining_minutes"], tr("Remaining estimate"), integer=True, maximum=10**7))
+    from serviceops_core.projects.models import (ProjectComponent, ProjectVersion, WorkItemAffectsVersion,
+                                                 WorkItemComponent, WorkItemFixVersion)
+    for key, model, row_model, column, field, label in (
+            ("component_ids", WorkItemComponent, ProjectComponent, "component_id", "components", tr("Component")),
+            ("fix_version_ids", WorkItemFixVersion, ProjectVersion, "version_id", "fix_versions", tr("Fix version")),
+            ("affects_version_ids", WorkItemAffectsVersion, ProjectVersion, "version_id", "affects_versions",
+             tr("Affects version"))):
+        if key in changes:
+            _replace_links(model, item, column, _project_rows(row_model, project, changes[key], label) or [], actor,
+                           field)
     start = _parse_date(changes["start_date"], tr("Start date")) if "start_date" in changes else item.start_date
     due = _parse_date(changes["due_date"], tr("Due date")) if "due_date" in changes else item.due_date
     if start and due and due < start:
@@ -584,8 +694,11 @@ def update_item(actor, item, changes):
     if "story_points" in changes:
         _set(item, actor, "story_points", _parse_number(changes["story_points"], tr("Story points"), maximum=1000))
     if "estimate_minutes" in changes:
-        _set(item, actor, "estimate_minutes",
-             _parse_number(changes["estimate_minutes"], tr("Estimate"), integer=True, maximum=10**6))
+        estimate = _parse_number(changes["estimate_minutes"], tr("Estimate"), integer=True, maximum=10**6)
+        if item.remaining_minutes is None or (item.remaining_minutes == item.estimate_minutes and not item.spent_minutes
+                                              and "remaining_minutes" not in changes):
+            item.remaining_minutes = estimate
+        _set(item, actor, "estimate_minutes", estimate)
     if "labels" in changes:
         labels = _parse_labels(changes["labels"]) or []
         old = [row.label for row in item.labels]
@@ -609,7 +722,7 @@ def update_item(actor, item, changes):
             added = [user for user in assignees if user.id not in old_ids]
     item.updated_at = now()
     db.session.flush()
-    db.session.expire(item, ["assignees", "labels"])
+    db.session.expire(item, ["assignees", "labels", "components", "fix_versions", "affects_versions"])
     _notify(added, actor, item, tr("{name} assigned {key} to you", name=actor.name, key=item.key), item.title,
             "work_item.assigned")
     if item.status_id != old_status.id:
@@ -676,11 +789,35 @@ def delete_item(actor, item):
 
 # --- comments --------------------------------------------------------------------------
 
-def add_comment(actor, item, body):
+COMMENT_ROLE_RANK = {"admin": 3, "member": 2, "viewer": 1, "reader": 0}
+
+
+def comment_visible_to(user, comment, project):
+    """A comment restricted to a project role is shown to that role and above
+    (Jira's comment visibility); its author always sees it."""
+    if not comment.visibility or comment.user_id == user.id:
+        return True
+    role = project_role(user, project)
+    return COMMENT_ROLE_RANK.get(role, -1) >= COMMENT_ROLE_RANK[comment.visibility]
+
+
+def visible_comments(user, item):
+    rows = WorkItemComment.query.filter_by(work_item_id=item.id).order_by(WorkItemComment.created_at,
+                                                                           WorkItemComment.id).all()
+    return [row for row in rows if comment_visible_to(user, row, item.project)]
+
+
+def add_comment(actor, item, body, visibility=None):
     if not can_comment(actor, item.project):
         abort(403, description=tr("You can read this project but not comment on it."))
     body = _clean_text(body, 20000, tr("Comment"), required=True)
-    comment = WorkItemComment(tenant_id=item.tenant_id, work_item_id=item.id, user_id=actor.id, body=body)
+    visibility = visibility or None
+    if visibility not in (None, "admin", "member"):
+        abort(400, description=tr("Choose who can see the comment."))
+    if visibility and COMMENT_ROLE_RANK.get(project_role(actor, item.project), -1) < COMMENT_ROLE_RANK[visibility]:
+        abort(403, description=tr("You can only restrict a comment to a role you hold."))
+    comment = WorkItemComment(tenant_id=item.tenant_id, work_item_id=item.id, user_id=actor.id, body=body,
+                              visibility=visibility)
     db.session.add(comment)
     db.session.flush()
     usernames = {match.group(1).lower() for match in core.MENTION_PATTERN.finditer(body)}
@@ -688,7 +825,7 @@ def add_comment(actor, item, body):
     if usernames:
         mentioned = [user for user in User.query.filter(
             User.tenant_id == item.tenant_id, User.active.is_(True), func.lower(User.username).in_(usernames)).all()
-            if can_view(user, item.project)]
+            if can_view(user, item.project) and comment_visible_to(user, comment, item.project)]
     preview = body if len(body) <= 200 else body[:197] + "..."
     _watch(item, actor)
     for user in mentioned:
@@ -697,17 +834,135 @@ def add_comment(actor, item, body):
     _notify(mentioned, actor, item, tr("{name} mentioned you in {key}", name=actor.name, key=item.key), preview,
             "work_item.mentioned")
     mentioned_ids = {user.id for user in mentioned}
-    _notify([user for user in watchers(item) if user.id not in mentioned_ids], actor, item,
+    _notify([user for user in watchers(item)
+             if user.id not in mentioned_ids and comment_visible_to(user, comment, item.project)], actor, item,
             tr("New comment on {key}", key=item.key), f"{actor.name}: {preview}", "work_item.commented")
     item.updated_at = now()
     return comment
 
 
+def comment_or_404(user, item, comment_id):
+    comment = WorkItemComment.query.filter_by(id=comment_id, work_item_id=item.id).first()
+    if not comment or not comment_visible_to(user, comment, item.project):
+        abort(404)
+    return comment
+
+
+def _require_comment_owner_or_admin(actor, item, comment):
+    if comment.user_id != actor.id and not can_administer(actor, item.project):
+        abort(403, description=tr("Only the author or a project administrator can change this comment."))
+    if item.project.archived_at is not None:
+        abort(403, description=tr("This project is archived."))
+
+
+def edit_comment(actor, item, comment, body):
+    _require_comment_owner_or_admin(actor, item, comment)
+    body = _clean_text(body, 20000, tr("Comment"), required=True)
+    if body != comment.body:
+        comment.body, comment.edited_at = body, now()
+        core.audit("work item comment edited", item.key, f"comment={comment.id}", user_id=actor.id,
+                   tenant_id=item.tenant_id)
+
+
+def delete_comment(actor, item, comment):
+    _require_comment_owner_or_admin(actor, item, comment)
+    core.audit("work item comment deleted", item.key, f"comment={comment.id}", user_id=actor.id,
+               tenant_id=item.tenant_id)
+    db.session.delete(comment)
+
+
+def toggle_reaction(actor, item, comment, emoji):
+    from serviceops_core.projects.models import REACTIONS, WorkItemCommentReaction
+    if not can_view(actor, item.project):
+        abort(404)
+    if emoji not in REACTIONS:
+        abort(400, description=tr("Choose a reaction."))
+    row = WorkItemCommentReaction.query.filter_by(comment_id=comment.id, user_id=actor.id, emoji=emoji).first()
+    if row:
+        db.session.delete(row)
+        return False
+    db.session.add(WorkItemCommentReaction(tenant_id=item.tenant_id, comment_id=comment.id, user_id=actor.id,
+                                           emoji=emoji))
+    return True
+
+
+def reactions_for(comment_ids, user):
+    """{comment_id: [(emoji, count, mine), ...]} in REACTIONS order."""
+    from serviceops_core.projects.models import REACTIONS, WorkItemCommentReaction
+    result = {}
+    if not comment_ids:
+        return result
+    rows = WorkItemCommentReaction.query.filter(WorkItemCommentReaction.comment_id.in_(comment_ids)).all()
+    for comment_id in comment_ids:
+        mine = {row.emoji for row in rows if row.comment_id == comment_id and row.user_id == user.id}
+        counts = {}
+        for row in rows:
+            if row.comment_id == comment_id:
+                counts[row.emoji] = counts.get(row.emoji, 0) + 1
+        result[comment_id] = [(emoji, counts[emoji], emoji in mine) for emoji in REACTIONS if emoji in counts]
+    return result
+
+
+# --- votes, stars and views ---------------------------------------------------------------------
+
+def toggle_vote(actor, item):
+    """Jira: you cannot vote on work you reported, or on resolved work."""
+    from serviceops_core.projects.models import WorkItemVote
+    if not can_view(actor, item.project):
+        abort(404)
+    if item.reporter_id == actor.id:
+        abort(409, description=tr("You cannot vote for a work item you reported."))
+    row = WorkItemVote.query.filter_by(work_item_id=item.id, user_id=actor.id).first()
+    if row:
+        db.session.delete(row)
+        return False
+    if item.status.category == "done":
+        abort(409, description=tr("You cannot vote for resolved work."))
+    db.session.add(WorkItemVote(tenant_id=item.tenant_id, work_item_id=item.id, user_id=actor.id))
+    return True
+
+
+def voters(item):
+    from serviceops_core.projects.models import WorkItemVote
+    return User.query.join(WorkItemVote, WorkItemVote.user_id == User.id).filter(
+        WorkItemVote.work_item_id == item.id).order_by(User.name).all()
+
+
+def toggle_star(actor, target_type, target):
+    from serviceops_core.projects.models import ProjectStar
+    project = target if target_type == "project" else target.project
+    if not can_view(actor, project):
+        abort(404)
+    row = ProjectStar.query.filter_by(user_id=actor.id, target_type=target_type, target_id=target.id).first()
+    if row:
+        db.session.delete(row)
+        return False
+    db.session.add(ProjectStar(tenant_id=actor.tenant_id, user_id=actor.id, target_type=target_type,
+                               target_id=target.id))
+    return True
+
+
+def is_starred(user, target_type, target_id):
+    from serviceops_core.projects.models import ProjectStar
+    return ProjectStar.query.filter_by(user_id=user.id, target_type=target_type, target_id=target_id).first() \
+        is not None
+
+
+def record_view(user, item):
+    from serviceops_core.projects.models import WorkItemView
+    row = db.session.get(WorkItemView, (user.id, item.id))
+    if row:
+        row.viewed_at = now()
+    else:
+        db.session.add(WorkItemView(tenant_id=item.tenant_id, user_id=user.id, work_item_id=item.id))
+
+
 # --- links ----------------------------------------------------------------------------------
 
 def add_link(actor, item, link_type, target_text):
+    from serviceops_core.projects import catalog
     require_edit(actor, item.project)
-    if link_type not in LINK_TYPES:
+    if catalog.link_type_named(item.tenant_id, link_type) is None:
         abort(400, description=tr("Choose a link type."))
     target_text = (target_text or "").strip()
     target = find_visible_item(actor, target_text)
@@ -766,14 +1021,10 @@ def links_for(user, item):
     return [row for row in rows if row]
 
 
-LINK_LABELS = {
-    ("blocks", True): "blocks", ("blocks", False): "is blocked by",
-    ("relates", True): "relates to", ("relates", False): "relates to",
-    ("duplicates", True): "duplicates", ("duplicates", False): "is duplicated by",
-}
-
-
 def _link_row(user, link, outgoing):
+    from serviceops_core.projects import catalog
+    link_type = catalog.link_type_named(link.tenant_id, link.link_type)
+    relation = (link_type.outward if outgoing else link_type.inward) if link_type else link.link_type
     if outgoing:
         if link.target_type == "work_item":
             target = db.session.get(WorkItem, link.target_id)
@@ -791,8 +1042,7 @@ def _link_row(user, link, outgoing):
         if not source or not can_view(user, source.project):
             return None
         label, url, title, state = source.key, f"/work-items/{source.key}", source.title, source.status.name
-    return {"id": link.id, "relation": LINK_LABELS[(link.link_type, outgoing)], "label": label, "url": url,
-            "title": title, "state": state}
+    return {"id": link.id, "relation": relation, "label": label, "url": url, "title": title, "state": state}
 
 
 def items_linked_to_record(user, target_type, target_id):
@@ -854,6 +1104,15 @@ def item_query(project, filters, user=None):
             func.lower(WorkItemLabel.label) == str(filters["label"]).lower())))
     if str(filters.get("epic") or "").isdigit():
         query = query.filter(WorkItem.parent_id == int(filters["epic"]))
+    from serviceops_core.projects.models import WorkItemComponent, WorkItemFixVersion
+    if str(filters.get("component") or "").isdigit():
+        query = query.filter(WorkItem.id.in_(db.session.query(WorkItemComponent.work_item_id).filter(
+            WorkItemComponent.component_id == int(filters["component"]))))
+    if str(filters.get("version") or "").isdigit():
+        query = query.filter(WorkItem.id.in_(db.session.query(WorkItemFixVersion.work_item_id).filter(
+            WorkItemFixVersion.version_id == int(filters["version"]))))
+    if filters.get("flagged") == "1":
+        query = query.filter(WorkItem.flagged.is_(True))
     return query
 
 

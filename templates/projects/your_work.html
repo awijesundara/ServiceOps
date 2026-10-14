@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "projects/_macros.html" import type_icon, status_pill with context %}
+{% block title %}{{ tr('Your work · {instance_name}', instance_name=instance_name) }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">{{ tr('PROJECTS') }}</p><h1>{{ tr('Your work') }}</h1><p>{{ tr('Work you changed, opened, are assigned or starred, across your projects.') }}</p></div>
+  <a class="primary" href="{{ url_for('projects.global_create') }}" data-shortcut="c">{{ tr('Create work item') }}</a></header>
+{% if recent_projects or starred_projects %}
+<section class="your-work-projects" aria-label="{{ tr('Projects') }}">
+  {% for project in (starred_projects + recent_projects)|unique(attribute='id') %}<a class="your-work-project" href="{{ url_for('projects.board', key=project.key) }}"><strong>{{ project.name }}</strong><span class="muted">{{ project.key }}{% if project in starred_projects %} · ★{% endif %}</span></a>{% endfor %}
+</section>
+{% endif %}
+<nav class="project-tabs" aria-label="{{ tr('Your work') }}">
+  {% for value, label in [('worked', 'Worked on'), ('viewed', 'Viewed'), ('assigned', 'Assigned to me'), ('starred', 'Starred')] %}<a href="{{ url_for('projects.your_work', tab=value) }}" {% if tab == value %}aria-current="page"{% endif %}>{{ tr(label) }}</a>{% endfor %}
+</nav>
+{% set rows = {'worked': worked, 'viewed': viewed, 'assigned': assigned, 'starred': starred_items}[tab] %}
+<section class="panel">
+  {% if rows %}<ul class="wi-child-list">{% for item in rows %}<li>{{ type_icon(item.item_type) }}<a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.key }}</a><span class="wi-child-title">{{ item.title }}</span><small class="muted">{{ item.project.name }}</small>{{ status_pill(item.status) }}</li>{% endfor %}</ul>
+  {% else %}<div class="empty-state"><h3>{{ tr('Nothing here yet') }}</h3><p>{{ tr('Work items appear here as you change, open, are assigned or star them.') }}</p></div>{% endif %}
+</section>
+{% endblock %}

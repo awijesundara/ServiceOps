@@ -53,7 +53,7 @@
     input.setAttribute("aria-expanded", "false");
     input.setAttribute("aria-controls", listId);
     input.setAttribute("aria-label", select.getAttribute("aria-label") || select.closest("label")?.firstChild?.textContent?.trim() || tr("Add a person"));
-    input.placeholder = tr("Add a person…");
+    input.placeholder = select.dataset.pickerPlaceholder || tr("Add a person…");
     const list = document.createElement("ul");
     list.id = listId;
     list.className = "people-options";
@@ -101,7 +101,7 @@
       if (!options.length) {
         const empty = document.createElement("li");
         empty.className = "people-none";
-        empty.textContent = tr("No matching people");
+        empty.textContent = select.dataset.pickerEmpty || tr("No matching people");
         list.append(empty);
       }
       list.hidden = false;
@@ -178,6 +178,172 @@
         select.disabled = false;
       }
     });
+  });
+
+  // --- Markdown toolbar and preview on descriptions and comments.
+  const MARKS = [
+    ["B", "Bold", "**", "**"], ["I", "Italic", "*", "*"], ["</>", "Code", "`", "`"],
+    ["🔗", "Link", "[", "](https://)"], ["•", "Bulleted list", "- ", ""], ["1.", "Numbered list", "1. ", ""],
+    ["❝", "Quote", "> ", ""],
+  ];
+  document.querySelectorAll("textarea[data-markdown]").forEach(area => {
+    const bar = document.createElement("div");
+    bar.className = "md-toolbar";
+    bar.setAttribute("role", "toolbar");
+    bar.setAttribute("aria-label", tr("Formatting"));
+    MARKS.forEach(([text, label, before, after]) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = text;
+      button.title = tr(label);
+      button.setAttribute("aria-label", tr(label));
+      button.addEventListener("click", () => {
+        const start = area.selectionStart, end = area.selectionEnd;
+        const chosen = area.value.slice(start, end);
+        area.setRangeText(before + chosen + after, start, end, "end");
+        if (!chosen) area.selectionStart = area.selectionEnd = start + before.length;
+        area.focus();
+      });
+      bar.append(button);
+    });
+    const previewButton = document.createElement("button");
+    previewButton.type = "button";
+    previewButton.className = "md-preview-toggle";
+    previewButton.textContent = tr("Preview");
+    previewButton.setAttribute("aria-pressed", "false");
+    const preview = document.createElement("div");
+    preview.className = "md md-preview";
+    preview.hidden = true;
+    previewButton.addEventListener("click", async () => {
+      const showing = preview.hidden;
+      previewButton.setAttribute("aria-pressed", String(showing));
+      previewButton.textContent = showing ? tr("Write") : tr("Preview");
+      if (!showing) { preview.hidden = true; area.hidden = false; area.focus(); return; }
+      try {
+        const data = await postJson("/projects/markdown-preview", {text: area.value});
+        preview.innerHTML = data.html || "";  // HTML built server-side from escaped text
+      } catch (error) {
+        preview.textContent = error.message;
+      }
+      area.hidden = true;
+      preview.hidden = false;
+    });
+    bar.append(previewButton);
+    area.before(bar);
+    area.after(preview);
+  });
+
+  // --- List: select work items and change them together.
+  const bulkBar = document.querySelector("[data-bulk-bar]");
+  if (bulkBar) {
+    const boxes = () => Array.from(document.querySelectorAll("[data-bulk-item]"));
+    const count = bulkBar.querySelector("[data-bulk-count]");
+    const update = () => {
+      const chosen = boxes().filter(box => box.checked).length;
+      bulkBar.hidden = chosen === 0;
+      count.textContent = tr("{count} selected", {count: chosen});
+    };
+    boxes().forEach(box => box.addEventListener("change", update));
+    document.querySelectorAll("[data-select-all]").forEach(all => all.addEventListener("change", () => {
+      all.closest("table").querySelectorAll("[data-bulk-item]").forEach(box => { box.checked = all.checked; });
+      update();
+    }));
+    const action = bulkBar.querySelector("[data-bulk-action]");
+    action.addEventListener("change", () => {
+      bulkBar.querySelectorAll("[data-bulk-value]").forEach(field => {
+        const active = field.dataset.bulkValue === action.value;
+        field.hidden = !active;
+        field.querySelectorAll("select, input").forEach(control => { control.disabled = !active; });
+      });
+    });
+    bulkBar.addEventListener("submit", event => {
+      if (action.value === "delete" && !window.confirm(bulkBar.querySelector("[data-confirm-delete]").dataset.confirmDelete)) {
+        event.preventDefault();
+      }
+    });
+  }
+
+  // --- Attachments: drop a file onto the upload area.
+  document.querySelectorAll("form[data-drop-upload]").forEach(form => {
+    const zone = form.querySelector(".wi-dropzone");
+    const input = form.querySelector("input[type=file]");
+    ["dragenter", "dragover"].forEach(name => zone.addEventListener(name, event => { event.preventDefault(); zone.classList.add("is-over"); }));
+    ["dragleave", "drop"].forEach(name => zone.addEventListener(name, () => zone.classList.remove("is-over")));
+    zone.addEventListener("drop", event => {
+      event.preventDefault();
+      if (!event.dataTransfer.files.length) return;
+      input.files = event.dataTransfer.files;
+      form.requestSubmit();
+    });
+  });
+
+  // --- Keyboard shortcuts (Jira's): ? help, c create, / search, and on a
+  // work item e edit, i assign to me, w watch, m comment; j/k move through lists.
+  const typing = target => target.closest("input, textarea, select, [contenteditable=true]");
+  const rows = () => Array.from(document.querySelectorAll(".wi-table tbody tr, .wi-child-list li"));
+  let rowIndex = -1;
+  function showShortcutHelp() {
+    let dialog = document.getElementById("shortcut-help");
+    if (!dialog) {
+      dialog = document.createElement("dialog");
+      dialog.id = "shortcut-help";
+      dialog.className = "shortcut-help";
+      dialog.setAttribute("aria-labelledby", "shortcut-help-title");
+      const title = document.createElement("h2");
+      title.id = "shortcut-help-title";
+      title.textContent = tr("Keyboard shortcuts");
+      const list = document.createElement("dl");
+      [["c", "Create a work item"], ["/", "Search"], ["j / k", "Next or previous work item in a list"],
+       ["o", "Open the selected work item"], ["e", "Edit the work item"], ["i", "Assign to me"],
+       ["w", "Watch or stop watching"], ["m", "Comment"], ["?", "Show these shortcuts"]].forEach(([keys, label]) => {
+        const term = document.createElement("dt");
+        const kbd = document.createElement("kbd");
+        kbd.textContent = keys;
+        term.append(kbd);
+        const description = document.createElement("dd");
+        description.textContent = tr(label);
+        list.append(term, description);
+      });
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "button";
+      close.textContent = tr("Close");
+      close.addEventListener("click", () => dialog.close());
+      dialog.append(title, list, close);
+      document.body.append(dialog);
+    }
+    dialog.showModal();
+  }
+  document.addEventListener("keydown", event => {
+    if (event.ctrlKey || event.metaKey || event.altKey || typing(event.target)) return;
+    const key = event.key;
+    const click = selector => { const target = document.querySelector(selector); if (target) { event.preventDefault(); target.click(); } };
+    if (key === "?") { event.preventDefault(); showShortcutHelp(); }
+    else if (key === "c") {
+      event.preventDefault();
+      const create = document.querySelector('.project-head-actions a.primary, a[data-shortcut="c"]');
+      window.location.href = create ? create.href : "/work-items/new";
+    } else if (key === "/") {
+      const search = document.querySelector('.project-filters input[name="q"]') || document.querySelector('input[type="search"]');
+      if (search) { event.preventDefault(); search.focus(); }
+    } else if (key === "e") click('[data-shortcut="e"]');
+    else if (key === "i") click('[data-shortcut="i"]');
+    else if (key === "w") click('[data-shortcut="w"]');
+    else if (key === "m") {
+      const comment = document.querySelector('[data-shortcut-target="m"]');
+      if (comment) { event.preventDefault(); comment.focus(); comment.scrollIntoView({block: "center"}); }
+    } else if (key === "j" || key === "k") {
+      const all = rows();
+      if (!all.length) return;
+      event.preventDefault();
+      all[rowIndex]?.classList.remove("is-current");
+      rowIndex = Math.max(0, Math.min(all.length - 1, rowIndex + (key === "j" ? 1 : -1)));
+      all[rowIndex].classList.add("is-current");
+      all[rowIndex].querySelector("a")?.focus();
+    } else if (key === "o" && rowIndex >= 0) {
+      const link = rows()[rowIndex]?.querySelector("a");
+      if (link) { event.preventDefault(); link.click(); }
+    }
   });
 
   // --- Board: drag cards between and within columns.

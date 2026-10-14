@@ -16,8 +16,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # Routes live in serviceops_core/web/ and the helpers they call mostly in
 # app.py, so both are parsed into one call graph.
 SOURCE_FILES = [ROOT / "app.py", *sorted((ROOT / "serviceops_core" / "web").glob("*.py")),
-                # Project routes delegate to their rules module (B-443).
-                ROOT / "serviceops_core" / "projects" / "service.py"]
+                # Project routes delegate to their rules modules (B-443, B-449).
+                *[ROOT / "serviceops_core" / "projects" / f"{name}.py"
+                  for name in ("service", "tracking", "operations", "releases", "catalog")]]
 
 ALLOWLIST = {
     "notification_mark_read": "marks the caller's own notification read; no shared record changes",
@@ -32,6 +33,12 @@ ALLOWLIST = {
     "my_workspace": "saves/resets the caller's own personal workspace widget layout; no shared record changes",
     "api_passkey_registration_options": "creates a short-lived one-time protocol challenge; successful credential registration is audited on completion",
     "item_watch": "starts or stops the caller's own notifications for a work item; no shared record changes",
+    "item_star": "stars or unstars a work item for the caller's own Your work list; no shared record changes",
+    "project_star": "stars or unstars a project for the caller's own Your work list; no shared record changes",
+    "item_vote": "adds or removes the caller's own vote, which is shown as a count; no record field changes",
+    "api_item_vote": "adds or removes the acting user's own vote, shown as a count; no record field changes",
+    "item_comment_react": "adds or removes the caller's own emoji reaction on a comment; no record field changes",
+    "markdown_preview": "renders text for the editor preview; nothing is stored",
     "api_passkey_authentication_options": "creates an unauthenticated short-lived one-time protocol challenge; successful login is audited on completion",
 }
 

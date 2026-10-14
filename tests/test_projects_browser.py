@@ -100,14 +100,15 @@ def test_board_drag_people_picker_inline_status_and_quick_add(server):
 
         # People picker on the work item page.
         page.goto(base + "/work-items/WEB-3")
-        search = page.locator(".people-search")
+        search = page.get_by_role("combobox", name="Assignees")
         search.click()
         search.fill("ben")
         search.press("Enter")
-        expect(page.locator(".people-chip")).to_have_count(2)
+        chips = page.locator("[data-wi-details] .people-chip")
+        expect(chips).to_have_count(2)
         page.get_by_role("button", name="Save details").click()
         page.wait_for_load_state("networkidle")
-        expect(page.locator(".people-chip")).to_contain_text(["Aiko Tanaka", "Ben Carter"])
+        expect(page.locator("[data-wi-details] .people-chip")).to_contain_text(["Aiko Tanaka", "Ben Carter"])
 
         # Inline status on the list.
         page.goto(base + "/projects/WEB/list")
@@ -136,7 +137,9 @@ def test_project_pages_have_no_accessibility_violations(server, width, theme):
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         _sign_in(page, base)
-        for path in ("/projects", "/projects/new", "/projects/WEB/overview", "/projects/WEB/board", "/projects/WEB/board?swimlane=epic",
+        for path in ("/projects/WEB/releases", "/projects/WEB/components", "/your-work", "/projects/admin",
+                     "/work-items/new", "/projects/WEB/list?group=status&assignee=me",
+                     "/projects", "/projects/new", "/projects/WEB/overview", "/projects/WEB/board", "/projects/WEB/board?swimlane=epic",
                      "/projects/WEB/list?group=status", "/work-items/WEB-2", "/work-items/WEB-1",
                      "/projects/WEB/items/new", "/projects/WEB/settings", "/my/work-items"):
             page.goto(base + path)
@@ -146,3 +149,50 @@ def test_project_pages_have_no_accessibility_violations(server, width, theme):
             assert overflow <= 1, (path, width, "page scrolls sideways")
         assert not errors, errors
         browser.close()
+
+
+def test_phase2_editor_work_log_bulk_change_and_shortcuts(server):
+    from playwright.sync_api import expect, sync_playwright
+    app, base = server
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        _sign_in(page, base)
+        page.goto(base + "/work-items/WEB-2")
+        # Markdown toolbar and preview on the comment box.
+        box = page.locator("#wi-comment-body")
+        box.fill("plain ")
+        page.locator(".wi-comment-form .md-toolbar button[aria-label='Bold']").click()
+        page.keyboard.type("strong")
+        page.locator(".wi-comment-form .md-preview-toggle").click()
+        expect(page.locator(".wi-comment-form .md-preview strong")).to_have_text("strong")
+        page.locator(".wi-comment-form .md-preview-toggle").click()
+        page.get_by_role("button", name="Comment", exact=True).click()
+        page.wait_for_load_state("networkidle")
+        expect(page.locator("#wi-comments-panel .md strong").last).to_have_text("strong")
+        # Log work from the toolbar dialog.
+        page.locator(".wi-toolbar summary", has_text="Log work").click()
+        page.fill(".wi-worklog-form input[name=spent]", "1h 30m")
+        page.locator(".wi-worklog-form button.primary").click()
+        page.wait_for_load_state("networkidle")
+        expect(page.locator(".wi-time")).to_contain_text("1h 30m")
+        # Keyboard shortcut help.
+        page.locator("body").click(position={"x": 5, "y": 300})
+        page.keyboard.press("?")
+        expect(page.locator("#shortcut-help")).to_be_visible()
+        page.keyboard.press("Escape")
+        # Bulk change on the list.
+        page.goto(base + "/projects/WEB/list")
+        page.locator("[data-select-all]").check()
+        expect(page.locator("[data-bulk-bar]")).to_be_visible()
+        page.select_option("[data-bulk-action]", "priority")
+        page.select_option("[data-bulk-value=priority] select", "highest")
+        page.locator("[data-bulk-bar] button.primary").click()
+        page.wait_for_load_state("networkidle")
+        expect(page.locator(".toast, .flash").first).to_contain_text("work items changed")
+        assert not errors, errors
+        browser.close()
+    with app.app_context():
+        assert {item.priority for item in WorkItem.query.all()} == {"highest"}

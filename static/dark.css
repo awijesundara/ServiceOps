@@ -76,7 +76,7 @@ html.theme-dark .login-card details{color:var(--muted)}
 html.theme-dark .flash{background:#151e1c;color:#6fbbaa}
 html.theme-dark .flash.error{background:#261a19;color:#f38a7c}
 html.theme-dark .flash.warning{background:#1d170d;color:#d5a265}
-html.theme-dark .error-page>strong{color:#d8e0e3}
+html.theme-dark .error-page>strong{color:#85949d}
 html.theme-dark .muted{color:var(--muted)}
 html.theme-dark .priority.p1{background:#2c1b1a;color:#f08878}
 html.theme-dark .priority.p2{background:#241908;color:#d29048}
@@ -1198,6 +1198,53 @@ html.theme-dark .overview-bar-fill{background:#3b82c4}
 html.theme-dark .overview-bar-done{background:#2e9e5b}
 html.theme-dark .overview-bar-muted{background:#9aa9b2}
 html.theme-dark .project-overview a,html.theme-dark .wi-history a{color:var(--ink)}
+html.theme-dark .wi-dialog[open]>summary{background:#161c20}
+html.theme-dark .wi-dialog-body{border:1px solid var(--line);background:#182128;box-shadow:0 14px 36px rgba(0,0,0,0.476)}
+html.theme-dark .wi-dialog-body fieldset{border:1px solid var(--line)}
+html.theme-dark .wi-menu details summary,html.theme-dark .wi-menu-link,html.theme-dark .wi-menu .link-button{color:var(--ink)}
+html.theme-dark .wi-menu details summary:hover,html.theme-dark .wi-menu-link:hover,html.theme-dark .wi-menu .link-button:hover{background:#151b1f}
+html.theme-dark .wi-menu-danger{color:var(--red)!important}
+html.theme-dark .wi-star{color:#da9f2c}
+html.theme-dark .wi-flag-banner{background:#251918;color:#f78e80}
+html.theme-dark .wi-flag{color:#e57e6e}
+html.theme-dark .wi-resolution{color:var(--muted)}
+html.theme-dark .wi-restricted{background:#201806;color:#ce9a53}
+html.theme-dark .md blockquote{border-left:3px solid var(--line);color:#a4b4c0}
+html.theme-dark .md code{background:#181d22}
+html.theme-dark .md pre{background:#141a1e}
+html.theme-dark .md pre code{background:none}
+html.theme-dark .md-table th,html.theme-dark .md-table td{border:1px solid var(--line)}
+html.theme-dark .md-toolbar button{border:1px solid var(--line);background:#182128;color:#acbecc}
+html.theme-dark .md-toolbar button:hover{background:#151b1f}
+html.theme-dark .md-preview{border:1px dashed var(--line);background:#12181c}
+html.theme-dark .wi-reaction{border:1px solid var(--line);background:#182128}
+html.theme-dark .wi-reaction.mine{border-color:#4c6e6a;background:#17201e}
+html.theme-dark .wi-react-picker summary{border:1px solid var(--line);color:var(--muted)}
+html.theme-dark .wi-react-picker>div{border:1px solid var(--line);background:#182128;box-shadow:0 8px 20px rgba(0,0,0,0.388)}
+html.theme-dark .wi-comment-edit summary{color:var(--muted)}
+html.theme-dark .wi-comment-delete{color:var(--muted)!important}
+html.theme-dark .wi-comment-actions label{color:var(--muted)}
+html.theme-dark .wi-thumb{border:1px solid var(--line)}
+html.theme-dark .wi-dropzone{border:2px dashed var(--line);color:var(--muted)}
+html.theme-dark .wi-dropzone.is-over{border-color:#4c6e6a;background:#151b1f}
+html.theme-dark .wi-time{border-top:1px solid var(--line)}
+html.theme-dark .wi-time-bar{background:#1c2126}
+html.theme-dark .wi-time-estimate{background:#3b82c4}
+html.theme-dark .wi-time-remaining{background:#e2a500}
+html.theme-dark .wi-time-spent{background:#2e9e5b}
+html.theme-dark .release-progress{background:#1c2126}
+html.theme-dark .release-done{background:#2e9e5b}
+html.theme-dark .release-doing{background:#3b82c4}
+html.theme-dark .release-overdue{background:#251918;color:#f08878}
+html.theme-dark .release-table tr.is-archived td{color:var(--muted)}
+html.theme-dark .bulk-bar{border:1px solid #304a47;background:#151b1f}
+html.theme-dark .wi-table tr.is-current td{background:#151b1f}
+html.theme-dark .wi-child-list li.is-current{background:#151b1f}
+html.theme-dark .your-work-project{border:1px solid var(--line);background:#182128;color:var(--ink);box-shadow:var(--shadow)}
+html.theme-dark .your-work-project:hover{border-color:#434f54}
+html.theme-dark .shortcut-help{border:1px solid var(--line)}
+html.theme-dark .shortcut-help::backdrop{background:rgba(255,255,255,0.45)}
+html.theme-dark .shortcut-help kbd{border:1px solid var(--line);background:#12181c}
 /* Theme tokens. The configured brand color stays the identity color of the
    sidebar and filled buttons; accents used as text are lifted toward white so
    they stay readable on dark surfaces whatever brand color is configured. */

@@ -9,12 +9,13 @@ from flask import abort, g, jsonify, request
 
 import app as core
 from serviceops_core.localization import tr
-from serviceops_core.projects import service
+from serviceops_core.projects import releases, service, tracking
 from serviceops_core.projects.models import Project, WorkItem, WorkItemComment
 from serviceops_models import db
 
 WRITE_FIELDS = {"title", "description", "type", "status_id", "priority", "assignee_ids", "labels", "parent_key",
-                "start_date", "due_date", "story_points", "estimate_minutes"}
+                "start_date", "due_date", "story_points", "estimate_minutes", "remaining_minutes", "component_ids",
+                "fix_version_ids", "affects_version_ids", "environment", "resolution_id", "flagged"}
 
 
 def project_document(project):
@@ -38,6 +39,11 @@ def item_document(item, include_comments=False):
         "start_date": item.start_date.isoformat() if item.start_date else None,
         "due_date": item.due_date.isoformat() if item.due_date else None,
         "story_points": item.story_points, "estimate_minutes": item.estimate_minutes,
+        "remaining_minutes": item.remaining_minutes, "spent_minutes": item.spent_minutes,
+        "resolution": item.resolution.name if item.resolution else None, "environment": item.environment,
+        "flagged": item.flagged, "components": [row.name for row in item.components],
+        "fix_versions": [row.name for row in item.fix_versions],
+        "affects_versions": [row.name for row in item.affects_versions],
         "created_at": item.created_at.isoformat(), "updated_at": item.updated_at.isoformat(),
         "resolved_at": item.resolved_at.isoformat() if item.resolved_at else None,
     }
@@ -67,13 +73,23 @@ def _fields(body, project):
     fields = {}
     mapping = {"title": "title", "description": "description", "type": "item_type", "status_id": "status_id",
                "priority": "priority", "labels": "labels", "start_date": "start_date", "due_date": "due_date",
-               "story_points": "story_points", "estimate_minutes": "estimate_minutes"}
+               "story_points": "story_points", "estimate_minutes": "estimate_minutes",
+               "remaining_minutes": "remaining_minutes", "environment": "environment", "resolution_id": "resolution_id"}
     for name, target in mapping.items():
         if name in body:
             value = body[name]
             if isinstance(value, bool) or isinstance(value, (dict, list)) and name != "labels":
                 abort(400, description=tr("{field} has the wrong type.", field=name))
             fields[target] = value
+    for name in ("component_ids", "fix_version_ids", "affects_version_ids"):
+        if name in body:
+            if not isinstance(body[name], list):
+                abort(400, description=tr("{field} must be a list of ids.", field=name))
+            fields[name] = body[name]
+    if "flagged" in body:
+        if not isinstance(body["flagged"], bool):
+            abort(400, description=tr("flagged must be true or false."))
+        fields["flagged"] = body["flagged"]
     if "assignee_ids" in body:
         if not isinstance(body["assignee_ids"], list):
             abort(400, description=tr("assignee_ids must be a list of user ids."))
@@ -87,6 +103,8 @@ def _fields(body, project):
 
 
 def register(app):
+    register_phase2(app)
+
     @app.get("/api/v1/projects")
     def api_projects():
         core.require_api_scope("projects:read")
@@ -136,7 +154,10 @@ def register(app):
             priority=fields.pop("priority", "medium"), assignee_ids=fields.pop("assignee_ids", None),
             labels=fields.pop("labels", None), parent_id=fields.pop("parent_id", None),
             start_date=fields.pop("start_date", None), due_date=fields.pop("due_date", None),
-            story_points=fields.pop("story_points", None), estimate_minutes=fields.pop("estimate_minutes", None))
+            story_points=fields.pop("story_points", None), estimate_minutes=fields.pop("estimate_minutes", None),
+            component_ids=fields.pop("component_ids", None), fix_version_ids=fields.pop("fix_version_ids", None),
+            affects_version_ids=fields.pop("affects_version_ids", None), environment=fields.pop("environment", "") or "",
+            resolution_id=fields.pop("resolution_id", None), flagged=fields.pop("flagged", False))
         document = {"data": item_document(item)}
         core.store_api_idempotency(idempotency_key, request_hash, document, 201)
         core.audit("api create", item.key, core.mobile_client_details(g.api_client), user_id=user.id,
@@ -171,3 +192,59 @@ def register(app):
         db.session.commit()
         return jsonify({"data": {"id": comment.id, "author": user.username, "body": comment.body,
                                  "created_at": comment.created_at.isoformat()}}), 201
+
+
+def worklog_document(row):
+    return {"id": row.id, "author": row.author.username, "started_at": row.started_at.isoformat(),
+            "minutes": row.minutes, "time_spent": tracking.format_duration(row.minutes), "comment": row.comment}
+
+
+def register_phase2(app):
+    @app.get("/api/v1/work-items/<item_key>/worklogs")
+    def api_item_worklogs(item_key):
+        core.require_api_scope("projects:read")
+        item = service.item_or_404(_user(), item_key)
+        return jsonify({"data": [worklog_document(row) for row in tracking.worklogs_for(item)]})
+
+    @app.post("/api/v1/work-items/<item_key>/worklogs")
+    def api_item_log_work(item_key):
+        core.require_api_scope("projects:write")
+        user = _user()
+        item = service.item_or_404(user, item_key)
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or not isinstance(body.get("time_spent"), str):
+            abort(400, description=tr("A JSON object with time_spent (for example \"2h 30m\") is required."))
+        for name in ("started_at", "comment", "remaining_mode", "new_remaining", "reduce_by"):
+            if name in body and not isinstance(body[name], str):
+                abort(400, description=tr("{field} must be a string.", field=name))
+        row = tracking.log_work(user, item, body["time_spent"], body.get("started_at"), body.get("comment", ""),
+                                body.get("remaining_mode", "auto"), body.get("new_remaining"), body.get("reduce_by"))
+        db.session.commit()
+        return jsonify({"data": worklog_document(row)}), 201
+
+    @app.post("/api/v1/work-items/<item_key>/votes")
+    def api_item_vote(item_key):
+        core.require_api_scope("projects:write")
+        user = _user()
+        item = service.item_or_404(user, item_key)
+        voted = service.toggle_vote(user, item)
+        db.session.commit()
+        return jsonify({"data": {"voted": voted, "votes": len(service.voters(item))}})
+
+    @app.get("/api/v1/projects/<key>/components")
+    def api_project_components(key):
+        core.require_api_scope("projects:read")
+        project = service.project_or_404(_user(), key)
+        return jsonify({"data": [{"id": row.id, "name": row.name, "description": row.description,
+                                  "lead": row.lead.username if row.lead else None,
+                                  "default_assignee": row.default_assignee} for row in releases.components(project)]})
+
+    @app.get("/api/v1/projects/<key>/versions")
+    def api_project_versions(key):
+        core.require_api_scope("projects:read")
+        project = service.project_or_404(_user(), key)
+        return jsonify({"data": [{"id": row.id, "name": row.name, "description": row.description,
+                                  "start_date": row.start_date.isoformat() if row.start_date else None,
+                                  "release_date": row.release_date.isoformat() if row.release_date else None,
+                                  "released": row.released, "archived": row.archived}
+                                 for row in releases.versions(project)]})

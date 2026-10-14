@@ -336,7 +336,9 @@ def register(app):
                         "description": "Requires projects:write and the Idempotency-Key header. Body fields: "
                                        "title (required), description, type (epic, story, task, bug, subtask), "
                                        "status_id, priority (highest, high, medium, low, lowest), assignee_ids, "
-                                       "labels, parent_key, start_date, due_date, story_points, estimate_minutes.",
+                                       "labels, parent_key, start_date, due_date, story_points, estimate_minutes, "
+                                       "remaining_minutes, component_ids, fix_version_ids, affects_version_ids, "
+                                       "environment, resolution_id, flagged.",
                         "parameters": [{"name": "Idempotency-Key", "in": "header", "required": True,
                                         "schema": {"type": "string"}}],
                         "requestBody": {"required": True, "content": {"application/json": {
@@ -353,6 +355,31 @@ def register(app):
                         "requestBody": {"required": True, "content": {"application/json": {
                             "schema": {"type": "object"}}}},
                     },
+                },
+                "/work-items/{key}/worklogs": {
+                    "parameters": [{"name": "key", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "get": {"summary": "A work item's work logs", "description": "Requires projects:read."},
+                    "post": {
+                        "summary": "Log work",
+                        "description": "Requires projects:write. Body: time_spent (Jira duration such as 2h 30m), "
+                                       "optional started_at (ISO date-time), comment, remaining_mode (auto, leave, "
+                                       "new, reduce) with new_remaining or reduce_by.",
+                        "requestBody": {"required": True, "content": {"application/json": {
+                            "schema": {"type": "object", "required": ["time_spent"]}}}},
+                    },
+                },
+                "/work-items/{key}/votes": {
+                    "parameters": [{"name": "key", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "post": {"summary": "Vote or remove your vote", "description": "Requires projects:write. "
+                             "You cannot vote for work you reported or for resolved work."},
+                },
+                "/projects/{key}/components": {
+                    "parameters": [{"name": "key", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "get": {"summary": "A project's components", "description": "Requires projects:read."},
+                },
+                "/projects/{key}/versions": {
+                    "parameters": [{"name": "key", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "get": {"summary": "A project's versions (releases)", "description": "Requires projects:read."},
                 },
                 "/work-items/{key}/comments": {
                     "parameters": [{"name": "key", "in": "path", "required": True, "schema": {"type": "string"}}],
