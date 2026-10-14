@@ -144,6 +144,22 @@ function initListFilter(container) {
     if (!builder.hidden && !rowsHost.children.length) addRow();
   });
 
+  // The builder floats over the list: close it on a click outside it or on
+  // Escape. Conditions stay as edited until Apply.
+  const closeBuilder = () => {
+    builder.hidden = true;
+    container.classList.remove("is-open");
+  };
+  document.addEventListener("click", (event) => {
+    if (!builder.hidden && !event.composedPath().includes(container)) closeBuilder();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !builder.hidden) {
+      closeBuilder();
+      toggle.focus();
+    }
+  });
+
   addButton.addEventListener("click", () => addRow());
 
   clearButton.addEventListener("click", () => {
