@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('Create project · {instance_name}', instance_name=instance_name) }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow"><a href="{{ url_for('projects.index') }}">{{ tr('PROJECTS') }}</a></p><h1>{{ tr('Create project') }}</h1><p>{{ tr('The key prefixes every work item number, for example WEB-12. It cannot be changed later.') }}</p></div></header>
+<form method="post" class="panel form-grid" data-project-form>
+  <label>{{ tr('Project name') }}<input name="name" required maxlength="160" data-project-name autofocus></label>
+  <label>{{ tr('Key') }}<input name="key" required maxlength="10" pattern="[A-Za-z][A-Za-z0-9]{1,9}" data-project-key aria-describedby="key-help" autocomplete="off"></label>
+  <p class="wide muted form-help" id="key-help">{{ tr('2 to 10 letters or digits, starting with a letter.') }}</p>
+  <label class="wide">{{ tr('Description') }}<textarea name="description" rows="3" maxlength="10000"></textarea></label>
+  <label>{{ tr('Access') }}<select name="visibility"><option value="private">{{ tr('Private: members only') }}</option><option value="open">{{ tr('Open: everyone in the organisation can view') }}</option></select></label>
+  <label>{{ tr('Project lead') }}<select name="lead_id"><option value="">{{ tr('Me') }}</option>{% for user in users %}<option value="{{ user.id }}">{{ user.name }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Colour') }}<input type="color" name="color" value="#0f6e7a"></label>
+  <div class="wide actions"><a class="button" href="{{ url_for('projects.index') }}">{{ tr('Cancel') }}</a><button class="primary">{{ tr('Create project') }}</button></div>
+</form>
+{% endblock %}

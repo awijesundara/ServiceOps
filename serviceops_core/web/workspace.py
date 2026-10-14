@@ -836,6 +836,8 @@ def register(app):
             for entry in navigation_entries(SETTING_GROUP_META):
                 if entry.client_management and not can_access_clients:
                     continue
+                if entry.setting and not setting_bool(entry.setting):
+                    continue
                 if entry.minimum_role and not role_at_least(current_user.effective_role, entry.minimum_role):
                     continue
                 if normalized_q in f"{entry.label} {entry.keywords}".casefold():
@@ -865,6 +867,10 @@ def register(app):
                                            Ticket.id.in_(matching_ticket_ids)).limit(20):
                 results.append({"type": row.kind.title(), "label": f"{row.number} · {row.title}",
                                 "url": url_for("ticket_detail", ticket_id=row.id), "meta": row.state})
+            from serviceops_core.projects import service as projects
+            for row in projects.search(current_user, q):
+                results.append({"type": "Work item", "label": f"{row.key} · {row.title}",
+                                "url": url_for("projects.item_detail", item_key=row.key), "meta": row.status.name})
             for row in visible_knowledge_query(current_user).filter(all_terms(
                 [Knowledge.title, Knowledge.body, Knowledge.category]
             )).limit(20):

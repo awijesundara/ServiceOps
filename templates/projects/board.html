@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "projects/_macros.html" import type_icon, priority_icon, assignee_faces with context %}
+{% block title %}{{ tr('{key} board · {instance_name}', key=project.key, instance_name=instance_name) }}{% endblock %}
+{% block content %}<span hidden data-live-watch="project:{{ project.id }}"></span>
+{% include "projects/_header.html" %}
+{% set filter_extra %}<label><span>{{ tr('Group rows by') }}</span><select name="swimlane"><option value="none">{{ tr('No grouping') }}</option><option value="assignee" {% if swimlane == 'assignee' %}selected{% endif %}>{{ tr('Assignee') }}</option><option value="epic" {% if swimlane == 'epic' %}selected{% endif %}>{{ tr('Epic') }}</option></select></label>{% endset %}
+{% include "projects/_filters.html" %}
+<section class="project-board" aria-label="{{ tr('Project board') }}" data-project-board data-project="{{ project.key }}" data-can-edit="{{ 'true' if can_edit else 'false' }}">
+  <div class="project-board-columns project-board-heads">
+    {% for column in columns %}{% set status = column.status %}{% set total = counts.get(status.id, 0) %}
+    <div class="project-column{% if status.wip_limit and total > status.wip_limit %} over-limit{% endif %}" data-status="{{ status.id }}" data-category="{{ status.category }}">
+      <header>
+        <h2>{{ status.name }}</h2>
+        <span class="project-column-count" data-count="{{ total }}" data-limit="{{ status.wip_limit or '' }}" title="{{ tr('Work in progress limit {limit}', limit=status.wip_limit) if status.wip_limit else tr('Work items in this status') }}">{{ total }}{% if status.wip_limit %} / {{ status.wip_limit }}{% endif %}</span>
+      </header>
+    </div>
+    {% endfor %}
+  </div>
+  {% for lane_title in lane_titles %}{% set lane_index = loop.index0 %}
+  {% if lane_title %}<h3 class="project-swimlane-title">{{ lane_title }}</h3>{% endif %}
+  <div class="project-board-columns project-lane">
+    {% for column in columns %}{% set status = column.status %}{% set items = column.lanes[lane_index] %}
+    <div class="project-column-body" data-status="{{ status.id }}" aria-label="{{ status.name }}">
+      <div class="project-cards" data-drop-status="{{ status.id }}">
+        {% for item in items %}
+        <article class="wi-card" draggable="{{ 'true' if can_edit else 'false' }}" data-item-key="{{ item.key }}" data-item-id="{{ item.id }}">
+          <a class="wi-card-title" href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.title }}</a>
+          {% if item.labels %}<div class="wi-labels">{% for label in item.labels[:3] %}<span class="wi-label">{{ label.label }}</span>{% endfor %}</div>{% endif %}
+          {% if item.parent and item.parent.item_type == 'epic' %}<span class="wi-epic" title="{{ tr('Epic') }}">{{ item.parent.title }}</span>{% endif %}
+          <div class="wi-card-meta">
+            {{ type_icon(item.item_type) }}<span class="wi-key">{{ item.key }}</span>{{ priority_icon(item.priority) }}
+            {% if item.story_points is not none %}<span class="wi-points" title="{{ tr('Story points') }}">{{ item.story_points|round(1)|string|replace('.0', '') }}</span>{% endif %}
+            {% if item.due_date %}<span class="wi-due{% if item.due_date < now().date() and item.status.category != 'done' %} overdue{% endif %}" title="{{ tr('Due date') }}">{{ item.due_date.strftime('%d %b') }}</span>{% endif %}
+            {{ assignee_faces(item.assignees) }}
+          </div>
+        </article>
+        {% endfor %}
+        <p class="project-empty" {% if items %}hidden{% endif %}><span class="project-empty-idle">{{ tr('No work items') }}</span><span class="project-empty-drop">{{ tr('Drop here') }}</span></p>
+      </div>
+      {% if can_edit and lane_index == 0 %}
+      <form method="post" action="{{ url_for('projects.new_item', key=project.key) }}" class="project-quick-add">
+        <input type="hidden" name="status_id" value="{{ status.id }}"><input type="hidden" name="return" value="board">
+        <label class="visually-hidden" for="quick-{{ status.id }}">{{ tr('New work item in {status}', status=status.name) }}</label>
+        <input id="quick-{{ status.id }}" name="title" maxlength="255" placeholder="{{ tr('+ Add a work item') }}" required>
+        <select name="item_type" aria-label="{{ tr('Type') }}">{% for t in item_types if t not in ('epic', 'subtask') %}<option value="{{ t }}">{{ tr(item_type_labels[t]) }}</option>{% endfor %}</select>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

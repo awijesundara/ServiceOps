@@ -474,6 +474,8 @@ html.theme-dark .people-profile-facts a{color:var(--dk-accent-strong)}
 html.theme-dark .rt-link-status[data-kind=error]{color:#ec8575}
 html.theme-dark .rt-link-status[data-kind=ok]{color:var(--dk-accent-strong)}
 html.theme-dark .record-grid .record-field{color:#a1b4bc}
+html.theme-dark .linked-work-items li{border-bottom:1px solid #292f33}
+html.theme-dark .linked-work-items li:last-child{border-bottom:0}
 /* platform.css */
 html.theme-dark .unified-nav{background:#182128;border-bottom:1px solid var(--line)}
 html.theme-dark .nav-toggle,html.theme-dark .nav-icon{border:0;background:transparent}
@@ -1109,6 +1111,83 @@ html.theme-dark .ai-chat.is-page .ai-chat-memory{background:rgba(24,33,40,0.98)}
 html.theme-dark .detail-list dt{color:var(--muted)}
 html.theme-dark .ai-action-draft{border-color:var(--ai-amber,#62503b)}
 html.theme-dark .ai-error{color:#f38a7c}
+/* projects.css */
+html.theme-dark .empty-state{color:var(--muted)}
+html.theme-dark .empty-state h3{color:var(--ink)}
+html.theme-dark .button.danger,html.theme-dark button.danger{color:var(--red);border-color:#543835}
+html.theme-dark .button.danger:hover,html.theme-dark button.danger:hover{background:#211817}
+html.theme-dark .project-badge{background:var(--project-color);color:#ffffff}
+html.theme-dark .project-title .eyebrow a{color:inherit}
+html.theme-dark .project-tabs{border-bottom:1px solid var(--line)}
+html.theme-dark .project-tabs a{color:var(--muted);border-bottom:3px solid transparent}
+html.theme-dark .project-tabs a:hover{color:var(--ink)}
+html.theme-dark .project-tabs a[aria-current=page]{color:var(--ink);border-bottom-color:var(--dk-accent)}
+html.theme-dark .project-table tr.is-archived td{color:var(--muted)}
+html.theme-dark .project-filters label{color:var(--muted)}
+html.theme-dark .project-column{border:1px solid var(--line);border-bottom:0;background:#171d21}
+html.theme-dark .project-column h2{color:#a4b4c0}
+html.theme-dark .project-column-count{color:var(--muted);background:#182128}
+html.theme-dark .project-column.over-limit{background:#251918}
+html.theme-dark .project-column.over-limit .project-column-count{background:#c0392b;color:#fff}
+html.theme-dark .project-swimlane-title{color:var(--ink)}
+html.theme-dark .project-column-body{border:1px solid var(--line);border-top:0;background:#141a1e}
+html.theme-dark .project-cards.drop-target{background:#182121;outline:2px dashed #4c6e6a}
+html.theme-dark .project-empty{color:var(--muted)}
+html.theme-dark .wi-card{border:1px solid var(--line);background:#182128;box-shadow:var(--shadow)}
+html.theme-dark .wi-card:hover{border-color:#434f54}
+html.theme-dark .wi-card-title{color:var(--ink)}
+html.theme-dark .wi-card-meta{color:var(--muted)}
+html.theme-dark .wi-key{color:#9dafbc}
+html.theme-dark .wi-label{background:#181d22;color:#a4b4c0}
+html.theme-dark .wi-epic{background:#221d2a;color:#b79ef9}
+html.theme-dark .wi-points{background:#1c2126;color:#acbecc}
+html.theme-dark .wi-due.overdue{color:var(--red)}
+html.theme-dark .wi-type::after{background:#182128}
+html.theme-dark .wi-type-epic{background:#7e57c2}
+html.theme-dark .wi-type-story{background:#2e9e5b}
+html.theme-dark .wi-type-task{background:#3b82c4}
+html.theme-dark .wi-type-bug{background:#d64541}
+html.theme-dark .wi-type-subtask{background:#5d8aa8}
+html.theme-dark .wi-type-subtask::after{background:transparent;border:2px solid #292f33}
+html.theme-dark .wi-priority-highest{background:#c0392b}
+html.theme-dark .wi-priority-high{background:#e0662a}
+html.theme-dark .wi-priority-medium{background:#e2a500}
+html.theme-dark .wi-priority-low{background:#3b82c4}
+html.theme-dark .wi-priority-lowest{background:#5d8aa8}
+html.theme-dark .wi-face{border:2px solid #292f33}
+html.theme-dark .wi-face-more{color:var(--muted)}
+html.theme-dark .wi-status-todo{background:#1b2025;color:#a4b4c0}
+html.theme-dark .wi-status-in_progress{background:#19232f;color:#6faef3}
+html.theme-dark .wi-status-done{background:#13241b;color:#63b981}
+html.theme-dark .wi-summary a{color:var(--ink)}
+html.theme-dark .wi-breadcrumb{color:var(--muted)}
+html.theme-dark .wi-breadcrumb a{color:inherit}
+html.theme-dark .wi-breadcrumb a:hover{color:var(--ink)}
+html.theme-dark .wi-progress-bar{background:#1c2126}
+html.theme-dark .wi-progress-fill{background:#2e9e5b}
+html.theme-dark .wi-child-list li,html.theme-dark .wi-link-list li,html.theme-dark .wi-attachment-list li{border-bottom:1px solid #292f33}
+html.theme-dark .wi-child-list li:last-child,html.theme-dark .wi-link-list li:last-child,html.theme-dark .wi-attachment-list li:last-child{border-bottom:0}
+html.theme-dark .wi-child-title{color:var(--ink)}
+html.theme-dark .wi-link-relation{color:var(--muted)}
+html.theme-dark .wi-remove{color:var(--muted)}
+html.theme-dark .wi-remove:hover{color:var(--red)}
+html.theme-dark .wi-tabs{border-bottom:1px solid var(--line)}
+html.theme-dark .wi-tabs button{border:0;border-bottom:3px solid transparent;background:none;color:var(--muted)}
+html.theme-dark .wi-tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--dk-accent)}
+html.theme-dark .wi-history li{border-bottom:1px solid #292f33}
+html.theme-dark .wi-old{color:var(--muted)}
+html.theme-dark .wi-details label{color:var(--muted)}
+html.theme-dark .wi-readonly dt{color:var(--muted)}
+html.theme-dark .wi-meta{border-top:1px solid var(--line)}
+html.theme-dark .project-inline-add label{color:var(--muted)}
+html.theme-dark .people-chip{background:#1a1f24;color:var(--ink)}
+html.theme-dark .people-chip button{border:0;background:none;color:var(--muted)}
+html.theme-dark .people-chip button:hover{color:var(--red);background:#182128}
+html.theme-dark .people-options{border:1px solid var(--line);background:#182128;box-shadow:0 10px 26px rgba(0,0,0,0.432)}
+html.theme-dark .people-options li{color:var(--ink)}
+html.theme-dark .people-options li[aria-selected=true],html.theme-dark .people-options li:hover{background:#161c20}
+html.theme-dark .people-options .people-none{color:var(--muted)}
+html.theme-dark .wi-child-list a,html.theme-dark .wi-link-list a,html.theme-dark .wi-attachment-list a{color:var(--dk-accent-strong)}
 /* Theme tokens. The configured brand color stays the identity color of the
    sidebar and filled buttons; accents used as text are lifted toward white so
    they stay readable on dark surfaces whatever brand color is configured. */

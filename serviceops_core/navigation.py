@@ -17,6 +17,8 @@ class NavigationEntry:
     params: Mapping[str, str] = field(default_factory=dict)
     minimum_role: str | None = None
     client_management: bool = False
+    # Shown only when this boolean setting is on (an optional module).
+    setting: str | None = None
 
 
 NAVIGATION_ENTRIES = (
@@ -72,6 +74,8 @@ NAVIGATION_ENTRIES = (
     NavigationEntry("Notification templates", "Subject body email message content", "notification_templates_admin", minimum_role="admin"),
     NavigationEntry("Guided tours", "Onboarding walkthrough help", "guided_tours_admin", minimum_role="admin"),
     NavigationEntry("Data governance", "Retention legal hold GDPR export erasure privacy", "data_governance_admin", minimum_role="admin"),
+    NavigationEntry("Projects", "Project management boards Kanban Scrum Jira ClickUp work items epics stories tasks bugs", "projects.index", setting="PROJECTS_ENABLED"),
+    NavigationEntry("My work items", "Project work items assigned to me", "projects.my_items", setting="PROJECTS_ENABLED"),
     NavigationEntry("Client management", "Customer support external clients SysOps", "client_management_home", client_management=True),
     NavigationEntry("Customer tickets", "Client cases conversations replies internal notes", "client_tickets", client_management=True),
     NavigationEntry("Client organizations", "Customer companies accounts", "client_organizations", client_management=True),

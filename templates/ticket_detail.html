@@ -111,6 +111,13 @@
   <a href="#gov-outages">{{ tr('Outages') }}</a>
   {% endif %}<a href="#attachments">{{ tr('Attachments ({attachments})', attachments=(ticket.attachments|length)) }}</a><a href="#event-history">{{ tr('Event history') }}</a>
 </nav>
+{% set project_items = linked_work_items('ticket', ticket.id) %}
+{% if project_items %}
+<section class="panel" id="project-work-items">
+  <header class="section-heading"><div><h2>{{ tr('Project work items') }}</h2><p>{{ tr('Delivery work linked to this record') }}</p></div><span>{{ tr('{count} linked', count=project_items|length) }}</span></header>
+  <ul class="linked-work-items">{% for item in project_items %}<li><a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.key }}</a> {{ item.title }} <span class="badge">{{ item.status.name }}</span> <small class="muted">{{ item.project.name }}</small></li>{% endfor %}</ul>
+</section>
+{% endif %}
 <section class="panel event-history-panel" id="event-history">
   <header class="section-heading"><div><p class="eyebrow">{{ tr('EVENT STREAM') }}</p><h2>{{ tr('Event history') }}</h2></div><span>{{ tr('{history} events', history=(history|length)) }}</span></header>
   {% if can_manage_ticket %}

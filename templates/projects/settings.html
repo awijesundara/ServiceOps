@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('{key} settings · {instance_name}', key=project.key, instance_name=instance_name) }}{% endblock %}
+{% block content %}
+{% include "projects/_header.html" %}
+<div class="project-settings">
+  <form method="post" class="panel form-grid" id="details">
+    <input type="hidden" name="action" value="details"><input type="hidden" name="section" value="details">
+    <h2 class="wide">{{ tr('Details') }}</h2>
+    <label>{{ tr('Project name') }}<input name="name" value="{{ project.name }}" required maxlength="160"></label>
+    <label>{{ tr('Key') }}<input value="{{ project.key }}" disabled aria-describedby="key-fixed"></label>
+    <p class="wide muted form-help" id="key-fixed">{{ tr('The key is part of every work item number and cannot change.') }}</p>
+    <label class="wide">{{ tr('Description') }}<textarea name="description" rows="3" maxlength="10000">{{ project.description }}</textarea></label>
+    <label>{{ tr('Access') }}<select name="visibility"><option value="private" {% if project.visibility == 'private' %}selected{% endif %}>{{ tr('Private: members only') }}</option><option value="open" {% if project.visibility == 'open' %}selected{% endif %}>{{ tr('Open: everyone in the organisation can view') }}</option></select></label>
+    <label>{{ tr('Project lead') }}<select name="lead_id"><option value="">{{ tr('No lead') }}</option>{% for user in users %}<option value="{{ user.id }}" {% if user.id == project.lead_id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
+    <label>{{ tr('Colour') }}<input type="color" name="color" value="{{ project.color }}"></label>
+    <div class="wide actions"><button class="primary">{{ tr('Save details') }}</button></div>
+  </form>
+
+  <section class="panel" id="members" aria-labelledby="members-title">
+    <div class="panel-head"><div><h2 id="members-title">{{ tr('Members') }}</h2><p>{{ tr('Administrators manage settings, members and statuses. Members create and edit work items. Viewers read and comment. Organisation administrators can always manage every project.') }}</p></div></div>
+    <div class="table-scroll"><table>
+      <thead><tr><th scope="col">{{ tr('Person') }}</th><th scope="col">{{ tr('Role') }}</th><th scope="col"><span class="visually-hidden">{{ tr('Actions') }}</span></th></tr></thead>
+      <tbody>{% for member in members %}<tr>
+        <td>{{ user_avatar(member.user, 'avatar wi-face', link=False) }} {{ user_link(member.user) }}</td>
+        <td><form method="post" class="inline-form"><input type="hidden" name="action" value="member"><input type="hidden" name="section" value="members"><input type="hidden" name="user_id" value="{{ member.user_id }}">
+          <label class="visually-hidden" for="role-{{ member.user_id }}">{{ tr('Role of {name}', name=member.user.name) }}</label>
+          <select id="role-{{ member.user_id }}" name="role" data-autosubmit>{% for role in roles %}<option value="{{ role }}" {% if role == member.role %}selected{% endif %}>{{ tr(role_labels[role]) }}</option>{% endfor %}</select>
+          <noscript><button class="button">{{ tr('Save') }}</button></noscript></form></td>
+        <td><form method="post" class="inline-form" data-confirm="{{ tr('Remove {name} from this project?', name=member.user.name) }}"><input type="hidden" name="action" value="remove_member"><input type="hidden" name="section" value="members"><input type="hidden" name="user_id" value="{{ member.user_id }}"><button class="button">{{ tr('Remove') }}</button></form></td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    <form method="post" class="project-inline-add"><input type="hidden" name="action" value="member"><input type="hidden" name="section" value="members">
+      <label>{{ tr('Add person') }}<select name="user_id" required data-enhance-select><option value="">{{ tr('Choose a person') }}</option>{% set member_ids = members|map(attribute='user_id')|list %}{% for user in users if user.id not in member_ids %}<option value="{{ user.id }}">{{ user.name }} ({{ user.username }})</option>{% endfor %}</select></label>
+      <label>{{ tr('Role') }}<select name="role">{% for role in roles %}<option value="{{ role }}" {% if role == 'member' %}selected{% endif %}>{{ tr(role_labels[role]) }}</option>{% endfor %}</select></label>
+      <button class="primary">{{ tr('Add member') }}</button>
+    </form>
+  </section>
+
+  <section class="panel" id="statuses" aria-labelledby="statuses-title">
+    <div class="panel-head"><div><h2 id="statuses-title">{{ tr('Workflow statuses') }}</h2><p>{{ tr('Statuses are the board columns, left to right. Each belongs to a category used for progress and reports. A work-in-progress limit marks the column when exceeded.') }}</p></div></div>
+    <div class="table-scroll"><table class="status-table">
+      <thead><tr><th scope="col">{{ tr('Order') }}</th><th scope="col">{{ tr('Status') }}</th><th scope="col">{{ tr('Category') }}</th><th scope="col">{{ tr('WIP limit') }}</th><th scope="col">{{ tr('Work items') }}</th><th scope="col"><span class="visually-hidden">{{ tr('Actions') }}</span></th></tr></thead>
+      <tbody>{% for status in project.statuses %}<tr>
+        <td class="status-order">
+          <form method="post" class="inline-form"><input type="hidden" name="action" value="move_status"><input type="hidden" name="section" value="statuses"><input type="hidden" name="status_id" value="{{ status.id }}"><button class="link-button" name="direction" value="up" aria-label="{{ tr('Move {name} left', name=status.name) }}" {% if loop.first %}disabled{% endif %}>↑</button><button class="link-button" name="direction" value="down" aria-label="{{ tr('Move {name} right', name=status.name) }}" {% if loop.last %}disabled{% endif %}>↓</button></form>
+        </td>
+        <td colspan="3"><form method="post" class="status-edit"><input type="hidden" name="action" value="update_status"><input type="hidden" name="section" value="statuses"><input type="hidden" name="status_id" value="{{ status.id }}">
+          <label><span class="visually-hidden">{{ tr('Name') }}</span><input name="name" value="{{ status.name }}" required maxlength="60"></label>
+          <label><span class="visually-hidden">{{ tr('Category') }}</span><select name="category">{% for c in categories %}<option value="{{ c }}" {% if c == status.category %}selected{% endif %}>{{ tr(category_labels[c]) }}</option>{% endfor %}</select></label>
+          <label><span class="visually-hidden">{{ tr('WIP limit') }}</span><input name="wip_limit" type="number" min="1" max="999" value="{{ status.wip_limit or '' }}" placeholder="{{ tr('None') }}"></label>
+          <button class="button">{{ tr('Save') }}</button></form></td>
+        <td>{{ counts.get(status.id, 0) }}</td>
+        <td>{% if project.statuses|length > 1 %}<details class="status-delete"><summary class="button">{{ tr('Delete') }}</summary><form method="post"><input type="hidden" name="action" value="delete_status"><input type="hidden" name="section" value="statuses"><input type="hidden" name="status_id" value="{{ status.id }}"><label>{{ tr('Move its work items to') }}<select name="replacement_id">{% for other in project.statuses if other.id != status.id %}<option value="{{ other.id }}">{{ other.name }}</option>{% endfor %}</select></label><button class="button danger">{{ tr('Delete {name}', name=status.name) }}</button></form></details>{% endif %}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    <form method="post" class="project-inline-add"><input type="hidden" name="action" value="add_status"><input type="hidden" name="section" value="statuses">
+      <label>{{ tr('New status') }}<input name="name" required maxlength="60"></label>
+      <label>{{ tr('Category') }}<select name="category">{% for c in categories %}<option value="{{ c }}">{{ tr(category_labels[c]) }}</option>{% endfor %}</select></label>
+      <button class="primary">{{ tr('Add status') }}</button>
+    </form>
+  </section>
+
+  <section class="panel" id="archive">
+    <h2>{{ tr('Archive') }}</h2>
+    {% if project.archived_at %}
+    <p>{{ tr('This project is archived: it is read-only and hidden from the project list.') }}</p>
+    <form method="post"><input type="hidden" name="action" value="restore"><button class="primary">{{ tr('Restore project') }}</button></form>
+    {% else %}
+    <p>{{ tr('Archiving makes the project read-only and hides it from the project list. Nothing is deleted.') }}</p>
+    <form method="post" data-confirm="{{ tr('Archive {name}?', name=project.name) }}"><input type="hidden" name="action" value="archive"><button class="button danger">{{ tr('Archive project') }}</button></form>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

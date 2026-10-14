@@ -75,6 +75,13 @@ def register(app):
             kind, _, raw_id = item.partition(":")
             if item == "tickets" and role_at_least(current_user.effective_role, "agent"):
                 watch.append("tickets")
+            elif kind in ("project", "work_item") and raw_id.isdigit():
+                from serviceops_core.projects import service as projects
+                from serviceops_models import Project, WorkItem
+                record = db.session.get(Project if kind == "project" else WorkItem, int(raw_id))
+                project = record if kind == "project" else (record.project if record else None)
+                if project and projects.enabled() and projects.can_view(current_user, project):
+                    watch.append(f"{kind}:{record.id}")
             elif kind == "ticket" and raw_id.isdigit():
                 ticket = core.tenant_query(Ticket).filter_by(id=int(raw_id)).first()
                 if ticket and user_can_view_ticket(current_user, ticket):

@@ -573,6 +573,20 @@ document.addEventListener("DOMContentLoaded", () => {
     showLiveBanner(tr("Someone else just updated this record."), tr("Reload to see it"));
   }
 
+  // Project boards and work items: one banner per burst of other people's changes.
+  let watchedChangeTimer = null;
+  function showWatchedChanged(data) {
+    if (!liveWatch || data.key !== liveWatch || data.self) return;
+    clearTimeout(watchedChangeTimer);
+    watchedChangeTimer = setTimeout(() => {
+      if (liveWatch.startsWith("work_item:")) {
+        showLiveBanner(tr("Someone else just updated this work item."), tr("Reload to see it"));
+      } else {
+        showLiveBanner(tr("Work items in this project have changed."), tr("Refresh"));
+      }
+    }, 1500);
+  }
+
   // Work lists hear only that some ticket changed; a burst of changes
   // (bulk updates, imports) shows one banner after it settles.
   let listChangeTimer = null;
@@ -729,6 +743,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       source.addEventListener("ticket", event => showRecordUpdated(JSON.parse(event.data)));
       source.addEventListener("tickets", event => showListUpdated(JSON.parse(event.data)));
+      source.addEventListener("changed", event => showWatchedChanged(JSON.parse(event.data)));
       source.addEventListener("signed-out", () => { source.close(); live = false; });
       source.addEventListener("error", () => {
         // CONNECTING: the browser retries by itself. CLOSED: the server

@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v=app_version) }}">
   {% if ui_direction == 'rtl' %}<link rel="stylesheet" href="{{ url_for('static', filename='rtl.css', v=app_version) }}">{% endif %}
   {% if request.endpoint == 'task_board' %}<link rel="stylesheet" href="{{ url_for('static', filename='task-board.css', v=app_version) }}">{% endif %}
+  {% if request.blueprint == 'projects' %}<link rel="stylesheet" href="{{ url_for('static', filename='projects.css', v=app_version) }}">{% endif %}
   {% if request.endpoint in ['status_page', 'status_page_default'] %}<link rel="stylesheet" href="{{ url_for('static', filename='status-page.css', v=app_version) }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v=app_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v=app_version) }}">
@@ -40,6 +41,7 @@
   <script src="{{ url_for('static', filename='admin-nav.js', v=app_version) }}" defer></script>
   <script src="{{ url_for('static', filename='admin-context.js', v=app_version) }}" defer></script>
   {% if request.endpoint == 'ticket_detail' %}<script src="{{ url_for('static', filename='attachment-drop.js', v=app_version) }}" defer></script>{% endif %}
+  {% if request.blueprint == 'projects' %}<script src="{{ url_for('static', filename='projects.js', v=app_version) }}" defer></script>{% endif %}
   {% if current_user.is_authenticated %}<script src="{{ url_for('static', filename='guided-tour.js', v=app_version) }}" defer></script>{% endif %}
   {% if current_user.is_authenticated and ((request.endpoint or '').startswith('ai.') or ai_chat_available(current_user)) %}
   <link rel="stylesheet" href="{{ url_for('static', filename='ai-chat.css', v=app_version) }}">
@@ -91,6 +93,16 @@
         <a href="{{ url_for('org_chart') }}" {% if nav_active('org_chart') %}class="active" aria-current="page"{% endif %}>{{ tr('Organization chart') }}</a>
       </div>
     </details>
+
+    {% if projects_enabled %}
+    <details class="nav-group" {% if request.blueprint == 'projects' %}open{% endif %}>
+      <summary><span class="nav-symbol" aria-hidden="true">▤</span><span>{{ tr('Projects') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>
+      <div class="nav-group-items">
+        <a href="{{ url_for('projects.index') }}" {% if request.endpoint == 'projects.index' %}class="active" aria-current="page"{% endif %}>{{ tr('All projects') }}</a>
+        <a href="{{ url_for('projects.my_items') }}" {% if request.endpoint == 'projects.my_items' %}class="active" aria-current="page"{% endif %}>{{ tr('My work items') }}</a>
+      </div>
+    </details>
+    {% endif %}
 
     <details class="nav-group" {% if request.endpoint in ['catalog','knowledge','modules','mobile_app'] %}open{% endif %}>
       <summary><span class="nav-symbol" aria-hidden="true">◎</span><span>{{ tr('Self-service') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>

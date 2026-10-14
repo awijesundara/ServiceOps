@@ -89,6 +89,13 @@ class Hub:
                     stream.offer(frame)
                 if "tickets" in stream.watch:
                     stream.offer(list_frames[event.get("actor") == stream.user_id])
+        elif event.get("type") == "watch":
+            # Project pages: the key names a project or work item the stream
+            # was authorised to watch; the frame says only that it changed.
+            key = event.get("key")
+            for stream in self.streams:
+                if stream.tenant_id == tenant and key in stream.watch:
+                    stream.offer(sse("changed", {"key": key, "self": event.get("actor") == stream.user_id}))
 
     def broadcast(self, frame):
         for stream in self.streams:

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "projects/_macros.html" import type_icon, priority_icon, status_pill, assignee_faces with context %}
+{% block title %}{{ tr('{key} work items · {instance_name}', key=project.key, instance_name=instance_name) }}{% endblock %}
+{% block content %}<span hidden data-live-watch="project:{{ project.id }}"></span>
+{% include "projects/_header.html" %}
+{% set filter_extra %}<label><span>{{ tr('Group by') }}</span><select name="group">{% for value, label in [('none', 'No grouping'), ('status', 'Status'), ('type', 'Type'), ('assignee', 'Assignee'), ('epic', 'Epic')] %}<option value="{{ value }}" {% if group == value %}selected{% endif %}>{{ tr(label) }}</option>{% endfor %}</select></label><label><span>{{ tr('Sort by') }}</span><select name="sort">{% for value, label in [('rank', 'Rank'), ('priority', 'Priority'), ('due', 'Due date'), ('updated', 'Recently updated'), ('created', 'Recently created'), ('key', 'Key')] %}<option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ tr(label) }}</option>{% endfor %}</select></label><label><span>{{ tr('Status') }}</span><select name="category"><option value="">{{ tr('Any status') }}</option><option value="open" {% if filters.category == 'open' %}selected{% endif %}>{{ tr('Not done') }}</option>{% for c in categories %}<option value="{{ c }}" {% if filters.category == c %}selected{% endif %}>{{ tr(category_labels[c]) }}</option>{% endfor %}</select></label>{% endset %}
+{% include "projects/_filters.html" %}
+<section class="panel project-list" data-project-list>
+  <p class="muted project-list-count">{{ tr('{count} work items', count=total) }}</p>
+  {% if total %}
+  {% for title, items in groups %}
+  {% if title %}<h2 class="project-group-title">{{ title }} <span class="badge">{{ items|length }}</span></h2>{% endif %}
+  <div class="table-scroll"><table class="wi-table">
+    <thead><tr><th scope="col">{{ tr('Type') }}</th><th scope="col">{{ tr('Key') }}</th><th scope="col">{{ tr('Summary') }}</th><th scope="col">{{ tr('Status') }}</th><th scope="col">{{ tr('Assignees') }}</th><th scope="col">{{ tr('Priority') }}</th><th scope="col">{{ tr('Points') }}</th><th scope="col">{{ tr('Due') }}</th></tr></thead>
+    <tbody>
+    {% for item in items %}<tr>
+      <td>{{ type_icon(item.item_type) }}</td>
+      <td class="wi-key-cell"><a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.key }}</a></td>
+      <td class="wi-summary"><a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.title }}</a>{% for label in item.labels[:3] %} <span class="wi-label">{{ label.label }}</span>{% endfor %}</td>
+      <td>{% if can_edit %}<select class="wi-inline-status" data-item-key="{{ item.key }}" aria-label="{{ tr('Status of {key}', key=item.key) }}">{% for status in project.statuses %}<option value="{{ status.id }}" {% if status.id == item.status_id %}selected{% endif %}>{{ status.name }}</option>{% endfor %}</select>{% else %}{{ status_pill(item.status) }}{% endif %}</td>
+      <td>{% if item.assignees %}{{ assignee_faces(item.assignees) }}{% else %}<span class="muted">{{ tr('Unassigned') }}</span>{% endif %}</td>
+      <td>{{ priority_icon(item.priority) }} {{ tr(priority_labels[item.priority]) }}</td>
+      <td>{{ item.story_points|round(1)|string|replace('.0', '') if item.story_points is not none else '—' }}</td>
+      <td>{% if item.due_date %}<span class="wi-due{% if item.due_date < now().date() and item.status.category != 'done' %} overdue{% endif %}">{{ item.due_date.isoformat() }}</span>{% else %}—{% endif %}</td>
+    </tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% endfor %}
+  {% if pages > 1 %}<nav class="pagination" aria-label="{{ tr('Pages') }}">{% if prev_url %}<a class="button" href="{{ prev_url }}">{{ tr('Previous') }}</a>{% endif %}<span>{{ tr('Page {page} of {pages}', page=page_number, pages=pages) }}</span>{% if next_url %}<a class="button" href="{{ next_url }}">{{ tr('Next') }}</a>{% endif %}</nav>{% endif %}
+  {% else %}
+  <div class="empty-state"><h3>{{ tr('No work items match') }}</h3><p>{{ tr('Change the filters, or create the first work item.') if filters else tr('Create the first work item to get started.') }}</p>{% if can_edit %}<a class="primary" href="{{ url_for('projects.new_item', key=project.key) }}">{{ tr('Create work item') }}</a>{% endif %}</div>
+  {% endif %}
+</section>
+{% endblock %}
