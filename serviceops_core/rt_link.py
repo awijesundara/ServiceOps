@@ -16,7 +16,7 @@ import requests
 from serviceops_core import rt_import
 from serviceops_core.localization import tr
 
-RT_ID = re.compile(r"#? *(\d{1,10})")
+RT_ID = re.compile(r"#? ?(\d{1,10})")  # input is whitespace-normalized first: at most one space
 _HTML_TAG = re.compile(r"<[^<>]+>")  # excluding "<" keeps stripping linear on unclosed tags
 
 
