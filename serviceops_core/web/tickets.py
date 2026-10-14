@@ -144,6 +144,7 @@ from serviceops_models import (
     RequestedItem,
     RTImportJob,
     ServiceOffering,
+    GroupMember,
     SupportGroup,
     TaskCI,
     TaskHistory,
@@ -325,9 +326,23 @@ def register(app):
                 "url": record_url(task),
             }
 
+        # A team manager (or an administrator) can open one member's queue
+        # from the manager portal.
+        person = current_user
+        member_id = request.args.get("assignee", "")
+        if member_id:
+            person = tenant_query(User).filter_by(id=int(member_id) if member_id.isdigit() else 0).first_or_404()
+            managed = {group.id for group in core.team_groups().filter(SupportGroup.manager_id == current_user.id)}
+            member_groups = {row.group_id for row in GroupMember.query.filter_by(user_id=person.id)}
+            if person.id != current_user.id and not (role_at_least(current_user.effective_role, "admin")
+                                                     or managed & member_groups):
+                abort(403, description=tr("Only this person's team manager can view their task queue."))
         assigned_to_me, team_tasks = [], []
         for model, kind_label in ((OperationalTask, None), (CatalogTask, "SCTASK")):
-            mine = open_tasks(model).filter(model.assignee_id == current_user.id).all()
+            mine = open_tasks(model).filter(model.assignee_id == person.id).all()
+            if person.id != current_user.id:
+                assigned_to_me.extend(row_for(task, kind_label or task.task_kind.upper()) for task in mine)
+                continue
             mine_ids = {task.id for task in mine}
             assigned_to_me.extend(
                 row_for(task, kind_label or task.task_kind.upper()) for task in mine
@@ -351,6 +366,7 @@ def register(app):
         team_tasks.sort(key=sort_key)
         return render_template(
             "task_queue.html", assigned_to_me=assigned_to_me, team_tasks=team_tasks,
+            person=person if person.id != current_user.id else None,
         )
 
     @app.get("/tickets/<kind>")
@@ -401,6 +417,23 @@ def register(app):
         field_spec["group"] = {"label": "Assignment group", "type": "choice",
                                 "options": [(str(g.id), g.name) for g in filter_groups]}
         value_labels = {("group", str(g.id)): g.name for g in filter_groups}
+        # Filters the manager portal links to: open, resolved recently, SLA
+        # state, and the assignee (offered only for people already in the filter).
+        days = sorted({"7", "30", "90"} | {c["value"] for c in conditions
+                                           if c["field"] == "resolved_within_days" and c["value"].isdigit()}, key=int)
+        field_spec["open"] = {"label": "Open", "type": "choice", "options": [("1", "Yes")]}
+        field_spec["sla"] = {"label": "SLA", "type": "choice", "options": [("breached", "Breached"),
+                                                                           ("at_risk", "At risk")]}
+        field_spec["resolved_within_days"] = {"label": "Resolved within (days)", "type": "choice",
+                                              "options": [(d, d) for d in days]}
+        assignee_ids = {int(c["value"]) for c in conditions if c["field"] == "assignee" and c["value"].isdigit()}
+        if assignee_ids:
+            people = tenant_query(User).filter(User.id.in_(assignee_ids)).order_by(User.name).all()
+            field_spec["assignee"] = {"label": "Assigned to", "type": "choice",
+                                      "options": [(str(u.id), u.name) for u in people]}
+        for key in ("open", "sla", "resolved_within_days", "assignee"):
+            for value, label in field_spec.get(key, {}).get("options", []):
+                value_labels[(key, value)] = label
         breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec, value_labels)
         client_fields = {
             key: {"label": tr_value(spec["label"]), "type": spec["type"],

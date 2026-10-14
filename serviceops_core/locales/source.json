@@ -7261,6 +7261,9 @@
    "id": "Nothing assigned to you right now."
   },
   {
+   "id": "Nothing assigned to {name} right now."
+  },
+  {
    "id": "Nothing awaiting your approval."
   },
   {
@@ -7519,6 +7522,12 @@
    "id": "Only the fulfillment team can add tasks to this requested item."
   },
   {
+   "id": "Only the incident's assignee or its assigned team can act on it."
+  },
+  {
+   "id": "Only the incident's assignee or its assigned team can investigate it with AI."
+  },
+  {
    "id": "Only the reporter or a project administrator can delete a work item."
   },
   {
@@ -7526,6 +7535,9 @@
   },
   {
    "id": "Only the view's creator or an admin can delete it."
+  },
+  {
+   "id": "Only this person's team manager can view their task queue."
   },
   {
    "id": "Only used when \"Storage backend\" above is set to IPFS. PostgreSQL remains required for everything except file attachments in this release."
@@ -7591,6 +7603,9 @@
   },
   {
    "id": "Open tasks"
+  },
+  {
+   "id": "Open tasks assigned to {name}"
   },
   {
    "id": "Open ticket list"
@@ -9432,6 +9447,9 @@
    "id": "Resolved tickets that met their SLA"
   },
   {
+   "id": "Resolved within (days)"
+  },
+  {
    "id": "Resolved without reopening"
   },
   {
@@ -9741,6 +9759,9 @@
   },
   {
    "id": "SERVICEOPS MOBILE"
+  },
+  {
+   "id": "SLA"
   },
   {
    "id": "SLA \"at risk\" warning window (hours)"

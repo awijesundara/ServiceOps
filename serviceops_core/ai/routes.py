@@ -450,7 +450,7 @@ def register(app):
     def incident(ticket_id):
         identity = service.actor(current_user)
         config = service.enabled_config(identity.tenant_id, lock=request.method == "POST")
-        ticket = service.visible_incident(identity, ticket_id)
+        ticket = service.responsible_incident(identity, ticket_id)
         if request.method == "POST":
             try:
                 request_key = str(uuid.UUID(request.form.get("request_key", "")))
@@ -575,7 +575,7 @@ def register(app):
             abort(409, description=tr("Only a completed investigation can become a ticket action."))
         if not service.sources_accessible(identity, json.loads(run.sources_json or "[]")):
             abort(403, description=tr("You no longer have access to all evidence used by this investigation."))
-        ticket = service.visible_incident(identity, run.ticket_id)
+        ticket = service.responsible_incident(identity, run.ticket_id)
         existing = AIAction.query.filter_by(run_id=run.id, action_type="add_comment").first()
         if existing:
             return redirect(url_for("ai.action_review", action_id=existing.id))
@@ -641,6 +641,9 @@ def register(app):
             abort(410, description=tr("This proposal expired. Prepare it again from a current investigation."))
         if not sources_ok:
             abort(403, description=tr("You no longer have access to all evidence used by this investigation."))
+        if run.kind == "investigation" and not service.responsible_for(
+                SimpleNamespace(id=actor_id, tenant_id=identity.tenant_id), ticket):
+            abort(403, description=tr("Only the incident's assignee or its assigned team can act on it."))
         locked_ticket = Ticket.query.filter_by(id=ticket.id, tenant_id=identity.tenant_id).with_for_update().one()
         expected = action.target_updated_at.replace(tzinfo=now().tzinfo)
         actual = locked_ticket.updated_at.replace(tzinfo=now().tzinfo)
@@ -958,5 +961,6 @@ def register(app):
 
     app.register_blueprint(blueprint)
     app.jinja_env.globals["ai_available"] = service.available
+    app.jinja_env.globals["ai_can_investigate"] = service.can_investigate
     app.jinja_env.globals["ai_chat_available"] = service.chat_available
     app.jinja_env.globals["ai_chat_retention_days"] = service.chat_retention_days

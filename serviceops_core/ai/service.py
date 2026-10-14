@@ -49,6 +49,34 @@ def visible_incident(identity, ticket_id):
     return read_access.tickets(identity).filter_by(id=ticket_id, kind="incident").first_or_404()
 
 
+def responsible_for(identity, ticket):
+    """Whether this person works the incident: its assignee, or the manager or
+    a member of its assignment group. Seeing an incident is not enough to
+    investigate it with AI or act on it from an investigation."""
+    import app as core
+    if ticket.tenant_id != identity.tenant_id:
+        return False
+    if ticket.assignee_id == identity.id:
+        return True
+    group = core.ticket_owning_group(ticket)
+    if not group or not group.active or group.tenant_id != identity.tenant_id:
+        return False
+    return group.manager_id == identity.id or core.GroupMember.query.filter_by(
+        group_id=group.id, user_id=identity.id).first() is not None
+
+
+def responsible_incident(identity, ticket_id):
+    ticket = visible_incident(identity, ticket_id)
+    if not responsible_for(identity, ticket):
+        abort(403, description=tr("Only the incident's assignee or its assigned team can investigate it with AI."))
+    return ticket
+
+
+def can_investigate(user, ticket):
+    """For templates: AI is on for incidents here and this person works the ticket."""
+    return available(user) and responsible_for(actor(user), ticket)
+
+
 def chat_available(user):
     """Whether this person may see the chatbot: signed in, an allowed role, and enabled by the administrator."""
     if not user.is_authenticated or not user.active or user.effective_role not in access.CHAT_ROLES or ipfs_enabled():

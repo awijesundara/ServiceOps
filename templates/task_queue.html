@@ -4,7 +4,7 @@
 <header class="page-head"><div><p class="eyebrow">{{ tr('WORK QUEUE') }}</p><h1>{{ tr('My tasks') }}</h1><p>{{ tr('Change, problem, event, and service catalog tasks assigned to you or your teams.') }}</p></div></header>
 
 <section class="panel table-panel">
-<h2>{{ tr('Assigned to me') }}</h2>
+<h2>{% if person %}{{ tr('Open tasks assigned to {name}', name=person.name) }}{% else %}{{ tr('Assigned to me') }}{% endif %}</h2>
 <table>
   <thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Type') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Team') }}</th><th>{{ tr('Due') }}</th></tr></thead>
   <tbody>
@@ -18,13 +18,13 @@
       <td>{{ (row.due_at|usertime('%b %d, %H:%M')) if row.due_at else "—" }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="empty">{{ tr('Nothing assigned to you right now.') }}</td></tr>
+    <tr><td colspan="6" class="empty">{% if person %}{{ tr('Nothing assigned to {name} right now.', name=person.name) }}{% else %}{{ tr('Nothing assigned to you right now.') }}{% endif %}</td></tr>
     {% endfor %}
   </tbody>
 </table>
 </section>
 
-<section class="panel table-panel">
+{% if not person %}<section class="panel table-panel">
 <h2>{{ tr("My teams' open tasks") }}</h2>
 <table>
   <thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Type') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Team') }}</th><th>{{ tr('Assigned to') }}</th><th>{{ tr('Due') }}</th></tr></thead>
@@ -44,5 +44,5 @@
     {% endfor %}
   </tbody>
 </table>
-</section>
+</section>{% endif %}
 {% endblock %}

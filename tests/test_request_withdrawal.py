@@ -85,3 +85,14 @@ def test_record_approvals_page_lists_only_the_callers_approvals(client, app):
     which has no approver_id: every non-administrator got a 500."""
     login(client, "employee", "Employee123!")
     assert client.get("/approvals").status_code == 200
+
+
+def test_waiting_approvals_link_to_the_record_being_approved(client, app):
+    ritm_id, _ = _order(client, app, name="Linked approval item")
+    client.post("/logout")
+    login(client, "database.manager", "Manager123!")
+    page = client.get("/approval-chains").data.decode()
+    box = page[page.index("Waiting for your decision"):]
+    with app.app_context():
+        number = db.session.get(RequestedItem, ritm_id).number
+    assert f'href="/ritm/{ritm_id}"' in box and number in box and "Linked approval item" in box
