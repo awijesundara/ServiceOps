@@ -100,7 +100,7 @@ html.theme-dark .lookup-empty{color:var(--muted)}
 html.theme-dark .sla-breached-heading{color:var(--red)}
 html.theme-dark .sla-breached-cell{color:var(--red)}
 html.theme-dark .sla-at-risk-cell{color:#d29048}
-html.theme-dark .select-enhance::after{color:var(--muted)}
+html.theme-dark .select-enhance::after{border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;color:var(--ink)}
 html.theme-dark .select-enhance-option.current::after{color:var(--dk-accent-strong)}
 html.theme-dark .ci-attr-remove{color:var(--muted)}
 html.theme-dark .ci-attr-remove:hover{color:var(--red)}
