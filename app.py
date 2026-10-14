@@ -2529,6 +2529,7 @@ def record_reference(record_type, record_id):
         "sctask": CatalogTask,
         "work_task": OperationalTask,
         "knowledge": Knowledge,
+        "work_item": WorkItem,
     }
     model = model_map.get(record_type)
     return db.session.get(model, record_id) if model else None
@@ -2905,6 +2906,8 @@ def record_url(record):
     if isinstance(record, OperationalTask):
         parent = record_reference(record.parent_type, record.parent_id)
         return record_url(parent) if parent else "#"
+    if isinstance(record, WorkItem):
+        return url_for("projects.item_detail", item_key=record.key)
     return "#"
 
 

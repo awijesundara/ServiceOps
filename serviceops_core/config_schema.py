@@ -137,6 +137,11 @@ SETTING_DEFINITIONS = {
         {"key": "DASHBOARD_SHOW_SLA_WIDGETS", "label": "Show SLA breached / at-risk widgets", "type": "bool", "default": "true", "live": True},
         {"key": "DASHBOARD_SHOW_RECENT", "label": "Show \"Recently updated\"", "type": "bool", "default": "true", "live": True},
         {"key": "SLA_AT_RISK_HOURS", "label": "SLA \"at risk\" warning window (hours)", "type": "int", "default": "4", "min": 1, "max": 72, "live": True},
+        {"key": "PROJECTS_ENABLED", "label": "Enable project management (projects, boards, work items)", "type": "bool", "default": "false", "live": True},
+        {"key": "PROJECTS_CREATORS", "label": "Who can create projects", "type": "choice", "default": "manager", "live": True,
+         "choices": ["everyone", "agent", "manager", "admin"],
+         "choice_labels": {"everyone": "Everyone", "agent": "Agents and above", "manager": "Managers and administrators",
+                           "admin": "Administrators only"}},
     ],
     "my_workspace_widgets": [
         # One bool per WORKSPACE_WIDGET_REGISTRY entry (B-121 governance):
