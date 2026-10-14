@@ -66,6 +66,12 @@ with app.app_context():
                                       parent_id=fuzz_epic.id, assignee_ids=[fuzz_admin.id], labels="fuzz")
     projects.create_item(fuzz_admin, fuzz_project, "Fuzz subtask", item_type="subtask", parent_id=fuzz_story.id)
     projects.add_comment(fuzz_admin, fuzz_story, "Fuzz comment")
+    from serviceops_core.projects import releases as fuzz_releases, tracking as fuzz_tracking
+    fuzz_component = fuzz_releases.save_component(fuzz_admin, fuzz_project, "Fuzz component")
+    fuzz_version = fuzz_releases.save_version(fuzz_admin, fuzz_project, "1.0")
+    projects.update_item(fuzz_admin, fuzz_story, {"component_ids": [fuzz_component.id],
+                                                  "fix_version_ids": [fuzz_version.id], "estimate_minutes": 240})
+    fuzz_tracking.log_work(fuzz_admin, fuzz_story, "1h", comment="Fuzz work log")
     first_ticket = Ticket.query.first()
     if first_ticket:
         projects.add_link(fuzz_admin, fuzz_story, "relates", first_ticket.number)
