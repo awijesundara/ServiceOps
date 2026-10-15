@@ -26,7 +26,8 @@ def ai_browser_server():
     with app.app_context():
         user = User.query.filter_by(username="admin").one()
         ticket = Ticket(number="INC-AI-BROWSER-" + __import__("uuid").uuid4().hex[:6], kind="incident", title="VPN browser investigation",
-                        description="VPN unavailable for the operator", requester_id=user.id, tenant_id=user.tenant_id)
+                        description="VPN unavailable for the operator", requester_id=user.id, assignee_id=user.id,
+                        tenant_id=user.tenant_id)
         db.session.add(ticket)
         db.session.commit()
         ticket_id = ticket.id
