@@ -682,9 +682,6 @@
    "id": "Add a version…"
   },
   {
-   "id": "Add a widget"
-  },
-  {
    "id": "Add a work note or comment… (type @ to mention someone)"
   },
   {
@@ -828,6 +825,15 @@
    "id": "Add user"
   },
   {
+   "id": "Add widget"
+  },
+  {
+   "id": "Add widgets"
+  },
+  {
+   "id": "Add widgets for the tickets, tasks, charts and notes you want to keep an eye on."
+  },
+  {
    "id": "Add {count} selected",
    "javascript": true
   },
@@ -960,6 +966,9 @@
   },
   {
    "id": "After each successful backup, have your backup script report it:"
+  },
+  {
+   "id": "Age"
   },
   {
    "id": "Agent"
@@ -2151,6 +2160,9 @@
    "id": "Change, problem, event, and service catalog tasks assigned to you or your teams."
   },
   {
+   "id": "Changed {when} by {name}"
+  },
+  {
    "id": "Changes"
   },
   {
@@ -2170,6 +2182,9 @@
   },
   {
    "id": "Charcoal surfaces with clear, cool accents."
+  },
+  {
+   "id": "Charts"
   },
   {
    "id": "Chat"
@@ -2932,6 +2947,9 @@
    "id": "Copy this token now"
   },
   {
+   "id": "Copy to my dashboards"
+  },
+  {
    "id": "Core switch stack"
   },
   {
@@ -3309,6 +3327,9 @@
   },
   {
    "id": "Customize the subject and body ServiceOps sends for each notification type. Use"
+  },
+  {
+   "id": "Customize this dashboard"
   },
   {
    "id": "Customize this widget to add links."
@@ -3818,6 +3839,9 @@
    "javascript": true
   },
   {
+   "id": "Drag a widget by its header, or use the arrows, to reorder. Configure sets its title, width and what it shows."
+  },
+  {
    "id": "Drag the image to reposition it, then use the slider to zoom. Only the circle is kept."
   },
   {
@@ -3825,9 +3849,6 @@
   },
   {
    "id": "Drag to reposition and zoom to crop before saving."
-  },
-  {
-   "id": "Drag widgets to reorder them, or use the arrows."
   },
   {
    "id": "Drop a file here or choose one"
@@ -4548,6 +4569,9 @@
   },
   {
    "id": "For deployments without direct internet access to this provider."
+  },
+  {
+   "id": "For example: My day"
   },
   {
    "id": "For example: Office server"
@@ -5415,6 +5439,9 @@
    "id": "Items cannot be added to a completed request."
   },
   {
+   "id": "Its owner has not added any widgets yet."
+  },
+  {
    "id": "Its work items move to"
   },
   {
@@ -5995,9 +6022,6 @@
    "id": "Make default"
   },
   {
-   "id": "Make your own editable copy"
-  },
-  {
    "id": "Manage contacts"
   },
   {
@@ -6292,6 +6316,9 @@
   },
   {
    "id": "More actions"
+  },
+  {
+   "id": "More dashboard actions"
   },
   {
    "id": "Move"
@@ -7657,6 +7684,9 @@
    "id": "Only users explicitly granted CCB approval authority are selected as voters for new non-standard changes. Removing authority does not rewrite historical decisions."
   },
   {
+   "id": "Only you can see this dashboard"
+  },
+  {
    "id": "Open"
   },
   {
@@ -7680,9 +7710,6 @@
    "javascript": true
   },
   {
-   "id": "Open first"
-  },
-  {
    "id": "Open full page"
   },
   {
@@ -7699,9 +7726,6 @@
   },
   {
    "id": "Open incidents and changes at priority {priority}."
-  },
-  {
-   "id": "Open list"
   },
   {
    "id": "Open models"
@@ -7722,6 +7746,12 @@
    "id": "Open tasks assigned to {name}"
   },
   {
+   "id": "Open these {count} tickets"
+  },
+  {
+   "id": "Open this first"
+  },
+  {
    "id": "Open ticket list"
   },
   {
@@ -7729,9 +7759,6 @@
   },
   {
    "id": "Open tickets where you are the assignee"
-  },
-  {
-   "id": "Open tickets · open tasks"
   },
   {
    "id": "Open to all SysOps members"
@@ -7789,7 +7816,7 @@
    "id": "Opened {count}"
   },
   {
-   "id": "Opens first"
+   "id": "Opens first when you choose Dashboards"
   },
   {
    "id": "Operational"
@@ -7817,6 +7844,9 @@
   },
   {
    "id": "Operator"
+  },
+  {
+   "id": "Optional"
   },
   {
    "id": "Optional -- leave blank for a silent field-only macro"
@@ -8164,6 +8194,9 @@
   },
   {
    "id": "Person"
+  },
+  {
+   "id": "Personal"
   },
   {
    "id": "Personal channel status updated."
@@ -10810,7 +10843,13 @@
    "id": "Share with every SysOps member"
   },
   {
+   "id": "Shared with {count} people in {name}"
+  },
+  {
    "id": "Shared with {count} people."
+  },
+  {
+   "id": "Shared with {count} person in {name}"
   },
   {
    "id": "Shares requests between all allowed services, favouring the ones you weight higher."
@@ -12090,10 +12129,7 @@
    "id": "This conversation is full. Start a new chat."
   },
   {
-   "id": "This dashboard has no widgets yet."
-  },
-  {
-   "id": "This dashboard has no widgets yet. Choose Customize to add some."
+   "id": "This dashboard is empty"
   },
   {
    "id": "This device's port"
@@ -12233,6 +12269,9 @@
   },
   {
    "id": "Ticket state entry"
+  },
+  {
+   "id": "Tickets"
   },
   {
    "id": "Tickets in this list have changed.",
@@ -14383,13 +14422,13 @@
    "javascript": true
   },
   {
-   "id": "{count} open"
-  },
-  {
    "id": "{count} open change"
   },
   {
    "id": "{count} open changes"
+  },
+  {
+   "id": "{count} open in total"
   },
   {
    "id": "{count} open incident"
@@ -15069,7 +15108,7 @@
    "id": "{tickets_seen} seen · {records_created} {value} ({events_created} events, {changes_created} changes) · {already_imported} already imported"
   },
   {
-   "id": "{tickets} tickets, {tasks} tasks"
+   "id": "{tickets} open tickets, {tasks} open tasks"
   },
   {
    "id": "{tickets} ticket{value} shown"

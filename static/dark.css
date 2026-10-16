@@ -1266,31 +1266,65 @@ html.theme-dark .wi-details .wi-status-select{border:0;background-color:#1b2025;
 html.theme-dark .wi-details .wi-status-select[data-category=in_progress]{background-color:#19232f;color:#6faef3}
 html.theme-dark .wi-details .wi-status-select[data-category=done]{background-color:#13241b;color:#63b981}
 /* dashboards.css */
-html.theme-dark .dash-popover{background:#182128;border:1px solid var(--line);box-shadow:0 12px 30px rgba(0,0,0,0.432)}
+html.theme-dark .dash-home-badge{background:var(--brand-amber-soft,#211809);color:#d5a265}
+html.theme-dark .dash-meta{color:var(--muted)}
+html.theme-dark .dash-meta span+span::before{color:var(--line)}
+html.theme-dark .dash-menu-panel{background:#182128;border:1px solid var(--line);box-shadow:0 12px 30px rgba(0,0,0,0.432)}
+html.theme-dark .dash-menu-panel button{border:0;background:none}
+html.theme-dark .dash-menu-panel button:hover{background:var(--brand-teal-soft,#191e23)}
+html.theme-dark .dash-menu-panel .dash-danger{color:#f38a7c}
 html.theme-dark .dash-tabs{border-bottom:1px solid var(--line)}
-html.theme-dark .dash-tabs a{border:1px solid var(--line);background:#182128;color:var(--ink)}
-html.theme-dark .dash-tabs a:hover{border-color:var(--dk-accent)}
+html.theme-dark .dash-tabs a,html.theme-dark .dash-tab-add{border:1px solid var(--line);background:#182128;color:var(--ink)}
+html.theme-dark .dash-tabs a:hover,html.theme-dark .dash-tab-add:hover{border-color:var(--dk-accent)}
 html.theme-dark .dash-tabs a.active{background:var(--green);border-color:var(--dk-accent);color:#fff}
 html.theme-dark .dash-tabs-label{color:var(--muted)}
-html.theme-dark .dash-grip{color:var(--muted)}
+html.theme-dark .dash-tab-add{color:var(--dk-accent-strong)}
+html.theme-dark .dash-popover{background:#182128;border:1px solid var(--line);box-shadow:0 12px 30px rgba(0,0,0,0.432)}
+html.theme-dark .dash-toolbar{border:1px dashed var(--dk-accent);background:var(--brand-teal-soft,#191e23)}
+html.theme-dark .dash-rename label{border:0}
+html.theme-dark .dash-add-panel{background:#182128;border:1px solid var(--line);box-shadow:0 16px 40px rgba(0,0,0,0.52)}
+html.theme-dark .dash-add-panel h3{color:var(--muted)}
+html.theme-dark .dash-hint{color:var(--muted)}
+html.theme-dark .dash-catalog-item{border:1px solid var(--line);background:#182128}
+html.theme-dark .dash-catalog-item:hover{border-color:var(--dk-accent);background:var(--brand-teal-soft,#191e23)}
+html.theme-dark .dash-catalog-item small{color:var(--muted)}
+html.theme-dark .dash-widget{background:#182128;border:1px solid var(--line);box-shadow:var(--shadow)}
+html.theme-dark .dash-icon{background:var(--brand-teal-soft,#191e23);color:var(--dk-accent-strong)}
+html.theme-dark .dash-chip{background:var(--bg);color:var(--muted)}
 html.theme-dark .dash-widget.is-drop-target{outline:2px solid var(--dk-accent)}
 html.theme-dark .dash-config{border:1px solid var(--line);background:var(--bg)}
-html.theme-dark .dash-tiles a{border:1px solid var(--line);color:inherit}
+html.theme-dark .dash-empty-line,html.theme-dark .dash-widget .empty,html.theme-dark .dash-empty-cell{color:var(--muted)}
+html.theme-dark .dash-tiles a{border:1px solid var(--line);border-left:4px solid var(--line);color:inherit}
 html.theme-dark .dash-tiles a:hover{border-color:var(--dk-accent)}
 html.theme-dark .dash-tiles span{color:var(--muted)}
+html.theme-dark .dash-tiles a.tone-warn{border-left-color:var(--brand-amber,#62503b);background:var(--brand-amber-soft,#211809)}
+html.theme-dark .dash-tiles a.tone-warn strong{color:#d5a265}
+html.theme-dark .dash-tiles a.tone-alert{border-left-color:#c0392b;background:#261a19}
+html.theme-dark .dash-tiles a.tone-alert strong{color:#f38a7c}
+html.theme-dark .dash-table th{border-bottom:1px solid var(--line)}
+html.theme-dark .dash-table td small{color:var(--muted)}
+html.theme-dark .dash-table .dash-unassigned{color:#d29048}
 html.theme-dark .dash-list li,html.theme-dark .dash-links li{border-bottom:1px solid var(--line)}
 html.theme-dark .dash-list li:last-child,html.theme-dark .dash-links li:last-child{border-bottom:0}
 html.theme-dark .dash-list small{color:var(--muted)}
 html.theme-dark .dash-list li.unread strong{color:var(--dk-accent-strong)}
-html.theme-dark .dash-bar-track{background:var(--brand-teal-soft,#191e23)}
+html.theme-dark .dash-links li{border:0}
+html.theme-dark .dash-links a{border:1px solid var(--line)}
+html.theme-dark .dash-links a:hover{border-color:var(--dk-accent)}
+html.theme-dark .dash-bar-row{color:inherit}
+html.theme-dark .dash-bar-row:hover{background:var(--bg)}
+html.theme-dark .dash-bar-track{background:var(--bg)}
 html.theme-dark .dash-bar-track i{background:var(--green)}
-html.theme-dark .dash-trend{border-bottom:1px solid var(--line)}
-html.theme-dark .dash-trend-day i.opened,html.theme-dark .dash-legend span.opened{background:var(--brand-amber,#5e3c0b)}
-html.theme-dark .dash-trend-day i.resolved,html.theme-dark .dash-legend span.resolved{background:var(--green)}
+html.theme-dark .dash-stack b{background:var(--brand-amber,#5e3c0b)}
+html.theme-dark .dash-trend-scale{color:var(--muted)}
+html.theme-dark .dash-trend{border-bottom:1px solid var(--line);background:linear-gradient(to bottom,var(--line) 1px,transparent 1px) 0 4px/100% 50%}
+html.theme-dark .dash-trend-day i.opened,html.theme-dark .dash-legend span.opened,html.theme-dark .dash-legend span.tasks{background:var(--brand-amber,#5e3c0b)}
+html.theme-dark .dash-trend-day i.resolved,html.theme-dark .dash-legend span.resolved,html.theme-dark .dash-legend span.tickets{background:var(--green)}
+html.theme-dark .dash-trend-axis{color:var(--muted)}
 html.theme-dark .dash-legend{color:var(--muted)}
-html.theme-dark .dash-catalog form{border:1px solid var(--line)}
-html.theme-dark .dash-catalog small{color:var(--muted)}
-html.theme-dark .dash-delete{border-top:1px solid var(--line)}
+html.theme-dark .dash-empty{background:#182128;border:1px dashed var(--line)}
+html.theme-dark .dash-empty p{color:var(--muted)}
+html.theme-dark .dash-empty-icon{background:var(--brand-teal-soft,#191e23);color:var(--dk-accent-strong)}
 /* Theme tokens. The configured brand color stays the identity color of the
    sidebar and filled buttons; accents used as text are lifted toward white so
    they stay readable on dark surfaces whatever brand color is configured. */
