@@ -144,6 +144,12 @@
    "id": "A configuration item cannot depend on itself."
   },
   {
+   "id": "A dashboard holds at most {count} widgets."
+  },
+  {
+   "id": "A dashboard name has 1 to 80 characters."
+  },
+  {
    "id": "A dedicated Pinata gateway URL is required"
   },
   {
@@ -324,6 +330,9 @@
   },
   {
    "id": "A visual map of configuration items and how they connect."
+  },
+  {
+   "id": "A widget title has at most 120 characters."
   },
   {
    "id": "A work item can have at most 20 labels."
@@ -671,6 +680,9 @@
   },
   {
    "id": "Add a version…"
+  },
+  {
+   "id": "Add a widget"
   },
   {
    "id": "Add a work note or comment… (type @ to mention someone)"
@@ -1102,6 +1114,9 @@
   },
   {
    "id": "An asset tag and a name are required."
+  },
+  {
+   "id": "An empty dashboard"
   },
   {
    "id": "An epic cannot have a parent."
@@ -1989,6 +2004,9 @@
    "id": "Catalog items use their own policy, or the default when none is chosen (Catalog & fulfillment routing)."
   },
   {
+   "id": "Catalog requests"
+  },
+  {
    "id": "Catalog tasks cannot be added until the RITM is approved."
   },
   {
@@ -2280,6 +2298,9 @@
   },
   {
    "id": "Choose a valid {label}."
+  },
+  {
+   "id": "Choose a widget from the list."
   },
   {
    "id": "Choose a work item type."
@@ -2670,6 +2691,9 @@
    "id": "Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk. Toggle a service to publish or hide it on the"
   },
   {
+   "id": "Configure"
+  },
+  {
    "id": "Configure the URL and an API token under"
   },
   {
@@ -2884,6 +2908,9 @@
   {
    "id": "Copied",
    "javascript": true
+  },
+  {
+   "id": "Copied to your dashboards as {name}."
   },
   {
    "id": "Copy",
@@ -3284,6 +3311,12 @@
    "id": "Customize the subject and body ServiceOps sends for each notification type. Use"
   },
   {
+   "id": "Customize this widget to add links."
+  },
+  {
+   "id": "Customize this widget to write a note."
+  },
+  {
    "id": "Customized"
   },
   {
@@ -3305,7 +3338,19 @@
    "id": "Dashboard content and service-level warning thresholds."
   },
   {
+   "id": "Dashboard created. Add, arrange and configure its widgets."
+  },
+  {
+   "id": "Dashboard saved."
+  },
+  {
+   "id": "Dashboard widgets"
+  },
+  {
    "id": "Dashboard · {instance_name}"
+  },
+  {
+   "id": "Dashboards"
   },
   {
    "id": "Data"
@@ -3461,6 +3506,9 @@
    "javascript": true
   },
   {
+   "id": "Delete dashboard"
+  },
+  {
    "id": "Delete group {name}? Members lose the access it grants."
   },
   {
@@ -3477,6 +3525,9 @@
   },
   {
    "id": "Delete this comment?"
+  },
+  {
+   "id": "Delete this dashboard and its widgets?"
   },
   {
    "id": "Delete this policy? Catalog items using it fall back to the default."
@@ -3774,6 +3825,9 @@
   },
   {
    "id": "Drag to reposition and zoom to crop before saving."
+  },
+  {
+   "id": "Drag widgets to reorder them, or use the arrows."
   },
   {
    "id": "Drop a file here or choose one"
@@ -4198,6 +4252,9 @@
    "id": "Everyone"
   },
   {
+   "id": "Everyone in {name} sees this dashboard; each person only ever sees records they may open."
+  },
+  {
    "id": "Everyone signed in to this organization can open your profile. Your name and role are always shown. Choose which other details are public; the rest stay private to you."
   },
   {
@@ -4484,6 +4541,9 @@
    "id": "Font size"
   },
   {
+   "id": "For"
+  },
+  {
    "id": "For agents, managers and administrators."
   },
   {
@@ -4755,9 +4815,6 @@
   },
   {
    "id": "HUMAN APPROVAL REQUIRED"
-  },
-  {
-   "id": "Half width"
   },
   {
    "id": "Hardware assets with their assignment, purchase and warranty data."
@@ -5373,7 +5430,13 @@
    "id": "Job title"
   },
   {
+   "id": "Join a team to see its workload."
+  },
+  {
    "id": "Jump to a configuration item…"
+  },
+  {
+   "id": "Just me"
   },
   {
    "id": "Just the address. The rest is added for you."
@@ -5899,6 +5962,9 @@
    "id": "MM/dd/yyyy"
   },
   {
+   "id": "MY DASHBOARD"
+  },
+  {
    "id": "Macro name is required."
   },
   {
@@ -5927,6 +5993,9 @@
   },
   {
    "id": "Make default"
+  },
+  {
+   "id": "Make your own editable copy"
   },
   {
    "id": "Manage contacts"
@@ -6116,6 +6185,9 @@
    "id": "Midnight"
   },
   {
+   "id": "Mine"
+  },
+  {
    "id": "Minimize interface animation."
   },
   {
@@ -6264,13 +6336,7 @@
    "id": "My Telegram"
   },
   {
-   "id": "My Workspace"
-  },
-  {
    "id": "My Workspace widgets"
-  },
-  {
-   "id": "My Workspace · {instance_name}"
   },
   {
    "id": "My approvals"
@@ -6282,10 +6348,13 @@
    "id": "My chat destinations"
   },
   {
-   "id": "My notifications"
+   "id": "My dashboard"
   },
   {
-   "id": "My open tickets"
+   "id": "My dashboards"
+  },
+  {
+   "id": "My notifications"
   },
   {
    "id": "My organization allows outside AI services"
@@ -6498,10 +6567,16 @@
    "id": "New customer ticket · {instance_name}"
   },
   {
+   "id": "New dashboard"
+  },
+  {
    "id": "New fulfillment task"
   },
   {
    "id": "New group"
+  },
+  {
+   "id": "New knowledge"
   },
   {
    "id": "New knowledge article"
@@ -6639,6 +6714,9 @@
    "id": "No articles found."
   },
   {
+   "id": "No articles yet."
+  },
+  {
    "id": "No attachments."
   },
   {
@@ -6658,6 +6736,9 @@
   },
   {
    "id": "No change-plan values changed."
+  },
+  {
+   "id": "No changes planned in this window."
   },
   {
    "id": "No changes reached a final outcome in the last 30 days."
@@ -6927,13 +7008,22 @@
    "id": "No open tasks for your teams."
   },
   {
+   "id": "No open tasks."
+  },
+  {
    "id": "No open ticket data yet."
   },
   {
    "id": "No open tickets right now."
   },
   {
+   "id": "No open tickets."
+  },
+  {
    "id": "No open work assigned to a team yet."
+  },
+  {
+   "id": "No open work items."
   },
   {
    "id": "No open work."
@@ -7007,6 +7097,9 @@
   },
   {
    "id": "No requested items."
+  },
+  {
+   "id": "No requests."
   },
   {
    "id": "No resolved {priority} incidents"
@@ -7099,9 +7192,6 @@
   },
   {
    "id": "No users match this search."
-  },
-  {
-   "id": "No widgets selected. Use \"Customize\" below to add some."
   },
   {
    "id": "No work item or record {number} that you can see."
@@ -7244,6 +7334,9 @@
   },
   {
    "id": "Not-sensitive patterns"
+  },
+  {
+   "id": "Note"
   },
   {
    "id": "Notes"
@@ -7405,6 +7498,9 @@
    "id": "One per line. A request that mentions any of them stays private."
   },
   {
+   "id": "One per line: Label | /path, for example Network changes | /tickets/change"
+  },
+  {
    "id": "One per line: a short name such as gg_unix, or a full DN such as cn=admins,ou=groups,dc=example,dc=com"
   },
   {
@@ -7412,6 +7508,9 @@
   },
   {
    "id": "One project with its statuses"
+  },
+  {
+   "id": "One third"
   },
   {
    "id": "One work item with its comments"
@@ -7522,6 +7621,9 @@
    "id": "Only the current owning team's manager or an admin can reassign this record."
   },
   {
+   "id": "Only the dashboard's owner, or for a team dashboard its manager or an administrator, can change it."
+  },
+  {
    "id": "Only the fulfillment team can add tasks to this requested item."
   },
   {
@@ -7535,6 +7637,9 @@
   },
   {
    "id": "Only the requester, the person it is for, or an administrator can withdraw an open request."
+  },
+  {
+   "id": "Only the team's manager or an administrator can add a team dashboard."
   },
   {
    "id": "Only the view's creator or an admin can delete it."
@@ -7575,6 +7680,9 @@
    "javascript": true
   },
   {
+   "id": "Open first"
+  },
+  {
    "id": "Open full page"
   },
   {
@@ -7591,6 +7699,9 @@
   },
   {
    "id": "Open incidents and changes at priority {priority}."
+  },
+  {
+   "id": "Open list"
   },
   {
    "id": "Open models"
@@ -7618,6 +7729,9 @@
   },
   {
    "id": "Open tickets where you are the assignee"
+  },
+  {
+   "id": "Open tickets · open tasks"
   },
   {
    "id": "Open to all SysOps members"
@@ -7666,7 +7780,16 @@
    "id": "Opened"
   },
   {
+   "id": "Opened and resolved"
+  },
+  {
    "id": "Opened by"
+  },
+  {
+   "id": "Opened {count}"
+  },
+  {
+   "id": "Opens first"
   },
   {
    "id": "Operational"
@@ -7857,9 +7980,6 @@
   {
    "id": "Owning team: {team}",
    "javascript": true
-  },
-  {
-   "id": "PERSONAL WORKSPACE"
   },
   {
    "id": "PERSONALIZATION"
@@ -8068,9 +8188,6 @@
   },
   {
    "id": "Pick CIs by name or serial number…"
-  },
-  {
-   "id": "Pick and arrange the widgets you want on your own landing page."
   },
   {
    "id": "Pick what you are connecting to. You can change everything afterwards."
@@ -8326,6 +8443,9 @@
    "id": "Priority"
   },
   {
+   "id": "Priority 1 and 2"
+  },
+  {
    "id": "Priority levels must be unique and non-empty."
   },
   {
@@ -8472,6 +8592,9 @@
   },
   {
    "id": "Projects"
+  },
+  {
+   "id": "Projects are not enabled."
   },
   {
    "id": "Projects you belong to and projects open to your organisation."
@@ -9142,6 +9265,9 @@
    "id": "Remove this stage?"
   },
   {
+   "id": "Remove this widget?"
+  },
+  {
    "id": "Remove {key}"
   },
   {
@@ -9408,9 +9534,6 @@
    "id": "Reset preview"
   },
   {
-   "id": "Reset to default"
-  },
-  {
    "id": "Reset to recommended"
   },
   {
@@ -9454,6 +9577,9 @@
   },
   {
    "id": "Resolved without reopening"
+  },
+  {
+   "id": "Resolved {count}"
   },
   {
    "id": "Resolved {resolved_at}"
@@ -9930,9 +10056,6 @@
   },
   {
    "id": "Save item"
-  },
-  {
-   "id": "Save layout"
   },
   {
    "id": "Save major incident status"
@@ -11042,6 +11165,9 @@
    "id": "Start time"
   },
   {
+   "id": "Start with"
+  },
+  {
    "id": "Started"
   },
   {
@@ -11203,6 +11329,9 @@
    "id": "Successful with issues"
   },
   {
+   "id": "Suggested widgets"
+  },
+  {
    "id": "Suggests no service offering"
   },
   {
@@ -11308,6 +11437,9 @@
    "id": "System preferences"
   },
   {
+   "id": "TEAM DASHBOARD · {name}"
+  },
+  {
    "id": "TOTP-based multi-factor authentication for your account."
   },
   {
@@ -11404,7 +11536,13 @@
    "id": "Team name or vendor"
   },
   {
+   "id": "Team workload"
+  },
+  {
    "id": "Team workload, SLA exposure and performance across the teams you manage."
+  },
+  {
+   "id": "Team: {name}"
   },
   {
    "id": "Teams"
@@ -11874,6 +12012,9 @@
    "id": "Then"
   },
   {
+   "id": "There can be at most {count} dashboards here."
+  },
+  {
    "id": "These approvers delegated authority to you for an active absence window. You were not notified when the request was first opened; any decision records both identities."
   },
   {
@@ -11947,6 +12088,12 @@
   },
   {
    "id": "This conversation is full. Start a new chat."
+  },
+  {
+   "id": "This dashboard has no widgets yet."
+  },
+  {
+   "id": "This dashboard has no widgets yet. Choose Customize to add some."
   },
   {
    "id": "This device's port"
@@ -12052,6 +12199,9 @@
    "id": "Ticket categories"
   },
   {
+   "id": "Ticket chart"
+  },
+  {
    "id": "Ticket counts"
   },
   {
@@ -12068,6 +12218,9 @@
   },
   {
    "id": "Ticket lifecycle board"
+  },
+  {
+   "id": "Ticket list"
   },
   {
    "id": "Ticket number."
@@ -12242,6 +12395,9 @@
    "id": "Turn this off and hosted services are never used, whatever else is set. An outside service receives the question and the records needed to answer it, never the asker's name or email. Use a plan whose terms do not keep or train on what it receives: free tiers (Google AI Studio's, for example) may use it to improve the provider's products."
   },
   {
+   "id": "Two thirds"
+  },
+  {
    "id": "Two-factor authentication (MFA)"
   },
   {
@@ -12392,6 +12548,9 @@
   },
   {
    "id": "Up to date"
+  },
+  {
+   "id": "Upcoming changes"
   },
   {
    "id": "Update"
@@ -12963,7 +13122,10 @@
    "id": "Why does this differ from the calculated baseline?"
   },
   {
-   "id": "Widgets users may add to their personal workspace"
+   "id": "Widgets people may add to personal and team dashboards"
+  },
+  {
+   "id": "Width"
   },
   {
    "id": "Window"
@@ -13104,12 +13266,6 @@
    "id": "Workspace defaults"
   },
   {
-   "id": "Workspace layout saved."
-  },
-  {
-   "id": "Workspace reset to the default widget set."
-  },
-  {
    "id": "Write",
    "javascript": true
   },
@@ -13144,6 +13300,9 @@
   },
   {
    "id": "You are not allowed to create projects."
+  },
+  {
+   "id": "You are not in a team"
   },
   {
    "id": "You are not involved in this catalog task or its fulfillment."
@@ -13331,6 +13490,9 @@
   },
   {
    "id": "alive"
+  },
+  {
+   "id": "all"
   },
   {
    "id": "also every item without its own policy"
@@ -13798,6 +13960,9 @@
    "id": "or use a directory/local account"
   },
   {
+   "id": "order must be a list of widget ids."
+  },
+  {
    "id": "parent_id must be an integer comment identifier."
   },
   {
@@ -14218,6 +14383,9 @@
    "javascript": true
   },
   {
+   "id": "{count} open"
+  },
+  {
    "id": "{count} open change"
   },
   {
@@ -14466,6 +14634,9 @@
    "id": "{label} can have at most {limit} characters."
   },
   {
+   "id": "{label} has at most {max} characters."
+  },
+  {
    "id": "{label} is not a valid user."
   },
   {
@@ -14542,6 +14713,9 @@
   },
   {
    "id": "{members} member(s)"
+  },
+  {
+   "id": "{name} (copy)"
   },
   {
    "id": "{name} (outside)",
@@ -14621,6 +14795,9 @@
    "id": "{name} must be between {low} and {high}."
   },
   {
+   "id": "{name} now opens first."
+  },
+  {
    "id": "{name} released; {count} unfinished work items moved."
   },
   {
@@ -14649,6 +14826,9 @@
   },
   {
    "id": "{name} withdrew {numbers}: {reason}"
+  },
+  {
+   "id": "{name} · Dashboards · {instance_name}"
   },
   {
    "id": "{name} · {size}",
@@ -14760,6 +14940,12 @@
   },
   {
    "id": "{old} moved to {new}."
+  },
+  {
+   "id": "{opened} opened and {resolved} resolved"
+  },
+  {
+   "id": "{opened} opened, {resolved} resolved"
   },
   {
    "id": "{organizations} customer account{value}"
@@ -14881,6 +15067,9 @@
   },
   {
    "id": "{tickets_seen} seen · {records_created} {value} ({events_created} events, {changes_created} changes) · {already_imported} already imported"
+  },
+  {
+   "id": "{tickets} tickets, {tasks} tasks"
   },
   {
    "id": "{tickets} ticket{value} shown"

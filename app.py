@@ -6960,106 +6960,6 @@ def _read_and_filter_log_file():
     return parsed, error_message, log_path, filters
 
 
-def _workspace_widget_my_open_tickets(user):
-    terminal = ("Resolved", "Closed", "Cancelled")
-    rows = visible_ticket_query(user).filter(
-        Ticket.assignee_id == user.id, Ticket.state.notin_(terminal),
-    ).order_by(Ticket.priority, Ticket.updated_at.desc()).limit(8).all()
-    return {"tickets": rows}
-
-
-def _workspace_widget_recent_tickets(user):
-    rows = visible_ticket_query(user).filter(Ticket.deleted_at.is_(None)).order_by(
-        Ticket.updated_at.desc()
-    ).limit(8).all()
-    return {"tickets": rows}
-
-
-def _workspace_widget_sla_at_risk(user):
-    terminal = ("Resolved", "Closed", "Cancelled")
-    ticket_ids = [
-        row[0] for row in visible_ticket_query(user).filter(Ticket.state.notin_(terminal))
-        .with_entities(Ticket.id).all()
-    ]
-    rows = []
-    if ticket_ids:
-        breach_horizon = now() + timedelta(hours=setting_int("SLA_AT_RISK_HOURS", 4))
-        sla_rows = TaskSLA.query.filter(
-            TaskSLA.target_type == "ticket", TaskSLA.target_id.in_(ticket_ids),
-            TaskSLA.stage == "In Progress", TaskSLA.breached.is_(False),
-        ).order_by(TaskSLA.breach_at).all()
-        tickets_by_id = {t.id: t for t in Ticket.query.filter(Ticket.id.in_(ticket_ids)).all()}
-        for row in sla_rows:
-            breach_at = row.breach_at if row.breach_at.tzinfo else row.breach_at.replace(tzinfo=timezone.utc)
-            if breach_at <= breach_horizon and row.target_id in tickets_by_id:
-                rows.append(tickets_by_id[row.target_id])
-    return {"tickets": rows[:8]}
-
-
-def _workspace_widget_approvals_awaiting_me(user):
-    votes = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
-        ApprovalVote.approver_id == user.id, ApprovalVote.state == "Requested",
-        ApprovalChain.tenant_id == user.tenant_id,
-    ).limit(8).all()
-    return {"votes": votes}
-
-
-def _workspace_widget_favorites(user):
-    rows = Favorite.query.filter_by(user_id=user.id).order_by(Favorite.created_at.desc()).limit(8).all()
-    return {"favorites": rows}
-
-
-def _workspace_widget_recently_viewed(user):
-    rows = RecentView.query.filter_by(user_id=user.id).order_by(RecentView.viewed_at.desc()).limit(8).all()
-    return {"views": rows}
-
-
-def _workspace_widget_notifications(user):
-    rows = Notification.query.filter_by(user_id=user.id).order_by(
-        Notification.read.asc(), Notification.created_at.desc()
-    ).limit(8).all()
-    return {"notifications": rows}
-
-
-def _workspace_widget_ticket_stats(user):
-    terminal = ("Resolved", "Closed", "Cancelled")
-    rows = visible_ticket_query(user).with_entities(Ticket.kind, Ticket.state).all()
-    counts = {"incident": 0, "change": 0, "open": 0}
-    for kind, state in rows:
-        if kind in ("incident", "change"):
-            counts[kind] += 1
-        if state not in terminal:
-            counts["open"] += 1
-    return {"counts": counts}
-
-
-# B-121: the closed catalog a personal workspace layout can be built from --
-# pre-built, server-rendered widgets reusing existing queries/authorization
-# (visible_ticket_query etc.), never arbitrary user-supplied content. Adding
-# a widget here means adding both a data function above and rendering logic
-# in my_workspace.html; removing/renaming one is safe -- UserWorkspaceLayout
-# .layout_json rows referencing a since-removed key are silently skipped at
-# render time. Enablement is governed instance-wide via the
-# WORKSPACE_WIDGET_<KEY>_ENABLED settings (see SETTING_DEFINITIONS) --
-# PlatformSetting is a single global row per key across the whole install,
-# same as every other entry in SETTING_DEFINITIONS, not actually per-tenant
-# despite the column existing on the table.
-WORKSPACE_WIDGET_REGISTRY = {
-    "ticket_stats": {"label": "Ticket counts", "default_span": 2, "data": _workspace_widget_ticket_stats},
-    "my_open_tickets": {"label": "My open tickets", "default_span": 1, "data": _workspace_widget_my_open_tickets},
-    "recent_tickets": {"label": "Recently updated tickets", "default_span": 1, "data": _workspace_widget_recent_tickets},
-    "sla_at_risk": {"label": "SLA at risk", "default_span": 1, "data": _workspace_widget_sla_at_risk},
-    "approvals_awaiting_me": {"label": "Approvals awaiting me", "default_span": 1, "data": _workspace_widget_approvals_awaiting_me},
-    "favorites": {"label": "Favorites", "default_span": 1, "data": _workspace_widget_favorites},
-    "recently_viewed": {"label": "Recently viewed", "default_span": 1, "data": _workspace_widget_recently_viewed},
-    "notifications": {"label": "Notifications", "default_span": 1, "data": _workspace_widget_notifications},
-}
-
-
-def workspace_widget_enabled(widget_key):
-    return setting_bool(f"WORKSPACE_WIDGET_{widget_key.upper()}_ENABLED", True)
-
-
 _test_schema_template = {}
 
 
@@ -7846,6 +7746,7 @@ def create_app(test_config=None):
         approval_policies,
         auth,
         client_management,
+        dashboards,
         cmdb,
         groups,
         itam,
@@ -7869,6 +7770,7 @@ def create_app(test_config=None):
     knowledge.register(app)
     cmdb.register(app)
     client_management.register(app)
+    dashboards.register(app)
     service_requests.register(app)
     projects.register(app)
 

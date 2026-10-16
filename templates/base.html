@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='utilities.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboards.css', v=asset_version) }}">
   {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='notification-audiences.css', v=asset_version) }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='client-management.css', v=asset_version) }}">
   {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css', v=asset_version) }}">{% endif %}
@@ -67,7 +68,7 @@
   <nav class="application-nav" aria-label="{{ tr('Application navigation') }}" data-application-nav>
     <label class="nav-filter"><span aria-hidden="true">⌕</span><input type="search" placeholder="{{ tr('Find menu') }}" aria-label="{{ tr('Find a menu item') }}" data-nav-filter></label>
     <a class="nav-home{% if nav_active('dashboard') %} active{% endif %}" href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">⌂</span><span>{{ tr('Home') }}</span></a>
-    <a class="nav-home{% if nav_active('my_workspace') %} active{% endif %}" href="{{ url_for('my_workspace') }}" {% if nav_active('my_workspace') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">▤</span><span>{{ tr('My Workspace') }}</span></a>
+    <a class="nav-home{% if request.endpoint in ('dashboards_home','dashboard_view') %} active{% endif %}" href="{{ url_for('dashboards_home') }}" {% if request.endpoint in ('dashboards_home','dashboard_view') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">▤</span><span>{{ tr('Dashboards') }}</span></a>
 
     {% if client_management_access %}
     <details class="nav-group nav-group-client" {% if request.endpoint in ['client_management_home','client_tickets','client_ticket_new','client_ticket_detail','client_organizations','client_contacts'] %}open{% endif %}>

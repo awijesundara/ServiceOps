@@ -1,0 +1,75 @@
+{# Dashboard widgets (B-464). Every value is escaped; links are records' own URLs
+   or internal paths validated by serviceops_core.dashboards.parse_links. #}
+{% macro ticket_rows(tickets) %}
+<table class="dash-table"><tbody>
+{% for ticket in tickets %}
+  <tr><td><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a></td>
+      <td class="dash-cell-title">{{ ticket.title }}</td>
+      <td><span class="priority {{ ticket.priority|lower }}">{{ ticket.priority }}</span></td>
+      <td><span class="badge">{{ tr_value(ticket.state) }}</span></td></tr>
+{% else %}<tr><td class="empty">{{ tr('Nothing here right now.') }}</td></tr>{% endfor %}
+</tbody></table>
+{% endmacro %}
+
+{% macro widget_body(item) %}{% set data = item.data %}
+{% if item.key == 'ticket_counts' %}
+  <div class="dash-tiles">{% for tile in data.tiles %}<a href="{{ tile.url }}"><span>{{ tr_value(tile.label) }}</span><strong>{{ tile.count }}</strong></a>{% endfor %}</div>
+{% elif item.key == 'ticket_list' %}{{ ticket_rows(data.tickets) }}
+{% elif item.key == 'ticket_chart' %}
+  {% if data.bars %}<ul class="dash-bars">{% for bar in data.bars %}<li><span class="dash-bar-label">{{ tr_value(bar.label) }}</span><span class="dash-bar-track"><i class="pct-w-{{ bar.pct }}"></i></span><strong>{{ bar.count }}</strong></li>{% endfor %}</ul>
+  <p class="muted dash-foot">{{ tr('{count} open', count=data.total) }}</p>
+  {% else %}<p class="empty">{{ tr('No open tickets.') }}</p>{% endif %}
+{% elif item.key == 'ticket_trend' %}
+  <div class="dash-trend" role="img" aria-label="{{ tr('{opened} opened and {resolved} resolved', opened=data.opened_total, resolved=data.resolved_total) }}">
+    {% for day in data.days %}<div class="dash-trend-day" title="{{ day.date }}: {{ tr('{opened} opened, {resolved} resolved', opened=day.opened, resolved=day.resolved) }}"><i class="opened pct-h-{{ day.opened_pct }}"></i><i class="resolved pct-h-{{ day.resolved_pct }}"></i></div>{% endfor %}
+  </div>
+  <p class="dash-legend"><span class="opened"></span>{{ tr('Opened {count}', count=data.opened_total) }} <span class="resolved"></span>{{ tr('Resolved {count}', count=data.resolved_total) }}</p>
+{% elif item.key == 'team_workload' %}
+  {% if data.missing_team %}<p class="empty">{{ tr('Join a team to see its workload.') }}</p>{% else %}
+  <ul class="dash-bars">{% for row in data.members %}<li><a class="dash-bar-label" href="{{ row.url }}">{{ row.user.name }}</a><span class="dash-bar-track"><i class="pct-w-{{ row.pct }}"></i></span><strong title="{{ tr('{tickets} tickets, {tasks} tasks', tickets=row.tickets, tasks=row.tasks) }}">{{ row.tickets }}·{{ row.tasks }}</strong></li>{% else %}<li class="empty">{{ tr('No members yet.') }}</li>{% endfor %}</ul>
+  <p class="muted dash-foot">{{ tr('Open tickets · open tasks') }}</p>{% endif %}
+{% elif item.key == 'tasks' %}
+  <table class="dash-table"><tbody>{% for row in data.tasks %}<tr><td><a href="{{ row.url }}">{{ row.task.number }}</a></td><td class="dash-cell-title">{{ row.task.title }}</td><td><span class="badge">{{ tr_value(row.task.state) }}</span></td></tr>{% else %}<tr><td class="empty">{{ tr('No open tasks.') }}</td></tr>{% endfor %}</tbody></table>
+{% elif item.key == 'approvals' %}
+  <ul class="dash-list">{% for row in data.approvals %}<li><a href="{{ row.url }}">{{ row.number }}</a>{% if row.title %} · {{ row.title }}{% endif %}<small>{{ row.vote.gate.name }}</small></li>{% else %}<li class="empty">{{ tr('Nothing awaiting your approval.') }}</li>{% endfor %}</ul>
+{% elif item.key == 'upcoming_changes' %}
+  <table class="dash-table"><tbody>{% for row in data.changes %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=row.ticket.id) }}">{{ row.ticket.number }}</a></td><td class="dash-cell-title">{{ row.ticket.title }}</td><td>{{ row.governance.planned_start|usertime('%b %d %H:%M') }}</td><td><span class="badge">{{ tr_value(row.governance.change_type) }}</span></td></tr>{% else %}<tr><td class="empty">{{ tr('No changes planned in this window.') }}</td></tr>{% endfor %}</tbody></table>
+{% elif item.key == 'requests' %}
+  <table class="dash-table"><tbody>{% for ritm in data['items'] %}<tr><td><a href="{{ url_for('ritm_detail', ritm_id=ritm.id) }}">{{ ritm.number }}</a></td><td class="dash-cell-title">{{ ritm.item.name if ritm.item else '' }}</td><td><span class="badge">{{ tr_value(ritm.state) }}</span></td></tr>{% else %}<tr><td class="empty">{{ tr('No requests.') }}</td></tr>{% endfor %}</tbody></table>
+{% elif item.key == 'knowledge' %}
+  <ul class="dash-list">{% for article in data.articles %}<li><a href="{{ url_for('knowledge_detail', article_id=article.id) }}">{{ article.title }}</a><small>{{ article.category }}</small></li>{% else %}<li class="empty">{{ tr('No articles yet.') }}</li>{% endfor %}</ul>
+{% elif item.key == 'work_items' %}
+  {% if data.disabled %}<p class="empty">{{ tr('Projects are not enabled.') }}</p>{% else %}
+  <ul class="dash-list">{% for work in data['items'] %}<li><a href="{{ url_for('projects.item_detail', item_key=work.key) }}">{{ work.key }}</a> · {{ work.title }}</li>{% else %}<li class="empty">{{ tr('No open work items.') }}</li>{% endfor %}</ul>{% endif %}
+{% elif item.key == 'favorites' %}
+  <ul class="dash-list">{% for favorite in data.favorites %}<li><a href="{{ favorite.url }}">{{ tr_value(favorite.label) }}</a></li>{% else %}<li class="empty">{{ tr('No favorites saved yet.') }}</li>{% endfor %}</ul>
+{% elif item.key == 'recently_viewed' %}
+  <ul class="dash-list">{% for view in data.views %}<li><a href="{{ view.url }}">{{ tr_value(view.label) }}</a></li>{% else %}<li class="empty">{{ tr('Nothing viewed recently.') }}</li>{% endfor %}</ul>
+{% elif item.key == 'notifications' %}
+  <ul class="dash-list">{% for notification in data.notifications %}<li{% if not notification.read %} class="unread"{% endif %}><strong>{{ notification.title }}</strong><small>{{ notification.body }}</small></li>{% else %}<li class="empty">{{ tr('No notifications.') }}</li>{% endfor %}</ul>
+{% elif item.key == 'note' %}
+  {% for paragraph in data.paragraphs %}<p class="dash-note">{{ paragraph }}</p>{% else %}<p class="empty">{{ tr('Customize this widget to write a note.') }}</p>{% endfor %}
+{% elif item.key == 'links' %}
+  <ul class="dash-links">{% for link in data.links %}<li><a href="{{ link.url }}">{{ link.label }}</a></li>{% else %}<li class="empty">{{ tr('Customize this widget to add links.') }}</li>{% endfor %}</ul>
+{% endif %}
+{% endmacro %}
+
+{% macro widget_options(item, dashboard, member_groups, spans) %}
+<details class="dash-config">
+  <summary>{{ tr('Configure') }}</summary>
+  <form method="post" action="{{ url_for('dashboard_widget_update', dashboard_id=dashboard.id, widget_id=item.widget.id) }}" class="stack">
+    <label>{{ tr('Title') }}<input name="title" maxlength="120" value="{{ item.widget.title or '' }}" placeholder="{{ tr_value(item.spec.label) }}"></label>
+    <label>{{ tr('Width') }}<select name="span">{% for span in spans %}<option value="{{ span }}" {% if item.widget.span == span %}selected{% endif %}>{{ {1: tr('One third'), 2: tr('Two thirds'), 3: tr('Full width')}[span] }}</option>{% endfor %}</select></label>
+    {% for name, spec in item.spec.options.items() %}
+      {% if spec.type == 'choice' %}
+        <label>{{ tr_value(spec.label) }}<select name="opt_{{ name }}">{% for value, label in spec.choices %}{% if not (name == 'scope' and value == 'mine' and dashboard.scope == 'group') %}<option value="{{ value }}" {% if item.opts.get(name, spec.default) == value %}selected{% endif %}>{{ tr_value(label) }}</option>{% endif %}{% endfor %}</select></label>
+      {% elif spec.type == 'team' and dashboard.scope == 'personal' %}
+        <label>{{ tr_value(spec.label) }}<select name="opt_{{ name }}">{% for group in member_groups %}<option value="{{ group.id }}" {% if item.team and item.team.id == group.id %}selected{% endif %}>{{ group.name }}</option>{% else %}<option value="">{{ tr('You are not in a team') }}</option>{% endfor %}</select></label>
+      {% elif spec.type == 'textarea' %}
+        <label>{{ tr_value(spec.label) }}<textarea name="opt_{{ name }}" rows="4" maxlength="{{ spec.max }}">{{ item.opts.get(name, '') }}</textarea>{% if spec.help %}<small>{{ tr_value(spec.help) }}</small>{% endif %}</label>
+      {% endif %}
+    {% endfor %}
+    <div class="actions"><button class="primary">{{ tr('Apply') }}</button></div>
+  </form>
+</details>
+{% endmacro %}

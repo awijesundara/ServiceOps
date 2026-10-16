@@ -98,8 +98,6 @@ from app import (
     visible_client_ticket_query,
     visible_enterprise_record_query,
     visible_ticket_query,
-    workspace_widget_enabled,
-    WORKSPACE_WIDGET_REGISTRY,
 )
 from serviceops_core.rack_location import is_data_center_group, rack_label, rack_mounted_cis
 from serviceops_core.config_schema import SETTING_DEFINITIONS
@@ -153,7 +151,6 @@ from serviceops_models import (
     Ticket,
     TicketAssignmentGroup,
     User,
-    UserWorkspaceLayout,
 )
 from serviceops_core.localization import tr, tr_value
 from serviceops_core import rt_link
@@ -240,70 +237,11 @@ def register(app):
                 ])
         return csv_response(buffer.getvalue(), "open-work.csv")
 
-    @app.route("/workspace", methods=["GET", "POST"])
+    @app.get("/workspace")
     @login_required
     def my_workspace():
-        """B-121: a user's personal, configurable landing page -- widgets
-        picked from WORKSPACE_WIDGET_REGISTRY's closed catalog, arranged in
-        a simple ordered list with a 1- or 2-column span each. Distinct
-        from /dashboard (the fixed, admin-configured default), which is
-        untouched by this feature."""
-        layout_row = UserWorkspaceLayout.query.filter_by(user_id=current_user.id).one_or_none()
-        if request.method == "POST":
-            action = request.form.get("action", "save")
-            if action == "save":
-                new_layout = []
-                for widget_key in request.form.getlist("widget_key"):
-                    if widget_key not in WORKSPACE_WIDGET_REGISTRY:
-                        continue
-                    span = 2 if request.form.get(f"span_{widget_key}") == "2" else 1
-                    new_layout.append({"widget_key": widget_key, "span": span})
-                if not layout_row:
-                    layout_row = UserWorkspaceLayout(
-                        tenant_id=current_user.tenant_id, user_id=current_user.id, layout_json=new_layout,
-                    )
-                    db.session.add(layout_row)
-                else:
-                    layout_row.layout_json = new_layout
-                db.session.commit()
-                flash(tr("Workspace layout saved."), "success")
-            elif action == "reset":
-                if layout_row:
-                    db.session.delete(layout_row)
-                    db.session.commit()
-                flash(tr("Workspace reset to the default widget set."), "success")
-            return redirect(url_for("my_workspace"))
-
-        available = {
-            key: entry for key, entry in WORKSPACE_WIDGET_REGISTRY.items()
-            if workspace_widget_enabled(key)
-        }
-        if layout_row and layout_row.layout_json:
-            selected = [
-                item for item in layout_row.layout_json
-                if isinstance(item, dict) and item.get("widget_key") in available
-            ]
-        else:
-            # No saved layout yet -- a reasonable default so /workspace
-            # isn't a blank page on first visit, not auto-seeded data.
-            selected = [
-                {"widget_key": key, "span": entry["default_span"]}
-                for key, entry in available.items()
-                if key in ("ticket_stats", "my_open_tickets", "recent_tickets")
-            ]
-        widgets = []
-        for item in selected:
-            key = item["widget_key"]
-            context = available[key]["data"](current_user)
-            widgets.append({
-                "key": key, "label": available[key]["label"], "span": item.get("span", 1),
-                "context": context,
-            })
-        return render_template(
-            "my_workspace.html", widgets=widgets, available=available,
-            selected_keys={item["widget_key"] for item in selected},
-            selected_spans={item["widget_key"]: item.get("span", 1) for item in selected},
-        )
+        """My Workspace (B-121) became Dashboards (B-464); the address stays."""
+        return redirect(url_for("dashboards_home"))
 
     @app.get("/work/tasks")
     @login_required
