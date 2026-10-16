@@ -297,7 +297,8 @@ def register(app):
                 story_points=fields.pop("story_points", None), estimate_minutes=fields.pop("estimate_minutes", None),
                 component_ids=fields.pop("component_ids", None), fix_version_ids=fields.pop("fix_version_ids", None),
                 affects_version_ids=fields.pop("affects_version_ids", None),
-                environment=fields.pop("environment", "") or "")
+                environment=fields.pop("environment", "") or "",
+                remaining_minutes=fields.pop("remaining_minutes", None))
             db.session.commit()
             if _wants_json():
                 return jsonify(_item_json(item)), 201

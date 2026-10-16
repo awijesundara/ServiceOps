@@ -139,12 +139,8 @@ def parse_item_key(text):
 
 
 def item_or_404(user, item_key):
-    parsed = parse_item_key(item_key)
-    if not parsed:
-        abort(404)
-    project = project_or_404(user, parsed[0])
-    item = WorkItem.query.filter_by(project_id=project.id, number=parsed[1]).first()
-    if not item:
+    item = find_visible_item(user, item_key)
+    if item is None:
         abort(404)
     return item
 
@@ -154,9 +150,14 @@ def find_visible_item(user, item_key):
     if not parsed:
         return None
     project = Project.query.filter_by(tenant_id=user.tenant_id, key=parsed[0]).first()
-    if not project or not can_view(user, project):
-        return None
-    return WorkItem.query.filter_by(project_id=project.id, number=parsed[1]).first()
+    if project and can_view(user, project):
+        item = WorkItem.query.filter_by(project_id=project.id, number=parsed[1]).first()
+        if item is not None:
+            return item
+    # An old key belongs to the destination item, even if access to its
+    # original project has changed. resolve_alias checks destination access.
+    from serviceops_core.projects.operations import resolve_alias
+    return resolve_alias(user, item_key)
 
 
 def require_edit(user, project):
@@ -282,7 +283,13 @@ def set_member(actor, project, user_id, role):
     user = _active_tenant_user(user_id, project.tenant_id, tr("Member"))
     if not user:
         abort(400, description=tr("Choose a user."))
-    member = ProjectMember.query.filter_by(project_id=project.id, user_id=user.id).first()
+    # Serialize role changes and removals on the same project so concurrent
+    # demotions cannot both remove its last administrator.
+    Project.query.filter_by(id=project.id).with_for_update().one()
+    member = ProjectMember.query.filter_by(project_id=project.id, user_id=user.id).populate_existing().first()
+    if member and member.role == "admin" and role != "admin":
+        if ProjectMember.query.filter_by(project_id=project.id, role="admin").count() <= 1:
+            abort(409, description=tr("A project needs at least one administrator."))
     if member:
         member.role = role
     else:
@@ -295,7 +302,8 @@ def set_member(actor, project, user_id, role):
 
 def remove_member(actor, project, user_id):
     require_admin(actor, project)
-    member = ProjectMember.query.filter_by(project_id=project.id, user_id=user_id).first()
+    Project.query.filter_by(id=project.id).with_for_update().one()
+    member = ProjectMember.query.filter_by(project_id=project.id, user_id=user_id).populate_existing().first()
     if not member:
         abort(404)
     admins = ProjectMember.query.filter_by(project_id=project.id, role="admin").count()
@@ -574,7 +582,7 @@ def default_status(project):
 def create_item(actor, project, title, item_type="task", description="", status_id=None, priority="medium",
                 assignee_ids=None, labels=None, parent_id=None, start_date=None, due_date=None,
                 story_points=None, estimate_minutes=None, component_ids=None, fix_version_ids=None,
-                affects_version_ids=None, environment="", resolution_id=None, flagged=False):
+                affects_version_ids=None, environment="", resolution_id=None, flagged=False, remaining_minutes=None):
     require_edit(actor, project)
     if item_type not in ITEM_TYPES:
         abort(400, description=tr("Choose a work item type."))
@@ -611,7 +619,8 @@ def create_item(actor, project, title, item_type="task", description="", status_
                     story_points=_parse_number(story_points, tr("Story points"), maximum=1000),
                     estimate_minutes=_parse_number(estimate_minutes, tr("Estimate"), integer=True, maximum=10**6),
                     environment=environment, flagged=bool(flagged))
-    item.remaining_minutes = item.estimate_minutes
+    item.remaining_minutes = (item.estimate_minutes if remaining_minutes is None else
+                              _parse_number(remaining_minutes, tr("Remaining estimate"), integer=True, maximum=10**7))
     db.session.add(item)
     db.session.flush()
     for rows, model, column in ((components, WorkItemComponent, "component_id"),
