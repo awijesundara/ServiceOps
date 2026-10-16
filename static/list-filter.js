@@ -133,14 +133,15 @@ function initListFilter(container) {
   }
 
   (initialConditions.length ? initialConditions : []).forEach(addRow);
-  if (initialConditions.length) {
-    builder.hidden = false;
-    container.classList.add("is-open");
-  }
+  // Applied conditions do not imply an open editor (for example dashboard links).
+  builder.hidden = true;
+  container.classList.remove("is-open");
+  toggle.setAttribute("aria-expanded", "false");
 
   toggle.addEventListener("click", () => {
     builder.hidden = !builder.hidden;
     container.classList.toggle("is-open", !builder.hidden);
+    toggle.setAttribute("aria-expanded", String(!builder.hidden));
     if (!builder.hidden && !rowsHost.children.length) addRow();
   });
 
@@ -149,6 +150,7 @@ function initListFilter(container) {
   const closeBuilder = () => {
     builder.hidden = true;
     container.classList.remove("is-open");
+    toggle.setAttribute("aria-expanded", "false");
   };
   document.addEventListener("click", (event) => {
     if (!builder.hidden && !event.composedPath().includes(container)) closeBuilder();
