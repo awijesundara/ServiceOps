@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('{name} · Dashboards · {instance_name}', name=dashboard.name, instance_name=instance_name) }}{% endblock %}
+{% block content %}{% from 'dashboards/_widget.html' import widget_body, widget_options %}
+<span hidden data-live-watch="tickets"></span>
+<header class="page-head dash-head">
+  <div>
+    <p class="eyebrow">{% if dashboard.scope == 'group' %}{{ tr('TEAM DASHBOARD · {name}', name=dashboard.group.name|upper) }}{% else %}{{ tr('MY DASHBOARD') }}{% endif %}</p>
+    <h1>{{ dashboard.name }}{% if dashboard.id == home_id %} <span class="badge" title="{{ tr('Opens first') }}">{{ tr('Home') }}</span>{% endif %}</h1>
+    {% if dashboard.description %}<p>{{ dashboard.description }}</p>{% endif %}
+  </div>
+  <div class="record-actions dash-actions">
+    {% if editable %}
+      {% if editing %}<a class="button primary" href="{{ url_for('dashboard_view', dashboard_id=dashboard.id) }}">{{ tr('Done') }}</a>
+      {% else %}<a class="button" href="{{ url_for('dashboard_view', dashboard_id=dashboard.id, edit=1) }}">{{ tr('Customize') }}</a>{% endif %}
+    {% endif %}
+    {% if dashboard.id != home_id %}<form method="post" action="{{ url_for('dashboard_home_set', dashboard_id=dashboard.id) }}"><button>{{ tr('Open first') }}</button></form>{% endif %}
+    <form method="post" action="{{ url_for('dashboard_copy', dashboard_id=dashboard.id) }}"><button title="{{ tr('Make your own editable copy') }}">{{ tr('Copy') }}</button></form>
+    <details class="dash-new">
+      <summary class="button">{{ tr('New dashboard') }}</summary>
+      <form method="post" action="{{ url_for('dashboard_create') }}" class="stack dash-popover">
+        <label>{{ tr('Name') }}<input name="name" maxlength="80" required></label>
+        <label>{{ tr('For') }}<select name="group_id">
+          <option value="">{{ tr('Just me') }}</option>
+          {% for group in manageable_groups %}<option value="{{ group.id }}">{{ tr('Team: {name}', name=group.name) }}</option>{% endfor %}
+        </select></label>
+        <label>{{ tr('Start with') }}<select name="start"><option value="suggested">{{ tr('Suggested widgets') }}</option><option value="empty">{{ tr('An empty dashboard') }}</option></select></label>
+        <label>{{ tr('Description') }}<input name="description" maxlength="255"></label>
+        <button class="primary">{{ tr('Create') }}</button>
+      </form>
+    </details>
+  </div>
+</header>
+
+<nav class="dash-tabs" aria-label="{{ tr('Dashboards') }}">
+  <span class="dash-tabs-label">{{ tr('Mine') }}</span>
+  {% for item in personal %}<a href="{{ url_for('dashboard_view', dashboard_id=item.id) }}" class="{{ 'active' if item.id == dashboard.id }}"{% if item.id == dashboard.id %} aria-current="page"{% endif %}>{{ item.name }}{% if item.id == home_id %} ★{% endif %}</a>{% endfor %}
+  {% for group, items in shared %}{% if items %}
+  <span class="dash-tabs-label">{{ group.name }}</span>
+  {% for item in items %}<a href="{{ url_for('dashboard_view', dashboard_id=item.id) }}" class="{{ 'active' if item.id == dashboard.id }}"{% if item.id == dashboard.id %} aria-current="page"{% endif %}>{{ item.name }}{% if item.id == home_id %} ★{% endif %}</a>{% endfor %}
+  {% endif %}{% endfor %}
+</nav>
+
+{% if editing %}
+<section class="panel dash-editor">
+  <div class="dash-editor-grid">
+    <form method="post" action="{{ url_for('dashboard_settings', dashboard_id=dashboard.id) }}" class="stack">
+      <h2>{{ tr('Dashboard') }}</h2>
+      <label>{{ tr('Name') }}<input name="name" maxlength="80" required value="{{ dashboard.name }}"></label>
+      <label>{{ tr('Description') }}<input name="description" maxlength="255" value="{{ dashboard.description }}"></label>
+      <div class="actions"><button class="primary">{{ tr('Save') }}</button></div>
+    </form>
+    <div>
+      <h2>{{ tr('Add a widget') }}</h2>
+      <p class="muted">{% if dashboard.scope == 'group' %}{{ tr('Everyone in {name} sees this dashboard; each person only ever sees records they may open.', name=dashboard.group.name) }}{% else %}{{ tr('Drag widgets to reorder them, or use the arrows.') }}{% endif %}</p>
+      <ul class="dash-catalog">
+        {% for key, spec in catalog.items() %}
+        <li><form method="post" action="{{ url_for('dashboard_widget_add', dashboard_id=dashboard.id) }}">
+          <input type="hidden" name="widget_key" value="{{ key }}">
+          <div><strong>{{ tr_value(spec.label) }}</strong><small>{{ tr_value(spec.description) }}</small></div>
+          <button>{{ tr('Add') }}</button>
+        </form></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <form method="post" action="{{ url_for('dashboard_delete', dashboard_id=dashboard.id) }}" data-confirm="{{ tr('Delete this dashboard and its widgets?') }}" class="dash-delete">
+    <button class="danger-button">{{ tr('Delete dashboard') }}</button>
+  </form>
+</section>
+{% endif %}
+
+<div class="dash-grid{% if editing %} is-editing{% endif %}" {% if editing %}data-dash-layout="{{ url_for('dashboard_layout', dashboard_id=dashboard.id) }}"{% endif %}>
+  {% for item in widgets %}
+  <section class="panel dash-widget span-{{ item.widget.span }}" id="widget-{{ item.widget.id }}" data-widget-id="{{ item.widget.id }}"{% if editing %} draggable="true"{% endif %}>
+    <header class="dash-widget-head">
+      <h2>{% if editing %}<span class="dash-grip" aria-hidden="true">⠿</span>{% endif %}{{ item.title }}{% if dashboard.scope == 'personal' and item.team and (item.opts.get('scope') == 'team' or item.key == 'team_workload') %} <small class="muted">· {{ item.team.name }}</small>{% endif %}</h2>
+      {% if item.data.url and not editing %}<a class="dash-more" href="{{ item.data.url }}">{{ tr('Open list') }} ›</a>{% endif %}
+      {% if editing %}
+      <div class="dash-widget-tools">
+        {% if not loop.first %}<form method="post" action="{{ url_for('dashboard_widget_move', dashboard_id=dashboard.id, widget_id=item.widget.id) }}"><input type="hidden" name="direction" value="up"><button aria-label="{{ tr('Move up') }}" title="{{ tr('Move up') }}">↑</button></form>{% endif %}
+        {% if not loop.last %}<form method="post" action="{{ url_for('dashboard_widget_move', dashboard_id=dashboard.id, widget_id=item.widget.id) }}"><input type="hidden" name="direction" value="down"><button aria-label="{{ tr('Move down') }}" title="{{ tr('Move down') }}">↓</button></form>{% endif %}
+        <form method="post" action="{{ url_for('dashboard_widget_remove', dashboard_id=dashboard.id, widget_id=item.widget.id) }}" data-confirm="{{ tr('Remove this widget?') }}"><button aria-label="{{ tr('Remove') }}" title="{{ tr('Remove') }}">✕</button></form>
+      </div>
+      {% endif %}
+    </header>
+    {% if editing %}{{ widget_options(item, dashboard, member_groups, spans) }}{% endif %}
+    <div class="dash-widget-body">{{ widget_body(item) }}</div>
+  </section>
+  {% else %}
+  <section class="panel dash-widget span-3"><p class="empty">{% if editable %}{{ tr('This dashboard has no widgets yet. Choose Customize to add some.') }}{% else %}{{ tr('This dashboard has no widgets yet.') }}{% endif %}</p></section>
+  {% endfor %}
+</div>
+<script src="{{ url_for('static', filename='dashboards.js', v=asset_version) }}" defer></script>
+{% endblock %}

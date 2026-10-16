@@ -164,6 +164,9 @@ __all__ = [
     "GuidedTourStep",
     "UserTourProgress",
     "UserWorkspaceLayout",
+    "Dashboard",
+    "DashboardWidget",
+    "DashboardHome",
 ]
 
 db = SQLAlchemy()
@@ -2827,6 +2830,50 @@ class UserWorkspaceLayout(db.Model):
     layout_json = db.Column(db.JSON, nullable=False, default=list)
     updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     user = db.relationship("User")
+
+
+class Dashboard(db.Model):
+    """B-464: a customizable dashboard -- personal (owner_id) or shared by a
+    group (group_id; its members view it, its manager and administrators
+    edit it). Widgets come from the closed, server-rendered catalog in
+    serviceops_core/dashboards.py and always show data as the *viewer* may
+    see it, so a shared dashboard never widens anyone's access."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    scope = db.Column(db.String(10), nullable=False)  # "personal" or "group"
+    owner_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), index=True)
+    group_id = db.Column(db.Integer, db.ForeignKey("support_group.id", ondelete="CASCADE"), index=True)
+    name = db.Column(db.String(80), nullable=False)
+    description = db.Column(db.String(255), nullable=False, default="")
+    position = db.Column(db.Integer, nullable=False, default=0)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    owner = db.relationship("User", foreign_keys=[owner_id])
+    group = db.relationship("SupportGroup")
+    updated_by = db.relationship("User", foreign_keys=[updated_by_id])
+    widgets = db.relationship("DashboardWidget", cascade="all, delete-orphan", passive_deletes=True,
+                              order_by="DashboardWidget.position", back_populates="dashboard")
+
+
+class DashboardWidget(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    dashboard_id = db.Column(db.Integer, db.ForeignKey("dashboard.id", ondelete="CASCADE"), nullable=False, index=True)
+    widget_key = db.Column(db.String(60), nullable=False)
+    title = db.Column(db.String(120))
+    span = db.Column(db.Integer, nullable=False, default=1)  # 1 to 3 grid columns
+    position = db.Column(db.Integer, nullable=False, default=0)
+    options_json = db.Column(db.Text, nullable=False, default="{}")
+    dashboard = db.relationship("Dashboard", back_populates="widgets")
+
+
+class DashboardHome(db.Model):
+    """Which dashboard opens first for a person (theirs or a group's)."""
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    dashboard_id = db.Column(db.Integer, db.ForeignKey("dashboard.id", ondelete="CASCADE"), nullable=False)
 
 
 class ChecklistItem(db.Model):

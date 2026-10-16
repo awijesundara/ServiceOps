@@ -27,6 +27,7 @@ NAVIGATION_ENTRIES = (
     NavigationEntry("My tasks", "Work assigned to me", "my_work_tasks", minimum_role="agent"),
     NavigationEntry("Incidents", "Incident Management open active critical", "tickets", {"kind": "incident"}),
     NavigationEntry("Service requests", "Request Fulfilment requested items", "requests_list"),
+    NavigationEntry("Dashboards", "My workspace personal team group dashboard widgets charts", "dashboards_home"),
     NavigationEntry("Changes", "Change Management calendar approvals", "tickets", {"kind": "change"}, "agent"),
     NavigationEntry("Service catalog", "Catalog items request services", "catalog"),
     NavigationEntry("Knowledge", "Knowledge Management articles search", "knowledge"),

@@ -20,7 +20,9 @@ SOURCE_FILES = [ROOT / "app.py", *sorted((ROOT / "serviceops_core" / "web").glob
                 *[ROOT / "serviceops_core" / "projects" / f"{name}.py"
                   for name in ("service", "tracking", "operations", "releases", "catalog")],
                 # Approval policies (B-460) and request withdrawal (B-461) audit in their rules modules.
-                ROOT / "serviceops_core" / "approval_policies.py", ROOT / "serviceops_core" / "request_withdrawal.py"]
+                ROOT / "serviceops_core" / "approval_policies.py", ROOT / "serviceops_core" / "request_withdrawal.py",
+                # Dashboards (B-464) audit in their rules module.
+                ROOT / "serviceops_core" / "dashboards.py"]
 
 ALLOWLIST = {
     "notification_mark_read": "marks the caller's own notification read; no shared record changes",
@@ -32,7 +34,6 @@ ALLOWLIST = {
     "history_record": "records the caller's own recently-viewed pages; no shared record changes",
     "set_acting_role": "switches which of the caller's own already-granted roles this session acts as; no shared record changes, and only ever narrows/restores the caller's own authority",
     "guided_tours_progress": "records the caller's own dismiss/completion state for a guided tour; no shared record changes",
-    "my_workspace": "saves/resets the caller's own personal workspace widget layout; no shared record changes",
     "api_passkey_registration_options": "creates a short-lived one-time protocol challenge; successful credential registration is audited on completion",
     "item_watch": "starts or stops the caller's own notifications for a work item; no shared record changes",
     "item_star": "stars or unstars a work item for the caller's own Your work list; no shared record changes",

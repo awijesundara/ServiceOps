@@ -1265,6 +1265,32 @@ html.theme-dark .status-delete>summary.button,html.theme-dark .panel td form[dat
 html.theme-dark .wi-details .wi-status-select{border:0;background-color:#1b2025;color:#a4b4c0}
 html.theme-dark .wi-details .wi-status-select[data-category=in_progress]{background-color:#19232f;color:#6faef3}
 html.theme-dark .wi-details .wi-status-select[data-category=done]{background-color:#13241b;color:#63b981}
+/* dashboards.css */
+html.theme-dark .dash-popover{background:#182128;border:1px solid var(--line);box-shadow:0 12px 30px rgba(0,0,0,0.432)}
+html.theme-dark .dash-tabs{border-bottom:1px solid var(--line)}
+html.theme-dark .dash-tabs a{border:1px solid var(--line);background:#182128;color:var(--ink)}
+html.theme-dark .dash-tabs a:hover{border-color:var(--dk-accent)}
+html.theme-dark .dash-tabs a.active{background:var(--green);border-color:var(--dk-accent);color:#fff}
+html.theme-dark .dash-tabs-label{color:var(--muted)}
+html.theme-dark .dash-grip{color:var(--muted)}
+html.theme-dark .dash-widget.is-drop-target{outline:2px solid var(--dk-accent)}
+html.theme-dark .dash-config{border:1px solid var(--line);background:var(--bg)}
+html.theme-dark .dash-tiles a{border:1px solid var(--line);color:inherit}
+html.theme-dark .dash-tiles a:hover{border-color:var(--dk-accent)}
+html.theme-dark .dash-tiles span{color:var(--muted)}
+html.theme-dark .dash-list li,html.theme-dark .dash-links li{border-bottom:1px solid var(--line)}
+html.theme-dark .dash-list li:last-child,html.theme-dark .dash-links li:last-child{border-bottom:0}
+html.theme-dark .dash-list small{color:var(--muted)}
+html.theme-dark .dash-list li.unread strong{color:var(--dk-accent-strong)}
+html.theme-dark .dash-bar-track{background:var(--brand-teal-soft,#191e23)}
+html.theme-dark .dash-bar-track i{background:var(--green)}
+html.theme-dark .dash-trend{border-bottom:1px solid var(--line)}
+html.theme-dark .dash-trend-day i.opened,html.theme-dark .dash-legend span.opened{background:var(--brand-amber,#5e3c0b)}
+html.theme-dark .dash-trend-day i.resolved,html.theme-dark .dash-legend span.resolved{background:var(--green)}
+html.theme-dark .dash-legend{color:var(--muted)}
+html.theme-dark .dash-catalog form{border:1px solid var(--line)}
+html.theme-dark .dash-catalog small{color:var(--muted)}
+html.theme-dark .dash-delete{border-top:1px solid var(--line)}
 /* Theme tokens. The configured brand color stays the identity color of the
    sidebar and filled buttons; accents used as text are lifted toward white so
    they stay readable on dark surfaces whatever brand color is configured. */

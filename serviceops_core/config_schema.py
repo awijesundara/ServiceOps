@@ -144,21 +144,26 @@ SETTING_DEFINITIONS = {
                            "admin": "Administrators only"}},
     ],
     "my_workspace_widgets": [
-        # One bool per WORKSPACE_WIDGET_REGISTRY entry (B-121 governance):
-        # an admin can disable a widget tenant-wide, which drops it from
-        # both the picker and any layout that already included it (skipped
-        # at render time, not an error) without deleting anyone's saved
-        # layout. Kept as a hand-written list (not generated from the
-        # registry at import time) to match this file's existing
-        # convention of a static, readable settings schema.
-        {"key": "WORKSPACE_WIDGET_TICKET_STATS_ENABLED", "label": "Ticket counts", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_MY_OPEN_TICKETS_ENABLED", "label": "My open tickets", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_RECENT_TICKETS_ENABLED", "label": "Recently updated tickets", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_SLA_AT_RISK_ENABLED", "label": "SLA at risk", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_APPROVALS_AWAITING_ME_ENABLED", "label": "Approvals awaiting me", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_FAVORITES_ENABLED", "label": "Favorites", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_RECENTLY_VIEWED_ENABLED", "label": "Recently viewed", "type": "bool", "default": "true", "live": True},
-        {"key": "WORKSPACE_WIDGET_NOTIFICATIONS_ENABLED", "label": "Notifications", "type": "bool", "default": "true", "live": True},
+        # One bool per dashboard widget (serviceops_core/dashboards.py, B-464;
+        # earlier My Workspace, B-121): turning one off removes it from the
+        # widget picker and hides it on every personal and team dashboard
+        # without deleting anyone's layout.
+        {"key": "DASHBOARD_WIDGET_TICKET_COUNTS_ENABLED", "label": "Ticket counts", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_TICKET_LIST_ENABLED", "label": "Ticket list", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_TICKET_CHART_ENABLED", "label": "Ticket chart", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_TICKET_TREND_ENABLED", "label": "Opened and resolved", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_TEAM_WORKLOAD_ENABLED", "label": "Team workload", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_TASKS_ENABLED", "label": "Open tasks", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_APPROVALS_ENABLED", "label": "Approvals awaiting me", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_UPCOMING_CHANGES_ENABLED", "label": "Upcoming changes", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_REQUESTS_ENABLED", "label": "Catalog requests", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_KNOWLEDGE_ENABLED", "label": "New knowledge", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_WORK_ITEMS_ENABLED", "label": "My work items", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_FAVORITES_ENABLED", "label": "Favorites", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_RECENTLY_VIEWED_ENABLED", "label": "Recently viewed", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_NOTIFICATIONS_ENABLED", "label": "Notifications", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_NOTE_ENABLED", "label": "Note", "type": "bool", "default": "true", "live": True},
+        {"key": "DASHBOARD_WIDGET_LINKS_ENABLED", "label": "Links", "type": "bool", "default": "true", "live": True},
     ],
     "email_delivery": [
         {"key": "SMTP_ENABLED", "label": "Enable SMTP delivery", "type": "bool", "default": "false", "live": True},

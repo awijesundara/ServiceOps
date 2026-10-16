@@ -36,7 +36,7 @@ SOURCES = [
     "app.css", "enterprise.css", "itil.css", "platform.css", "rtl.css",
     "task-board.css", "status-page.css", "brand.css", "admin-workspace.css",
     "notification-audiences.css", "utilities.css", "client-management.css", "integrations.css",
-    "ai-chat.css", "projects.css",
+    "ai-chat.css", "projects.css", "dashboards.css",
 ]
 
 BACKGROUND = {"background", "background-color", "background-image"}
