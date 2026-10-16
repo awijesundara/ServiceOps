@@ -3,7 +3,7 @@ catalog live in serviceops_core/dashboards.py."""
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from app import SupportGroup, db
+from app import GroupMember, SupportGroup, db
 from serviceops_core import dashboards as boards
 from serviceops_core.localization import tr
 
@@ -27,11 +27,21 @@ def register(app):
         personal, shared = boards.visible_dashboards(current_user)
         home = boards.home_dashboard(current_user)
         manageable_groups = [g for g in boards.member_groups(current_user) if boards.can_manage_group(current_user, g)]
+        catalog = boards.catalog(dashboard.scope)
+        catalog_groups = [(category, [(key, spec) for key, spec in catalog.items() if spec["category"] == category])
+                          for category in boards.CATEGORIES]
+        member_count = None
+        if dashboard.scope == "group":
+            member_ids = {m.user_id for m in GroupMember.query.filter_by(group_id=dashboard.group_id)}
+            if dashboard.group.manager_id:
+                member_ids.add(dashboard.group.manager_id)
+            member_count = len(member_ids)
         return render_template(
             "dashboards/view.html", dashboard=dashboard, widgets=boards.render_context(current_user, dashboard),
             personal=personal, shared=shared, editable=editable, editing=editing, home_id=home.id,
-            catalog=boards.catalog(dashboard.scope), spans=boards.SPANS, member_groups=boards.member_groups(current_user),
-            manageable_groups=manageable_groups,
+            catalog_groups=[(category, items) for category, items in catalog_groups if items],
+            spans=boards.SPANS, member_groups=boards.member_groups(current_user),
+            manageable_groups=manageable_groups, member_count=member_count, age=boards.age_label,
         )
 
     @app.post("/dashboards")

@@ -52,8 +52,27 @@ def test_a_my_workspace_layout_becomes_the_first_dashboard(client, app):
             ("ticket_list", "at_risk"), ("favorites", None)]
 
 
+def _seed_tickets(app, group_id):
+    """Open and resolved tickets, assigned and not, so lists and charts have rows."""
+    from datetime import timedelta
+    from app import now
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        for index, (state, priority, assignee) in enumerate((("New", "P1", None), ("In Progress", "P2", admin.id),
+                                                              ("Pending", "P3", admin.id), ("Resolved", "P4", admin.id))):
+            ticket = Ticket(number=f"INC94000{index:02d}", kind="incident", title=f"Seed {index}", description="d",
+                            state=state, priority=priority, category="Software", requester_id=admin.id,
+                            assignee_id=assignee, created_at=now() - timedelta(days=index),
+                            resolved_at=now() if state == "Resolved" else None)
+            db.session.add(ticket)
+            db.session.flush()
+            db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=group_id))
+        db.session.commit()
+
+
 def test_every_widget_renders_with_every_option_on_personal_and_team_dashboards(client, app):
     group_id, _ = _database_member(app)
+    _seed_tickets(app, group_id)
     login(client)
     personal = client.post("/dashboards", data={"name": "Everything", "start": "empty"})
     personal_id = int(personal.headers["Location"].split("/dashboards/")[1].split("?")[0])

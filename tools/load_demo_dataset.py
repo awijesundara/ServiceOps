@@ -284,7 +284,7 @@ def build_problems(cis, teams, agents_by_team):
             task = OperationalTask(
                 number=f"PTASK{record.id:04d}{index:02d}", task_kind="problem",
                 parent_type="enterprise", parent_id=record.id, title=task_title,
-                task_type="Investigation", state="Open" if index > 1 else "Closed",
+                task_type="Investigation", state="Open" if index > 1 else "Closed Complete",
                 sequence=index, assignment_group_id=team.id, assignee_id=assignee.id if assignee else None,
             )
             db.session.add(task)
@@ -328,7 +328,7 @@ def build_changes(cis, teams, agents_by_team, admin):
             db.session.add(OperationalTask(
                 number=f"CTASK{ticket.id:04d}{index:02d}", task_kind="change",
                 parent_type="ticket", parent_id=ticket.id, title=task_title,
-                task_type="Implementation", state="Closed" if state in ("Implemented", "Closed") else "Open",
+                task_type="Implementation", state="Closed Complete" if state in ("Implemented", "Closed") else "Open",
                 sequence=index, assignment_group_id=team.id, assignee_id=assignee.id if assignee else None,
             ))
 
@@ -359,7 +359,7 @@ def build_requests(teams, requesters, admin):
         db.session.flush()
         task = CatalogTask(
             number=sequence_number(CatalogTask, "SCTASK"), requested_item_id=ritm.id,
-            title=f"Fulfill {item.name}", state="Closed" if state == "Closed Complete" else "Open",
+            title=f"Fulfill {item.name}", state="Closed Complete" if state == "Closed Complete" else "Open",
             assignment_group_id=windows.id,
         )
         db.session.add(task)

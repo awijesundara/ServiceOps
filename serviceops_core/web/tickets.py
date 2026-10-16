@@ -106,6 +106,7 @@ from serviceops_core.projections import project_document
 from serviceops_core.task_lifecycle import build_state_track, OPERATIONAL_TASK_TRANSITIONS
 from serviceops_core.web.common import (
     save_ticket_attachment,
+    TERMINAL_TASK_STATES,
     ticket_filter_field_spec,
     ticket_list_query,
     usertime_filter,
@@ -246,7 +247,7 @@ def register(app):
     @app.get("/work/tasks")
     @login_required
     def my_work_tasks():
-        terminal = ["Closed Complete", "Closed Incomplete", "Closed Skipped"]
+        terminal = TERMINAL_TASK_STATES  # includes Cancelled, so cancelled tasks are not open work
         group_ids = user_support_group_ids(current_user)
 
         def open_tasks(model):

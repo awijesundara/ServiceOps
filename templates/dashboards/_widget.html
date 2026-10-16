@@ -1,41 +1,53 @@
 {# Dashboard widgets (B-464). Every value is escaped; links are records' own URLs
    or internal paths validated by serviceops_core.dashboards.parse_links. #}
-{% macro ticket_rows(tickets) %}
-<table class="dash-table"><tbody>
-{% for ticket in tickets %}
-  <tr><td><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a></td>
-      <td class="dash-cell-title">{{ ticket.title }}</td>
+{% macro empty(text) %}<p class="dash-empty-line">{{ text }}</p>{% endmacro %}
+
+{% macro ticket_rows(tickets, age) %}
+{% if tickets %}
+<table class="dash-table">
+  <thead><tr><th scope="col">{{ tr('Number') }}</th><th scope="col">{{ tr('Summary') }}</th><th scope="col">{{ tr('Priority') }}</th><th scope="col">{{ tr('State') }}</th><th scope="col" class="dash-num">{{ tr('Age') }}</th></tr></thead>
+  <tbody>
+  {% for ticket in tickets %}
+  <tr><td class="dash-nowrap"><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a></td>
+      <td class="dash-cell-title" title="{{ ticket.title }}">{{ ticket.title }}{% if ticket.assignee %}<small>{{ ticket.assignee.name }}</small>{% else %}<small class="dash-unassigned">{{ tr('Unassigned') }}</small>{% endif %}</td>
       <td><span class="priority {{ ticket.priority|lower }}">{{ ticket.priority }}</span></td>
-      <td><span class="badge">{{ tr_value(ticket.state) }}</span></td></tr>
-{% else %}<tr><td class="empty">{{ tr('Nothing here right now.') }}</td></tr>{% endfor %}
-</tbody></table>
+      <td class="dash-nowrap"><span class="badge">{{ tr_value(ticket.state) }}</span></td>
+      <td class="dash-num muted" title="{{ ticket.created_at|usertime('%b %d, %H:%M') }}">{{ age(ticket.created_at) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}{{ empty(tr('Nothing here right now.')) }}{% endif %}
 {% endmacro %}
 
-{% macro widget_body(item) %}{% set data = item.data %}
+{% macro widget_body(item, age) %}{% set data = item.data %}
 {% if item.key == 'ticket_counts' %}
-  <div class="dash-tiles">{% for tile in data.tiles %}<a href="{{ tile.url }}"><span>{{ tr_value(tile.label) }}</span><strong>{{ tile.count }}</strong></a>{% endfor %}</div>
-{% elif item.key == 'ticket_list' %}{{ ticket_rows(data.tickets) }}
+  <div class="dash-tiles">{% for tile in data.tiles %}<a href="{{ tile.url }}" class="{{ 'tone-' ~ tile.tone if tile.tone }}"><span>{{ tr_value(tile.label) }}</span><strong>{{ tile.count }}</strong></a>{% endfor %}</div>
+{% elif item.key == 'ticket_list' %}{{ ticket_rows(data.tickets, age) }}
 {% elif item.key == 'ticket_chart' %}
-  {% if data.bars %}<ul class="dash-bars">{% for bar in data.bars %}<li><span class="dash-bar-label">{{ tr_value(bar.label) }}</span><span class="dash-bar-track"><i class="pct-w-{{ bar.pct }}"></i></span><strong>{{ bar.count }}</strong></li>{% endfor %}</ul>
-  <p class="muted dash-foot">{{ tr('{count} open', count=data.total) }}</p>
-  {% else %}<p class="empty">{{ tr('No open tickets.') }}</p>{% endif %}
+  {% if data.bars %}<ul class="dash-bars">{% for bar in data.bars %}<li><a class="dash-bar-row" href="{{ bar.url }}" title="{{ tr('Open these {count} tickets', count=bar.count) }}"><span class="dash-bar-label">{{ tr_value(bar.label) }}</span><span class="dash-bar-track"><i class="pct-w-{{ bar.pct }}"></i></span><strong>{{ bar.count }}</strong></a></li>{% endfor %}</ul>
+  <p class="muted dash-foot">{{ tr('{count} open in total', count=data.total) }}</p>
+  {% else %}{{ empty(tr('No open tickets.')) }}{% endif %}
 {% elif item.key == 'ticket_trend' %}
-  <div class="dash-trend" role="img" aria-label="{{ tr('{opened} opened and {resolved} resolved', opened=data.opened_total, resolved=data.resolved_total) }}">
-    {% for day in data.days %}<div class="dash-trend-day" title="{{ day.date }}: {{ tr('{opened} opened, {resolved} resolved', opened=day.opened, resolved=day.resolved) }}"><i class="opened pct-h-{{ day.opened_pct }}"></i><i class="resolved pct-h-{{ day.resolved_pct }}"></i></div>{% endfor %}
+  <div class="dash-trend-wrap">
+    <span class="dash-trend-scale" aria-hidden="true"><span>{{ data.peak }}</span><span>0</span></span>
+    <div class="dash-trend" role="img" aria-label="{{ tr('{opened} opened and {resolved} resolved', opened=data.opened_total, resolved=data.resolved_total) }}">
+      {% for day in data.days %}<div class="dash-trend-day" title="{{ day.date.strftime('%b %d') }}: {{ tr('{opened} opened, {resolved} resolved', opened=day.opened, resolved=day.resolved) }}"><i class="opened pct-h-{{ day.opened_pct }}"></i><i class="resolved pct-h-{{ day.resolved_pct }}"></i></div>{% endfor %}
+    </div>
   </div>
+  <div class="dash-trend-axis" aria-hidden="true"><span>{{ data.first.strftime('%b %d') }}</span><span>{{ data.middle.strftime('%b %d') }}</span><span>{{ data.last.strftime('%b %d') }}</span></div>
   <p class="dash-legend"><span class="opened"></span>{{ tr('Opened {count}', count=data.opened_total) }} <span class="resolved"></span>{{ tr('Resolved {count}', count=data.resolved_total) }}</p>
 {% elif item.key == 'team_workload' %}
-  {% if data.missing_team %}<p class="empty">{{ tr('Join a team to see its workload.') }}</p>{% else %}
-  <ul class="dash-bars">{% for row in data.members %}<li><a class="dash-bar-label" href="{{ row.url }}">{{ row.user.name }}</a><span class="dash-bar-track"><i class="pct-w-{{ row.pct }}"></i></span><strong title="{{ tr('{tickets} tickets, {tasks} tasks', tickets=row.tickets, tasks=row.tasks) }}">{{ row.tickets }}·{{ row.tasks }}</strong></li>{% else %}<li class="empty">{{ tr('No members yet.') }}</li>{% endfor %}</ul>
-  <p class="muted dash-foot">{{ tr('Open tickets · open tasks') }}</p>{% endif %}
+  {% if data.missing_team %}{{ empty(tr('Join a team to see its workload.')) }}{% elif not data.members %}{{ empty(tr('No members yet.')) }}{% else %}
+  <ul class="dash-bars dash-workload">{% for row in data.members %}<li><a class="dash-bar-row" href="{{ row.url }}" title="{{ tr('{tickets} open tickets, {tasks} open tasks', tickets=row.tickets, tasks=row.tasks) }}"><span class="dash-bar-label">{{ row.user.name }}</span><span class="dash-bar-track dash-stack"><i class="pct-w-{{ row.ticket_pct }}"></i><b class="pct-w-{{ row.task_pct }}"></b></span><strong>{{ row.tickets + row.tasks }}</strong></a></li>{% endfor %}</ul>
+  <p class="dash-legend"><span class="tickets"></span>{{ tr('Open tickets') }} <span class="tasks"></span>{{ tr('Open tasks') }}</p>{% endif %}
 {% elif item.key == 'tasks' %}
-  <table class="dash-table"><tbody>{% for row in data.tasks %}<tr><td><a href="{{ row.url }}">{{ row.task.number }}</a></td><td class="dash-cell-title">{{ row.task.title }}</td><td><span class="badge">{{ tr_value(row.task.state) }}</span></td></tr>{% else %}<tr><td class="empty">{{ tr('No open tasks.') }}</td></tr>{% endfor %}</tbody></table>
+  <table class="dash-table"><tbody>{% for row in data.tasks %}<tr><td><a href="{{ row.url }}">{{ row.task.number }}</a></td><td class="dash-cell-title">{{ row.task.title }}</td><td><span class="badge">{{ tr_value(row.task.state) }}</span></td></tr>{% else %}<tr><td colspan="5" class="dash-empty-cell">{{ tr('No open tasks.') }}</td></tr>{% endfor %}</tbody></table>
 {% elif item.key == 'approvals' %}
   <ul class="dash-list">{% for row in data.approvals %}<li><a href="{{ row.url }}">{{ row.number }}</a>{% if row.title %} · {{ row.title }}{% endif %}<small>{{ row.vote.gate.name }}</small></li>{% else %}<li class="empty">{{ tr('Nothing awaiting your approval.') }}</li>{% endfor %}</ul>
 {% elif item.key == 'upcoming_changes' %}
-  <table class="dash-table"><tbody>{% for row in data.changes %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=row.ticket.id) }}">{{ row.ticket.number }}</a></td><td class="dash-cell-title">{{ row.ticket.title }}</td><td>{{ row.governance.planned_start|usertime('%b %d %H:%M') }}</td><td><span class="badge">{{ tr_value(row.governance.change_type) }}</span></td></tr>{% else %}<tr><td class="empty">{{ tr('No changes planned in this window.') }}</td></tr>{% endfor %}</tbody></table>
+  <table class="dash-table"><tbody>{% for row in data.changes %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=row.ticket.id) }}">{{ row.ticket.number }}</a></td><td class="dash-cell-title">{{ row.ticket.title }}</td><td>{{ row.governance.planned_start|usertime('%b %d %H:%M') }}</td><td><span class="badge">{{ tr_value(row.governance.change_type) }}</span></td></tr>{% else %}<tr><td colspan="5" class="dash-empty-cell">{{ tr('No changes planned in this window.') }}</td></tr>{% endfor %}</tbody></table>
 {% elif item.key == 'requests' %}
-  <table class="dash-table"><tbody>{% for ritm in data['items'] %}<tr><td><a href="{{ url_for('ritm_detail', ritm_id=ritm.id) }}">{{ ritm.number }}</a></td><td class="dash-cell-title">{{ ritm.item.name if ritm.item else '' }}</td><td><span class="badge">{{ tr_value(ritm.state) }}</span></td></tr>{% else %}<tr><td class="empty">{{ tr('No requests.') }}</td></tr>{% endfor %}</tbody></table>
+  <table class="dash-table"><tbody>{% for ritm in data['items'] %}<tr><td><a href="{{ url_for('ritm_detail', ritm_id=ritm.id) }}">{{ ritm.number }}</a></td><td class="dash-cell-title">{{ ritm.item.name if ritm.item else '' }}</td><td><span class="badge">{{ tr_value(ritm.state) }}</span></td></tr>{% else %}<tr><td colspan="5" class="dash-empty-cell">{{ tr('No requests.') }}</td></tr>{% endfor %}</tbody></table>
 {% elif item.key == 'knowledge' %}
   <ul class="dash-list">{% for article in data.articles %}<li><a href="{{ url_for('knowledge_detail', article_id=article.id) }}">{{ article.title }}</a><small>{{ article.category }}</small></li>{% else %}<li class="empty">{{ tr('No articles yet.') }}</li>{% endfor %}</ul>
 {% elif item.key == 'work_items' %}

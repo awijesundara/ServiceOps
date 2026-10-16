@@ -42,13 +42,32 @@ def _choice(label, choices, default):
 
 SCOPE = _choice("Show", SCOPE_CHOICES, "mine")
 KIND = _choice("Records", KIND_CHOICES, "incident")
-LIMIT = _choice("Rows", LIMIT_CHOICES, "10")
+LIMIT = _choice("Rows", LIMIT_CHOICES, "5")
 TEAM = {"type": "team", "label": "Team"}
 
 
-def _widget(label, description, data, scopes=("personal", "group"), span=1, options=None):
+def _widget(label, description, data, scopes=("personal", "group"), span=1, options=None, icon="▤",
+            category="Tickets"):
     return {"label": label, "description": description, "data": data, "scopes": scopes, "default_span": span,
-            "options": options or {}}
+            "options": options or {}, "icon": icon, "category": category}
+
+
+CATEGORIES = ("Tickets", "Charts", "Work", "Personal", "Content")
+
+
+def age_label(moment):
+    """Compact age such as 5m, 3h or 2d, for list columns."""
+    if moment is None:
+        return ""
+    current = now()
+    if moment.tzinfo is None:
+        current = current.replace(tzinfo=None)
+    seconds = max(0, int((current - moment).total_seconds()))
+    if seconds < 3600:
+        return f"{max(1, seconds // 60)}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h"
+    return f"{seconds // 86400}d"
 
 
 # --- data helpers ------------------------------------------------------------------------------
@@ -97,15 +116,17 @@ def ticket_list_link(viewer, opts, team, **extra):
 def _ticket_counts(viewer, opts, team):
     query = _tickets(viewer, opts, team).filter(Ticket.state.notin_(TERMINAL_TICKET))
     open_ids = query.with_entities(Ticket.id)
+    urgent = query.filter(Ticket.priority.in_(("P1", "P2"))).count()
+    unassigned = query.filter(Ticket.assignee_id.is_(None)).count()
+    breached = db.session.query(func.count()).select_from(
+        _sla_ticket_ids("breached").filter(TaskSLA.target_id.in_(open_ids)).subquery()).scalar()
     return {"tiles": [
-        {"label": "Open", "count": query.count(), "url": ticket_list_link(viewer, opts, team, open=1)},
-        {"label": "Priority 1 and 2", "count": query.filter(Ticket.priority.in_(("P1", "P2"))).count(),
+        {"label": "Open", "count": query.count(), "tone": "", "url": ticket_list_link(viewer, opts, team, open=1)},
+        {"label": "Priority 1 and 2", "count": urgent, "tone": "warn" if urgent else "",
          "url": ticket_list_link(viewer, opts, team, open=1)},
-        {"label": "Unassigned", "count": query.filter(Ticket.assignee_id.is_(None)).count(),
+        {"label": "Unassigned", "count": unassigned, "tone": "warn" if unassigned else "",
          "url": ticket_list_link(viewer, opts, team, open=1)},
-        {"label": "SLA breached",
-         "count": db.session.query(func.count()).select_from(
-             _sla_ticket_ids("breached").filter(TaskSLA.target_id.in_(open_ids)).subquery()).scalar(),
+        {"label": "SLA breached", "count": breached, "tone": "alert" if breached else "",
          "url": ticket_list_link(viewer, opts, team, sla="breached")},
     ]}
 
@@ -123,7 +144,7 @@ def _ticket_list(viewer, opts, team):
              "updated": (Ticket.updated_at.desc(),)}[opts.get("sort", "priority")]
     extra = {"recent": {}, "open": {"open": 1}, "unassigned": {"open": 1}, "at_risk": {"sla": "at_risk"},
              "breached": {"sla": "breached"}}[show]
-    return {"tickets": query.order_by(*order).limit(int(opts.get("limit", 10))).all(),
+    return {"tickets": query.order_by(*order).limit(int(opts.get("limit", 5))).all(),
             "url": ticket_list_link(viewer, opts, team, **extra)}
 
 
@@ -131,17 +152,24 @@ def _ticket_chart(viewer, opts, team):
     query = _tickets(viewer, opts, team).filter(Ticket.state.notin_(TERMINAL_TICKET))
     by = opts.get("group_by", "priority")
     if by == "assignee":
-        rows = query.outerjoin(User, User.id == Ticket.assignee_id).with_entities(
-            func.coalesce(User.name, ""), func.count(Ticket.id)).group_by(User.name).all()
-        rows = [(name or tr("Unassigned"), count) for name, count in rows]
+        rows = [(name or tr("Unassigned"), count, user_id) for user_id, name, count in
+                query.outerjoin(User, User.id == Ticket.assignee_id).with_entities(
+                    Ticket.assignee_id, User.name, func.count(Ticket.id)).group_by(Ticket.assignee_id, User.name)]
     else:
         column = {"priority": Ticket.priority, "state": Ticket.state, "category": Ticket.category}[by]
-        rows = query.with_entities(column, func.count(Ticket.id)).group_by(column).all()
+        rows = [(value, count, value) for value, count in
+                query.with_entities(column, func.count(Ticket.id)).group_by(column)]
     rows = sorted(rows, key=lambda row: (str(row[0]) if by == "priority" else -row[1], str(row[0])))[:12]
-    peak = max([count for _, count in rows] or [1])
-    return {"bars": [{"label": label or tr("None"), "count": count, "pct": max(2, round(count * 100 / peak))}
-                     for label, count in rows],
-            "total": sum(count for _, count in rows), "url": ticket_list_link(viewer, opts, team, open=1)}
+    peak = max([row[1] for row in rows] or [1])
+
+    def bar_url(key):
+        if key is None:
+            return ticket_list_link(viewer, opts, team, open=1)
+        return ticket_list_link(viewer, opts, team, open=1, **{by: key})
+
+    return {"bars": [{"label": label or tr("None"), "count": count, "pct": max(2, round(count * 100 / peak)),
+                      "url": bar_url(key)} for label, count, key in rows],
+            "total": sum(row[1] for row in rows), "url": ticket_list_link(viewer, opts, team, open=1)}
 
 
 def _ticket_trend(viewer, opts, team):
@@ -158,6 +186,7 @@ def _ticket_trend(viewer, opts, team):
     return {"days": [{"date": d, "opened": opened[d], "resolved": resolved[d],
                       "opened_pct": round(opened[d] * 100 / peak), "resolved_pct": round(resolved[d] * 100 / peak)}
                      for d in dates],
+            "peak": peak, "first": dates[0], "middle": dates[len(dates) // 2], "last": dates[-1],
             "opened_total": sum(opened[d] for d in dates), "resolved_total": sum(resolved[d] for d in dates)}
 
 
@@ -180,6 +209,8 @@ def _team_workload(viewer, opts, team):
     peak = max([tickets.get(p.id, 0) + tasks[p.id] for p in people] + [1])
     return {"members": [{"user": p, "tickets": tickets.get(p.id, 0), "tasks": tasks[p.id],
                          "pct": round((tickets.get(p.id, 0) + tasks[p.id]) * 100 / peak),
+                         "ticket_pct": round(tickets.get(p.id, 0) * 100 / peak),
+                         "task_pct": round(tasks[p.id] * 100 / peak),
                          "url": ticket_list_link(viewer, {"scope": "visible", "kind": "incident"}, None,
                                                  assignee=p.id, open=1)}
                         for p in people]}
@@ -196,17 +227,17 @@ def _tasks(viewer, opts, team):
             query = query.filter(model.assignment_group_id == team.id)
         else:
             query = query.filter(model.assignee_id == viewer.id)
-        rows += query.limit(int(opts.get("limit", 10))).all()
+        rows += query.limit(int(opts.get("limit", 5))).all()
     rows.sort(key=lambda t: ((getattr(t, "due_at", None) or getattr(t, "planned_end", None)) is None,
                              str(getattr(t, "due_at", None) or getattr(t, "planned_end", None) or "")))
-    return {"tasks": [{"task": t, "url": core.record_url(t)} for t in rows[:int(opts.get("limit", 10))]],
+    return {"tasks": [{"task": t, "url": core.record_url(t)} for t in rows[:int(opts.get("limit", 5))]],
             "url": url_for("my_work_tasks")}
 
 
 def _approvals(viewer, opts, team):
     votes = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
         ApprovalVote.approver_id == viewer.id, ApprovalVote.state == "Requested",
-        ApprovalChain.tenant_id == viewer.tenant_id).limit(int(opts.get("limit", 10))).all()
+        ApprovalChain.tenant_id == viewer.tenant_id).limit(int(opts.get("limit", 5))).all()
     rows = []
     for vote in votes:
         record = core.record_reference(vote.gate.chain.target_type, vote.gate.chain.target_id)
@@ -224,12 +255,12 @@ def _upcoming_changes(viewer, opts, team):
         ChangeGovernance.planned_start <= now() + timedelta(days=days),
         Ticket.state.notin_(("Closed", "Cancelled", "Rejected")))
     rows = query.with_entities(Ticket, ChangeGovernance).order_by(ChangeGovernance.planned_start) \
-        .limit(int(opts.get("limit", 10))).all()
+        .limit(int(opts.get("limit", 5))).all()
     return {"changes": [{"ticket": t, "governance": g} for t, g in rows]}
 
 
 def _requests(viewer, opts, team):
-    limit = int(opts.get("limit", 10))
+    limit = int(opts.get("limit", 5))
     if opts.get("scope", "mine") == "team":
         if team is None:
             return {"items": []}
@@ -252,7 +283,7 @@ def _knowledge(viewer, opts, team):
     from serviceops_models import Knowledge
     query = core.visible_knowledge_query(viewer).filter(Knowledge.published.is_(True),
                                                         Knowledge.archived.is_(False))
-    return {"articles": query.order_by(Knowledge.created_at.desc()).limit(int(opts.get("limit", 10))).all(),
+    return {"articles": query.order_by(Knowledge.created_at.desc()).limit(int(opts.get("limit", 5))).all(),
             "url": url_for("knowledge")}
 
 
@@ -260,23 +291,23 @@ def _work_items(viewer, opts, team):
     from serviceops_core.projects import service as projects
     if not projects.enabled():
         return {"items": [], "disabled": True}
-    return {"items": projects.my_open_items(viewer, limit=int(opts.get("limit", 10))),
+    return {"items": projects.my_open_items(viewer, limit=int(opts.get("limit", 5))),
             "url": url_for("projects.my_items")}
 
 
 def _favorites(viewer, opts, team):
     return {"favorites": Favorite.query.filter_by(user_id=viewer.id).order_by(Favorite.created_at.desc())
-            .limit(int(opts.get("limit", 10))).all()}
+            .limit(int(opts.get("limit", 5))).all()}
 
 
 def _recently_viewed(viewer, opts, team):
     return {"views": RecentView.query.filter_by(user_id=viewer.id).order_by(RecentView.viewed_at.desc())
-            .limit(int(opts.get("limit", 10))).all()}
+            .limit(int(opts.get("limit", 5))).all()}
 
 
 def _notifications(viewer, opts, team):
     return {"notifications": Notification.query.filter_by(user_id=viewer.id).order_by(
-        Notification.read.asc(), Notification.created_at.desc()).limit(int(opts.get("limit", 10))).all()}
+        Notification.read.asc(), Notification.created_at.desc()).limit(int(opts.get("limit", 5))).all()}
 
 
 def _note(viewer, opts, team):
@@ -302,7 +333,7 @@ def parse_links(text):
 WIDGETS = {
     "ticket_counts": _widget(
         "Ticket counts", "Open, priority 1 and 2, unassigned and SLA-breached tickets, each opening the list.",
-        _ticket_counts, span=3, options={"scope": SCOPE, "kind": KIND, "team": TEAM}),
+        _ticket_counts, span=3, options={"scope": SCOPE, "kind": KIND, "team": TEAM}, icon="▦", category="Tickets"),
     "ticket_list": _widget(
         "Ticket list", "Open, unassigned, at-risk, breached or recently updated tickets.", _ticket_list, span=2,
         options={"scope": SCOPE, "kind": KIND, "team": TEAM,
@@ -311,52 +342,52 @@ WIDGETS = {
                                            ("recent", "Recently updated")], "open"),
                  "sort": _choice("Sort by", [("priority", "Priority"), ("updated", "Last updated"),
                                              ("oldest", "Oldest first")], "priority"),
-                 "limit": LIMIT}),
+                 "limit": LIMIT}, icon="☰", category="Tickets"),
     "ticket_chart": _widget(
         "Ticket chart", "Open tickets as a bar chart by priority, state, category or assignee.", _ticket_chart,
         options={"scope": SCOPE, "kind": KIND, "team": TEAM,
                  "group_by": _choice("Group by", [("priority", "Priority"), ("state", "State"),
                                                   ("category", "Category"), ("assignee", "Assignee")],
-                                     "priority")}),
+                                     "priority")}, icon="▥", category="Charts"),
     "ticket_trend": _widget(
         "Opened and resolved", "Tickets opened and resolved per day.", _ticket_trend, span=2,
         options={"scope": SCOPE, "kind": KIND, "team": TEAM,
-                 "days": _choice("Period", [("7", "7 days"), ("14", "14 days"), ("30", "30 days")], "14")}),
+                 "days": _choice("Period", [("7", "7 days"), ("14", "14 days"), ("30", "30 days")], "14")}, icon="◢", category="Charts"),
     "team_workload": _widget(
-        "Team workload", "Open tickets and tasks per team member.", _team_workload, options={"team": TEAM}),
+        "Team workload", "Open tickets and tasks per team member.", _team_workload, options={"team": TEAM}, icon="⚖", category="Charts"),
     "tasks": _widget(
         "Open tasks", "Change, problem and catalog tasks for you or your team.", _tasks,
         options={"scope": _choice("Show", [("mine", "Assigned to me"), ("team", "My team")], "mine"),
-                 "team": TEAM, "limit": LIMIT}),
+                 "team": TEAM, "limit": LIMIT}, icon="✓", category="Work"),
     "approvals": _widget(
         "Approvals awaiting me", "Decisions waiting for you, linked to their records.", _approvals,
-        scopes=("personal",), options={"limit": LIMIT}),
+        scopes=("personal",), options={"limit": LIMIT}, icon="✔", category="Work"),
     "upcoming_changes": _widget(
         "Upcoming changes", "Changes planned to start soon.", _upcoming_changes, span=2,
         options={"scope": SCOPE, "team": TEAM,
                  "days": _choice("Window", [("1", "24 hours"), ("7", "7 days"), ("30", "30 days")], "7"),
-                 "limit": LIMIT}),
+                 "limit": LIMIT}, icon="◷", category="Work"),
     "requests": _widget(
         "Catalog requests", "Your requests, or open requested items your team fulfils.", _requests,
         options={"scope": _choice("Show", [("mine", "My requests"), ("team", "My team fulfils")], "mine"),
                  "team": TEAM, "show": _choice("Which", [("open", "Open"), ("all", "All")], "open"),
-                 "limit": LIMIT}),
+                 "limit": LIMIT}, icon="⇄", category="Work"),
     "knowledge": _widget("New knowledge", "Recently published knowledge articles.", _knowledge,
-                         options={"limit": LIMIT}),
+                         options={"limit": LIMIT}, icon="✎", category="Content"),
     "work_items": _widget("My work items", "Open project work items assigned to you.", _work_items,
-                          scopes=("personal",), options={"limit": LIMIT}),
+                          scopes=("personal",), options={"limit": LIMIT}, icon="◆", category="Work"),
     "favorites": _widget("Favorites", "Pages you have starred.", _favorites, scopes=("personal",),
-                         options={"limit": LIMIT}),
+                         options={"limit": LIMIT}, icon="★", category="Personal"),
     "recently_viewed": _widget("Recently viewed", "Records and pages you opened recently.", _recently_viewed,
-                               scopes=("personal",), options={"limit": LIMIT}),
+                               scopes=("personal",), options={"limit": LIMIT}, icon="↺", category="Personal"),
     "notifications": _widget("Notifications", "Your latest notifications.", _notifications,
-                             scopes=("personal",), options={"limit": LIMIT}),
+                             scopes=("personal",), options={"limit": LIMIT}, icon="♪", category="Personal"),
     "note": _widget("Note", "Text for yourself or your team, such as an on-call rota or announcement.", _note,
-                    options={"text": {"type": "textarea", "label": "Text", "max": 2000}}),
+                    options={"text": {"type": "textarea", "label": "Text", "max": 2000}}, icon="✍", category="Content"),
     "links": _widget("Links", "Shortcuts to pages in ServiceOps, one 'Label | /path' per line.", _links,
                      options={"links": {"type": "textarea", "label": "Links", "max": 2000,
                                         "help": "One per line: Label | /path, for example Network changes | "
-                                                "/tickets/change"}}),
+                                                "/tickets/change"}}, icon="↗", category="Content"),
 }
 
 # My Workspace (B-121) widget keys and the configured widget each becomes.
