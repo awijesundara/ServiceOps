@@ -130,6 +130,7 @@ from serviceops_models import (
     ConfigurationItem,
     db,
     EnterpriseRecord,
+    Comment,
     FileAttachment,
     IMPROVEMENT_STATES,
     ImprovementItem,
@@ -1099,6 +1100,18 @@ def register(app):
             and effective_role_has_action(current_user.effective_role, "resolve")
         )
         internal_view = effective_role_has_action(current_user.effective_role, "comment_internal")
+        # The comment thread and attachments panel walk every comment's
+        # author, replies and files; load those in batches (held here for the
+        # render) instead of one query per comment.
+        preloaded_comments = Comment.query.filter_by(ticket_id=ticket.id).options(
+            selectinload(Comment.author), selectinload(Comment.attachments), selectinload(Comment.replies),
+        ).all()
+        preloaded_attachments = FileAttachment.query.filter_by(ticket_id=ticket.id).options(
+            selectinload(FileAttachment.uploaded_by),
+        ).all()
+        from serviceops_core.public_profile import prime_visibility
+        prime_visibility([row.user_id for row in preloaded_comments]
+                         + [row.uploaded_by_id for row in preloaded_attachments] + [ticket.requester_id])
         chains = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).options(
             selectinload(ApprovalChain.gates).selectinload(ApprovalGate.votes).selectinload(ApprovalVote.approver),
         ).all()

@@ -592,11 +592,25 @@ def effective_role_has_action(role, action, tenant_id=None):
     (not inside) security.py for the same reason."""
     tenant_id = tenant_id if tenant_id is not None else tenant_context_id()
     if tenant_id is not None:
-        override = RolePolicyOverride.query.filter_by(
-            tenant_id=tenant_id, role=role, action=action,
-        ).first()
-        if override:
-            return override.is_granted
+        cache = request_cache()
+        if cache is None:
+            override = RolePolicyOverride.query.filter_by(
+                tenant_id=tenant_id, role=role, action=action,
+            ).first()
+            if override:
+                return override.is_granted
+        else:
+            # A page asks a dozen or more of these; load the tenant's few
+            # override rows once per request (dropped when one is written).
+            by_tenant = cache.setdefault("role_policy_overrides", {})
+            if tenant_id not in by_tenant:
+                by_tenant[tenant_id] = {
+                    (row.role, row.action): row.is_granted
+                    for row in RolePolicyOverride.query.filter_by(tenant_id=tenant_id).all()
+                }
+            granted = by_tenant[tenant_id].get((role, action))
+            if granted is not None:
+                return granted
     return role_has_action(role, action)
 
 
@@ -1596,17 +1610,44 @@ def _request_setting_rows():
 # Request-scoped read caches and the models whose writes invalidate them.
 REQUEST_CACHE_SOURCES = {
     "platform_settings": "PlatformSetting", "ai_chat_available": "AIConfiguration", "tenants": "Tenant",
+    "role_policy_overrides": "RolePolicyOverride",
+    "support_group_ids": ("GroupMember", "SupportGroup"),
+    "membership_group_ids": "GroupMember",
+    "executive_office_group": "SupportGroup",
 }
+
+
+def _drop_request_caches_for(written):
+    cache = request_cache()
+    if not cache:
+        return
+    for key, models in REQUEST_CACHE_SOURCES.items():
+        if written.intersection((models,) if isinstance(models, str) else models):
+            cache.pop(key, None)
 
 
 @sa_event.listens_for(Session, "after_flush")
 def _drop_request_caches_on_write(session, flush_context):
+    _drop_request_caches_for({type(obj).__name__ for obj in (*session.new, *session.dirty, *session.deleted)})
+
+
+@sa_event.listens_for(Session, "do_orm_execute")
+def _drop_request_caches_on_bulk_write(orm_execute_state):
+    # Query.update()/delete() and update()/delete() statements change rows
+    # without passing through the flush, so they invalidate here instead.
+    if orm_execute_state.is_update or orm_execute_state.is_delete:
+        mapper = orm_execute_state.bind_mapper
+        if mapper is not None:
+            _drop_request_caches_for({mapper.class_.__name__})
+
+
+@sa_event.listens_for(Session, "after_soft_rollback")
+def _drop_request_caches_on_rollback(session, previous_transaction):
+    # A cache can have been repopulated after a flush inside the transaction
+    # that just rolled back. This also runs for nested/savepoint rollbacks.
     cache = request_cache()
-    if not cache:
-        return
-    written = {type(obj).__name__ for obj in (*session.new, *session.dirty, *session.deleted)}
-    for key, model in REQUEST_CACHE_SOURCES.items():
-        if model in written:
+    if cache is not None:
+        for key in REQUEST_CACHE_SOURCES:
             cache.pop(key, None)
 
 
@@ -1680,18 +1721,14 @@ def notification_severity_for_event(event_type):
     return NOTIFICATION_SEVERITY_BY_EVENT.get(event_type, "info")
 
 
-def highest_notification_severity(unread_query):
-    """The single most severe value among a user's unread notifications, or
-    None when there are no unread notifications -- drives the bell icon's
-    badge color (a bell showing 5 unread where only one is critical should
-    still read as critical, not be diluted to the count's own color)."""
-    severities = {
-        row[0] for row in unread_query.filter_by(read=False).with_entities(Notification.severity).distinct()
-    }
-    for level in ("critical", "warning", "info"):
-        if level in severities:
-            return level
-    return None
+def notification_summary(user_query):
+    """(unread count, worst unread severity) from one grouped query; the bell
+    renders on every page and the poll runs after every action."""
+    unread = dict(user_query.filter_by(read=False).with_entities(
+        Notification.severity, func.count(Notification.id),
+    ).group_by(Notification.severity).all())
+    severity = next((level for level in ("critical", "warning", "info") if unread.get(level)), None)
+    return sum(unread.values()), severity
 
 
 def create_notification(user_id, title, body, tenant_id=None, target_type=None, target_id=None,
@@ -2546,19 +2583,38 @@ def log_field_changes(target_type, target_id, before, after, event="Field change
     return changed
 
 
+RECORD_REFERENCE_MODELS = {
+    "ticket": Ticket,
+    "enterprise": EnterpriseRecord,
+    "request": CatalogRequest,
+    "ritm": RequestedItem,
+    "sctask": CatalogTask,
+    "work_task": OperationalTask,
+    "knowledge": Knowledge,
+    "work_item": WorkItem,
+}
+
+
 def record_reference(record_type, record_id):
-    model_map = {
-        "ticket": Ticket,
-        "enterprise": EnterpriseRecord,
-        "request": CatalogRequest,
-        "ritm": RequestedItem,
-        "sctask": CatalogTask,
-        "work_task": OperationalTask,
-        "knowledge": Knowledge,
-        "work_item": WorkItem,
-    }
-    model = model_map.get(record_type)
+    model = RECORD_REFERENCE_MODELS.get(record_type)
     return db.session.get(model, record_id) if model else None
+
+
+def prefetch_record_references(pairs):
+    """Load the records behind many (record_type, record_id) pairs with one
+    query per type. Returns the loaded rows; while the caller holds that list,
+    record_reference() for those pairs is served from the session's identity
+    map instead of one query each."""
+    wanted = {}
+    for record_type, record_id in pairs:
+        if record_type and record_id:
+            wanted.setdefault(record_type, set()).add(record_id)
+    loaded = []
+    for record_type, ids in wanted.items():
+        model = RECORD_REFERENCE_MODELS.get(record_type)
+        if model:
+            loaded.extend(model.query.filter(model.id.in_(ids)).all())
+    return loaded
 
 
 def record_tenant_id(record):
@@ -3501,7 +3557,19 @@ def user_can_manage_ticket(user, ticket):
         return False
     if group.manager_id == user.id:
         return True
-    return GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first() is not None
+    return group.id in membership_group_ids(user)
+
+
+def membership_group_ids(user):
+    """Every group the user has a GroupMember row in (active or not, any
+    tenant -- callers apply their own rules), one query per request."""
+    cache = request_cache()
+    if cache is not None and user.id in cache.get("membership_group_ids", {}):
+        return cache["membership_group_ids"][user.id]
+    ids = frozenset(row[0] for row in db.session.query(GroupMember.group_id).filter_by(user_id=user.id).all())
+    if cache is not None:
+        cache.setdefault("membership_group_ids", {})[user.id] = ids
+    return ids
 
 
 def manageable_ticket_ids(user, tickets):
@@ -3862,7 +3930,13 @@ def executive_office_group(tenant_id):
     (CEO) approver for change governance. Seeded automatically alongside the
     Change Control Board (see seed()); configured the same way a team's
     manager is (itil_admin's "Executive approval" section)."""
-    return SupportGroup.query.filter_by(name="Executive Office", tenant_id=tenant_id).first()
+    cache = request_cache()
+    if cache is None:
+        return SupportGroup.query.filter_by(name="Executive Office", tenant_id=tenant_id).first()
+    groups = cache.setdefault("executive_office_group", {})
+    if tenant_id not in groups:
+        groups[tenant_id] = SupportGroup.query.filter_by(name="Executive Office", tenant_id=tenant_id).first()
+    return groups[tenant_id]
 
 
 def change_service_coowner_groups(ticket, scoped_cis):
@@ -4086,7 +4160,7 @@ def user_in_group(user, group):
     return (
         user.role == "admin"
         or group.manager_id == user.id
-        or GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first() is not None
+        or group.id in membership_group_ids(user)
     )
 
 
@@ -5586,18 +5660,28 @@ def catalog_fulfillment_group(item):
 
 
 def user_support_group_ids(user):
+    """Active same-tenant teams the user belongs to or manages. Two queries
+    (no per-membership group load), cached for the rest of the request and
+    dropped when a membership or team row is written."""
     if not user.is_authenticated or not user.active:
         return set()
+    cache = request_cache()
+    key = (user.id, user.tenant_id)
+    if cache is not None and key in cache.get("support_group_ids", {}):
+        return set(cache["support_group_ids"][key])
     group_ids = {
-        membership.group_id
-        for membership in GroupMember.query.filter_by(user_id=user.id).all()
-        if membership.group.active and membership.group.tenant_id == user.tenant_id
+        row[0] for row in db.session.query(GroupMember.group_id)
+        .join(SupportGroup, SupportGroup.id == GroupMember.group_id)
+        .filter(GroupMember.user_id == user.id, SupportGroup.active.is_(True),
+                SupportGroup.tenant_id == user.tenant_id).all()
     }
     group_ids.update(
-        group.id for group in SupportGroup.query.filter_by(
+        row[0] for row in db.session.query(SupportGroup.id).filter_by(
             manager_id=user.id, active=True, tenant_id=user.tenant_id
         ).all()
     )
+    if cache is not None:
+        cache.setdefault("support_group_ids", {})[key] = frozenset(group_ids)
     return group_ids
 
 
@@ -5654,7 +5738,7 @@ def user_can_access_client_management(user):
     group = client_sysops_group(user.tenant_id)
     return bool(group and (
         group.manager_id == user.id
-        or GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first()
+        or group.id in membership_group_ids(user)
     ))
 
 
@@ -6030,7 +6114,7 @@ def user_can_manage_enterprise_record(user, record):
         group = db.session.get(SupportGroup, record.support_group_id)
         if group and (
             group.manager_id == user.id
-            or GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first()
+            or group.id in membership_group_ids(user)
         ):
             return True
     group_ids = user_support_group_ids(user)
@@ -7699,6 +7783,10 @@ def create_app(test_config=None):
         favorites = Favorite.query.filter_by(user_id=current_user.id).order_by(Favorite.folder, Favorite.label).all()
         notification_query = tenant_query(Notification).filter_by(user_id=current_user.id)
         recent_notifications = notification_query.order_by(Notification.created_at.desc()).limit(6).all()
+        # Held for the render: the bell's target links resolve from these rows.
+        notification_targets = prefetch_record_references(  # noqa: F841
+            (row.target_type, row.target_id) for row in recent_notifications)
+        unread_count, unread_severity = notification_summary(notification_query)
         current_page_url = request.path + (f"?{request.query_string.decode()}" if request.query_string else "")
         current_tenant = request_tenant(current_user.tenant_id)
         return platform_context | {
@@ -7714,8 +7802,8 @@ def create_app(test_config=None):
                 row.id: notification_target_url(row.target_type, row.target_id)
                 for row in recent_notifications
             },
-            "unread_notifications": notification_query.filter_by(read=False).count(),
-            "unread_notification_severity": highest_notification_severity(notification_query),
+            "unread_notifications": unread_count,
+            "unread_notification_severity": unread_severity,
             "pending_approvals_count": ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
                 ApprovalVote.approver_id == current_user.id,
                 ApprovalVote.state == "Requested",

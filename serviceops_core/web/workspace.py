@@ -25,7 +25,7 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
-from sqlalchemy import case, func
+from sqlalchemy import func
 
 import app as core
 from serviceops_core.identity import normalize_email
@@ -38,7 +38,6 @@ from app import (
     audit,
     csv_response,
     DOMAIN_CONFIG,
-    highest_notification_severity,
     integration_endpoint_valid,
     is_safe_internal_path,
     notification_target_url,
@@ -516,19 +515,25 @@ def register(app):
         query = tenant_query(Notification).filter_by(user_id=current_user.id)
         # One small query fingerprints the bell's state; an unchanged bell
         # answers 304 with no body (the browser sends the last ETag).
-        latest, total, unread = query.with_entities(
-            func.max(Notification.id), func.count(Notification.id),
-            func.sum(case((Notification.read.is_(False), 1), else_=0)),
-        ).one()
+        counts = query.with_entities(
+            Notification.read, Notification.severity, func.max(Notification.id), func.count(Notification.id),
+        ).group_by(Notification.read, Notification.severity).all()
+        latest = max((row[2] for row in counts), default=0)
+        total = sum(row[3] for row in counts)
+        unread = sum(row[3] for row in counts if not row[0])
+        severities = {row[1] for row in counts if not row[0]}
+        severity = next((level for level in ("critical", "warning", "info") if level in severities), None)
         etag = f'"n{current_user.id}-{latest or 0}-{total}-{unread or 0}"'
         if request.headers.get("If-None-Match") == etag:
             response = Response(status=304)
             response.headers["ETag"] = etag
             return response
         recent = query.order_by(Notification.created_at.desc()).limit(6).all()
+        prefetched = core.prefetch_record_references(  # noqa: F841 - holds targets during serialization
+            (row.target_type, row.target_id) for row in recent)
         response = jsonify({
-            "unread_count": query.filter_by(read=False).count(),
-            "severity": highest_notification_severity(query),
+            "unread_count": unread,
+            "severity": severity,
             "latest_id": recent[0].id if recent else None,
             "notifications": [
                 {

@@ -10,7 +10,7 @@ from flask import abort, g, jsonify, request
 import app as core
 from serviceops_core.localization import tr
 from serviceops_core.projects import releases, service, tracking
-from serviceops_core.projects.models import Project, WorkItem, WorkItemComment
+from serviceops_core.projects.models import Project, WorkItem
 from serviceops_models import db
 
 WRITE_FIELDS = {"title", "description", "type", "status_id", "priority", "assignee_ids", "labels", "parent_key",
@@ -50,7 +50,7 @@ def item_document(item, include_comments=False):
     if include_comments:
         document["comments"] = [
             {"id": row.id, "author": row.author.username, "body": row.body, "created_at": row.created_at.isoformat()}
-            for row in WorkItemComment.query.filter_by(work_item_id=item.id).order_by(WorkItemComment.created_at)]
+            for row in service.visible_comments(g.api_user, item)]
     return document
 
 
@@ -157,7 +157,8 @@ def register(app):
             story_points=fields.pop("story_points", None), estimate_minutes=fields.pop("estimate_minutes", None),
             component_ids=fields.pop("component_ids", None), fix_version_ids=fields.pop("fix_version_ids", None),
             affects_version_ids=fields.pop("affects_version_ids", None), environment=fields.pop("environment", "") or "",
-            resolution_id=fields.pop("resolution_id", None), flagged=fields.pop("flagged", False))
+            resolution_id=fields.pop("resolution_id", None), flagged=fields.pop("flagged", False),
+            remaining_minutes=fields.pop("remaining_minutes", None))
         document = {"data": item_document(item)}
         core.store_api_idempotency(idempotency_key, request_hash, document, 201)
         core.audit("api create", item.key, core.mobile_client_details(g.api_client), user_id=user.id,
