@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% from '_status_badge.html' import status_badge %}
-{% block title %}{{ tr('Changes') if kind == 'change' else tr('Incidents') }} · {{ instance_name }}{% endblock %}
+{% block title %}{{ tr('Changes') if kind == 'change' else (tr('Incidents and changes') if kind == 'all' else tr('Incidents')) }} · {{ instance_name }}{% endblock %}
 {% block content %}<span hidden data-live-watch="tickets"></span>
 <section class="list-workspace">
   <header class="list-toolbar">
-    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Changes') if kind == 'change' else tr('Incidents') }}</strong><small>{{ tr('{total} records', total=(total)) }}</small></div></div>
-    <a class="primary button" href="{{ url_for('ticket_new', kind=kind) }}">{{ tr('New') }}</a>
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Changes') if kind == 'change' else (tr('Incidents and changes') if kind == 'all' else tr('Incidents')) }}</strong><small>{{ tr('{total} records', total=(total)) }}</small></div></div>
+    {% if kind != 'all' %}<a class="primary button" href="{{ url_for('ticket_new', kind=kind) }}">{{ tr('New') }}</a>{% endif %}
     <a class="button" href="{{ url_for('tickets_export', kind=kind, q=q, filter=raw_filter) }}">⬇ CSV</a>
     <button type="button" class="button" data-print-page>🖶 {{ tr('Print') }}</button>
     <form class="list-search">

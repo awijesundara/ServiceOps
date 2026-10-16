@@ -250,33 +250,38 @@ def ticket_filter_field_spec():
     }
 
 
+def team_ticket_condition(group_id=None):
+    """Tickets of a group, by each kind's own rule: an incident through its
+    assignment group (TicketAssignmentGroup), a change through its owning
+    group (ChangeOwnership). Without group_id: tickets that have a group at
+    all. One definition shared by the ticket list and dashboard widgets, so
+    a widget's number and the list it opens always agree."""
+    assigned = db.session.query(TicketAssignmentGroup.ticket_id)
+    owned = db.session.query(ChangeOwnership.ticket_id)
+    if group_id is not None:
+        assigned = assigned.filter(TicketAssignmentGroup.group_id == group_id)
+        owned = owned.filter(ChangeOwnership.group_id == group_id)
+    return db.or_(db.and_(Ticket.kind == "change", Ticket.id.in_(owned)),
+                  db.and_(Ticket.kind != "change", Ticket.id.in_(assigned)))
+
+
 def ticket_group_filter_handler(kind):
     """Assignment group lives on TicketAssignmentGroup (incidents) or
     ChangeOwnership (changes), not a plain Ticket column, so it needs a
     subquery instead of the generic column-based filter path."""
-    link_model = ChangeOwnership if kind == "change" else TicketAssignmentGroup
 
     def handler(query, op, value):
-        if op == "eq" and value:
+        if op in ("eq", "ne") and value:
             try:
                 group_id_value = int(value)
             except ValueError:
                 return query
-            return query.filter(Ticket.id.in_(
-                db.session.query(link_model.ticket_id).filter(link_model.group_id == group_id_value)
-            ))
-        if op == "ne" and value:
-            try:
-                group_id_value = int(value)
-            except ValueError:
-                return query
-            return query.filter(~Ticket.id.in_(
-                db.session.query(link_model.ticket_id).filter(link_model.group_id == group_id_value)
-            ))
+            condition = team_ticket_condition(group_id_value)
+            return query.filter(condition if op == "eq" else ~condition)
         if op == "is_empty":
-            return query.filter(~Ticket.id.in_(db.session.query(link_model.ticket_id)))
+            return query.filter(~team_ticket_condition())
         if op == "is_not_empty":
-            return query.filter(Ticket.id.in_(db.session.query(link_model.ticket_id)))
+            return query.filter(team_ticket_condition())
         return query
     return handler
 
@@ -291,6 +296,14 @@ def _int_value(value):
 def _assignee_filter(query, op, value):
     user_id = _int_value(value)
     return query.filter(Ticket.assignee_id == user_id) if op == "eq" and user_id is not None else query
+
+
+def _unassigned_filter(query, op, value):
+    return query.filter(Ticket.assignee_id.is_(None)) if op == "eq" and value == "1" else query
+
+
+def _urgent_filter(query, op, value):
+    return query.filter(Ticket.priority.in_(("P1", "P2"))) if op == "eq" and value == "1" else query
 
 
 def _open_filter(query, op, value):
@@ -333,14 +346,15 @@ def ticket_list_query(kind, q="", conditions=None):
     """Shared filtering for the ticket list view and its CSV export, so
     both stay consistent: free-text search plus the generic filter
     condition list (see apply_filter_conditions)."""
-    query = visible_tickets().filter_by(kind=kind).filter(Ticket.deleted_at.is_(None))
+    kinds = ("incident", "change") if kind == "all" else (kind,)
+    query = visible_tickets().filter(Ticket.kind.in_(kinds), Ticket.deleted_at.is_(None))
     if q:
         query = query.filter(db.or_(Ticket.number.ilike(f"%{q}%"), Ticket.title.ilike(f"%{q}%")))
     query = apply_filter_conditions(
         query, conditions or [], ticket_filter_field_spec(),
         extra_handlers={"group": ticket_group_filter_handler(kind), "assignee": _assignee_filter,
                         "open": _open_filter, "resolved_within_days": _resolved_within_filter,
-                        "sla": _sla_filter},
+                        "sla": _sla_filter, "unassigned": _unassigned_filter, "urgent": _urgent_filter},
     )
     return query
 
@@ -414,22 +428,29 @@ def manager_portal_context():
     if open_ticket_rows:
         # Joined to the same open-ticket filter instead of binding every open
         # ticket id (PostgreSQL caps a statement at 65,535 parameters).
-        sla_rows = db.session.query(Ticket.assignee_id, TaskSLA.breached, TaskSLA.breach_at, Ticket.kind).join(
+        sla_rows = db.session.query(Ticket.assignee_id, TaskSLA.breached, TaskSLA.breach_at, Ticket.kind, Ticket.id).join(
             TaskSLA, (TaskSLA.target_type == "ticket") & (TaskSLA.target_id == Ticket.id),
         ).filter(
             Ticket.assignee_id.in_(member_ids),
             Ticket.state.notin_(TERMINAL_TICKET_STATES),
             TaskSLA.stage == "In Progress",
         ).all()
-        for assignee_id, breached, breach_at, kind in sla_rows:
+        # A ticket can run several SLAs (response, resolution): count tickets,
+        # as the ticket list does, not SLA rows.
+        breached_tickets, at_risk_tickets = set(), set()
+        for assignee_id, breached, breach_at, kind, ticket_id in sla_rows:
             if breached:
-                sla_breached_by_member[assignee_id] += 1
-                by_kind[("sla_breached", assignee_id, kind)] += 1
+                breached_tickets.add((assignee_id, kind, ticket_id))
             else:
                 breach_at = breach_at if breach_at.tzinfo else breach_at.replace(tzinfo=timezone.utc)
                 if breach_at <= breach_horizon:
-                    sla_at_risk_by_member[assignee_id] += 1
-                    by_kind[("sla_at_risk", assignee_id, kind)] += 1
+                    at_risk_tickets.add((assignee_id, kind, ticket_id))
+        for assignee_id, kind, _ticket_id in breached_tickets:
+            sla_breached_by_member[assignee_id] += 1
+            by_kind[("sla_breached", assignee_id, kind)] += 1
+        for assignee_id, kind, _ticket_id in at_risk_tickets:
+            sla_at_risk_by_member[assignee_id] += 1
+            by_kind[("sla_at_risk", assignee_id, kind)] += 1
 
     team_rows = []
     member_rows_by_group = {}

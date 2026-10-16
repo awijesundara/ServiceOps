@@ -203,3 +203,91 @@ def test_an_administrator_can_turn_a_widget_off_everywhere(client, app):
     page = client.get(f"/dashboards/{dashboard_id}?edit=1").get_data(as_text=True)
     assert "Approvals awaiting me" not in page
     assert client.post(f"/dashboards/{dashboard_id}/widgets", data={"widget_key": "approvals"}).status_code == 400
+
+
+def _reconcile_world(app):
+    """Team and other-team incidents and changes, assigned and not, P1 and P4,
+    and one ticket with two at-risk and one with two breached SLAs."""
+    from datetime import timedelta
+    from app import ChangeOwnership, SLADefinition, TaskSLA, now
+    group_id, member_id = _database_member(app)
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        windows = SupportGroup.query.filter_by(name="Windows").one()
+        definition = SLADefinition(name="Resolve", target_type="ticket", duration_minutes=60, tenant_id=admin.tenant_id)
+        db.session.add(definition)
+        db.session.flush()
+        rows = [("incident", group_id, member_id, "P1"), ("incident", group_id, None, "P4"),
+                ("incident", windows.id, member_id, "P2"), ("change", group_id, member_id, "P3"),
+                ("change", group_id, None, "P1"), ("change", windows.id, None, "P4"),
+                ("incident", group_id, member_id, "P3")]
+        tickets = []
+        for index, (kind, team, assignee, priority) in enumerate(rows):
+            ticket = Ticket(number=f"{'INC' if kind == 'incident' else 'CHG'}95000{index:02d}", kind=kind,
+                            title=f"Reconcile {index}", description="d", state="New", priority=priority,
+                            category="Software", requester_id=admin.id, assignee_id=assignee)
+            db.session.add(ticket)
+            db.session.flush()
+            db.session.add(ChangeOwnership(ticket_id=ticket.id, group_id=team) if kind == "change"
+                           else TicketAssignmentGroup(ticket_id=ticket.id, group_id=team))
+            tickets.append(ticket)
+        for ticket, breached in ((tickets[0], False), (tickets[0], False), (tickets[6], True), (tickets[6], True)):
+            db.session.add(TaskSLA(definition_id=definition.id, target_type="ticket", target_id=ticket.id,
+                                   breach_at=now() + (timedelta(minutes=-5) if breached else timedelta(hours=1)),
+                                   breached=breached))
+        db.session.commit()
+    return group_id
+
+
+def _list_total(client, url):
+    import re
+    page = client.get(url).get_data(as_text=True)
+    return int(re.search(r"([\d,]+) records", page).group(1).replace(",", ""))
+
+
+def test_every_dashboard_number_matches_the_list_it_opens(client, app):
+    """The count a widget shows is exactly what its link lists: tiles, list
+    widgets, chart bars and workload, for every scope and record kind."""
+    import itertools
+    from flask_login import login_user
+    group_id = _reconcile_world(app)
+    login(client, "db.member", "DbMember123!")
+    checked = 0
+    with app.test_request_context("/"):
+        member = User.query.filter_by(username="db.member").one()
+        login_user(member)
+        team = db.session.get(SupportGroup, group_id)
+        for scope, kind in itertools.product(("mine", "team", "visible"), ("incident", "change", "all")):
+            opts = {"scope": scope, "kind": kind}
+            cases = [(t["count"], t["url"]) for t in boards._ticket_counts(member, opts, team)["tiles"]]
+            for by in ("priority", "state", "category", "assignee"):
+                data = boards._ticket_chart(member, dict(opts, group_by=by), team)
+                cases += [(b["count"], b["url"]) for b in data["bars"] if b["url"]] + [(data["total"], data["url"])]
+                assert data["total"] == sum(b["count"] for b in data["bars"])
+            for show in ("open", "unassigned", "at_risk", "breached"):
+                data = boards._ticket_list(member, dict(opts, show=show, limit=20), team)
+                cases.append((len(data["tickets"]), data["url"]))
+            for count, url in cases:
+                assert _list_total(client, url) == count, (scope, kind, url)
+                checked += 1
+        for row in boards._team_workload(member, {}, team)["members"]:
+            assert _list_total(client, row["url"]) == row["tickets"]
+            checked += 1
+    assert checked > 100
+
+
+def test_manager_portal_counts_tickets_not_slas(client, app):
+    """Two running SLAs on one ticket count it once, as the list does."""
+    from flask_login import login_user
+    from serviceops_core.web.common import manager_portal_context, ticket_list_url
+    group_id = _reconcile_world(app)
+    login(client)
+    with app.test_request_context("/"):
+        login_user(User.query.filter_by(username="admin").one())
+        teams, members = manager_portal_context()
+        rows = members[group_id]
+        member = next(m for m in rows if m["user"].username == "db.member")
+        assert member["sla_at_risk"] == 1 and member["sla_breached"] == 1
+        for metric, extra in (("sla_at_risk", {"sla": "at_risk"}), ("sla_breached", {"sla": "breached"})):
+            url = ticket_list_url("incident", member["user"].id, **extra)
+            assert _list_total(client, url) == member["by_kind"][metric]["incident"]

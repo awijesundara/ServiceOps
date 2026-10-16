@@ -357,6 +357,7 @@ VALUES = (
     translatable('Primary brand color'),
     translatable('Priority'),
     translatable('Priority 1 and 2'),
+    translatable('Priority 1 or 2'),
     translatable('Priority override reason'),
     translatable('Problem'),
     translatable('Problem fix change'),

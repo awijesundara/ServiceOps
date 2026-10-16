@@ -311,7 +311,9 @@ def register(app):
     @app.get("/tickets/<kind>")
     @login_required
     def tickets(kind):
-        if kind not in ("incident", "change"):
+        # "all" lists incidents and changes together (dashboard widgets that
+        # count both open it, so the number and the list agree).
+        if kind not in ("incident", "change", "all"):
             abort(404)
         q = request.args.get("q", "").strip()
         raw_filter = request.args.get("filter", "")
@@ -361,6 +363,8 @@ def register(app):
         days = sorted({"7", "30", "90"} | {c["value"] for c in conditions
                                            if c["field"] == "resolved_within_days" and c["value"].isdigit()}, key=int)
         field_spec["open"] = {"label": "Open", "type": "choice", "options": [("1", "Yes")]}
+        field_spec["unassigned"] = {"label": "Unassigned", "type": "choice", "options": [("1", "Yes")]}
+        field_spec["urgent"] = {"label": "Priority 1 or 2", "type": "choice", "options": [("1", "Yes")]}
         field_spec["sla"] = {"label": "SLA", "type": "choice", "options": [("breached", "Breached"),
                                                                            ("at_risk", "At risk")]}
         field_spec["resolved_within_days"] = {"label": "Resolved within (days)", "type": "choice",
@@ -370,7 +374,7 @@ def register(app):
             people = tenant_query(User).filter(User.id.in_(assignee_ids)).order_by(User.name).all()
             field_spec["assignee"] = {"label": "Assigned to", "type": "choice",
                                       "options": [(str(u.id), u.name) for u in people]}
-        for key in ("open", "sla", "resolved_within_days", "assignee"):
+        for key in ("open", "unassigned", "urgent", "sla", "resolved_within_days", "assignee"):
             for value, label in field_spec.get(key, {}).get("options", []):
                 value_labels[(key, value)] = label
         breadcrumb_parts = filter_conditions_breadcrumb(conditions, field_spec, value_labels)
@@ -390,7 +394,7 @@ def register(app):
     @app.get("/tickets/<kind>/export.csv")
     @login_required
     def tickets_export(kind):
-        if kind not in ("incident", "change"):
+        if kind not in ("incident", "change", "all"):
             abort(404)
         q = request.args.get("q", "").strip()
         conditions = parse_list_filter_param(request.args.get("filter", ""))
