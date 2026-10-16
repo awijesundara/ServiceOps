@@ -5210,6 +5210,9 @@
    "id": "Incidents Fixed By Change"
   },
   {
+   "id": "Incidents and changes"
+  },
+  {
    "id": "Incidents by closure category"
   },
   {
@@ -7912,6 +7915,9 @@
    "id": "Original estimate"
   },
   {
+   "id": "Other"
+  },
+  {
    "id": "Other (describe below)"
   },
   {
@@ -8477,6 +8483,9 @@
   },
   {
    "id": "Priority 1 and 2"
+  },
+  {
+   "id": "Priority 1 or 2"
   },
   {
    "id": "Priority levels must be unique and non-empty."

@@ -24,7 +24,7 @@
   <div class="dash-tiles">{% for tile in data.tiles %}<a href="{{ tile.url }}" class="{{ 'tone-' ~ tile.tone if tile.tone }}"><span>{{ tr_value(tile.label) }}</span><strong>{{ tile.count }}</strong></a>{% endfor %}</div>
 {% elif item.key == 'ticket_list' %}{{ ticket_rows(data.tickets, age) }}
 {% elif item.key == 'ticket_chart' %}
-  {% if data.bars %}<ul class="dash-bars">{% for bar in data.bars %}<li><a class="dash-bar-row" href="{{ bar.url }}" title="{{ tr('Open these {count} tickets', count=bar.count) }}"><span class="dash-bar-label">{{ tr_value(bar.label) }}</span><span class="dash-bar-track"><i class="pct-w-{{ bar.pct }}"></i></span><strong>{{ bar.count }}</strong></a></li>{% endfor %}</ul>
+  {% if data.bars %}<ul class="dash-bars">{% for bar in data.bars %}<li>{% if bar.url %}<a class="dash-bar-row" href="{{ bar.url }}" title="{{ tr('Open these {count} tickets', count=bar.count) }}">{% else %}<span class="dash-bar-row">{% endif %}<span class="dash-bar-label">{{ tr_value(bar.label) }}</span><span class="dash-bar-track"><i class="pct-w-{{ bar.pct }}"></i></span><strong>{{ bar.count }}</strong>{% if bar.url %}</a>{% else %}</span>{% endif %}</li>{% endfor %}</ul>
   <p class="muted dash-foot">{{ tr('{count} open in total', count=data.total) }}</p>
   {% else %}{{ empty(tr('No open tickets.')) }}{% endif %}
 {% elif item.key == 'ticket_trend' %}

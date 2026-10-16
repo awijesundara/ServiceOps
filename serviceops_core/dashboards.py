@@ -17,9 +17,9 @@ from sqlalchemy import func
 import app as core
 from serviceops_core.localization import tr
 from serviceops_models import (ApprovalChain, ApprovalGate, ApprovalVote, CatalogItemRouting, CatalogRequest,
-                               CatalogTask, ChangeGovernance, ChangeOwnership, Dashboard, DashboardHome,
+                               CatalogTask, ChangeGovernance, Dashboard, DashboardHome,
                                DashboardWidget, Favorite, GroupMember, Notification, OperationalTask, RecentView,
-                               RequestedItem, SupportGroup, TaskSLA, Ticket, TicketAssignmentGroup, User,
+                               RequestedItem, SupportGroup, TaskSLA, Ticket, User,
                                UserWorkspaceLayout, db, now)
 
 TERMINAL_TICKET = ("Resolved", "Closed", "Cancelled")
@@ -72,11 +72,6 @@ def age_label(moment):
 
 # --- data helpers ------------------------------------------------------------------------------
 
-def _team_ticket_ids(group_id):
-    return (db.session.query(TicketAssignmentGroup.ticket_id).filter(TicketAssignmentGroup.group_id == group_id)
-            .union(db.session.query(ChangeOwnership.ticket_id).filter(ChangeOwnership.group_id == group_id)))
-
-
 def _tickets(viewer, opts, team):
     query = core.visible_ticket_query(viewer).filter(Ticket.deleted_at.is_(None))
     kind = opts.get("kind", "incident")
@@ -87,7 +82,9 @@ def _tickets(viewer, opts, team):
     elif scope == "team":
         if team is None:
             return query.filter(db.false())
-        query = query.filter(Ticket.id.in_(_team_ticket_ids(team.id)))
+        # The ticket list's own team rule, so the number and the list agree.
+        from serviceops_core.web.common import team_ticket_condition
+        query = query.filter(team_ticket_condition(team.id))
     return query
 
 
@@ -109,23 +106,21 @@ def ticket_list_link(viewer, opts, team, **extra):
     elif opts.get("scope") == "team" and team is not None:
         rows.append({"field": "group", "op": "eq", "value": str(team.id)})
     rows += [{"field": key, "op": "eq", "value": str(value)} for key, value in extra.items()]
-    return url_for("tickets", kind="change" if kind == "change" else "incident",
+    return url_for("tickets", kind=kind if kind in ("incident", "change", "all") else "incident",
                    filter=json.dumps(rows, separators=(",", ":")) if rows else None)
 
 
 def _ticket_counts(viewer, opts, team):
     query = _tickets(viewer, opts, team).filter(Ticket.state.notin_(TERMINAL_TICKET))
-    open_ids = query.with_entities(Ticket.id)
     urgent = query.filter(Ticket.priority.in_(("P1", "P2"))).count()
     unassigned = query.filter(Ticket.assignee_id.is_(None)).count()
-    breached = db.session.query(func.count()).select_from(
-        _sla_ticket_ids("breached").filter(TaskSLA.target_id.in_(open_ids)).subquery()).scalar()
+    breached = query.filter(Ticket.id.in_(_sla_ticket_ids("breached"))).count()  # tickets, not SLA rows
     return {"tiles": [
         {"label": "Open", "count": query.count(), "tone": "", "url": ticket_list_link(viewer, opts, team, open=1)},
         {"label": "Priority 1 and 2", "count": urgent, "tone": "warn" if urgent else "",
-         "url": ticket_list_link(viewer, opts, team, open=1)},
+         "url": ticket_list_link(viewer, opts, team, open=1, urgent=1)},
         {"label": "Unassigned", "count": unassigned, "tone": "warn" if unassigned else "",
-         "url": ticket_list_link(viewer, opts, team, open=1)},
+         "url": ticket_list_link(viewer, opts, team, open=1, unassigned=1)},
         {"label": "SLA breached", "count": breached, "tone": "alert" if breached else "",
          "url": ticket_list_link(viewer, opts, team, sla="breached")},
     ]}
@@ -142,7 +137,7 @@ def _ticket_list(viewer, opts, team):
         query = query.filter(Ticket.id.in_(_sla_ticket_ids(show)))
     order = {"priority": (Ticket.priority, Ticket.updated_at.desc()), "oldest": (Ticket.created_at,),
              "updated": (Ticket.updated_at.desc(),)}[opts.get("sort", "priority")]
-    extra = {"recent": {}, "open": {"open": 1}, "unassigned": {"open": 1}, "at_risk": {"sla": "at_risk"},
+    extra = {"recent": {}, "open": {"open": 1}, "unassigned": {"open": 1, "unassigned": 1}, "at_risk": {"sla": "at_risk"},
              "breached": {"sla": "breached"}}[show]
     return {"tickets": query.order_by(*order).limit(int(opts.get("limit", 5))).all(),
             "url": ticket_list_link(viewer, opts, team, **extra)}
@@ -159,17 +154,24 @@ def _ticket_chart(viewer, opts, team):
         column = {"priority": Ticket.priority, "state": Ticket.state, "category": Ticket.category}[by]
         rows = [(value, count, value) for value, count in
                 query.with_entities(column, func.count(Ticket.id)).group_by(column)]
-    rows = sorted(rows, key=lambda row: (str(row[0]) if by == "priority" else -row[1], str(row[0])))[:12]
+    rows = sorted(rows, key=lambda row: (str(row[0]) if by == "priority" else -row[1], str(row[0])))
+    total = sum(row[1] for row in rows)
+    if len(rows) > 12:  # the rest as one bar, so the bars always add up to the total
+        rows = rows[:11] + [(tr("Other"), sum(row[1] for row in rows[11:]), "__other__")]
     peak = max([row[1] for row in rows] or [1])
 
     def bar_url(key):
-        if key is None:
+        if key == "__other__":
+            return None  # "everything except the bars shown" is not a list filter
+        if key is None and by == "assignee":
+            return ticket_list_link(viewer, opts, team, open=1, unassigned=1)
+        if key is None or key == "":
             return ticket_list_link(viewer, opts, team, open=1)
         return ticket_list_link(viewer, opts, team, open=1, **{by: key})
 
     return {"bars": [{"label": label or tr("None"), "count": count, "pct": max(2, round(count * 100 / peak)),
                       "url": bar_url(key)} for label, count, key in rows],
-            "total": sum(row[1] for row in rows), "url": ticket_list_link(viewer, opts, team, open=1)}
+            "total": total, "url": ticket_list_link(viewer, opts, team, open=1)}
 
 
 def _ticket_trend(viewer, opts, team):
@@ -211,7 +213,7 @@ def _team_workload(viewer, opts, team):
                          "pct": round((tickets.get(p.id, 0) + tasks[p.id]) * 100 / peak),
                          "ticket_pct": round(tickets.get(p.id, 0) * 100 / peak),
                          "task_pct": round(tasks[p.id] * 100 / peak),
-                         "url": ticket_list_link(viewer, {"scope": "visible", "kind": "incident"}, None,
+                         "url": ticket_list_link(viewer, {"scope": "visible", "kind": "all"}, None,
                                                  assignee=p.id, open=1)}
                         for p in people]}
 
