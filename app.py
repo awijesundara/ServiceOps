@@ -976,7 +976,8 @@ def create_api_token():
     return token, token[:12], api_token_hash(token)
 
 
-MOBILE_API_SCOPES = {"tickets:read", "incidents:create", "tickets:update"}
+# Project scopes still go through each project's own permissions.
+MOBILE_API_SCOPES = {"tickets:read", "incidents:create", "tickets:update", "projects:read", "projects:write"}
 
 
 def passkey_configuration():
@@ -7753,6 +7754,7 @@ def create_app(test_config=None):
         groups,
         itam,
         knowledge,
+        mobile_dashboards,
         platform,
         projects,
         service_requests,
@@ -7773,6 +7775,7 @@ def create_app(test_config=None):
     cmdb.register(app)
     client_management.register(app)
     dashboards.register(app)
+    mobile_dashboards.register(app)
     service_requests.register(app)
     projects.register(app)
 
