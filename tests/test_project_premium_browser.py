@@ -70,7 +70,7 @@ def test_premium_workspaces_with_actual_interactions(server,width,theme):
         browser.close()
 
 
-def test_timeline_drag_review_and_intake_journey(server):
+def test_timeline_drag_review_and_intake_journey(server,tmp_path):
     from playwright.sync_api import sync_playwright,expect
     from app import db,User
     from serviceops_core.projects import service
@@ -94,7 +94,7 @@ def test_timeline_drag_review_and_intake_journey(server):
         editor.get_by_label('Label',exact=True).fill('Business reason');editor.get_by_label('Required',exact=True).check()
         editor.get_by_role('button',name='Save form',exact=True).click();page.wait_for_load_state('networkidle')
         page.get_by_role('link',name='Open form',exact=True).click();page.wait_for_load_state('networkidle');page.get_by_label('Summary',exact=True).fill('New hosting platform');page.get_by_label('Business reason').fill('Capacity expansion')
-        page.screenshot(path='/private/tmp/serviceops-premium-20261018/intake-diagnostic.png',full_page=True)
+        page.screenshot(path=str(tmp_path/'intake-diagnostic.png'),full_page=True)
         violations=_axe(page)
         assert not violations,(violations,page.locator('.project-tabs a').first.evaluate('(e)=>({color:getComputedStyle(e).color,background:getComputedStyle(e.parentElement).backgroundColor,body:getComputedStyle(document.body).backgroundColor,html:document.documentElement.className})'))
         page.get_by_role('button',name='Create work item',exact=True).click();page.wait_for_load_state('networkidle');page.locator('summary').filter(has_text='Submitted form').click();expect(page.get_by_text('Capacity expansion',exact=True)).to_be_visible()
