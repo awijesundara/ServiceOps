@@ -608,6 +608,24 @@ def history_for_model(scope, messages, limit=6):
 
 _MARKER_START = re.compile(r"\[\[\s*(?:TICKET|FOLLOW|REMEMBER|DRAFT)|\[\[[A-Za-z -]{0,10}$|\[$", re.I)
 _LEVELS = ("Low", "Medium", "High", "Critical")
+# Smaller self-hosted models sometimes return the draft object without the [[TICKET]] marker, often in a
+# ```json fence; the draft is still recognised (and never shown as raw JSON) when its kind is a ticket kind.
+_BARE_DRAFT = re.compile(r'(?:```(?:json)?\s*)?(\{\s*"kind"\s*:\s*"(?:incident|change)")', re.I)
+
+
+def _bare_draft(text):
+    """(start, end, data) of an unmarked ticket-draft object in the answer, or None."""
+    import json
+    match = _BARE_DRAFT.search(text or "")
+    if not match:
+        return None
+    try:
+        data, length = json.JSONDecoder().raw_decode(text[match.start(1):])
+    except ValueError:
+        return None
+    end = match.start(1) + length
+    fence = re.match(r"\s*```", text[end:])
+    return match.start(), end + (fence.end() if fence else 0), data
 # Historical hard-coded default -- kept only as the last-resort fallback in
 # _tenant_categories() below if a tenant's admin-managed list is ever empty
 # (migration 20260926_0103 always seeds it, so this should not normally apply)
@@ -678,25 +696,28 @@ def extract_extras(text, may_raise_change=False, tenant_id=None, timezone_name=N
     text = text or ""
     categories = _tenant_categories(tenant_id)
     match = re.search(r"\[\[\s*TICKET\s*\]\]\s*", text, re.I)
+    data = None
     if match:
         try:
             data, _ = json.JSONDecoder().raw_decode(text[match.end():])
         except ValueError:
             data = None
-        if isinstance(data, dict):
-            kind = str(data.get("kind", "incident")).lower()
-            title = " ".join(str(data.get("title", "")).split())[:180]
-            description = str(data.get("description", "")).strip()[:10000]
-            if kind == "change" and not may_raise_change:
-                kind = ""
-            if kind in ("incident", "change") and title and description:
-                pick = lambda value, options, default: next((o for o in options if o.lower() == str(value).lower()), default)  # noqa: E731
-                extras["draft"] = {"kind": kind, "title": redact(title), "description": redact(description),
-                                   "impact": pick(data.get("impact"), _LEVELS, "Medium"),
-                                   "urgency": pick(data.get("urgency"), _LEVELS, "Medium"),
-                                   "category": pick(data.get("category"), categories, "")}
-                from serviceops_core.ai.ticket_drafts import additional_fields
-                extras["draft"].update(additional_fields(data, timezone_name))
+    elif bare := _bare_draft(text):
+        data = bare[2]
+    if isinstance(data, dict):
+        kind = str(data.get("kind", "incident")).lower()
+        title = " ".join(str(data.get("title", "")).split())[:180]
+        description = str(data.get("description", "")).strip()[:10000]
+        if kind == "change" and not may_raise_change:
+            kind = ""
+        if kind in ("incident", "change") and title and description:
+            pick = lambda value, options, default: next((o for o in options if o.lower() == str(value).lower()), default)  # noqa: E731
+            extras["draft"] = {"kind": kind, "title": redact(title), "description": redact(description),
+                               "impact": pick(data.get("impact"), _LEVELS, "Medium"),
+                               "urgency": pick(data.get("urgency"), _LEVELS, "Medium"),
+                               "category": pick(data.get("category"), categories, "")}
+            from serviceops_core.ai.ticket_drafts import additional_fields
+            extras["draft"].update(additional_fields(data, timezone_name))
     note = re.search(r"\[\[\s*REMEMBER\s*\]\]\s*(.+?)\s*(?:\[\[|$)", text, re.I | re.S)
     if note:
         candidate = " ".join(note.group(1).split()).strip(" \"'")[:240]
@@ -714,6 +735,9 @@ def sanitize_answer(text, allowed_identifiers, valid_source_ids, typed_by_user=(
     cut = _MARKER_START.search(text or "")
     if cut:
         text = text[:cut.start()].rstrip()  # the machine-readable tail is never shown as text
+    bare = _bare_draft(text)
+    if bare:
+        text = (text[:bare[0]].rstrip() + "\n\n" + text[bare[1]:].lstrip()).strip()
     allowed = set(allowed_identifiers) | {n.upper() for n in typed_by_user}
     text = _RECORD_ID.sub(lambda m: m.group(0) if m.group(0) in allowed else UNVERIFIED_REFERENCE, text or "")
     text = re.sub(r"\[(S\d+)\]", lambda m: m.group(0) if m.group(1) in valid_source_ids else "", text)
