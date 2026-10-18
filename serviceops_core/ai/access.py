@@ -608,6 +608,9 @@ def history_for_model(scope, messages, limit=6):
 
 _MARKER_START = re.compile(r"\[\[\s*(?:TICKET|FOLLOW|REMEMBER|DRAFT)|\[\[[A-Za-z -]{0,10}$|\[$", re.I)
 _LEVELS = ("Low", "Medium", "High", "Critical")
+# Leading number of the draft's own kind in a draft title: the record does not exist yet, so it is invented.
+_INVENTED_NUMBER = {kind: re.compile(rf"^{prefix}[0-9X]{{3,}}\b\s*(?:(?:Normal|Standard|Emergency)\b\s*)?[:\-\u2013]?\s*", re.I)
+                    for kind, prefix in (("change", "CHG"), ("incident", "INC"))}
 # Smaller self-hosted models sometimes return the draft object without the [[TICKET]] marker, often in a
 # ```json fence; the draft is still recognised (and never shown as raw JSON) when its kind is a ticket kind.
 _BARE_DRAFT = re.compile(r'(?:```(?:json)?\s*)?(\{\s*"kind"\s*:\s*"(?:incident|change)")', re.I)
@@ -706,7 +709,10 @@ def extract_extras(text, may_raise_change=False, tenant_id=None, timezone_name=N
         data = bare[2]
     if isinstance(data, dict):
         kind = str(data.get("kind", "incident")).lower()
-        title = " ".join(str(data.get("title", "")).split())[:180]
+        title = " ".join(str(data.get("title", "")).split())
+        if kind in _INVENTED_NUMBER:  # a new record has no number yet; models sometimes invent one ("CHG0000XXX Normal: ...")
+            title = _INVENTED_NUMBER[kind].sub("", title)
+        title = title[:180]
         description = str(data.get("description", "")).strip()[:10000]
         if kind == "change" and not may_raise_change:
             kind = ""
