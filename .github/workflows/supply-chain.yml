@@ -114,16 +114,27 @@ jobs:
             -e POSTGRES_USER=transaction_gate -e POSTGRES_PASSWORD=transaction-quality-gate \
             -e POSTGRES_DB=serviceops_architecture_test -p 127.0.0.1:55437:5432 \
             postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+          # The image's entrypoint first runs a temporary server for initdb (pg_isready already
+          # answers then) and shuts it down before starting the real one; wait for that to finish.
           ready=false
-          for attempt in $(seq 1 40); do
-            if docker exec serviceops-transaction-gate pg_isready -U transaction_gate -d serviceops_architecture_test; then
+          for attempt in $(seq 1 60); do
+            if docker logs serviceops-transaction-gate 2>&1 | grep -q "PostgreSQL init process complete" \
+              && docker exec serviceops-transaction-gate pg_isready -U transaction_gate -d serviceops_architecture_test; then
               ready=true
               break
             fi
             sleep 1
           done
           test "$ready" = true
-          docker exec serviceops-transaction-gate createdb -U transaction_gate serviceops_arch_realtime_test
+          created=false
+          for attempt in $(seq 1 10); do
+            if docker exec serviceops-transaction-gate createdb -U transaction_gate serviceops_arch_realtime_test; then
+              created=true
+              break
+            fi
+            sleep 2
+          done
+          test "$created" = true
           docker run --rm --network host \
             -e ARCHITECTURE_DATABASE_URL -e REALTIME_DATABASE_URL \
             "serviceops-test:${RELEASE_SHA}" \
