@@ -1255,11 +1255,6 @@ def sorted_query(query, sort):
     return query.order_by(*(SORTS.get(sort) or SORTS["rank"]))
 
 
-def project_members(project):
-    return User.query.join(ProjectMember, ProjectMember.user_id == User.id).filter(
-        ProjectMember.project_id == project.id, User.active.is_(True)).order_by(User.name).all()
-
-
 def assignable_users(project):
     """Members who can edit; tenant administrators are added when assigned."""
     return User.query.join(ProjectMember, ProjectMember.user_id == User.id).filter(

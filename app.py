@@ -377,8 +377,6 @@ login_manager.login_view = "login"
 oauth = OAuth()
 
 
-
-
 def parse_form_datetime(value):
     """Parses a datetime-local form value into a UTC-aware datetime so it can
     be safely compared against tz-aware DateTime(timezone=True) columns."""
@@ -526,24 +524,6 @@ def current_storage():
     """The active StorageBackend (PostgresStorageBackend by default,
     IPFSStorageBackend under STORAGE_MODE=ipfs), built once at app boot."""
     return current_app.extensions["storage_backend"]
-
-
-def ipfs_find_user_by_username(username):
-    rows = current_storage().query("user", tenant_id=None, filters=[("username", "eq", username)])
-    return ipfs_user_from_dict(rows[0]) if rows else None
-
-
-def ipfs_user_from_dict(fields):
-    """Wraps a plain dict from IPFSStorageBackend.get/query("user", ...) as
-    a transient (never added to a db.session) User instance, so the exact
-    same model class -- same UserMixin behavior, same plain-Column
-    attributes templates/routes already read (name, username, role,
-    tenant_id, mfa_enabled, ...) -- works under STORAGE_MODE=ipfs with no
-    database at all. Only plain Column attributes are safe to read on a
-    transient instance; relationship-backed properties (granted_roles,
-    manager, ...) would try to issue a real query and must not be touched
-    on this object -- login-only milestone, see BACKLOG B-335."""
-    return User(**fields)
 
 
 def object_storage_client():
@@ -1255,41 +1235,6 @@ def flush_request_metrics():
                 _request_metric_buffer[key] = (held_count + count, held_ms + total_ms)
 
 
-_ipfs_rate_limit_windows = {}
-_ipfs_rate_limit_lock = threading.Lock()
-
-
-def _ipfs_route_rate_limit(scope, key, limit, window_seconds):
-    """In-memory equivalent of the DB-backed windowed counter below, for
-    STORAGE_MODE=ipfs (BACKLOG B-335, known first-slice gap): counters
-    live only in this process's memory, so they reset on every restart
-    and aren't shared across multiple app instances -- acceptable for now
-    since IPFS mode is already constrained to a single app process (see
-    the storage-mode plan's "Deployment/process shape" section). That
-    single-process constraint only rules out cross-process races, not
-    cross-thread ones -- gunicorn's gthread worker class runs several
-    request-handling threads inside that one process, so the
-    read-increment-write below is guarded by a lock rather than relying
-    on the GIL to make it atomic across the two dict operations."""
-    composite_key = f"{scope}:{key}"[:160]
-    current = now()
-    epoch_start = (int(current.timestamp()) // window_seconds) * window_seconds
-    window_start = datetime.fromtimestamp(epoch_start, tz=timezone.utc)
-    with _ipfs_rate_limit_lock:
-        # Opportunistic cleanup of stale windows so this dict doesn't grow
-        # unboundedly for the lifetime of a long-running process.
-        stale_cutoff = window_start - timedelta(hours=1)
-        for existing_key, existing_window in list(_ipfs_rate_limit_windows):
-            if existing_window < stale_cutoff:
-                del _ipfs_rate_limit_windows[(existing_key, existing_window)]
-        count = _ipfs_rate_limit_windows.get((composite_key, window_start), 0) + 1
-        _ipfs_rate_limit_windows[(composite_key, window_start)] = count
-    if count > limit:
-        g.rate_limit_retry_after = max(1, window_seconds - int((current - window_start).total_seconds()))
-        return False
-    return True
-
-
 def route_rate_limit(scope, key, limit, window_seconds=60):
     """General-purpose IP/account-scoped rate limiter for unauthenticated web
     routes (ISO 27001 A.8.16), generalized from `enforce_api_rate_limit`'s
@@ -1576,10 +1521,6 @@ DOMAIN_ICONS = {
     "event": '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
     "release": '<path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" y1="22" x2="12" y2="12"/>',
 }
-
-
-
-
 
 
 def initial_language_preference():
@@ -4096,13 +4037,6 @@ def _conflict_descriptions(tenant_id, ci_ids, planned_start, planned_end, exclud
     return conflicts
 
 
-def precreate_change_conflicts(tenant_id, ci_id, planned_start, planned_end):
-    """Checked while a change is still being filled out, before it exists, so the
-    submitter is warned and blocked instead of discovering the conflict afterward."""
-    ci_ids = {ci_id} if ci_id else set()
-    return _conflict_descriptions(tenant_id, ci_ids, planned_start, planned_end)
-
-
 def active_change_freeze(tenant_id, planned_start, planned_end):
     """Returns the first ChangeFreezeWindow whose range overlaps the given
     planned window, or None. Overlap uses the same open-interval test as
@@ -6388,34 +6322,6 @@ def seed_itil(admin):
                 db.session.add(TicketSubcategory(
                     category_id=category.id, name=subcategory_name, active=True, tenant_id=admin.tenant_id,
                 ))
-
-
-def bootstrap_ipfs_tenant_and_admin():
-    """Minimal STORAGE_MODE=ipfs equivalent of seed()'s bootstrap-admin
-    path (BACKLOG B-335, login-only milestone) -- creates a default
-    tenant and administrator directly in IPFSStorageBackend if none
-    exists yet. Does not call seed_itil()/deploy_workflow_package(): those
-    create dozens of Postgres-only entities (support groups, catalog
-    items, workflow definitions, ...) this storage backend doesn't
-    implement. A fresh IPFS-mode instance only has login working; there
-    is deliberately no catalog/workflow/CMDB seed data yet."""
-    storage = current_storage()
-    if storage.query("tenant", tenant_id=None):
-        return
-    admin_password = secret_value("ADMIN_PASSWORD")
-    if not admin_password:
-        raise RuntimeError("ADMIN_PASSWORD is required to bootstrap the first administrator.")
-    if len(admin_password) < 14:
-        raise RuntimeError("ADMIN_PASSWORD must contain at least 14 characters.")
-    storage.create("tenant", slug=os.getenv("DEFAULT_TENANT_SLUG", "default"),
-                    name=os.getenv("DEFAULT_TENANT_NAME", "Default organisation"))
-    storage.create(
-        "user", username="admin", name="System Administrator", email="admin@example.local",
-        password_hash=hash_password(admin_password), role="admin", tenant_id=1,
-        active=True, auth_version=1, failed_login_count=0, mfa_enabled=False,
-        title="", department="", business_phone="", mobile_phone="", location="",
-        timezone="Asia/Tokyo", date_format="system", calendar_integration="None",
-    )
 
 
 def seed():

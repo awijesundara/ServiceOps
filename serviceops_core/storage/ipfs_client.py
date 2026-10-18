@@ -10,11 +10,6 @@ this module has no retry/fallback policy of its own.
 import httpx
 
 
-class IPFSClientError(RuntimeError):
-    """Raised for IPFS RPC responses that are 2xx but semantically wrong
-    (e.g. a key-generation collision the caller should treat as OK)."""
-
-
 class IPFSClient:
     # Normal Kubo operations stay tightly bounded. name_publish uses its own
     # longer timeout because it runs only in the backend's retrying publisher

@@ -7,9 +7,9 @@ from flask import abort, current_app
 import app as core
 from serviceops_core.localization import tr
 from serviceops_core.projects import service
-from serviceops_core.projects.models import (ITEM_TYPES, PRIORITIES, Project, ProjectStatus, WorkItem,
+from serviceops_core.projects.models import (ITEM_TYPES, PRIORITIES, Project, WorkItem,
                                              WorkItemAssignee, WorkItemComponent, WorkItemFixVersion,
-                                             WorkItemAffectsVersion, WorkItemKeyAlias, WorkItemLabel, WorkItemLink)
+                                             WorkItemAffectsVersion, WorkItemKeyAlias, WorkItemLink)
 from serviceops_models import db
 
 BULK_LIMIT = 500
@@ -232,9 +232,3 @@ def project_choices(user, exclude=None):
             and (exclude is None or project.id != exclude.id)]
 
 
-def statuses_of(project):
-    return ProjectStatus.query.filter_by(project_id=project.id).order_by(ProjectStatus.position).all()
-
-
-def labels_of(item):
-    return [row.label for row in WorkItemLabel.query.filter_by(work_item_id=item.id)]
