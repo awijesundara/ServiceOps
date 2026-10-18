@@ -64,10 +64,18 @@ def bind_draft(draft, identity, sources, question=None):
         if question:
             import re
             normalized = ' '.join(question.casefold().split())
-            named = {s['id'] for s in sources if s.get('kind') == 'ci' and s.get('title') and
-                     re.search(r'(?<!\w)' + re.escape(' '.join(s['title'].casefold().split())) + r'(?!\w)', normalized)}
+            def mentions(text, source):
+                return re.search(r'(?<!\w)' + re.escape(' '.join(source['title'].casefold().split())) + r'(?!\w)', text)
+
+            named = {s['id'] for s in sources if s.get('kind') == 'ci' and s.get('title') and mentions(normalized, s)}
             if named:
                 result['ci_sources'] = [s for s in result.get('ci_sources', []) if s in named]
+                # A request can name several CIs ("confirm pay-api-01 is healthy, then patch pay-api-02"); the
+                # one the draft's own title is about is the subject, so it wins over the others the model picked.
+                title = ' '.join(str(result.get('title', '')).casefold().split())
+                subject = [s['id'] for s in sources if s['id'] in named and mentions(title, s)]
+                if subject:
+                    result['ci_sources'] = [s for s in result['ci_sources'] if s in subject] or subject
         ids = list(dict.fromkeys(known[s] for s in result.get('ci_sources', []) if s in known))
         cis = {ci.id: ci for ci in read_access.configuration_items(identity).filter(core.ConfigurationItem.id.in_(ids or [-1])).all()}
         result['ci_ids'] = [i for i in ids if i in cis]

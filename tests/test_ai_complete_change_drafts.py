@@ -228,3 +228,33 @@ def test_json_that_is_not_a_ticket_draft_is_left_alone(app):
     with app.app_context():
         assert 'draft' not in access.extract_extras(answer, may_raise_change=True, tenant_id=1)
     assert '"replicas": 2' in access.sanitize_answer(answer, set(), set())
+
+
+def test_invented_number_of_the_drafts_own_kind_is_removed_from_its_title(app):
+    for title, expected in (('CHG0000XXX Normal: Upgrade SAMPLE server', 'Upgrade SAMPLE server'),
+                            ('CHG0000006: Upgrade SAMPLE server', 'Upgrade SAMPLE server'),
+                            ('INC0000006 fix: Upgrade SAMPLE server', 'INC0000006 fix: Upgrade SAMPLE server')):
+        fields = dict(draft_fields(), title=title)
+        with app.app_context():
+            extras = access.extract_extras('[[TICKET]] ' + json.dumps(fields), may_raise_change=True, tenant_id=1, timezone_name='UTC')
+        assert extras['draft']['title'] == expected
+
+
+def test_the_ci_named_in_the_draft_title_wins_over_other_cis_the_request_names(app, world):
+    with app.app_context():
+        team = SupportGroup.query.filter_by(name='Database').one()
+        target = ConfigurationItem(name='node-b', ci_class='Server', support_group_id=team.id, tenant_id=1)
+        other = ConfigurationItem(name='node-a', ci_class='Server', support_group_id=team.id, tenant_id=1)
+        db.session.add_all([target, other])
+        db.session.commit()
+        sources = [{'id': 'S1', 'kind': 'ci', 'record_id': other.id, 'title': 'node-a'},
+                   {'id': 'S2', 'kind': 'ci', 'record_id': target.id, 'title': 'node-b'}]
+        draft = dict(draft_fields(), title='Upgrade memory on node-b', ci_sources=['S1'])
+        from app import User
+        identity = User.query.filter_by(username='admin').one()
+        question = 'Draft a change: confirm node-a is healthy, then upgrade memory on node-b.'
+        assert bind_draft(draft, identity, sources, question=question)['ci_ids'] == [target.id]
+        both = dict(draft, ci_sources=['S1', 'S2'])
+        assert bind_draft(both, identity, sources, question=question)['ci_ids'] == [target.id]
+        untitled = dict(draft, title='Memory upgrade', ci_sources=['S1'])
+        assert bind_draft(untitled, identity, sources, question=question)['ci_ids'] == [other.id]
