@@ -1,4 +1,4 @@
-FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS psycopg-c
+FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS psycopg-c
 
 # Compile psycopg's C module against Debian's patched libpq. Without it psycopg
 # runs its pure-Python fallback, which a 500-user load test (2026-10-12) showed
@@ -25,7 +25,7 @@ RUN mkdir -p /wheels \
             echo "WARNING: could not compile psycopg-c; the image keeps the binary fallback"; \
         fi
 
-FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6
+FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 
 ARG PIP_INDEX_URL=""
 ARG PIP_TRUSTED_HOST=""
