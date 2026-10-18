@@ -46,7 +46,8 @@ class Kubernetes:
             with urlopen(request,context=self.context,timeout=15) as response:return json.load(response)
         except HTTPError as error:
             if optional and error.code==404:return None
-            LOG.warning('Sandbox Kubernetes request rejected: method=%s code=%s resource=%s',method,error.code,path)
+            # Log the collection only (e.g. .../secrets), never individual resource names.
+            LOG.warning('Sandbox Kubernetes request rejected: method=%s code=%s collection=%s',method,error.code,path.split('?')[0].rsplit('/',1)[0])
             raise KubernetesError('Kubernetes request failed with HTTP '+str(error.code)) from None
         except Exception as error:
             LOG.error('Sandbox Kubernetes connection failed: type=%s reason=%s verify_code=%s',type(error).__name__,type(getattr(error,'reason',None)).__name__,getattr(getattr(error,'reason',None),'verify_code',None))
