@@ -207,3 +207,24 @@ def test_planned_times_without_an_offset_are_read_in_the_requesters_zone(app):
         unreadable = access.extract_extras('[[TICKET]] ' + json.dumps(fields), may_raise_change=True, tenant_id=1,
                                            timezone_name='Asia/Tokyo')['draft']
         assert 'planned_start' not in unreadable
+
+
+def test_unmarked_fenced_draft_is_recognised_and_never_shown_as_json(app):
+    fields = {k: v for k, v in draft_fields().items() if k != 'description'}
+    fields['description'] = 'Upgrade the operating system on SAMPLE server.'
+    answer = 'Here is the draft for the change you requested:\n```json\n' + json.dumps(fields, indent=2) + '\n```\nReview it first.'
+    with app.app_context():
+        extras = access.extract_extras(answer, may_raise_change=True, tenant_id=1, timezone_name='UTC')
+    assert extras['draft']['kind'] == 'change' and extras['draft']['title'] == 'Upgrade SAMPLE server'
+    assert extras['draft']['planned_start'] == '2030-11-01T23:00'
+    assert extras['draft']['backout_plan'] == fields['backout_plan']
+    shown = access.sanitize_answer(answer, set(), set())
+    assert '"kind"' not in shown and '```' not in shown
+    assert shown.startswith('Here is the draft') and shown.endswith('Review it first.')
+
+
+def test_json_that_is_not_a_ticket_draft_is_left_alone(app):
+    answer = 'The config looks like this: {"kind": "deployment", "replicas": 2}'
+    with app.app_context():
+        assert 'draft' not in access.extract_extras(answer, may_raise_change=True, tenant_id=1)
+    assert '"replicas": 2' in access.sanitize_answer(answer, set(), set())
