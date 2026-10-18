@@ -39,3 +39,22 @@ def test_neighbor_controls_match(server,compact,touch):
                 output.mkdir(parents=True,exist_ok=True)
                 page.screenshot(path=str(output/f"{route.rsplit('/',1)[-1]}-{'touch' if touch else 'compact' if compact else 'standard'}.png"))
         browser.close()
+
+
+@pytest.mark.parametrize('compact,touch', [(False,False),(True,False),(True,True)])
+def test_client_management_search_filter_and_save_view_match(server,compact,touch):
+    from playwright.sync_api import sync_playwright
+    _,base=server
+    with sync_playwright() as playwright:
+        browser=playwright.chromium.launch()
+        page=browser.new_page(viewport={'width':390 if touch else 1440,'height':1000},has_touch=touch,is_mobile=touch)
+        _sign_in(page,base)
+        response=page.goto(base+'/client-management/tickets',wait_until='networkidle')
+        assert response.ok
+        if compact:
+            page.evaluate("document.body.classList.add('density-compact')")
+        heights=page.evaluate("""()=>['.client-toolbar .list-search > button','.client-toolbar .list-filter-toggle','.client-toolbar .save-view > summary','.client-toolbar input[type=search]'].map(s=>document.querySelector(s).getBoundingClientRect().height)""")
+        assert len(set(heights))==1,heights
+        assert heights[0]==(44 if touch else 34 if compact else 38)
+        assert not _axe(page)
+        browser.close()
