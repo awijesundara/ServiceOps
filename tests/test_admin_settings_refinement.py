@@ -155,12 +155,19 @@ def test_browser_admin_controls_are_accessible_and_save_multiple_executives(app,
                 violations = page.evaluate("async () => (await axe.run(document, {runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa']}})).violations")
                 assert not violations, (path, [(item['id'], [node['target'] for node in item['nodes']]) for item in violations])
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), path
-            for checkbox in page.locator('input[name="user_ids"]').all():
-                checkbox.uncheck()
-            for user_id in selected:
-                page.locator(f'input[name="user_ids"][value="{user_id}"]').check()
+            # Executives are added one at a time through the searchable picker.
+            users = page.locator('[data-approval-users="executive"]')
+            for username in ('admin', 'employee'):
+                if users.locator('li').filter(has_text=username).count():
+                    continue
+                picker = users.get_by_role('combobox', name='User to add')
+                picker.fill(username)
+                picker.press('ArrowDown')
+                picker.press('Enter')
+                users.get_by_role('button', name='Add user').click()
+                page.wait_for_load_state('networkidle')
             page.get_by_label('Approval rule').select_option('any')
-            page.get_by_role('button', name='Save executive approvers').click()
+            page.get_by_role('button', name='Save approval rule').click()
             page.wait_for_load_state('networkidle')
             with app.app_context():
                 executive = SupportGroup.query.filter_by(name='Executive Office').one()
