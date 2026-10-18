@@ -104,10 +104,6 @@ def versions(project, include_archived=True):
     return query.order_by(ProjectVersion.position, ProjectVersion.id).all()
 
 
-def unreleased_versions(project):
-    return [row for row in versions(project, include_archived=False) if not row.released]
-
-
 def version_or_404(project, version_id):
     row = ProjectVersion.query.filter_by(id=version_id, project_id=project.id).first()
     if not row:

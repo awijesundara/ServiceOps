@@ -6,7 +6,7 @@ A day and a week are the tenant's working day and week
 (PROJECTS_HOURS_PER_DAY, PROJECTS_DAYS_PER_WEEK).
 """
 import re
-from datetime import datetime, time
+from datetime import datetime
 
 from flask import abort
 from sqlalchemy import func
@@ -123,7 +123,6 @@ def _lock_item(item, actor):
     return item
 
 
-
 def log_work(actor, item, spent, started=None, comment="", remaining_mode="auto", new_remaining=None,
              reduce_by=None):
     service.require_edit(actor, item.project)
@@ -206,15 +205,7 @@ def time_tracking(item):
             "has_any": bool(item.estimate_minutes or spent or item.remaining_minutes)}
 
 
-def worklog_day(value):
-    """Midday on a date, for forms that only pick a day."""
-    return datetime.combine(value, time(12, 0)).replace(tzinfo=now().tzinfo)
-
-
 def worklogs_for(item):
     return WorkItemWorklog.query.filter_by(work_item_id=item.id).order_by(WorkItemWorklog.started_at.desc()).all()
 
 
-def total_spent(project_id):
-    return int(db.session.query(func.coalesce(func.sum(WorkItem.spent_minutes), 0)).filter(
-        WorkItem.project_id == project_id).scalar())
