@@ -64,7 +64,9 @@ def save_policy(actor,data,client_ip=None):
 
 @roadmap.guarded
 def enforce_network():
-    if request.path in ('/health','/ready','/metrics') or request.path.startswith('/static/'):return
+    # Probes come from the node, not a user network: an allowlist must never fail the kubelet's
+    # liveness check, or Kubernetes restarts the web pod in a loop.
+    if request.path in ('/health','/ready','/live','/metrics') or request.path.startswith('/static/'):return
     if not request.endpoint:return
     rules=policy().get('ip_networks',[])
     if not rules:return

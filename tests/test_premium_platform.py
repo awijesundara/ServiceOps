@@ -44,6 +44,7 @@ def test_allowlist_lockout_protection_stale_policy_and_untrusted_headers(app,cli
     response=client.get('/login',environ_overrides={'REMOTE_ADDR':'198.51.100.10'},headers={'X-Forwarded-For':'127.0.0.1'})
     assert response.status_code==403
     assert client.get('/health',environ_overrides={'REMOTE_ADDR':'198.51.100.10'}).status_code==200
+    assert client.get('/live',environ_overrides={'REMOTE_ADDR':'10.1.134.1'}).status_code==200
     assert client.get('/login').status_code==200
 
 
