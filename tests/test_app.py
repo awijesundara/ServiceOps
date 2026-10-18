@@ -693,7 +693,7 @@ def test_audit_log_supports_structured_filtering_by_user_and_action(client, app)
     """Regression test for a real reported gap: /admin/audit only had a
     single free-text box searching action/target, with no way to narrow by
     who performed an action, when, or from where. Extends the same
-    ServiceNow-style filter framework tickets/cmdb already use
+    condition filter framework tickets/cmdb already use
     (parse_list_filter_param/apply_filter_conditions) rather than a
     bespoke mechanism."""
     with app.app_context():
@@ -9072,7 +9072,7 @@ def test_ticket_list_filters_by_priority_category_and_assignment_group(client, a
     assert b"Windows login issue" not in contains.data
 
 
-def test_module_records_list_supports_servicenow_style_filter(client, app):
+def test_module_records_list_supports_condition_filter(client, app):
     login(client)
     client.post("/module/problem/new", data={
         "record_type": "Root cause analysis",
@@ -9128,7 +9128,7 @@ def test_change_password_is_local_users_only(client, app):
     assert b"Change password" in own_admin_profile.data
 
 
-def test_cmdb_list_supports_servicenow_style_filter(client, app):
+def test_cmdb_list_supports_condition_filter(client, app):
     with app.app_context():
         windows = SupportGroup.query.filter_by(name="Windows").one()
         db.session.add(ConfigurationItem(
@@ -10490,7 +10490,7 @@ def test_admin_roles_override_is_tenant_scoped(client, app):
     assert b'name="grant__agent__comment_internal" checked' in page.data
 
 
-def test_users_list_supports_servicenow_style_filter(client, app):
+def test_users_list_supports_condition_filter(client, app):
     login(client)
     with app.app_context():
         db.session.add(User(
@@ -10506,7 +10506,7 @@ def test_users_list_supports_servicenow_style_filter(client, app):
     assert b"Role is manager" in filtered.data
 
 
-def test_assets_list_supports_servicenow_style_filter(client, app):
+def test_assets_list_supports_condition_filter(client, app):
     login(client)
     with app.app_context():
         db.session.add(Asset(asset_tag="AST-100", name="Filter laptop", asset_type="Laptop", status="In use"))

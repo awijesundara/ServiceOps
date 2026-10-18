@@ -1,4 +1,4 @@
-"""Admin-configurable ITIL v4/ServiceNow-style ticket category taxonomy (B-388 follow-up)."""
+"""Admin-configurable ITIL v4-style ticket category taxonomy (B-388 follow-up)."""
 from werkzeug.security import generate_password_hash
 
 from app import ServiceOffering, Tenant, Ticket, TicketCategory, TicketSubcategory, User, db, normalize_ticket_category, normalize_ticket_subcategory

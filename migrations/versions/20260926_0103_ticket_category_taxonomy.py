@@ -1,10 +1,10 @@
-"""Admin-configurable ITIL v4/ServiceNow-style ticket category taxonomy.
+"""Admin-configurable ITIL v4-style ticket category taxonomy.
 
 Ticket.category/subcategory stay free text (unchanged) -- these two new tables
 supply the controlled vocabulary the ticket form and AI drafting validate
 against, replacing what used to be a hard-coded Python list
 (`TICKET_CATEGORY_OPTIONS` in app.py). Every existing tenant is seeded with
-today's six category names plus a starter set of ITIL v4/ServiceNow-style
+today's six category names plus a starter set of ITIL v4-style
 subcategories, editable/removable by an administrator afterward.
 
 Revision ID: 20260926_0103
