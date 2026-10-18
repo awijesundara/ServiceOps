@@ -291,7 +291,7 @@ def test_convert_between_subtask_and_standard_types(pm):
     db.session.commit()
     operations.convert_item(u("dev.one"), task, "subtask", story.id)
     assert task.item_type == "subtask" and task.parent_id == story.id
-    expect_abort(409, operations.convert_item, u("dev.one"), story, "subtask", None)  # it has a subtask
+    expect_abort(400, operations.convert_item, u("dev.one"), story, "subtask", None)  # parent is required
     operations.convert_item(u("dev.one"), task, "bug")
     assert task.item_type == "bug" and task.parent_id is None
     expect_abort(400, operations.convert_item, u("dev.one"), task, "bug")  # same type

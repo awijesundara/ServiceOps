@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('Review planning changes') }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">{{ tr('PLANNING DRAFT') }}</p><h1>{{ draft.name }}</h1><p>{{ tr('Review planning changes') }}</p></div><a class="button" href="{{ url_for('projects.planning_overview') }}">{{ tr('Planning overview') }}</a></header>
+{% if stale %}<p class="panel" role="alert">{{ tr('This draft is stale. Work or dependencies have changed. Create a new draft before applying changes.') }}</p>{% endif %}
+{% if draft.applied_at %}<p class="panel" role="status">{{ tr('Selected changes from this draft have already been applied.') }}</p>{% endif %}
+<form method="post" action="{{ url_for('projects.planning_apply',draft_id=draft.id,action='apply') }}" class="panel">
+<div class="table-scroll" tabindex="0" role="region" aria-label="{{ tr('Proposed date changes') }}"><table class="project-table"><thead><tr><th>{{ tr('Apply') }}</th><th>{{ tr('Work item') }}</th><th>{{ tr('Previous start') }}</th><th>{{ tr('Planned start') }}</th><th>{{ tr('Previous due') }}</th><th>{{ tr('Planned due') }}</th></tr></thead><tbody>
+{% for id,change in draft.changes.items() %}{% set old=draft.before[id] %}<tr><td><input type="checkbox" name="item_ids" value="{{ id }}" checked aria-label="{{ tr('Apply changes to {key}',key=old.key) }}" {% if stale or draft.applied_at %}disabled{% endif %}></td><td><a href="{{ url_for('projects.item_detail',item_key=old.key) }}">{{ old.key }} · {{ old.title }}</a></td><td>{{ old.start or '—' }}</td><td>{{ change.start or '—' }}</td><td>{{ old.due or '—' }}</td><td>{{ change.due or '—' }}</td></tr>{% endfor %}</tbody></table></div>
+<p>{{ tr('Only checked rows will be saved. Applying consumes this draft; unchecked suggestions are not applied. Every date change is recorded in work-item history.') }}</p><button class="primary" {% if stale or draft.applied_at %}disabled{% endif %}>{{ tr('Apply selected changes') }}</button></form>
+{% if not draft.applied_at %}<form method="post" action="{{ url_for('projects.planning_apply',draft_id=draft.id,action='discard') }}"><button>{{ tr('Discard draft') }}</button></form>{% endif %}
+{% endblock %}

@@ -7,7 +7,7 @@
 <nav class="wi-breadcrumb" aria-label="{{ tr('Breadcrumb') }}">
   <a href="{{ url_for('projects.index') }}">{{ tr('Projects') }}</a> /
   <a href="{{ url_for('projects.board', key=project.key) }}"><span class="project-badge small project-c-{{ project.id }}" aria-hidden="true">{{ project.key[:2] }}</span>{{ project.name }}</a>
-  {% if item.parent %}/ <a href="{{ url_for('projects.item_detail', item_key=item.parent.key) }}">{{ type_icon(item.parent.item_type) }} {{ item.parent.key }}</a>{% endif %}
+  {% for ancestor in ancestors %}/ <a href="{{ url_for('projects.item_detail', item_key=ancestor.key) }}">{{ type_icon(ancestor.item_type) }} {{ ancestor.key }}</a>{% endfor %}
   / <span aria-current="page">{{ type_icon(item.item_type) }} {{ item.key }}</span>
 </nav>
 <div class="wi-layout" data-work-item="{{ item.key }}">
@@ -15,6 +15,7 @@
     <header class="wi-title">
       <h1>{{ item.title }}</h1>
     </header>
+    {% for response in form_answers %}<details class="panel"><summary>{{ response.name }} · {{ tr('Submitted form') }}</summary><dl>{% for field in response.fields %}<dt>{{ field.label }}</dt><dd>{{ response.answers[field.key] if response.answers[field.key] is not none else '—' }}</dd>{% endfor %}</dl></details>{% endfor %}
     <div class="wi-toolbar" role="toolbar" aria-label="{{ tr('Work item actions') }}">
       {% if can_edit %}
       <details class="wi-dialog wi-edit-text"><summary class="button" data-shortcut="e">{{ tr('Edit') }}</summary>
@@ -107,7 +108,6 @@
       {% if item.environment %}<h3 class="wi-subheading">{{ tr('Environment') }}</h3><div class="md">{{ rich_text(item.environment) }}</div>{% endif %}
     </section>
 
-    {% if item.item_type != 'subtask' %}
     <section class="panel wi-section" aria-labelledby="wi-children">
       <div class="wi-section-head"><h2 id="wi-children">{{ tr('Work items in this epic') if item.item_type == 'epic' else tr('Subtasks') }}</h2>
         {% if can_edit %}<a class="button" href="{{ url_for('projects.new_item', key=project.key, parent=item.id, type='story' if item.item_type == 'epic' else 'subtask') }}">{{ tr('Add') }}</a>{% endif %}</div>
@@ -117,7 +117,6 @@
       {% if child_total > children|length %}<a class="project-more" href="{{ url_for('projects.item_list', key=project.key, epic=item.id) }}">{{ tr('{count} more in the list', count=child_total - children|length) }}</a>{% endif %}
       {% else %}<p class="muted">{{ tr('None yet.') }}</p>{% endif %}
     </section>
-    {% endif %}
 
     <section class="panel wi-section" id="links" aria-labelledby="wi-links">
       <h2 id="wi-links">{{ tr('Linked work and records') }}</h2>

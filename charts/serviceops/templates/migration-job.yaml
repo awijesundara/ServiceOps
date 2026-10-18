@@ -49,6 +49,8 @@ spec:
             capabilities: {drop: ["ALL"]}
           resources: {{- toYaml .Values.resources | nindent 12 }}
           env:
+            - {name: SERVICEOPS_IMAGE_REFERENCE, value: {{ include "serviceops.imageRef" . | quote }}}
+            - {name: SERVICEOPS_RELEASE_OVERRIDE_REASON, value: {{ .Values.database.releaseOverrideReason | default "" | quote }}}
             - {name: AUTO_MIGRATE, value: "true"}
             - {name: DEPLOYMENT_PROFILE, value: "production"}
             - {name: LOG_DIR, value: /tmp/logs}

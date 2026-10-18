@@ -4,7 +4,7 @@
   <div class="project-title">
     <span class="project-badge project-c-{{ project.id }}" aria-hidden="true">{{ project.key[:2] }}</span>
     <div>
-      <p class="eyebrow"><a href="{{ url_for('projects.index') }}">{{ tr('PROJECTS') }}</a> · {{ project.key }}{% if project.archived_at %} · {{ tr('Archived') }}{% endif %}</p>
+      <p class="eyebrow project-breadcrumb"><a href="{{ url_for('projects.index') }}">{{ tr('Projects') }}</a> · {{ project.key }}{% if project.archived_at %} · {{ tr('Archived') }}{% endif %}</p>
       <h1>{{ project.name }}</h1>
     </div>
   </div>
@@ -14,10 +14,16 @@
   </div>
 </header>
 <nav class="project-tabs" aria-label="{{ tr('Project views') }}">
-  <a href="{{ url_for('projects.overview', key=project.key) }}" {% if tab == 'overview' %}aria-current="page"{% endif %}>{{ tr('Overview') }}</a>
+  <a href="{{ url_for('projects.overview', key=project.key) }}" {% if tab == 'overview' %}aria-current="page"{% endif %}>{{ tr('Summary') }}</a>
   <a href="{{ url_for('projects.board', key=project.key) }}" {% if tab == 'board' %}aria-current="page"{% endif %}>{{ tr('Board') }}</a>
+  <a href="{{ url_for('projects.planning_timeline',key=project.key) }}" {% if tab=='timeline' %}aria-current="page"{% endif %}>{{ tr('Timeline') }}</a>
+  <a href="{{ url_for('projects.planning_calendar',key=project.key) }}" {% if tab=='calendar' %}aria-current="page"{% endif %}>{{ tr('Calendar') }}</a>
+  <a href="{{ url_for('projects.planning_goals',key=project.key) }}" {% if tab=='goals' %}aria-current="page"{% endif %}>{{ tr('Goals') }}</a>
+  <a href="{{ url_for('projects.planning_teams',key=project.key) }}" {% if tab=='teams' %}aria-current="page"{% endif %}>{{ tr('Team') }}</a>
   <a href="{{ url_for('projects.item_list', key=project.key) }}" {% if tab == 'list' %}aria-current="page"{% endif %}>{{ tr('List') }}</a>
+  <a href="{{ url_for('projects.sprint_backlog', key=project.key) }}" {% if tab == 'backlog' %}aria-current="page"{% endif %}>{{ tr('Backlog') }}</a>
   <a href="{{ url_for('projects.project_releases', key=project.key) }}" {% if tab == 'releases' %}aria-current="page"{% endif %}>{{ tr('Releases') }}</a>
   <a href="{{ url_for('projects.project_components', key=project.key) }}" {% if tab == 'components' %}aria-current="page"{% endif %}>{{ tr('Components') }}</a>
+  {% for view,label in [('forms','Forms'),('pages','Pages'),('reports','Reports'),('shortcuts','Shortcuts')] %}<a href="{{ url_for('projects.project_content',key=project.key,view=view) }}" {% if tab==view %}aria-current="page"{% endif %}>{{ tr(label) }}</a>{% endfor %}
   {% if can_admin %}<a href="{{ url_for('projects.settings', key=project.key) }}" {% if tab == 'settings' %}aria-current="page"{% endif %}>{{ tr('Settings') }}</a>{% endif %}
 </nav>

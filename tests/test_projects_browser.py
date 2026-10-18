@@ -196,3 +196,63 @@ def test_phase2_editor_work_log_bulk_change_and_shortcuts(server):
         browser.close()
     with app.app_context():
         assert {item.priority for item in WorkItem.query.all()} == {"highest"}
+
+
+def test_nested_subtask_drilldown_and_portfolio_accessibility(server):
+    from playwright.sync_api import expect, sync_playwright
+    application, base = server
+    with application.app_context():
+        project = WorkItem.query.filter_by(number=2).one().project
+        actor = User.query.filter_by(username='admin').one()
+        child = service.create_item(actor, project, 'Nested child', item_type='subtask', parent_id=2)
+        grandchild = service.create_item(actor, project, 'Nested grandchild', item_type='subtask', parent_id=child.id)
+        service.create_item(actor, project, 'Nested leaf', item_type='subtask', parent_id=grandchild.id)
+        db.session.commit()
+        child_key, grandchild_key = child.key, grandchild.key
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={'width':1440,'height':1000})
+        errors=[]
+        page.on('pageerror',lambda error: errors.append(str(error)))
+        _sign_in(page,base)
+        page.goto(base+'/work-items/'+child_key)
+        page.locator('.wi-child-list a',has_text=grandchild_key).click()
+        page.wait_for_load_state('networkidle')
+        expect(page.locator('.wi-breadcrumb')).to_contain_text('WEB-1')
+        expect(page.locator('.wi-breadcrumb')).to_contain_text('WEB-2')
+        expect(page.locator('#wi-children')).to_be_visible()
+        expect(page.locator('.wi-child-list')).to_contain_text('Nested leaf')
+        for width in (1440,390):
+            page.set_viewport_size({'width':width,'height':1000})
+            if width < 600 and page.locator('[data-nav-toggle]').get_attribute('aria-expanded') == 'true':
+                page.reload()
+                expect(page.locator('[data-nav-toggle]')).to_have_attribute('aria-expanded', 'false')
+            page.wait_for_load_state('networkidle')
+            assert not _axe(page)
+            capture = os.getenv('SERVICEOPS_NESTED_SCREENSHOT_DIR')
+            if capture:
+                page.screenshot(path=os.path.join(capture, f'nested-work-{width}.png'), full_page=True)
+            page.goto(base+'/projects/planning')
+            expect(page.get_by_role('heading',name='Cross-project planning')).to_be_visible()
+            page.get_by_label('Shift dates by days').fill('7')
+            page.get_by_role('button',name='Preview',exact=True).click()
+            expect(page.get_by_role('status')).to_contain_text('nothing has been saved')
+            page.wait_for_load_state('networkidle')
+            assert not _axe(page)
+            assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+            if capture:
+                page.screenshot(path=os.path.join(capture, f'planning-{width}.png'), full_page=True)
+            page.goto(base+'/work-items/'+grandchild_key)
+        page = browser.new_page(viewport={'width':390,'height':1000})
+        page.on('pageerror',lambda error: errors.append(str(error)))
+        page.goto(base+'/login')
+        page.fill('input[name="username"]', 'employee')
+        page.fill('input[name="password"]', 'Employee123!')
+        page.click('button.primary')
+        page.goto(base+'/projects/WEB/board')
+        page.wait_for_load_state('networkidle')
+        expect(page.get_by_role('status')).to_contain_text('This board is read-only.')
+        expect(page.locator('.wi-card[draggable=true]')).to_have_count(0)
+        assert not _axe(page)
+        assert not errors
+        browser.close()

@@ -3190,6 +3190,11 @@ __all__ += ["THEMES", "DARK_THEMES"]
 # every other model.
 from serviceops_core.projects.models import (  # noqa: E402,F401 -- re-exported via __all__
     Project, ProjectComponent, ProjectMember, ProjectStar, ProjectStatus, ProjectVersion, WorkItem,
+    ProjectPlanningDraft, ProjectViewPreference, ProjectGoal, ProjectGoalItem,
+    ProjectPlan, ProjectPlanNode, ProjectPlanTeam, ProjectPlanAllocation, ProjectPlanScenario,
+    ProjectAutomationRule, ProjectAutomationRun, ProjectSandbox,
+    ProjectPage, ProjectForm, ProjectFormResponse, ProjectShortcut,
+    ProjectSavedFilter, ProjectFilterFavourite, ProjectSprint, ProjectSprintItem, ProjectSprintEvent,
     WorkItemAffectsVersion, WorkItemAssignee, WorkItemComment, WorkItemCommentReaction, WorkItemComponent,
     WorkItemFixVersion, WorkItemHistory, WorkItemKeyAlias, WorkItemLabel, WorkItemLink, WorkItemLinkType,
     WorkItemResolution, WorkItemView, WorkItemVote, WorkItemWatcher, WorkItemWorklog,

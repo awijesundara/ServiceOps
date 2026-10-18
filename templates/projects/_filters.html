@@ -8,6 +8,7 @@
   <label><span>{{ tr('Priority') }}</span><select name="priority"><option value="">{{ tr('All priorities') }}</option>{% for p in priorities %}<option value="{{ p }}" {% if filters.priority == p %}selected{% endif %}>{{ tr(priority_labels[p]) }}</option>{% endfor %}</select></label>
   {% if epics %}<label><span>{{ tr('Epic') }}</span><select name="epic"><option value="">{{ tr('All epics') }}</option>{% for epic in epics %}<option value="{{ epic.id }}" {% if filters.epic == epic.id|string %}selected{% endif %}>{{ epic.key }} · {{ epic.title }}</option>{% endfor %}</select></label>{% endif %}
   {% if labels %}<label><span>{{ tr('Label') }}</span><select name="label"><option value="">{{ tr('All labels') }}</option>{% for label in labels %}<option {% if (filters.label or '')|lower == label|lower %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+  {% if filters.sprint %}<input type="hidden" name="sprint" value="{{ filters.sprint }}"><a class="button" href="{{ url_for('projects.sprint_backlog',key=project.key,sprint=filters.sprint) }}">{{ tr('Open selected sprint') }}</a>{% endif %}
   {{ filter_extra|default('') }}
   <div class="project-filter-actions"><button class="primary" type="submit" data-filter-apply>{{ tr('Apply') }}</button>{% if filters %}<a class="button" href="{{ request.path }}">{{ tr('Clear filters') }}</a>{% endif %}</div>
 </form>

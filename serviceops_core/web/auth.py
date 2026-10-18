@@ -331,8 +331,11 @@ def register(app):
         token_hash = hmac.new(
             current_app.config["SECRET_KEY"].encode(), token.encode(), hashlib.sha256,
         ).hexdigest()
-        row = PasswordResetToken.query.filter_by(token_hash=token_hash, used_at=None).first()
-        valid = bool(row and align_tz(row.expires_at, now()) > now() and row.user.active)
+        query = PasswordResetToken.query.filter_by(token_hash=token_hash, used_at=None)
+        if request.method == "POST":
+            query = query.with_for_update().populate_existing()
+        row = query.first()
+        valid = bool(row and align_tz(row.expires_at, now()) > now() and account_usable(row.user))
         if not valid:
             return render_template("error.html", code=400, message="This recovery link is invalid or expired."), 400
         if request.method == "POST":

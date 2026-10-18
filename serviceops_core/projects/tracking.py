@@ -105,9 +105,29 @@ def _started(value):
     return parsed
 
 
+def _lock_item(item, actor):
+    # Every work-log mutation recalculates counters on the same parent row.
+    # Refresh after locking so an earlier request's remaining estimate is
+    # not reused after another request has committed its work log.
+    from serviceops_core.projects.models import Project
+    project_id, tenant_id = item.project_id, item.tenant_id
+    with db.session.no_autoflush:
+        Project.query.filter_by(id=project_id).with_for_update().populate_existing().one()
+        WorkItem.query.with_entities(WorkItem.id).filter_by(id=item.id).with_for_update().one()
+        db.session.refresh(item, [column.key for column in WorkItem.__table__.columns])
+        if item.project_id != project_id or item.tenant_id != tenant_id:
+            abort(409, description=tr("This work item moved to another project. Reload it before making changes."))
+        db.session.expire(item, ['project', 'status'])
+    service._forget_roles()
+    service.require_edit(actor, item.project)
+    return item
+
+
+
 def log_work(actor, item, spent, started=None, comment="", remaining_mode="auto", new_remaining=None,
              reduce_by=None):
     service.require_edit(actor, item.project)
+    _lock_item(item, actor)
     minutes = parse_duration(spent, tr("Time spent"))
     if not minutes:
         abort(400, description=tr("Enter the time spent, for example 1h 30m."))
@@ -122,6 +142,8 @@ def log_work(actor, item, spent, started=None, comment="", remaining_mode="auto"
     _recalculate_spent(item)
     item.updated_at = now()
     service.log_work_item_history(item, actor, "work logged", None, format_duration(minutes))
+    from serviceops_core.projects import sprints
+    sprints.capture(actor, item)
     return worklog
 
 
@@ -133,6 +155,8 @@ def _own_or_admin(actor, item, worklog):
 
 def update_worklog(actor, item, worklog, spent=None, started=None, comment=None):
     _own_or_admin(actor, item, worklog)
+    _lock_item(item, actor)
+    worklog = worklog_or_404(item, worklog.id)
     if spent is not None:
         minutes = parse_duration(spent, tr("Time spent"))
         if not minutes:
@@ -145,19 +169,25 @@ def update_worklog(actor, item, worklog, spent=None, started=None, comment=None)
     worklog.updated_at = now()
     _recalculate_spent(item)
     service.log_work_item_history(item, actor, "work log edited", None, format_duration(worklog.minutes))
+    from serviceops_core.projects import sprints
+    sprints.capture(actor, item)
 
 
 def delete_worklog(actor, item, worklog):
     _own_or_admin(actor, item, worklog)
+    _lock_item(item, actor)
+    worklog = worklog_or_404(item, worklog.id)
     minutes = worklog.minutes
     db.session.delete(worklog)
     db.session.flush()
     _recalculate_spent(item)
     service.log_work_item_history(item, actor, "work log deleted", format_duration(minutes), None)
+    from serviceops_core.projects import sprints
+    sprints.capture(actor, item)
 
 
 def worklog_or_404(item, worklog_id):
-    worklog = WorkItemWorklog.query.filter_by(id=worklog_id, work_item_id=item.id).first()
+    worklog = WorkItemWorklog.query.filter_by(id=worklog_id, work_item_id=item.id).populate_existing().first()
     if not worklog:
         abort(404)
     return worklog

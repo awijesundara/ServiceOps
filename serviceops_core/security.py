@@ -22,25 +22,32 @@ SECRET_FIELD_PATTERN = re.compile(
     r"""(?ix)
     (
         \b(?:[a-z0-9_]*password|[a-z0-9_]*secret|[a-z0-9_]*token
-           |secret_encrypted|api_key|apikey|private_key
+           |[a-z0-9_]*secret_encrypted|mfa_backup_codes_json|mfa_code|backup_code
+           |[a-z0-9_]*secret_key|settings_encryption_key|[a-z0-9_]*password_hash|[a-z0-9_]*token_hash
+           |[a-z0-9_]*api_key|[a-z0-9_]*apikey|[a-z0-9_]*private_key|[a-z0-9_]*session_id|cf_authorization
+           |database_url|sqlalchemy_database_uri
            |ldap_bind_password|connection_string|dsn
-        )\b
+        )\b["']?
         \s*[:=]\s*
     )
     (?:
-        "([^"]*)"          # "value"
-        |'([^']*)'         # 'value'
+        "((?:\\.|[^"\\])*)"  # quoted values may contain escaped quotes
+        |'((?:\\.|[^'\\])*)'
         |(\S+)              # bareword value
     )
     """
 )
 
-AUTH_HEADER_PATTERN = re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)(\S+)")
+AUTH_HEADER_PATTERN = re.compile(r"(?i)(authorization[\"']?\s*[:=]\s*[\"']?(?:bearer|basic)\s+)([^\s\"',;}]+)")
 
 # URL paths that carry a secret as a path segment (a one-time password-recovery
 # token). Matches anywhere in a log line, so request lines and Referer headers
 # in access logs are covered too.
 PATH_SECRET_PATTERN = re.compile(r"(/reset-password/)[^\s/?#\"']+")
+
+# Credentials embedded in a connection URL must also be removed when the
+# surrounding diagnostic has no named secret field.
+URL_AUTH_PATTERN = re.compile(r"(?i)(\b[a-z][a-z0-9+.-]*://)[^/\s@]+@")
 
 REDACTED = "***REDACTED***"
 
@@ -71,6 +78,7 @@ def redact(text):
     text = SECRET_FIELD_PATTERN.sub(_replace, text)
     text = AUTH_HEADER_PATTERN.sub(lambda m: f"{m.group(1)}{REDACTED}", text)
     text = PATH_SECRET_PATTERN.sub(lambda m: f"{m.group(1)}{REDACTED}", text)
+    text = URL_AUTH_PATTERN.sub(lambda m: f"{m.group(1)}{REDACTED}@", text)
     return text
 
 
@@ -121,6 +129,11 @@ class RedactingFilter(logging.Filter):
             record.args = ()
             record.exc_info = None
         return True
+
+
+def identity_role(identity):
+    """The selected role of a User, or the role on an already-scoped identity."""
+    return getattr(identity, "effective_role", None) or getattr(identity, "role", None)
 
 
 class PolicyConfigurationError(RuntimeError):

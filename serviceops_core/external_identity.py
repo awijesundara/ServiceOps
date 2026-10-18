@@ -365,7 +365,7 @@ def sync_ldap_manager_on_login(user, entry_dn, manager_dn, merged_attr_map):
                 try:
                     service.unbind()
                 except Exception:
-                    pass
+                    current_app.logger.warning("LDAP service connection cleanup failed during manager resolution")
             if not entries:
                 return
             values = entries[0].entry_attributes_as_dict

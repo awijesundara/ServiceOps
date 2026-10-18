@@ -38,7 +38,7 @@ def _wants_json():
 
 def _filters():
     keys = ("q", "type", "status", "category", "priority", "assignee", "label", "epic", "component", "version",
-            "flagged")
+            "flagged", "sprint")
     return {key: request.args.get(key, "").strip() for key in keys if request.args.get(key, "").strip()}
 
 
@@ -112,7 +112,24 @@ def register(app):
             context.update(project=project, project_role=role, can_edit=service.can_edit(current_user, project),
                            can_admin=service.can_administer(current_user, project),
                            can_comment=service.can_comment(current_user, project))
+            from serviceops_core.projects import roadmap
+            context.setdefault("workspace_view", roadmap.view_settings(current_user, project))
+        if 'payload' in context:
+            ids={person['id'] for row in context['payload']['items'] for person in row['assignees']}
+            context['timeline_people']={u.id:u for u in User.query.filter(User.tenant_id==current_user.tenant_id,User.id.in_(ids))}
         return render_template(template, **common, **context)
+
+    from serviceops_core.projects import navigator
+    navigator.register(blueprint, page)
+    from serviceops_core.projects import sprint_routes
+    sprint_routes.register_web(blueprint, page)
+    from serviceops_core.projects import planning_routes
+    planning_routes.register_web(blueprint, page)
+    from serviceops_core.projects import advanced_routes
+    advanced_routes.register_web(blueprint, page)
+
+    from serviceops_core.projects import content_routes
+    content_routes.register_web(blueprint, page)
 
     # --- projects -------------------------------------------------------------------
 
@@ -132,6 +149,22 @@ def register(app):
                 ProjectMember.project_id.in_(ids)).group_by(ProjectMember.project_id))
         return page("projects/index.html", projects=projects, open_counts=open_counts, member_counts=member_counts,
                     show_archived=show_archived, can_create=service.can_create_projects(current_user))
+
+    @blueprint.get("/projects/planning")
+    def planning_overview():
+        from serviceops_core.projects import planning
+        try:
+            page_number = int(request.args.get("page", "1"))
+            shift = int(request.args.get("shift", "0"))
+            context = planning.portfolio(current_user, page=page_number, shift_days=shift)
+            return page("projects/planning.html", **context)
+        except ValueError:
+            abort(400, description=tr("Planning page and date shift must be whole numbers."))
+        except HTTPException:
+            raise
+        except Exception:
+            current_app.logger.error("Project planning page failed for tenant %s", current_user.tenant_id)
+            abort(503, description=tr("Planning is temporarily unavailable. Please try again."))
 
     @blueprint.route("/projects/new", methods=["GET", "POST"])
     def new_project():
@@ -317,12 +350,16 @@ def register(app):
             item_type = "subtask"
         return page("projects/item_form.html", project, item_type=item_type, parent=parent,
                     members=service.assignable_users(project), epics=service.epics(project),
-                    parents=_parent_choices(project), components=releases.components(project),
+                    parents=_parent_choices(project, parent), components=releases.components(project),
                     versions=releases.versions(project, include_archived=False))
 
-    def _parent_choices(project):
-        return WorkItem.query.filter(WorkItem.project_id == project.id, WorkItem.item_type != "subtask").order_by(
+    def _parent_choices(project, selected=None):
+        rows = WorkItem.query.filter(WorkItem.project_id == project.id).order_by(
             WorkItem.item_type != "epic", WorkItem.number.desc()).limit(500).all()
+        # Keep an older selected parent even when the bounded options exclude it.
+        if selected is not None and selected.project_id == project.id and all(row.id != selected.id for row in rows):
+            rows.insert(0, selected)
+        return rows
 
     def _item_or_redirect(item_key):
         """The work item, or a redirect for a moved (old) or differently-cased key."""
@@ -363,9 +400,10 @@ def register(app):
         voters = service.voters(item)
         return page("projects/item.html", project, item=item, comments=comments, history=history,
                     children=children, child_total=child_total, child_done=child_done,
+                    ancestors=service.ancestor_path(item),
                     links=service.links_for(current_user, item), attachments=attachments,
                     watching=service.is_watching(item, current_user), members=service.assignable_users(project),
-                    parents=_parent_choices(project), statuses=list(project.statuses), worklogs=worklogs,
+                    parents=_parent_choices(project, item.parent), statuses=list(project.statuses), worklogs=worklogs,
                     timeline=timeline, time=tracking.time_tracking(item), fmt=tracking.format_duration,
                     voters=voters, voted=any(user.id == current_user.id for user in voters),
                     starred=service.is_starred(current_user, "work_item", item.id),
@@ -374,7 +412,7 @@ def register(app):
                     resolutions=catalog.resolutions(project.tenant_id), link_types=catalog.link_types(project.tenant_id),
                     move_targets=operations.project_choices(current_user, exclude=project),
                     watcher_list=service.watchers(item), project_role=service.project_role(current_user, project),
-                    reaction_choices=REACTIONS, now_local=core.now())
+                    reaction_choices=REACTIONS, now_local=core.now(), form_answers=__import__("serviceops_core.projects.content",fromlist=["responses"]).responses(item))
 
     @blueprint.post("/work-items/<item_key>/edit")
     def item_edit(item_key):
@@ -389,7 +427,9 @@ def register(app):
     @blueprint.post("/work-items/<item_key>/move")
     def item_move(item_key):
         item = service.item_or_404(current_user, item_key)
-        data = request.get_json(silent=True) or request.form
+        data = request.get_json(silent=True) if request.is_json else request.form
+        if request.is_json and not isinstance(data, dict):
+            abort(400, description=tr("A JSON object is required."))
         service.move_item(current_user, item, data.get("status_id"), data.get("before_id"), data.get("after_id"))
         db.session.commit()
         return jsonify(_item_json(item))
@@ -688,7 +728,10 @@ def register(app):
 
     @blueprint.post("/projects/markdown-preview")
     def markdown_preview():
-        text = (request.get_json(silent=True) or {}).get("text", "")
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            abort(400, description=tr("A JSON object is required."))
+        text = payload.get("text", "")
         if not isinstance(text, str) or len(text) > 50000:
             abort(400, description=tr("Nothing to preview."))
         return jsonify({"html": str(rich_text(text))})

@@ -102,6 +102,33 @@ jobs:
           test "$(wc -l < /tmp/alembic-heads.txt)" -eq 1
           docker run --rm "serviceops-test:${RELEASE_SHA}" pytest -q -n auto
 
+      - name: Verify PostgreSQL transaction and real-time invariants
+        timeout-minutes: 10
+        env:
+          ARCHITECTURE_DATABASE_URL: postgresql+psycopg://transaction_gate:transaction-quality-gate@127.0.0.1:55437/serviceops_architecture_test
+          REALTIME_DATABASE_URL: postgresql+psycopg://transaction_gate:transaction-quality-gate@127.0.0.1:55437/serviceops_arch_realtime_test
+        run: |
+          set -euo pipefail
+          trap 'docker rm -f serviceops-transaction-gate >/dev/null 2>&1 || echo "::warning::Transaction-test database cleanup failed"' EXIT
+          docker run -d --name serviceops-transaction-gate \
+            -e POSTGRES_USER=transaction_gate -e POSTGRES_PASSWORD=transaction-quality-gate \
+            -e POSTGRES_DB=serviceops_architecture_test -p 127.0.0.1:55437:5432 \
+            postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+          ready=false
+          for attempt in $(seq 1 40); do
+            if docker exec serviceops-transaction-gate pg_isready -U transaction_gate -d serviceops_architecture_test; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = true
+          docker exec serviceops-transaction-gate createdb -U transaction_gate serviceops_arch_realtime_test
+          docker run --rm --network host \
+            -e ARCHITECTURE_DATABASE_URL -e REALTIME_DATABASE_URL \
+            "serviceops-test:${RELEASE_SHA}" \
+            pytest -q tests/test_architecture_transactions.py tests/test_project_query_postgres.py tests/test_project_sprints_postgres.py tests/test_realtime_events.py
+
       - name: Validate shell, JavaScript, and Compose configuration
         env:
           POSTGRES_PASSWORD: quality-gate-only
@@ -284,6 +311,7 @@ jobs:
           mkdir -p "${E2E_ARTIFACT_DIR}"
           python -m pytest tests/test_e2e_smoke.py -v
           RUN_ADMIN_ASSIGNMENT_BROWSER=1 python -m pytest tests/test_admin_assignment_browser.py -v
+          RUN_PROJECTS_BROWSER=1 python -m pytest tests/test_project_query_browser.py tests/test_project_sprints_browser.py -v
 
       - name: Capture Compose diagnostics on failure
         if: failure()

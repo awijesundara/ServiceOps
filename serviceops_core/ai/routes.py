@@ -696,6 +696,7 @@ def register(app):
             try:
                 pages.append({"label": page["label"], "url": url_for(page["endpoint"], **page.get("params", {}))})
             except Exception:  # noqa: BLE001 - a page that was renamed since must never break an answer
+                app.logger.warning("An AI draft reference could not be linked; omitting the unavailable page")
                 continue
         if route and "pages" in route:
             route = {**route, "pages": pages}

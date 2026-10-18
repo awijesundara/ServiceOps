@@ -72,6 +72,44 @@ class ProjectMember(db.Model):
     __table_args__ = (db.UniqueConstraint("project_id", "user_id", name="uq_project_member_user"),)
 
 
+class ProjectPlanningDraft(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    payload_json = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    applied_at = db.Column(db.DateTime(timezone=True))
+
+
+class ProjectViewPreference(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    project_id = db.Column(db.Integer, db.ForeignKey("project.id", ondelete="CASCADE"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    payload_json = db.Column(db.Text, nullable=False, default="{}")
+    __table_args__ = (db.UniqueConstraint("project_id", "user_id", name="uq_project_view_preference"),)
+
+
+class ProjectGoal(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    project_id = db.Column(db.Integer, db.ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = db.Column(db.String(160), nullable=False)
+    description = db.Column(db.Text, nullable=False, default="")
+    target_date = db.Column(db.Date)
+    state = db.Column(db.String(12), nullable=False, default="open")
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    __table_args__ = (db.CheckConstraint("state IN ('open','achieved','cancelled')", name="ck_project_goal_state"),)
+
+
+class ProjectGoalItem(db.Model):
+    tenant_id = _tenant_column()
+    goal_id = db.Column(db.Integer, db.ForeignKey("project_goal.id", ondelete="CASCADE"), primary_key=True)
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="CASCADE"), primary_key=True)
+
+
 class ProjectStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tenant_id = _tenant_column()
@@ -118,6 +156,7 @@ class WorkItem(db.Model):
     assignees = db.relationship("User", secondary="work_item_assignee", lazy="selectin", order_by="User.name")
     labels = db.relationship("WorkItemLabel", lazy="selectin", cascade="all, delete-orphan",
                              order_by="WorkItemLabel.label")
+    form_responses = db.relationship("ProjectFormResponse",lazy="select",cascade="all, delete-orphan",back_populates="work_item")
     resolution = db.relationship("WorkItemResolution")
     components = db.relationship("ProjectComponent", secondary="work_item_component", lazy="selectin",
                                  order_by="ProjectComponent.name")
@@ -321,10 +360,229 @@ class WorkItemKeyAlias(db.Model):
     __table_args__ = (db.UniqueConstraint("tenant_id", "project_key", "number", name="uq_work_item_key_alias"),)
 
 
+
+class ProjectSavedFilter(db.Model):
+    """A query definition; sharing never grants access to its result records."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    owner_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    query_text = db.Column(db.Text, nullable=False)
+    sharing = db.Column(db.String(12), nullable=False, default="private", server_default="private")
+    project_id = db.Column(db.Integer, db.ForeignKey("project.id", ondelete="CASCADE"), index=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
+    owner = db.relationship("User")
+    project = db.relationship("Project")
+    __table_args__ = (db.UniqueConstraint("tenant_id", "owner_id", "name", name="uq_project_filter_owner_name"),)
+
+
+class ProjectFilterFavourite(db.Model):
+    filter_id = db.Column(db.Integer, db.ForeignKey("project_saved_filter.id", ondelete="CASCADE"), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), primary_key=True)
+    tenant_id = _tenant_column()
+
+
+class ProjectSprint(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    project_id = db.Column(db.Integer, db.ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    goal = db.Column(db.Text, nullable=False, default="")
+    state = db.Column(db.String(12), nullable=False, default="planned")
+    start_at = db.Column(db.DateTime(timezone=True))
+    end_at = db.Column(db.DateTime(timezone=True))
+    started_at = db.Column(db.DateTime(timezone=True))
+    completed_at = db.Column(db.DateTime(timezone=True))
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    baseline_json = db.Column(db.Text, nullable=False, default="{}")
+    outcome_json = db.Column(db.Text, nullable=False, default="{}")
+    project = db.relationship("Project")
+    __table_args__ = (db.CheckConstraint("state IN ('planned','active','closed')", name="ck_project_sprint_state"),)
+
+
+class ProjectSprintItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    sprint_id = db.Column(db.Integer, db.ForeignKey("project_sprint.id", ondelete="CASCADE"), nullable=False, index=True)
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="SET NULL"), index=True)
+    item_key = db.Column(db.String(32), nullable=False)
+    title = db.Column(db.String(255), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    completed = db.Column(db.Boolean, nullable=False, default=False)
+    added_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    removed_at = db.Column(db.DateTime(timezone=True))
+    item = db.relationship("WorkItem")
+    sprint = db.relationship("ProjectSprint")
+    __table_args__ = (db.Index("uq_project_sprint_item_current", "work_item_id", unique=True,
+                             postgresql_where=db.text("active"), sqlite_where=db.text("active = 1")),)
+
+
+class ProjectSprintEvent(db.Model):
+    """Append-only sprint state snapshots survive work-item deletion and moves."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    sprint_id = db.Column(db.Integer, db.ForeignKey("project_sprint.id", ondelete="CASCADE"), nullable=False, index=True)
+    membership_id = db.Column(db.Integer, db.ForeignKey("project_sprint_item.id", ondelete="CASCADE"))
+    actor_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    kind = db.Column(db.String(24), nullable=False)
+    payload_json = db.Column(db.Text, nullable=False, default="{}")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    __table_args__ = (db.Index("ix_project_sprint_event_time", "sprint_id", "created_at", "id"),)
+
+
+class ProjectPlan(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=False, default="")
+    projects_json = db.Column(db.Text, nullable=False)
+    settings_json = db.Column(db.Text, nullable=False, default="{}")
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
+
+
+class ProjectPlanNode(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    plan_id = db.Column(db.Integer, db.ForeignKey("project_plan.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_id = db.Column(db.Integer, db.ForeignKey("project_plan_node.id", ondelete="CASCADE"))
+    name = db.Column(db.String(160), nullable=False)
+    kind = db.Column(db.String(40), nullable=False)
+    position = db.Column(db.Integer, nullable=False, default=0)
+    item_keys_json = db.Column(db.Text, nullable=False, default="[]")
+
+
+class ProjectPlanTeam(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    plan_id = db.Column(db.Integer, db.ForeignKey("project_plan.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    capacity = db.Column(db.Float, nullable=False, default=80)
+    unit = db.Column(db.String(10), nullable=False, default="hours")
+    members_json = db.Column(db.Text, nullable=False, default="[]")
+    __table_args__ = (db.CheckConstraint("capacity >= 0 AND unit IN ('hours','points')", name="ck_project_plan_team_capacity"),)
+
+
+class ProjectPlanAllocation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    plan_id = db.Column(db.Integer, db.ForeignKey("project_plan.id", ondelete="CASCADE"), nullable=False, index=True)
+    team_id = db.Column(db.Integer, db.ForeignKey("project_plan_team.id", ondelete="CASCADE"), nullable=False)
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="CASCADE"), nullable=False)
+    iteration = db.Column(db.Integer, nullable=False)
+    __table_args__ = (db.UniqueConstraint("plan_id", "work_item_id", name="uq_plan_work_allocation"),
+                      db.CheckConstraint("iteration >= 0 AND iteration < 52", name="ck_plan_iteration"))
+
+
+class ProjectPlanScenario(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    plan_id = db.Column(db.Integer, db.ForeignKey("project_plan.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    payload_json = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+
+
+class ProjectAutomationRule(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=False)
+    projects_json = db.Column(db.Text, nullable=False)
+    config_json = db.Column(db.Text, nullable=False)
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+
+
+class ProjectAutomationRun(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    rule_id = db.Column(db.Integer, db.ForeignKey("project_automation_rule.id", ondelete="CASCADE"), nullable=False, index=True)
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="SET NULL"))
+    item_key = db.Column(db.String(32), nullable=False)
+    outcome = db.Column(db.String(20), nullable=False)
+    affected = db.Column(db.Integer, nullable=False, default=0)
+    detail = db.Column(db.String(160), nullable=False, default="")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+
+
+class ProjectSandbox(db.Model):
+    slot = db.Column(db.Integer, nullable=False)
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    state = db.Column(db.String(16), nullable=False, default="queued")
+    image = db.Column(db.String(255))
+    last_error = db.Column(db.String(160), nullable=False, default="")
+    events_json = db.Column(db.Text, nullable=False, default="[]")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
+    __table_args__ = (db.CheckConstraint("state IN ('queued','provisioning','ready','failed','deleting','deleted')", name="ck_project_sandbox_state"),
+                      db.CheckConstraint("slot IN (1,2)",name="ck_project_sandbox_slot"),)
+
+
+class ProjectPage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    project_id = db.Column(db.Integer, db.ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = db.Column(db.String(160), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
+
+
+class ProjectForm(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    project_id = db.Column(db.Integer, db.ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=False, default="")
+    config_json = db.Column(db.Text, nullable=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+
+
+class ProjectFormResponse(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    form_id = db.Column(db.Integer, db.ForeignKey("project_form.id", ondelete="SET NULL"))
+    work_item_id = db.Column(db.Integer, db.ForeignKey("work_item.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    schema_json = db.Column(db.Text, nullable=False)
+    answers_json = db.Column(db.Text, nullable=False)
+    submitted_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    work_item = db.relationship("WorkItem", back_populates="form_responses")
+
+
+class ProjectShortcut(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = _tenant_column()
+    project_id = db.Column(db.Integer, db.ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True)
+    label = db.Column(db.String(80), nullable=False)
+    url = db.Column(db.String(2000), nullable=False)
+
 MODEL_NAMES = [
+    "ProjectPage", "ProjectForm", "ProjectFormResponse", "ProjectShortcut",
+    "ProjectSandbox",
+    "ProjectPlan", "ProjectPlanNode", "ProjectPlanTeam", "ProjectPlanAllocation", "ProjectPlanScenario",
+    "ProjectAutomationRule", "ProjectAutomationRun",
+    "ProjectPlanningDraft", "ProjectViewPreference", "ProjectGoal", "ProjectGoalItem",
+    "ProjectSprint", "ProjectSprintItem", "ProjectSprintEvent",
     "Project", "ProjectMember", "ProjectStatus", "WorkItem", "WorkItemAssignee", "WorkItemWatcher",
     "WorkItemLabel", "WorkItemComment", "WorkItemHistory", "WorkItemLink",
     "WorkItemResolution", "WorkItemLinkType", "ProjectComponent", "ProjectVersion", "WorkItemComponent",
     "WorkItemFixVersion", "WorkItemAffectsVersion", "WorkItemWorklog", "WorkItemVote", "ProjectStar",
-    "WorkItemView", "WorkItemCommentReaction", "WorkItemKeyAlias",
+    "WorkItemView", "WorkItemCommentReaction", "WorkItemKeyAlias", "ProjectSavedFilter", "ProjectFilterFavourite",
 ]

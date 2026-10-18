@@ -4,6 +4,8 @@
 {% with color_projects = projects %}{% include "projects/_colors.html" %}{% endwith %}
 <header class="page-head">
   <div><p class="eyebrow">{{ tr('PROJECT MANAGEMENT') }}</p><h1>{{ tr('Projects') }}</h1><p>{{ tr('Plan, track and deliver work with boards, lists and work items linked to your service records.') }}</p></div>
+  <a class="button" href="{{ url_for('projects.issue_navigator') }}">{{ tr('Search work items') }}</a>
+  <a class="button" href="{{ url_for('projects.planning_overview') }}">{{ tr('Cross-project planning') }}</a>
   {% if can_create %}<a class="primary" href="{{ url_for('projects.new_project') }}">{{ tr('Create project') }}</a>{% endif %}
 </header>
 <section class="panel">

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "projects/_macros.html" import type_icon, status_pill with context %}
+{% block title %}{{ tr('Search work items') }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">{{ tr('PROJECT MANAGEMENT') }}</p><h1>{{ tr('Search work items') }}</h1><p>{{ tr('Search across projects you can access. Shared filters never change record permissions.') }}</p></div><a class="button" href="{{ url_for('projects.index') }}">{{ tr('Projects') }}</a></header>
+<section class="panel">
+  <form method="get" class="stack">
+    {% if selected %}<input type="hidden" name="filter" value="{{ selected.id }}">{% endif %}
+    <label for="project-jql">{{ tr('Query') }}</label><textarea id="project-jql" name="jql" rows="3" maxlength="4096" aria-describedby="query-help{% if error %} query-error{% endif %}" {% if error %}aria-invalid="true"{% endif %}>{{ jql }}</textarea>
+    <p class="muted" id="query-help">{{ tr('Use AND, OR, NOT, parentheses, IN, IS EMPTY and ORDER BY. Text matching supports simple * and ? wildcards; it does not use Lucene syntax. Date functions use UTC.') }}</p>
+    {% if error %}<p id="query-error" role="alert">{{ error }}</p>{% endif %}
+    <div class="actions"><button class="primary">{{ tr('Search') }}</button><a class="button" href="{{ url_for('projects.issue_navigator') }}">{{ tr('Reset') }}</a>{% if not error %}<button class="button" name="export" value="csv">{{ tr('Export CSV') }}</button>{% endif %}</div>
+  </form>
+  <details><summary>{{ tr('Supported query fields and examples') }}</summary><p>{{ query_fields|join(', ') }}</p><pre>assignee = currentUser() AND resolution IS EMPTY
+priority IN (highest, high) AND due &lt; startOfDay()
+(summary ~ "upgrade*" OR labels = maintenance) ORDER BY due ASC
+project = WEB AND sprint IN openSprints()</pre><p class="muted">{{ tr('Use openSprints(), closedSprints() and futureSprints() with the sprint field. Calendar functions include startOfDay(), endOfDay(), startOfWeek(), endOfWeek(), startOfMonth(), endOfMonth(), startOfYear() and endOfYear(). currentUser() and now() are also supported. CHANGED supports selected history fields; WAS, custom-field and plugin queries are not supported.') }}</p></details>
+</section>
+<section class="panel">
+<h2>{{ tr('Saved filters') }}</h2>
+{% if selected and jql != selected.query_text %}<p role="status">{{ tr('This query has unsaved changes.') }}</p>{% endif %}
+{% if selected %}<p>{{ tr('Current filter') }}: <strong>{{ selected.name }}</strong> · {{ selected.sharing }}</p><div class="actions"><form method="post" action="{{ url_for('projects.filter_favourite', filter_id=selected.id) }}"><input type="hidden" name="enabled" value="{{ '0' if selected.id in favourites else '1' }}"><button class="button">{{ tr('Remove favourite') if selected.id in favourites else tr('Add favourite') }}</button></form>{% if selected.owner_id == current_user.id %}<form method="post" action="{{ url_for('projects.filter_delete', filter_id=selected.id) }}"><button class="button" data-confirm-delete="{{ tr('Delete this saved filter?') }}">{{ tr('Delete filter') }}</button></form>{% endif %}</div>{% endif %}
+{% if saved_filters %}<ul class="wi-child-list">{% for row in saved_filters %}<li><a href="{{ url_for('projects.issue_navigator', filter=row.id) }}">{% if row.id in favourites %}<span aria-label="{{ tr('Favourite') }}">★</span> {% endif %}{{ row.name }}</a><span class="muted">{{ row.sharing }}</span></li>{% endfor %}</ul>{% if saved_filters|length == 500 %}<p>{{ tr('Showing up to 500 saved filters. Open another filter directly using its link.') }}</p>{% endif %}{% else %}<p class="muted">{{ tr('No saved filters available.') }}</p>{% endif %}
+<details><summary>{{ tr('Save this query') }}</summary><form method="post" action="{{ url_for('projects.filter_save') }}" class="form-grid">
+  <label>{{ tr('Filter name') }}<input name="name" required maxlength="100" value="{{ selected.name if selected and selected.owner_id == current_user.id else '' }}"></label>
+  <div class="wide"><label for="saved-filter-jql">{{ tr('Query to save') }}</label><textarea id="saved-filter-jql" name="jql" rows="3" maxlength="4096">{{ jql }}</textarea></div>
+  <label>{{ tr('Sharing') }}<select name="sharing"><option value="private" {% if selected and selected.sharing == 'private' %}selected{% endif %}>{{ tr('Only me') }}</option><option value="project" {% if selected and selected.sharing == 'project' %}selected{% endif %}>{{ tr('People with access to a project') }}</option>{% if can_share_tenant %}<option value="tenant" {% if selected and selected.sharing == 'tenant' %}selected{% endif %}>{{ tr('Organisation') }}</option>{% endif %}</select></label>
+  <label>{{ tr('Sharing project') }}<select name="project_key"><option value="">{{ tr('Choose a project for project sharing') }}</option>{% for project in filter_projects %}<option value="{{ project.key }}" {% if selected and selected.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
+  <p class="muted">{{ tr('Sharing publishes the query text. Every viewer still sees only their permitted records. Project sharing requires member access; organisation sharing requires a tenant administrator.') }}</p>
+  <div class="actions">{% if selected and selected.owner_id == current_user.id %}<button class="primary" name="filter_id" value="{{ selected.id }}">{{ tr('Update filter') }}</button>{% endif %}<button class="button">{{ tr('Save new filter') }}</button></div>
+</form></details>
+</section>
+<section class="panel"><h2>{{ tr('Results') }} <small>({{ total }})</small></h2>
+{% if rows %}<div class="table-scroll"><table class="project-table"><thead><tr><th>{{ tr('Key') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('Project') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Priority') }}</th><th>{{ tr('Due') }}</th></tr></thead><tbody>{% for item in rows %}<tr><td>{{ type_icon(item.item_type) }} <a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.key }}</a></td><td><a href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.title }}</a></td><td>{{ item.project.name }}</td><td>{{ status_pill(item.status) }}</td><td>{{ tr(priority_labels[item.priority]) }}</td><td>{{ item.due_date or '—' }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="muted">{{ tr('No work items match.') }}</p>{% endif %}
+<nav class="actions" aria-label="{{ tr('Search result pages') }}">{% if page_number > 1 %}<a class="button" href="{{ url_for('projects.issue_navigator', jql=jql, page=page_number-1, filter=selected.id if selected else none) }}">{{ tr('Previous') }}</a>{% endif %}<span>{{ page_number }} / {{ pages }}</span>{% if page_number < pages %}<a class="button" href="{{ url_for('projects.issue_navigator', jql=jql, page=page_number+1, filter=selected.id if selected else none) }}">{{ tr('Next') }}</a>{% endif %}</nav>
+</section>
+{% endblock %}

@@ -11,13 +11,14 @@ Access, in order:
 Members and admins edit work items; viewers comment; readers only read.
 """
 import re
-from datetime import date
+from datetime import date, timedelta
 
-from flask import abort, g, has_request_context
+from flask import abort, current_app
 from sqlalchemy import func, or_
 
 import app as core
 from serviceops_core.localization import tr
+from serviceops_core.request_cache import request_cache
 from serviceops_core.projects.models import (
     DEFAULT_STATUSES, ITEM_TYPES, PRIORITIES, PROJECT_ROLES, STATUS_CATEGORIES, VISIBILITIES,
     Project, ProjectMember, ProjectStatus, WorkItem, WorkItemAssignee, WorkItemComment, WorkItemHistory,
@@ -62,20 +63,22 @@ def _tenant_admin(user):
 
 def _role_cache():
     """Per-request memo of project roles; pages check the same role many times."""
-    if not has_request_context():
-        return None
-    return g.setdefault("_project_roles", {})
+    cache = request_cache()
+    return cache.setdefault("project_roles", {}) if cache is not None else None
 
 
 def _forget_roles():
-    if has_request_context():
-        g.pop("_project_roles", None)
+    cache = request_cache()
+    if cache is not None:
+        cache.pop("project_roles", None)
 
 
 def project_role(user, project):
     """admin, member, viewer, reader (open project, not a member) or None."""
     cache = _role_cache()
-    cache_key = (getattr(user, "id", None), project.id, project.visibility, getattr(user, "effective_role", None))
+    cache_key = (getattr(user, "id", None), project.id, project.visibility,
+                 getattr(user, "effective_role", None), getattr(user, "active", False),
+                 getattr(user, "tenant_id", None), project.tenant_id)
     if cache is not None and cache_key in cache:
         return cache[cache_key]
     role = _project_role(user, project)
@@ -91,7 +94,7 @@ def _project_role(user, project):
         return None
     if _tenant_admin(user):
         return "admin"
-    member = ProjectMember.query.filter_by(project_id=project.id, user_id=user.id).first()
+    member = ProjectMember.query.filter_by(project_id=project.id, user_id=user.id).populate_existing().first()
     if member:
         return member.role
     if project.visibility == "open":
@@ -180,6 +183,8 @@ def suggest_key(name):
 
 
 def _clean_text(value, limit, label, required=False):
+    if value is not None and not isinstance(value, str):
+        abort(400, description=tr("{label} must be text.", label=label))
     text = (value or "").strip()
     if required and not text:
         abort(400, description=tr("{label} is required.", label=label))
@@ -191,10 +196,7 @@ def _clean_text(value, limit, label, required=False):
 def _active_tenant_user(user_id, tenant_id, label):
     if user_id in (None, ""):
         return None
-    try:
-        user_id = int(user_id)
-    except (TypeError, ValueError):
-        abort(400, description=tr("{label} is not a valid user.", label=label))
+    user_id = _parse_number(user_id, label, integer=True, maximum=2**31 - 1)
     user = User.query.filter_by(id=user_id, tenant_id=tenant_id, active=True).first()
     if not user:
         abort(400, description=tr("{label} is not an active user in this organisation.", label=label))
@@ -336,10 +338,7 @@ def add_status(actor, project, name, category):
 
 
 def status_or_404(project, status_id):
-    try:
-        status_id = int(status_id)
-    except (TypeError, ValueError):
-        abort(400, description=tr("Choose a status."))
+    status_id = _parse_number(status_id, tr("Status"), integer=True, maximum=2**31 - 1)
     status = ProjectStatus.query.filter_by(id=status_id, project_id=project.id).first()
     if not status:
         abort(400, description=tr("That status does not belong to this project."))
@@ -457,9 +456,11 @@ def _parse_date(value, label):
 def _parse_number(value, label, integer=False, maximum=100000):
     if value in (None, ""):
         return None
+    if isinstance(value, bool) or (integer and isinstance(value, float) and not value.is_integer()):
+        abort(400, description=tr("{label} must be a whole number.", label=label))
     try:
         number = int(value) if integer else float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         abort(400, description=tr("{label} must be a number.", label=label))
     if number < 0 or number > maximum or number != number:
         abort(400, description=tr("{label} must be between 0 and {maximum}.", label=label, maximum=maximum))
@@ -469,7 +470,11 @@ def _parse_number(value, label, integer=False, maximum=100000):
 def _parse_labels(value):
     if value is None:
         return None
-    raw = value if isinstance(value, (list, tuple)) else re.split(r"[,\s]+", str(value))
+    if not isinstance(value, (str, list, tuple)) or (
+        isinstance(value, (list, tuple)) and any(not isinstance(label, str) for label in value)
+    ):
+        abort(400, description=tr("Labels must be text or a list of text values."))
+    raw = value if isinstance(value, (list, tuple)) else re.split(r"[,\s]+", value)
     labels = []
     for label in raw:
         label = str(label).strip()
@@ -508,10 +513,7 @@ def _project_rows(model, project, raw, label):
     raw = raw if isinstance(raw, (list, tuple)) else [part for part in str(raw).split(",") if part.strip()]
     rows = []
     for value in raw:
-        try:
-            value = int(value)
-        except (TypeError, ValueError):
-            abort(400, description=tr("{label} is not valid.", label=label))
+        value = _parse_number(value, label, integer=True, maximum=2**31 - 1)
         row = model.query.filter_by(id=value, project_id=project.id).first()
         if not row:
             abort(400, description=tr("{label} must belong to this project.", label=label))
@@ -548,13 +550,47 @@ def _resolve(item, actor, status, resolution_id=None):
         item.resolution_id, item.resolution, item.resolved_at = None, None, None
 
 
+def hierarchy_rows(item, ancestors=False):
+    """Return same-project hierarchy members using a cycle-safe recursive query.
+
+    UNION (not UNION ALL) bounds even damaged cyclic data. No Python recursion
+    or product depth cap is used, and tenant/project scope applies to every edge.
+    """
+    try:
+        tree = db.session.query(WorkItem.id, WorkItem.parent_id).filter_by(
+            id=item.id, project_id=item.project_id, tenant_id=item.tenant_id).cte(recursive=True)
+        edge = WorkItem.id == tree.c.parent_id if ancestors else WorkItem.parent_id == tree.c.id
+        tree = tree.union(db.session.query(WorkItem.id, WorkItem.parent_id).join(tree, edge).filter(
+            WorkItem.project_id == item.project_id, WorkItem.tenant_id == item.tenant_id))
+        return WorkItem.query.join(tree, WorkItem.id == tree.c.id).filter(WorkItem.id != item.id).populate_existing().all()
+    except Exception:
+        current_app.logger.error("Project hierarchy query failed for work item %s", item.id)
+        raise
+
+
+def ancestor_path(item):
+    """Root-first breadcrumbs, restricted to the current project and tenant."""
+    try:
+        rows = {row.id: row for row in hierarchy_rows(item, ancestors=True)}
+        path, seen, parent_id = [], {item.id}, item.parent_id
+        while parent_id in rows and parent_id not in seen:
+            seen.add(parent_id)
+            parent = rows[parent_id]
+            path.append(parent)
+            parent_id = parent.parent_id
+        return list(reversed(path))
+    except Exception:
+        current_app.logger.error("Project ancestor path failed for work item %s", item.id)
+        raise
+
+
 def _validate_parent(project, item_type, parent_id, item=None):
     if parent_id in (None, ""):
         if item_type == "subtask":
             abort(400, description=tr("A subtask needs a parent work item."))
         return None
     parent = WorkItem.query.filter_by(id=_parse_number(parent_id, tr("Parent"), integer=True, maximum=2**31),
-                                      project_id=project.id).first()
+                                      project_id=project.id, tenant_id=project.tenant_id).populate_existing().first()
     if not parent:
         abort(400, description=tr("The parent must be a work item in this project."))
     if item is not None and parent.id == item.id:
@@ -562,10 +598,12 @@ def _validate_parent(project, item_type, parent_id, item=None):
     if item_type == "epic":
         abort(400, description=tr("An epic cannot have a parent."))
     if item_type == "subtask":
-        if parent.item_type in ("epic", "subtask"):
-            abort(400, description=tr("A subtask belongs to a story, task or bug."))
+        if parent.item_type == "epic":
+            abort(400, description=tr("A subtask belongs to a story, task, bug or another subtask."))
     elif parent.item_type != "epic":
         abort(400, description=tr("Stories, tasks and bugs can only belong to an epic."))
+    if item is not None and any(row.id == item.id for row in hierarchy_rows(parent, ancestors=True)):
+        abort(400, description=tr("A work item cannot be placed beneath one of its descendants."))
     return parent
 
 
@@ -591,6 +629,7 @@ def create_item(actor, project, title, item_type="task", description="", status_
     title = _clean_text(title, 255, tr("Title"), required=True)
     description = _clean_text(description, 50000, tr("Description"))
     status = status_or_404(project, status_id) if status_id not in (None, "") else default_status(project)
+    Project.query.filter_by(id=project.id).with_for_update().one()
     parent = _validate_parent(project, item_type, parent_id)
     assignees = _parse_assignees(assignee_ids, project) or []
     labels = _parse_labels(labels) or []
@@ -609,7 +648,7 @@ def create_item(actor, project, title, item_type="task", description="", status_
         abort(400, description=tr("The due date cannot be before the start date."))
     # Lock the project row so two people creating items at once get
     # different numbers.
-    locked = Project.query.filter_by(id=project.id).with_for_update().one()
+    locked = Project.query.filter_by(id=project.id).with_for_update().populate_existing().one()
     number = locked.next_number
     locked.next_number = number + 1
     item = WorkItem(tenant_id=project.tenant_id, project_id=project.id, number=number, item_type=item_type,
@@ -642,6 +681,8 @@ def create_item(actor, project, title, item_type="task", description="", status_
     db.session.expire(item, ["assignees", "labels", "components", "fix_versions", "affects_versions"])
     _notify(assignees, actor, item, tr("{name} assigned {key} to you", name=actor.name, key=item.key),
             item.title, "work_item.assigned")
+    from serviceops_core.projects import automation
+    automation.dispatch(item, 'created')
     return item
 
 
@@ -656,7 +697,18 @@ def update_item(actor, item, changes):
     history row per changed field and notifies assignees and watchers."""
     project = item.project
     require_edit(actor, project)
+    with db.session.no_autoflush:
+        Project.query.filter_by(id=project.id).with_for_update().populate_existing().one()
+        db.session.refresh(item, [column.key for column in WorkItem.__table__.columns])
+        if item.project_id != project.id or item.tenant_id != project.tenant_id:
+            abort(409, description=tr("This work item moved to another project. Reload it before making changes."))
+        db.session.expire(item, ["status"])
+    _forget_roles()
+    require_edit(actor, project)
     changes = {key: value for key, value in changes.items() if key in EDITABLE_FIELDS}
+    if "parent_id" in changes or "item_type" in changes:
+        Project.query.filter_by(id=project.id).with_for_update().one()
+        db.session.refresh(item, ["parent_id", "item_type"])
     old_status = item.status
     if "title" in changes:
         _set(item, actor, "title", _clean_text(changes["title"], 255, tr("Title"), required=True))
@@ -666,7 +718,7 @@ def update_item(actor, item, changes):
         new_type = changes["item_type"]
         if new_type not in ITEM_TYPES:
             abort(400, description=tr("Choose a work item type."))
-        if new_type != item.item_type and item.children and (new_type == "subtask" or item.item_type == "epic"):
+        if new_type != item.item_type and item.children and (new_type == "epic" or item.item_type == "epic"):
             abort(409, description=tr("Move or remove this item's children before changing its type."))
         _validate_parent(project, new_type, changes.get("parent_id", item.parent_id), item)
         _set(item, actor, "item_type", new_type)
@@ -764,6 +816,10 @@ def update_item(actor, item, changes):
                 tr("{key} moved to {status}", key=item.key, status=item.status.name),
                 tr("{name} moved {key} from {old} to {new}.", name=actor.name, key=item.key, old=old_status.name,
                    new=item.status.name), "work_item.transitioned")
+    from serviceops_core.projects import sprints
+    sprints.capture(actor, item)
+    from serviceops_core.projects import automation
+    automation.dispatch(item, 'transitioned' if item.status_id != old_status.id else 'updated')
     return item
 
 
@@ -777,7 +833,7 @@ def _set(item, actor, field, value):
 def move_item(actor, item, status_id=None, before_id=None, after_id=None):
     """Board drag: change status (optional) and place the item between two
     neighbours in the target column (before_id is above, after_id below)."""
-    if status_id not in (None, "") and int(status_id) != item.status_id:
+    if status_id not in (None, "") and _parse_number(status_id, tr("Status"), integer=True, maximum=2**31 - 1) != item.status_id:
         update_item(actor, item, {"status_id": status_id})
     else:
         require_edit(actor, item.project)
@@ -811,11 +867,29 @@ def _renumber(project_id, status_id):
 
 def delete_item(actor, item):
     project = item.project
+    with db.session.no_autoflush:
+        Project.query.filter_by(id=project.id).with_for_update().populate_existing().one()
+        db.session.refresh(item, [column.key for column in WorkItem.__table__.columns])
+        if item.project_id != project.id or item.tenant_id != project.tenant_id:
+            abort(409, description=tr("This work item moved to another project. Reload it before making changes."))
+        db.session.expire(item, ["parent", "children"])
+    _forget_roles()
     if not can_administer(actor, project) and actor.id != item.reporter_id:
         abort(403, description=tr("Only the reporter or a project administrator can delete a work item."))
     require_edit(actor, project)
+    from serviceops_core.projects import sprints
+    from serviceops_core.projects.models import ProjectSprintItem
+    sprints.detach_for_removal(actor, item)
+    ProjectSprintItem.query.filter_by(work_item_id=item.id).update({"work_item_id": None}, synchronize_session="fetch")
     for child in list(item.children):
-        child.parent_id = None
+        # Preserve nested descendants when deleting an intermediate subtask.
+        new_parent = item.parent_id if child.item_type == "subtask" else None
+        log_work_item_history(child, actor, "parent", item.key, item.parent.key if new_parent else None)
+        child.parent = item.parent if new_parent else None
+        child.parent_id = new_parent
+        if child.item_type == "subtask" and new_parent is None:
+            log_work_item_history(child, actor, "item_type", "subtask", "task")
+            child.item_type = "task"
     WorkItemLink.query.filter_by(target_type="work_item", target_id=item.id).delete()
     core.audit("work item deleted", item.key, item.title, user_id=actor.id, tenant_id=item.tenant_id)
     db.session.delete(item)
@@ -1000,6 +1074,20 @@ def add_link(actor, item, link_type, target_text):
         abort(400, description=tr("Choose a link type."))
     target_text = (target_text or "").strip()
     target = find_visible_item(actor, target_text)
+    original_project = item.project_id
+    target_project = target.project_id if target else None
+    lock_ids = sorted({item.project_id} | ({target.project_id} if target else set()))
+    Project.query.filter(Project.id.in_(lock_ids)).order_by(Project.id).with_for_update().all()
+    db.session.refresh(item,['project_id','tenant_id'])
+    db.session.expire(item,['project'])
+    if item.project_id != original_project:abort(409,description=tr('This work item moved. Reload it before linking.'))
+    if target:
+        db.session.refresh(target,['project_id','tenant_id'])
+        db.session.expire(target,['project'])
+        if target.project_id != target_project:abort(409,description=tr('The link target moved. Reload it before linking.'))
+        if not can_view(actor,target.project):abort(404)
+    _forget_roles()
+    require_edit(actor, item.project)
     if target:
         if target.id == item.id:
             abort(400, description=tr("A work item cannot link to itself."))
@@ -1040,6 +1128,11 @@ def remove_link(actor, item, link_id):
         if not incoming:
             abort(404)
         link = incoming
+    endpoint_ids = {link.source_id} | ({link.target_id} if link.target_type == 'work_item' else set())
+    project_ids = [p for (p,) in db.session.query(WorkItem.project_id).filter(WorkItem.id.in_(endpoint_ids))]
+    Project.query.filter(Project.id.in_(project_ids)).order_by(Project.id).with_for_update().all()
+    _forget_roles()
+    require_edit(actor, item.project)
     log_work_item_history(item, actor, "link", f"{link.link_type} #{link.id}", None)
     db.session.delete(link)
 
@@ -1103,7 +1196,12 @@ def item_query(project, filters, user=None):
     """Work items of one project matching list/board filters. Filters:
     q (words or a key), type, status (id), category, priority, assignee
     (user id, "me" or "none"), label, parent (id), epic (id)."""
-    query = WorkItem.query.filter(WorkItem.project_id == project.id)
+    query = WorkItem.query.filter(WorkItem.project_id == project.id, WorkItem.tenant_id == project.tenant_id)
+    if filters.get('sprint'):
+        from serviceops_core.projects import query as project_query, sprints
+        if user is None: abort(400, description=tr('Sprint filtering requires a signed-in user.'))
+        sprint = sprints.get(user,project,filters['sprint'])
+        query = query.filter(project_query.Parser('',user).sprint_items(sprints.ProjectSprint.id == sprint.id))
     q = (filters.get("q") or "").strip()
     if q:
         parsed = parse_item_key(q)
@@ -1233,6 +1331,11 @@ def overview(project, today):
     epic_progress = [(epic, *progress.get(epic.id, (0, 0))) for epic in epics(project)]
     activity = db.session.query(WorkItemHistory, WorkItem).join(WorkItem, WorkItem.id == WorkItemHistory.work_item_id).filter(
         WorkItem.project_id == project.id).order_by(WorkItemHistory.created_at.desc(), WorkItemHistory.id.desc()).limit(15).all()
-    return {"by_category": by_category, "total": sum(by_category.values()), "by_type": by_type,
+    cutoff=core.now()-timedelta(days=7)
+    weekly=dict(done=base.filter(WorkItem.resolved_at>=cutoff).count(),updated=base.filter(WorkItem.updated_at>=cutoff).count(),
+        created=base.filter(WorkItem.created_at>=cutoff).count(),due=open_items.filter(WorkItem.due_date>=today,WorkItem.due_date<=today+timedelta(days=7)).count())
+    all_types=dict(base.with_entities(WorkItem.item_type,func.count()).group_by(WorkItem.item_type).all())
+    all_priorities=dict(base.with_entities(WorkItem.priority,func.count()).group_by(WorkItem.priority).all())
+    return {"weekly":weekly,"all_types":all_types,"all_priorities":all_priorities,"by_category": by_category, "total": sum(by_category.values()), "by_type": by_type,
             "by_priority": by_priority, "workload": workload, "unassigned": unassigned, "overdue": overdue,
             "epic_progress": epic_progress, "activity": activity}

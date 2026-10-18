@@ -21,6 +21,7 @@ setting so this works against AD or OpenLDAP schemas without any
 hard-coded company-specific attribute, OU, or domain assumptions.
 """
 import json
+import logging
 import re
 import uuid
 from contextlib import nullcontext
@@ -344,7 +345,7 @@ def sync_directory(tenant_id, dry_run=False):
         try:
             service.unbind()
         except Exception:
-            pass
+            logging.getLogger("app").warning("LDAP service connection cleanup failed during directory sync")
 
     summary["directory_entries"] = len(entries)
 
