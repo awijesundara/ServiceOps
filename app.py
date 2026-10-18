@@ -81,7 +81,7 @@ def escape_like(value):
     return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 from serviceops_core.security import (
-    consume_backup_code, hash_backup_code, hash_password, load_policy, redact, RedactingFilter,
+    consume_backup_code, hash_backup_code, hash_password, identity_role, load_policy, redact, RedactingFilter,
     role_has_action, validate_policy, verify_and_upgrade_password, verify_password,
 )
 from serviceops_core.priority import calculate_priority, validate_priority_policy
@@ -979,6 +979,8 @@ API_SCOPES = {
     # Project management (B-443).
     "projects:read",
     "projects:write",
+    "platform:read",
+    "platform:write",
 }
 
 
@@ -1175,7 +1177,7 @@ def user_requires_mfa_by_policy(user):
     this file, e.g. app.py:3313, 10292)."""
     if not setting_bool("REQUIRE_MFA_FOR_ADMIN", False):
         return False
-    if user.role == "admin":
+    if role_at_least(user.role, "admin"):
         return True
     ccb = SupportGroup.query.filter_by(
         name="Change Control Board", tenant_id=user.tenant_id
@@ -1368,7 +1370,7 @@ def api_ticket_document(ticket, user, *, include_details=False):
         from serviceops_core.ticket_details import ticket_details
         document["details"] = ticket_details(ticket, user)
         document["configuration_items"] = document["details"]["configuration_items"]
-    return project_document("ticket", user.role, document)
+    return project_document("ticket", identity_role(user), document)
 
 
 def api_attachment_document(attachment, ticket_number):
@@ -1614,6 +1616,7 @@ REQUEST_CACHE_SOURCES = {
     "support_group_ids": ("GroupMember", "SupportGroup"),
     "membership_group_ids": "GroupMember",
     "executive_office_group": "SupportGroup",
+    "project_roles": ("ProjectMember", "Project", "User", "UserRoleGrant"),
 }
 
 
@@ -3546,11 +3549,11 @@ def ticket_owning_group(ticket):
 
 
 def user_can_manage_ticket(user, ticket):
-    if not user.is_authenticated or not user.active:
+    if not user.is_authenticated or not user.active or not role_at_least(identity_role(user), "agent"):
         return False
     if ticket.tenant_id != user.tenant_id:
         return False
-    if user.role == "admin":
+    if role_at_least(identity_role(user), "admin"):
         return True
     group = ticket_owning_group(ticket)
     if not group:
@@ -3578,10 +3581,10 @@ def manageable_ticket_ids(user, tickets):
     to 100 cards per lane). Same rules: an active same-tenant user who is an
     administrator, or the manager or a member of the ticket's owning team
     (a change's ownership team when it has one, otherwise its assignment)."""
-    if not user.is_authenticated or not user.active:
+    if not user.is_authenticated or not user.active or not role_at_least(identity_role(user), "agent"):
         return set()
     tickets = [ticket for ticket in tickets if ticket.tenant_id == user.tenant_id]
-    if user.role == "admin":
+    if role_at_least(identity_role(user), "admin"):
         return {ticket.id for ticket in tickets}
     ids = [ticket.id for ticket in tickets]
     if not ids:
@@ -3639,10 +3642,10 @@ def visible_ticket_query(user):
     if not user.is_authenticated or not user.active:
         return query.filter(Ticket.id == -1)
     query = query.filter(Ticket.tenant_id == user.tenant_id)
-    if user.role == "admin":
+    if role_at_least(identity_role(user), "admin"):
         return query
     group_ids = user_support_group_ids(user)
-    if group_ids and SupportGroup.query.filter(
+    if role_at_least(identity_role(user), "agent") and group_ids and SupportGroup.query.filter(
         SupportGroup.id.in_(group_ids),
         SupportGroup.group_type.in_(IT_FULFILLMENT_GROUP_TYPES),
         SupportGroup.active.is_(True),
@@ -4158,7 +4161,7 @@ def user_in_group(user, group):
     if group.tenant_id != user.tenant_id:
         return False
     return (
-        user.role == "admin"
+        role_at_least(identity_role(user), "admin")
         or group.manager_id == user.id
         or group.id in membership_group_ids(user)
     )
@@ -4223,6 +4226,10 @@ def catalog_approval_stages(requested_for, item):
 
 
 def decide_vote(vote, decision, comments):
+    from serviceops_core.approval_decisions import refresh_locked_approval
+    refresh_locked_approval(vote)
+    if decision not in ("Approved", "Rejected"):
+        abort(400, description=tr("Choose Approved or Rejected."))
     if vote.state != "Requested" or vote.gate.state != "Requested" or vote.gate.chain.state != "Running":
         abort(409, description=tr("This approval is no longer active."))
     vote.state = decision
@@ -4555,7 +4562,7 @@ def _poll_client_mailbox(mailbox, limit=50):
         try:
             connection.logout()
         except Exception:
-            pass
+            current_app.logger.warning("IMAP connection cleanup failed after inbox polling")
 
 
 def process_client_email_inbox(limit=50):
@@ -5918,7 +5925,7 @@ def visible_catalog_request_query(user):
     if not user.is_authenticated or not user.active:
         return query.filter(CatalogRequest.id == -1)
     query = query.filter(CatalogRequest.tenant_id == user.tenant_id)
-    if user.role == "admin":
+    if role_at_least(identity_role(user), "admin"):
         return query
     # Unlike tickets/enterprise records, catalog fulfillment is deliberately
     # routing-scoped: a request routed to Windows must not be visible to Unix
@@ -5933,7 +5940,7 @@ def visible_catalog_request_query(user):
         )).all()
     }
     group_ids = user_support_group_ids(user)
-    if group_ids:
+    if role_at_least(identity_role(user), "agent") and group_ids:
         routed_item_ids = {
             row[0] for row in db.session.query(CatalogItemRouting.catalog_item_id).filter(
                 CatalogItemRouting.active.is_(True),
@@ -5981,9 +5988,9 @@ def user_can_view_catalog_request(user, catalog_request):
 
 def user_can_add_request_item(user, catalog_request):
     return (
-        user.is_authenticated and user.active
+        user.is_authenticated and user.active and user.tenant_id == catalog_request.tenant_id
         and (
-            user.role == "admin"
+            role_at_least(identity_role(user), "admin")
             or catalog_request.requested_by_id == user.id
             or catalog_request.requested_for_id == user.id
         )
@@ -5991,11 +5998,11 @@ def user_can_add_request_item(user, catalog_request):
 
 
 def user_can_manage_ritm(user, ritm):
-    if not user.is_authenticated or not user.active:
+    if not user.is_authenticated or not user.active or not role_at_least(identity_role(user), "agent"):
         return False
     if ritm.tenant_id != user.tenant_id:
         return False
-    if user.role == "admin":
+    if role_at_least(identity_role(user), "admin"):
         return True
     group_ids = user_support_group_ids(user)
     route_group = catalog_fulfillment_group(ritm.item)
@@ -6013,7 +6020,7 @@ def visible_enterprise_record_query(user):
     if not user.is_authenticated or not user.active:
         return query.filter(EnterpriseRecord.id == -1)
     query = query.filter(EnterpriseRecord.tenant_id == user.tenant_id)
-    if user.role == "admin":
+    if role_at_least(identity_role(user), "admin"):
         return query
     group_ids = user_support_group_ids(user)
     record_ids = set()
@@ -6030,7 +6037,7 @@ def visible_enterprise_record_query(user):
     # blanket "any Unix/Windows/etc. agent sees everything" shortcut would
     # leak that data tenant-wide. Those domains only ever fall through to the
     # strict requester/assignee/approver/actual-owning-group checks below.
-    if group_ids and SupportGroup.query.filter(
+    if role_at_least(identity_role(user), "agent") and group_ids and SupportGroup.query.filter(
         SupportGroup.id.in_(group_ids),
         SupportGroup.group_type.in_(IT_FULFILLMENT_GROUP_TYPES),
         SupportGroup.active.is_(True),
@@ -6090,9 +6097,9 @@ def user_can_manage_enterprise_record(user, record):
         return False
     if record.tenant_id != user.tenant_id:
         return False
-    if user.role == "admin":
+    if role_at_least(identity_role(user), "admin"):
         return True
-    if user.role not in ("agent", "manager"):
+    if identity_role(user) not in ("agent", "manager"):
         return False
     # Deliberately NOT granting manage rights just because requester_id ==
     # user.id: tickets never let the requester self-manage (user_can_manage_ticket
@@ -7125,6 +7132,7 @@ def create_app(test_config=None):
             minutes=int(os.getenv("SESSION_LIFETIME_MINUTES", "480"))
         ),
         AUTO_MIGRATE=env_bool("AUTO_MIGRATE", True),
+        PREMIUM_SANDBOX_ENABLED=env_bool("PREMIUM_SANDBOX_ENABLED", False),
         STORAGE_MODE=os.getenv("STORAGE_MODE", "postgres").strip().lower(),
     )
     if test_config:

@@ -322,6 +322,71 @@ def register(app):
                 "/docs": {
                     "get": {"summary": "Complete Markdown API guide", "security": []}
                 },
+                "/work-item-search": {
+                    "get": {"summary": "Search visible project work items with the core JQL dialect",
+                        "description": "Requires projects:read. jql supports boolean expressions, IN, IS EMPTY, "
+                            "typed comparisons and ORDER BY. A saved filter never grants record access. "
+                            "See the project search guide for supported fields/functions; full Jira JQL is not claimed.",
+                        "parameters": [{"name": name, "in": "query", "schema": {"type": "string"}}
+                            for name in ("jql", "filter")] + [
+                            {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 200}},
+                            {"name": "offset", "in": "query", "schema": {"type": "integer", "minimum": 0, "maximum": 1000000}}]},
+                },
+                "/project-filters": {
+                    "get": {"summary": "List visible saved project filters", "description": "Requires projects:read. "
+                        "Supports limit (1-200) and offset (0-1000000). Response includes total and next_offset."},
+                    "post": {"summary": "Create a saved project filter", "description": "Requires projects:write and "
+                        "Idempotency-Key. JSON: name, jql, sharing (private/project/tenant), project_key. "
+                        "Project sharing requires edit access; tenant sharing requires a tenant administrator."},
+                },
+                "/project-filters/{filter_id}": {
+                    "parameters": [{"name": "filter_id", "in": "path", "required": True,
+                                    "schema": {"type": "integer"}}],
+                    "patch": {"summary": "Update an owned project filter", "description": "Requires projects:write. "
+                        "Only the owner can edit. Accepts name, jql, sharing and project_key."},
+                    "delete": {"summary": "Delete an owned project filter", "description": "Requires projects:write. "
+                        "Only the owner can delete; removes favourites too."},
+                },
+                "/project-filters/{filter_id}/favourite": {
+                    "parameters": [{"name": "filter_id", "in": "path", "required": True,
+                                    "schema": {"type": "integer"}}],
+                    "put": {"summary": "Set your project filter favourite state", "description": "Requires "
+                        "projects:write. JSON: enabled boolean. Idempotent desired-state operation."},
+                },
+                "/projects/{key}/sprints": {"parameters": [{"name":"key","in":"path","required":True,"schema":{"type":"string"}}],
+                    "get": {"summary": "List project sprints", "description": "projects:read; state planned/active/closed; limit 1-200, offset 0-1000000."},
+                    "post": {"summary": "Create a planned sprint", "description": "projects:write, project administrator and Idempotency-Key. JSON name, goal, start_at, end_at. ISO timestamps normalize to UTC; both dates required together, maximum 366 days."}},
+                "/projects/{key}/sprints/{sprint_id}": {"parameters": [{"name":"key","in":"path","required":True,"schema":{"type":"string"}}, {"name":"sprint_id","in":"path","required":True,"schema":{"type":"integer"}}],
+                    "get": {"summary": "Read one visible sprint"},
+                    "patch": {"summary": "Edit a planned or active sprint", "description": "Project administrator; same fields as create. Closed sprints are immutable."},
+                    "delete": {"summary": "Delete a planned sprint", "description": "Project administrator. Work returns to backlog; started sprint history cannot be deleted."}},
+                "/projects/{key}/sprints/{sprint_id}/start": {"parameters": [{"name":"key","in":"path","required":True,"schema":{"type":"string"}}, {"name":"sprint_id","in":"path","required":True,"schema":{"type":"integer"}}], "post": {"summary": "Start a planned sprint", "description": "Project administrator; empty JSON object. Captures baseline. Parallel active sprints are supported."}},
+                "/projects/{key}/sprints/{sprint_id}/complete": {"parameters": [{"name":"key","in":"path","required":True,"schema":{"type":"string"}}, {"name":"sprint_id","in":"path","required":True,"schema":{"type":"integer"}}], "post": {"summary": "Complete an active sprint", "description": "Project administrator; optional destination_id integer or null for backlog. Unfinished work moves transactionally; completed scope and estimates are frozen."}},
+                "/projects/{key}/sprint-items": {"parameters": [{"name":"key","in":"path","required":True,"schema":{"type":"string"}}], "put": {"summary": "Assign or rank sprint work", "description": "projects:write and project edit access. JSON item_keys (1-100), sprint_id (integer or null for backlog), optional before_key for one item. Same-project stories/tasks/bugs; subtasks inherit. Bulk failures roll back the complete request."}},
+                "/projects/{key}/sprints/{sprint_id}/items": {"parameters": [{"name":"key","in":"path","required":True,"schema":{"type":"string"}}, {"name":"sprint_id","in":"path","required":True,"schema":{"type":"integer"}}], "get": {"summary": "List sprint membership", "description": "projects:read; limit/offset. Closed memberships retain snapshots; moved/deleted live objects are not expanded."}},
+                "/projects/{key}/sprints/{sprint_id}/events": {"parameters": [{"name":"key","in":"path","required":True,"schema":{"type":"string"}}, {"name":"sprint_id","in":"path","required":True,"schema":{"type":"integer"}}], "get": {"summary": "Page through sprint scope and lifecycle history", "description": "projects:read; limit 1-200 and offset 0-1000000. Append-only event snapshots."}},
+                "/projects/{key}/sprints/{sprint_id}/report": {"parameters": [{"name":"key","in":"path","required":True,"schema":{"type":"string"}}, {"name":"sprint_id","in":"path","required":True,"schema":{"type":"integer"}}], "get": {"summary": "Sprint baseline, outcome and daily burndown/burnup", "description": "projects:read; unit count/points/estimate/remaining. UTC daily snapshots; 50000-event/366-day bound. Full paginated events remain available above the chart limit."}},
+                '/project-plans': {'get': {'summary': 'List visible saved plans'}, 'post': {'summary': 'Create a plan', 'description': 'projects:write and Idempotency-Key. JSON name, description, projects (keys), settings.'}},
+                '/project-plans/{plan_id}': {'get': {'summary': 'Read plan hierarchy, teams, capacity and allocations'}, 'parameters': [{'name': 'plan_id', 'in': 'path', 'required': True, 'schema': {'type': 'integer'}}]},
+                '/project-plans/{plan_id}/{action}': {'post': {'summary': 'Change a planning proposal', 'description': 'projects:write. Required current revision. Actions node, team, allocate, settings, scenario, restore, auto, review. Review produces a draft; actual dates change only on draft apply.'}, 'parameters': [{'name': 'plan_id', 'in': 'path', 'required': True, 'schema': {'type': 'integer'}}, {'name': 'action', 'in': 'path', 'required': True, 'schema': {'type': 'string'}}]},
+                '/project-automation': {'get': {'summary': 'List owned automation rules'}, 'post': {'summary': 'Create a bounded automation rule', 'description': 'projects:write, Idempotency-Key and project administration. JSON name, projects, enabled, config.'}},
+                '/project-automation/{rule_id}': {'get': {'summary': 'Read rule and execution audit'}, 'put': {'summary': 'Update rule with current revision'}, 'parameters': [{'name': 'rule_id', 'in': 'path', 'required': True, 'schema': {'type': 'integer'}}]},
+                '/projects/{key}/content/{view}': {'get': {'summary': 'Read pages, forms, shortcuts or reports'}, 'post': {'summary': 'Create project content', 'description': 'projects:write and Idempotency-Key. Pages require edit; forms and shortcuts require project administration. Reports are read only.'}, 'parameters': [{'name': 'key', 'in': 'path', 'required': True, 'schema': {'type': 'string'}}, {'name': 'view', 'in': 'path', 'required': True, 'schema': {'type': 'string'}}]},
+                '/projects/{key}/content/{view}/{identifier}': {'put': {'summary': 'Save a page or form with current revision'}, 'parameters': [{'name': 'key', 'in': 'path', 'required': True, 'schema': {'type': 'string'}}, {'name': 'view', 'in': 'path', 'required': True, 'schema': {'type': 'string'}}, {'name': 'identifier', 'in': 'path', 'required': True, 'schema': {'type': 'integer'}}]},
+                '/projects/{key}/forms/{identifier}/submit': {'post': {'summary': 'Submit typed intake answers as a work item', 'description': 'projects:write and Idempotency-Key. JSON title, description, answers. Answers retain an immutable schema snapshot.'}, 'parameters': [{'name': 'key', 'in': 'path', 'required': True, 'schema': {'type': 'string'}}, {'name': 'identifier', 'in': 'path', 'required': True, 'schema': {'type': 'integer'}}]},
+                '/platform/premium-policy': {'get': {'summary': 'Read release track and IP policy'}, 'put': {'summary': 'Update install policy with current revision', 'description': 'platform:write and platform administration. Preserves the requesting address in the allowlist.'}},
+                '/platform/sandboxes': {'get': {'summary': 'List isolated synthetic sandboxes'}, 'post': {'summary': 'Queue an isolated sandbox', 'description': 'platform:write and Idempotency-Key. Synthetic data only; two global slots, expiry up to seven days.'}},
+                '/platform/sandboxes/{identifier}': {'delete': {'summary': 'Queue permanent removal of synthetic sandbox resources'}, 'parameters': [{'name': 'identifier', 'in': 'path', 'required': True, 'schema': {'type': 'integer'}}]},
+                "/project-planning/timeline": {"get":{"summary":"Permission-scoped timeline, hierarchy and dependencies","description":"projects:read. Optional repeated project keys, zoom weeks/months/years, anchor YYYY-MM-DD and q. Maximum 50 projects, 500 work items and 2000 visible blocking dependencies."}},
+                "/project-planning/drafts": {"get":{"summary":"List owned planning drafts","description":"projects:read. Up to 50 recent visible owned drafts."},"post":{"summary":"Create a reviewable scheduling draft","description":"projects:write and Idempotency-Key. JSON projects (array of keys), name, mode auto/manual. Auto requires start YYYY-MM-DD; optional hours 1-24, weekends boolean, reserve_people boolean. Manual requires changes mapping work-item IDs to start and due date objects. Nothing updates work until apply."}},
+                "/project-planning/drafts/{draft_id}": {"parameters":[{"name":"draft_id","in":"path","required":True,"schema":{"type":"integer"}}],"get":{"summary":"Review an owned draft","description":"projects:read; project visibility rechecked."},"delete":{"summary":"Discard an unapplied owned draft","description":"projects:write; applied history cannot be discarded."}},
+                "/project-planning/drafts/{draft_id}/apply": {"parameters":[{"name":"draft_id","in":"path","required":True,"schema":{"type":"integer"}}],"post":{"summary":"Apply checked draft changes atomically","description":"projects:write. JSON item_ids (nonempty array). Rechecks permissions, locks affected and prerequisite projects, rejects stale work/dependencies with 409. Applying consumes the draft."}},
+                "/projects/{key}/goals": {"parameters":[{"name":"key","in":"path","required":True,"schema":{"type":"string"}}],"get":{"summary":"List project goals and linked completion progress","description":"projects:read. Up to 200 goals."},"post":{"summary":"Create a project goal","description":"projects:write, Idempotency-Key and project edit access. JSON title, description, target_date, state open/achieved/cancelled, item_keys array from the same project."}},
+                "/projects/{key}/goals/{goal_id}": {"parameters":[{"name":"key","in":"path","required":True,"schema":{"type":"string"}},{"name":"goal_id","in":"path","required":True,"schema":{"type":"integer"}}],"patch":{"summary":"Update a project goal","description":"projects:write and project edit access. Same fields as goal creation; omitted fields preserved."}},
+                "/projects/{key}/view-preferences": {"parameters":[{"name":"key","in":"path","required":True,"schema":{"type":"string"}}],"get":{"summary":"Get personal project view settings","description":"projects:read. show_points, show_assignees, show_versions, show_epics, show_priority, compact booleans."},"put":{"summary":"Replace personal project view settings","description":"projects:write; project view access is sufficient. JSON boolean settings; omitted fields reset to defaults. No shared configuration is changed."}},
+                "/projects/{key}/planning-calendar": {"parameters":[{"name":"key","in":"path","required":True,"schema":{"type":"string"}}],"get":{"summary":"Monthly start and due events","description":"projects:read. month YYYY-MM, maximum 500 work items."}},
+                "/projects/{key}/planning-team": {"parameters":[{"name":"key","in":"path","required":True,"schema":{"type":"string"}}],"get":{"summary":"Project membership and recorded workload","description":"projects:read. Per-person open work, remaining minutes and points. Shared assignments count for every person; not an employee availability calendar."}},
+                "/projects/{key}/velocity": {"parameters": [{"name":"key","in":"path","required":True,"schema":{"type":"string"}}], "get": {"summary": "Last ten completed sprint baselines and outcomes", "description": "projects:read; count, points and minutes remain separate; no fabricated historical baselines."}},
                 "/projects": {"get": {
                     "summary": "List projects the acting user can see",
                     "description": "Requires projects:read and project management enabled.",
@@ -876,7 +941,9 @@ def register(app):
             abort(400, description=tr("A JSON object is required."))
         raw = str(body.get("refresh_token", ""))
         digest = api_token_hash(raw) if raw.startswith("sor_") else ""
-        row = APIClient.query.filter_by(refresh_token_hash=digest, client_kind="mobile", active=True).first()
+        row = APIClient.query.filter_by(
+            refresh_token_hash=digest, client_kind="mobile", active=True,
+        ).with_for_update().populate_existing().first()
         if not row or not hmac.compare_digest(row.refresh_token_hash or "", digest) or align_tz(row.refresh_expires_at, now()) <= now() or not account_usable(row.acting_user):
             abort(401, description=tr("The mobile refresh token is invalid, expired, or revoked."))
         if row.auth_version != row.acting_user.auth_version:
@@ -1271,7 +1338,7 @@ def register(app):
     @app.post("/api/v1/incidents")
     def api_incident_create():
         require_api_scope("incidents:create")
-        if not effective_role_has_action(g.api_user.role, "create", tenant_id=g.api_user.tenant_id):
+        if not effective_role_has_action(g.api_user.effective_role, "create", tenant_id=g.api_user.tenant_id):
             abort(403, description=tr("The acting user cannot create records."))
         key, request_hash, replay = api_idempotency_context()
         if replay:
@@ -1328,7 +1395,7 @@ def register(app):
     def api_ticket_update(number):
         require_api_scope("tickets:update")
         for action in ("update", "assign", "transition"):
-            if not effective_role_has_action(g.api_user.role, action, tenant_id=g.api_user.tenant_id):
+            if not effective_role_has_action(g.api_user.effective_role, action, tenant_id=g.api_user.tenant_id):
                 abort(403, description=tr("The acting user cannot perform {action}.", action=action))
         ticket = visible_ticket_query(g.api_user).filter(
             func.upper(Ticket.number) == number.upper()
@@ -1502,7 +1569,7 @@ def register(app):
     @app.post("/api/v1/tickets/<number>/workflow-events")
     def api_workflow_event(number):
         require_api_scope("workflows:execute")
-        if not effective_role_has_action(g.api_user.role, "transition", tenant_id=g.api_user.tenant_id):
+        if not effective_role_has_action(g.api_user.effective_role, "transition", tenant_id=g.api_user.tenant_id):
             abort(403, description=tr("The acting user cannot execute workflows."))
         ticket = visible_ticket_query(g.api_user).filter(
             func.upper(Ticket.number) == number.upper()
@@ -1524,7 +1591,7 @@ def register(app):
             tenant_id=ticket.tenant_id,
         )
         db.session.flush()
-        document = {"data": project_document("workflow_ack", g.api_user.role, {
+        document = {"data": project_document("workflow_ack", g.api_user.effective_role, {
             "event_id": job.event_id, "state": job.state,
             "ticket": ticket.number,
         })}
@@ -1544,7 +1611,7 @@ def register(app):
             SupportGroup.tenant_id == g.api_user.tenant_id,
             SupportGroup.active.is_(True), GroupMember.user_id == g.api_user.id,
         ).order_by(SupportGroup.name).all()
-        if role_at_least(g.api_user.role, "manager"):
+        if role_at_least(g.api_user.effective_role, "manager"):
             groups = SupportGroup.query.filter_by(
                 tenant_id=g.api_user.tenant_id, active=True,
             ).order_by(SupportGroup.name).all()
@@ -1564,8 +1631,8 @@ def register(app):
             "assignment_groups": [{"id": row.id, "name": row.name} for row in groups],
             "counts": {"pending_approvals": pending, "unread_notifications": unread},
             "capabilities": {
-                "create_incident": effective_role_has_action(g.api_user.role, "create", tenant_id=g.api_user.tenant_id),
-                "manage_tickets": effective_role_has_action(g.api_user.role, "update", tenant_id=g.api_user.tenant_id),
+                "create_incident": effective_role_has_action(g.api_user.effective_role, "create", tenant_id=g.api_user.tenant_id),
+                "manage_tickets": effective_role_has_action(g.api_user.effective_role, "update", tenant_id=g.api_user.tenant_id),
                 "view_cmdb": role_at_least(g.api_user.effective_role, "agent"),
             },
         }})

@@ -66,11 +66,23 @@ def verify_second_factor(user, code, at=None):
     step = _totp_step(user, code, at)
     if step is not None and _claim_step(user, step):
         return True, False
-    if user.mfa_backup_codes_json:
-        remaining = consume_backup_code(json.loads(user.mfa_backup_codes_json), code)
-        if remaining is not None:
-            user.mfa_backup_codes_json = json.dumps(remaining)
+    for _ in range(3):
+        original = user.mfa_backup_codes_json
+        if not original:
+            return False, False
+        remaining = consume_backup_code(json.loads(original), code)
+        if remaining is None:
+            return False, False
+        # The JSON predicate makes code consumption single-use even when
+        # another request loaded the same code list before this commit.
+        claimed = User.query.filter(
+            User.id == user.id, User.mfa_backup_codes_json == original,
+        ).update({User.mfa_backup_codes_json: json.dumps(remaining)}, synchronize_session=False)
+        db.session.expire(user, ["mfa_backup_codes_json"])
+        if claimed:
             return True, True
+    from flask import current_app
+    current_app.logger.warning("MFA backup code update contention for user %s", user.id)
     return False, False
 
 

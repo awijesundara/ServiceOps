@@ -459,3 +459,49 @@
     }
   });
 })();
+
+(function () {
+  "use strict";
+  const table = document.querySelector("[data-sprint-backlog]");
+  if (!table) return;
+  let source = null, saving = false;
+  table.addEventListener("dragstart", event => {
+    const row = event.target.closest("[data-backlog-row][draggable=true]");
+    if (!row || saving) { event.preventDefault(); return; }
+    source = row.dataset.backlogRow;
+    event.dataTransfer.setData("text/plain", source);
+    event.dataTransfer.effectAllowed = "move";
+  });
+  table.addEventListener("dragover", event => {
+    const row = event.target.closest("[data-backlog-row]");
+    if (source && row && row.dataset.backlogRow !== source) {
+      event.preventDefault(); row.classList.add("sprint-drag-target");
+    }
+  });
+  const clear = () => table.querySelectorAll(".sprint-drag-target").forEach(row => row.classList.remove("sprint-drag-target"));
+  table.addEventListener("dragleave", clear);
+  table.addEventListener("dragend", () => { clear(); source = null; });
+  table.addEventListener("drop", async event => {
+    const row = event.target.closest("[data-backlog-row]");
+    if (!source || !row || saving) return;
+    event.preventDefault(); clear();
+    if (source === row.dataset.backlogRow) return;
+    const key = source; source = null; saving = true;
+    try {
+      const response = await fetch(table.dataset.saveUrl, {
+        method: "POST", headers: {"Content-Type":"application/json", "Accept":"application/json",
+          "X-CSRF-Token":document.querySelector('meta[name="csrf-token"]')?.content || ""},
+        body: JSON.stringify({item_keys:[key], sprint_id:table.dataset.sprint ? Number(table.dataset.sprint) : null,
+          before_key:row.dataset.backlogRow})
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || tr("The backlog could not be updated."));
+      window.location.reload();
+    } catch (error) {
+      console.error("Sprint ranking request failed");
+      const status = document.getElementById("sprint-rank-status");
+      if (status) status.textContent = error.message || tr("The backlog could not be updated.");
+      if (typeof showToast === "function") showToast(error.message || tr("The backlog could not be updated."), "error");
+    } finally { saving = false; }
+  });
+})();

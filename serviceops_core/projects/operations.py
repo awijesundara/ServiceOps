@@ -40,6 +40,7 @@ def clone_item(actor, item, title=None, include_subtasks=False, include_links=Fa
                _parent_id=None):
     project = item.project
     service.require_edit(actor, project)
+    Project.query.filter_by(id=project.id).with_for_update().one()
     copy = service.create_item(
         actor, project, title or tr("CLONE - {title}", title=item.title)[:255], item_type=item.item_type,
         description=item.description, status_id=service.default_status(project).id, priority=item.priority,
@@ -50,6 +51,9 @@ def clone_item(actor, item, title=None, include_subtasks=False, include_links=Fa
         affects_version_ids=[row.id for row in item.affects_versions], environment=item.environment)
     db.session.add(WorkItemLink(tenant_id=item.tenant_id, source_id=copy.id, link_type="clones",
                                 target_type="work_item", target_id=item.id, created_by_id=actor.id))
+    from serviceops_core.projects.models import ProjectFormResponse
+    for response in item.form_responses:
+        db.session.add(ProjectFormResponse(tenant_id=item.tenant_id,form_id=response.form_id,work_item_id=copy.id,name=response.name,schema_json=response.schema_json,answers_json=response.answers_json,submitted_by_id=actor.id))
     if include_links:
         for link in WorkItemLink.query.filter_by(source_id=item.id).all():
             if link.link_type != "clones":
@@ -59,8 +63,18 @@ def clone_item(actor, item, title=None, include_subtasks=False, include_links=Fa
     if include_attachments:
         _copy_attachments(item, copy, actor)
     if include_subtasks and item.item_type != "epic":
-        for child in WorkItem.query.filter_by(parent_id=item.id, item_type="subtask").order_by(WorkItem.rank):
-            clone_item(actor, child, title=child.title, include_attachments=include_attachments, _parent_id=copy.id)
+        remaining = service.hierarchy_rows(item)
+        copies = {item.id: copy}
+        while remaining:
+            ready = [child for child in remaining if child.parent_id in copies]
+            if not ready:
+                abort(409, description=tr("The work item hierarchy must be repaired before cloning."))
+            for child in ready:
+                copies[child.id] = clone_item(actor, child, title=child.title,
+                    include_links=include_links, include_attachments=include_attachments,
+                    _parent_id=copies[child.parent_id].id)
+            ready_ids = {child.id for child in ready}
+            remaining = [child for child in remaining if child.id not in ready_ids]
     service.log_work_item_history(item, actor, "cloned", None, copy.key)
     return copy
 
@@ -84,16 +98,22 @@ def move_item(actor, item, target_project, item_type=None, status_id=None):
         abort(400, description=tr("Choose a different project."))
     service.require_edit(actor, source)
     service.require_edit(actor, target_project)
+    Project.query.filter(Project.id.in_([source.id, target_project.id])).order_by(
+        Project.id).with_for_update().all()
+    db.session.refresh(item, ["parent_id", "item_type"])
     if item.item_type == "subtask":
         abort(400, description=tr("Move the parent work item; its subtasks move with it."))
     item_type = item_type or item.item_type
     if item_type not in ITEM_TYPES or item_type == "subtask":
         abort(400, description=tr("Choose a work item type."))
-    if item_type != "epic" and item.item_type == "epic" and WorkItem.query.filter_by(parent_id=item.id).count():
-        abort(409, description=tr("Move or remove this epic's children before changing its type."))
-    moved = [item] + WorkItem.query.filter_by(parent_id=item.id, item_type="subtask").all()
+    if (item.item_type == "epic" or item_type == "epic") and WorkItem.query.filter_by(parent_id=item.id).count():
+        abort(409, description=tr("Move or remove this item's children before moving it or changing its type."))
+    moved = [item] + service.hierarchy_rows(item)
+    from serviceops_core.projects import sprints
+    for row in moved:
+        sprints.detach_for_removal(actor, row)
     old_key = item.key
-    locked = Project.query.filter_by(id=target_project.id).with_for_update().one()
+    locked = Project.query.filter_by(id=target_project.id).with_for_update().populate_existing().one()
     for row in moved:
         db.session.add(WorkItemKeyAlias(tenant_id=row.tenant_id, project_key=source.key, number=row.number,
                                         work_item_id=row.id))
@@ -103,6 +123,7 @@ def move_item(actor, item, target_project, item_type=None, status_id=None):
         row.number = locked.next_number
         locked.next_number += 1
         row.status_id, row.status = status.id, status
+        service._resolve(row, actor, status)
         row.rank = service._next_rank(target_project.id, status.id)
         for model in (WorkItemComponent, WorkItemFixVersion, WorkItemAffectsVersion):
             model.query.filter_by(work_item_id=row.id).delete()
@@ -137,13 +158,11 @@ def resolve_alias(user, item_key):
 
 def convert_item(actor, item, item_type, parent_id=None):
     """Subtask to a standard type, or a standard type to a subtask of
-    `parent_id` (which cannot have subtasks of its own moved under it)."""
+    `parent_id`, preserving nested descendants and rejecting cycles."""
     service.require_edit(actor, item.project)
     if item_type not in ITEM_TYPES or item_type == item.item_type:
         abort(400, description=tr("Choose a different work item type."))
     if item_type == "subtask":
-        if WorkItem.query.filter_by(parent_id=item.id).count():
-            abort(409, description=tr("A work item with subtasks or children cannot become a subtask."))
         service.update_item(actor, item, {"item_type": "subtask", "parent_id": parent_id})
     else:
         changes = {"item_type": item_type}

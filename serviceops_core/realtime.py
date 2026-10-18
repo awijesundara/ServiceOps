@@ -21,6 +21,7 @@ web application as usual. Other databases (SQLite in tests and IPFS mode)
 skip all of this; browsers fall back to polling.
 """
 import json
+import logging
 
 from flask import has_request_context
 from sqlalchemy import event, text
@@ -38,6 +39,7 @@ def _actor_id():
         from flask_login import current_user
         return current_user.id if current_user.is_authenticated else None
     except Exception:
+        logging.getLogger("app").warning("Real-time actor attribution is unavailable", exc_info=True)
         return None
 
 
@@ -79,6 +81,7 @@ def _after_flush(session, flush_context):
     except Exception:
         # Signals are an optimisation; a failure here must never break a write.
         session.info.pop(_PENDING, None)
+        logging.getLogger("app").warning("Real-time signals could not be collected", exc_info=True)
 
 
 @event.listens_for(Session, "before_commit")
@@ -94,30 +97,33 @@ def _before_commit(session):
         bind = session.get_bind()
         if bind.dialect.name != "postgresql":
             return
-        ticket_tenants = {}
-        for kind, tenant, target, actor in sorted(pending["events"], key=str):
-            if kind == "ticket" and tenant is None:
-                # History rows carry no tenant: take the ticket's.
-                if target not in ticket_tenants:
-                    ticket_tenants[target] = session.execute(
-                        text("SELECT tenant_id FROM ticket WHERE id = :id"), {"id": target},
-                    ).scalar()
-                tenant = ticket_tenants[target]
-            if tenant is None:
-                continue
-            payload = {"type": kind, "tenant": tenant}
-            if kind == "notification":
-                payload["user"] = target
-            elif kind == "watch":
-                payload.update({"key": target, "actor": actor})
-            else:
-                payload.update({"id": target, "actor": actor})
-            session.execute(text("SELECT pg_notify(:channel, :payload)"),
-                            {"channel": EVENTS_CHANNEL, "payload": json.dumps(payload, separators=(",", ":"))})
-        if pending["outbox"]:
-            session.execute(text("SELECT pg_notify(:channel, '')"), {"channel": OUTBOX_CHANNEL})
+        # PostgreSQL marks the transaction failed after a notification error.
+        # Catching it alone can make COMMIT silently roll back the business
+        # write. Isolate these best-effort signals in a savepoint instead.
+        with session.begin_nested():
+            ticket_tenants = {}
+            for kind, tenant, target, actor in sorted(pending["events"], key=str):
+                if kind == "ticket" and tenant is None:
+                    # History rows carry no tenant: take the ticket's.
+                    if target not in ticket_tenants:
+                        ticket_tenants[target] = session.execute(
+                            text("SELECT tenant_id FROM ticket WHERE id = :id"), {"id": target},
+                        ).scalar()
+                    tenant = ticket_tenants[target]
+                if tenant is None:
+                    continue
+                payload = {"type": kind, "tenant": tenant}
+                if kind == "notification":
+                    payload["user"] = target
+                elif kind == "watch":
+                    payload.update({"key": target, "actor": actor})
+                else:
+                    payload.update({"id": target, "actor": actor})
+                session.execute(text("SELECT pg_notify(:channel, :payload)"),
+                                {"channel": EVENTS_CHANNEL, "payload": json.dumps(payload, separators=(",", ":"))})
+            if pending["outbox"]:
+                session.execute(text("SELECT pg_notify(:channel, '')"), {"channel": OUTBOX_CHANNEL})
     except Exception:
         # Never fail the commit for a signal; browsers and the worker still
         # catch up through their periodic checks.
-        import logging
         logging.getLogger("app").warning("Real-time signal could not be queued", exc_info=True)

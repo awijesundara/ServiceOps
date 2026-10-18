@@ -1,0 +1,17 @@
+{# The project has already passed the existing tenant and visibility gates. #}
+<div class="project-context" role="group" aria-label="{{ tr('Current project navigation') }}">
+  <div class="project-context-identity"><span class="project-badge small project-c-{{ project.id }}" aria-hidden="true">{{ project.key[:2] }}</span><div><strong>{{ project.name }}</strong><span>{{ project.key }}</span></div></div>
+  <a href="{{ url_for('projects.overview',key=project.key) }}" {% if tab|default('')=='overview' %}class="active" aria-current="page"{% endif %}><span aria-hidden="true">◈</span>{{ tr('Overview') }}</a>
+  <a href="{{ url_for('projects.planning_timeline',key=project.key) }}" {% if tab|default('')=='timeline' %}class="active" aria-current="page"{% endif %}><span aria-hidden="true">⇥</span>{{ tr('Timeline') }}</a>
+  <a href="{{ url_for('projects.planning_calendar',key=project.key) }}" {% if tab|default('')=='calendar' %}class="active" aria-current="page"{% endif %}><span aria-hidden="true">▦</span>{{ tr('Calendar') }}</a>
+  <a href="{{ url_for('projects.planning_goals',key=project.key) }}" {% if tab|default('')=='goals' %}class="active" aria-current="page"{% endif %}><span aria-hidden="true">◎</span>{{ tr('Goals') }}</a>
+  <a href="{{ url_for('projects.planning_teams',key=project.key) }}" {% if tab|default('')=='teams' %}class="active" aria-current="page"{% endif %}><span aria-hidden="true">♧</span>{{ tr('Team') }}</a>
+  <a href="{{ url_for('projects.sprint_backlog',key=project.key) }}" {% if tab|default('')=='backlog' %}class="active" aria-current="page"{% endif %}><span aria-hidden="true">☷</span>{{ tr('Backlog') }}</a>
+  <a href="{{ url_for('projects.board',key=project.key) }}" {% if tab|default('')=='board' %}class="active" aria-current="page"{% endif %}><span aria-hidden="true">▥</span>{{ tr('Board') }}</a>
+  <a href="{{ url_for('projects.item_list',key=project.key) }}" {% if tab|default('')=='list' %}class="active" aria-current="page"{% endif %}><span aria-hidden="true">☰</span>{{ tr('List') }}</a>
+  <a href="{{ url_for('projects.sprint_list',key=project.key) }}"><span aria-hidden="true">◷</span>{{ tr('Sprints and reports') }}</a>
+  <a href="{{ url_for('projects.project_releases',key=project.key) }}" {% if tab|default('')=='releases' %}class="active" aria-current="page"{% endif %}><span aria-hidden="true">⚑</span>{{ tr('Releases') }}</a>
+  <a href="{{ url_for('projects.project_components',key=project.key) }}" {% if tab|default('')=='components' %}class="active" aria-current="page"{% endif %}><span aria-hidden="true">◇</span>{{ tr('Components') }}</a>
+  {% if can_admin|default(false) %}<a href="{{ url_for('projects.settings',key=project.key) }}" {% if tab|default('')=='settings' %}class="active" aria-current="page"{% endif %}><span aria-hidden="true">⚙</span>{{ tr('Project settings') }}</a>{% endif %}
+  <a class="project-context-back" href="{{ url_for('projects.index') }}">← {{ tr('All projects') }}</a>
+</div>

@@ -165,7 +165,7 @@ def test_hierarchy_rules(pm):
     elsewhere = service.create_item(u("database.manager"), other, "Epic elsewhere", item_type="epic")
     expect_abort(400, service.create_item, u("dev.one"), project, "Cross project", item_type="story",
                  parent_id=elsewhere.id)
-    expect_abort(409, service.update_item, u("dev.one"), story, {"item_type": "subtask", "parent_id": story.id})
+    expect_abort(400, service.update_item, u("dev.one"), story, {"item_type": "subtask", "parent_id": story.id})
 
 
 def test_board_moves_order_items_between_neighbours(pm):

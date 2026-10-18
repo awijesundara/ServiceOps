@@ -138,6 +138,9 @@
    "id": "A comment between 1 and 10000 characters is required."
   },
   {
+   "id": "A completed sprint cannot be edited."
+  },
+  {
    "id": "A component name has 1 to 100 characters."
   },
   {
@@ -217,10 +220,19 @@
    "id": "A passkey credential object with a response object is required."
   },
   {
+   "id": "A plan is visible only to people who can access all its project sources. Its owner or a tenant administrator with edit access can manage the plan."
+  },
+  {
    "id": "A policy called {name} already exists."
   },
   {
    "id": "A policy name has 1 to 120 characters."
+  },
+  {
+   "id": "A portfolio hierarchy cannot contain a cycle."
+  },
+  {
+   "id": "A prerequisite has no due date. Date it before automatic scheduling."
   },
   {
    "id": "A project key has 2 to 10 letters or digits and starts with a letter."
@@ -272,19 +284,25 @@
    "id": "A small activity label appears while the assistant works and disappears when the answer is ready. Private model reasoning is not shown. It drafts advice for your review and makes no operational changes."
   },
   {
+   "id": "A sprint can contain at most 5,000 work items."
+  },
+  {
    "id": "A stage name has 1 to 160 characters."
   },
   {
    "id": "A status update message is required."
   },
   {
-   "id": "A subtask belongs to a story, task or bug."
+   "id": "A subtask belongs to a story, task, bug or another subtask."
   },
   {
    "id": "A subtask needs a parent work item."
   },
   {
    "id": "A summary is required for the post-implementation review."
+  },
+  {
+   "id": "A summary of project status, priorities, workload and recent activity."
   },
   {
    "id": "A tenant with slug \"{slug}\" already exists."
@@ -344,10 +362,13 @@
    "id": "A work item cannot be its own parent."
   },
   {
+   "id": "A work item cannot be placed beneath one of its descendants."
+  },
+  {
    "id": "A work item cannot link to itself."
   },
   {
-   "id": "A work item with subtasks or children cannot become a subtask."
+   "id": "A work item exceeds the 366-day scheduling limit."
   },
   {
    "id": "A work item's work logs"
@@ -360,6 +381,9 @@
   },
   {
    "id": "A work-in-progress limit is between 1 and 999."
+  },
+  {
+   "id": "A zero-prefix network does not restrict access. Remove the policy to allow everyone."
   },
   {
    "id": "A {label} synchronization is already queued or running."
@@ -516,6 +540,12 @@
    "id": "Access level for directory users in no mapped group"
   },
   {
+   "id": "Access policy is temporarily unavailable."
+  },
+  {
+   "id": "Access stays private to the cluster. An operator with Kubernetes access can open a local port-forward and obtain the fresh administrator password from this sandbox secret."
+  },
+  {
    "id": "Accessibility"
   },
   {
@@ -537,7 +567,8 @@
    "id": "Acting user"
   },
   {
-   "id": "Action"
+   "id": "Action",
+   "javascript": true
   },
   {
    "id": "Action contains unsupported fields."
@@ -586,6 +617,9 @@
   },
   {
    "id": "Active users"
+  },
+  {
+   "id": "Active users below are distinct people with recorded audit activity during rolling 1, 7 and 30-day windows. Passive page views without an audit event are not counted."
   },
   {
    "id": "Active users were seen in the last 15 minutes."
@@ -676,6 +710,9 @@
    "id": "Add a stage"
   },
   {
+   "id": "Add a team and its iteration capacity before scheduling."
+  },
+  {
    "id": "Add a trigger"
   },
   {
@@ -724,6 +761,13 @@
    "id": "Add checklist item"
   },
   {
+   "id": "Add comment",
+   "javascript": true
+  },
+  {
+   "id": "Add component"
+  },
+  {
    "id": "Add condition"
   },
   {
@@ -731,6 +775,9 @@
   },
   {
    "id": "Add discovery target"
+  },
+  {
+   "id": "Add favourite"
   },
   {
    "id": "Add field"
@@ -746,6 +793,9 @@
   },
   {
    "id": "Add label"
+  },
+  {
+   "id": "Add level"
   },
   {
    "id": "Add link type"
@@ -781,6 +831,9 @@
    "id": "Add person"
   },
   {
+   "id": "Add portfolio level"
+  },
+  {
    "id": "Add problem task"
   },
   {
@@ -803,6 +856,9 @@
    "javascript": true
   },
   {
+   "id": "Add shortcut"
+  },
+  {
    "id": "Add stage"
   },
   {
@@ -813,6 +869,9 @@
   },
   {
    "id": "Add subcategory"
+  },
+  {
+   "id": "Add team"
   },
   {
    "id": "Add this page to favorites",
@@ -834,12 +893,18 @@
    "id": "Add widgets for the tickets, tasks, charts and notes you want to keep an eye on."
   },
   {
+   "id": "Add your planning teams"
+  },
+  {
    "id": "Add {count} selected",
    "javascript": true
   },
   {
    "id": "Add {name}",
    "javascript": true
+  },
+  {
+   "id": "Added"
   },
   {
    "id": "Added to favorites.",
@@ -873,6 +938,9 @@
    "id": "Admin"
   },
   {
+   "id": "Admin insights"
+  },
+  {
    "id": "Administration"
   },
   {
@@ -889,6 +957,9 @@
   },
   {
    "id": "Administration home"
+  },
+  {
+   "id": "Administration is temporarily unavailable."
   },
   {
    "id": "Administration overview"
@@ -937,6 +1008,9 @@
    "id": "Administrators only"
   },
   {
+   "id": "Advanced JSON"
+  },
+  {
    "id": "Advanced model",
    "javascript": true
   },
@@ -951,6 +1025,9 @@
   },
   {
    "id": "Affected CIs and impacted services"
+  },
+  {
+   "id": "Affected work"
   },
   {
    "id": "Affects version"
@@ -1037,7 +1114,13 @@
    "id": "All other equipment has a valid U position."
   },
   {
+   "id": "All plans"
+  },
+  {
    "id": "All priorities"
+  },
+  {
+   "id": "All project sprints"
   },
   {
    "id": "All projects"
@@ -1047,6 +1130,18 @@
   },
   {
    "id": "All sources"
+  },
+  {
+   "id": "All sprints"
+  },
+  {
+   "id": "All sprints and backlog"
+  },
+  {
+   "id": "All sprints · {instance_name}"
+  },
+  {
+   "id": "All states"
   },
   {
    "id": "All statuses"
@@ -1065,6 +1160,9 @@
   },
   {
    "id": "All vendors"
+  },
+  {
+   "id": "All versions"
   },
   {
    "id": "All words can match across different columns."
@@ -1086,6 +1184,9 @@
   },
   {
    "id": "Allowed"
+  },
+  {
+   "id": "Allowed client networks"
   },
   {
    "id": "Already added",
@@ -1213,6 +1314,9 @@
    "id": "Applied \"{name}\"."
   },
   {
+   "id": "Applied plan history cannot be discarded."
+  },
+  {
    "id": "Applied when a new ticket does not declare a priority."
   },
   {
@@ -1225,6 +1329,12 @@
    "id": "Apply"
   },
   {
+   "id": "Apply changes to {key}"
+  },
+  {
+   "id": "Apply checked draft changes atomically"
+  },
+  {
    "id": "Apply filters"
   },
   {
@@ -1235,6 +1345,9 @@
   },
   {
    "id": "Apply macro"
+  },
+  {
+   "id": "Apply selected changes"
   },
   {
    "id": "Approval"
@@ -1396,7 +1509,13 @@
    "id": "Assign"
   },
   {
+   "id": "Assign a story, task or bug. Subtasks follow their parent; epics are planned separately."
+  },
+  {
    "id": "Assign actions need the numeric team or agent ID; set_status/set_priority need an exact status/priority value ({statuses} / {priorities}); notify actions post the value as the message."
+  },
+  {
+   "id": "Assign or rank sprint work"
   },
   {
    "id": "Assign team managers and the alternate names that resolve to each team"
@@ -1540,6 +1659,9 @@
    "id": "Auto-create an organization from the sender's domain"
   },
   {
+   "id": "Auto-schedule"
+  },
+  {
    "id": "Automatic"
   },
   {
@@ -1555,7 +1677,22 @@
    "id": "Automatically required and locked on for Production, any Management-class CI, or Critical business criticality. For other CIs (Dev/UAT/Staging), check this box for custom cases that still need board sign-off."
   },
   {
+   "id": "Automation"
+  },
+  {
    "id": "Automation & content"
+  },
+  {
+   "id": "Automation branches support at most 100 work items."
+  },
+  {
+   "id": "Automation execution history"
+  },
+  {
+   "id": "Automation executions in the last 30 days"
+  },
+  {
+   "id": "Automation rule saved."
   },
   {
    "id": "Automation rules"
@@ -1596,6 +1733,9 @@
   },
   {
    "id": "Avg. hours to resolve"
+  },
+  {
+   "id": "Avoid overlapping assigned people"
   },
   {
    "id": "Awaiting Approval"
@@ -1659,6 +1799,24 @@
    "id": "Background worker"
   },
   {
+   "id": "Backlog"
+  },
+  {
+   "id": "Backlog and sprints"
+  },
+  {
+   "id": "Backlog and sprints · {instance_name}"
+  },
+  {
+   "id": "Backlog pagination"
+  },
+  {
+   "id": "Backlog updated."
+  },
+  {
+   "id": "Backlog work"
+  },
+  {
    "id": "Backout plan",
    "javascript": true
   },
@@ -1673,6 +1831,12 @@
    "id": "Base DN"
   },
   {
+   "id": "Baseline"
+  },
+  {
+   "id": "Basic"
+  },
+  {
    "id": "Before"
   },
   {
@@ -1680,6 +1844,12 @@
   },
   {
    "id": "Blade chassis"
+  },
+  {
+   "id": "Blocker"
+  },
+  {
+   "id": "Blocking links from projects on this page to work you can access. A warning appears when the blocker finishes after the dependent work starts. A uniform date shift does not change these conflicts."
   },
   {
    "id": "Blue-green accents with a bright, focused workspace."
@@ -1697,6 +1867,9 @@
    "id": "Bool"
   },
   {
+   "id": "Boolean"
+  },
+  {
    "id": "Bot token"
   },
   {
@@ -1707,6 +1880,13 @@
   },
   {
    "id": "Bottom"
+  },
+  {
+   "id": "Branch condition"
+  },
+  {
+   "id": "Branch over related work",
+   "javascript": true
   },
   {
    "id": "Brand colors and default interface density"
@@ -1748,6 +1928,9 @@
    "id": "Bronze Silver Gold"
   },
   {
+   "id": "Browse all sprints and history"
+  },
+  {
    "id": "Browse configuration items",
    "javascript": true
   },
@@ -1758,10 +1941,17 @@
    "id": "Browser, device, version…"
   },
   {
-   "id": "Bug"
+   "id": "Bug",
+   "javascript": true
+  },
+  {
+   "id": "Build scheduling proposal"
   },
   {
    "id": "Bulk action"
+  },
+  {
+   "id": "Bundled"
   },
   {
    "id": "Bundled IPFS node"
@@ -1774,6 +1964,9 @@
   },
   {
    "id": "Bundled PostgreSQL is selected"
+  },
+  {
+   "id": "Bundled track"
   },
   {
    "id": "Busiest teams"
@@ -1909,6 +2102,9 @@
    "id": "CSAT avg (out of 5)"
   },
   {
+   "id": "CSV export is limited to 10,000 work items. Refine the query first."
+  },
+  {
    "id": "CTASKs are only available for change tickets."
   },
   {
@@ -1984,6 +2180,15 @@
   },
   {
    "id": "Canonical JSON with an HMAC-SHA-256 signature."
+  },
+  {
+   "id": "Capacity estimate mode"
+  },
+  {
+   "id": "Capacity is configured per iteration. Hours and story points remain separate units. Remaining mode counts done work as zero; original mode includes its recorded estimate."
+  },
+  {
+   "id": "Capacity per iteration"
   },
   {
    "id": "Card numbers and bank account numbers."
@@ -2079,6 +2284,9 @@
    "id": "Change Tasks ({work_tasks})"
   },
   {
+   "id": "Change a planning proposal"
+  },
+  {
    "id": "Change a work item"
   },
   {
@@ -2130,6 +2338,9 @@
    "id": "Change recovery set settings or replace the reporting token"
   },
   {
+   "id": "Change release track"
+  },
+  {
    "id": "Change request"
   },
   {
@@ -2154,6 +2365,9 @@
    "id": "Change this from Team managers / Approval authority"
   },
   {
+   "id": "Change track"
+  },
+  {
    "id": "Change type"
   },
   {
@@ -2167,6 +2381,12 @@
   },
   {
    "id": "Changes apply to your account on every device."
+  },
+  {
+   "id": "Changes saved."
+  },
+  {
+   "id": "Changing cadence updates the planning proposal. Work-item dates change only after a separate review and apply."
   },
   {
    "id": "Changing purpose, risk, schedule, CI, implementation, testing, or backout information supersedes prior decisions and starts a new approval revision."
@@ -2240,6 +2460,16 @@
    "id": "Choice"
   },
   {
+   "id": "Choices (comma separated)",
+   "javascript": true
+  },
+  {
+   "id": "Choose 1 to 24 working hours per day and valid scheduling options."
+  },
+  {
+   "id": "Choose Approved or Rejected."
+  },
+  {
    "id": "Choose To do, In progress or Done."
   },
   {
@@ -2253,6 +2483,9 @@
   },
   {
    "id": "Choose a different project."
+  },
+  {
+   "id": "Choose a different work item in this project."
   },
   {
    "id": "Choose a different work item type."
@@ -2279,10 +2512,16 @@
    "id": "Choose a person"
   },
   {
+   "id": "Choose a planned or active sprint in this project."
+  },
+  {
    "id": "Choose a policy."
   },
   {
    "id": "Choose a priority."
+  },
+  {
+   "id": "Choose a project for project sharing"
   },
   {
    "id": "Choose a reaction."
@@ -2291,10 +2530,10 @@
    "id": "Choose a resolution."
   },
   {
-   "id": "Choose a stage."
+   "id": "Choose a smaller project scope: planning supports up to 50 projects."
   },
   {
-   "id": "Choose a status."
+   "id": "Choose a stage."
   },
   {
    "id": "Choose a supported provider."
@@ -2306,10 +2545,64 @@
    "id": "Choose a team…"
   },
   {
+   "id": "Choose a timeline between 1900 and 2200."
+  },
+  {
+   "id": "Choose a title, valid goal state and description under 10,000 characters."
+  },
+  {
+   "id": "Choose a trigger item in this rule scope."
+  },
+  {
    "id": "Choose a user."
   },
   {
    "id": "Choose a user…"
+  },
+  {
+   "id": "Choose a valid assignee."
+  },
+  {
+   "id": "Choose a valid backlog page."
+  },
+  {
+   "id": "Choose a valid destination sprint."
+  },
+  {
+   "id": "Choose a valid favourite state."
+  },
+  {
+   "id": "Choose a valid filter sharing option."
+  },
+  {
+   "id": "Choose a valid planning page and a date shift within ten years."
+  },
+  {
+   "id": "Choose a valid quick filter and search under 200 characters."
+  },
+  {
+   "id": "Choose a valid report page."
+  },
+  {
+   "id": "Choose a valid saved filter."
+  },
+  {
+   "id": "Choose a valid search page."
+  },
+  {
+   "id": "Choose a valid sprint or the backlog."
+  },
+  {
+   "id": "Choose a valid sprint page."
+  },
+  {
+   "id": "Choose a valid sprint state."
+  },
+  {
+   "id": "Choose a valid version or epic."
+  },
+  {
+   "id": "Choose a valid whole number."
   },
   {
    "id": "Choose a valid {label}."
@@ -2342,6 +2635,9 @@
    "id": "Choose an organization-wide operational feed or one support group's chat room. Users add private destinations in their own preferences."
   },
   {
+   "id": "Choose an unfinished story, task or bug as the ranking target."
+  },
+  {
    "id": "Choose another component of this project."
   },
   {
@@ -2349,6 +2645,9 @@
   },
   {
    "id": "Choose another default before deleting this policy."
+  },
+  {
+   "id": "Choose another planned or active sprint, or the backlog."
   },
   {
    "id": "Choose another resolution for the work items that use {name}."
@@ -2363,7 +2662,17 @@
    "id": "Choose at least one person."
   },
   {
+   "id": "Choose automatic or manual planning."
+  },
+  {
    "id": "Choose channels, select event categories, and review delivery health."
+  },
+  {
+   "id": "Choose count, points, estimate or remaining as the report unit."
+  },
+  {
+   "id": "Choose dates between 1900 and 2200.",
+   "javascript": true
   },
   {
    "id": "Choose density, font scale, high contrast, reduced motion, navigation behavior, and your preferred start page."
@@ -2399,13 +2708,31 @@
    "id": "Choose the version to merge into."
   },
   {
+   "id": "Choose today or a future release date."
+  },
+  {
    "id": "Choose two different versions."
+  },
+  {
+   "id": "Choose up to 50 project keys."
+  },
+  {
+   "id": "Choose valid automation components."
+  },
+  {
+   "id": "Choose valid view settings."
+  },
+  {
+   "id": "Choose weeks, months or years."
   },
   {
    "id": "Choose what shows in the table — CIs pulled from NetBox/CSV carry more fields than fit by default."
   },
   {
    "id": "Choose what the policy applies to."
+  },
+  {
+   "id": "Choose when changes and new features are admitted by the deployment migration gate."
   },
   {
    "id": "Choose when the stage applies."
@@ -2575,6 +2902,9 @@
    "id": "Cloudflare Access key download proxy"
   },
   {
+   "id": "Collapse all"
+  },
+  {
    "id": "Collected evidence",
    "javascript": true
   },
@@ -2594,7 +2924,8 @@
    "id": "Comma-separated, must exactly match this target's own status values (e.g. customer tickets use \"Pending,On-hold\", not \"On Hold\")."
   },
   {
-   "id": "Comment"
+   "id": "Comment",
+   "javascript": true
   },
   {
    "id": "Comment (optional)"
@@ -2607,6 +2938,12 @@
   },
   {
    "id": "Comments"
+  },
+  {
+   "id": "Committed estimates are frozen at start. Delivered estimates use completed work at closure. Item counts, points and minutes remain separate."
+  },
+  {
+   "id": "Committed points"
   },
   {
    "id": "Communications"
@@ -2642,6 +2979,10 @@
    "id": "Company name"
   },
   {
+   "id": "Compare against",
+   "javascript": true
+  },
+  {
    "id": "Compensation action schema is invalid."
   },
   {
@@ -2652,6 +2993,21 @@
    "id": "Complete Markdown API guide"
   },
   {
+   "id": "Complete a sprint to see velocity."
+  },
+  {
+   "id": "Complete an active sprint"
+  },
+  {
+   "id": "Complete sprint"
+  },
+  {
+   "id": "Complete the required field: {field}"
+  },
+  {
+   "id": "Complete the subtasks of finished parent work items, or reopen their parent before completing this sprint."
+  },
+  {
    "id": "Complete these fields before submitting: {fields}",
    "javascript": true
   },
@@ -2659,10 +3015,19 @@
    "id": "Completed"
   },
   {
+   "id": "Completed outside sprint"
+  },
+  {
+   "id": "Completion"
+  },
+  {
    "id": "Component"
   },
   {
    "id": "Component lead"
+  },
+  {
+   "id": "Component type"
   },
   {
    "id": "Components"
@@ -2677,13 +3042,17 @@
    "id": "Components updated."
   },
   {
-   "id": "Condition"
+   "id": "Condition",
+   "javascript": true
   },
   {
    "id": "Condition contains unsupported fields."
   },
   {
    "id": "Condition field or operator is unsupported."
+  },
+  {
+   "id": "Configuration"
   },
   {
    "id": "Configuration item"
@@ -2888,6 +3257,12 @@
    "id": "Continue with Keycloak"
   },
   {
+   "id": "Continuous"
+  },
+  {
+   "id": "Continuous track"
+  },
+  {
    "id": "Contract notice period"
   },
   {
@@ -2938,6 +3313,14 @@
    "id": "Copy answer"
   },
   {
+   "id": "Copy from trigger issue",
+   "javascript": true
+  },
+  {
+   "id": "Copy is unavailable. Copy the address from your browser instead.",
+   "javascript": true
+  },
+  {
    "id": "Copy the monitoring credentials now"
   },
   {
@@ -2948,6 +3331,9 @@
   },
   {
    "id": "Copy to my dashboards"
+  },
+  {
+   "id": "Copy view link"
   },
   {
    "id": "Core switch stack"
@@ -3024,6 +3410,9 @@
    "javascript": true
   },
   {
+   "id": "Count"
+  },
+  {
    "id": "Counted by ServiceOps. Your provider's own remaining credit is not available through its API; check the provider's dashboard."
   },
   {
@@ -3039,6 +3428,9 @@
    "id": "Create CI"
   },
   {
+   "id": "Create a bounded automation rule"
+  },
+  {
    "id": "Create a client organization before adding contacts."
   },
   {
@@ -3048,7 +3440,28 @@
    "id": "Create a new backup reporting token? The previous one stops working."
   },
   {
+   "id": "Create a plan"
+  },
+  {
+   "id": "Create a plan to bring projects, teams and dependencies together."
+  },
+  {
+   "id": "Create a planned sprint"
+  },
+  {
+   "id": "Create a project goal"
+  },
+  {
    "id": "Create a project to plan work on a board, or ask a project administrator to add you."
+  },
+  {
+   "id": "Create a reviewable scheduling draft"
+  },
+  {
+   "id": "Create a rule to automate work across the projects you administer."
+  },
+  {
+   "id": "Create a saved project filter"
   },
   {
    "id": "Create a tour"
@@ -3067,6 +3480,9 @@
   },
   {
    "id": "Create an incident or service request to get started."
+  },
+  {
+   "id": "Create an isolated environment to test product changes with synthetic sample projects, fresh PostgreSQL, separate secrets and storage, and blocked outbound integrations. Environments expire automatically."
   },
   {
    "id": "Create and add another"
@@ -3102,7 +3518,13 @@
    "id": "Create customer ticket"
   },
   {
+   "id": "Create form"
+  },
+  {
    "id": "Create freeze window"
+  },
+  {
+   "id": "Create goal"
   },
   {
    "id": "Create governed work in the {name} workspace."
@@ -3117,10 +3539,19 @@
    "id": "Create organization"
   },
   {
+   "id": "Create page"
+  },
+  {
+   "id": "Create plan"
+  },
+  {
    "id": "Create policy"
   },
   {
    "id": "Create project"
+  },
+  {
+   "id": "Create project content"
   },
   {
    "id": "Create project · {instance_name}"
@@ -3135,10 +3566,19 @@
    "id": "Create reporting token"
   },
   {
+   "id": "Create rule"
+  },
+  {
+   "id": "Create sandbox"
+  },
+  {
    "id": "Create schedule"
   },
   {
    "id": "Create source"
+  },
+  {
+   "id": "Create sprint"
   },
   {
    "id": "Create teams from the mapped LDAP team attribute"
@@ -3163,6 +3603,9 @@
   },
   {
    "id": "Create version"
+  },
+  {
+   "id": "Create versions in the source projects to plan releases here."
   },
   {
    "id": "Create work item"
@@ -3195,6 +3638,9 @@
    "id": "Created vs. resolved"
   },
   {
+   "id": "Creates a saved draft only. Existing date spans or remaining estimates determine duration. Each assigned person is reserved for the full item duration; unassigned work has no capacity constraint. Completed and read-only work stays fixed. Dependencies use finish-to-start ordering. This is not an employee availability calendar."
+  },
+  {
    "id": "Credentials are encrypted and are never shown again.",
    "javascript": true
   },
@@ -3209,6 +3655,12 @@
    "id": "Cross-origin MCP requests are not accepted."
   },
   {
+   "id": "Cross-project planning"
+  },
+  {
+   "id": "Cross-project timeline"
+  },
+  {
    "id": "Cross-tenant control, visible only to superadmin accounts. Every other admin screen is scoped to your own tenant."
   },
   {
@@ -3221,13 +3673,22 @@
    "id": "Current effective value"
   },
   {
+   "id": "Current filter"
+  },
+  {
    "id": "Current fulfillment team"
+  },
+  {
+   "id": "Current image"
   },
   {
    "id": "Current manager"
   },
   {
    "id": "Current password"
+  },
+  {
+   "id": "Current project navigation"
   },
   {
    "id": "Current release"
@@ -3347,6 +3808,12 @@
    "id": "DC=example,DC=com"
   },
   {
+   "id": "Daily UTC snapshots show actual activity. Scope changes and estimate changes remain visible. Subtasks are counted through their parent, not as additional estimates."
+  },
+  {
+   "id": "Daily sprint values"
+  },
+  {
    "id": "Dark"
   },
   {
@@ -3420,7 +3887,17 @@
    "id": "Date"
   },
   {
+   "id": "Date adjustment"
+  },
+  {
    "id": "Date and time display"
+  },
+  {
+   "id": "Date conflict"
+  },
+  {
+   "id": "Date dragging is unavailable. Use the date fields to create a proposal.",
+   "javascript": true
   },
   {
    "id": "Date format"
@@ -3433,6 +3910,9 @@
   },
   {
    "id": "Dates must fall within the change's planned window. If this change has already been sent for approval, adding a task is a material change — it will return {number} to Awaiting Approval and notify approvers again."
+  },
+  {
+   "id": "Dates, remaining effort and dependencies across projects you can access."
   },
   {
    "id": "Datetime"
@@ -3514,6 +3994,15 @@
    "id": "Delete"
   },
   {
+   "id": "Delete a planned sprint"
+  },
+  {
+   "id": "Delete an existing sandbox before creating a third environment."
+  },
+  {
+   "id": "Delete an owned project filter"
+  },
+  {
    "id": "Delete attachment"
   },
   {
@@ -3530,13 +4019,31 @@
    "id": "Delete dashboard"
   },
   {
+   "id": "Delete filter"
+  },
+  {
    "id": "Delete group {name}? Members lose the access it grants."
+  },
+  {
+   "id": "Delete level"
+  },
+  {
+   "id": "Delete planned sprint"
   },
   {
    "id": "Delete policy"
   },
   {
+   "id": "Delete sandbox"
+  },
+  {
+   "id": "Delete sprint"
+  },
+  {
    "id": "Delete target"
+  },
+  {
+   "id": "Delete team"
   },
   {
    "id": "Delete the selected work items? This cannot be undone."
@@ -3551,10 +4058,19 @@
    "id": "Delete this dashboard and its widgets?"
   },
   {
+   "id": "Delete this planning team and unschedule its allocations? Work items are preserved."
+  },
+  {
    "id": "Delete this policy? Catalog items using it fall back to the default."
   },
   {
+   "id": "Delete this portfolio level and its nested levels? Work items are preserved."
+  },
+  {
    "id": "Delete this rack? This cannot be undone."
+  },
+  {
+   "id": "Delete this saved filter?"
   },
   {
    "id": "Delete this tour and all its steps? This cannot be undone."
@@ -3593,6 +4109,15 @@
    "id": "Delivered"
   },
   {
+   "id": "Delivered items"
+  },
+  {
+   "id": "Delivered minutes"
+  },
+  {
+   "id": "Delivered points"
+  },
+  {
    "id": "Delivered, failed, retrying, and skipped outbound messages"
   },
   {
@@ -3626,6 +4151,25 @@
    "id": "Department and division"
   },
   {
+   "id": "Dependencies report"
+  },
+  {
+   "id": "Dependency cycles prevent automatic scheduling."
+  },
+  {
+   "id": "Dependency lines could not be drawn. The dependency list remains available.",
+   "javascript": true
+  },
+  {
+   "id": "Dependency review"
+  },
+  {
+   "id": "Dependency warnings"
+  },
+  {
+   "id": "Dependent work"
+  },
+  {
    "id": "Depends on"
   },
   {
@@ -3641,6 +4185,9 @@
   {
    "id": "Deployment started. The installer is building and checking ServiceOps…",
    "javascript": true
+  },
+  {
+   "id": "Derived from children"
   },
   {
    "id": "Describe the affected area"
@@ -3672,6 +4219,10 @@
    "javascript": true
   },
   {
+   "id": "Destination status",
+   "javascript": true
+  },
+  {
    "id": "Detailed logs · {instance_name}"
   },
   {
@@ -3692,6 +4243,10 @@
   },
   {
    "id": "Dim surfaces for working in low light."
+  },
+  {
+   "id": "Direct children",
+   "javascript": true
   },
   {
    "id": "Direct reports"
@@ -3737,6 +4292,18 @@
   },
   {
    "id": "Discard all {candidates} discovered device(s) without adding them?"
+  },
+  {
+   "id": "Discard an old draft before creating more than 50 pending plans."
+  },
+  {
+   "id": "Discard an unapplied owned draft"
+  },
+  {
+   "id": "Discard draft"
+  },
+  {
+   "id": "Discard local changes"
   },
   {
    "id": "Discarded {deleted} discovered device(s) without adding them to the CMDB."
@@ -3797,6 +4364,9 @@
    "id": "Display name"
   },
   {
+   "id": "Distribution"
+  },
+  {
    "id": "Docker Compose"
   },
   {
@@ -3839,6 +4409,9 @@
    "javascript": true
   },
   {
+   "id": "Drag a row before another to rank it, or use Move up. Select checkboxes to change sprint. Changes stay on this planning view."
+  },
+  {
    "id": "Drag a widget by its header, or use the arrows, to reorder. Configure sets its title, width and what it shows."
   },
   {
@@ -3848,7 +4421,13 @@
    "id": "Drag tickets between lanes. Every move updates the source record, audit history, and SLA state."
   },
   {
+   "id": "Drag to rank; use Move up with the keyboard."
+  },
+  {
    "id": "Drag to reposition and zoom to crop before saving."
+  },
+  {
+   "id": "Drag work to schedule"
   },
   {
    "id": "Drop a file here or choose one"
@@ -3910,6 +4489,9 @@
    "id": "Each row is an event waiting to run, running now, completed, or stopped after repeated failures."
   },
   {
+   "id": "Each team has its own capacity and members."
+  },
+  {
    "id": "Edit",
    "javascript": true
   },
@@ -3917,10 +4499,26 @@
    "id": "Edit \"{title}\" and its steps"
   },
   {
+   "id": "Edit a planned or active sprint"
+  },
+  {
+   "id": "Edit form"
+  },
+  {
+   "id": "Edit goal"
+  },
+  {
    "id": "Edit group: {name}"
   },
   {
+   "id": "Edit issue",
+   "javascript": true
+  },
+  {
    "id": "Edit material change plan"
+  },
+  {
+   "id": "Edit page"
   },
   {
    "id": "Edit profile"
@@ -3929,7 +4527,13 @@
    "id": "Edit reporting lines"
   },
   {
+   "id": "Edit sprint"
+  },
+  {
    "id": "Edit stage"
+  },
+  {
+   "id": "Edit team"
   },
   {
    "id": "Edit {name}",
@@ -4035,6 +4639,12 @@
    "id": "Enabled"
   },
   {
+   "id": "Enabled users"
+  },
+  {
+   "id": "End (UTC)"
+  },
+  {
    "id": "End time"
   },
   {
@@ -4071,6 +4681,9 @@
    "id": "Enter a valid Google Sheets URL."
   },
   {
+   "id": "Enter a valid ISO date and time. Times without an offset use UTC."
+  },
+  {
    "id": "Enter a valid absence start and end time."
   },
   {
@@ -4080,10 +4693,17 @@
    "id": "Enter a valid email address."
   },
   {
+   "id": "Enter a valid form configuration.",
+   "javascript": true
+  },
+  {
    "id": "Enter a valid holiday date."
   },
   {
    "id": "Enter a valid model identifier."
+  },
+  {
+   "id": "Enter a valid number for {field}."
   },
   {
    "id": "Enter a valid syslog port."
@@ -4136,7 +4756,13 @@
    "id": "Environment"
   },
   {
+   "id": "Environment details"
+  },
+  {
    "id": "Environment key is active. Rotate once to place versioned verification keys under governed storage."
+  },
+  {
+   "id": "Environment name"
   },
   {
    "id": "Environments requiring CCB approval"
@@ -4145,7 +4771,11 @@
    "id": "Environment{src}"
   },
   {
-   "id": "Epic"
+   "id": "Epic",
+   "javascript": true
+  },
+  {
+   "id": "Epic and versions"
   },
   {
    "id": "Epics"
@@ -4338,6 +4968,9 @@
    "id": "Exempts one specific record from the automatic retention purge, regardless of the policy above."
   },
   {
+   "id": "Expand all"
+  },
+  {
    "id": "Expected outcome"
   },
   {
@@ -4425,6 +5058,12 @@
    "id": "Favorites"
   },
   {
+   "id": "Favourite"
+  },
+  {
+   "id": "Favourite requires an enabled boolean."
+  },
+  {
    "id": "Fetch from RT"
   },
   {
@@ -4432,7 +5071,8 @@
    "javascript": true
   },
   {
-   "id": "Field"
+   "id": "Field",
+   "javascript": true
   },
   {
    "id": "Field existence is tenant-wide; an organization can override whether a field is required or visible for it from that organization's own page."
@@ -4448,10 +5088,16 @@
    "javascript": true
   },
   {
+   "id": "Fields"
+  },
+  {
    "id": "Fields NetBox and Snipe-IT already sent appear in the lists. Mapped values follow the priority above."
   },
   {
    "id": "Fields kept"
+  },
+  {
+   "id": "Fields support text, paragraph, integer, number, date, choice, multi_choice and boolean. Keys must be unique."
   },
   {
    "id": "Fields where two sources disagree. The higher-priority source wins."
@@ -4470,7 +5116,25 @@
    "id": "Filter and select discovered devices"
   },
   {
+   "id": "Filter backlog work"
+  },
+  {
    "id": "Filter by name, title, or team"
+  },
+  {
+   "id": "Filter deleted."
+  },
+  {
+   "id": "Filter name"
+  },
+  {
+   "id": "Filter name contains invalid characters."
+  },
+  {
+   "id": "Filter name must contain 1 to 100 characters."
+  },
+  {
+   "id": "Filter saved."
   },
   {
    "id": "Filter team members"
@@ -4535,7 +5199,8 @@
    "id": "Flag removed"
   },
   {
-   "id": "Flagged"
+   "id": "Flagged",
+   "javascript": true
   },
   {
    "id": "Flagged: this work item is blocked or needs attention."
@@ -4583,6 +5248,10 @@
    "id": "For {name} · Stage {sequence} · {name2}"
   },
   {
+   "id": "For:",
+   "javascript": true
+  },
+  {
    "id": "Forbidden"
   },
   {
@@ -4597,6 +5266,9 @@
   },
   {
    "id": "Form Responses"
+  },
+  {
+   "id": "Form configuration JSON"
   },
   {
    "id": "Formatting",
@@ -4667,6 +5339,13 @@
    "id": "Full name"
   },
   {
+   "id": "Full screen"
+  },
+  {
+   "id": "Full screen is unavailable in this browser.",
+   "javascript": true
+  },
+  {
    "id": "Full width"
   },
   {
@@ -4697,10 +5376,19 @@
    "id": "Generated live from the running instance's contract at"
   },
   {
+   "id": "Get a breakdown of work by type."
+  },
+  {
+   "id": "Get a snapshot of the status of your work."
+  },
+  {
    "id": "Get a visible ticket"
   },
   {
    "id": "Get notified when there is a new comment on this ticket"
+  },
+  {
+   "id": "Get personal project view settings"
   },
   {
    "id": "Getting ready",
@@ -4711,6 +5399,27 @@
   },
   {
    "id": "Go to scheduled automation"
+  },
+  {
+   "id": "Goal"
+  },
+  {
+   "id": "Goal description"
+  },
+  {
+   "id": "Goal saved."
+  },
+  {
+   "id": "Goal state"
+  },
+  {
+   "id": "Goal title"
+  },
+  {
+   "id": "Goal work must belong to this project."
+  },
+  {
+   "id": "Goals"
   },
   {
    "id": "Good day, {split}"
@@ -4838,6 +5547,9 @@
    "id": "HELP CENTER"
   },
   {
+   "id": "HTTPS URL or internal path"
+  },
+  {
    "id": "HUMAN APPROVAL REQUIRED"
   },
   {
@@ -4887,7 +5599,8 @@
    "id": "Higher gets more requests (Spread the load)."
   },
   {
-   "id": "Highest"
+   "id": "Highest",
+   "javascript": true
   },
   {
    "id": "Historical"
@@ -4948,6 +5661,9 @@
   },
   {
    "id": "Hostname unavailable or not verified"
+  },
+  {
+   "id": "Hours"
   },
   {
    "id": "How NetBox fields map to the CMDB"
@@ -5085,6 +5801,12 @@
    "id": "If your plan limits how much you can use, such as a free tier, enter it. ServiceOps then avoids a service that has used its allowance, spreads work across your services in proportion to what each has left, and saves the most capable models for the hardest work."
   },
   {
+   "id": "Image identity is supplied by the deployment operator."
+  },
+  {
+   "id": "Immutable sandbox candidate selected by the operator"
+  },
+  {
    "id": "Immutable security audit events as signed JSON."
   },
   {
@@ -5165,7 +5887,8 @@
    "id": "In order"
   },
   {
-   "id": "In progress"
+   "id": "In progress",
+   "javascript": true
   },
   {
    "id": "In repair"
@@ -5237,6 +5960,12 @@
    "id": "Include the group’s manager"
   },
   {
+   "id": "Include weekends"
+  },
+  {
+   "id": "Include your current client address before enabling the IP allowlist."
+  },
+  {
    "id": "Incoming webhook (fire-and-forget)"
   },
   {
@@ -5244,6 +5973,9 @@
   },
   {
    "id": "Incoming webhook, or the interactive app that reads /commands."
+  },
+  {
+   "id": "Incomplete"
   },
   {
    "id": "Increase separation between controls and surfaces."
@@ -5270,6 +6002,9 @@
    "id": "Initial role"
   },
   {
+   "id": "Insights"
+  },
+  {
    "id": "Install a signed build from the"
   },
   {
@@ -5289,6 +6024,9 @@
   },
   {
    "id": "Int"
+  },
+  {
+   "id": "Integer"
   },
   {
    "id": "Integrations and delivery"
@@ -5363,6 +6101,9 @@
    "id": "Invalid outbound proxy mode."
   },
   {
+   "id": "Invalid planned work item."
+  },
+  {
    "id": "Invalid priority row for {impact}."
   },
   {
@@ -5411,10 +6152,42 @@
    "id": "Inward description"
   },
   {
+   "id": "Isolated sandboxes use the operator-pinned preview image. Production records and credentials are never copied."
+  },
+  {
+   "id": "Issue"
+  },
+  {
+   "id": "Issue Type",
+   "javascript": true
+  },
+  {
    "id": "Issue a discoverable passkey authentication challenge"
   },
   {
    "id": "Issue an authenticated mobile passkey registration challenge"
+  },
+  {
+   "id": "Issue completion progress"
+  },
+  {
+   "id": "Issue created",
+   "javascript": true
+  },
+  {
+   "id": "Issue fields condition",
+   "javascript": true
+  },
+  {
+   "id": "Issue sources"
+  },
+  {
+   "id": "Issue transitioned",
+   "javascript": true
+  },
+  {
+   "id": "Issue updated",
+   "javascript": true
   },
   {
    "id": "It is encrypted after this page. Store it in the receiving system."
@@ -5440,6 +6213,15 @@
   },
   {
    "id": "Items cannot be added to a completed request."
+  },
+  {
+   "id": "Iteration"
+  },
+  {
+   "id": "Iteration capacity"
+  },
+  {
+   "id": "Iteration settings"
   },
   {
    "id": "Its owner has not added any widgets yet."
@@ -5496,10 +6278,14 @@
    "id": "Kept in step with each source on every sync, so it is read-only here. Change it in the source system."
   },
   {
-   "id": "Key"
+   "id": "Key",
+   "javascript": true
   },
   {
    "id": "Key (unique, lowercase, e.g. \"dashboard-intro\")"
+  },
+  {
+   "id": "Key / structure"
   },
   {
    "id": "Key ID"
@@ -5645,13 +6431,17 @@
    "id": "LM Studio"
   },
   {
-   "id": "Label"
+   "id": "Label",
+   "javascript": true
   },
   {
    "id": "Labels"
   },
   {
    "id": "Labels have no spaces or commas and at most 60 characters."
+  },
+  {
+   "id": "Labels must be text or a list of text values."
   },
   {
    "id": "Language"
@@ -5708,6 +6498,9 @@
    "id": "Last set by {field_source}"
   },
   {
+   "id": "Last ten completed sprint baselines and outcomes"
+  },
+  {
    "id": "Last updated"
   },
   {
@@ -5721,6 +6514,9 @@
   },
   {
    "id": "Lead"
+  },
+  {
+   "id": "Lead time measures creation to the latest resolution. Reopened work is excluded until resolved again."
   },
   {
    "id": "Learn {instance_name}"
@@ -5778,6 +6574,9 @@
    "id": "Level"
   },
   {
+   "id": "Level type"
+  },
+  {
    "id": "Lifecycle"
   },
   {
@@ -5785,6 +6584,9 @@
   },
   {
    "id": "Lifecycle status"
+  },
+  {
+   "id": "Lifetime in hours"
   },
   {
    "id": "Limit to first N new tickets (leave blank for all — recommended for your first preview)"
@@ -5814,6 +6616,9 @@
    "id": "Link problem"
   },
   {
+   "id": "Link project work to an outcome. Progress is based on completed linked work; mark the outcome achieved after reviewing the evidence."
+  },
+  {
    "id": "Link record"
   },
   {
@@ -5826,7 +6631,14 @@
    "id": "Linked to {number}"
   },
   {
+   "id": "Linked work",
+   "javascript": true
+  },
+  {
    "id": "Linked work and records"
+  },
+  {
+   "id": "Linked work items"
   },
   {
    "id": "Linked {name} to {linked_names}."
@@ -5850,7 +6662,25 @@
    "id": "List each source exactly once."
   },
   {
+   "id": "List isolated synthetic sandboxes"
+  },
+  {
+   "id": "List owned automation rules"
+  },
+  {
+   "id": "List owned planning drafts"
+  },
+  {
+   "id": "List project goals and linked completion progress"
+  },
+  {
+   "id": "List project sprints"
+  },
+  {
    "id": "List projects the acting user can see"
+  },
+  {
+   "id": "List sprint membership"
   },
   {
    "id": "List the authenticated mobile user's passkeys"
@@ -5860,6 +6690,12 @@
   },
   {
    "id": "List visible incidents and changes"
+  },
+  {
+   "id": "List visible saved plans"
+  },
+  {
+   "id": "List visible saved project filters"
   },
   {
    "id": "Lists"
@@ -5881,6 +6717,10 @@
   },
   {
    "id": "Local administrator"
+  },
+  {
+   "id": "Local date proposals discarded.",
+   "javascript": true
   },
   {
    "id": "Local login, AD/LDAP, Keycloak, directory attributes, and synchronization."
@@ -5965,7 +6805,8 @@
    "id": "Lowercase letters, numbers, underscores. Used internally and cannot be changed later."
   },
   {
-   "id": "Lowest"
+   "id": "Lowest",
+   "javascript": true
   },
   {
    "id": "MAC address"
@@ -6034,7 +6875,16 @@
    "id": "Manage organizations"
   },
   {
+   "id": "Manage portfolio structure"
+  },
+  {
    "id": "Manage role permissions for this organization. Reset a role to restore its recommended defaults."
+  },
+  {
+   "id": "Manage sandboxes"
+  },
+  {
+   "id": "Manage sprint"
   },
   {
    "id": "Manage team members. Directory-managed memberships are marked."
@@ -6127,6 +6977,9 @@
    "id": "Mark one of the user's notifications read"
   },
   {
+   "id": "Markdown"
+  },
+  {
    "id": "Match system"
   },
   {
@@ -6152,6 +7005,9 @@
   },
   {
    "id": "Measured result"
+  },
+  {
+   "id": "Median lead time"
   },
   {
    "id": "Medium",
@@ -6228,6 +7084,12 @@
   },
   {
    "id": "Missing a customer?"
+  },
+  {
+   "id": "Missing estimates: {points} without points; {time} without time estimates. Totals cover the complete filtered view, not just this page."
+  },
+  {
+   "id": "Missing parent dates are derived from children for display only. Dates are stored on work items. Editing dates or auto-scheduling creates a separate draft for review before anything is applied."
   },
   {
    "id": "Mistral"
@@ -6315,6 +7177,15 @@
    "id": "Monitoring sources"
   },
   {
+   "id": "Month"
+  },
+  {
+   "id": "Monthly project calendar"
+  },
+  {
+   "id": "Monthly start and due events"
+  },
+  {
    "id": "More"
   },
   {
@@ -6333,10 +7204,16 @@
    "id": "Move its work items to"
   },
   {
-   "id": "Move or remove this epic's children before changing its type."
+   "id": "Move or remove this item's children before changing its type."
   },
   {
-   "id": "Move or remove this item's children before changing its type."
+   "id": "Move or remove this item's children before moving it or changing its type."
+  },
+  {
+   "id": "Move selected"
+  },
+  {
+   "id": "Move selected work to"
   },
   {
    "id": "Move the parent work item; its subtasks move with it."
@@ -6345,10 +7222,16 @@
    "id": "Move to another project"
   },
   {
+   "id": "Move unfinished work to"
+  },
+  {
    "id": "Move unfinished work to another unreleased version."
   },
   {
    "id": "Move up"
+  },
+  {
+   "id": "Move {key} up"
   },
   {
    "id": "Move {name} left"
@@ -6570,6 +7453,9 @@
    "id": "New backup codes generated. Save them now -- they will not be shown again."
   },
   {
+   "id": "New candidates are blocked until the release date. After a successful migration, the next window advances by one month. Retrying the same approved image remains allowed."
+  },
+  {
    "id": "New catalog policy"
   },
   {
@@ -6598,6 +7484,10 @@
   },
   {
    "id": "New dashboard"
+  },
+  {
+   "id": "New field",
+   "javascript": true
   },
   {
    "id": "New fulfillment task"
@@ -6664,10 +7554,17 @@
    "id": "Next approver: {manager_chain}"
   },
   {
+   "id": "Next release"
+  },
+  {
+   "id": "Next release date"
+  },
+  {
    "id": "Next run"
   },
   {
-   "id": "No"
+   "id": "No",
+   "javascript": true
   },
   {
    "id": "No AI service yet. Add one to get started."
@@ -6832,6 +7729,9 @@
    "id": "No customer-visible comments yet."
   },
   {
+   "id": "No date conflict detected"
+  },
+  {
    "id": "No decision comments."
   },
   {
@@ -6887,6 +7787,9 @@
    "id": "No fulfillment tasks. Automation may fulfill this item."
   },
   {
+   "id": "No goals yet."
+  },
+  {
    "id": "No grouping"
   },
   {
@@ -6927,6 +7830,9 @@
   },
   {
    "id": "No incidents resolved in the last 30 days."
+  },
+  {
+   "id": "No intake forms yet."
   },
   {
    "id": "No internal notes yet."
@@ -7013,6 +7919,9 @@
    "id": "No matching work"
   },
   {
+   "id": "No matching work items."
+  },
+  {
    "id": "No members assigned to this team yet."
   },
   {
@@ -7074,10 +7983,19 @@
    "id": "No phone number"
   },
   {
+   "id": "No planning teams yet."
+  },
+  {
    "id": "No profile picture has been uploaded."
   },
   {
+   "id": "No project pages yet."
+  },
+  {
    "id": "No project to add work to"
+  },
+  {
+   "id": "No projects available."
   },
   {
    "id": "No projects yet"
@@ -7126,6 +8044,9 @@
    "id": "No releases yet"
   },
   {
+   "id": "No releases yet."
+  },
+  {
    "id": "No requested items."
   },
   {
@@ -7141,10 +8062,22 @@
    "id": "No route or check anywhere in the app consults this action yet; it's authorized separately and unconditionally by role/team rules instead."
   },
   {
+   "id": "No rule executions yet. Previewing a rule does not execute it."
+  },
+  {
+   "id": "No sandbox environments yet."
+  },
+  {
    "id": "No satisfaction ratings submitted in the last 30 days."
   },
   {
    "id": "No saved conversations yet."
+  },
+  {
+   "id": "No saved filters available."
+  },
+  {
+   "id": "No saved scenarios."
   },
   {
    "id": "No service may handle this.",
@@ -7155,6 +8088,9 @@
   },
   {
    "id": "No sessions recorded."
+  },
+  {
+   "id": "No shortcuts yet."
   },
   {
    "id": "No sibling catalog tasks on this request item."
@@ -7172,10 +8108,16 @@
    "id": "No sources."
   },
   {
+   "id": "No sprints match this view."
+  },
+  {
    "id": "No stages yet. Add one below."
   },
   {
    "id": "No steps yet -- add one below."
+  },
+  {
+   "id": "No stored date conflict"
   },
   {
    "id": "No subcategories yet."
@@ -7224,6 +8166,15 @@
    "id": "No users match this search."
   },
   {
+   "id": "No visible blocking dependencies for these projects."
+  },
+  {
+   "id": "No visible blocking dependencies."
+  },
+  {
+   "id": "No visible date conflicts detected."
+  },
+  {
    "id": "No work item or record {number} that you can see."
   },
   {
@@ -7233,7 +8184,16 @@
    "id": "No work items have this fix version."
   },
   {
+   "id": "No work items in this planning view."
+  },
+  {
    "id": "No work items match"
+  },
+  {
+   "id": "No work items match this view."
+  },
+  {
+   "id": "No work items match."
   },
   {
    "id": "No work logged yet."
@@ -7488,6 +8448,9 @@
    "id": "Number"
   },
   {
+   "id": "Number of iterations"
+  },
+  {
    "id": "Number or short description"
   },
   {
@@ -7501,6 +8464,9 @@
   },
   {
    "id": "Ollama"
+  },
+  {
+   "id": "On environment creation"
   },
   {
    "id": "On for this browser.",
@@ -7523,6 +8489,12 @@
   },
   {
    "id": "One JSON-RPC 2.0 message per request: initialize, ping, tools/list, tools/call. Requires mcp:access; each read-only tool also needs its scope (tickets:read, cmdb:read, knowledge:read, approvals:read) and tools/list shows only those granted. Stateless: GET/DELETE return 405."
+  },
+  {
+   "id": "One day of activity is recorded. A trend line appears as more daily snapshots become available."
+  },
+  {
+   "id": "One network per line. An empty list disables the restriction. Your current address must remain included. Health/readiness, metrics and static assets retain their existing access rules."
   },
   {
    "id": "One per line. A request that mentions any of them stays private."
@@ -7564,6 +8536,12 @@
    "id": "Only a manager or administrator may override calculated priority, with a reason of at least 10 characters."
   },
   {
+   "id": "Only a planned sprint can be deleted."
+  },
+  {
+   "id": "Only a planned sprint can be started."
+  },
+  {
    "id": "Only a superadmin can change the superadmin grant."
   },
   {
@@ -7594,6 +8572,9 @@
    "id": "Only administrators can change project settings for the organisation."
   },
   {
+   "id": "Only an active sprint can be completed."
+  },
+  {
    "id": "Only an administrator can change organization visibility or access grants."
   },
   {
@@ -7612,6 +8593,12 @@
    "id": "Only an administrator can manage triggers."
   },
   {
+   "id": "Only blocking dependencies whose endpoints you can access are shown. Finish-to-start conflicts use stored dates; program-board iteration conflicts are shown on that board."
+  },
+  {
+   "id": "Only checked rows will be saved. Applying consumes this draft; unchecked suggestions are not applied. Every date change is recorded in work-item history."
+  },
+  {
    "id": "Only dead workflow jobs can be replayed."
   },
   {
@@ -7624,16 +8611,25 @@
    "id": "Only future matching events are delivered to this channel."
   },
   {
+   "id": "Only me"
+  },
+  {
    "id": "Only project administrators can change project settings."
   },
   {
    "id": "Only project administrators can change the reporter."
   },
   {
+   "id": "Only project administrators can manage sprints."
+  },
+  {
    "id": "Only published knowledge"
   },
   {
    "id": "Only request participants or an administrator can add items."
+  },
+  {
+   "id": "Only tenant administrators can share filters with the whole organisation."
   },
   {
    "id": "Only the SCIM filter userName eq \"value\" is supported."
@@ -7687,6 +8683,9 @@
    "id": "Only users explicitly granted CCB approval authority are selected as voters for new non-standard changes. Removing authority does not rewrite historical decisions."
   },
   {
+   "id": "Only work and dependencies you can access are shown. Lines connect visible rows; off-screen dependencies remain in this list."
+  },
+  {
    "id": "Only you can see this dashboard"
   },
   {
@@ -7709,8 +8708,14 @@
    "id": "Open changes"
   },
   {
+   "id": "Open cross-project timeline"
+  },
+  {
    "id": "Open favorites, history, notifications, help, and preferences.",
    "javascript": true
+  },
+  {
+   "id": "Open form"
   },
   {
    "id": "Open full page"
@@ -7731,7 +8736,13 @@
    "id": "Open incidents and changes at priority {priority}."
   },
   {
+   "id": "Open local sandbox"
+  },
+  {
    "id": "Open models"
+  },
+  {
+   "id": "Open month"
   },
   {
    "id": "Open notification inbox"
@@ -7740,7 +8751,16 @@
    "id": "Open priority mix"
   },
   {
+   "id": "Open selected sprint"
+  },
+  {
    "id": "Open service requests"
+  },
+  {
+   "id": "Open sprint"
+  },
+  {
+   "id": "Open sprint board"
   },
   {
    "id": "Open tasks"
@@ -7770,6 +8790,9 @@
    "id": "Open to the organisation"
   },
   {
+   "id": "Open view"
+  },
+  {
    "id": "Open volume"
   },
   {
@@ -7777,9 +8800,6 @@
   },
   {
    "id": "Open work by person"
-  },
-  {
-   "id": "Open work by type and priority"
   },
   {
    "id": "Open work items"
@@ -7843,6 +8863,9 @@
    "id": "Operational status{src}"
   },
   {
+   "id": "Operational visibility"
+  },
+  {
    "id": "Operations"
   },
   {
@@ -7880,6 +8903,9 @@
   },
   {
    "id": "Org chart · {instance_name}"
+  },
+  {
+   "id": "Organisation"
   },
   {
    "id": "Organisation default"
@@ -7973,6 +8999,9 @@
    "id": "Outward description"
   },
   {
+   "id": "Over capacity"
+  },
+  {
    "id": "Overdue"
   },
   {
@@ -8021,6 +9050,9 @@
    "id": "PERSONALIZATION"
   },
   {
+   "id": "PLANNING DRAFT"
+  },
+  {
    "id": "PLATFORM"
   },
   {
@@ -8042,6 +9074,9 @@
    "id": "Pacific time (Google)"
   },
   {
+   "id": "Page through sprint scope and lifecycle history"
+  },
+  {
    "id": "Page {page} of {pages}"
   },
   {
@@ -8052,6 +9087,9 @@
   },
   {
    "id": "Pagination"
+  },
+  {
+   "id": "Paragraph"
   },
   {
    "id": "Parallel"
@@ -8068,6 +9106,13 @@
   },
   {
    "id": "Parent incident"
+  },
+  {
+   "id": "Parent issue",
+   "javascript": true
+  },
+  {
+   "id": "Parent level"
   },
   {
    "id": "Parent record"
@@ -8169,7 +9214,13 @@
    "id": "People & access"
   },
   {
+   "id": "People and priority"
+  },
+  {
    "id": "People manager"
+  },
+  {
+   "id": "People with access to a project"
   },
   {
    "id": "Per-(CI class, role) Read/Create/Update/Delete grants for the CMDB."
@@ -8184,16 +9235,25 @@
    "id": "Performance period"
   },
   {
+   "id": "Period"
+  },
+  {
    "id": "Permanent fix"
   },
   {
    "id": "Permanent or temporary fix change"
   },
   {
+   "id": "Permanently delete this synthetic sandbox, including its database and uploaded files?"
+  },
+  {
    "id": "Permanently erase {name}'s name, email, and other personal details? This cannot be undone."
   },
   {
    "id": "Permanently replaces this account's name, email, phone, title, and department with an anonymous placeholder. Cannot be undone."
+  },
+  {
+   "id": "Permission-scoped timeline, hierarchy and dependencies"
   },
   {
    "id": "Permissions"
@@ -8250,10 +9310,46 @@
    "id": "Placement"
   },
   {
+   "id": "Plan"
+  },
+  {
+   "id": "Plan and create sprints"
+  },
+  {
+   "id": "Plan created."
+  },
+  {
+   "id": "Plan dates for {key}"
+  },
+  {
+   "id": "Plan in backlog"
+  },
+  {
+   "id": "Plan name"
+  },
+  {
+   "id": "Plan name must contain 1 to 100 characters."
+  },
+  {
+   "id": "Plan saved."
+  },
+  {
+   "id": "Plan settings"
+  },
+  {
+   "id": "Plan views"
+  },
+  {
+   "id": "Plan work, run parallel sprints and carry unfinished items forward. Subtasks follow their parent; totals count stories, tasks and bugs once."
+  },
+  {
    "id": "Plan, track and deliver work with boards, lists and work items linked to your service records."
   },
   {
    "id": "Planned"
+  },
+  {
+   "id": "Planned due"
   },
   {
    "id": "Planned end",
@@ -8282,10 +9378,44 @@
    "id": "Planning"
   },
   {
+   "id": "Planning controls could not be loaded. Normal page links and forms remain available.",
+   "javascript": true
+  },
+  {
+   "id": "Planning draft discarded."
+  },
+  {
+   "id": "Planning is temporarily unavailable. Please try again."
+  },
+  {
+   "id": "Planning overview"
+  },
+  {
+   "id": "Planning page and date shift must be whole numbers."
+  },
+  {
+   "id": "Planning pages"
+  },
+  {
+   "id": "Planning start"
+  },
+  {
+   "id": "Planning view"
+  },
+  {
+   "id": "Plans"
+  },
+  {
    "id": "Plans, risk, schedule, tasks, and approvals"
   },
   {
    "id": "Platform & security"
+  },
+  {
+   "id": "Platform administration"
+  },
+  {
+   "id": "Platform controls"
   },
   {
    "id": "Platform name"
@@ -8298,6 +9428,9 @@
   },
   {
    "id": "Points"
+  },
+  {
+   "id": "Points for {key}"
   },
   {
    "id": "Policy"
@@ -8319,6 +9452,15 @@
   },
   {
    "id": "Policy settings"
+  },
+  {
+   "id": "Portfolio hierarchy and progress"
+  },
+  {
+   "id": "Portfolio overview"
+  },
+  {
+   "id": "Portfolio rollups deduplicate linked work and its descendants. Work rows show their own recursive progress. Missing points are not treated as completed points."
   },
   {
    "id": "Ports",
@@ -8412,6 +9554,9 @@
    "javascript": true
   },
   {
+   "id": "Prerequisite"
+  },
+  {
    "id": "Preserved as NetBox attributes:"
   },
   {
@@ -8425,16 +9570,34 @@
    "id": "Preview (nothing has been saved yet). {fields_skipped_netbox_owned} NetBox-owned and {fields_skipped_snipeit_owned} Snipe-IT-owned fields would be preserved."
   },
   {
+   "id": "Preview affected work"
+  },
+  {
    "id": "Preview changes"
   },
   {
    "id": "Preview import"
   },
   {
+   "id": "Preview is active. Dates shown below are shifted; nothing has been saved."
+  },
+  {
    "id": "Preview matching rules"
   },
   {
    "id": "Preview only (dry run) — nothing is saved"
+  },
+  {
+   "id": "Preview only: stored dates stay unchanged. Remaining effort is recorded work, not available team capacity. Date rollups cover every work item in each project."
+  },
+  {
+   "id": "Preview rule without changes"
+  },
+  {
+   "id": "Preview schedule"
+  },
+  {
+   "id": "Preview track"
   },
   {
    "id": "Preview valid until {netbox_import_expires}."
@@ -8450,6 +9613,12 @@
   },
   {
    "id": "Previous"
+  },
+  {
+   "id": "Previous due"
+  },
+  {
+   "id": "Previous start"
   },
   {
    "id": "Primary"
@@ -8479,13 +9648,17 @@
    "id": "Prioritized operational work with SLA urgency. Completed records roll off automatically but remain available in ticket lists and search."
   },
   {
-   "id": "Priority"
+   "id": "Priority",
+   "javascript": true
   },
   {
    "id": "Priority 1 and 2"
   },
   {
    "id": "Priority 1 or 2"
+  },
+  {
+   "id": "Priority breakdown"
   },
   {
    "id": "Priority levels must be unique and non-empty."
@@ -8569,7 +9742,16 @@
    "id": "Processing"
   },
   {
+   "id": "Product"
+  },
+  {
+   "id": "Production"
+  },
+  {
    "id": "Production security policy passed"
+  },
+  {
+   "id": "Production track"
   },
   {
    "id": "Production, Staging"
@@ -8590,6 +9772,9 @@
    "id": "Profile updated."
   },
   {
+   "id": "Program board"
+  },
+  {
    "id": "Progress"
   },
   {
@@ -8600,16 +9785,46 @@
    "id": "Project"
   },
   {
+   "id": "Project activity"
+  },
+  {
+   "id": "Project administrator. Work returns to backlog; started sprint history cannot be deleted."
+  },
+  {
+   "id": "Project administrator; empty JSON object. Captures baseline. Parallel active sprints are supported."
+  },
+  {
+   "id": "Project administrator; optional destination_id integer or null for backlog. Unfinished work moves transactionally; completed scope and estimates are frozen."
+  },
+  {
+   "id": "Project administrator; same fields as create. Closed sprints are immutable."
+  },
+  {
    "id": "Project board"
   },
   {
    "id": "Project default"
   },
   {
+   "id": "Project details"
+  },
+  {
+   "id": "Project goals"
+  },
+  {
    "id": "Project lead"
   },
   {
+   "id": "Project membership and recorded workload"
+  },
+  {
    "id": "Project name"
+  },
+  {
+   "id": "Project people"
+  },
+  {
+   "id": "Project role"
   },
   {
    "id": "Project settings"
@@ -8624,10 +9839,19 @@
    "id": "Project settings saved."
   },
   {
+   "id": "Project team"
+  },
+  {
+   "id": "Project team and workload"
+  },
+  {
    "id": "Project views"
   },
   {
    "id": "Project work items"
+  },
+  {
+   "id": "Project workspace navigation"
   },
   {
    "id": "Project {key} created."
@@ -8645,6 +9869,10 @@
    "id": "Projects · {instance_name}"
   },
   {
+   "id": "Proposal only. Review changes before applying.",
+   "javascript": true
+  },
+  {
    "id": "Propose"
   },
   {
@@ -8652,6 +9880,15 @@
   },
   {
    "id": "Proposed"
+  },
+  {
+   "id": "Proposed date changes"
+  },
+  {
+   "id": "Provide a schedule start and valid scheduling options."
+  },
+  {
+   "id": "Provide both sprint start and end times."
   },
   {
    "id": "Provide the details needed to route and resolve this work."
@@ -8694,6 +9931,9 @@
   },
   {
    "id": "Provider-level results for the latest outbound attempts."
+  },
+  {
+   "id": "Provisioning failed. The operator can inspect the controller and retained migration jobs; delete this environment to release its slot."
   },
   {
    "id": "Proxy"
@@ -8756,6 +9996,9 @@
    "id": "Query"
   },
   {
+   "id": "Query to save"
+  },
+  {
    "id": "Question"
   },
   {
@@ -8768,13 +10011,22 @@
    "id": "Queue an authorized durable workflow event"
   },
   {
+   "id": "Queue an isolated sandbox"
+  },
+  {
    "id": "Queue import"
+  },
+  {
+   "id": "Queue permanent removal of synthetic sandbox resources"
   },
   {
    "id": "Queue → Team"
   },
   {
    "id": "Queued"
+  },
+  {
+   "id": "Quick filters"
   },
   {
    "id": "RELEASES"
@@ -8940,6 +10192,18 @@
    "id": "Raised on"
   },
   {
+   "id": "Rank"
+  },
+  {
+   "id": "Rank work items within the same backlog or sprint."
+  },
+  {
+   "id": "Ranked sprint work items"
+  },
+  {
+   "id": "Ranking requires one work item and one target key."
+  },
+  {
    "id": "Rate Limited"
   },
   {
@@ -8958,16 +10222,37 @@
    "id": "Read linked ticket rack placements, primary CI first"
   },
   {
+   "id": "Read one visible sprint"
+  },
+  {
    "id": "Read only"
   },
   {
    "id": "Read only: operational updates are restricted to active members of {name}."
   },
   {
+   "id": "Read pages, forms, shortcuts or reports"
+  },
+  {
+   "id": "Read plan hierarchy, teams, capacity and allocations"
+  },
+  {
+   "id": "Read release track and IP policy"
+  },
+  {
+   "id": "Read rule and execution audit"
+  },
+  {
    "id": "Read the authorized Web UI ticket detail sections"
   },
   {
    "id": "Read this incident and its recent comments."
+  },
+  {
+   "id": "Read-only plan. Its owner or a tenant administrator with project edit access can change it."
+  },
+  {
+   "id": "Read-only work item."
   },
   {
    "id": "Reader"
@@ -9189,6 +10474,10 @@
    "id": "Related records"
   },
   {
+   "id": "Related work",
+   "javascript": true
+  },
+  {
    "id": "Relationship"
   },
   {
@@ -9204,10 +10493,22 @@
    "id": "Release date"
   },
   {
+   "id": "Release milestones"
+  },
+  {
    "id": "Release notes"
   },
   {
    "id": "Release notes list the finished work items of this version."
+  },
+  {
+   "id": "Release timezone"
+  },
+  {
+   "id": "Release track details"
+  },
+  {
+   "id": "Release tracks"
   },
   {
    "id": "Released"
@@ -9229,7 +10530,13 @@
    "id": "Remaining"
   },
   {
+   "id": "Remaining effort (hours)"
+  },
+  {
    "id": "Remaining estimate"
+  },
+  {
+   "id": "Remaining minutes"
   },
   {
    "id": "Remember",
@@ -9252,11 +10559,18 @@
    "javascript": true
   },
   {
+   "id": "Remove component",
+   "javascript": true
+  },
+  {
    "id": "Remove condition",
    "javascript": true
   },
   {
    "id": "Remove discovery target {name}?"
+  },
+  {
+   "id": "Remove favourite"
   },
   {
    "id": "Remove field",
@@ -9286,6 +10600,9 @@
   },
   {
    "id": "Remove relationship"
+  },
+  {
+   "id": "Remove shortcut"
   },
   {
    "id": "Remove the attached file"
@@ -9327,6 +10644,9 @@
    "id": "Remove {name} from {name2}"
   },
   {
+   "id": "Removed"
+  },
+  {
    "id": "Removed from favorites.",
    "javascript": true
   },
@@ -9338,6 +10658,12 @@
   },
   {
    "id": "Reopen"
+  },
+  {
+   "id": "Repair the work hierarchy before planning."
+  },
+  {
+   "id": "Replace personal project view settings"
   },
   {
    "id": "Replace the current {field} with the RT ticket's?",
@@ -9362,7 +10688,13 @@
    "id": "Replying to"
   },
   {
+   "id": "Report"
+  },
+  {
    "id": "Report an incident"
+  },
+  {
+   "id": "Report unit"
   },
   {
    "id": "Reporter"
@@ -9483,7 +10815,8 @@
    "id": "Require external immutable export"
   },
   {
-   "id": "Required"
+   "id": "Required",
+   "javascript": true
   },
   {
    "id": "Required before the parent change can complete"
@@ -9516,6 +10849,15 @@
    "id": "Requires projects:read. Filters: q, type, status (id), category (todo, in_progress, done, open), priority, assignee (user id, me, none), label, epic (id). Cursor is the last work item number; limit 1-200."
   },
   {
+   "id": "Requires projects:read. Supports limit (1-200) and offset (0-1000000). Response includes total and next_offset."
+  },
+  {
+   "id": "Requires projects:read. jql supports boolean expressions, IN, IS EMPTY, typed comparisons and ORDER BY. A saved filter never grants record access. See the project search guide for supported fields/functions; full Jira JQL is not claimed."
+  },
+  {
+   "id": "Requires projects:write and Idempotency-Key. JSON: name, jql, sharing (private/project/tenant), project_key. Project sharing requires edit access; tenant sharing requires a tenant administrator."
+  },
+  {
    "id": "Requires projects:write and the Idempotency-Key header. Body fields: title (required), description, type (epic, story, task, bug, subtask), status_id, priority (highest, high, medium, low, lowest), assignee_ids, labels, parent_key, start_date, due_date, story_points, estimate_minutes, remaining_minutes, component_ids, fix_version_ids, affects_version_ids, environment, resolution_id, flagged."
   },
   {
@@ -9526,6 +10868,15 @@
   },
   {
    "id": "Requires projects:write. Body: time_spent (Jira duration such as 2h 30m), optional started_at (ISO date-time), comment, remaining_mode (auto, leave, new, reduce) with new_remaining or reduce_by."
+  },
+  {
+   "id": "Requires projects:write. JSON: enabled boolean. Idempotent desired-state operation."
+  },
+  {
+   "id": "Requires projects:write. Only the owner can delete; removes favourites too."
+  },
+  {
+   "id": "Requires projects:write. Only the owner can edit. Accepts name, jql, sharing and project_key."
   },
   {
    "id": "Requires projects:write. You cannot vote for work you reported or for resolved work."
@@ -9639,6 +10990,12 @@
    "id": "Restore project"
   },
   {
+   "id": "Restore proposal"
+  },
+  {
+   "id": "Restrict this installation to trusted IPv4 and IPv6 client networks. The existing trusted-proxy middleware resolves the client address; user-supplied headers from untrusted peers do not bypass the policy."
+  },
+  {
    "id": "Restrict visibility"
   },
   {
@@ -9649,6 +11006,9 @@
   },
   {
    "id": "Result"
+  },
+  {
+   "id": "Results"
   },
   {
    "id": "Retention (days)"
@@ -9684,6 +11044,9 @@
    "id": "Retry pending deliveries"
   },
   {
+   "id": "Return this work item to the backlog before converting it to an epic or subtask."
+  },
+  {
    "id": "Return to users"
   },
   {
@@ -9705,6 +11068,9 @@
    "id": "Review accountable groups, managers, and membership"
   },
   {
+   "id": "Review an owned draft"
+  },
+  {
    "id": "Review and create",
    "javascript": true
   },
@@ -9724,7 +11090,14 @@
    "id": "Review browser sessions and immediately revoke access that is no longer trusted."
   },
   {
+   "id": "Review changes",
+   "javascript": true
+  },
+  {
    "id": "Review comment draft"
+  },
+  {
+   "id": "Review date changes"
   },
   {
    "id": "Review decisions across catalog and enterprise workflows."
@@ -9738,6 +11111,9 @@
   {
    "id": "Review exact change",
    "javascript": true
+  },
+  {
+   "id": "Review planning changes"
   },
   {
    "id": "Review sessions"
@@ -9817,6 +11193,9 @@
    "id": "Roles & permissions · {instance_name}"
   },
   {
+   "id": "Root"
+  },
+  {
    "id": "Root Cause Analysis"
   },
   {
@@ -9850,10 +11229,22 @@
    "id": "Rule"
   },
   {
+   "id": "Rule configuration"
+  },
+  {
+   "id": "Rule details"
+  },
+  {
+   "id": "Rule name"
+  },
+  {
    "id": "Rule version"
   },
   {
    "id": "Rules and guided content that run consistently without manual repetition"
+  },
+  {
+   "id": "Rules run as their owner with current project permissions. Each event processes rules once; automation changes do not trigger additional rules. Branches are limited to 100 work items and failures are recorded in the audit log."
   },
   {
    "id": "Rules, templates and tours"
@@ -9884,6 +11275,9 @@
   },
   {
    "id": "Run on a schedule"
+  },
+  {
+   "id": "Run report"
   },
   {
    "id": "Run retention purge now"
@@ -10037,6 +11431,18 @@
    "id": "Sample devices as they would appear in the CMDB:"
   },
   {
+   "id": "Sandbox"
+  },
+  {
+   "id": "Sandbox creation requires an isolated controller, dedicated storage and enforced Kubernetes RBAC. The installation operator must enable these before creation is available."
+  },
+  {
+   "id": "Sandbox environments"
+  },
+  {
+   "id": "Sandboxes"
+  },
+  {
    "id": "Sandstone"
   },
   {
@@ -10049,10 +11455,16 @@
    "id": "Save Google Chat"
   },
   {
+   "id": "Save IP allowlist"
+  },
+  {
    "id": "Save RT connection settings"
   },
   {
    "id": "Save Telegram"
+  },
+  {
+   "id": "Save a page or form with current revision"
   },
   {
    "id": "Save access policy"
@@ -10061,13 +11473,22 @@
    "id": "Save alias"
   },
   {
+   "id": "Save allocation"
+  },
+  {
    "id": "Save and replace token"
   },
   {
    "id": "Save approval rule"
   },
   {
+   "id": "Save as new view"
+  },
+  {
    "id": "Save as view"
+  },
+  {
+   "id": "Save automation rule"
   },
   {
    "id": "Save branding"
@@ -10097,16 +11518,31 @@
    "id": "Save first, then test the saved connection. The test shows what Snipe-IT holds and what the token may read, without writing anything."
   },
   {
+   "id": "Save form"
+  },
+  {
+   "id": "Save goal"
+  },
+  {
    "id": "Save item"
   },
   {
+   "id": "Save level"
+  },
+  {
    "id": "Save major incident status"
+  },
+  {
+   "id": "Save new filter"
   },
   {
    "id": "Save notification preferences"
   },
   {
    "id": "Save overrides"
+  },
+  {
+   "id": "Save page"
   },
   {
    "id": "Save permissions"
@@ -10116,6 +11552,9 @@
   },
   {
    "id": "Save plan and request reapproval"
+  },
+  {
+   "id": "Save plan settings"
   },
   {
    "id": "Save policy"
@@ -10136,13 +11575,25 @@
    "id": "Save review"
   },
   {
+   "id": "Save scenario"
+  },
+  {
    "id": "Save service"
   },
   {
    "id": "Save source rules"
   },
   {
+   "id": "Save sprint"
+  },
+  {
    "id": "Save stage"
+  },
+  {
+   "id": "Save team"
+  },
+  {
+   "id": "Save this query"
   },
   {
    "id": "Save ticket defaults"
@@ -10151,7 +11602,13 @@
    "id": "Save tour"
   },
   {
+   "id": "Save track"
+  },
+  {
    "id": "Save view"
+  },
+  {
+   "id": "Save view settings"
   },
   {
    "id": "Save visibility"
@@ -10160,7 +11617,13 @@
    "id": "Save your backup codes"
   },
   {
+   "id": "Save {key}"
+  },
+  {
    "id": "Save {label}"
+  },
+  {
+   "id": "Saved"
   },
   {
    "id": "Saved a note",
@@ -10168,6 +11631,18 @@
   },
   {
    "id": "Saved client ticket views"
+  },
+  {
+   "id": "Saved filter fields must be text."
+  },
+  {
+   "id": "Saved filters"
+  },
+  {
+   "id": "Saved planning drafts"
+  },
+  {
+   "id": "Saved view"
   },
   {
    "id": "Saved views"
@@ -10189,6 +11664,12 @@
    "id": "Say why the request is being withdrawn."
   },
   {
+   "id": "Scale"
+  },
+  {
+   "id": "Scale: 0 to {maximum}"
+  },
+  {
    "id": "Scan attachments with ClamAV"
   },
   {
@@ -10203,7 +11684,16 @@
    "javascript": true
   },
   {
+   "id": "Scenario name"
+  },
+  {
+   "id": "Scenarios"
+  },
+  {
    "id": "Schedule"
+  },
+  {
+   "id": "Schedule from"
   },
   {
    "id": "Schedule holiday added."
@@ -10227,7 +11717,19 @@
    "id": "Schedule name must contain 1-160 characters."
   },
   {
+   "id": "Schedule preview"
+  },
+  {
+   "id": "Schedule proposal"
+  },
+  {
    "id": "Schedule target, interval, or start time is invalid."
+  },
+  {
+   "id": "Schedule work on the program board first."
+  },
+  {
+   "id": "Schedule {key}"
   },
   {
    "id": "Scheduled automation"
@@ -10268,6 +11770,9 @@
    "id": "Search ServiceOps"
   },
   {
+   "id": "Search across projects you can access. Shared filters never change record permissions."
+  },
+  {
    "id": "Search administration"
   },
   {
@@ -10287,6 +11792,9 @@
   },
   {
    "id": "Search audit events"
+  },
+  {
+   "id": "Search backlog"
   },
   {
    "id": "Search by CI name or serial number…"
@@ -10327,6 +11835,9 @@
    "javascript": true
   },
   {
+   "id": "Search key or summary"
+  },
+  {
    "id": "Search knowledge articles the user may read"
   },
   {
@@ -10348,6 +11859,9 @@
    "id": "Search requests"
   },
   {
+   "id": "Search result pages"
+  },
+  {
    "id": "Search the knowledge base…"
   },
   {
@@ -10358,6 +11872,15 @@
   },
   {
    "id": "Search users"
+  },
+  {
+   "id": "Search visible project work items with the core JQL dialect"
+  },
+  {
+   "id": "Search work"
+  },
+  {
+   "id": "Search work items"
   },
   {
    "id": "Search {kind} records"
@@ -10383,6 +11906,12 @@
   },
   {
    "id": "See delivered, failed, retried, and skipped messages by destination."
+  },
+  {
+   "id": "See how work is being prioritized across the project."
+  },
+  {
+   "id": "Select"
   },
   {
    "id": "Select a category"
@@ -10527,6 +12056,9 @@
    "id": "Select at least one personal notification event."
   },
   {
+   "id": "Select between 1 and 100 work item keys."
+  },
+  {
    "id": "Select every device"
   },
   {
@@ -10545,6 +12077,9 @@
    "id": "Select the owning IT team, provide implementation, validation, and backout plans, then follow the team-manager and CCB approval chain."
   },
   {
+   "id": "Select valid changes to apply."
+  },
+  {
    "id": "Select valid executive users."
   },
   {
@@ -10555,6 +12090,12 @@
   },
   {
    "id": "Select {key}"
+  },
+  {
+   "id": "Selected changes from this draft have already been applied."
+  },
+  {
+   "id": "Selected date changes saved."
   },
   {
    "id": "Select…"
@@ -10840,6 +12381,9 @@
    "id": "Set up the recovery set"
   },
   {
+   "id": "Set your project filter favourite state"
+  },
+  {
    "id": "Settings"
   },
   {
@@ -10864,10 +12408,22 @@
    "id": "Shares requests between all allowed services, favouring the ones you weight higher."
   },
   {
+   "id": "Sharing"
+  },
+  {
    "id": "Sharing method"
   },
   {
    "id": "Sharing options"
+  },
+  {
+   "id": "Sharing project"
+  },
+  {
+   "id": "Sharing publishes the query text. Every viewer still sees only their permitted records. Project sharing requires member access; organisation sharing requires a tenant administrator."
+  },
+  {
+   "id": "Shift dates by days"
   },
   {
    "id": "Short description"
@@ -10908,6 +12464,9 @@
    "id": "Show raw snapshot values"
   },
   {
+   "id": "Showing the first 100 dependencies. Open the relevant project work item to review additional links."
+  },
+  {
    "id": "Showing the first {open_requests} open requests."
   },
   {
@@ -10918,6 +12477,12 @@
   },
   {
    "id": "Showing the first {relationships} of {relationships_total} relationships. Open a configuration item or the"
+  },
+  {
+   "id": "Showing the latest 100 of {count} events. The API provides paginated access to all events."
+  },
+  {
+   "id": "Showing up to 500 saved filters. Open another filter directly using its link."
   },
   {
    "id": "Showing your saved theme."
@@ -11062,6 +12627,9 @@
    "id": "Snipe-IT to CMDB field mapping"
   },
   {
+   "id": "Solid: actual · dashed: scope · dotted: ideal burndown. The table below provides exact accessible values."
+  },
+  {
    "id": "Solved"
   },
   {
@@ -11153,6 +12721,90 @@
    "id": "Spreadsheet and manual fields (CPUs, RAM, Builder, iDRAC, DNS, …). Edit or remove them, or add your own."
   },
   {
+   "id": "Sprint"
+  },
+  {
+   "id": "Sprint activity"
+  },
+  {
+   "id": "Sprint baseline, outcome and daily burndown/burnup"
+  },
+  {
+   "id": "Sprint charts support at most 366 days of actual activity."
+  },
+  {
+   "id": "Sprint completed"
+  },
+  {
+   "id": "Sprint edited"
+  },
+  {
+   "id": "Sprint end must follow start by no more than 366 days."
+  },
+  {
+   "id": "Sprint filtering requires a signed-in user."
+  },
+  {
+   "id": "Sprint goal"
+  },
+  {
+   "id": "Sprint goal must contain at most 10,000 characters."
+  },
+  {
+   "id": "Sprint name"
+  },
+  {
+   "id": "Sprint name must contain 1 to 100 characters without control characters."
+  },
+  {
+   "id": "Sprint navigation"
+  },
+  {
+   "id": "Sprint pagination"
+  },
+  {
+   "id": "Sprint planning is temporarily unavailable. Please try again."
+  },
+  {
+   "id": "Sprint report"
+  },
+  {
+   "id": "Sprint report and charts"
+  },
+  {
+   "id": "Sprint report details"
+  },
+  {
+   "id": "Sprint report pagination"
+  },
+  {
+   "id": "Sprint report · {instance_name}"
+  },
+  {
+   "id": "Sprint saved."
+  },
+  {
+   "id": "Sprint started"
+  },
+  {
+   "id": "Sprint state"
+  },
+  {
+   "id": "Sprint text contains invalid Unicode."
+  },
+  {
+   "id": "Sprint updated."
+  },
+  {
+   "id": "Sprint work breakdown"
+  },
+  {
+   "id": "Sprint work list"
+  },
+  {
+   "id": "Sprints and reports"
+  },
+  {
    "id": "Staff access is required for AI actions."
   },
   {
@@ -11192,6 +12844,12 @@
    "id": "Start"
   },
   {
+   "id": "Start (UTC)"
+  },
+  {
+   "id": "Start a planned sprint"
+  },
+  {
    "id": "Start at /auth/keycloak/mobile/start with code_challenge (S256) and state; the browser returns to serviceops://keycloak with code and state."
   },
   {
@@ -11210,6 +12868,12 @@
    "id": "Start page"
   },
   {
+   "id": "Start sprint"
+  },
+  {
+   "id": "Start the sprint to record its baseline and daily chart."
+  },
+  {
    "id": "Start time"
   },
   {
@@ -11219,19 +12883,35 @@
    "id": "Started"
   },
   {
+   "id": "Starting a sprint accepts an empty JSON object."
+  },
+  {
+   "id": "Starting scope"
+  },
+  {
+   "id": "Starting scope without estimates: {points} items without points; {minutes} without time estimates."
+  },
+  {
    "id": "Starts"
   },
   {
    "id": "State"
   },
   {
-   "id": "Status"
+   "id": "Status",
+   "javascript": true
   },
   {
    "id": "Status & lifecycle"
   },
   {
+   "id": "Status category"
+  },
+  {
    "id": "Status code"
+  },
+  {
+   "id": "Status for {key}"
   },
   {
    "id": "Status labels → lifecycle:"
@@ -11241,6 +12921,13 @@
   },
   {
    "id": "Status of {key}"
+  },
+  {
+   "id": "Status overview"
+  },
+  {
+   "id": "Status refresh is unavailable. Use Refresh to check the environment.",
+   "javascript": true
   },
   {
    "id": "Status update posted."
@@ -11253,6 +12940,9 @@
   },
   {
    "id": "Statuses are the board columns, left to right. Each belongs to a category used for progress and reports. A work-in-progress limit marks the column when exceeded."
+  },
+  {
+   "id": "Stay up to date with what is happening across the project."
   },
   {
    "id": "Step added."
@@ -11302,16 +12992,27 @@
    "id": "Storage backend"
   },
   {
+   "id": "Stories and all descendants",
+   "javascript": true
+  },
+  {
    "id": "Stories, tasks and bugs can only belong to an epic."
   },
   {
-   "id": "Story"
+   "id": "Story",
+   "javascript": true
+  },
+  {
+   "id": "Story point progress"
   },
   {
    "id": "Story points"
   },
   {
    "id": "Stream audit events to SIEM"
+  },
+  {
+   "id": "Structure"
   },
   {
    "id": "Subcategory"
@@ -11359,13 +13060,20 @@
    "id": "Submit rating"
   },
   {
+   "id": "Submit typed intake answers as a work item"
+  },
+  {
+   "id": "Submitted form"
+  },
+  {
    "id": "Subnet (CIDR)"
   },
   {
    "id": "Subscribed events"
   },
   {
-   "id": "Subtask"
+   "id": "Subtask",
+   "javascript": true
   },
   {
    "id": "Subtasks"
@@ -11386,7 +13094,8 @@
    "id": "Suggests service offering"
   },
   {
-   "id": "Summary"
+   "id": "Summary",
+   "javascript": true
   },
   {
    "id": "Superadmin"
@@ -11405,6 +13114,9 @@
   },
   {
    "id": "Support overview"
+  },
+  {
+   "id": "Supported query fields and examples"
   },
   {
    "id": "Supported:"
@@ -11446,6 +13158,9 @@
    "id": "Synchronize parent incident state to child incidents"
   },
   {
+   "id": "Synthetic data only"
+  },
+  {
    "id": "Syslog port"
   },
   {
@@ -11474,6 +13189,9 @@
   },
   {
    "id": "System health"
+  },
+  {
+   "id": "System health and recovery status"
   },
   {
    "id": "System health · {instance_name}"
@@ -11512,6 +13230,9 @@
    "id": "Target CSS selector (leave blank to center the step with no highlighted element)"
   },
   {
+   "id": "Target date"
+  },
+  {
    "id": "Target roles (none selected = every role)"
   },
   {
@@ -11524,7 +13245,8 @@
    "id": "Target type"
   },
   {
-   "id": "Task"
+   "id": "Task",
+   "javascript": true
   },
   {
    "id": "Task SLAs"
@@ -11575,6 +13297,9 @@
    "id": "Team memberships"
   },
   {
+   "id": "Team name"
+  },
+  {
    "id": "Team name alias removed."
   },
   {
@@ -11597,6 +13322,9 @@
   },
   {
    "id": "Teams Workflow or incoming webhook URL."
+  },
+  {
+   "id": "Teams and iterations"
   },
   {
    "id": "Teams:"
@@ -11818,6 +13546,10 @@
    "id": "The authenticated session is no longer valid."
   },
   {
+   "id": "The backlog could not be updated.",
+   "javascript": true
+  },
+  {
    "id": "The category and subcategory choices offered on the ticket form. Deactivating a category or subcategory removes it from the form without changing tickets that already used it. Picking a subcategory on the ticket form only ever suggests its linked service offering — it never overwrites what the requester already chose."
   },
   {
@@ -11828,16 +13560,27 @@
    "javascript": true
   },
   {
+   "id": "The component limit has been reached.",
+   "javascript": true
+  },
+  {
    "id": "The configured outbound proxy URL is invalid."
   },
   {
    "id": "The current password is incorrect."
   },
   {
+   "id": "The date proposal could not be saved. Reload and try again.",
+   "javascript": true
+  },
+  {
    "id": "The day resets in"
   },
   {
    "id": "The default policy needs at least one stage."
+  },
+  {
+   "id": "The destination sprint would exceed 5,000 work items."
   },
   {
    "id": "The directory could not be reached: {error}"
@@ -11849,10 +13592,38 @@
    "id": "The end date must be on or after the start date."
   },
   {
+   "id": "The expanded dependency graph is too large."
+  },
+  {
+   "id": "The favourite could not be saved. Please try again."
+  },
+  {
+   "id": "The filter could not be deleted. Please try again."
+  },
+  {
+   "id": "The filter could not be saved because its name is already in use."
+  },
+  {
+   "id": "The filter could not be saved. Please try again."
+  },
+  {
+   "id": "The form changed. Reload before saving."
+  },
+  {
+   "id": "The hierarchy could not be updated. Reload this view.",
+   "javascript": true
+  },
+  {
    "id": "The idempotency key was already used for a different request."
   },
   {
+   "id": "The installation policy changed. Reload before saving."
+  },
+  {
    "id": "The installed version and build are shown inside the app under More → Settings so support teams can identify the exact client in use."
+  },
+  {
+   "id": "The iteration cannot fit {key} with its dependencies and duration. Move it to a later iteration or increase the iteration length."
   },
   {
    "id": "The key is part of every work item number and cannot change."
@@ -11862,6 +13633,9 @@
   },
   {
    "id": "The latest customer-support conversations"
+  },
+  {
+   "id": "The link target moved. Reload it before linking."
   },
   {
    "id": "The manager identifier must be an integer."
@@ -11907,7 +13681,17 @@
    "id": "The old group name is already an alias of another team."
   },
   {
+   "id": "The operation could not be completed. Reload and try again.",
+   "javascript": true
+  },
+  {
+   "id": "The operator must enable the isolated sandbox controller before creating environments."
+  },
+  {
    "id": "The owning team requires an active manager or approval group."
+  },
+  {
+   "id": "The page changed. Reload before saving."
   },
   {
    "id": "The parent must be a work item in this project."
@@ -11929,6 +13713,18 @@
   },
   {
    "id": "The person an asset is checked out to becomes the CI owner when a ServiceOps user has the same email. Purchase and warranty dates fill the CI dates."
+  },
+  {
+   "id": "The plan changed. Reload it before saving."
+  },
+  {
+   "id": "The plan must contain 1 to 500 changed work items."
+  },
+  {
+   "id": "The prerequisite must be in an earlier iteration."
+  },
+  {
+   "id": "The preview would move a date outside the supported calendar."
   },
   {
    "id": "The product name shown in navigation and browser titles."
@@ -11991,7 +13787,16 @@
    "id": "The response is intentionally the same whether an account exists or not, and this only applies to local accounts — if you sign in through your organization's directory (AD/LDAP), contact your administrator instead."
   },
   {
+   "id": "The rule changed. Reload before saving."
+  },
+  {
+   "id": "The schedule exceeds the five-year planning horizon."
+  },
+  {
    "id": "The security token is missing or expired. Refresh the page and try again."
+  },
+  {
+   "id": "The selected changes omit a prerequisite or conflict with its dates. Include the prerequisite changes or create a new plan."
   },
   {
    "id": "The selected named user receives management authority for that team. A team's change assessment is approved by its manager or, when an approval group is set, by any active member of that group. Change submission remains blocked while a team has neither."
@@ -12030,6 +13835,9 @@
    "id": "The signed-in user's own profile picture"
   },
   {
+   "id": "The sprint will be deleted and its work returned to the backlog. Started sprint history is retained."
+  },
+  {
    "id": "The synchronization job limit must be between 1 and 100."
   },
   {
@@ -12039,10 +13847,17 @@
    "id": "The ticket changed after this proposal was prepared. Run a new investigation first."
   },
   {
+   "id": "The timeline font layout could not be refreshed.",
+   "javascript": true
+  },
+  {
    "id": "The token for"
   },
   {
    "id": "The work item gets a new key; links to the old key keep working. Subtasks move with it. Components and versions belong to this project and are removed."
+  },
+  {
+   "id": "The work item hierarchy must be repaired before cloning."
   },
   {
    "id": "The {name} team (co-owner of a service this CI backs) requires an active manager or approval group."
@@ -12060,7 +13875,18 @@
    "id": "Then"
   },
   {
+   "id": "Then perform an action",
+   "javascript": true
+  },
+  {
+   "id": "Then:",
+   "javascript": true
+  },
+  {
    "id": "There can be at most {count} dashboards here."
+  },
+  {
+   "id": "There is no open leaf work to schedule."
   },
   {
    "id": "These approvers delegated authority to you for an active absence window. You were not notified when the request was first opened; any decision records both identities."
@@ -12119,6 +13945,12 @@
    "id": "This attachment could not be verified as safe and is temporarily unavailable. Please contact an administrator."
   },
   {
+   "id": "This board changes the plan proposal only. Review changes to apply dates to work items. Capacity uses the selected estimate mode; unknown estimates are shown explicitly."
+  },
+  {
+   "id": "This board is read-only. Ask a project administrator for member access to move cards or edit work items."
+  },
+  {
    "id": "This browser blocks notifications for ServiceOps. Allow them in the browser's site settings.",
    "javascript": true
   },
@@ -12129,10 +13961,16 @@
    "id": "This change already references RT #{id}."
   },
   {
+   "id": "This client address is outside the installation IP allowlist."
+  },
+  {
    "id": "This contact is under an active legal hold and cannot be erased."
   },
   {
    "id": "This contact's personal data has already been erased."
+  },
+  {
+   "id": "This controls deployment admission; saving a track does not deploy software. An operator can override a window only with an explicit recorded reason in the migration job configuration."
   },
   {
    "id": "This conversation is full. Start a new chat."
@@ -12150,10 +13988,19 @@
    "id": "This draft has not been published. Only agents, managers and administrators can see it until it is published."
   },
   {
+   "id": "This draft is stale. Work or dependencies have changed. Create a new draft before applying changes."
+  },
+  {
    "id": "This draft was prepared by the AI assistant from your conversation. Review every field and complete any missing information before creating it. Nothing has been submitted yet."
   },
   {
    "id": "This endpoint has not been allowlisted by the deployment operator. The operator must add {origin} to AI_SELF_HOSTED_ENDPOINTS (Helm ai.selfHostedEndpoints)."
+  },
+  {
+   "id": "This environment contains synthetic data and will be permanently removed at expiry. At most two environments can be active."
+  },
+  {
+   "id": "This event exceeds the 1,000-action automation budget."
   },
   {
    "id": "This group is required by the platform and cannot be deleted."
@@ -12172,6 +14019,21 @@
    "id": "This passkey is already registered."
   },
   {
+   "id": "This planning draft has already been applied."
+  },
+  {
+   "id": "This planning scope exceeds 2,000 dependencies."
+  },
+  {
+   "id": "This planning scope exceeds 500 work items. Choose a smaller project."
+  },
+  {
+   "id": "This planning view is read-only. Ask a project administrator for member access to assign work."
+  },
+  {
+   "id": "This project already has 200 goals."
+  },
+  {
    "id": "This project already has a component called {name}."
   },
   {
@@ -12179,6 +14041,9 @@
   },
   {
    "id": "This project already has a version called {name}."
+  },
+  {
+   "id": "This project exceeds 200 goals."
   },
   {
    "id": "This project is archived."
@@ -12196,10 +14061,16 @@
    "id": "This proposal expired. Prepare it again from a current investigation."
   },
   {
+   "id": "This query has unsaved changes."
+  },
+  {
    "id": "This record is already owned by that team."
   },
   {
    "id": "This remains a standard INC. Major incident status has not been proposed."
+  },
+  {
+   "id": "This scenario refers to removed work or teams."
   },
   {
    "id": "This service is hosted outside your organization. Sensitive requests are never sent to it.",
@@ -12219,6 +14090,12 @@
    "id": "This sign-in has expired. Start again from the app."
   },
   {
+   "id": "This sprint exceeds the 50,000-event reporting limit. Use the paginated event API."
+  },
+  {
+   "id": "This tenant already has 100 automation rules."
+  },
+  {
    "id": "This ticket isn't resolved yet."
   },
   {
@@ -12229,6 +14106,12 @@
   },
   {
    "id": "This will update"
+  },
+  {
+   "id": "This work item moved to another project. Reload it before making changes."
+  },
+  {
+   "id": "This work item moved. Reload it before linking."
   },
   {
    "id": "Tick every configuration item to add",
@@ -12302,6 +14185,16 @@
    "id": "Time zone"
   },
   {
+   "id": "Timeline"
+  },
+  {
+   "id": "Timeline anchor"
+  },
+  {
+   "id": "Timeline changes",
+   "javascript": true
+  },
+  {
    "id": "Title"
   },
   {
@@ -12320,7 +14213,8 @@
    "id": "To date/time"
   },
   {
-   "id": "To do"
+   "id": "To do",
+   "javascript": true
   },
   {
    "id": "To update"
@@ -12344,7 +14238,13 @@
    "id": "Toggle checklist item"
   },
   {
+   "id": "Toggle children of {key}"
+  },
+  {
    "id": "Toggle navigation"
+  },
+  {
+   "id": "Toggle {name}"
   },
   {
    "id": "Token (shown once)"
@@ -12392,6 +14292,9 @@
    "id": "Topology map"
   },
   {
+   "id": "Total"
+  },
+  {
    "id": "Tour complete.",
    "javascript": true
   },
@@ -12402,13 +14305,42 @@
    "id": "Traceback"
   },
   {
+   "id": "Track"
+  },
+  {
+   "id": "Transition issue",
+   "javascript": true
+  },
+  {
+   "id": "Transition the issue",
+   "javascript": true
+  },
+  {
    "id": "Translations are bundled with ServiceOps and work offline. Text without a translation appears in English, and record content stays in the language it was written in."
   },
   {
    "id": "Treat as known error"
   },
   {
+   "id": "Trigger",
+   "javascript": true
+  },
+  {
+   "id": "Trigger field",
+   "javascript": true
+  },
+  {
+   "id": "Trigger issue",
+   "javascript": true
+  },
+  {
    "id": "Trigger name is required."
+  },
+  {
+   "id": "Trigger work"
+  },
+  {
+   "id": "Trigger work item key"
   },
   {
    "id": "Triggers"
@@ -12455,7 +14387,8 @@
    "id": "Two-factor verification"
   },
   {
-   "id": "Type"
+   "id": "Type",
+   "javascript": true
   },
   {
    "id": "Type ROTATE"
@@ -12479,6 +14412,9 @@
   },
   {
    "id": "Type your message…"
+  },
+  {
+   "id": "Types of work"
   },
   {
    "id": "US Eastern"
@@ -12523,6 +14459,9 @@
    "id": "Unidentified equipment"
   },
   {
+   "id": "Unit"
+  },
+  {
    "id": "Unknown"
   },
   {
@@ -12553,7 +14492,19 @@
    "id": "Unknown release action."
   },
   {
+   "id": "Unknown saved filter field."
+  },
+  {
    "id": "Unknown settings action."
+  },
+  {
+   "id": "Unknown sprint assignment fields."
+  },
+  {
+   "id": "Unknown sprint completion fields."
+  },
+  {
+   "id": "Unknown sprint fields."
   },
   {
    "id": "Unlink {name}"
@@ -12572,6 +14523,18 @@
   },
   {
    "id": "Unreleased"
+  },
+  {
+   "id": "Unschedule work outside the new iteration range first."
+  },
+  {
+   "id": "Unscheduled"
+  },
+  {
+   "id": "Unscheduled open work"
+  },
+  {
+   "id": "Unscheduled or outside this view"
   },
   {
    "id": "Unsolved"
@@ -12607,19 +14570,37 @@
    "id": "Update a change task"
   },
   {
+   "id": "Update a project goal"
+  },
+  {
    "id": "Update an authorized owning-team ticket"
+  },
+  {
+   "id": "Update an owned project filter"
+  },
+  {
+   "id": "Update filter"
   },
   {
    "id": "Update incident"
   },
   {
+   "id": "Update install policy with current revision"
+  },
+  {
    "id": "Update record"
+  },
+  {
+   "id": "Update report"
   },
   {
    "id": "Update review"
   },
   {
    "id": "Update root cause, workaround, and fix"
+  },
+  {
+   "id": "Update rule with current revision"
   },
   {
    "id": "Update status"
@@ -12631,10 +14612,16 @@
    "id": "Update user"
   },
   {
+   "id": "Update view"
+  },
+  {
    "id": "Update {number}"
   },
   {
    "id": "Updated"
+  },
+  {
+   "id": "Updated revision"
   },
   {
    "id": "Updated {value}"
@@ -12686,6 +14673,9 @@
    "id": "Use \"archived\" instead of \"not-configured\" once the backup is also copied off the server."
   },
   {
+   "id": "Use AND, OR, NOT, parentheses, IN, IS EMPTY and ORDER BY. Text matching supports simple * and ? wildcards; it does not use Lucene syntax. Date functions use UTC."
+  },
+  {
    "id": "Use Close to complete it, or Reopen to make other changes."
   },
   {
@@ -12704,7 +14694,13 @@
    "id": "Use a custom proxy"
   },
   {
+   "id": "Use a date between 1900 and 2200 in YYYY-MM-DD format."
+  },
+  {
    "id": "Use a proxy for this model"
+  },
+  {
+   "id": "Use an internal path or a complete HTTPS URL."
   },
   {
    "id": "Use at most 80 characters for the asset tag and 160 for the name."
@@ -12717,6 +14713,9 @@
   },
   {
    "id": "Use matching passwords containing at least {min_length} characters."
+  },
+  {
+   "id": "Use openSprints(), closedSprints() and futureSprints() with the sprint field. Calendar functions include startOfDay(), endOfDay(), startOfWeek(), endOfWeek(), startOfMonth(), endOfMonth(), startOfYear() and endOfYear(). currentUser() and now() are also supported. CHANGED supports selected history fields; WAS, custom-field and plugin queries are not supported."
   },
   {
    "id": "Use shorter timestamps in operational lists."
@@ -12744,6 +14743,9 @@
   },
   {
    "id": "Use today"
+  },
+  {
+   "id": "Use valid IPv4 or IPv6 networks."
   },
   {
    "id": "Use w (weeks), d (days), h (hours) and m (minutes), for example 1d 4h."
@@ -12847,6 +14849,12 @@
    "id": "Variables submitted with {number}"
   },
   {
+   "id": "Velocity results"
+  },
+  {
+   "id": "Velocity · last 10 completed sprints"
+  },
+  {
    "id": "Vendor"
   },
   {
@@ -12860,6 +14868,9 @@
   },
   {
    "id": "Verification code"
+  },
+  {
+   "id": "Verified immutable candidates may be deployed whenever the operator chooses."
   },
   {
    "id": "Verified your access",
@@ -12923,10 +14934,17 @@
    "id": "View all request logs"
   },
   {
+   "id": "View all work"
+  },
+  {
    "id": "View healthy CIs"
   },
   {
    "id": "View iOS project"
+  },
+  {
+   "id": "View link copied. Recipients still need project access.",
+   "javascript": true
   },
   {
    "id": "View location"
@@ -12936,6 +14954,9 @@
   },
   {
    "id": "View mobile setup and download details"
+  },
+  {
+   "id": "View name"
   },
   {
    "id": "View notifications"
@@ -12953,10 +14974,19 @@
    "id": "View queue"
   },
   {
+   "id": "View report"
+  },
+  {
    "id": "View results ({pending_counts})"
   },
   {
    "id": "View schedule"
+  },
+  {
+   "id": "View settings"
+  },
+  {
+   "id": "View settings saved."
   },
   {
    "id": "View the release on GitHub"
@@ -13038,7 +15068,13 @@
    "id": "Warm stone surfaces with restrained bronze accents."
   },
   {
+   "id": "Warning"
+  },
+  {
    "id": "Warnings"
+  },
+  {
+   "id": "Warnings and dependencies"
   },
   {
    "id": "Warnings and errors appear below."
@@ -13080,7 +15116,13 @@
    "id": "Webhook URL"
   },
   {
+   "id": "Weeks per iteration"
+  },
+  {
    "id": "Weight"
+  },
+  {
+   "id": "Welcome back, {name}"
   },
   {
    "id": "Welcome to ServiceOps"
@@ -13134,10 +15176,21 @@
    "id": "When"
   },
   {
+   "id": "When an issue event occurs",
+   "javascript": true
+  },
+  {
+   "id": "When approved"
+  },
+  {
    "id": "When sources disagree about a field, the source higher in this list wins and the disagreement is reported in the import results."
   },
   {
    "id": "When you have more than one service, this decides which one answers."
+  },
+  {
+   "id": "When:",
+   "javascript": true
   },
   {
    "id": "Where ServiceOps runs"
@@ -13194,6 +15247,15 @@
    "id": "Work"
   },
   {
+   "id": "Work added"
+  },
+  {
+   "id": "Work already completed when it entered the active sprint is shown separately and excluded from delivered velocity."
+  },
+  {
+   "id": "Work cannot fit within the plan. Check estimates, team capacity, dependencies and iteration dates."
+  },
+  {
    "id": "Work description"
   },
   {
@@ -13206,13 +15268,25 @@
    "id": "Work in progress limit {limit}"
   },
   {
+   "id": "Work item"
+  },
+  {
    "id": "Work item actions"
   },
   {
    "id": "Work item assigned to you"
   },
   {
+   "id": "Work item created."
+  },
+  {
    "id": "Work item key or record number"
+  },
+  {
+   "id": "Work item saved."
+  },
+  {
+   "id": "Work item search is temporarily unavailable. Please try again."
   },
   {
    "id": "Work item shared with you"
@@ -13249,10 +15323,28 @@
    "id": "Work notes"
   },
   {
+   "id": "Work or dependencies changed after this draft was created. Create a fresh plan."
+  },
+  {
+   "id": "Work removed"
+  },
+  {
    "id": "Work tasks"
   },
   {
+   "id": "Work timeline with dates and dependency lines"
+  },
+  {
+   "id": "Work type"
+  },
+  {
+   "id": "Work updated"
+  },
+  {
    "id": "Work you changed, opened, are assigned or starred, across your projects."
+  },
+  {
+   "id": "Work-item start and due dates appear below. Open an item to update its dates, or propose dates from the timeline. Goal targets are shown as milestones."
   },
   {
    "id": "Workaround"
@@ -13298,6 +15390,9 @@
    "id": "Working days per week"
   },
   {
+   "id": "Working hours must be a whole number."
+  },
+  {
    "id": "Working hours per day"
   },
   {
@@ -13306,6 +15401,9 @@
   {
    "id": "Working…",
    "javascript": true
+  },
+  {
+   "id": "Workload reflects recorded remaining estimates, not employee availability. Multi-assigned work is counted for each person; person totals must not be added as project capacity."
   },
   {
    "id": "Works out every create and update, then discards it. Writes nothing."
@@ -13338,7 +15436,11 @@
    "id": "Year-end code freeze"
   },
   {
-   "id": "Yes"
+   "id": "Yes",
+   "javascript": true
+  },
+  {
+   "id": "You already have a filter with that name."
   },
   {
    "id": "You already have a view with that name."
@@ -13460,6 +15562,9 @@
    "id": "Your conversations"
   },
   {
+   "id": "Your current client address"
+  },
+  {
    "id": "Your current password is required to disable MFA."
   },
   {
@@ -13522,6 +15627,9 @@
   },
   {
    "id": "acme-corp"
+  },
+  {
+   "id": "added"
   },
   {
    "id": "admin"
@@ -13600,6 +15708,9 @@
    "id": "attached {name}"
   },
   {
+   "id": "baseline"
+  },
+  {
    "id": "before",
    "javascript": true
   },
@@ -13611,6 +15722,9 @@
   },
   {
    "id": "bool"
+  },
+  {
+   "id": "boolean"
   },
   {
    "id": "browser push notification proxy"
@@ -13684,6 +15798,9 @@
    "id": "datetime"
   },
   {
+   "id": "days"
+  },
+  {
    "id": "dd/MM/yyyy"
   },
   {
@@ -13700,6 +15817,10 @@
   },
   {
    "id": "dismissed"
+  },
+  {
+   "id": "does not equal",
+   "javascript": true
   },
   {
    "id": "e.g. 12345"
@@ -13744,6 +15865,9 @@
    "id": "e.g. account_tier"
   },
   {
+   "id": "edit"
+  },
+  {
    "id": "edited"
   },
   {
@@ -13762,6 +15886,10 @@
    "id": "environment must be Production, Staging, Development or Test."
   },
   {
+   "id": "equals",
+   "javascript": true
+  },
+  {
    "id": "example.com"
   },
   {
@@ -13769,6 +15897,9 @@
   },
   {
    "id": "fact"
+  },
+  {
+   "id": "fields"
   },
   {
    "id": "filtered to {status}"
@@ -13866,6 +15997,9 @@
    "id": "int"
   },
   {
+   "id": "integer"
+  },
+  {
    "id": "investigation"
   },
   {
@@ -13894,6 +16028,9 @@
    "id": "is tested by"
   },
   {
+   "id": "iteration"
+  },
+  {
    "id": "its conditions match, ServiceOps performs its controlled actions and records the result below."
   },
   {
@@ -13913,6 +16050,9 @@
   },
   {
    "id": "limit and cursor must be integers."
+  },
+  {
+   "id": "limit must be 1 to 200 and offset must be 0 to 1000000."
   },
   {
    "id": "limit {record_limit}"
@@ -13978,6 +16118,9 @@
    "id": "notification"
   },
   {
+   "id": "number"
+  },
+  {
    "id": "object storage proxy"
   },
   {
@@ -14011,10 +16154,16 @@
    "id": "order must be a list of widget ids."
   },
   {
+   "id": "paragraph"
+  },
+  {
    "id": "parent_id must be an integer comment identifier."
   },
   {
    "id": "parent_key must be a work item in this project."
+  },
+  {
+   "id": "parent_key must be a work item key."
   },
   {
    "id": "payroll acquisition"
@@ -14024,6 +16173,12 @@
   },
   {
    "id": "placeholders from the list below each one. Anything left unedited keeps its built-in default wording."
+  },
+  {
+   "id": "platform:write and Idempotency-Key. Synthetic data only; two global slots, expiry up to seven days."
+  },
+  {
+   "id": "platform:write and platform administration. Preserves the requesting address in the allowlist."
   },
   {
    "id": "plus groups linked to {authority}"
@@ -14042,7 +16197,85 @@
    "id": "project"
   },
   {
+   "id": "projects:read. Optional repeated project keys, zoom weeks/months/years, anchor YYYY-MM-DD and q. Maximum 50 projects, 500 work items and 2000 visible blocking dependencies."
+  },
+  {
+   "id": "projects:read. Per-person open work, remaining minutes and points. Shared assignments count for every person; not an employee availability calendar."
+  },
+  {
+   "id": "projects:read. Up to 200 goals."
+  },
+  {
+   "id": "projects:read. Up to 50 recent visible owned drafts."
+  },
+  {
+   "id": "projects:read. month YYYY-MM, maximum 500 work items."
+  },
+  {
+   "id": "projects:read. show_points, show_assignees, show_versions, show_epics, show_priority, compact booleans."
+  },
+  {
+   "id": "projects:read; count, points and minutes remain separate; no fabricated historical baselines."
+  },
+  {
+   "id": "projects:read; limit 1-200 and offset 0-1000000. Append-only event snapshots."
+  },
+  {
+   "id": "projects:read; limit/offset. Closed memberships retain snapshots; moved/deleted live objects are not expanded."
+  },
+  {
+   "id": "projects:read; project visibility rechecked."
+  },
+  {
+   "id": "projects:read; state planned/active/closed; limit 1-200, offset 0-1000000."
+  },
+  {
+   "id": "projects:read; unit count/points/estimate/remaining. UTC daily snapshots; 50000-event/366-day bound. Full paginated events remain available above the chart limit."
+  },
+  {
+   "id": "projects:write and Idempotency-Key. JSON name, description, projects (keys), settings."
+  },
+  {
+   "id": "projects:write and Idempotency-Key. JSON projects (array of keys), name, mode auto/manual. Auto requires start YYYY-MM-DD; optional hours 1-24, weekends boolean, reserve_people boolean. Manual requires changes mapping work-item IDs to start and due date objects. Nothing updates work until apply."
+  },
+  {
+   "id": "projects:write and Idempotency-Key. JSON title, description, answers. Answers retain an immutable schema snapshot."
+  },
+  {
+   "id": "projects:write and Idempotency-Key. Pages require edit; forms and shortcuts require project administration. Reports are read only."
+  },
+  {
+   "id": "projects:write and project edit access. JSON item_keys (1-100), sprint_id (integer or null for backlog), optional before_key for one item. Same-project stories/tasks/bugs; subtasks inherit. Bulk failures roll back the complete request."
+  },
+  {
+   "id": "projects:write and project edit access. Same fields as goal creation; omitted fields preserved."
+  },
+  {
+   "id": "projects:write, Idempotency-Key and project administration. JSON name, projects, enabled, config."
+  },
+  {
+   "id": "projects:write, Idempotency-Key and project edit access. JSON title, description, target_date, state open/achieved/cancelled, item_keys array from the same project."
+  },
+  {
+   "id": "projects:write, project administrator and Idempotency-Key. JSON name, goal, start_at, end_at. ISO timestamps normalize to UTC; both dates required together, maximum 366 days."
+  },
+  {
+   "id": "projects:write. JSON item_ids (nonempty array). Rechecks permissions, locks affected and prerequisite projects, rejects stale work/dependencies with 409. Applying consumes the draft."
+  },
+  {
+   "id": "projects:write. Required current revision. Actions node, team, allocate, settings, scenario, restore, auto, review. Review produces a draft; actual dates change only on draft apply."
+  },
+  {
+   "id": "projects:write; applied history cannot be discarded."
+  },
+  {
+   "id": "projects:write; project view access is sufficient. JSON boolean settings; omitted fields reset to defaults. No shared configuration is changed."
+  },
+  {
    "id": "provider must be local or ldap."
+  },
+  {
+   "id": "pts"
   },
   {
    "id": "public status page"
@@ -14099,6 +16332,9 @@
    "id": "released"
   },
   {
+   "id": "removed"
+  },
+  {
    "id": "replaced"
   },
   {
@@ -14110,6 +16346,9 @@
   },
   {
    "id": "requests today"
+  },
+  {
+   "id": "saved"
   },
   {
    "id": "seen in the last 15 minutes"
@@ -14153,6 +16392,9 @@
   {
    "id": "starts with",
    "javascript": true
+  },
+  {
+   "id": "state"
   },
   {
    "id": "stopped being called after a successful run -- check the external backup job's own logs/schedule first."
@@ -14405,6 +16647,9 @@
    "id": "{count} files"
   },
   {
+   "id": "{count} historical work entries"
+  },
+  {
    "id": "{count} incident resolved in this window."
   },
   {
@@ -14412,6 +16657,9 @@
   },
   {
    "id": "{count} linked"
+  },
+  {
+   "id": "{count} matching work items"
   },
   {
    "id": "{count} member"
@@ -14452,6 +16700,12 @@
    "id": "{count} open tasks"
   },
   {
+   "id": "{count} open work items are unassigned."
+  },
+  {
+   "id": "{count} open work items have no due date."
+  },
+  {
    "id": "{count} rack"
   },
   {
@@ -14486,6 +16740,9 @@
    "id": "{count} source conflicts"
   },
   {
+   "id": "{count} sprints"
+  },
+  {
    "id": "{count} tokens written",
    "javascript": true
   },
@@ -14496,8 +16753,14 @@
    "id": "{count} tools"
   },
   {
+   "id": "{count} unknown estimates"
+  },
+  {
    "id": "{count} unread",
    "javascript": true
+  },
+  {
+   "id": "{count} unscheduled work items"
   },
   {
    "id": "{count} virtual machine"
@@ -14519,6 +16782,9 @@
   },
   {
    "id": "{count} work items changed."
+  },
+  {
+   "id": "{count} work items would be affected."
   },
   {
    "id": "{created} to create, {updated} to update"
@@ -14550,6 +16816,12 @@
   },
   {
    "id": "{done} of {total} done"
+  },
+  {
+   "id": "{done} of {total} linked work items complete"
+  },
+  {
+   "id": "{done} of {total} work items are done."
   },
   {
    "id": "{duration_minutes} minutes"
@@ -14655,9 +16927,6 @@
    "id": "{key} must be a string."
   },
   {
-   "id": "{key} overview · {instance_name}"
-  },
-  {
    "id": "{key} releases · {instance_name}"
   },
   {
@@ -14685,13 +16954,7 @@
    "id": "{label} has at most {max} characters."
   },
   {
-   "id": "{label} is not a valid user."
-  },
-  {
    "id": "{label} is not an active user in this organisation."
-  },
-  {
-   "id": "{label} is not valid."
   },
   {
    "id": "{label} is now {value}."
@@ -14725,6 +16988,9 @@
   },
   {
    "id": "{label} must be between {low} and {high}."
+  },
+  {
+   "id": "{label} must be text."
   },
   {
    "id": "{label} must be {limit} characters or fewer."
@@ -15012,6 +17278,9 @@
    "id": "{placeholder}'s personal data has been erased."
   },
   {
+   "id": "{points} points · {minutes} estimated minutes"
+  },
+  {
    "id": "{previous} updated as {name}."
   },
   {
@@ -15073,6 +17342,9 @@
   },
   {
    "id": "{sources} configured inbound monitoring sources."
+  },
+  {
+   "id": "{source} finishes on or after {target} starts."
   },
   {
    "id": "{source} import queued. It runs in controlled batches."
@@ -15159,6 +17431,9 @@
   },
   {
    "id": "{total} records · {types}"
+  },
+  {
+   "id": "{type} distribution"
   },
   {
    "id": "{u_height}U rack"

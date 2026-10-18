@@ -227,7 +227,7 @@ def scim_user_document(user):
 
 def require_scim_admin():
     require_api_scope("users:provision")
-    if not effective_role_has_action(g.api_user.role, "security_administer", tenant_id=g.api_user.tenant_id):
+    if not effective_role_has_action(g.api_user.effective_role, "security_administer", tenant_id=g.api_user.tenant_id):
         abort(403, description=tr("The SCIM client must act as a security administrator."))
 
 

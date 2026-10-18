@@ -290,3 +290,19 @@ events:
   resources:
     requests: {cpu: 20m, memory: 64Mi}
     limits: {cpu: 500m, memory: 256Mi}
+
+# Install-wide Premium controls. Sandboxes contain synthetic data only.
+premium:
+  sandbox:
+    enabled: false
+    image: ""
+    # Override for an external database outside the default PostgreSQL pod selector.
+    databaseEgress: []
+    # Disable only for a verified legacy cluster CA; certificate/hostname checks stay on.
+    strictAPIX509: true
+    apiServerCIDRs: ["10.152.183.1/32"]
+    namespace: serviceops-sandboxes
+    storageClass: "serviceops-sandbox-local"
+    storageNode: ""
+    storageRoot: /var/lib/serviceops-sandboxes
+    postgresImage: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777

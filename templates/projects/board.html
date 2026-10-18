@@ -3,8 +3,10 @@
 {% block title %}{{ tr('{key} board · {instance_name}', key=project.key, instance_name=instance_name) }}{% endblock %}
 {% block content %}<span hidden data-live-watch="project:{{ project.id }}"></span>
 {% include "projects/_header.html" %}
+<div class="project-view-heading"><h2>{{ tr('Board') }}</h2>{% set view_target="board" %}{% include "projects/_view_settings.html" %}<a class="button" href="{{ url_for('projects.sprint_backlog',key=project.key) }}">{{ tr('Plan in backlog') }} <span aria-hidden="true">↗</span></a></div>
 {% set filter_extra %}<label><span>{{ tr('Group rows by') }}</span><select name="swimlane"><option value="none">{{ tr('No grouping') }}</option><option value="assignee" {% if swimlane == 'assignee' %}selected{% endif %}>{{ tr('Rows by assignee') }}</option><option value="epic" {% if swimlane == 'epic' %}selected{% endif %}>{{ tr('Rows by epic') }}</option></select></label>{% endset %}
 {% include "projects/_filters.html" %}
+{% if not can_edit %}<p class="panel" role="status">{{ tr('This board is read-only. Ask a project administrator for member access to move cards or edit work items.') }}</p>{% endif %}
 <section class="project-board" aria-label="{{ tr('Project board') }}" data-project-board data-project="{{ project.key }}" data-can-edit="{{ 'true' if can_edit else 'false' }}">
   <div class="project-board-columns project-board-heads">
     {% for column in columns %}{% set status = column.status %}{% set total = counts.get(status.id, 0) %}
@@ -25,13 +27,14 @@
         {% for item in items %}
         <article class="wi-card" draggable="{{ 'true' if can_edit else 'false' }}" data-item-key="{{ item.key }}" data-item-id="{{ item.id }}">
           <a class="wi-card-title" href="{{ url_for('projects.item_detail', item_key=item.key) }}">{{ item.title }}</a>
+          {% if item.flagged %}<span class="wi-card-flag"><span aria-hidden="true">⚑</span> {{ tr('Flagged') }}</span>{% endif %}
           {% if item.labels %}<div class="wi-labels">{% for label in item.labels[:3] %}<span class="wi-label">{{ label.label }}</span>{% endfor %}</div>{% endif %}
-          {% if item.parent and item.parent.item_type == 'epic' %}<span class="wi-epic" title="{{ tr('Epic') }}">{{ item.parent.title }}</span>{% endif %}
+          {% if workspace_view.show_epics and item.parent and item.parent.item_type == 'epic' %}<span class="wi-epic" title="{{ tr('Epic') }}">{{ item.parent.title }}</span>{% endif %}
           <div class="wi-card-meta">
-            {{ type_icon(item.item_type) }}<span class="wi-key">{{ item.key }}</span>{{ priority_icon(item.priority) }}
-            {% if item.story_points is not none %}<span class="wi-points" title="{{ tr('Story points') }}">{{ item.story_points|round(1)|string|replace('.0', '') }}</span>{% endif %}
+            {{ type_icon(item.item_type) }}<span class="wi-key">{{ item.key }}</span>{% if workspace_view.show_priority %}{{ priority_icon(item.priority) }}{% endif %}
+            {% if workspace_view.show_points and item.story_points is not none %}<span class="wi-points" title="{{ tr('Story points') }}">{{ item.story_points|round(1)|string|replace('.0', '') }}</span>{% endif %}
             {% if item.due_date %}<span class="wi-due{% if item.due_date < now().date() and item.status.category != 'done' %} overdue{% endif %}" title="{{ tr('Due date') }}">{{ item.due_date.strftime('%d %b') }}</span>{% endif %}
-            {{ assignee_faces(item.assignees) }}
+            {% if workspace_view.show_assignees %}{{ assignee_faces(item.assignees) }}{% endif %}
           </div>
         </article>
         {% endfor %}

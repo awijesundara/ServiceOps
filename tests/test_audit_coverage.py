@@ -18,13 +18,15 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCE_FILES = [ROOT / "app.py", *sorted((ROOT / "serviceops_core" / "web").glob("*.py")),
                 # Project routes delegate to their rules modules (B-443, B-449).
                 *[ROOT / "serviceops_core" / "projects" / f"{name}.py"
-                  for name in ("service", "tracking", "operations", "releases", "catalog")],
+                  for name in ("service", "tracking", "operations", "releases", "catalog", "roadmap", "planning_routes", "advanced_plans", "advanced_routes", "automation", "content", "content_routes")],
                 # Approval policies (B-460) and request withdrawal (B-461) audit in their rules modules.
                 ROOT / "serviceops_core" / "approval_policies.py", ROOT / "serviceops_core" / "request_withdrawal.py",
                 # Dashboards (B-464) audit in their rules module.
-                ROOT / "serviceops_core" / "dashboards.py"]
+                ROOT / "serviceops_core" / "dashboards.py", ROOT / "serviceops_core" / "premium_platform.py"]
 
 ALLOWLIST = {
+    "planning_view_settings": "updates only the caller's project display preferences; no shared work changes",
+    "api_planning_preferences": "updates only the caller's project display preferences; no shared work changes",
     "notification_mark_read": "marks the caller's own notification read; no shared record changes",
     "notifications_mark_all_read": "marks the caller's own notifications read; no shared record changes",
     "notifications_clear": "deletes the caller's own notifications; no shared record changes",

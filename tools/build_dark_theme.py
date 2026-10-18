@@ -52,7 +52,11 @@ LINE = {
     "accent-color", "scrollbar-color",
 }
 SHADOW = {"box-shadow", "text-shadow"}
-PROPERTIES = BACKGROUND | TEXT | FILL | LINE | SHADOW
+# Background shorthands reset image layout. Preserve that layout under the
+# same dark specificity as the image, otherwise select chevrons tile.
+BACKGROUND_LAYOUT = {'background-repeat', 'background-position', 'background-size',
+                     'background-attachment', 'background-origin', 'background-clip'}
+PROPERTIES = BACKGROUND | BACKGROUND_LAYOUT | TEXT | FILL | LINE | SHADOW
 
 HEX = re.compile(r"#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b")
 RGB = re.compile(r"rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)")

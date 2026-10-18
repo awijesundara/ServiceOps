@@ -48,6 +48,8 @@ def item_document(item, include_comments=False):
         "resolved_at": item.resolved_at.isoformat() if item.resolved_at else None,
     }
     if include_comments:
+        from serviceops_core.projects.content import responses
+        document["form_responses"] = responses(item)
         document["comments"] = [
             {"id": row.id, "author": row.author.username, "body": row.body, "created_at": row.created_at.isoformat()}
             for row in service.visible_comments(g.api_user, item)]
@@ -95,6 +97,8 @@ def _fields(body, project):
             abort(400, description=tr("assignee_ids must be a list of user ids."))
         fields["assignee_ids"] = body["assignee_ids"]
     if "parent_key" in body:
+        if body["parent_key"] is not None and not isinstance(body["parent_key"], str):
+            abort(400, description=tr("parent_key must be a work item key."))
         parent = service.find_visible_item(g.api_user, body["parent_key"]) if body["parent_key"] else None
         if body["parent_key"] and (not parent or parent.project_id != project.id):
             abort(400, description=tr("parent_key must be a work item in this project."))
@@ -104,6 +108,18 @@ def _fields(body, project):
 
 def register(app):
     register_phase2(app)
+    from serviceops_core.projects import search_api
+    search_api.register(app, _user, item_document)
+    from serviceops_core.projects import sprint_routes
+    sprint_routes.register_api(app, _user, item_document)
+    from serviceops_core.projects import planning_routes
+    planning_routes.register_api(app, _user)
+    from serviceops_core.projects import advanced_routes
+    advanced_routes.register_api(app, _user)
+    from serviceops_core.projects import content_routes
+    content_routes.register_api(app, _user)
+    from serviceops_core.web import premium_administration
+    premium_administration.register(app)
 
     @app.get("/api/v1/projects")
     def api_projects():
@@ -129,7 +145,7 @@ def register(app):
         except ValueError:
             abort(400, description=tr("limit and cursor must be integers."))
         filters = {name: request.args.get(name, "").strip() for name in
-                   ("q", "type", "status", "category", "priority", "assignee", "label", "epic")
+                   ("q", "type", "status", "category", "priority", "assignee", "label", "epic", "sprint")
                    if request.args.get(name, "").strip()}
         rows = service.item_query(project, filters, user).filter(WorkItem.number > cursor).order_by(
             WorkItem.number).limit(limit + 1).all()

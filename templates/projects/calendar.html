@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('Calendar') }} · {{ instance_name }}{% endblock %}
+{% block content %}{% include "projects/_header.html" %}
+<div class="project-view-heading"><h2>{{ tr('Calendar') }} · {{ month }}</h2><a class="button" href="{{ url_for('projects.planning_timeline',key=project.key) }}">{{ tr('Timeline') }}</a></div>
+<form class="panel planning-toolbar" method="get"><a class="button" href="?month={{ previous }}">← {{ tr('Previous') }}</a><label>{{ tr('Month') }}<input type="month" name="month" value="{{ month }}" required></label><button>{{ tr('Open month') }}</button><a class="button" href="?month={{ following }}">{{ tr('Next') }} →</a></form>
+<p>{{ tr('Work-item start and due dates appear below. Open an item to update its dates, or propose dates from the timeline. Goal targets are shown as milestones.') }}</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="{{ tr('Monthly project calendar') }}"><div class="planning-calendar">
+{% for day in ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'] %}<strong>{{ tr(day) }}</strong>{% endfor %}
+{% for cell in cells %}<section class="calendar-day{% if not cell.current %} calendar-other{% endif %}{% if cell.today %} calendar-today{% endif %}" aria-label="{{ cell.date }}"><time datetime="{{ cell.date }}">{{ cell.day }}</time>{% for event in cell.events %}<a href="{{ url_for('projects.item_detail',item_key=event.item.key) }}"><span class="wi-status wi-status-{{ event.item.category }}">{{ tr(event.kind) }}</span> {{ event.item.key }} · {{ event.item.title }}</a>{% endfor %}{% for goal in goals if goal.target_date==cell.date %}<a href="{{ url_for('projects.planning_goals',key=project.key) }}">◎ {{ goal.title }}</a>{% endfor %}</section>{% endfor %}
+</div></div>
+{% endblock %}

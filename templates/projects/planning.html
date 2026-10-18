@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('Cross-project planning') }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">{{ tr('PROJECT MANAGEMENT') }}</p><h1>{{ tr('Cross-project planning') }}</h1><p>{{ tr('Dates, remaining effort and dependencies across projects you can access.') }}</p></div><a class="button" href="{{ url_for('projects.index') }}">{{ tr('Projects') }}</a></header>
+<p><a class="primary" href="{{ url_for('projects.portfolio_timeline') }}">{{ tr('Open cross-project timeline') }}</a></p>
+<section class="panel">
+  <h2>{{ tr('Schedule preview') }}</h2>
+  <form method="get" class="actions"><label>{{ tr('Shift dates by days') }} <input type="number" name="shift" min="-3650" max="3650" value="{{ shift_days }}" required aria-describedby="preview-help"></label><button class="primary">{{ tr('Preview') }}</button><a class="button" href="{{ url_for('projects.planning_overview') }}">{{ tr('Reset') }}</a></form>
+  <p class="muted" id="preview-help">{{ tr('Preview only: stored dates stay unchanged. Remaining effort is recorded work, not available team capacity. Date rollups cover every work item in each project.') }}</p>
+  {% if shift_days %}<p role="status">{{ tr('Preview is active. Dates shown below are shifted; nothing has been saved.') }}</p>{% endif %}
+</section>
+<section class="panel">
+  <h2>{{ tr('Portfolio overview') }} <small>({{ project_total }})</small></h2>
+  <div class="table-scroll"><table class="project-table"><thead><tr><th>{{ tr('Project') }}</th><th>{{ tr('Progress') }}</th><th>{{ tr('Start date') }}</th><th>{{ tr('Due date') }}</th><th>{{ tr('Overdue') }}</th><th>{{ tr('Unscheduled open work') }}</th><th>{{ tr('Remaining effort (hours)') }}</th></tr></thead><tbody>
+  {% for project in projects %}{% set summary = summaries.get(project.id, {}) %}<tr><td><a href="{{ url_for('projects.board', key=project.key) }}">{{ project.name }}</a></td><td>{{ summary.get('done', 0) }} / {{ summary.get('total', 0) }}</td><td>{{ summary.get('start') or '—' }}</td><td>{{ summary.get('due') or '—' }}</td><td>{{ summary.get('overdue', 0) }}</td><td>{{ summary.get('unscheduled', 0) }}</td><td>{{ '%.1f'|format(summary.get('remaining', 0) / 60) }}</td></tr>{% else %}<tr><td colspan="7">{{ tr('No projects available.') }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <nav class="actions" aria-label="{{ tr('Planning pages') }}">{% if page_number > 1 %}<a class="button" href="{{ url_for('projects.planning_overview', page=page_number-1, shift=shift_days) }}">{{ tr('Previous') }}</a>{% endif %}<span>{{ page_number }} / {{ page_count }}</span>{% if page_number < page_count %}<a class="button" href="{{ url_for('projects.planning_overview', page=page_number+1, shift=shift_days) }}">{{ tr('Next') }}</a>{% endif %}</nav>
+</section>
+<section class="panel"><h2>{{ tr('Dependency review') }}</h2><p>{{ tr('Blocking links from projects on this page to work you can access. A warning appears when the blocker finishes after the dependent work starts. A uniform date shift does not change these conflicts.') }}</p>
+<div class="table-scroll"><table class="project-table"><thead><tr><th>{{ tr('Blocker') }}</th><th>{{ tr('Dependent work') }}</th><th>{{ tr('Schedule') }}</th></tr></thead><tbody>{% for row in dependencies %}<tr><td><a href="{{ url_for('projects.item_detail', item_key=row.source.key) }}">{{ row.source.key }} · {{ row.source.title }}</a></td><td><a href="{{ url_for('projects.item_detail', item_key=row.target.key) }}">{{ row.target.key }} · {{ row.target.title }}</a></td><td>{{ tr('Date conflict') if row.conflict else tr('No date conflict detected') }}</td></tr>{% else %}<tr><td colspan="3">{{ tr('No visible blocking dependencies for these projects.') }}</td></tr>{% endfor %}</tbody></table></div>
+{% if dependency_total > dependencies|length %}<p class="muted">{{ tr('Showing the first 100 dependencies. Open the relevant project work item to review additional links.') }}</p>{% endif %}
+</section>
+{% endblock %}

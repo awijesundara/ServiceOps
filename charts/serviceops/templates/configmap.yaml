@@ -12,3 +12,6 @@ data:
   METRICS_ENABLED: "true"
   OTEL_SERVICE_NAME: "serviceops"
   OTEL_RESOURCE_ATTRIBUTES: {{ printf "service.version=%s,deployment.environment=%s" .Chart.AppVersion .Values.deploymentProfile | quote }}
+  SERVICEOPS_IMAGE_REFERENCE: {{ include "serviceops.imageRef" . | quote }}
+  PREMIUM_SANDBOX_ENABLED: {{ .Values.premium.sandbox.enabled | quote }}
+  SANDBOX_NAMESPACE: {{ .Values.premium.sandbox.namespace | quote }}
