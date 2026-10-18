@@ -22,6 +22,16 @@ def test_metrics_exposes_operational_signals(client):
     assert response.headers["Content-Type"].startswith("text/plain")
 
 
+def test_metrics_without_a_token_stay_off_the_proxy(client, monkeypatch):
+    monkeypatch.delenv("METRICS_TOKEN", raising=False)
+    assert client.get("/metrics", headers={"X-Forwarded-For": "203.0.113.9"}).status_code == 404
+    assert client.get("/metrics", environ_base={"REMOTE_ADDR": "93.184.216.34"}).status_code == 404
+    monkeypatch.setenv("METRICS_TOKEN", "scrape-secret")
+    proxied = {"X-Forwarded-For": "203.0.113.9"}
+    assert client.get("/metrics", headers=proxied).status_code == 401
+    assert client.get("/metrics", headers=proxied | {"Authorization": "Bearer scrape-secret"}).status_code == 200
+
+
 def test_request_metrics_are_db_backed_not_in_process(client, app):
     # B-285: an in-process Counter() undercounts across Gunicorn's multiple
     # worker processes -- this asserts the fix (a shared DB row) actually

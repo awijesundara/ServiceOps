@@ -15,10 +15,10 @@ import re
 from markupsafe import Markup, escape
 
 # URLs are matched on escaped text: "&" may only appear as "&amp;", so an
-# escaped quote (&#34;) always ends a URL.
-URL_CHARS = r"(?:[^\s<&)]|&amp;)"
+# escaped quote (&#34;) always ends a URL, and so does a code placeholder.
+URL_CHARS = r"(?:[^\s<&)\x00\x01]|&amp;)"
 LINK = re.compile(r"\[([^\]\n]{1,300})\]\(((?:https?://|mailto:)" + URL_CHARS + r"{1,2000})\)")
-BARE_URL = re.compile(r"(?<![\"'=>/\w])(https?://" + URL_CHARS + r"{0,2000}[^\s<&.,;:!?)\]'\"])")
+BARE_URL = re.compile(r"(?<![\"'=>/\w])(https?://" + URL_CHARS + r"{0,2000}[^\s<&.,;:!?)\]'\"\x00\x01])")
 BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")
 ITALIC = re.compile(r"(?<![\*\w])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\*\w])")
 STRIKE = re.compile(r"~~(?=\S)(.+?)(?<=\S)~~")
@@ -73,7 +73,10 @@ def render(text, mention=None, item_link=None):
     """HTML for `text`. `mention` and `item_link`, when given, receive
     escaped inline text and return it with @mentions or work item keys
     turned into links."""
-    lines = str(escape(text or "")).replace("\r\n", "\n").split("\n")
+    # \x00 and \x01 mark protected code spans and links in _inline; they
+    # are never meaningful in user text.
+    text = (text or "").replace("\x00", "").replace("\x01", "")
+    lines = str(escape(text)).replace("\r\n", "\n").split("\n")
     out, paragraph, index = [], [], 0
 
     def flush():

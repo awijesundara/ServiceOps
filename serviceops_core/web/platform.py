@@ -2,6 +2,7 @@
 
 Moved from app.create_app(); endpoint names are unchanged."""
 import hmac
+import ipaddress
 import os
 import time as time_module
 from datetime import datetime, timedelta
@@ -43,6 +44,15 @@ from serviceops_models import (
     User,
 )
 from serviceops_core.localization import tr
+
+
+def _direct_private_scrape():
+    if request.headers.get("X-Forwarded-For") or request.headers.get("Forwarded"):
+        return False
+    try:
+        return ipaddress.ip_address(request.remote_addr or "").is_private
+    except ValueError:
+        return False
 
 
 def register(app):
@@ -269,6 +279,10 @@ def register(app):
         supplied_token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         if configured_token and not hmac.compare_digest(configured_token, supplied_token):
             abort(401)
+        if not configured_token and not _direct_private_scrape():
+            # Without a token, only a scraper on the private network that
+            # reaches the pod directly (not through the proxy) may read them.
+            abort(404)
         heartbeat = db.session.get(PlatformSetting, "WORKER_LAST_HEARTBEAT")
         worker_up = 0
         if heartbeat and heartbeat.value:
