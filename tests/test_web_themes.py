@@ -1,6 +1,7 @@
 """Account theme persistence and real browser selection regressions."""
 import os
 import re
+import tempfile
 import threading
 
 import pytest
@@ -95,7 +96,7 @@ def test_theme_cards_keyboard_save_and_render(app, width):
                 assert contrast >= 4.5, (theme, contrast)
                 page.locator('h1').click()
                 page.evaluate('window.scrollTo(0, 0)')
-                page.screenshot(path=f'/private/tmp/serviceops-preview-{theme}-{width}.png', full_page=True)
+                page.screenshot(path=f'{tempfile.gettempdir()}/serviceops-preview-{theme}-{width}.png', full_page=True)
             page.get_by_role('button', name='Reset preview', exact=True).click()
             expect(page.locator('body')).to_have_class(re.compile('theme-light'))
             expect(page.locator('input[name=theme][value=light]')).to_be_checked()
@@ -157,7 +158,7 @@ def test_theme_cards_keyboard_save_and_render(app, width):
                     page.wait_for_load_state('networkidle')
                     expect(page.locator('body')).to_have_class(re.compile(f'theme-{theme}'))
                     assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), (theme, path, width)
-                    page.screenshot(path=f'/private/tmp/serviceops-workspace-{theme}-{width}-{path.strip("/").replace("/", "-") or "home"}.png', full_page=True)
+                    page.screenshot(path=f'{tempfile.gettempdir()}/serviceops-workspace-{theme}-{width}-{path.strip("/").replace("/", "-") or "home"}.png', full_page=True)
             assert not errors
             browser.close()
     finally:

@@ -1,6 +1,7 @@
 """Complete draft transfer, timezone conversion, references and review-only creation."""
 import json
 import re
+import tempfile
 import uuid
 
 from app import ConfigurationItem, SupportGroup, Ticket, db
@@ -181,9 +182,9 @@ def test_complete_change_draft_browser(app, client, world, width):
             expect(page.locator('.lookup-chip [name=ci_id]')).to_have_value(str(ci_id))
             for name in ('implementation_plan', 'test_plan', 'backout_plan', 'description'):
                 expect(page.locator(f'[name={name}]')).to_have_value(draft_fields()[name].strip())
-            page.screenshot(path=f'/private/tmp/serviceops-ai-complete-draft-{width}.png', full_page=True)
+            page.screenshot(path=f'{tempfile.gettempdir()}/serviceops-ai-complete-draft-{width}.png', full_page=True)
             assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), page.evaluate("Array.from(document.querySelectorAll('body *')).filter(e=>e.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(e=>({tag:e.tagName,cls:e.className,width:e.getBoundingClientRect().width}))")
-            page.screenshot(path=f'/private/tmp/serviceops-ai-complete-draft-{width}.png', full_page=True)
+            page.screenshot(path=f'{tempfile.gettempdir()}/serviceops-ai-complete-draft-{width}.png', full_page=True)
             page.get_by_role('button', name='Create change', exact=True).click()
             page.wait_for_load_state('networkidle')
             assert '/ticket/' in page.url
