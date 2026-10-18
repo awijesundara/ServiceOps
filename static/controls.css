@@ -1,0 +1,55 @@
+/* Shared control contract. Keep navigation, icon tools, cards and tree toggles
+   under their own component styles; action controls share one geometry. */
+:root{--control-height:38px;--control-radius:6px;--control-font-size:14px;--control-border:#8999a5}
+body.density-compact{--control-height:34px}
+body main :is(.button,.primary,button[type=submit]:not([class])){min-height:var(--control-height);height:auto;padding:calc((var(--control-height) - 22px)/2) 14px;border-radius:var(--control-radius);font-size:var(--control-font-size);font-weight:600;line-height:20px;box-sizing:border-box;vertical-align:middle}
+/* These properties are the shared action contract, including older table rules.
+   Component-specific colors and layout remain independently configurable. */
+body main :is(.button,.primary){min-height:var(--control-height)!important;height:auto!important;padding:calc((var(--control-height) - 22px)/2) 14px!important;border-radius:var(--control-radius)!important;font-size:var(--control-font-size)!important;line-height:20px!important;font-weight:600!important}
+body main :is(a.button,a.primary,summary.button){display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}
+body main :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]):not([type=submit]):not([type=button]),select,textarea){min-height:var(--control-height);border:1px solid var(--control-border);border-radius:var(--control-radius);padding:calc((var(--control-height) - 22px)/2) 10px;font-size:var(--control-font-size);line-height:20px;color:var(--ink);background-color:var(--white);box-sizing:border-box}
+body main textarea{height:auto;resize:vertical}
+body main select{padding-inline-end:30px}
+body main .select-enhance input{padding-inline-end:34px}
+body main .select-enhance select{min-height:0}
+body main input:is([type=checkbox],[type=radio]):not(.switch input):not(.theme-option input){width:18px;height:18px;min-width:18px;min-height:18px;margin:0;vertical-align:middle;accent-color:var(--green);cursor:pointer;flex-shrink:0}
+/* Palette cards use visually hidden radios; retain their accessible label. */
+body main .theme-option input{width:1px;height:1px;min-width:0;min-height:0}
+body main :is(button,input,select,textarea):disabled{cursor:not-allowed;opacity:.6}
+body main :is(input,textarea)[readonly]{background-color:var(--bg)}
+body main :is(button,input,select,textarea,a.button,summary.button):focus-visible{outline:3px solid var(--green);outline-offset:2px}
+html.theme-dark{--control-border:#8495a6}
+html.theme-dark body main :is(button,input,select,textarea,a.button,summary.button):focus-visible{outline-color:var(--dk-accent)}
+/* The active location is communicated by shape and color, not font weight. */
+body .project-tabs{gap:4px;border-bottom:2px solid var(--line);padding-top:3px;overflow-x:auto;scroll-padding-inline:12px}
+body .project-tabs a{position:relative;display:inline-flex;align-items:center;min-height:44px;padding:10px 14px;margin-bottom:0;border:0;border-radius:5px 5px 0 0;font-size:14px;font-weight:600;color:var(--muted);text-decoration:none;white-space:nowrap}
+body .project-tabs a:hover{background:var(--bg);color:var(--ink)}
+body .project-tabs a[aria-current=page]{background:var(--brand-teal-soft,#e8f2f4);color:var(--ink)}
+body .project-tabs a[aria-current=page]::after{content:"";position:absolute;inset-inline:8px;bottom:0;height:3px;background:var(--green);border-radius:3px 3px 0 0}
+body .wi-tabs button[aria-selected=true]{background:var(--brand-teal-soft,#e8f2f4);color:var(--ink);border-bottom:3px solid var(--green)}
+html.theme-dark body .project-tabs a[aria-current=page],html.theme-dark body .wi-tabs button[aria-selected=true]{background:var(--surface-subtle,#25343f);color:var(--ink)}
+html.theme-dark body .project-tabs a[aria-current=page]::after{background:var(--dk-accent)}
+html.theme-dark body .wi-tabs button[aria-selected=true]{border-bottom-color:var(--dk-accent)}
+@media(pointer:coarse){body,body.density-compact{--control-height:44px}body main input:is([type=checkbox],[type=radio]):not(.switch input):not(.theme-option input){width:22px;height:22px;min-width:22px;min-height:22px}body main .theme-option input{width:1px;height:1px;min-width:0;min-height:0}}
+
+/* Single-line fields and adjacent form actions share actual geometry, rather
+   than competing module-specific height and padding combinations. */
+body main input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]):not([type=submit]):not([type=button]),body main select:not([multiple]):not([size]):not(.select-enhance select){height:var(--control-height)!important;min-height:var(--control-height)!important;font-size:var(--control-font-size)!important;line-height:20px!important;border-radius:var(--control-radius)!important}
+body main form button:not([type=button]):not([class]){min-height:var(--control-height);padding:calc((var(--control-height) - 22px)/2) 14px;border-radius:var(--control-radius);font-size:var(--control-font-size);line-height:20px;font-weight:600;box-sizing:border-box}
+body main .project-filters .project-filter-search input{padding-inline-start:32px}
+body main :is(.project-filter-actions,.wi-toolbar,.project-head-actions,.record-actions){align-items:center;gap:8px}
+body main :is(.planning-toolbar,.project-filters){column-gap:12px;row-gap:12px;align-items:flex-end}
+body main .planning-toolbar>button{align-self:flex-end}
+body main .wi-toolbar .inline-form{align-items:center;gap:8px;margin:0}
+body main .planning-toolbar label{gap:6px}
+/* Action-link layout must not reveal collapsed or explicitly hidden tools. */
+body main summary.project-filters-toggle{display:none}
+@media(max-width:560px){body main summary.project-filters-toggle{display:inline-flex}}
+body main :is(.button,.primary)[hidden]{display:none!important}
+
+body main select[multiple]{height:auto;min-height:112px}
+body main :is(.actions,div.planning-toolbar){align-items:center;gap:8px}
+body main form.actions:has(>label){align-items:flex-end}
+/* Wrap whole heading actions on narrow screens, never their button labels. */
+body main .project-view-heading .actions{display:flex;flex:1 1 auto;justify-content:flex-end;flex-wrap:wrap;min-width:0}
+body main .project-view-heading .actions>button,body main .project-view-heading .actions>details{flex:0 0 auto;white-space:nowrap}

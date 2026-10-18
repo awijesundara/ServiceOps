@@ -138,7 +138,7 @@ jobs:
           docker run --rm --network host \
             -e ARCHITECTURE_DATABASE_URL -e REALTIME_DATABASE_URL \
             "serviceops-test:${RELEASE_SHA}" \
-            pytest -q tests/test_architecture_transactions.py tests/test_project_query_postgres.py tests/test_project_sprints_postgres.py tests/test_realtime_events.py
+            pytest -q tests/test_architecture_transactions.py tests/test_project_query_postgres.py tests/test_project_sprints_postgres.py tests/test_project_hierarchy_postgres.py tests/test_project_planning_postgres.py tests/test_project_premium_postgres.py tests/test_realtime_events.py
 
       - name: Validate shell, JavaScript, and Compose configuration
         env:
@@ -322,7 +322,8 @@ jobs:
           mkdir -p "${E2E_ARTIFACT_DIR}"
           python -m pytest tests/test_e2e_smoke.py -v
           RUN_ADMIN_ASSIGNMENT_BROWSER=1 python -m pytest tests/test_admin_assignment_browser.py -v
-          RUN_PROJECTS_BROWSER=1 python -m pytest tests/test_project_query_browser.py tests/test_project_sprints_browser.py -v
+          RUN_LIST_FILTER_BROWSER=1 python -m pytest tests/test_list_filter_browser.py -v
+          RUN_PROJECTS_BROWSER=1 python -m pytest tests/test_project*browser.py tests/test_control_standards_browser.py -v
 
       - name: Capture Compose diagnostics on failure
         if: failure()

@@ -51,6 +51,7 @@
   <script src="{{ url_for('static', filename='ai-chat.js', v=asset_version) }}" defer></script>
   <script src="{{ url_for('static', filename='ai-chat-panel.js', v=asset_version) }}" defer></script>
   {% endif %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='controls.css', v=asset_version) }}">
   {# Last, so its html.theme-dark rules follow every light stylesheet. "system" lets the browser apply it only while the device is in dark mode. #}
   {% if request.endpoint == 'preferences' or ui_theme in ui_dark_themes or ui_theme == 'system' %}<link id="serviceops-dark-theme" rel="stylesheet" href="{{ url_for('static', filename='dark.css', v=asset_version) }}" media="{{ theme_dark_media }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='themes.css', v=asset_version) }}">
@@ -205,7 +206,7 @@
 </aside>
 <header class="unified-nav">
   <button class="nav-toggle" type="button" data-nav-toggle aria-label="{{ tr('Toggle navigation') }}" aria-expanded="true"><svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
-  {% if request.blueprint=='projects' %}<nav class="project-global-nav" aria-label="{{ tr('Project workspace navigation') }}"><a href="{{ url_for('projects.your_work') }}">{{ tr('Your work') }}</a><a href="{{ url_for('projects.index') }}">{{ tr('Projects') }}</a><a href="{{ url_for('projects.issue_navigator') }}">{{ tr('Filters') }}</a><a href="{{ url_for('dashboards_home') }}">{{ tr('Dashboards') }}</a><a href="{{ url_for('projects.advanced_plan_index') }}">{{ tr('Plans') }}</a><a class="primary" href="{{ url_for('projects.global_create') }}">{{ tr('Create') }}</a></nav>{% endif %}
+  {% if request.blueprint=='projects' %}{% include 'projects/_global_nav.html' %}{% endif %}
   <form action="{{ url_for('global_search') }}" class="global-search"><span><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span><input name="q" placeholder="{{ tr('Search ServiceOps') }}" aria-label="{{ tr('Search ServiceOps') }}"></form>
   <div class="nav-menus">
     <details data-nav-menu="favorites">

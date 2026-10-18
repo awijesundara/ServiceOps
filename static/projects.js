@@ -505,3 +505,25 @@
     } finally { saving = false; }
   });
 })();
+
+// Reveal the selected section without scrolling the document or moving focus.
+(function () {
+  "use strict";
+  function revealCurrentSection() {
+    try {
+      document.querySelectorAll('.project-tabs, .project-global-nav').forEach((nav) => {
+        const current = nav.querySelector('a[aria-current]');
+        if (!current || nav.clientWidth === 0) return;
+        const bounds = nav.getBoundingClientRect();
+        const selected = current.getBoundingClientRect();
+        const shift = selected.left < bounds.left ? selected.left - bounds.left - 8 :
+          selected.right > bounds.right ? selected.right - bounds.right + 8 : 0;
+        if (shift) nav.scrollBy({left: shift, behavior: 'instant'});
+      });
+    } catch (error) {
+      console.error('Project navigation selection could not be revealed');
+    }
+  }
+  requestAnimationFrame(revealCurrentSection);
+  window.addEventListener('resize', revealCurrentSection, {passive: true});
+})();

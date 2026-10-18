@@ -100,7 +100,7 @@ def validate_answers(config,answers):
                 value=float(value)
                 if not math.isfinite(value) or abs(value)>10**9 or (kind=='integer' and not value.is_integer()):raise ValueError()
                 if kind=='integer':value=int(value)
-            except (ValueError,TypeError):abort(400,description=tr('Enter a valid number for {field}.',field=field['label']))
+            except (ValueError,TypeError,OverflowError):abort(400,description=tr('Enter a valid number for {field}.',field=field['label']))
         elif kind=='date':value=roadmap.parse_date(value,True).isoformat()
         elif kind=='boolean':
             if value in ('true','false'):value=value=='true'
