@@ -260,7 +260,7 @@ def submitted_subcategory(form, fallback="", name="subcategory"):
     value = form.get(name, fallback)
     return form.get(f"{name}_other", "") if value == "__other__" else value
 
-# Generic ServiceNow-style list filtering: a list view declares which
+# Generic list filtering: a list view declares which
 # columns are filterable (FilterField) and the client posts back a JSON
 # array of {field, op, value} conditions (see static/list-filter.js). All
 # lists share this one implementation instead of each route inventing its
@@ -346,7 +346,7 @@ def apply_filter_conditions(query, conditions, field_spec, extra_handlers=None):
 
 def filter_conditions_breadcrumb(conditions, field_spec, value_labels=None):
     """Human-readable "Field is Value" breadcrumb text for the active
-    filter, mirroring ServiceNow's list-view breadcrumb."""
+    filter, shown as the list view's breadcrumb."""
     value_labels = value_labels or {}
     parts = []
     for condition in conditions:

@@ -1,4 +1,4 @@
-// ServiceNow-style list filter builder: "choose field / operator / value"
+// List filter builder: "choose field / operator / value"
 // condition rows that serialize to a `filter` query param (JSON array of
 // {field, op, value}), submitted via the list's existing search <form> so
 // paging, CSV export links, etc. only need to read one query param.

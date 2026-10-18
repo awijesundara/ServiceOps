@@ -57,9 +57,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // ones like "LDAP directory sync" that have no other menu entry of their
   // own -- matched against both the card's visible text and a data-keywords
   // attribute carrying synonyms (e.g. "active directory", "sso") a card's
-  // own title/description wouldn't otherwise contain. Modeled on Salesforce
-  // Setup's Quick Find / ServiceNow's Filter Navigator: live-filters in
-  // place, never navigates away just from typing.
+  // own title/description wouldn't otherwise contain. It filters in place
+  // and never navigates away just from typing.
   const quickFind = document.querySelector("[data-admin-quick-find]");
   if (quickFind) {
     const sections = [...document.querySelectorAll("[data-admin-home-section]")];

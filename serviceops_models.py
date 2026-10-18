@@ -2138,7 +2138,7 @@ class ServiceOffering(db.Model):
 
 
 class TicketCategory(db.Model):
-    """Admin-configurable ITIL v4/ServiceNow-style ticket category. Ticket.category
+    """Admin-configurable ITIL v4-style ticket category. Ticket.category
     stays free text (see migration 20260926_0103) -- this table supplies the controlled
     vocabulary the ticket form and AI drafting validate against, replacing what used to
     be a hard-coded Python list, without a destructive FK migration of existing data."""
