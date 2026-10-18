@@ -323,7 +323,7 @@ jobs:
           python -m pytest tests/test_e2e_smoke.py -v
           RUN_ADMIN_ASSIGNMENT_BROWSER=1 python -m pytest tests/test_admin_assignment_browser.py -v
           RUN_LIST_FILTER_BROWSER=1 python -m pytest tests/test_list_filter_browser.py -v
-          RUN_PROJECTS_BROWSER=1 python -m pytest tests/test_project*browser.py tests/test_control_standards_browser.py -v
+          RUN_PROJECTS_BROWSER=1 python -m pytest -n 2 tests/test_project*browser.py tests/test_control_standards_browser.py -v
 
       - name: Capture Compose diagnostics on failure
         if: failure()
