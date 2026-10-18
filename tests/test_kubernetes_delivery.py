@@ -72,13 +72,14 @@ def test_every_workload_builds_links_from_the_configured_public_origin():
     for name in ("deployment.yaml", "worker.yaml", "ai-worker.yaml"):
         assert entry in (ROOT / "charts/serviceops/templates" / name).read_text(), name
 
-def test_safe_update_changes_the_governed_digest_and_is_atomic():
+def test_safe_update_changes_the_governed_digest_and_waits_without_rollback():
     script = (ROOT / "tools/safe_update_k8s.sh").read_text()
     assert 'TARGET_DIGEST="${2:-}"' in script
     assert '--set-string "image.digest=$TARGET_DIGEST"' in script
     assert 'SERVICEOPS_BACKUP_REFERENCE' in script
     assert '--set-string "database.backupReference=$BACKUP_REFERENCE"' in script
-    assert "--atomic --wait" in script
+    assert "--wait --timeout 10m" in script
+    assert "--atomic" not in script
     assert "rollouts.argoproj.io" in script
     assert "--for=jsonpath='{.status.phase}'=Healthy" in script
     assert 'deployment/$RELEASE-worker' in script

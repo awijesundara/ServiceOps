@@ -50,11 +50,14 @@ def verify_supply_chain() -> dict[str, object]:
     ):
         errors.append("Every Kubernetes deployment action must be pinned to a full commit SHA.")
     for required in (
-        "gh attestation verify", 'image.digest=$IMAGE_DIGEST', "--atomic --wait",
+        "gh attestation verify", 'image.digest=$IMAGE_DIGEST', "--wait --timeout 10m",
         "KUBE_CONFIG_B64", "KUBERNETES_VALUES_B64", "environment: production",
     ):
         if required not in deployment_workflow:
             errors.append(f"Kubernetes deployment workflow is missing {required!r}.")
+
+    if re.search(r"(?<![\w-])--atomic\b", deployment_workflow):
+        errors.append("ServiceOps deployment must not automatically roll back after schema migration.")
 
     values = (ROOT / "charts/serviceops/values.yaml").read_text(encoding="utf-8")
     match = re.search(r"^\s*digest:\s*[\"']?([^\"' ]+)", values, re.MULTILINE)
@@ -86,8 +89,16 @@ def verify_supply_chain() -> dict[str, object]:
     installer = (
         ROOT / "tools/install/kubernetes.sh"
     ).read_text(encoding="utf-8")
+    serviceops_upgrade = installer.split('helm upgrade --install "$RELEASE"', 1)
+    if len(serviceops_upgrade) != 2 or "--wait --timeout 10m" not in serviceops_upgrade[1]:
+        errors.append("ServiceOps installer must wait for the migration-safe upgrade.")
+    elif re.search(r"(?<![\w-])--atomic\b", serviceops_upgrade[1]):
+        errors.append("ServiceOps installer must not automatically roll back after schema migration.")
     if "policy.sigstore.dev/include" not in installer:
         errors.append("Kubernetes installer does not enable attestation admission.")
+    update_script = (ROOT / "tools/safe_update_k8s.sh").read_text(encoding="utf-8")
+    if "--wait --timeout 10m" not in update_script or re.search(r"(?<![\w-])--atomic\b", update_script):
+        errors.append("ServiceOps update tool must not automatically roll back after schema migration.")
     if errors:
         raise RuntimeError("Supply-chain verification failed: " + " ".join(errors))
     return {

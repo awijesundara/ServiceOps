@@ -26,7 +26,7 @@ def document(row):
 def integer(value,default=None):
     if value in ('',None):return default
     try:
-        if isinstance(value,bool):raise ValueError()
+        if type(value) not in (str,int):raise ValueError()
         return int(value)
     except (TypeError,ValueError):abort(400)
 

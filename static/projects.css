@@ -694,3 +694,23 @@ select:not([multiple]){appearance:none;-webkit-appearance:none;padding-right:30p
 
 .structure-table button[data-structure-toggle][hidden]{display:inline-block!important;visibility:hidden}
 [data-intake-fields] fieldset{border:1px solid var(--border);padding:16px;margin:12px 0;display:grid;gap:12px}
+
+/* Workspace navigation: persistent section identity, including deep links. */
+.project-global-nav{gap:4px;align-self:stretch;align-items:center}
+.project-global-nav>a{position:relative;display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:8px 11px;border-radius:5px;font-size:13px;line-height:20px}
+.project-global-nav>a:not(.primary):hover{background:var(--bg)}
+.project-global-nav>a[aria-current]:not(.primary){background:var(--brand-teal-soft,#e8f2f4);color:var(--ink)}
+.project-global-nav>a[aria-current]::after{content:"";position:absolute;inset-inline:9px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--green)}
+.project-global-nav>a.primary[aria-current]::after{background:currentColor}
+html.theme-dark .project-global-nav>a[aria-current]:not(.primary){background:var(--surface-subtle,#25343f);color:var(--ink)}
+html.theme-dark .project-global-nav>a[aria-current]:not(.primary)::after{background:var(--dk-accent)}
+@media(max-width:1199px){
+  .project-app .unified-nav{display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:8px;height:auto;padding:8px 16px}
+  .project-app .nav-toggle{grid-row:1;grid-column:1}
+  .project-app .global-search{grid-row:1;grid-column:2;min-width:0;width:100%;max-width:none}
+  .project-app .global-search input{min-width:0}
+  .project-app .nav-menus{grid-row:1;grid-column:3}
+  .project-app .project-global-nav{display:flex;grid-row:2;grid-column:1/-1;min-width:0;overflow-x:auto;max-width:100%;padding-bottom:3px;scroll-padding-inline:8px}
+  .project-global-nav>a{flex-shrink:0}
+}
+@media(min-width:901px) and (max-width:1199px){.project-app main{padding-top:138px}}

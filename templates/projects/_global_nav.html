@@ -1,0 +1,12 @@
+{# Resolve the section on the server so deep links and reloads stay selected. #}
+{% set endpoint = request.endpoint or '' %}
+{% set selected = 'projects' %}
+{% if endpoint == 'projects.your_work' %}{% set selected = 'work' %}
+{% elif endpoint == 'projects.issue_navigator' %}{% set selected = 'filters' %}
+{% elif endpoint.startswith('projects.advanced_') or endpoint in ('projects.portfolio_timeline','projects.planning_review','projects.planning_overview') %}{% set selected = 'plans' %}
+{% elif endpoint == 'projects.global_create' %}{% set selected = 'create' %}{% endif %}
+<nav class="project-global-nav" aria-label="{{ tr('Project workspace navigation') }}">
+  {% for section, label, target in [('work','Your work','projects.your_work'),('projects','Projects','projects.index'),('filters','Filters','projects.issue_navigator'),('plans','Plans','projects.advanced_plan_index'),('create','Create','projects.global_create')] %}
+  <a href="{{ url_for(target) }}"{% if section == 'create' %} class="primary"{% endif %}{% if section == selected %} aria-current="{{ 'page' if endpoint == target else 'location' }}"{% endif %}>{{ tr(label) }}</a>
+  {% endfor %}
+</nav>

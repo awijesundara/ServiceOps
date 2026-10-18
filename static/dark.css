@@ -1404,6 +1404,12 @@ html.theme-dark .summary-activity strong{color:var(--dk-accent)}
 html.theme-dark .project-table td>small{color:var(--muted)}
 html.theme-dark .timeline-connectors .plan-grid-line{stroke:var(--line)}
 html.theme-dark [data-intake-fields] fieldset{border:1px solid var(--border)}
+html.theme-dark .project-global-nav>a:not(.primary):hover{background:var(--bg)}
+html.theme-dark .project-global-nav>a[aria-current]:not(.primary){background:var(--brand-teal-soft,#181e22);color:var(--ink)}
+html.theme-dark .project-global-nav>a[aria-current]::after{background:var(--green)}
+html.theme-dark .project-global-nav>a.primary[aria-current]::after{background:currentColor}
+html.theme-dark.theme-dark .project-global-nav>a[aria-current]:not(.primary){background:var(--surface-subtle,#25343f);color:var(--ink)}
+html.theme-dark.theme-dark .project-global-nav>a[aria-current]:not(.primary)::after{background:var(--dk-accent)}
 /* dashboards.css */
 html.theme-dark .dash-home-badge{background:var(--brand-amber-soft,#211809);color:#d5a265}
 html.theme-dark .dash-meta{color:var(--muted)}
@@ -1464,6 +1470,21 @@ html.theme-dark .dash-legend{color:var(--muted)}
 html.theme-dark .dash-empty{background:#182128;border:1px dashed var(--line)}
 html.theme-dark .dash-empty p{color:var(--muted)}
 html.theme-dark .dash-empty-icon{background:var(--brand-teal-soft,#191e23);color:var(--dk-accent-strong)}
+/* controls.css */
+html.theme-dark body main :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]):not([type=submit]):not([type=button]),select,textarea){border:1px solid var(--control-border);color:var(--ink);background-color:var(--white)}
+html.theme-dark body main input:is([type=checkbox],[type=radio]):not(.switch input):not(.theme-option input){accent-color:var(--dk-accent)}
+html.theme-dark body main :is(input,textarea)[readonly]{background-color:var(--bg)}
+html.theme-dark body main :is(button,input,select,textarea,a.button,summary.button):focus-visible{outline:3px solid var(--dk-accent)}
+html.theme-dark.theme-dark body main :is(button,input,select,textarea,a.button,summary.button):focus-visible{outline-color:var(--dk-accent)}
+html.theme-dark body .project-tabs{border-bottom:2px solid var(--line)}
+html.theme-dark body .project-tabs a{border:0;color:var(--muted)}
+html.theme-dark body .project-tabs a:hover{background:var(--bg);color:var(--ink)}
+html.theme-dark body .project-tabs a[aria-current=page]{background:var(--brand-teal-soft,#181e22);color:var(--ink)}
+html.theme-dark body .project-tabs a[aria-current=page]::after{background:var(--green)}
+html.theme-dark body .wi-tabs button[aria-selected=true]{background:var(--brand-teal-soft,#181e22);color:var(--ink);border-bottom:3px solid var(--dk-accent)}
+html.theme-dark.theme-dark body .project-tabs a[aria-current=page],html.theme-dark.theme-dark body .wi-tabs button[aria-selected=true]{background:var(--surface-subtle,#25343f);color:var(--ink)}
+html.theme-dark.theme-dark body .project-tabs a[aria-current=page]::after{background:var(--dk-accent)}
+html.theme-dark.theme-dark body .wi-tabs button[aria-selected=true]{border-bottom-color:var(--dk-accent)}
 /* Theme tokens. The configured brand color stays the identity color of the
    sidebar and filled buttons; accents used as text are lifted toward white so
    they stay readable on dark surfaces whatever brand color is configured. */

@@ -115,7 +115,7 @@ helm upgrade --install "$RELEASE" "$CHART" -n "$NAMESPACE" \
   --set-string existingSecret=serviceops-secrets \
   --set-string existingBootstrapSecret=serviceops-bootstrap \
   --set-string "database.backupReference=$BACKUP_REFERENCE" \
-  --atomic --wait --timeout 10m
+  --wait --timeout 10m
 kubectl rollout status "deployment/$RELEASE" -n "$NAMESPACE" --timeout=5m
 helm test "$RELEASE" -n "$NAMESPACE" --logs
 ok "ServiceOps rollout and packaged health test passed"

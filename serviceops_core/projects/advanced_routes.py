@@ -1,5 +1,6 @@
 """Web/REST contracts for saved plans, structures, program boards and rule editing."""
 import json
+import math
 
 from flask import abort,flash,jsonify,redirect,request,url_for
 from flask_login import current_user
@@ -16,15 +17,19 @@ from serviceops_core.projects.models import ProjectPlan,ProjectPlanNode,ProjectP
 @roadmap.guarded
 def number(value,nullable=False):
     if nullable and value in ('',None):return None
-    if isinstance(value,bool):abort(400)
+    if type(value) not in (str,int):abort(400)
     try:return int(value)
     except (ValueError,TypeError):abort(400,description=tr('Choose a valid whole number.'))
 
 
 @roadmap.guarded
 def decimal(value):
-    try:return float(value)
-    except (ValueError,TypeError):abort(400)
+    try:
+        if type(value) not in (str,int,float):raise ValueError()
+        result=float(value)
+        if not math.isfinite(result):raise ValueError()
+        return result
+    except (ValueError,TypeError,OverflowError):abort(400)
 
 
 @roadmap.guarded

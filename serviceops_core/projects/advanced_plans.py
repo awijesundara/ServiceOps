@@ -109,7 +109,7 @@ def save_node(actor,plan,payload,data,node_id=None):
 def save_team(actor,plan,payload,data,team_id=None):
     if not isinstance(data,dict) or set(data)-{'name','capacity','unit','members'}:abort(400)
     value=data.get('capacity');unit=data.get('unit','hours');members=data.get('members',[])
-    if type(value) not in (int,float) or not math.isfinite(value) or not 0<=value<=100000 or unit not in ('hours','points'):abort(400)
+    if type(value) not in (int,float) or not 0<=value<=100000 or not math.isfinite(value) or unit not in ('hours','points'):abort(400)
     if not isinstance(members,list) or len(members)>500 or any(type(i) is not int for i in members):abort(400)
     eligible={u.id for p in payload['projects'] for u in service.assignable_users(service.project_or_404(actor,p['key']))}
     if not set(members)<=eligible:abort(400)
