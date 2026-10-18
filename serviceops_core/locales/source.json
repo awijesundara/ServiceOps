@@ -65,9 +65,6 @@
    "id": "({cis_matched_by_serial} matched to existing items by serial number)"
   },
   {
-   "id": "({username}). This session, the user record you just authenticated as, and everything backing it lives entirely on IPFS -- there is no PostgreSQL container in this deployment at all."
-  },
-  {
    "id": ") blocks externally-hosted images, and there's no file upload/storage for one built yet."
   },
   {
@@ -151,6 +148,9 @@
   },
   {
    "id": "A dashboard name has 1 to 80 characters."
+  },
+  {
+   "id": "A dashboard's widgets with their data, as the web shows them"
   },
   {
    "id": "A dedicated Pinata gateway URL is required"
@@ -5333,9 +5333,6 @@
    "id": "Fulfillment team"
   },
   {
-   "id": "Full IPFS-backed application"
-  },
-  {
    "id": "Full name"
   },
   {
@@ -5739,9 +5736,6 @@
   },
   {
    "id": "IPFS API URL must be an http(s) URL"
-  },
-  {
-   "id": "IPFS is the authoritative encrypted store for application records and attachments. Dashboard, ticketing, administration, audit, session revocation, rate limits, workflows, CMDB, client management, and background processing use the standard ServiceOps experience."
   },
   {
    "id": "IPFS mode is experimental and only covers file attachments so far -- see the \"Storage\" section below."
@@ -7125,10 +7119,19 @@
    "id": "Mobile session required. Cursor-paginated; meta has limit, returned, has_more and next_cursor."
   },
   {
+   "id": "Mobile session required. Each widget has a view (tiles, tickets, bars, trend, workload, tasks, approvals, changes, requests, articles, work_items, links, notifications, note); a countable number carries a list reference (kind and filter) for /mobile/ticket-list."
+  },
+  {
    "id": "Mobile session required. Optional q; cursor-paginated."
   },
   {
    "id": "Mobile session required. Returns user, assignment_groups, counts (pending_approvals, unread_notifications) and capabilities."
+  },
+  {
+   "id": "Mobile session required. data.home_id is the dashboard that opens first."
+  },
+  {
+   "id": "Mobile session required. kind (incident, change or all) and filter (the JSON condition list from a widget's list reference); cursor-paginated, newest update first; meta.total is the full count."
   },
   {
    "id": "Mobile session required; the user must be the approver or an active delegate. Body: decision (Approved or Rejected) and optional comments (up to 2000 characters). Idempotency-Key is optional here."
@@ -7870,9 +7873,6 @@
   {
    "id": "No matches found.",
    "javascript": true
-  },
-  {
-   "id": "No matching administration area."
   },
   {
    "id": "No matching administration tool."
@@ -11175,9 +11175,6 @@
    "id": "Role of {name}"
   },
   {
-   "id": "Role protected and audited"
-  },
-  {
    "id": "Role → action policy"
   },
   {
@@ -11773,12 +11770,6 @@
    "id": "Search across projects you can access. Shared filters never change record permissions."
   },
   {
-   "id": "Search administration"
-  },
-  {
-   "id": "Search administration areas"
-  },
-  {
    "id": "Search and pick one or more configuration items…"
   },
   {
@@ -12275,13 +12266,7 @@
    "id": "ServiceOps"
   },
   {
-   "id": "ServiceOps (IPFS mode)"
-  },
-  {
    "id": "ServiceOps AI"
-  },
-  {
-   "id": "ServiceOps IPFS mode"
   },
   {
    "id": "ServiceOps Installation Center"
@@ -12291,9 +12276,6 @@
   },
   {
    "id": "ServiceOps REST API reference"
-  },
-  {
-   "id": "ServiceOps control center"
   },
   {
    "id": "ServiceOps groups"
@@ -13835,6 +13817,9 @@
    "id": "The signed-in user's own profile picture"
   },
   {
+   "id": "The signed-in user's personal and team dashboards"
+  },
+  {
    "id": "The sprint will be deleted and its work returned to the backlog. Started sprint history is retained."
   },
   {
@@ -13845,6 +13830,9 @@
   },
   {
    "id": "The ticket changed after this proposal was prepared. Run a new investigation first."
+  },
+  {
+   "id": "The tickets behind a dashboard number"
   },
   {
    "id": "The timeline font layout could not be refreshed.",
@@ -15128,9 +15116,6 @@
    "id": "Welcome to ServiceOps"
   },
   {
-   "id": "Welcome,"
-  },
-  {
    "id": "What I remember about you"
   },
   {
@@ -15902,6 +15887,9 @@
    "id": "fields"
   },
   {
+   "id": "filter must be a JSON list of conditions."
+  },
+  {
    "id": "filtered to {status}"
   },
   {
@@ -16032,6 +16020,9 @@
   },
   {
    "id": "its conditions match, ServiceOps performs its controlled actions and records the result below."
+  },
+  {
+   "id": "kind must be incident, change or all."
   },
   {
    "id": "last 14 days"

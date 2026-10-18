@@ -235,7 +235,8 @@ def visible_tickets():
     return visible_ticket_query(current_user)
 
 
-def ticket_filter_field_spec():
+def ticket_filter_field_spec(tenant_id=None):
+    tenant_id = current_user.tenant_id if tenant_id is None else tenant_id
     return {
         "number": {"label": "Number", "type": "text", "column": Ticket.number},
         "title": {"label": "Short description", "type": "text", "column": Ticket.title},
@@ -244,7 +245,7 @@ def ticket_filter_field_spec():
         "state": {"label": "State", "type": "choice", "column": Ticket.state,
                   "options": [(s, s) for s in TICKET_STATE_OPTIONS]},
         "category": {"label": "Category", "type": "choice", "column": Ticket.category,
-                    "options": [(c.name, c.name) for c in tenant_ticket_categories(current_user.tenant_id)]},
+                    "options": [(c.name, c.name) for c in tenant_ticket_categories(tenant_id)]},
         "opened": {"label": "Opened", "type": "date", "column": Ticket.created_at},
         "updated": {"label": "Updated", "type": "date", "column": Ticket.updated_at},
     }
@@ -342,16 +343,18 @@ TICKET_LINK_FILTERS = {
 }
 
 
-def ticket_list_query(kind, q="", conditions=None):
-    """Shared filtering for the ticket list view and its CSV export, so
-    both stay consistent: free-text search plus the generic filter
-    condition list (see apply_filter_conditions)."""
+def ticket_list_query(kind, q="", conditions=None, viewer=None):
+    """Shared filtering for the ticket list view, its CSV export and the
+    mobile API, so all stay consistent: free-text search plus the generic
+    filter condition list (see apply_filter_conditions). `viewer` defaults
+    to the signed-in web user."""
+    viewer = current_user if viewer is None else viewer
     kinds = ("incident", "change") if kind == "all" else (kind,)
-    query = visible_tickets().filter(Ticket.kind.in_(kinds), Ticket.deleted_at.is_(None))
+    query = visible_ticket_query(viewer).filter(Ticket.kind.in_(kinds), Ticket.deleted_at.is_(None))
     if q:
         query = query.filter(db.or_(Ticket.number.ilike(f"%{q}%"), Ticket.title.ilike(f"%{q}%")))
     query = apply_filter_conditions(
-        query, conditions or [], ticket_filter_field_spec(),
+        query, conditions or [], ticket_filter_field_spec(viewer.tenant_id),
         extra_handlers={"group": ticket_group_filter_handler(kind), "assignee": _assignee_filter,
                         "open": _open_filter, "resolved_within_days": _resolved_within_filter,
                         "sla": _sla_filter, "unassigned": _unassigned_filter, "urgent": _urgent_filter},

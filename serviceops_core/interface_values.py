@@ -3,6 +3,7 @@ tools/i18n_interface_values.py from the source; do not edit by hand."""
 from serviceops_core.localization import translatable
 
 VALUES = (
+    translatable("A dashboard's widgets with their data, as the web shows them"),
     translatable("A project's components"),
     translatable("A project's versions (releases)"),
     translatable('A rack and the readable equipment mounted in it'),
@@ -324,8 +325,11 @@ VALUES = (
     translatable('Mobile session required. Body: token (APNs device token), device_id and environment (sandbox or production).'),
     translatable('Mobile session required. Cursor-paginated.'),
     translatable('Mobile session required. Cursor-paginated; meta has limit, returned, has_more and next_cursor.'),
+    translatable('Mobile session required. Each widget has a view (tiles, tickets, bars, trend, workload, tasks, approvals, changes, requests, articles, work_items, links, notifications, note); a countable number carries a list reference (kind and filter) for /mobile/ticket-list.'),
     translatable('Mobile session required. Optional q; cursor-paginated.'),
     translatable('Mobile session required. Returns user, assignment_groups, counts (pending_approvals, unread_notifications) and capabilities.'),
+    translatable('Mobile session required. data.home_id is the dashboard that opens first.'),
+    translatable("Mobile session required. kind (incident, change or all) and filter (the JSON condition list from a widget's list reference); cursor-paginated, newest update first; meta.total is the full count."),
     translatable('Mobile session required; the user must be the approver or an active delegate. Body: decision (Approved or Rejected) and optional comments (up to 2000 characters). Idempotency-Key is optional here.'),
     translatable('Mobile session, tickets:read and agent role required. Returns data entries containing ci, relationship_role, rack and label; meta contains count and open_on_affected_cis. Missing placement values stay null. Cross-tenant and unreadable CI classes are excluded.'),
     translatable('Mode'),
@@ -607,6 +611,8 @@ VALUES = (
     translatable('Textarea'),
     translatable("The signed-in user's notifications, newest first"),
     translatable("The signed-in user's own profile picture"),
+    translatable("The signed-in user's personal and team dashboards"),
+    translatable('The tickets behind a dashboard number'),
     translatable('Ticket'),
     translatable('Ticket absent or invisible'),
     translatable('Ticket chart'),

@@ -641,6 +641,24 @@ def register(app):
                     "parameters": [{"name": "q", "in": "query", "required": False, "schema": {"type": "string"}},
                                    {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"}],
                 }},
+                "/mobile/dashboards": {"get": {
+                    "summary": "The signed-in user's personal and team dashboards",
+                    "description": "Mobile session required. data.home_id is the dashboard that opens first.",
+                }},
+                "/mobile/dashboards/{dashboard_id}": {
+                    "parameters": [{"name": "dashboard_id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                    "get": {
+                        "summary": "A dashboard's widgets with their data, as the web shows them",
+                        "description": "Mobile session required. Each widget has a view (tiles, tickets, bars, trend, workload, tasks, approvals, changes, requests, articles, work_items, links, notifications, note); a countable number carries a list reference (kind and filter) for /mobile/ticket-list.",
+                    },
+                },
+                "/mobile/ticket-list": {"get": {
+                    "summary": "The tickets behind a dashboard number",
+                    "description": "Mobile session required. kind (incident, change or all) and filter (the JSON condition list from a widget's list reference); cursor-paginated, newest update first; meta.total is the full count.",
+                    "parameters": [{"name": "kind", "in": "query", "required": False, "schema": {"type": "string"}},
+                                   {"name": "filter", "in": "query", "required": False, "schema": {"type": "string"}},
+                                   {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"}],
+                }},
                 "/mobile/cmdb": {"get": {
                     "summary": "Search configuration items the user may read",
                     "description": "Mobile session and agent role required; CI-class read policy applies. Optional q; cursor-paginated.",
@@ -955,6 +973,9 @@ def register(app):
         row.token_prefix = access[:12]
         row.refresh_token_hash = api_token_hash(refresh)
         row.access_expires_at = now() + timedelta(minutes=15)
+        # Sessions follow the current mobile scope set, so a scope added or
+        # removed on the server reaches signed-in apps at their next refresh.
+        row.scopes_json = json.dumps(sorted(core.MOBILE_API_SCOPES))
         row.last_used_at = now()
         audit("mobile token refresh", row.acting_user.username, mobile_client_details(row), user_id=row.acting_user_id, tenant_id=row.tenant_id)
         db.session.commit()
