@@ -3192,7 +3192,7 @@ from serviceops_core.projects.models import (  # noqa: E402,F401 -- re-exported 
     Project, ProjectComponent, ProjectMember, ProjectStar, ProjectStatus, ProjectVersion, WorkItem,
     ProjectPlanningDraft, ProjectViewPreference, ProjectGoal, ProjectGoalItem,
     ProjectPlan, ProjectPlanNode, ProjectPlanTeam, ProjectPlanAllocation, ProjectPlanScenario,
-    ProjectAutomationRule, ProjectAutomationRun, ProjectSandbox,
+    ProjectAutomationRule, ProjectAutomationRun,
     ProjectPage, ProjectForm, ProjectFormResponse, ProjectShortcut,
     ProjectSavedFilter, ProjectFilterFavourite, ProjectSprint, ProjectSprintItem, ProjectSprintEvent,
     WorkItemAffectsVersion, WorkItemAssignee, WorkItemComment, WorkItemCommentReaction, WorkItemComponent,

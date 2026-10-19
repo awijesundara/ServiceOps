@@ -17,7 +17,7 @@ def test_premium_expand_roundtrip_preserves_existing_work(pg_review):
         command.downgrade(config,'20261017_0131')
         assert 'project_plan' not in inspect(db.engine).get_table_names();assert WorkItem.query.count()==count;db.session.remove()
         command.upgrade(config,'head')
-        assert {'project_plan','project_sandbox','project_form','project_page','project_form_response','project_shortcut'}<=set(inspect(db.engine).get_table_names());assert WorkItem.query.count()==count
+        assert {'project_plan','project_form','project_page','project_form_response','project_shortcut'}<=set(inspect(db.engine).get_table_names());assert WorkItem.query.count()==count
 
 
 def test_stale_plan_update_rejected_postgresql(pg_review):

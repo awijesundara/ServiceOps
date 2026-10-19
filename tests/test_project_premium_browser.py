@@ -101,22 +101,3 @@ def test_timeline_drag_review_and_intake_journey(server,tmp_path):
         for view in ('pages','reports','shortcuts'):
             page.goto(base+'/projects/WEB/content/'+view,wait_until='networkidle');assert not _axe(page),view
         browser.close()
-
-
-@pytest.mark.parametrize('width',[390,1440])
-def test_premium_administration_accessibility(server,width):
-    from playwright.sync_api import sync_playwright
-    from datetime import timedelta
-    from app import db,User,now
-    from serviceops_core.projects.models import ProjectSandbox
-    application,base=server
-    with application.app_context():
-        actor=User.query.filter_by(username='admin').one();application.config['PREMIUM_SANDBOX_ENABLED']=True
-        db.session.add(ProjectSandbox(tenant_id=actor.tenant_id,owner_id=actor.id,name='Synthetic acceptance',slot=1,state='ready',expires_at=now()+timedelta(hours=1)));db.session.commit()
-    with sync_playwright() as p:
-        browser=p.chromium.launch();page=browser.new_page(viewport={'width':width,'height':1000});_sign_in(page,base)
-        for section in ('release-tracks','sandboxes','insights','ip-allowlist'):
-            response=page.goto(base+'/admin/premium/'+section,wait_until='networkidle');assert response.status==200
-            assert not _axe(page),(section,width)
-            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),(section,width)
-        browser.close()

@@ -959,8 +959,6 @@ API_SCOPES = {
     # Project management (B-443).
     "projects:read",
     "projects:write",
-    "platform:read",
-    "platform:write",
 }
 
 
@@ -1504,7 +1502,8 @@ DOMAIN_CONFIG = {
     "release": {"name": "Releases", "prefix": "REL", "types": ["Release", "Deployment", "Readiness review"]},
 }
 
-CMDB_RELATIONSHIP_DISPLAY_LIMIT = 200
+# The CMDB list previews relationships; the topology map shows them all.
+CMDB_RELATIONSHIP_DISPLAY_LIMIT = 25
 
 # One glyph per workspace on /modules, matching this app's existing
 # hand-authored feather-style icon set (viewBox 0 0 24 24, stroke-based --
@@ -7039,7 +7038,6 @@ def create_app(test_config=None):
             minutes=int(os.getenv("SESSION_LIFETIME_MINUTES", "480"))
         ),
         AUTO_MIGRATE=env_bool("AUTO_MIGRATE", True),
-        PREMIUM_SANDBOX_ENABLED=env_bool("PREMIUM_SANDBOX_ENABLED", False),
         STORAGE_MODE=os.getenv("STORAGE_MODE", "postgres").strip().lower(),
     )
     if test_config:

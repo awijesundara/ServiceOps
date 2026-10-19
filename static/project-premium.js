@@ -295,32 +295,6 @@
   } catch (error) { console.error('Timeline proposal controls failed', error?.name || 'Error'); if (feedback) feedback.textContent = tr('Date dragging is unavailable. Use the date fields to create a proposal.'); }
 })();
 
-(function () {
-  'use strict';
-  const container = document.querySelector('[data-sandbox-status-url]');
-  if (!container) return;
-  const tr = window.ServiceOpsI18n?.tr || (value => value);
-  const feedback = document.querySelector('[data-sandbox-feedback]');
-  async function refresh() {
-    try {
-      if (document.hidden) return;
-      const response = await fetch(container.dataset.sandboxStatusUrl, {headers: {Accept: 'application/json'}});
-      if (!response.ok) throw new Error('StatusUnavailable');
-      const body = await response.json();
-      for (const row of body.data) {
-        const cell = container.querySelector('[data-sandbox-row="' + Number(row.id) + '"] [data-sandbox-state]');
-        if (cell) {
-          cell.textContent = tr(row.state.charAt(0).toUpperCase() + row.state.slice(1));
-          const access=cell.closest('tr').querySelector('[data-sandbox-access]'), deletion=cell.closest('tr').querySelector('[data-sandbox-delete]');
-          if(access)access.hidden=row.state!=='ready';if(deletion)deletion.hidden=['deleted','deleting'].includes(row.state);
-        }
-      }
-      if (feedback) feedback.textContent = '';
-    } catch (error) { console.error('Sandbox status refresh failed', error?.name || 'Error'); if (feedback) feedback.textContent = tr('Status refresh is unavailable. Use Refresh to check the environment.'); }
-  }
-  window.setInterval(refresh, 15000);
-})();
-
 // Typed intake editor keeps a JSON fallback for keyboard-only and no-script use.
 document.querySelectorAll('[data-intake-editor]').forEach(form => {
   const tr=window.ServiceOpsI18n?.tr || (value=>value);
