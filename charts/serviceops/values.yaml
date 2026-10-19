@@ -265,9 +265,12 @@ ai:
 
 # Separate web capacity from background-worker resources.
 web:
-  workers: 2
+  workers: 3
   threads: 4
-  resources: {}  # falls back to resources when unset
+  # A 1-CPU limit throttled page bursts; three workers fit in 2 CPUs.
+  resources:
+    requests: {cpu: 250m, memory: 384Mi}
+    limits: {cpu: "2", memory: 1536Mi}
   probes:
     readinessTimeoutSeconds: 5
     readinessFailureThreshold: 3
