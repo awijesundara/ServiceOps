@@ -511,23 +511,6 @@ class ProjectAutomationRun(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
 
 
-class ProjectSandbox(db.Model):
-    slot = db.Column(db.Integer, nullable=False)
-    id = db.Column(db.Integer, primary_key=True)
-    tenant_id = _tenant_column()
-    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    name = db.Column(db.String(100), nullable=False)
-    state = db.Column(db.String(16), nullable=False, default="queued")
-    image = db.Column(db.String(255))
-    last_error = db.Column(db.String(160), nullable=False, default="")
-    events_json = db.Column(db.Text, nullable=False, default="[]")
-    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
-    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
-    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
-    __table_args__ = (db.CheckConstraint("state IN ('queued','provisioning','ready','failed','deleting','deleted')", name="ck_project_sandbox_state"),
-                      db.CheckConstraint("slot IN (1,2)",name="ck_project_sandbox_slot"),)
-
-
 class ProjectPage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tenant_id = _tenant_column()
@@ -575,7 +558,6 @@ class ProjectShortcut(db.Model):
 
 MODEL_NAMES = [
     "ProjectPage", "ProjectForm", "ProjectFormResponse", "ProjectShortcut",
-    "ProjectSandbox",
     "ProjectPlan", "ProjectPlanNode", "ProjectPlanTeam", "ProjectPlanAllocation", "ProjectPlanScenario",
     "ProjectAutomationRule", "ProjectAutomationRun",
     "ProjectPlanningDraft", "ProjectViewPreference", "ProjectGoal", "ProjectGoalItem",

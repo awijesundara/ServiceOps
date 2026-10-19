@@ -24,7 +24,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='platform.css', v=asset_version) }}">
   {% if ui_direction == 'rtl' %}<link rel="stylesheet" href="{{ url_for('static', filename='rtl.css', v=asset_version) }}">{% endif %}
   {% if request.endpoint == 'task_board' %}<link rel="stylesheet" href="{{ url_for('static', filename='task-board.css', v=asset_version) }}">{% endif %}
-  {% if request.blueprint == 'projects' or request.endpoint=='premium_administration' %}<link rel="stylesheet" href="{{ url_for('static', filename='projects.css', v=asset_version) }}">{% endif %}
+  {% if request.blueprint == 'projects' %}<link rel="stylesheet" href="{{ url_for('static', filename='projects.css', v=asset_version) }}">{% endif %}
   {% if request.endpoint in ['status_page', 'status_page_default'] %}<link rel="stylesheet" href="{{ url_for('static', filename='status-page.css', v=asset_version) }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='brand.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v=asset_version) }}">
@@ -42,7 +42,7 @@
   <script src="{{ url_for('static', filename='admin-nav.js', v=asset_version) }}" defer></script>
   <script src="{{ url_for('static', filename='admin-context.js', v=asset_version) }}" defer></script>
   {% if request.endpoint == 'ticket_detail' %}<script src="{{ url_for('static', filename='attachment-drop.js', v=asset_version) }}" defer></script>{% endif %}
-  {% if request.blueprint == 'projects' or request.endpoint=='premium_administration' %}<script src="{{ url_for('static', filename='projects.js', v=asset_version) }}" defer></script><script src="{{ url_for('static',filename='project-planning.js',v=asset_version) }}" defer></script><script src="{{ url_for('static',filename='project-premium.js',v=asset_version) }}" defer></script>{% endif %}
+  {% if request.blueprint == 'projects' %}<script src="{{ url_for('static', filename='projects.js', v=asset_version) }}" defer></script><script src="{{ url_for('static',filename='project-planning.js',v=asset_version) }}" defer></script><script src="{{ url_for('static',filename='project-premium.js',v=asset_version) }}" defer></script>{% endif %}
   {% if current_user.is_authenticated %}<script src="{{ url_for('static', filename='guided-tour.js', v=asset_version) }}" defer></script>{% endif %}
   {% if current_user.is_authenticated and ((request.endpoint or '').startswith('ai.') or ai_chat_available(current_user)) %}
   <link rel="stylesheet" href="{{ url_for('static', filename='ai-chat.css', v=asset_version) }}">
@@ -61,7 +61,7 @@
 {% from '_admin_icons.html' import admin_icon %}
 <a class="skip-link" href="#main-content">{{ tr('Skip to main content') }}</a>
 {% if current_user.is_authenticated %}
-{% set admin_endpoints = ['premium_administration','admin_home','admin_section','itil_admin','approval_policies_admin','system_settings_category','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin','data_governance_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
+{% set admin_endpoints = ['admin_home','admin_section','itil_admin','approval_policies_admin','system_settings_category','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin','data_governance_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
 <script src="{{ url_for('static', filename='nav-init.js', v=asset_version) }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">{{ tr('NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active') }}</div>{% endif %}
 <aside class="sidebar">
@@ -159,7 +159,7 @@
     <details class="nav-group nav-group-admin" {% if request.endpoint in admin_endpoints %}open{% endif %}>
       <summary><span class="nav-symbol" aria-hidden="true">⚙</span><span>{{ tr('Administration') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items admin-area-links">
-        <a class="admin-area-link{% if nav_active('admin_home') %} active{% endif %}" href="{{ url_for('admin_home') }}" {% if nav_active('admin_home') %}aria-current="page"{% endif %}><span class="admin-area-icon">{{ admin_icon('home') }}</span><span><strong>{{ tr('General') }}</strong><small>{{ tr('Administration overview') }}</small></span><span class="admin-area-chevron" aria-hidden="true"></span></a><a href="{{ url_for('premium_administration',section='release-tracks') }}">{{ tr('Release tracks') }}</a><a href="{{ url_for('premium_administration',section='sandboxes') }}">{{ tr('Sandboxes') }}</a><a href="{{ url_for('premium_administration',section='insights') }}">{{ tr('Admin insights') }}</a>
+        <a class="admin-area-link{% if nav_active('admin_home') %} active{% endif %}" href="{{ url_for('admin_home') }}" {% if nav_active('admin_home') %}aria-current="page"{% endif %}><span class="admin-area-icon">{{ admin_icon('home') }}</span><span><strong>{{ tr('General') }}</strong><small>{{ tr('Administration overview') }}</small></span><span class="admin-area-chevron" aria-hidden="true"></span></a>
         {% set admin_areas = [
           ('people-access',tr('People & access'),tr('Users, teams and permissions'),'people'),
           ('service-configuration',tr('Service configuration'),tr('Requests, changes and SLAs'),'service'),

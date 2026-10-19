@@ -118,8 +118,6 @@ def register(app):
     advanced_routes.register_api(app, _user)
     from serviceops_core.projects import content_routes
     content_routes.register_api(app, _user)
-    from serviceops_core.web import premium_administration
-    premium_administration.register(app)
 
     @app.get("/api/v1/projects")
     def api_projects():

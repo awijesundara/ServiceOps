@@ -383,9 +383,6 @@
    "id": "A work-in-progress limit is between 1 and 999."
   },
   {
-   "id": "A zero-prefix network does not restrict access. Remove the policy to allow everyone."
-  },
-  {
    "id": "A {label} synchronization is already queued or running."
   },
   {
@@ -540,12 +537,6 @@
    "id": "Access level for directory users in no mapped group"
   },
   {
-   "id": "Access policy is temporarily unavailable."
-  },
-  {
-   "id": "Access stays private to the cluster. An operator with Kubernetes access can open a local port-forward and obtain the fresh administrator password from this sandbox secret."
-  },
-  {
    "id": "Accessibility"
   },
   {
@@ -617,9 +608,6 @@
   },
   {
    "id": "Active users"
-  },
-  {
-   "id": "Active users below are distinct people with recorded audit activity during rolling 1, 7 and 30-day windows. Passive page views without an audit event are not counted."
   },
   {
    "id": "Active users were seen in the last 15 minutes."
@@ -938,9 +926,6 @@
    "id": "Admin"
   },
   {
-   "id": "Admin insights"
-  },
-  {
    "id": "Administration"
   },
   {
@@ -957,9 +942,6 @@
   },
   {
    "id": "Administration home"
-  },
-  {
-   "id": "Administration is temporarily unavailable."
   },
   {
    "id": "Administration overview"
@@ -1184,9 +1166,6 @@
   },
   {
    "id": "Allowed"
-  },
-  {
-   "id": "Allowed client networks"
   },
   {
    "id": "Already added",
@@ -1689,9 +1668,6 @@
    "id": "Automation execution history"
   },
   {
-   "id": "Automation executions in the last 30 days"
-  },
-  {
    "id": "Automation rule saved."
   },
   {
@@ -1951,9 +1927,6 @@
    "id": "Bulk action"
   },
   {
-   "id": "Bundled"
-  },
-  {
    "id": "Bundled IPFS node"
   },
   {
@@ -1964,9 +1937,6 @@
   },
   {
    "id": "Bundled PostgreSQL is selected"
-  },
-  {
-   "id": "Bundled track"
   },
   {
    "id": "Busiest teams"
@@ -2338,9 +2308,6 @@
    "id": "Change recovery set settings or replace the reporting token"
   },
   {
-   "id": "Change release track"
-  },
-  {
    "id": "Change request"
   },
   {
@@ -2363,9 +2330,6 @@
   },
   {
    "id": "Change this from Team managers / Approval authority"
-  },
-  {
-   "id": "Change track"
   },
   {
    "id": "Change type"
@@ -2708,9 +2672,6 @@
    "id": "Choose the version to merge into."
   },
   {
-   "id": "Choose today or a future release date."
-  },
-  {
    "id": "Choose two different versions."
   },
   {
@@ -2730,9 +2691,6 @@
   },
   {
    "id": "Choose what the policy applies to."
-  },
-  {
-   "id": "Choose when changes and new features are admitted by the deployment migration gate."
   },
   {
    "id": "Choose when the stage applies."
@@ -3257,12 +3215,6 @@
    "id": "Continue with Keycloak"
   },
   {
-   "id": "Continuous"
-  },
-  {
-   "id": "Continuous track"
-  },
-  {
    "id": "Contract notice period"
   },
   {
@@ -3482,9 +3434,6 @@
    "id": "Create an incident or service request to get started."
   },
   {
-   "id": "Create an isolated environment to test product changes with synthetic sample projects, fresh PostgreSQL, separate secrets and storage, and blocked outbound integrations. Environments expire automatically."
-  },
-  {
    "id": "Create and add another"
   },
   {
@@ -3567,9 +3516,6 @@
   },
   {
    "id": "Create rule"
-  },
-  {
-   "id": "Create sandbox"
   },
   {
    "id": "Create schedule"
@@ -3677,9 +3623,6 @@
   },
   {
    "id": "Current fulfillment team"
-  },
-  {
-   "id": "Current image"
   },
   {
    "id": "Current manager"
@@ -3997,9 +3940,6 @@
    "id": "Delete a planned sprint"
   },
   {
-   "id": "Delete an existing sandbox before creating a third environment."
-  },
-  {
    "id": "Delete an owned project filter"
   },
   {
@@ -4032,9 +3972,6 @@
   },
   {
    "id": "Delete policy"
-  },
-  {
-   "id": "Delete sandbox"
   },
   {
    "id": "Delete sprint"
@@ -4639,9 +4576,6 @@
    "id": "Enabled"
   },
   {
-   "id": "Enabled users"
-  },
-  {
    "id": "End (UTC)"
   },
   {
@@ -4756,13 +4690,7 @@
    "id": "Environment"
   },
   {
-   "id": "Environment details"
-  },
-  {
    "id": "Environment key is active. Rotate once to place versioned verification keys under governed storage."
-  },
-  {
-   "id": "Environment name"
   },
   {
    "id": "Environments requiring CCB approval"
@@ -5795,12 +5723,6 @@
    "id": "If your plan limits how much you can use, such as a free tier, enter it. ServiceOps then avoids a service that has used its allowance, spreads work across your services in proportion to what each has left, and saves the most capable models for the hardest work."
   },
   {
-   "id": "Image identity is supplied by the deployment operator."
-  },
-  {
-   "id": "Immutable sandbox candidate selected by the operator"
-  },
-  {
    "id": "Immutable security audit events as signed JSON."
   },
   {
@@ -5955,9 +5877,6 @@
   },
   {
    "id": "Include weekends"
-  },
-  {
-   "id": "Include your current client address before enabling the IP allowlist."
   },
   {
    "id": "Incoming webhook (fire-and-forget)"
@@ -6144,9 +6063,6 @@
   },
   {
    "id": "Inward description"
-  },
-  {
-   "id": "Isolated sandboxes use the operator-pinned preview image. Production records and credentials are never copied."
   },
   {
    "id": "Issue"
@@ -6580,9 +6496,6 @@
    "id": "Lifecycle status"
   },
   {
-   "id": "Lifetime in hours"
-  },
-  {
    "id": "Limit to first N new tickets (leave blank for all — recommended for your first preview)"
   },
   {
@@ -6654,9 +6567,6 @@
   },
   {
    "id": "List each source exactly once."
-  },
-  {
-   "id": "List isolated synthetic sandboxes"
   },
   {
    "id": "List owned automation rules"
@@ -6873,9 +6783,6 @@
   },
   {
    "id": "Manage role permissions for this organization. Reset a role to restore its recommended defaults."
-  },
-  {
-   "id": "Manage sandboxes"
   },
   {
    "id": "Manage sprint"
@@ -7456,9 +7363,6 @@
    "id": "New backup codes generated. Save them now -- they will not be shown again."
   },
   {
-   "id": "New candidates are blocked until the release date. After a successful migration, the next window advances by one month. Retrying the same approved image remains allowed."
-  },
-  {
    "id": "New catalog policy"
   },
   {
@@ -7555,12 +7459,6 @@
   },
   {
    "id": "Next approver: {manager_chain}"
-  },
-  {
-   "id": "Next release"
-  },
-  {
-   "id": "Next release date"
   },
   {
    "id": "Next run"
@@ -8065,9 +7963,6 @@
    "id": "No rule executions yet. Previewing a rule does not execute it."
   },
   {
-   "id": "No sandbox environments yet."
-  },
-  {
    "id": "No satisfaction ratings submitted in the last 30 days."
   },
   {
@@ -8466,9 +8361,6 @@
    "id": "Ollama"
   },
   {
-   "id": "On environment creation"
-  },
-  {
    "id": "On for this browser.",
    "javascript": true
   },
@@ -8492,9 +8384,6 @@
   },
   {
    "id": "One day of activity is recorded. A trend line appears as more daily snapshots become available."
-  },
-  {
-   "id": "One network per line. An empty list disables the restriction. Your current address must remain included. Health/readiness, metrics and static assets retain their existing access rules."
   },
   {
    "id": "One per line. A request that mentions any of them stays private."
@@ -8736,9 +8625,6 @@
    "id": "Open incidents and changes at priority {priority}."
   },
   {
-   "id": "Open local sandbox"
-  },
-  {
    "id": "Open models"
   },
   {
@@ -8861,9 +8747,6 @@
   },
   {
    "id": "Operational status{src}"
-  },
-  {
-   "id": "Operational visibility"
   },
   {
    "id": "Operations"
@@ -9244,9 +9127,6 @@
    "id": "Permanent or temporary fix change"
   },
   {
-   "id": "Permanently delete this synthetic sandbox, including its database and uploaded files?"
-  },
-  {
    "id": "Permanently erase {name}'s name, email, and other personal details? This cannot be undone."
   },
   {
@@ -9410,12 +9290,6 @@
   },
   {
    "id": "Platform & security"
-  },
-  {
-   "id": "Platform administration"
-  },
-  {
-   "id": "Platform controls"
   },
   {
    "id": "Platform name"
@@ -9597,9 +9471,6 @@
    "id": "Preview schedule"
   },
   {
-   "id": "Preview track"
-  },
-  {
    "id": "Preview valid until {netbox_import_expires}."
   },
   {
@@ -9742,16 +9613,7 @@
    "id": "Processing"
   },
   {
-   "id": "Product"
-  },
-  {
-   "id": "Production"
-  },
-  {
    "id": "Production security policy passed"
-  },
-  {
-   "id": "Production track"
   },
   {
    "id": "Production, Staging"
@@ -9783,9 +9645,6 @@
   },
   {
    "id": "Project"
-  },
-  {
-   "id": "Project activity"
   },
   {
    "id": "Project administrator. Work returns to backlog; started sprint history cannot be deleted."
@@ -9933,9 +9792,6 @@
    "id": "Provider-level results for the latest outbound attempts."
   },
   {
-   "id": "Provisioning failed. The operator can inspect the controller and retained migration jobs; delete this environment to release its slot."
-  },
-  {
    "id": "Proxy"
   },
   {
@@ -10011,13 +9867,7 @@
    "id": "Queue an authorized durable workflow event"
   },
   {
-   "id": "Queue an isolated sandbox"
-  },
-  {
    "id": "Queue import"
-  },
-  {
-   "id": "Queue permanent removal of synthetic sandbox resources"
   },
   {
    "id": "Queue → Team"
@@ -10235,9 +10085,6 @@
   },
   {
    "id": "Read plan hierarchy, teams, capacity and allocations"
-  },
-  {
-   "id": "Read release track and IP policy"
   },
   {
    "id": "Read rule and execution audit"
@@ -10500,15 +10347,6 @@
   },
   {
    "id": "Release notes list the finished work items of this version."
-  },
-  {
-   "id": "Release timezone"
-  },
-  {
-   "id": "Release track details"
-  },
-  {
-   "id": "Release tracks"
   },
   {
    "id": "Released"
@@ -10993,9 +10831,6 @@
    "id": "Restore proposal"
   },
   {
-   "id": "Restrict this installation to trusted IPv4 and IPv6 client networks. The existing trusted-proxy middleware resolves the client address; user-supplied headers from untrusted peers do not bypass the policy."
-  },
-  {
    "id": "Restrict visibility"
   },
   {
@@ -11428,18 +11263,6 @@
    "id": "Sample devices as they would appear in the CMDB:"
   },
   {
-   "id": "Sandbox"
-  },
-  {
-   "id": "Sandbox creation requires an isolated controller, dedicated storage and enforced Kubernetes RBAC. The installation operator must enable these before creation is available."
-  },
-  {
-   "id": "Sandbox environments"
-  },
-  {
-   "id": "Sandboxes"
-  },
-  {
    "id": "Sandstone"
   },
   {
@@ -11450,9 +11273,6 @@
   },
   {
    "id": "Save Google Chat"
-  },
-  {
-   "id": "Save IP allowlist"
   },
   {
    "id": "Save RT connection settings"
@@ -11597,9 +11417,6 @@
   },
   {
    "id": "Save tour"
-  },
-  {
-   "id": "Save track"
   },
   {
    "id": "Save view"
@@ -12908,10 +12725,6 @@
    "id": "Status overview"
   },
   {
-   "id": "Status refresh is unavailable. Use Refresh to check the environment.",
-   "javascript": true
-  },
-  {
    "id": "Status update posted."
   },
   {
@@ -13140,9 +12953,6 @@
    "id": "Synchronize parent incident state to child incidents"
   },
   {
-   "id": "Synthetic data only"
-  },
-  {
    "id": "Syslog port"
   },
   {
@@ -13171,9 +12981,6 @@
   },
   {
    "id": "System health"
-  },
-  {
-   "id": "System health and recovery status"
   },
   {
    "id": "System health · {instance_name}"
@@ -13599,9 +13406,6 @@
    "id": "The idempotency key was already used for a different request."
   },
   {
-   "id": "The installation policy changed. Reload before saving."
-  },
-  {
    "id": "The installed version and build are shown inside the app under More → Settings so support teams can identify the exact client in use."
   },
   {
@@ -13665,9 +13469,6 @@
   {
    "id": "The operation could not be completed. Reload and try again.",
    "javascript": true
-  },
-  {
-   "id": "The operator must enable the isolated sandbox controller before creating environments."
   },
   {
    "id": "The owning team requires an active manager or approval group."
@@ -13949,16 +13750,10 @@
    "id": "This change already references RT #{id}."
   },
   {
-   "id": "This client address is outside the installation IP allowlist."
-  },
-  {
    "id": "This contact is under an active legal hold and cannot be erased."
   },
   {
    "id": "This contact's personal data has already been erased."
-  },
-  {
-   "id": "This controls deployment admission; saving a track does not deploy software. An operator can override a window only with an explicit recorded reason in the migration job configuration."
   },
   {
    "id": "This conversation is full. Start a new chat."
@@ -13983,9 +13778,6 @@
   },
   {
    "id": "This endpoint has not been allowlisted by the deployment operator. The operator must add {origin} to AI_SELF_HOSTED_ENDPOINTS (Helm ai.selfHostedEndpoints)."
-  },
-  {
-   "id": "This environment contains synthetic data and will be permanently removed at expiry. At most two environments can be active."
   },
   {
    "id": "This event exceeds the 1,000-action automation budget."
@@ -14293,9 +14085,6 @@
    "id": "Traceback"
   },
   {
-   "id": "Track"
-  },
-  {
    "id": "Transition issue",
    "javascript": true
   },
@@ -14573,9 +14362,6 @@
    "id": "Update incident"
   },
   {
-   "id": "Update install policy with current revision"
-  },
-  {
    "id": "Update record"
   },
   {
@@ -14733,9 +14519,6 @@
    "id": "Use today"
   },
   {
-   "id": "Use valid IPv4 or IPv6 networks."
-  },
-  {
    "id": "Use w (weeks), d (days), h (hours) and m (minutes), for example 1d 4h."
   },
   {
@@ -14856,9 +14639,6 @@
   },
   {
    "id": "Verification code"
-  },
-  {
-   "id": "Verified immutable candidates may be deployed whenever the operator chooses."
   },
   {
    "id": "Verified your access",
@@ -15163,9 +14943,6 @@
   {
    "id": "When an issue event occurs",
    "javascript": true
-  },
-  {
-   "id": "When approved"
   },
   {
    "id": "When sources disagree about a field, the source higher in this list wins and the disagreement is reported in the import results."
@@ -15545,9 +15322,6 @@
   },
   {
    "id": "Your conversations"
-  },
-  {
-   "id": "Your current client address"
   },
   {
    "id": "Your current password is required to disable MFA."
@@ -16164,12 +15938,6 @@
   },
   {
    "id": "placeholders from the list below each one. Anything left unedited keeps its built-in default wording."
-  },
-  {
-   "id": "platform:write and Idempotency-Key. Synthetic data only; two global slots, expiry up to seven days."
-  },
-  {
-   "id": "platform:write and platform administration. Preserves the requesting address in the allowlist."
   },
   {
    "id": "plus groups linked to {authority}"
