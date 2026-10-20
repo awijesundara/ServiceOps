@@ -788,14 +788,21 @@ def register(app):
         results = []
         # ID subqueries, not materialized ORM rows -- see global_search().
         ticket_ids = visible_ticket_query(current_user).with_entities(Ticket.id)
-        for row in Ticket.query.filter(
+        # kind=incident narrows the search to incidents (the parent incident field).
+        only_incidents = request.args.get("kind") == "incident"
+        tickets = Ticket.query.filter(
             Ticket.id.in_(ticket_ids),
             db.or_(Ticket.number.ilike(pattern), Ticket.title.ilike(pattern)),
-        ).order_by(Ticket.updated_at.desc()).limit(10):
+        )
+        if only_incidents:
+            tickets = tickets.filter(Ticket.kind == "incident")
+        for row in tickets.order_by(Ticket.updated_at.desc()).limit(10):
             results.append({
                 "value": row.number, "label": f"{row.number} — {row.title}",
                 "description": f"{row.kind.title()} · {row.state}",
             })
+        if only_incidents:
+            return jsonify(results)
         enterprise_ids = visible_enterprise_record_query(current_user).with_entities(EnterpriseRecord.id)
         for row in EnterpriseRecord.query.filter(
             EnterpriseRecord.id.in_(enterprise_ids),

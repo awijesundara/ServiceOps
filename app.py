@@ -3030,7 +3030,9 @@ def related_records(target_type, target_id):
         if other:
             result.append({
                 "link": link, "record": other,
-                "label": RELATION_LABELS.get(link.link_type, link.link_type.replace("_", " ").title()),
+                # A parent link reads "Child incident" from the parent's side.
+                "label": "Child incident" if link.link_type == "parent_incident" and not outgoing
+                else RELATION_LABELS.get(link.link_type, link.link_type.replace("_", " ").title()),
                 "direction": "outgoing" if outgoing else "incoming",
                 "number": record_number(other), "title": record_title(other),
                 "url": record_url(other),

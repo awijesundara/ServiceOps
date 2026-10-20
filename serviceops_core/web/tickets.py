@@ -155,7 +155,7 @@ from serviceops_models import (
     User,
 )
 from serviceops_core.localization import tr, tr_value
-from serviceops_core import rt_link
+from serviceops_core import incident_hierarchy, rt_link
 from serviceops_core.request_values import form_int, parse_int
 from serviceops_core.safe_redirect import redirect_internal
 
@@ -586,6 +586,13 @@ def register(app):
                         f"This change cannot be created: it conflicts with {'; '.join(conflicts)}. "
                         "Reschedule the planned window or select a different configuration item."
                     )
+            parent_incident_number = request.form.get("parent_incident", "").strip() if kind == "incident" else ""
+            if parent_incident_number:
+                from werkzeug.exceptions import HTTPException
+                try:
+                    incident_hierarchy.find_parent(current_user, parent_incident_number, current_user.tenant_id)
+                except HTTPException as error:
+                    return render_form(error.description)
             change_type_input = request.form.get("change_type", "Normal")
             if kind == "change" and change_type_input != "Emergency":
                 freeze = active_change_freeze(current_user.tenant_id, planned_start, planned_end)
@@ -649,6 +656,8 @@ def register(app):
                 contact_type=contact_type, notify=notify,
                 service_offering_id=offering.id if offering else None,
                 requester_id=current_user.id)
+            if kind == "incident" and parent_incident_number:
+                incident_hierarchy.set_parent(current_user, ticket, parent_incident_number)
             if kind == "incident" and ci_id:
                 db.session.add(TaskCI(
                     target_type="ticket", target_id=ticket.id, ci_id=ci_id,
@@ -970,6 +979,8 @@ def register(app):
                     if offering and offering.status != "Operational":
                         abort(400, description=tr("Select an operational service offering."))
                     ticket.service_offering_id = offering.id if offering else None
+                    if "parent_incident" in request.form:
+                        incident_hierarchy.set_parent(current_user, ticket, request.form["parent_incident"])
                     ci_id = request.form.get("ci_id", "")
                     existing_primary = TaskCI.query.filter_by(
                         target_type="ticket", target_id=ticket.id,
@@ -1141,6 +1152,8 @@ def register(app):
             can_manage_ticket=can_manage_ticket, ticket_locked=ticket_locked, can_reopen=can_reopen,
             can_close=can_close,
             related=related_records("ticket", ticket.id),
+            parent_incident=incident_hierarchy.parent_of(ticket) if ticket.kind == "incident" else None,
+            child_incidents=incident_hierarchy.children_of(ticket) if ticket.kind == "incident" else [],
             relation_labels=RELATION_LABELS, work_tasks=work_tasks,
             work_task_states=OPERATIONAL_TASK_TRANSITIONS, history=history,
             deleted_attachments=deleted_comment_attachments(history),
@@ -1523,6 +1536,10 @@ def register(app):
         elif isinstance(source, RequestedItem):
             if not user_can_manage_ritm(current_user, source):
                 abort(403)
+        if request.form.get("link_type") == "parent_incident" and isinstance(source, Ticket):
+            incident_hierarchy.set_parent(current_user, source, request.form.get("target_number"))
+            db.session.commit()
+            return redirect(record_url(source))
         target = find_record_by_number(request.form.get("target_number"))
         if not target:
             abort(404, description=tr("No record matches the supplied number."))
@@ -1602,6 +1619,46 @@ def register(app):
             audit("link", record_number(source), description)
             db.session.commit()
         return redirect(record_url(source))
+
+    @app.post("/record-links/<int:link_id>/delete")
+    @roles("agent", "manager", "admin")
+    def record_link_remove(link_id):
+        """Remove a related-record link, with the same rights and locks as adding one."""
+        link = db.get_or_404(RecordLink, link_id)
+        source = record_reference(link.source_type, link.source_id)
+        target = record_reference(link.target_type, link.target_id)
+        if not source or record_tenant_id(source) != core.tenant_context_id():
+            abort(404)
+        if isinstance(source, Ticket):
+            require_ticket_team_access(source)
+            if source.kind == "change" and source.state not in ("New", "Awaiting Approval"):
+                abort(409, description=tr("{number} is locked: related records can only be changed before a change is "
+                                          "approved.", number=source.number))
+            if source.kind != "change" and ticket_locked_for_edits(source):
+                abort(409, description=tr("{number} is {state} and locked: only comments and notes can be added.",
+                                          number=source.number, state=source.state))
+        elif isinstance(source, EnterpriseRecord):
+            if not user_can_manage_enterprise_record(current_user, source):
+                abort(403)
+        elif isinstance(source, RequestedItem):
+            if not user_can_manage_ritm(current_user, source):
+                abort(403)
+        else:
+            abort(403)
+        if link.link_type == "parent_incident" and isinstance(source, Ticket):
+            incident_hierarchy.set_parent(current_user, source, "")
+        else:
+            label = RELATION_LABELS.get(link.link_type, link.link_type)
+            db.session.delete(link)
+            log_history(link.source_type, link.source_id, "Related record removed",
+                        details=f"{label}: {record_number(target) if target else 'deleted record'}")
+            if target is not None and link.target_type == "ticket":
+                log_history("ticket", link.target_id, "Related record removed",
+                            details=f"{record_number(source)} ({label})")
+            audit("unlink", record_number(source), f"{label}: {record_number(target) if target else link.target_id}")
+        db.session.commit()
+        redirect_to = request.form.get("next", "")
+        return redirect(redirect_to if core.is_safe_internal_path(redirect_to) else record_url(source))
 
     @app.post("/record/<target_type>/<int:target_id>/configuration-items")
     @roles("agent", "manager", "admin")

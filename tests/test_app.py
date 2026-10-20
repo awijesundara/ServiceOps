@@ -4451,7 +4451,11 @@ def test_incident_problem_change_and_parent_relationship_network(client, app):
             target_type="ticket", target_id=parent_id,
             event="Related record linked",
         ).all()
-        assert len(history) == 4
+        assert len(history) == 3
+        # The child link is recorded on the parent as a child incident.
+        assert TaskHistory.query.filter_by(
+            target_type="ticket", target_id=parent_id, event="Child incident added",
+        ).count() == 1
 
 
 def test_material_change_edit_supersedes_approvals_and_notifies_approvers(client, app):

@@ -305,6 +305,9 @@
    "id": "A summary of project status, priorities, workload and recent activity."
   },
   {
+   "id": "A task for another team adds an approval from that team's manager before the change can go ahead."
+  },
+  {
    "id": "A tenant with slug \"{slug}\" already exists."
   },
   {
@@ -1209,6 +1212,9 @@
   },
   {
    "id": "An epic cannot have a parent."
+  },
+  {
+   "id": "An incident cannot be its own parent."
   },
   {
    "id": "Analytics"
@@ -2419,6 +2425,9 @@
   },
   {
    "id": "Child CIs"
+  },
+  {
+   "id": "Child incidents"
   },
   {
    "id": "Choice"
@@ -5861,6 +5870,9 @@
    "id": "Incidents fixed by change"
   },
   {
+   "id": "Incidents linked to this one as their parent"
+  },
+  {
    "id": "Incidents/changes"
   },
   {
@@ -7587,6 +7599,9 @@
    "id": "No checklist items."
   },
   {
+   "id": "No child incidents. Set this incident as the Parent incident on a related incident to group it here."
+  },
+  {
    "id": "No client contacts configured."
   },
   {
@@ -7722,6 +7737,9 @@
   },
   {
    "id": "No improvement items yet."
+  },
+  {
+   "id": "No incident matches {number}."
   },
   {
    "id": "No incidents caused by this change."
@@ -8118,6 +8136,9 @@
    "id": "None yet."
   },
   {
+   "id": "None · search INC number or title…"
+  },
+  {
    "id": "Normal"
   },
   {
@@ -8482,6 +8503,9 @@
    "id": "Only an administrator can manage triggers."
   },
   {
+   "id": "Only an incident can be the parent of an incident."
+  },
+  {
    "id": "Only blocking dependencies whose endpoints you can access are shown. Finish-to-start conflicts use stored dates; program-board iteration conflicts are shown on that board."
   },
   {
@@ -8697,6 +8721,9 @@
    "id": "Open work · {instance_name}"
   },
   {
+   "id": "Open {number}"
+  },
+  {
    "id": "Open {page}",
    "javascript": true
   },
@@ -8765,6 +8792,9 @@
   },
   {
    "id": "Optional · or drop or paste a file here · up to 20 MB"
+  },
+  {
+   "id": "Optional · search INC number or title…"
   },
   {
    "id": "Optional — shown to anyone blocked by this freeze"
@@ -10430,6 +10460,9 @@
    "id": "Remove link to {label}"
   },
   {
+   "id": "Remove link to {number}"
+  },
+  {
    "id": "Remove mailbox {name}? This deletes its stored credentials."
   },
   {
@@ -10450,6 +10483,9 @@
   },
   {
    "id": "Remove this custom proxy"
+  },
+  {
+   "id": "Remove this link to {number}?"
   },
   {
    "id": "Remove this page from favorites",
@@ -13649,6 +13685,9 @@
    "id": "The work item hierarchy must be repaired before cloning."
   },
   {
+   "id": "The {name} team (assigned a change task) requires an active manager or approval group."
+  },
+  {
    "id": "The {name} team (co-owner of a service this CI backs) requires an active manager or approval group."
   },
   {
@@ -16382,6 +16421,12 @@
    "id": "{count} changes reviewed in this window."
   },
   {
+   "id": "{count} child"
+  },
+  {
+   "id": "{count} children"
+  },
+  {
    "id": "{count} configuration item"
   },
   {
@@ -16957,6 +17002,9 @@
    "id": "{number} has already been deleted."
   },
   {
+   "id": "{number} is locked: related records can only be changed before a change is approved."
+  },
+  {
    "id": "{number} is locked: related records can only be linked before a change is approved."
   },
   {
@@ -17025,6 +17073,9 @@
   },
   {
    "id": "{original_email}'s personal data has been erased."
+  },
+  {
+   "id": "{parent} is already a child of {child}; an incident cannot be its own ancestor."
   },
   {
    "id": "{period}: {used} of {limit}",
