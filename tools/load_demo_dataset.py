@@ -145,6 +145,12 @@ def build_users_and_teams():
             ).first():
                 db.session.add(GroupMember(group_id=ccb.id, user_id=user.id, role="CCB approver"))
     requesters = [get_or_create_user(u, n, "requester") for u, n in REQUESTERS]
+    # Changes that need board review end with the executive: give the demo one,
+    # so every change can be routed end to end.
+    executive_office = SupportGroup.query.filter_by(name="Executive Office").first()
+    if executive_office is not None and executive_office.manager_id is None:
+        executive = get_or_create_user("a.mori", "Akira Mori", "manager", executive_office, "manager")
+        executive_office.manager_id = executive.id
     db.session.flush()
     return teams, requesters
 

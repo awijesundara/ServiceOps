@@ -1536,6 +1536,19 @@ def create_ticket_with_unique_number(kind, **fields):
     return ticket
 
 
+def primary_team(user):
+    """The working team someone's own views are about: a team they manage
+    first, then any team they belong to (never a board or approval group)."""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return None
+    ids = user_support_group_ids(user)
+    teams = [group for group in SupportGroup.query.filter(SupportGroup.id.in_(ids or [-1]),
+                                                           SupportGroup.tenant_id == user.tenant_id)
+             .order_by(SupportGroup.name).all() if is_team_group(group)]
+    managed = [group for group in teams if group.manager_id == user.id]
+    return (managed or teams or [None])[0]
+
+
 def team_member_ids(group):
     """Active members and the manager of a team, the people who work its queue."""
     if group is None:

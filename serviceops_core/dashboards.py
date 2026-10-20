@@ -532,8 +532,7 @@ def team_for(viewer, dashboard, opts):
     team_id = opts.get("team")
     if team_id and team_id in core.user_support_group_ids(viewer):
         return db.session.get(SupportGroup, team_id)
-    groups = member_groups(viewer)
-    return groups[0] if groups else None
+    return core.primary_team(viewer) or next(iter(member_groups(viewer)), None)
 
 
 def render_context(viewer, dashboard):
@@ -719,7 +718,7 @@ def ensure_personal(user):
                 key, opts = LEGACY[item["widget_key"]]
                 widgets.append((key, 3 if item.get("span") == 2 and key != "ticket_counts" else
                                 WIDGETS[key]["default_span"], dict(opts)))
-    default = DEFAULT_PERSONAL_TEAM if member_groups(user) else DEFAULT_PERSONAL
+    default = DEFAULT_PERSONAL_TEAM if core.primary_team(user) else DEFAULT_PERSONAL
     dashboard = create_dashboard(user, tr("My dashboard"), widgets=widgets or default)
     dashboard.updated_by_id = None  # created automatically, not changed by the person
     db.session.commit()

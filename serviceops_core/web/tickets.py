@@ -357,8 +357,7 @@ def register(app):
         raw_filter = request.args.get("filter") if "filter" in request.args else json.dumps(open_rows)
         conditions = parse_list_filter_param(raw_filter)
         query = ticket_list_query(kind, q=q, conditions=conditions)
-        team_ids = sorted(core.user_support_group_ids(current_user))
-        my_team = db.session.get(SupportGroup, team_ids[0]) if team_ids else None
+        my_team = core.primary_team(current_user)
         quick_views = [(tr("Open"), open_rows),
                        (tr("Assigned to me"), open_rows + [{"field": "assignee", "op": "eq", "value": str(current_user.id)}])]
         if my_team is not None:
