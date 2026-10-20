@@ -175,6 +175,21 @@ def static_asset_version(static_folder):
     return f"{APP_VERSION}-{_asset_fingerprints[static_folder]}"
 
 
+def warm_templates(app):
+    """Compile every page template once at startup. Gunicorn preloads the app
+    and forks its workers from it, so each worker (and each one recycled by
+    --max-requests) starts with them compiled; otherwise the first visit to a
+    page in every worker paid for compiling it (three times slower)."""
+    started, compiled = time_module.monotonic(), 0
+    for name in app.jinja_env.list_templates(filter_func=lambda name: name.endswith((".html", ".txt", ".xml"))):
+        try:
+            app.jinja_env.get_template(name)
+            compiled += 1
+        except Exception:  # noqa: BLE001 - a template that cannot compile alone still compiles when used
+            app.logger.warning("Template %s was not precompiled", name, exc_info=True)
+    app.logger.info("Precompiled %s templates in %.1f s", compiled, time_module.monotonic() - started)
+
+
 def display_version():
     # STORAGE_MODE=ipfs is a database-less deployment with real, disclosed
     # operating-boundary differences from the default PostgreSQL mode (see
@@ -7445,6 +7460,10 @@ def create_app(test_config=None):
             return redirect(url_for("login"))
         return None
 
+    # Registered first so it runs last, after every other hook changed the body.
+    from serviceops_core.compression import compress_response
+    app.after_request(compress_response)
+
     @app.after_request
     def inject_csrf(response):
         # Deliberately NOT gated on response.status_code < 400: a form that
@@ -7962,6 +7981,7 @@ def create_app(test_config=None):
     if os.getenv("SERVICEOPS_SERVING") == "1":
         from serviceops_core.crash_reports import install_request_watchdog
         install_request_watchdog(app)
+        warm_templates(app)
     # Configuration reads (including syslog setup) can reopen the pool. Release
     # sessions and connections only after every startup component has finished.
     if not ipfs_enabled():
