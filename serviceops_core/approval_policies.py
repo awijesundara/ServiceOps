@@ -35,6 +35,7 @@ SOURCES = {
     "request_team_members": ("Every member of the fulfilment team", {"catalog"}, None),
     "owning_team_manager": ("Owning team's manager (and its approval groups)", {"change"}, None),
     "ci_owner_team_managers": ("Each other team owning an affected CI: its manager", {"change"}, None),
+    "ci_owners": ("Owners of the affected CIs: each person once", {"change"}, None),
     "service_coowner_team_managers": ("Each other team sharing an affected service: its manager", {"change"}, None),
     "task_team_managers": ("Each other team assigned a change task: its manager", {"change"}, None),
     "group": ("Members of a chosen group", {"catalog", "change", "enterprise"}, "group"),
@@ -69,6 +70,8 @@ AUTHORITIES = {"ccb": "Change Control Board", "executive": "Executive approval",
 
 TEAM_SOURCES = {"request_team_manager", "owning_team_manager", "ci_owner_team_managers",
                 "service_coowner_team_managers", "task_team_managers", "line_manager"}
+# Stages that name particular people; one person is never asked twice across them.
+PERSON_SOURCES = TEAM_SOURCES | {"ci_owners"}
 
 
 class ApprovalRouteError(ValueError):
@@ -94,18 +97,20 @@ def _default_definitions(tenant_id):
         ("catalog", "Line manager only", False, "Only the requester's line manager approves.",
          [_stage(0, "Line manager approval", "line_manager", mode="all")]),
         ("change", "Change authorization", True,
-         "The owning team's manager, the managers of other teams owning affected CIs, sharing an affected "
-         "service or assigned a change task, then for non-standard changes that need CCB review one CCB "
-         "approver and the executive.",
+         "The owning team's manager, the managers of other teams owning affected CIs, the owners of the "
+         "affected CIs (each person once), the managers of teams sharing an affected service or assigned a "
+         "change task, then for non-standard changes that need CCB review one CCB approver and the executive. "
+         "Nobody is asked twice.",
          [_stage(0, "{team} manager assessment", "owning_team_manager", mode="any", skip_duplicates=False),
           _stage(1, "{team} manager assessment (CI owner)", "ci_owner_team_managers", mode="any", skip_duplicates=False),
-          _stage(2, "{team} manager assessment (service co-owner)", "service_coowner_team_managers", mode="any", skip_duplicates=False),
-          _stage(3, "{team} manager approval (change task)", "task_team_managers", mode="any", skip_duplicates=False),
-          _stage(4, "CCB authorization", "group", group_id=ccb.id if ccb else None, role_filter="CCB approver",
+          _stage(2, "CI owner approval", "ci_owners", mode="all", skip_duplicates=False),
+          _stage(3, "{team} manager assessment (service co-owner)", "service_coowner_team_managers", mode="any", skip_duplicates=False),
+          _stage(4, "{team} manager approval (change task)", "task_team_managers", mode="any", skip_duplicates=False),
+          _stage(5, "CCB authorization", "group", group_id=ccb.id if ccb else None, role_filter="CCB approver",
                  authority="ccb", mode="any", skip_duplicates=False, condition="ccb_required_normal"),
-          _stage(5, "Emergency CCB authorization (expedited)", "group", group_id=ccb.id if ccb else None,
+          _stage(6, "Emergency CCB authorization (expedited)", "group", group_id=ccb.id if ccb else None,
                  role_filter="CCB approver", authority="ccb", mode="any", skip_duplicates=False, condition="ccb_required_emergency"),
-          _stage(6, "Executive (CEO) approval", "group", group_id=executive.id if executive else None,
+          _stage(7, "Executive (CEO) approval", "group", group_id=executive.id if executive else None,
                  role_filter="executive approver", include_manager=True, authority="executive",
                  mode="group_mode", skip_duplicates=False, condition="ccb_required")]),
         ("enterprise", "Enterprise record approval", True,
@@ -229,6 +234,13 @@ def _resolve(stage, context, tenant_id, covered_group_ids):
                             name=group.name, name2=ci.name)))
             covered_group_ids.add(group_id)
         return rows
+    if source == "ci_owners":
+        # One request per person however many of the CIs they own. The person
+        # who raised the change has agreed to it already, so is not asked.
+        requester_id = context["ticket"].requester_id if context.get("ticket") else None
+        owners = {ci.owner.id for ci in context.get("cis", [])
+                  if ci.owner and ci.owner.active and ci.owner.tenant_id == tenant_id and ci.owner.id != requester_id}
+        return [(name, owners, None, None)] if owners else []
     if source == "service_coowner_team_managers":
         rows = []
         for group in context.get("coowner_groups", []):
@@ -340,6 +352,8 @@ def build_stages(policy, context, exclude_user_ids=()):
             continue
         for name, ids, group, error in _resolve(stage, context, tenant_id, covered):
             ids = set(ids) - set(exclude_user_ids)
+            if not ids and stage.source == "ci_owners":
+                continue  # nobody left to ask is fine: the owners approve elsewhere or raised it
             if not ids:
                 # The fallback may include an excluded person (an administrator
                 # approving their own record when nobody else can).
@@ -353,12 +367,46 @@ def build_stages(policy, context, exclude_user_ids=()):
                 mode = group.approval_mode if group is not None and group.approval_mode in ("all", "any") else "all"
             if mode not in ("all", "any", "majority"):
                 mode = "any"
-            if stage.source in TEAM_SOURCES and len(ids) == 1:
-                mode = "all"  # a team's sole manager simply approves
-            built.append({"name": name, "mode": mode, "approver_ids": sorted(ids)})
+            if stage.source in PERSON_SOURCES and len(ids) == 1:
+                mode = "all"  # a team's sole manager (or a CI's sole owner) simply approves
+            if stage.source in PERSON_SOURCES and _fold_duplicate(built, name, mode, ids):
+                continue
+            built.append({"name": name, "mode": mode, "approver_ids": sorted(ids), "person_stage": stage.source in PERSON_SOURCES})
     if not built:
         raise ApprovalRouteError(tr("The approval policy {name} has no stage that applies here.", name=policy.name))
+    for stage in built:
+        stage.pop("person_stage", None)
     return built
+
+
+def _fold_duplicate(built, name, mode, ids):
+    """Nobody is asked twice for one record. A team or CI-owner stage folds into
+    an earlier one when that decision already covers it, and the earlier
+    stage's name then says so. People who must approve an earlier stage
+    themselves are taken out of a later every-approver stage (`ids` is changed
+    in place). Returns True when the stage adds nobody new."""
+    earlier = [previous for previous in built if previous["person_stage"]]
+    for previous in earlier:
+        if set(previous["approver_ids"]) == ids and previous["mode"] == mode:
+            previous["name"] = _joined_name(previous["name"], name)
+            return True
+    # Every-approver stages: each of their approvers decides personally.
+    must = [previous for previous in earlier if previous["mode"] == "all"]
+    must_ids = set().union(*(set(previous["approver_ids"]) for previous in must))
+    if not ids & must_ids:
+        return False
+    if mode == "any" or ids <= must_ids:
+        # One of these people already decides, or all of them do.
+        holder = next(previous for previous in must if ids & set(previous["approver_ids"]))
+        holder["name"] = _joined_name(holder["name"], name)
+        return True
+    ids.difference_update(must_ids)
+    return False
+
+
+def _joined_name(first, second):
+    joined = f"{first}; {second}"
+    return joined if len(joined) <= 160 else joined[:157] + "..."
 
 
 # --- administration -------------------------------------------------------------------------------

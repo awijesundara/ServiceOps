@@ -8201,8 +8201,10 @@ def test_change_gets_ci_owner_manager_approval_when_different_from_assignment_gr
         ticket = Ticket.query.filter_by(kind="change").one()
         chain = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket.id).one()
         names = [gate.name for gate in chain.gates]
-        assert "Unix manager assessment" in names
-        assert "Database manager assessment (CI owner)" in names
+        # The fixture's one manager runs both teams: asked once, for both.
+        assert any("Unix manager assessment" in name and "Database manager assessment (CI owner)" in name
+                   for name in names)
+        assert sum("manager assessment" in gate.name for gate in chain.gates) == 1
 
 
 def test_change_gets_approval_from_every_selected_ci_owner_team(client, app):
@@ -8356,9 +8358,11 @@ def test_change_requires_every_service_co_owner_team_manager_approval(app):
         db.session.commit()
         stages = change_approval_stages(ticket)
         names = [stage["name"] for stage in stages]
-        assert "Unix manager assessment" in names
-        assert "Network manager assessment (CI owner)" in names
-        assert "Database manager assessment (service co-owner)" in names
+        # One manager runs all three teams, so one stage names all three.
+        team_stage = next(name for name in names if name.startswith("Unix manager assessment"))
+        assert "Network manager assessment (CI owner)" in team_stage
+        assert "Database manager assessment (service co-owner)" in team_stage
+        assert sum(manager.id in stage["approver_ids"] for stage in stages if "manager assessment" in stage["name"]) == 1
         assert "Executive (CEO) approval" in names
         ccb_stage = next(stage for stage in stages if "CCB" in stage["name"])
         assert ccb_stage["mode"] == "any"
