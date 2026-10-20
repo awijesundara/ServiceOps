@@ -103,7 +103,7 @@ from serviceops_core.rack_location import is_data_center_group, rack_label, rack
 from serviceops_core.config_schema import SETTING_DEFINITIONS
 from serviceops_core.priority import calculate_priority
 from serviceops_core.projections import project_document
-from serviceops_core.task_lifecycle import build_state_track, OPERATIONAL_TASK_TRANSITIONS
+from serviceops_core.task_lifecycle import FINISHED_TICKET_STATES, build_state_track, OPERATIONAL_TASK_TRANSITIONS
 from serviceops_core.web.common import (
     save_ticket_attachment,
     TERMINAL_TASK_STATES,
@@ -180,9 +180,7 @@ def register(app):
     def open_work():
         priority = request.args.get("priority", "").strip()
         ticket_query = visible_ticket_query(current_user)
-        open_ticket_query = ticket_query.filter(
-            Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])
-        )
+        open_ticket_query = ticket_query.filter(Ticket.state.notin_(FINISHED_TICKET_STATES))
         if priority:
             open_ticket_query = open_ticket_query.filter_by(priority=priority)
         # Capped to keep this route bounded for tenants with a large open-work
@@ -211,9 +209,7 @@ def register(app):
     @login_required
     def open_work_export():
         priority = request.args.get("priority", "").strip()
-        open_ticket_query = visible_ticket_query(current_user).filter(
-            Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])
-        )
+        open_ticket_query = visible_ticket_query(current_user).filter(Ticket.state.notin_(FINISHED_TICKET_STATES))
         if priority:
             open_ticket_query = open_ticket_query.filter_by(priority=priority)
         export_limit = 5000

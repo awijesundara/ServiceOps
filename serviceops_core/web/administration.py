@@ -23,6 +23,7 @@ from sqlalchemy.orm import selectinload
 import app as core
 from serviceops_core.approval_groups import AUTHORITIES as APPROVAL_AUTHORITIES, linked_group_ids, set_authority_groups
 from serviceops_core.identity import normalize_email
+from serviceops_core.task_lifecycle import FINISHED_TICKET_STATES
 from app import (
     email_taken_by_other,
     _export_response,
@@ -1737,9 +1738,7 @@ def register(app):
             backup_setup=_reveal_backup_setup(session.pop("backup_setup", None)),
             backup_teams=core.team_groups().all(),
             total_users=tenant_query(User).filter_by(active=True).count(),
-            open_tickets=tenant_query(Ticket).filter(
-                Ticket.state.notin_(["Resolved", "Closed", "Cancelled"])
-            ).count(),
+            open_tickets=tenant_query(Ticket).filter(Ticket.state.notin_(FINISHED_TICKET_STATES)).count(),
             deployment_mode=os.getenv("DEPLOYMENT_MODE", "unknown"),
             gunicorn_workers=os.getenv("GUNICORN_WORKERS", "2"),
         )

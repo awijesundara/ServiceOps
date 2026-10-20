@@ -10,7 +10,7 @@ from datetime import timezone
 from serviceops_models import (CatalogItem, ChangeFreezeWindow, GroupMember, ServiceOffering, SLADefinition, SupportGroup, Ticket, User,
                                db, now)
 
-OPEN_STATES_EXCLUDED = ("Resolved", "Closed", "Cancelled", "Canceled", "Completed", "Implemented")
+OPEN_STATES_EXCLUDED = ("Resolved", "Closed", "Cancelled", "Canceled", "Rejected", "Completed", "Implemented")
 
 _INTENTS = {
     "profile": r"\b(my|me)\b.{0,25}\b(team|teams|group|manager|department|title|position|job)\b|\b(am i|do i|i)\b.{0,30}\b(ccb|group|team|belong|member)\b|\bwhat do you know about me\b|\btell me about me\b|\bwho am i\b|\bline manager\b|\bwho do i report\b",

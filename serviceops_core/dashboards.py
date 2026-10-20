@@ -16,13 +16,14 @@ from sqlalchemy import func
 
 import app as core
 from serviceops_core.localization import tr
+from serviceops_core.task_lifecycle import FINISHED_TICKET_STATES
 from serviceops_models import (ApprovalChain, ApprovalGate, ApprovalVote, CatalogItemRouting, CatalogRequest,
                                CatalogTask, ChangeGovernance, Dashboard, DashboardHome,
                                DashboardWidget, Favorite, GroupMember, Notification, OperationalTask, RecentView,
                                RequestedItem, SupportGroup, TaskSLA, Ticket, User,
                                UserWorkspaceLayout, db, now)
 
-TERMINAL_TICKET = ("Resolved", "Closed", "Cancelled")
+TERMINAL_TICKET = FINISHED_TICKET_STATES
 TERMINAL_TASK = ("Closed Complete", "Closed Incomplete", "Closed Skipped", "Cancelled")
 TERMINAL_ITEM = ("Closed Complete", "Closed Incomplete", "Closed Skipped", "Rejected", "Cancelled")
 MAX_DASHBOARDS = 20
@@ -255,7 +256,7 @@ def _upcoming_changes(viewer, opts, team):
         ChangeGovernance, ChangeGovernance.ticket_id == Ticket.id).filter(
         ChangeGovernance.planned_start >= now() - timedelta(hours=12),
         ChangeGovernance.planned_start <= now() + timedelta(days=days),
-        Ticket.state.notin_(("Closed", "Cancelled", "Rejected")))
+        Ticket.state.notin_(TERMINAL_TICKET))
     rows = query.with_entities(Ticket, ChangeGovernance).order_by(ChangeGovernance.planned_start) \
         .limit(int(opts.get("limit", 5))).all()
     return {"changes": [{"ticket": t, "governance": g} for t, g in rows]}

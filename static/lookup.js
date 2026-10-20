@@ -231,7 +231,10 @@ function initLookup(container) {
     debounceTimer = setTimeout(async () => {
       let response;
       try {
-        response = await fetch(`${url}?q=${encodeURIComponent(q)}`);
+        // The lookup URL may carry its own parameters (e.g. ?kind=incident).
+        const target = new URL(url, window.location.origin);
+        target.searchParams.set("q", q);
+        response = await fetch(target);
       } catch (error) {
         container.classList.remove("is-loading");
         window.showToast?.(tr("Search is unavailable right now. Please try again."), "error");

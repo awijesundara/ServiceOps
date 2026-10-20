@@ -2,7 +2,7 @@
 {% block content %}
 <section class="list-workspace">
   <header class="list-toolbar">
-    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Assets') }}</strong><small>{{ tr('{total} records', total=(total)) }}</small></div></div>
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Assets') }}</strong><small>{{ trn(total, '{count} record', '{count} records') }}</small></div></div>
     {% if current_user.effective_role in ['admin','superadmin'] %}<a class="primary button" href="{{ url_for('asset_new') }}">+ {{ tr('New asset') }}</a>{% endif %}
     <form class="list-search">
       <input type="hidden" name="filter" value="{{ raw_filter }}">

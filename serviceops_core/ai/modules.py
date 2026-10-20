@@ -20,7 +20,7 @@ from serviceops_models import (ApprovalVote, Asset, CatalogRequest, CatalogTask,
                                ConfigurationItem, EnterpriseRecord, Knowledge, OperationalTask, RequestedItem, SupportGroup,
                                TaskNote, TaskSLA, Ticket, TicketAssignmentGroup, User, db, now)
 
-CLOSED = ("Resolved", "Closed", "Cancelled", "Canceled", "Completed", "Implemented", "Fulfilled", "Complete")
+CLOSED = ("Resolved", "Closed", "Cancelled", "Canceled", "Rejected", "Completed", "Implemented", "Fulfilled", "Complete")
 
 _INTENTS = {
     "breaches": r"breach|overdue|violat|at risk|running late|missed (the )?(sla|target)",

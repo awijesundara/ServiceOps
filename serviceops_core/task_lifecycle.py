@@ -7,6 +7,13 @@ database; only the declarative "what states can X move to" data and its
 lookup helper live here.
 """
 
+# Ticket states where the work is over: nothing more will happen without a
+# reopen. Every "open" count, list and widget excludes exactly these, so the
+# numbers agree everywhere. Rejected is final for changes (it moves nowhere).
+FINISHED_TICKET_STATES = ("Resolved", "Closed", "Cancelled", "Rejected")
+# The same for service requests (REQ).
+FINISHED_REQUEST_STATES = ("Closed Complete", "Closed Incomplete", "Cancelled")
+
 TICKET_TRANSITIONS = {
     "New": ("New", "In Progress", "Pending", "Resolved", "Cancelled"),
     "In Progress": ("In Progress", "Pending", "Resolved", "Cancelled"),

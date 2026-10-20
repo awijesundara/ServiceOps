@@ -2,18 +2,20 @@
 {% block content %}
 <section class="list-workspace">
   <header class="list-toolbar">
-    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Requests') }}</strong><small>{{ tr('{total} records', total=(total)) }}</small></div></div>
+    {% set open_arg = 1 if open_only else none %}
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Open requests') if open_only else tr('Requests') }}</strong><small>{{ trn(total, '{count} record', '{count} records') }}</small></div></div>
+    {% if open_only %}<a class="button" href="{{ url_for('requests_list', q=q or none) }}">{{ tr('Show all requests') }}</a>{% else %}<a class="button" href="{{ url_for('requests_list', q=q or none, open=1) }}">{{ tr('Open only') }}</a>{% endif %}
     <a class="primary button" href="{{ url_for('catalog') }}">{{ tr('Open catalog') }}</a>
-    <a class="button" href="{{ url_for('requests_export', q=q) }}">⬇ CSV</a>
+    <a class="button" href="{{ url_for('requests_export', q=q, open=open_arg) }}">⬇ CSV</a>
     <button type="button" class="button" data-print-page>🖶 {{ tr('Print') }}</button>
     <form class="list-search">
-      <input name="q" value="{{ q }}" placeholder="{{ tr('REQ number') }}" aria-label="{{ tr('Search requests') }}">
+      {% if open_only %}<input type="hidden" name="open" value="1">{% endif %}<input name="q" value="{{ q }}" placeholder="{{ tr('REQ number') }}" aria-label="{{ tr('Search requests') }}">
       <button>{{ tr('Search') }}</button>
     </form>
     <nav class="list-pagination" aria-label="{{ tr('Pagination') }}">
-      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('requests_list', q=q, page=page-1) }}">‹</a>
+      <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('requests_list', q=q, page=page-1, open=open_arg) }}">‹</a>
       <span>{{ tr('Page {page} of {pages}', page=(page), pages=(pages)) }}</span>
-      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('requests_list', q=q, page=page+1) }}">›</a>
+      <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('requests_list', q=q, page=page+1, open=open_arg) }}">›</a>
     </nav>
   </header>
   <div class="task-list-scroll">

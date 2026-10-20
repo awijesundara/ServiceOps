@@ -8829,7 +8829,13 @@
    "id": "Open notification inbox"
   },
   {
+   "id": "Open only"
+  },
+  {
    "id": "Open priority mix"
+  },
+  {
+   "id": "Open requests"
   },
   {
    "id": "Open selected sprint"
@@ -12502,6 +12508,9 @@
   {
    "id": "Show ServiceOps notifications on this computer even when no ServiceOps tab is open.",
    "javascript": true
+  },
+  {
+   "id": "Show all requests"
   },
   {
    "id": "Show archived"
@@ -16803,6 +16812,9 @@
    "id": "{count} ratings submitted in this window."
   },
   {
+   "id": "{count} record"
+  },
+  {
    "id": "{count} records"
   },
   {
@@ -17546,9 +17558,6 @@
   },
   {
    "id": "{total_users} active users total · view queue"
-  },
-  {
-   "id": "{total} records"
   },
   {
    "id": "{total} records · {types}"

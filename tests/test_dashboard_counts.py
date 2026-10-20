@@ -3,6 +3,7 @@ a direct count of the tickets the user can see (perf review 2026-10-12)."""
 from flask import template_rendered
 
 from app import Ticket, User, create_ticket_with_unique_number, db, visible_ticket_query
+from serviceops_core.task_lifecycle import FINISHED_TICKET_STATES
 from tests.test_app import app, client, login  # noqa: F401
 
 
@@ -18,10 +19,10 @@ def test_dashboard_counts_match_the_visible_tickets(app, client):
             ticket.state = state
         db.session.commit()
         rows = visible_ticket_query(admin).with_entities(Ticket.kind, Ticket.priority, Ticket.state).all()
-        open_rows = [r for r in rows if r.state not in ("Resolved", "Closed", "Cancelled")]
-        expected = {
-            "incident": sum(r.kind == "incident" for r in rows),
-            "change": sum(r.kind == "change" for r in rows),
+        open_rows = [r for r in rows if r.state not in FINISHED_TICKET_STATES]
+        expected = {  # the tiles count open tickets only
+            "incident": sum(r.kind == "incident" for r in open_rows),
+            "change": sum(r.kind == "change" for r in open_rows),
             "p1": sum(r.kind == "incident" and r.priority == "P1" for r in open_rows),
             "p2": sum(r.kind == "incident" and r.priority == "P2" for r in open_rows),
             "open_tickets": len(open_rows),

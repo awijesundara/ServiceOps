@@ -6,10 +6,13 @@ same row the related-records list shows, so every path that sets a parent goes
 through set_parent() and its rules: one parent, no loops, same tenant, and only
 incidents the person may see.
 """
+import re
+
 from flask import abort
 
 import app as core
 from serviceops_core.localization import tr
+from serviceops_core.task_lifecycle import FINISHED_TICKET_STATES
 from serviceops_models import RecordLink, Ticket, db
 
 LINK = "parent_incident"
@@ -36,6 +39,45 @@ def _ancestors(ticket, limit=50):
         seen.add(current.id)
         current = parent_of(current)
     return seen
+
+
+def _descendants(ticket, limit=500):
+    """Ids of every incident below `ticket` (children, their children, ...)."""
+    found, frontier = set(), [ticket.id]
+    while frontier and len(found) < limit:
+        rows = RecordLink.query.filter(RecordLink.target_type == "ticket", RecordLink.target_id.in_(frontier),
+                                       RecordLink.link_type == LINK).with_entities(RecordLink.source_id).all()
+        frontier = [row[0] for row in rows if row[0] not in found]
+        found.update(frontier)
+    return found
+
+
+def candidates(user, text, exclude=None, limit=10):
+    """Incidents that can become the parent, best match first: every word must
+    appear in the number or title; "12", "inc12" and "INC0000012" all find
+    INC0000012. The incident being edited and its descendants are left out,
+    since choosing them would make a loop."""
+    words = (text or "").split()[:6]
+    if not words:
+        return []
+    query = core.visible_ticket_query(user).filter(Ticket.kind == "incident", Ticket.deleted_at.is_(None))
+    if exclude is not None:
+        query = query.filter(Ticket.id.notin_({exclude.id} | _descendants(exclude)))
+    exact = None
+    match = re.fullmatch(r"(?:inc)?0*(\d{1,7})", text.strip(), flags=re.IGNORECASE)
+    if match:
+        exact = f"INC{int(match.group(1)):07d}"
+    conditions = []
+    for word in words:
+        pattern = f"%{core.escape_like(word)}%"
+        conditions.append(db.or_(Ticket.number.ilike(pattern, escape="\\"), Ticket.title.ilike(pattern, escape="\\")))
+    matching = db.and_(*conditions)
+    if exact:
+        matching = db.or_(Ticket.number == exact, matching)
+    open_first = db.case((Ticket.state.in_(FINISHED_TICKET_STATES), 1), else_=0)
+    exact_first = db.case((Ticket.number == exact, 0), else_=1) if exact else db.literal(1)
+    return query.filter(matching).order_by(exact_first, open_first, Ticket.updated_at.desc(), Ticket.id.desc()) \
+        .limit(limit).all()
 
 
 def find_parent(user, number, tenant_id):

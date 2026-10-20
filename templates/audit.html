@@ -22,7 +22,7 @@
 </div>
 <section class="list-workspace">
   <header class="list-toolbar">
-    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Audit events') }}</strong><small>{{ tr('{total} records', total=(total)) }}</small></div></div>
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Audit events') }}</strong><small>{{ trn(total, '{count} record', '{count} records') }}</small></div></div>
     <form class="list-search">
       <input type="hidden" name="filter" value="{{ raw_filter }}">
       <input name="q" value="{{ q }}" placeholder="{{ tr('Action or target') }}" aria-label="{{ tr('Search audit events') }}">

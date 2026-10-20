@@ -62,8 +62,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (query.length < 6 || query === lastQuery) return;
       lastQuery = query;
       try {
-        const response = await fetch(`${panel.dataset.similarIncidents}?q=${encodeURIComponent(query)}`,
-          {headers: {Accept: "application/json"}});
+        const target = new URL(panel.dataset.similarIncidents, window.location.origin);
+        target.searchParams.set("q", query);
+        const response = await fetch(target, {headers: {Accept: "application/json"}});
         if (response.ok) render(await response.json());
       } catch (error) {
         panel.hidden = true; // Suggestions are optional; creating the incident still works.

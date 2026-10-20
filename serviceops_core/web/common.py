@@ -17,6 +17,7 @@ from sqlalchemy import func
 from werkzeug.utils import secure_filename
 
 import app as core
+from serviceops_core.task_lifecycle import FINISHED_TICKET_STATES
 from app import (
     align_tz,
     APP_VERSION,
@@ -76,7 +77,7 @@ from serviceops_core.public_url import public_url_for
 TICKET_STATE_OPTIONS = ["New", "In Progress", "Pending", "Resolved", "Closed", "Cancelled"]
 
 
-TERMINAL_TICKET_STATES = ["Resolved", "Closed", "Cancelled"]
+TERMINAL_TICKET_STATES = list(FINISHED_TICKET_STATES)
 
 
 TERMINAL_TASK_STATES = ["Closed Complete", "Closed Incomplete", "Closed Skipped", "Cancelled"]

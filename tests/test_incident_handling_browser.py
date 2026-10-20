@@ -113,6 +113,17 @@ def test_incident_handling_in_a_browser(app, width, height):
                 assert RecordLink.query.filter_by(source_id=child_id, link_type="parent_incident",
                                                   target_id=first_id).one()
 
+            # Typing in the Parent incident field lists matching incidents, not this one.
+            page.goto(base + f"/ticket/{child_id}")
+            parent_field = page.locator('#incident-record-form input[name="parent_incident"]')
+            parent_field.fill("")
+            parent_field.press_sequentially("mail server", delay=20)
+            options = page.locator("#incident-record-form .lookup-result")
+            expect(options.first).to_contain_text(first_number)
+            assert "Outlook cannot reach mail server again" not in options.all_inner_texts()[0]
+            options.first.dispatch_event("mousedown")
+            expect(parent_field).to_have_value(first_number)
+
             # The child shows its parent in the body; the hold reason follows the State field.
             page.goto(base + f"/ticket/{child_id}")
             expect(page.locator(".incident-family")).to_contain_text(f"Child of {first_number}")

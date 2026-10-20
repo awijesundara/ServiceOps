@@ -14,6 +14,7 @@ from flask import abort
 import app as core
 from serviceops_core.localization import tr
 from serviceops_core.request_values import parse_int
+from serviceops_core.task_lifecycle import FINISHED_TICKET_STATES
 from serviceops_models import (AssignmentRule, ConfigurationItem, EnterpriseRecord, IncidentTemplate,
                                ProblemProfile, RecordLink, ServiceOffering, SupportGroup, Ticket, TaskCI, db)
 
@@ -210,7 +211,7 @@ def similar(user, text, exclude_id=None, limit=5):
     pattern = db.or_(*[Ticket.title.ilike(f"%{core.escape_like(word)}%", escape="\\") for word in list(wanted)[:8]])
     candidates = core.visible_ticket_query(user).filter(
         Ticket.kind == "incident", Ticket.deleted_at.is_(None),
-        Ticket.state.notin_(("Resolved", "Closed", "Cancelled")), pattern,
+        Ticket.state.notin_(FINISHED_TICKET_STATES), pattern,
     ).order_by(Ticket.updated_at.desc()).limit(200).all()
     scored = []
     for ticket in candidates:

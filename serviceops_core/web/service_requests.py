@@ -48,7 +48,7 @@ from app import (
     user_in_group,
     visible_catalog_request_query,
 )
-from serviceops_core.task_lifecycle import build_state_track, CATALOG_TASK_TRANSITIONS
+from serviceops_core.task_lifecycle import build_state_track, CATALOG_TASK_TRANSITIONS, FINISHED_REQUEST_STATES
 from serviceops_core.web.common import user_can_view_catalog_task, usertime_filter
 from serviceops_models import (
     Approval,
@@ -294,6 +294,9 @@ def register(app):
     @login_required
     def requests_list():
         query = visible_catalog_request_query(current_user)
+        open_only = request.args.get("open") == "1"
+        if open_only:
+            query = query.filter(CatalogRequest.state.notin_(FINISHED_REQUEST_STATES))
         q = request.args.get("q", "").strip()
         if q:
             query = query.filter(CatalogRequest.number.ilike(f"%{q}%"))
@@ -312,13 +315,15 @@ def register(app):
             (page - 1) * per_page
         ).limit(per_page).all()
         return render_template(
-            "requests.html", requests=rows, q=q, page=page, pages=pages, total=total,
+            "requests.html", requests=rows, q=q, page=page, pages=pages, total=total, open_only=open_only,
         )
 
     @app.get("/requests/export.csv")
     @login_required
     def requests_export():
         query = visible_catalog_request_query(current_user)
+        if request.args.get("open") == "1":
+            query = query.filter(CatalogRequest.state.notin_(FINISHED_REQUEST_STATES))
         q = request.args.get("q", "").strip()
         if q:
             query = query.filter(CatalogRequest.number.ilike(f"%{q}%"))

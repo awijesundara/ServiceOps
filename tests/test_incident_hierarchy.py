@@ -121,6 +121,30 @@ def test_parent_lookup_can_be_limited_to_incidents(client, app):
         "change_type": "Standard", "risk_score": "20", "impact": "Low", "group_id": group_id(app),
         "implementation_plan": "i", "test_plan": "t", "backout_plan": "b",
         "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00"}).status_code == 302
-    kinds = {row["description"].split(" ·")[0] for row in client.get("/internal/lookup/records?q=zebra&kind=incident").json}
-    assert kinds == {"Incident"}
+    numbers = {row["value"][:3] for row in client.get("/internal/lookup/records?q=zebra&kind=incident").json}
+    assert numbers == {"INC"}
     assert "Change" in {row["description"].split(" ·")[0] for row in client.get("/internal/lookup/records?q=zebra").json}
+
+
+def test_parent_search_matches_words_and_short_numbers_and_skips_loops(client, app):
+    login(client)
+    _, mail_id, mail_number = _incident(client, app, "Mail server down in London")
+    _, child_id, child_number = _incident(client, app, "Users cannot send mail", parent_incident=mail_number)
+    _, other_id, other_number = _incident(client, app, "London office printer jam")
+    search = lambda q, **extra: [row["value"] for row in client.get(
+        "/internal/lookup/records", query_string={"kind": "incident", "q": q, **extra}).json]
+    # Every word must match, in any order.
+    assert search("london mail") == [mail_number]
+    assert set(search("london")) == {mail_number, other_number}
+    # Short numbers find the incident, exact number first.
+    digits = str(int(other_number[3:]))
+    assert search("0" + digits)[0] == other_number and search(f"inc{digits}")[0] == other_number
+    # The incident being edited and its children are never offered.
+    assert mail_number not in search("mail", exclude=mail_id) and child_number not in search("mail", exclude=mail_id)
+    assert mail_number in search("mail", exclude=child_id)
+    # Wildcards are literal; finished incidents come after open ones.
+    assert search("%") == []
+    with app.app_context():
+        db.session.get(Ticket, other_id).state = "Closed"
+        db.session.commit()
+    assert search("london") == [mail_number, other_number]

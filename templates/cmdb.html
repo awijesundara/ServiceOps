@@ -7,7 +7,7 @@
 <section class="stats"><a href="#configuration-items"><span>{{ tr('Configuration items') }}</span><strong>{{ cis_total }}</strong><small>{{ tr('Across all classes') }} →</small></a><a href="#service-relationships"><span>{{ tr('Relationships') }}</span><strong>{{ relationships_total }}</strong><small>{{ tr('Mapped dependencies') }} →</small></a><a href="{{ url_for('cmdb', status='Operational') }}"><span>{{ tr('Operational') }}</span><strong>{{ operational_total }}</strong><small>{{ tr('View healthy CIs') }} →</small></a></section>
 <section class="list-workspace" id="configuration-items">
   <header class="list-toolbar">
-    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Configuration items') }}</strong><small>{{ tr('{total} records', total=(total)) }}{% if status %} · {{ tr('filtered to {status}', status=(tr_value(status))) }} <a href="{{ url_for('cmdb', q=q) }}">{{ tr('(clear)') }}</a>{% endif %}</small></div></div>
+    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Configuration items') }}</strong><small>{{ trn(total, '{count} record', '{count} records') }}{% if status %} · {{ tr('filtered to {status}', status=(tr_value(status))) }} <a href="{{ url_for('cmdb', q=q) }}">{{ tr('(clear)') }}</a>{% endif %}</small></div></div>
     <form class="list-search">
       {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
       <input type="hidden" name="filter" value="{{ raw_filter }}">

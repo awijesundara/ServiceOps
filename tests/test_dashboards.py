@@ -242,7 +242,7 @@ def _reconcile_world(app):
 def _list_total(client, url):
     import re
     page = client.get(url).get_data(as_text=True)
-    return int(re.search(r"([\d,]+) records", page).group(1).replace(",", ""))
+    return int(re.search(r"([\d,]+) records?\b", page).group(1).replace(",", ""))
 
 
 def test_every_dashboard_number_matches_the_list_it_opens(client, app):

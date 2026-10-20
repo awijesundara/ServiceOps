@@ -29,8 +29,9 @@ from sqlalchemy import func
 
 import app as core
 from serviceops_core.identity import normalize_email
-from serviceops_core.localization import tr
+from serviceops_core.localization import tr, tr_value
 from serviceops_core.request_values import form_int
+from serviceops_core.task_lifecycle import FINISHED_REQUEST_STATES, FINISHED_TICKET_STATES
 from app import (
     email_taken_by_other,
     escape_like,
@@ -145,7 +146,7 @@ def register(app):
     def dashboard():
         visible_requests = visible_catalog_request_query(current_user)
         ticket_query = visible_ticket_query(current_user)
-        terminal_states = ("Resolved", "Closed", "Cancelled")
+        terminal_states = FINISHED_TICKET_STATES
         # One round trip on the highest-traffic page: the database counts per
         # (kind, priority, state), so a dozen rows come back however many
         # tickets exist. Fetching every visible ticket and counting in Python
@@ -153,20 +154,20 @@ def register(app):
         ticket_rows = ticket_query.with_entities(
             Ticket.kind, Ticket.priority, Ticket.state, func.count(Ticket.id),
         ).group_by(Ticket.kind, Ticket.priority, Ticket.state).order_by(None).all()
-        counts = {"incident": 0, "change": 0, "request": visible_requests.count()}
-        open_count = 0
+        # Every tile counts open records only, and links to a list showing exactly those.
+        open_requests = visible_requests.filter(CatalogRequest.state.notin_(FINISHED_REQUEST_STATES)).count()
+        counts = {"incident": 0, "change": 0, "request": open_requests}
+        open_count = open_requests
         incident_priority_counts = {"p1": 0, "p2": 0}
         for kind, priority, state, number in ticket_rows:
+            if state in terminal_states:
+                continue
+            open_count += number
             if kind in counts:
                 counts[kind] += number
-            if state not in terminal_states:
-                open_count += number
-                if kind == "incident" and priority in ("P1", "P2"):
-                    incident_priority_counts[priority.lower()] += number
+            if kind == "incident" and priority in ("P1", "P2"):
+                incident_priority_counts[priority.lower()] += number
         open_ticket_query = ticket_query.filter(Ticket.state.notin_(terminal_states))
-        open_count += visible_requests.filter(
-            CatalogRequest.state.notin_(["Closed Complete", "Closed Incomplete", "Cancelled"])
-        ).count()
         show_recent = setting_bool("DASHBOARD_SHOW_RECENT", True)
         show_my_assigned = setting_bool("DASHBOARD_SHOW_MY_ASSIGNED", True)
         show_sla_widgets = setting_bool("DASHBOARD_SHOW_SLA_WIDGETS", True)
@@ -817,21 +818,24 @@ def register(app):
         results = []
         # ID subqueries, not materialized ORM rows -- see global_search().
         ticket_ids = visible_ticket_query(current_user).with_entities(Ticket.id)
-        # kind=incident narrows the search to incidents (the parent incident field).
-        only_incidents = request.args.get("kind") == "incident"
+        # kind=incident is the parent incident field: its own ranked search.
+        if request.args.get("kind") == "incident":
+            from serviceops_core import incident_hierarchy
+            exclude_id = request.args.get("exclude", type=int)
+            exclude = visible_ticket_query(current_user).filter(Ticket.id == exclude_id).first() if exclude_id else None
+            return jsonify([{
+                "value": row.number, "label": f"{row.number} — {row.title}",
+                "description": f"{tr_value(row.state)} · {row.priority}",
+            } for row in incident_hierarchy.candidates(current_user, q, exclude=exclude)])
         tickets = Ticket.query.filter(
             Ticket.id.in_(ticket_ids),
             db.or_(Ticket.number.ilike(pattern), Ticket.title.ilike(pattern)),
         )
-        if only_incidents:
-            tickets = tickets.filter(Ticket.kind == "incident")
         for row in tickets.order_by(Ticket.updated_at.desc()).limit(10):
             results.append({
                 "value": row.number, "label": f"{row.number} — {row.title}",
                 "description": f"{row.kind.title()} · {row.state}",
             })
-        if only_incidents:
-            return jsonify(results)
         enterprise_ids = visible_enterprise_record_query(current_user).with_entities(EnterpriseRecord.id)
         for row in EnterpriseRecord.query.filter(
             EnterpriseRecord.id.in_(enterprise_ids),

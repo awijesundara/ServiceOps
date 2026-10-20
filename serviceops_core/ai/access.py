@@ -361,7 +361,7 @@ def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
     if list_match:
         noun = next((part for part in list_match.groups()
                      if part and part.lower().startswith(("incident", "change", "ticket"))), "tickets").lower()
-        listed = base.filter(~Ticket.state.in_(("Resolved", "Closed", "Cancelled", "Canceled", "Completed", "Implemented")))
+        listed = base.filter(~Ticket.state.in_(("Resolved", "Closed", "Cancelled", "Canceled", "Rejected", "Completed", "Implemented")))
         if noun.startswith("incident"):
             listed = listed.filter(Ticket.kind == "incident")
         elif noun.startswith("change"):
