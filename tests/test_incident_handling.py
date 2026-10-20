@@ -450,3 +450,16 @@ def test_other_tenant_cannot_reach_incident_handling_records(client, app):
     with app.app_context():
         assert db.session.get(AssignmentRule, rule_id) and db.session.get(IncidentTemplate, template_id)
         assert OperationalTask.query.filter_by(parent_id=ticket_id).count() == 0
+
+
+def test_blocked_resolution_keeps_the_typed_notes(client, app):
+    login(client)
+    _, ticket_id, _ = _incident(client, app, "Notes survive a blocked resolve")
+    client.post(f"/incident/{ticket_id}/tasks", data={"title": "Pending check", "group_id": group_id(app), "required": "1"})
+    response = _update(client, ticket_id, resolve="1", resolution_notes="Renewed the certificate.")
+    assert response.status_code == 302
+    with app.app_context():
+        ticket = db.session.get(Ticket, ticket_id)
+        assert ticket.state != "Resolved" and ticket.resolution_notes == "Renewed the certificate."
+    page = client.get(f"/ticket/{ticket_id}").get_data(as_text=True)
+    assert "Your resolution notes were saved." in page and "Renewed the certificate." in page

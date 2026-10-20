@@ -119,8 +119,11 @@ def collect_evidence(identity, ticket_id, scanner=None):
                         "number": row.number if kind == "ticket" else ""})
         evidence.append({"source": source_id, "kind": kind, "title": title, "text": body})
 
-    comments = Comment.query.filter_by(tenant_id=identity.tenant_id, ticket_id=ticket.id).order_by(
-        Comment.created_at.desc()).limit(5).all()
+    from app import can_see_work_notes
+    comments = Comment.query.filter_by(tenant_id=identity.tenant_id, ticket_id=ticket.id)
+    if not can_see_work_notes(identity):
+        comments = comments.filter(Comment.internal.is_(False))
+    comments = comments.order_by(Comment.created_at.desc()).limit(5).all()
     add("ticket", ticket, ticket.number + " " + ticket.title,
         f"State: {ticket.state}; Priority: {ticket.priority}\n{ticket.description[:3000]}\n" +
         "\n".join(redact(row.body)[:350] for row in comments))

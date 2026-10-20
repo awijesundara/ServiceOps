@@ -1313,7 +1313,7 @@ def api_ticket_document(ticket, user, *, include_details=False):
         "opened_at": ticket.created_at.isoformat(),
         "updated_at": ticket.updated_at.isoformat(),
         "resolved_at": ticket.resolved_at.isoformat() if ticket.resolved_at else None,
-        "attachments": [api_attachment_document(row, ticket.number) for row in ticket.attachments],
+        "attachments": [api_attachment_document(row, ticket.number) for row in visible_attachments(ticket.attachments, user)],
     }
     if ticket.kind == "incident":
         from serviceops_core import incident_hierarchy
@@ -1515,7 +1515,38 @@ def create_ticket_with_unique_number(kind, **fields):
     # goes through, so this can't be missed by adding a new one.
     if ticket.requester_id:
         follow_ticket(ticket, ticket.requester)
+    # Whoever logged it for the caller keeps hearing about it too.
+    if ticket.opened_by_id and ticket.opened_by_id != ticket.requester_id:
+        opener = db.session.get(User, ticket.opened_by_id)
+        if opener is not None:
+            follow_ticket(ticket, opener)
     return ticket
+
+
+def team_member_ids(group):
+    """Active members and the manager of a team, the people who work its queue."""
+    if group is None:
+        return set()
+    ids = {member.user_id for member in GroupMember.query.filter_by(group_id=group.id)
+           if member.user and member.user.active and member.user.tenant_id == group.tenant_id}
+    if group.manager and group.manager.active:
+        ids.add(group.manager_id)
+    return ids
+
+
+def notify_team(group, ticket, title, body, event_type, exclude_user_ids=()):
+    """Tell everyone on a team about work that has arrived in their queue."""
+    for user_id in sorted(team_member_ids(group) - set(exclude_user_ids)):
+        create_notification(user_id, title, body, tenant_id=ticket.tenant_id, target_type="ticket",
+                            target_id=ticket.id, event_type=event_type)
+
+
+def announce_new_ticket(ticket, group, actor_id=None):
+    """A new incident reaches its team; changes and requests have their own approval and task notices."""
+    if ticket.kind == "incident" and group is not None:
+        notify_team(group, ticket, f"New incident for {group.name}: {ticket.number}",
+                    f"{ticket.priority} · {ticket.title}", "incident.assigned_to_team",
+                    exclude_user_ids={actor_id} if actor_id else ())
 
 
 DOMAIN_CONFIG = {
@@ -3753,10 +3784,40 @@ def ticket_mentionable_users(ticket):
     return User.query.filter(User.id.in_(ids), User.active.is_(True)).order_by(User.name).all()
 
 
-def post_ticket_comment(ticket, author, body, parent_id=None, ai_assisted=False):
+def can_see_work_notes(user):
+    """Internal work notes are for the support teams; callers never see them."""
+    if not user or not getattr(user, "is_authenticated", True):
+        return False
+    role = getattr(user, "effective_role", None) or getattr(user, "role", None)
+    return bool(role) and effective_role_has_action(role, "comment_internal")
+
+
+def visible_comments(comments, user=None):
+    """The comments `user` (by default the signed-in person) may read:
+    everything for the support teams, only replies for everyone else."""
+    if user is None and has_request_context():
+        user = current_user
+    return list(comments) if can_see_work_notes(user) else [comment for comment in comments if not comment.internal]
+
+
+def attachment_hidden_from(attachment, user):
+    """A file attached to a work note is for the support teams only."""
+    return bool(attachment.comment_id and attachment.comment and attachment.comment.internal
+                and not can_see_work_notes(user))
+
+
+def visible_attachments(attachments, user=None):
+    if user is None and has_request_context():
+        user = current_user
+    return [attachment for attachment in attachments if not attachment_hidden_from(attachment, user)]
+
+
+def post_ticket_comment(ticket, author, body, parent_id=None, ai_assisted=False, internal=False):
     """Single source of truth for creating a ticket comment, shared by the
     web UI and the mobile REST API, so threading/follow/mention behavior
-    can't drift between the two entry points."""
+    can't drift between the two entry points. An internal work note is
+    stored, shown and notified to the support teams only."""
+    internal = bool(internal) and can_see_work_notes(author)
     if parent_id is not None:
         parent = db.session.get(Comment, parent_id)
         if not parent or parent.ticket_id != ticket.id:
@@ -3765,13 +3826,19 @@ def post_ticket_comment(ticket, author, body, parent_id=None, ai_assisted=False)
         # reply therefore joins the same top-level thread instead of creating
         # a hidden/deceptive deeper hierarchy through the API.
         parent_id = parent.parent_id or parent.id
+        if parent.internal and not can_see_work_notes(author):
+            abort(400, description=tr("That comment thread no longer exists."))
+        internal = internal or parent.internal  # a reply to a work note stays internal
     from serviceops_core.activity_origin import activity_origin
     comment = Comment(ticket_id=ticket.id, user_id=author.id, body=body, tenant_id=ticket.tenant_id,
-                      parent_id=parent_id, ai_assisted=ai_assisted, source_platform=activity_origin())
+                      parent_id=parent_id, ai_assisted=ai_assisted, source_platform=activity_origin(),
+                      internal=internal)
     db.session.add(comment)
     db.session.flush()
     follow_ticket(ticket, author)
     mentioned = mentioned_users_in_comment(body, ticket)
+    if internal:  # nobody outside the support teams hears about a work note
+        mentioned = [user for user in mentioned if can_see_work_notes(user)]
     preview = body if len(body) <= 200 else body[:197] + "..."
     for user in mentioned:
         follow_ticket(ticket, user)
@@ -3781,9 +3848,18 @@ def post_ticket_comment(ticket, author, body, parent_id=None, ai_assisted=False)
             event_type="ticket.mentioned",
         )
     already_notified = {author.id, *(user.id for user in mentioned)}
+    if not internal and author.id == ticket.requester_id and not ticket.assignee_id and not can_see_work_notes(author):
+        # Nobody owns it yet: the caller's reply goes to the whole team.
+        group = ticket_owning_group(ticket)
+        notify_team(group, ticket, f"The caller replied on {ticket.number}", f"{author.name}: {preview}",
+                    "ticket.caller_replied", exclude_user_ids=already_notified)
+        already_notified |= team_member_ids(group)
     for user in ticket_followers(ticket, exclude_user_ids=already_notified):
+        if internal and not can_see_work_notes(user):
+            continue
         create_notification(
-            user.id, f"New comment on {ticket.number}", f"{author.name}: {preview}",
+            user.id, f"New work note on {ticket.number}" if internal else f"New comment on {ticket.number}",
+            f"{author.name}: {preview}",
             tenant_id=ticket.tenant_id, target_type="ticket", target_id=ticket.id,
             event_type="ticket.comment_added",
         )
@@ -7782,6 +7858,9 @@ def create_app(test_config=None):
     app.jinja_env.globals["csp_nonce"] = csp_nonce
     from serviceops_core.task_lifecycle import VOID_STATES
     app.jinja_env.globals["void_state"] = lambda value: value in VOID_STATES
+    app.jinja_env.globals["visible_comments"] = visible_comments
+    app.jinja_env.globals["can_see_work_notes"] = can_see_work_notes
+    app.jinja_env.globals["visible_attachments"] = visible_attachments
     from serviceops_core import user_time
     # Date-time fields are typed and shown in the person's own zone.
     app.jinja_env.filters["userinput"] = user_time.input_value

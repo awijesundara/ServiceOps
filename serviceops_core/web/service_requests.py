@@ -80,12 +80,13 @@ from serviceops_core.safe_redirect import redirect_to_referrer
 def register(app):
     @app.get("/catalog")
     @login_required
-    def catalog():
+    def catalog(kept=None):
         return render_template(
             "catalog.html",
             items=tenant_query(CatalogItem).filter_by(active=True).options(
                 selectinload(CatalogItem.fulfillment_route).selectinload(CatalogItemRouting.support_group),
             ).order_by(CatalogItem.category, CatalogItem.name).all(),
+            kept=kept or {},
         )
 
     @app.post("/catalog/<int:item_id>/order")
@@ -99,11 +100,9 @@ def register(app):
             try:
                 approval_stages = catalog_approval_stages(current_user, item)
             except ValueError as error:
-                flash(
-                    tr("{name} cannot be requested yet: {error} Contact an administrator.", name=item.name, error=error),
-                    "error",
-                )
-                return redirect(url_for("catalog"))
+                # Say why in plain words and keep what the person typed.
+                flash(tr("{name} cannot be requested right now. {error}", name=item.name, error=error), "error")
+                return catalog(kept={item.id: request.form.get("details", "")}), 409
         def build_req():
             req = CatalogRequest(number=sequence_number(CatalogRequest, "REQ"), requested_by_id=current_user.id,
                                  requested_for_id=current_user.id)

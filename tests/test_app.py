@@ -3280,19 +3280,28 @@ def test_catalog_routes_to_prelogin_ldap_line_manager_without_flapping(client, a
         assert User.query.filter_by(username="brien.fly").count() == 1
 
 
-def test_catalog_approval_fails_closed_before_creating_records_without_line_manager(client, app):
+def test_catalog_request_without_line_manager_skips_to_team_approval_or_fails_closed(client, app):
+    """No line manager on file: by default the fulfilment team still approves; a
+    policy whose line-manager step has no fallback still refuses, plainly."""
     with app.app_context():
         employee = User.query.filter_by(username="employee").one()
         employee.manager_id = None
         db.session.commit()
 
     login(client, "employee", "Employee123!")
-    response = client.post(
-        "/catalog/1/order", data={"details": "Must not bypass policy"},
-        follow_redirects=True,
-    )
-    assert response.status_code == 200
-    assert b"active, same-tenant line manager" in response.data
+    client.post("/catalog/1/order", data={"details": "Laptop for the new joiner"})
+    with app.app_context():
+        chain = ApprovalChain.query.one()
+        assert [gate.name for gate in chain.gates] == ["Fulfilment team authorization"]
+        db.session.delete(chain.gates[0]); db.session.delete(chain)
+        for row in RequestedItem.query.all(): db.session.delete(row)
+        for row in CatalogRequest.query.all(): db.session.delete(row)
+        from app import ApprovalPolicyStage
+        ApprovalPolicyStage.query.filter_by(source="line_manager").update({"fallback": "none"})
+        db.session.commit()
+    response = client.post("/catalog/1/order", data={"details": "Must not bypass policy"})
+    assert response.status_code == 409
+    assert b"Your line manager is not recorded" in response.data and b"Must not bypass policy" in response.data
     with app.app_context():
         assert CatalogRequest.query.count() == 0
         assert RequestedItem.query.count() == 0
@@ -8916,7 +8925,12 @@ def test_commenting_auto_follows_and_notifies_other_followers(client, app):
         assert is_following_ticket(db.session.get(User, requester_id), ticket)
         follow_ticket(ticket, db.session.get(User, agent_id))
         db.session.commit()
-    client.post(f"/ticket/{ticket_id}", data={"action": "comment", "body": "Progress update."})
+    # A work note (the agent's default) never reaches the caller...
+    client.post(f"/ticket/{ticket_id}", data={"action": "comment", "body": "Internal triage."})
+    with app.app_context():
+        assert not Notification.query.filter_by(user_id=requester_id, target_type="ticket", target_id=ticket_id).count()
+    # ...a reply does.
+    client.post(f"/ticket/{ticket_id}", data={"action": "comment", "body": "Progress update.", "visibility": "public"})
     with app.app_context():
         notification = Notification.query.filter_by(
             user_id=agent_id, target_type="ticket", target_id=ticket_id,

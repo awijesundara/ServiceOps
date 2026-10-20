@@ -8,12 +8,12 @@
   'zip': 'archive', '7z': 'archive', 'rar': 'archive', 'gz': 'archive'} %}
 <section class="panel attachments-panel" id="attachments">
   <header class="section-heading attachments-heading">
-    <div><h2>{{ tr('Attachments') }}</h2><p>{% if ticket.attachments|length == 1 %}{{ tr('1 file') }}{% else %}{{ tr('{count} files', count=(ticket.attachments|length)) }}{% endif %}</p></div>
+    <div><h2>{{ tr('Attachments') }}</h2><p>{% set shown_attachments = visible_attachments(ticket.attachments) %}{% if shown_attachments|length == 1 %}{{ tr('1 file') }}{% else %}{{ tr('{count} files', count=(shown_attachments|length)) }}{% endif %}</p></div>
     <button type="button" class="primary attachment-add-button" data-attachment-open hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.6 12.2 20.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>{{ tr('Add attachments') }}</button>
   </header>
   {% if ticket.attachments %}
   <ul class="attachment-list">
-    {% for attachment in ticket.attachments %}
+    {% for attachment in shown_attachments %}
     {% set ext = (attachment.original_name.rsplit('.', 1)[-1] if '.' in attachment.original_name else '')|lower %}
     {% set download_url = url_for('attachment_download', attachment_id=attachment.id) %}
     {% set view_url = url_for('attachment_download', attachment_id=attachment.id, view=1) %}

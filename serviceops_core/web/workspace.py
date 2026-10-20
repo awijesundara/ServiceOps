@@ -144,6 +144,8 @@ def register(app):
     @app.get("/")
     @login_required
     def dashboard():
+        if not role_at_least(current_user.effective_role, "agent"):
+            return requester_home()
         visible_requests = visible_catalog_request_query(current_user)
         ticket_query = visible_ticket_query(current_user)
         terminal_states = FINISHED_TICKET_STATES
@@ -1072,6 +1074,20 @@ def register(app):
             "ui_action_ack", current_user.effective_role,
             {"active": active, "url": url, "label": label},
         ))
+
+    def requester_home():
+        """An employee's home: her own incidents and requests, what waits on
+        her, and the three things she comes here to do."""
+        mine = Ticket.query.filter(Ticket.tenant_id == current_user.tenant_id, Ticket.kind == "incident",
+                                   Ticket.requester_id == current_user.id, Ticket.deleted_at.is_(None))
+        open_incidents = mine.filter(Ticket.state.notin_(FINISHED_TICKET_STATES)).order_by(Ticket.updated_at.desc()).all()
+        waiting = [t for t in open_incidents if t.state == "Pending" and t.hold_reason == "Awaiting caller"]
+        resolved = mine.filter(Ticket.state.in_(("Resolved", "Closed"))).order_by(Ticket.updated_at.desc()).limit(5).all()
+        requests = visible_catalog_request_query(current_user).filter(
+            CatalogRequest.requested_for_id == current_user.id).order_by(CatalogRequest.opened_at.desc()).limit(10).all()
+        return render_template("requester_home.html", open_incidents=open_incidents, waiting=waiting,
+                               resolved=resolved, requests=requests,
+                               open_requests=[r for r in requests if r.state not in FINISHED_REQUEST_STATES])
 
     @app.post("/ui/history")
     @login_required

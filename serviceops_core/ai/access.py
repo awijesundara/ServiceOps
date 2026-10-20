@@ -195,9 +195,12 @@ class Evidence:
                 ("ticket", "knowledge", "ci", "enterprise", "request", "client_ticket", "asset")}
 
 
-def _ticket_text(ticket):
-    comments = Comment.query.filter_by(tenant_id=ticket.tenant_id, ticket_id=ticket.id).order_by(
-        Comment.created_at.desc()).limit(20).all()
+def _ticket_text(ticket, identity=None):
+    from app import can_see_work_notes
+    query = Comment.query.filter_by(tenant_id=ticket.tenant_id, ticket_id=ticket.id)
+    if not can_see_work_notes(identity):  # a caller's assistant never reads the teams' work notes
+        query = query.filter(Comment.internal.is_(False))
+    comments = query.order_by(Comment.created_at.desc()).limit(20).all()
     offering = ticket.service_offering.name if getattr(ticket, "service_offering", None) else "Not set"
     parts = [
         f"State: {ticket.state}; Priority: {ticket.priority}; Impact: {ticket.impact}; Urgency: {ticket.urgency}; "
@@ -339,7 +342,7 @@ def collect_chat_evidence(scope, question, scanner=None, context_numbers=()):
             return
         seen_tickets.add(ticket.id)
         evidence.add("ticket", ticket.id, ticket.number, f"{ticket.number} {ticket.title}",
-                     _ticket_summary(ticket) if brief else _ticket_text(ticket))
+                     _ticket_summary(ticket) if brief else _ticket_text(ticket, scope.identity))
 
     base = read_access.tickets(scope.identity)
     numbers = list(dict.fromkeys([*record_numbers(question), *context_numbers]))[:4]

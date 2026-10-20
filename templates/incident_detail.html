@@ -37,6 +37,22 @@
   </div>{% endif %}
   {% include "_csat_prompt.html" %}
   {% include "_state_track.html" %}
+  {% if not internal_view %}
+  {#- The caller sees her incident plainly, not the support teams' working form. -#}
+  {% if ticket.state == 'Pending' and ticket.hold_reason == 'Awaiting caller' and current_user.id == ticket.requester_id %}
+  <div class="caller-waiting" role="status"><strong>{{ tr('The support team is waiting for your reply.') }}</strong> <a href="#comment-form">{{ tr('Reply below') }}</a> {{ tr('and work on your incident continues straight away.') }}</div>
+  {% endif %}
+  <dl class="caller-summary">
+    <div><dt>{{ tr('Status') }}</dt><dd>{{ status_badge(ticket.state) }}{% if ticket.state == 'Pending' and ticket.hold_reason %} <span class="muted">{{ tr_value(ticket.hold_reason) }}</span>{% endif %}</dd></div>
+    <div><dt>{{ tr('Priority') }}</dt><dd>{{ tr_value(ticket.priority) }}</dd></div>
+    <div><dt>{{ tr('Reported') }}</dt><dd>{{ ticket.created_at|usertime('%b %d, %H:%M') }}</dd></div>
+    <div><dt>{{ tr('Handled by') }}</dt><dd>{{ owning_group.name if owning_group else tr('Being assigned') }}</dd></div>
+    {% if primary_ci_link %}<div><dt>{{ tr('Affected service') }}</dt><dd>{{ primary_ci_link.ci.name }}</dd></div>{% endif %}
+    <div class="wide"><dt>{{ tr('Short description') }}</dt><dd>{{ ticket.title }}</dd></div>
+    <div class="wide"><dt>{{ tr('Description') }}</dt><dd class="caller-text">{{ ticket.description }}</dd></div>
+    {% if ticket.resolution_notes and ticket.state in ('Resolved', 'Closed') %}<div class="wide"><dt>{{ tr('Resolution') }}</dt><dd class="caller-text">{{ ticket.resolution_notes }}</dd></div>{% endif %}
+  </dl>
+  {% else %}
   <form method="post" id="incident-record-form" class="record-form">
     <input type="hidden" name="action" value="update">
     <div class="record-grid">
@@ -80,6 +96,7 @@
     {% endif %}
     {% if can_manage_ticket %}<footer class="record-footer-actions"><button class="primary">{{ tr('Update incident') }}</button></footer>{% endif %}
   </form>
+  {% endif %}
 </section>
 
 {% if internal_view %}
@@ -180,7 +197,7 @@
     <header class="section-heading"><div><h2>{{ tr('Activity and work notes') }}</h2><p>{{ tr('Conversation and resolution evidence') }}</p></div></header>
     {% from "_comment_thread.html" import comment_thread %}
     <div class="comment-thread">{{ comment_thread(ticket, deleted=deleted_attachments) }}</div>
-    <form method="post" class="comment-box" enctype="multipart/form-data" id="comment-form" data-ticket-id="{{ ticket.id }}"><input type="hidden" name="action" value="comment"><input type="hidden" name="parent_id" value="" id="comment-parent-id"><div class="comment-reply-banner" id="comment-reply-banner" hidden>{{ tr('Replying to') }} <b id="comment-reply-author"></b> <button type="button" id="comment-reply-cancel">{{ tr('Cancel') }}</button></div><div class="mention-input-wrap"><textarea name="body" rows="3" placeholder="{{ tr('Add a work note or comment… (type @ to mention someone)') }}" required id="comment-body-input"></textarea><ul class="mention-suggestions" id="mention-suggestions" hidden></ul></div><div class="comment-attach" data-comment-attach><label class="comment-attach-button"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.6 12.2 20.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg><span>{{ tr('Attach file') }}</span><input type="file" name="file" accept="{{ attachment_supported_types().accept }}" aria-label="{{ tr('Attach a file to this note (optional)') }}"></label><span class="comment-attach-chip" data-comment-attach-chip hidden><span data-comment-attach-name></span><button type="button" data-comment-attach-clear aria-label="{{ tr('Remove the attached file') }}">×</button></span><small class="comment-attach-hint">{{ tr('Optional · or drop or paste a file here · up to 20 MB') }}</small></div>{% if child_incidents and can_manage_ticket %}<label class="check comment-copy"><input type="checkbox" name="copy_to_children" value="1"> {{ trn(child_incidents|length, 'Also post to the child incident', 'Also post to all {count} child incidents') }}</label>{% endif %}<button class="primary">{{ tr('Post comment') }}</button></form>
+    <form method="post" class="comment-box" enctype="multipart/form-data" id="comment-form" data-ticket-id="{{ ticket.id }}"><input type="hidden" name="action" value="comment"><input type="hidden" name="parent_id" value="" id="comment-parent-id">{% if can_see_work_notes(current_user) %}<fieldset class="comment-audience"><legend>{{ tr('Who sees this') }}</legend><label><input type="radio" name="visibility" value="internal" checked> {{ tr('Work note: support teams only') }}</label><label><input type="radio" name="visibility" value="public"> {{ tr('Reply: the caller sees it') }}</label></fieldset>{% endif %}<div class="comment-reply-banner" id="comment-reply-banner" hidden>{{ tr('Replying to') }} <b id="comment-reply-author"></b> <button type="button" id="comment-reply-cancel">{{ tr('Cancel') }}</button></div><div class="mention-input-wrap"><textarea name="body" rows="3" placeholder="{{ tr('Write a work note or a reply… (type @ to mention someone)') if can_see_work_notes(current_user) else tr('Write a reply to the support team…') }}" required id="comment-body-input"></textarea><ul class="mention-suggestions" id="mention-suggestions" hidden></ul></div><div class="comment-attach" data-comment-attach><label class="comment-attach-button"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.6 12.2 20.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg><span>{{ tr('Attach file') }}</span><input type="file" name="file" accept="{{ attachment_supported_types().accept }}" aria-label="{{ tr('Attach a file to this note (optional)') }}"></label><span class="comment-attach-chip" data-comment-attach-chip hidden><span data-comment-attach-name></span><button type="button" data-comment-attach-clear aria-label="{{ tr('Remove the attached file') }}">×</button></span><small class="comment-attach-hint">{{ tr('Optional · or drop or paste a file here · up to 20 MB') }}</small></div>{% if child_incidents and can_manage_ticket %}<label class="check comment-copy"><input type="checkbox" name="copy_to_children" value="1"> {{ trn(child_incidents|length, 'Also post to the child incident', 'Also post to all {count} child incidents') }}</label>{% endif %}<button class="primary">{{ tr('Post comment') }}</button></form>
   </section>
 
   <section class="panel">
@@ -189,6 +206,7 @@
   </section>
 </div>
 
+{% if internal_view %}
 <section class="panel" id="child-incidents">
   <header class="section-heading"><div><h2>{{ tr('Child incidents') }}</h2><p>{{ tr('Incidents linked to this one as their parent') }}</p></div><span>{{ trn(child_incidents|length, '{count} child', '{count} children') }}</span></header>
   {% for child in child_incidents %}<div class="sla-row"><div><strong><a href="{{ url_for('ticket_detail', ticket_id=child.id) }}">{{ child.number }}</a> · {{ child.title }}</strong><small>{{ status_badge(child.state) }} · {{ child.priority }}</small></div></div>{% else %}<p class="muted">{{ tr('No child incidents. Set this incident as the Parent incident on a related incident to group it here.') }}</p>{% endfor %}
@@ -244,6 +262,8 @@
     {% if can_manage_ticket %}<form method="post" action="{{ url_for('checklist_add', ticket_id=ticket.id) }}" class="inline-form"><input name="text" placeholder="{{ tr('Add checklist item') }}" required><button>{{ tr('Add') }}</button></form>{% endif %}
   </section>
 </div>
+
+{% endif %}
 
 {% include '_attachments_panel.html' %}
 

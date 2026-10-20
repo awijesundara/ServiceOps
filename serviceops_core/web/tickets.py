@@ -789,6 +789,7 @@ def register(app):
                 )
             else:
                 db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=owning_group.id))
+                core.announce_new_ticket(ticket, owning_group, actor_id=current_user.id)
             log_history(
                 "ticket", ticket.id, "Record created", details=(
                     f"{ticket.number} created and assigned to {owning_group.name}."
@@ -834,18 +835,22 @@ def register(app):
                 upload = request.files.get("file")
                 parent_id = request.form.get("parent_id", type=int)
                 if body:
-                    comment = post_ticket_comment(ticket, current_user, body, parent_id=parent_id)
-                    log_history("ticket", ticket.id, "Comment added", details=body[:500])
+                    # Support teams choose; anyone else always replies visibly.
+                    internal = core.can_see_work_notes(current_user) and request.form.get("visibility", "internal") != "public"
+                    comment = post_ticket_comment(ticket, current_user, body, parent_id=parent_id, internal=internal)
+                    log_history("ticket", ticket.id, "Work note added" if comment.internal else "Comment added",
+                                details=body[:500])
                     audit("comment", ticket.number)
                     if (ticket.kind == "incident" and request.form.get("copy_to_children")
                             and user_can_manage_ticket(current_user, ticket)):
-                        copied = incident_handling.copy_to_children(ticket, current_user, body)
+                        copied = incident_handling.copy_to_children(ticket, current_user, body, internal=comment.internal)
                         if copied:
                             flash(translate_plural(copied, "Also posted to {count} child incident.",
                                                    "Also posted to {count} child incidents.",
                                                    request_language()), "success")
                     if incident_handling.caller_replied(ticket, current_user):
-                        flash(tr("{number} is back in progress now that the caller replied.", number=ticket.number), "success")
+                        flash(tr("Thank you. Your reply was sent and the support team is working on {number} again.",
+                                 number=ticket.number), "success")
                     if upload and upload.filename:
                         attachment, error = save_ticket_attachment(ticket, upload, comment_id=comment.id)
                         if error:
@@ -1003,7 +1008,18 @@ def register(app):
                     transition_ticket(ticket, target_state, hold_reason=hold_reason)
                 except HTTPException as error:
                     db.session.rollback()
-                    flash(error.description or tr("That change could not be made."), "error")
+                    message = error.description or tr("That change could not be made.")
+                    # Never lose what the person typed: keep resolution notes as a draft.
+                    typed_notes = request.form.get("resolution_notes", "").strip()
+                    if ticket.kind == "incident" and typed_notes:
+                        kept = tenant_record_or_404(Ticket, ticket_id)
+                        if (kept.resolution_notes or "") != typed_notes:
+                            log_history("ticket", kept.id, "Field changed", "resolution notes",
+                                        kept.resolution_notes or "", typed_notes[:500])
+                            kept.resolution_notes = typed_notes
+                            db.session.commit()
+                        message += " " + tr("Your resolution notes were saved.")
+                    flash(message, "error")
                     return redirect(url_for("ticket_detail", ticket_id=ticket.id))
                 previous_override_reason = ticket.priority_override_reason
                 if governed_priority_input and requested_priority != calculated:
@@ -1178,6 +1194,9 @@ def register(app):
                 )
                 if ticket.kind == "change":
                     supersede_change_approval(ticket, ["owning team"])
+                core.notify_team(new_group, ticket, f"{ticket.number} was reassigned to {new_group.name}",
+                                 f"{ticket.priority} · {ticket.title}", "ticket.reassigned_to_team",
+                                 exclude_user_ids={current_user.id})
                 db.session.commit()
                 flash(tr("{number} reassigned to {name}.", number=ticket.number, name=new_group.name), "success")
                 return redirect(url_for("ticket_detail", ticket_id=ticket.id))
@@ -1941,10 +1960,9 @@ def register(app):
         task = create_with_retry_on_number_collision(build_task)
         log_history("ticket", ticket.id, "Incident task created", details=f"{task.number}: {task.title} → {group.name}")
         audit("create", task.number, f"{ticket.number}: {task.title}")
-        if group.manager_id:
-            create_notification(group.manager_id, tr("New task for {team}: {number}", team=group.name, number=task.number),
-                                task.title, tenant_id=ticket.tenant_id, target_type="ticket", target_id=ticket.id,
-                                event_type="incident.task_created")
+        # The whole team works its queue, not only its manager.
+        core.notify_team(group, ticket, tr("New task for {team}: {number}", team=group.name, number=task.number),
+                         task.title, "incident.task_created", exclude_user_ids={current_user.id})
         db.session.commit()
         flash(tr("{number} added for {team}.", number=task.number, team=group.name), "success")
         return redirect(url_for("ticket_detail", ticket_id=ticket.id) + "#incident-tasks")
@@ -2852,6 +2870,8 @@ def register(app):
                 abort(404)
         elif not user_can_view_ticket(current_user, attachment.ticket):
             abort(403)
+        elif core.attachment_hidden_from(attachment, current_user):
+            abort(404)
         # Only the handful of types a browser renders safely natively
         # (never HTML/SVG, which could execute script if opened inline)
         # are ever served inline. The shared response path also powers the

@@ -251,14 +251,16 @@ def create_problem(user, ticket):
     return record
 
 
-def copy_to_children(ticket, author, body):
-    """Post a parent's comment on each of its child incidents; returns how many."""
+def copy_to_children(ticket, author, body, internal=False):
+    """Post a parent's comment on each of its child incidents, with the same
+    visibility (a work note stays a work note); returns how many."""
     from serviceops_core import incident_hierarchy
     copied = 0
     for child in incident_hierarchy.children_of(ticket):
         if child.state in ("Closed", "Cancelled"):
             continue
-        core.post_ticket_comment(child, author, tr("From parent incident {number}:", number=ticket.number) + "\n" + body)
+        core.post_ticket_comment(child, author, tr("From parent incident {number}:", number=ticket.number) + "\n" + body,
+                                 internal=internal)
         core.log_history("ticket", child.id, "Comment added", details=f"Copied from parent {ticket.number}")
         copied += 1
     return copied

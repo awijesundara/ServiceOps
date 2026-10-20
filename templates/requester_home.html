@@ -1,0 +1,38 @@
+{% extends "base.html" %}{% from "_status_badge.html" import status_badge %}{% block title %}{{ tr('Home · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">{{ tr('SUPPORT') }}</p><h1>{{ tr('Good day, {name}', name=(current_user.name.split(' ')[0])) }}</h1><p>{{ tr('Your incidents and requests, and help when you need it.') }}</p></div></header>
+
+<nav class="requester-actions" aria-label="{{ tr('What do you need?') }}">
+  <a class="requester-action" href="{{ url_for('ticket_new', kind='incident') }}"><strong>{{ tr('Get help') }}</strong><span>{{ tr('Something is broken or not working') }}</span></a>
+  <a class="requester-action" href="{{ url_for('catalog') }}"><strong>{{ tr('Request something') }}</strong><span>{{ tr('Equipment, software or access') }}</span></a>
+  <a class="requester-action" href="{{ url_for('knowledge') }}"><strong>{{ tr('Find an answer') }}</strong><span>{{ tr('Search the knowledge base') }}</span></a>
+</nav>
+
+{% if waiting %}
+<section class="caller-waiting" role="status"><strong>{{ trn(waiting|length, 'The support team is waiting for your reply on {count} incident.', 'The support team is waiting for your reply on {count} incidents.') }}</strong>
+  {% for ticket in waiting %}<a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}#comment-form">{{ ticket.number }} · {{ ticket.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</section>
+{% endif %}
+
+<section class="panel table-panel">
+  <header class="section-heading"><div><h2>{{ tr('My open incidents') }}</h2></div><span>{{ trn(open_incidents|length, '{count} open', '{count} open') }}</span></header>
+  {% if open_incidents %}<div class="task-list-scroll"><table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Updated') }}</th></tr></thead><tbody>
+    {% for ticket in open_incidents %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a></td><td>{{ ticket.title }}</td><td>{{ status_badge(ticket.state) }}{% if ticket.state == 'Pending' and ticket.hold_reason %} <small class="muted">{{ tr_value(ticket.hold_reason) }}</small>{% endif %}</td><td>{{ ticket.updated_at|usertime('%b %d, %H:%M') }}</td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<p class="muted">{{ tr('You have no open incidents.') }}</p>{% endif %}
+</section>
+
+<section class="panel table-panel">
+  <header class="section-heading"><div><h2>{{ tr('My requests') }}</h2></div><span>{{ trn(open_requests|length, '{count} open', '{count} open') }}</span></header>
+  {% if requests %}<div class="task-list-scroll"><table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Items') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Opened') }}</th></tr></thead><tbody>
+    {% for req in requests %}<tr{% if void_state(req.state) %} class="status-row-inactive"{% endif %}><td><a href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></td><td>{{ req.items|map(attribute='item.name')|join(', ') }}</td><td>{{ status_badge(req.state) }}</td><td>{{ req.opened_at|usertime('%b %d, %H:%M') }}</td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<p class="muted">{{ tr('No requests yet. Use Request something to order equipment, software or access.') }}</p>{% endif %}
+</section>
+
+{% if resolved %}
+<section class="panel table-panel">
+  <header class="section-heading"><div><h2>{{ tr('Recently resolved') }}</h2></div></header>
+  <div class="task-list-scroll"><table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Updated') }}</th></tr></thead><tbody>
+    {% for ticket in resolved %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a></td><td>{{ ticket.title }}</td><td>{{ status_badge(ticket.state) }}</td><td>{{ ticket.updated_at|usertime('%b %d, %H:%M') }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endif %}
+{% endblock %}

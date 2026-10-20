@@ -61,6 +61,7 @@ CONDITIONS = {
 }
 FALLBACKS = {
     "none": "Nobody: the approval cannot start",
+    "skip": "Skip this step (a later step still approves)",
     "team_members": "The team's own active members (team stages)",
     "first_administrator": "The first active administrator",
     "all_administrators": "Any active administrator",
@@ -91,7 +92,7 @@ def _default_definitions(tenant_id):
         ("catalog", "Line manager, then fulfilment team", True,
          "The requester's line manager approves, then the manager of the team that fulfils the item "
          "(its catalog routing). A stage is skipped when it would ask the same person again.",
-         [_stage(0, "Line manager approval", "line_manager", mode="all"),
+         [_stage(0, "Line manager approval", "line_manager", mode="all", fallback="skip"),
           _stage(1, "Fulfilment team authorization", "request_team_manager", mode="any",
                  fallback="team_members")]),
         ("catalog", "Line manager only", False, "Only the requester's line manager approves.",
@@ -202,8 +203,8 @@ def _resolve(stage, context, tenant_id, covered_group_ids):
         ids = set()
         if manager and manager.active and manager.tenant_id == person.tenant_id and manager.id != person.id:
             ids = {manager.id}
-        return [(name, ids, None, tr("An active, same-tenant line manager must be assigned to the requested-for "
-                                     "user before an approval-required item can be submitted."))]
+        return [(name, ids, None, tr("Your line manager is not recorded, and this item needs their approval. "
+                                     "Ask an administrator to add your manager to your profile."))]
     if source in ("request_team_manager", "request_team_members"):
         group = core.catalog_fulfillment_group(context["item"]) if context.get("item") else None
         if not group:
@@ -354,6 +355,8 @@ def build_stages(policy, context, exclude_user_ids=()):
             ids = set(ids) - set(exclude_user_ids)
             if not ids and stage.source == "ci_owners":
                 continue  # nobody left to ask is fine: the owners approve elsewhere or raised it
+            if not ids and stage.fallback == "skip":
+                continue  # e.g. no line manager on file: the later steps still approve
             if not ids:
                 # The fallback may include an excluded person (an administrator
                 # approving their own record when nobody else can).

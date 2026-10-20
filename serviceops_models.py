@@ -573,6 +573,8 @@ class Comment(db.Model):
     # True when ServiceOps AI drafted the text and the author approved and posted it.
     source_platform = db.Column(db.String(30), nullable=True)
     ai_assisted = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    # A work note for the support teams only; the caller never sees it.
+    internal = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     author = db.relationship("User")
     replies = db.relationship(
         "Comment", backref=db.backref("parent", remote_side=[id]),

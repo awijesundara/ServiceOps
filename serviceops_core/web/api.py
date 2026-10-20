@@ -1353,6 +1353,8 @@ def register(app):
         attachment = FileAttachment.query.filter_by(
             id=attachment_id, ticket_id=ticket.id, tenant_id=ticket.tenant_id,
         ).first_or_404()
+        if core.attachment_hidden_from(attachment, g.api_user):
+            abort(404)
         return attachment_file_response(attachment, inline=True)
 
     @app.post("/api/v1/incidents")
@@ -1397,6 +1399,7 @@ def register(app):
             tenant_id=g.api_client.tenant_id,
         )
         db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=group.id))
+        core.announce_new_ticket(ticket, group, actor_id=g.api_user.id)
         attach_slas("ticket", ticket.id, ticket.priority)
         log_history(
             "ticket", ticket.id, "Record created",
@@ -1957,7 +1960,8 @@ def register(app):
                                       "parent_id": row.parent_id,
                                       "deleted_attachments": deleted.get(row.id, []),
                                       "source_platform": row.source_platform, "ai_assisted": row.ai_assisted,
-                                      "created_at": row.created_at.isoformat()} for row in ticket.comments]})
+                                      "internal": row.internal, "created_at": row.created_at.isoformat()}
+                                     for row in core.visible_comments(ticket.comments, g.api_user)]})
         except HTTPException:
             raise
         except Exception:
@@ -1989,8 +1993,10 @@ def register(app):
             parent_id = int(parent_id) if parent_id not in (None, "") else None
         except (TypeError, ValueError):
             abort(400, description=tr("parent_id must be an integer comment identifier."))
-        row = post_ticket_comment(ticket, g.api_user, body, parent_id=parent_id)
-        log_history("ticket", ticket.id, "Comment added", details=f"Mobile app · {g.api_user.name}")
+        # Support teams may post a work note the caller never sees ("internal": true).
+        row = post_ticket_comment(ticket, g.api_user, body, parent_id=parent_id, internal=payload.get("internal") is True)
+        log_history("ticket", ticket.id, "Work note added" if row.internal else "Comment added",
+                    details=f"Mobile app · {g.api_user.name}")
         incident_handling.caller_replied(ticket, g.api_user)
         document = {"data": {"id": row.id, "body": row.body, "author": g.api_user.name,
                               "source_platform": row.source_platform, "ai_assisted": row.ai_assisted,

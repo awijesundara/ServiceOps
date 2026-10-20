@@ -263,6 +263,17 @@ html.theme-dark .similar-incidents li{border-top:1px solid var(--line)}
 html.theme-dark .similar-incidents small{color:var(--muted)}
 html.theme-dark .similar-incidents .link-button{color:var(--dk-accent-strong)}
 html.theme-dark .comment-copy{color:var(--muted)}
+html.theme-dark .caller-waiting{border:1px solid #53462f;border-left:4px solid #c98a12;background:#1d170b;color:#d6b27d}
+html.theme-dark .caller-waiting a{color:inherit}
+html.theme-dark .caller-summary dt{color:var(--muted)}
+html.theme-dark .comment-internal{border-left:3px solid #c98a12;background:#1a1710}
+html.theme-dark .work-note-tag{background:#281d02;color:#d5aa71}
+html.theme-dark .comment-audience{border:0}
+html.theme-dark .comment-audience legend{color:var(--muted)}
+html.theme-dark .requester-action{border:1px solid var(--line);background:var(--white);color:var(--ink);box-shadow:var(--shadow)}
+html.theme-dark .requester-action strong{color:var(--dk-accent-strong)}
+html.theme-dark .requester-action span{color:var(--muted)}
+html.theme-dark .requester-action:hover,html.theme-dark .requester-action:focus-visible{border-color:var(--dk-accent)}
 /* enterprise.css */
 html.theme-dark .module-card{color:inherit}
 html.theme-dark .module-card:hover{border-color:#365750}

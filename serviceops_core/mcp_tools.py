@@ -85,7 +85,8 @@ def get_ticket(arguments):
     document = core.api_ticket_document(ticket, g.api_user)
     document["comments"] = [{
         "author": comment.author.name, "body": comment.body, "created_at": comment.created_at.isoformat(),
-    } for comment in sorted(ticket.comments, key=lambda row: row.created_at)[-TICKET_COMMENT_LIMIT:]]
+    } for comment in sorted(core.visible_comments(ticket.comments, g.api_user),
+                            key=lambda row: row.created_at)[-TICKET_COMMENT_LIMIT:]]
     return document
 
 
