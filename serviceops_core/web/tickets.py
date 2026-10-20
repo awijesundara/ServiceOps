@@ -626,13 +626,11 @@ def register(app):
                     current_user.tenant_id, set(seen_ci_ids), planned_start, planned_end,
                 )
                 if conflicts:
-                    return render_form(
-                        f"This change cannot be created: it conflicts with {'; '.join(conflicts)}. "
-                        "Reschedule the planned window or select a different configuration item."
-                    )
+                    return render_form(tr(
+                        "This change overlaps {changes} on the same or a dependent configuration item. Choose a "
+                        "different planned window, or coordinate with that change first.", changes="; ".join(conflicts)))
             parent_incident_number = request.form.get("parent_incident", "").strip() if kind == "incident" else ""
             if parent_incident_number:
-                from werkzeug.exceptions import HTTPException
                 try:
                     incident_hierarchy.find_parent(current_user, parent_incident_number, current_user.tenant_id)
                 except HTTPException as error:
@@ -758,10 +756,16 @@ def register(app):
                         details=f"Affected CI: {len(additional_ci_ids)} additional configuration item(s) linked at creation.",
                     )
                 run_change_conflict_detection(ticket, governance)
-                create_approval_chain(
-                    f"{ticket.number} change authorization v1",
-                    "ticket", ticket.id, change_approval_stages(ticket),
-                )
+                try:
+                    stages = change_approval_stages(ticket)
+                except HTTPException as error:
+                    # Nobody can approve a step: keep the person's form and say who can fix it.
+                    db.session.rollback()
+                    return render_form(tr("This change cannot be submitted yet because its approval cannot be "
+                                          "routed: {reason} An administrator can set this up under Administration, "
+                                          "Approval policies. Your entries are kept below.",
+                                          reason=error.description or ""))
+                create_approval_chain(f"{ticket.number} change authorization v1", "ticket", ticket.id, stages)
                 implementation_notes = "\n\n".join(filter(None, [
                     f"Implementation plan:\n{governance.implementation_plan}",
                     f"Test plan:\n{governance.test_plan}",
@@ -793,9 +797,10 @@ def register(app):
             audit("create", ticket.number, ticket.title)
             db.session.commit()
             conflicts = kind == "change" and governance.conflict_status.startswith("Conflict")
+            noted = kind == "change" and governance.conflict_status != "No conflict"
             flash(
                 tr("{number} created.", number=ticket.number)
-                + (f" {tr_value(governance.conflict_status)}." if conflicts else ""),
+                + (f" {governance.conflict_status}." if noted else ""),
                 "error" if conflicts else "success",
             )
             return redirect(url_for("ticket_detail", ticket_id=ticket.id))

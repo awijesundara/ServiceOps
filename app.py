@@ -118,7 +118,7 @@ from serviceops_core.identity import (
 )
 from serviceops_core.task_lifecycle import (
     TICKET_TRANSITIONS, ENTERPRISE_TRANSITIONS, CATALOG_TASK_TRANSITIONS,
-    OPERATIONAL_TASK_TRANSITIONS, build_state_track,
+    OPERATIONAL_TASK_TRANSITIONS, build_state_track, FINISHED_TICKET_STATES,
 )
 from serviceops_core.config_schema import (
     SETTING_DEFINITIONS, SETTING_GROUP_META, find_setting_definition,
@@ -4106,8 +4106,37 @@ def ci_impact_set(tenant_id, ci_ids, max_depth=4):
 
 
 def _conflict_descriptions(tenant_id, ci_ids, planned_start, planned_end, exclude_governance_id=None, exclude_ticket_id=None):
-    """Core schedule/CI overlap check shared by pre-creation and post-creation
-    conflict detection. Returns human-readable conflict description strings."""
+    """Changes scheduled at the same time on the same or a dependent CI: the
+    conflicts that stop a change being created or rescheduled. Open
+    incidents on those CIs are not conflicts (a change is how they get fixed);
+    open_incident_notes() lists them. Returns human-readable strings."""
+    return _change_schedule_conflicts(tenant_id, ci_ids, planned_start, planned_end, exclude_governance_id)
+
+
+def open_incident_notes(tenant_id, ci_ids, exclude_ticket_ids=()):
+    """Open incidents on the change's CIs or on CIs that depend on them, for
+    the change and its approvers to see. Incidents the change was raised to
+    fix are marked as such."""
+    if not ci_ids:
+        return []
+    impacted_ci_ids = ci_impact_set(tenant_id, ci_ids)
+    incidents = Ticket.query.filter(
+        Ticket.tenant_id == tenant_id, Ticket.kind == "incident", Ticket.deleted_at.is_(None),
+        Ticket.state.notin_(FINISHED_TICKET_STATES),
+    ).join(TaskCI, db.and_(TaskCI.target_type == "ticket", TaskCI.target_id == Ticket.id)) \
+        .filter(TaskCI.ci_id.in_(impacted_ci_ids)).distinct().order_by(Ticket.id).all()
+    notes = []
+    for incident in incidents:
+        incident_ci_ids = {link.ci_id for link in TaskCI.query.filter_by(target_type="ticket", target_id=incident.id)}
+        where = "on the same CI" if ci_ids & incident_ci_ids else "on a CI that depends on this one"
+        if incident.id in exclude_ticket_ids:
+            notes.append(f"{incident.number} (the incident this change resolves)")
+        else:
+            notes.append(f"{incident.number} (open incident {where})")
+    return notes
+
+
+def _change_schedule_conflicts(tenant_id, ci_ids, planned_start, planned_end, exclude_governance_id=None):
     conflicts = []
     if not (ci_ids and planned_start and planned_end):
         return conflicts
@@ -4116,7 +4145,7 @@ def _conflict_descriptions(tenant_id, ci_ids, planned_start, planned_end, exclud
         Ticket, ChangeGovernance.ticket_id == Ticket.id
     ).filter(
         Ticket.tenant_id == tenant_id,
-        Ticket.state.notin_(["Cancelled", "Rejected"]),
+        Ticket.state.notin_(FINISHED_TICKET_STATES),  # a finished change no longer occupies its window
         ChangeGovernance.planned_start.isnot(None),
         ChangeGovernance.planned_end.isnot(None),
         ChangeGovernance.planned_start < planned_end,
@@ -4136,23 +4165,6 @@ def _conflict_descriptions(tenant_id, ci_ids, planned_start, planned_end, exclud
             conflicts.append(f"{other.ticket.number} (overlapping change)")
         elif impacted_ci_ids.intersection(other_ci_ids):
             conflicts.append(f"{other.ticket.number} (overlapping change on a dependent CI)")
-    incident_query = Ticket.query.filter(
-        Ticket.tenant_id == tenant_id,
-        Ticket.kind == "incident",
-        Ticket.state.notin_(["Resolved", "Closed", "Cancelled"]),
-    ).join(
-        TaskCI, db.and_(TaskCI.target_type == "ticket", TaskCI.target_id == Ticket.id)
-    ).filter(TaskCI.ci_id.in_(impacted_ci_ids))
-    if exclude_ticket_id is not None:
-        incident_query = incident_query.filter(Ticket.id != exclude_ticket_id)
-    for incident in incident_query.all():
-        incident_ci_ids = {
-            link.ci_id for link in TaskCI.query.filter_by(target_type="ticket", target_id=incident.id).all()
-        }
-        if ci_ids.intersection(incident_ci_ids):
-            conflicts.append(f"{incident.number} (open incident on same CI)")
-        else:
-            conflicts.append(f"{incident.number} (open incident on a CI that depends on this one)")
     return conflicts
 
 
@@ -4184,9 +4196,15 @@ def run_change_conflict_detection(ticket, governance):
         ticket.tenant_id, current_ci_ids, governance.planned_start, governance.planned_end,
         exclude_governance_id=governance.id, exclude_ticket_id=ticket.id,
     )
-    governance.conflict_status = (
-        f"Conflict: {', '.join(conflicts)}" if conflicts else "No conflict"
-    )[:500]
+    resolves = {link.source_id for link in RecordLink.query.filter_by(
+        target_type="ticket", target_id=ticket.id, link_type="resolution_change", source_type="ticket")}
+    incidents = open_incident_notes(ticket.tenant_id, current_ci_ids, exclude_ticket_ids=resolves)
+    parts = []
+    if conflicts:
+        parts.append(f"Conflict: {', '.join(conflicts)}")
+    if incidents:
+        parts.append(f"Open incidents: {', '.join(incidents)}")
+    governance.conflict_status = ("; ".join(parts) if parts else "No conflict")[:500]
     # Matches this codebase's existing convention for routine automated
     # checks (e.g. the SLA-breach scan only logs a "breached" entry, never
     # a "checked, not breached" one for every non-breaching pass): the
@@ -4194,7 +4212,7 @@ def run_change_conflict_detection(ticket, governance):
     # actionable outcome. The tamper-evident audit log below always
     # records the check regardless, so "checked, no conflict" is never
     # lost -- it's just not clutter in front of the user.
-    if conflicts:
+    if conflicts or incidents:
         log_history(
             "ticket", ticket.id, "Conflict detection completed",
             details=governance.conflict_status,

@@ -258,3 +258,33 @@ def test_realtime_notify_failure_does_not_abort_business_transaction(pg_review, 
         finally:
             event.remove(engine, "before_cursor_execute", fail_notify)
             db.session.rollback()
+
+
+def test_change_whose_approval_cannot_be_routed_leaves_nothing_behind(pg_review):
+    """PostgreSQL, as in production: a change refused because nobody can approve a
+    step must not be saved half-built (no approval chain, stuck in New)."""
+    from app import SupportGroup, Ticket
+    with pg_review.app_context():
+        executive = SupportGroup.query.filter_by(name="Executive Office").one()
+        saved_manager, executive.manager_id = executive.manager_id, None
+        unix = SupportGroup.query.filter_by(name="Unix").one()
+        admin = User.query.filter_by(username="admin").one()
+        saved_unix, unix.manager_id = unix.manager_id, admin.id
+        db.session.commit()
+        unix_id = unix.id
+    try:
+        client = pg_review.test_client()
+        client.post("/login", data={"username": "admin", "password": "Admin123!"})
+        response = client.post("/tickets/new/change", data={
+            "title": "Unroutable change", "description": "x", "category": "Software", "priority": "P2",
+            "change_type": "Normal", "risk_score": "80", "impact": "High", "group_id": unix_id,
+            "implementation_plan": "i", "test_plan": "t", "backout_plan": "b",
+            "planned_start": "2026-12-01T09:00", "planned_end": "2026-12-01T10:00"})
+        assert response.status_code == 400 and b"Your entries are kept" in response.data
+        with pg_review.app_context():
+            assert Ticket.query.filter_by(title="Unroutable change").count() == 0
+    finally:
+        with pg_review.app_context():
+            SupportGroup.query.filter_by(name="Executive Office").one().manager_id = saved_manager
+            SupportGroup.query.filter_by(name="Unix").one().manager_id = saved_unix
+            db.session.commit()

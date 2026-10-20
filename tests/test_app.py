@@ -7938,7 +7938,8 @@ def test_conflict_detection_completed_history_only_logged_when_a_conflict_is_fou
         ).first()
 
 
-def test_change_creation_blocks_on_open_incident_conflict(client, app):
+def test_change_creation_notes_open_incident_without_blocking(client, app):
+    """A change is how an incident gets fixed: an open incident on the CI is noted, not a block."""
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
         ci = ConfigurationItem(
@@ -7954,18 +7955,19 @@ def test_change_creation_blocks_on_open_incident_conflict(client, app):
         "category": "Software", "priority": "P2", "group_id": group_id(app),
         "ci_id": str(ci_id),
     }).status_code == 302
-    blocked = client.post("/tickets/new/change", data={
-        "title": "Change during open incident", "description": "Should be blocked.",
+    created = client.post("/tickets/new/change", data={
+        "title": "Change during open incident", "description": "Fixes the shared server.",
         "category": "Software", "priority": "P3", "change_type": "Standard",
         "risk_score": "20", "impact": "Low", "group_id": group_id(app),
         "implementation_plan": "Implement.", "test_plan": "Test.",
         "backout_plan": "Back out.", "ci_id": str(ci_id),
         "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
-    })
-    assert blocked.status_code == 400
-    assert b"open incident" in blocked.data.lower()
+    }, follow_redirects=True)
+    assert created.status_code == 200
+    assert b"open incident on the same ci" in created.data.lower()
     with app.app_context():
-        assert Ticket.query.filter_by(title="Change during open incident").first() is None
+        change = Ticket.query.filter_by(title="Change during open incident").one()
+        assert change.change_governance.conflict_status.startswith("Open incidents")
 
 
 def test_change_creation_blocks_on_overlapping_change_conflict(client, app):

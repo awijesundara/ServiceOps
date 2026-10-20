@@ -238,6 +238,7 @@
     <dt>{{ tr('Type') }}</dt><dd>{{ ticket.change_governance.change_type }}</dd>
     <dt>{{ tr('Risk score') }}</dt><dd>{{ ticket.change_governance.risk_score }}{% if ticket.change_governance.risk_score_overridden %} <span class="badge">{{ tr('Overridden') }}{% if ticket.change_governance.risk_score_override_reason %}: {{ ticket.change_governance.risk_score_override_reason }}{% endif %}</span>{% endif %}</dd>
     <dt>{{ tr('Schedule') }}</dt><dd>{{ (ticket.change_governance.planned_start|usertime('%b %d %H:%M')) if ticket.change_governance.planned_start else tr('Not scheduled') }} → {{ (ticket.change_governance.planned_end|usertime('%b %d %H:%M')) if ticket.change_governance.planned_end else '—' }}</dd>
+    <dt>{{ tr('Conflicts and open incidents') }}</dt><dd>{{ ticket.change_governance.conflict_status or tr('Not checked yet') }}</dd>
   </dl>
   <p class="muted">{{ tr("Implementation, test, and backout plans are recorded on the change's first task — see") }} <a href="#gov-change-tasks">{{ tr('Change Tasks') }}</a>.</p>
   <p class="muted">{{ tr("Impact and configuration item are shown above in the main record fields. Scheduling conflicts are checked automatically and blocked at creation and whenever the plan is revised — a conflicting change or CI cannot be submitted, so there's nothing to display here.") }}</p>

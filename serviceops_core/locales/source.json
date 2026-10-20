@@ -3176,6 +3176,9 @@
    "javascript": true
   },
   {
+   "id": "Conflicts and open incidents"
+  },
+  {
    "id": "Conflicts flagged: {conflicts}."
   },
   {
@@ -8329,6 +8332,9 @@
   },
   {
    "id": "Not checked this view — verification hashes every event in the tenant's history and is only run on request."
+  },
+  {
+   "id": "Not checked yet"
   },
   {
    "id": "Not configured"
@@ -14060,7 +14066,13 @@
    "id": "This change already references RT #{id}."
   },
   {
+   "id": "This change cannot be submitted yet because its approval cannot be routed: {reason} An administrator can set this up under Administration, Approval policies. Your entries are kept below."
+  },
+  {
    "id": "This change falls inside the change freeze \"{title}\" ({start} to {end}){reason}. Only Emergency changes are permitted during a freeze."
+  },
+  {
+   "id": "This change overlaps {changes} on the same or a dependent configuration item. Choose a different planned window, or coordinate with that change first."
   },
   {
    "id": "This contact is under an active legal hold and cannot be erased."
