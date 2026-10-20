@@ -32,7 +32,7 @@
           <td><a href="{{ url_for('user_edit', user_id=user.id) }}">{{ user.username }}</a></td>
           <td class="identity-cell"><strong title="{{ user.name }}">{{ user_link(user) }}</strong><small title="{{ user.email }}">{{ user.email }}</small></td><td>{% if user.active %}<span class="status-badge active">{{ tr('Active') }}</span>{% else %}<span class="status-badge inactive">{{ tr('Inactive') }}</span>{% endif %}</td>
           <td><span class="tag">{{ tr_value(user.role) }}</span></td><td>{{ user.department or "—" }}</td>
-          <td>{{ membership_labels.get(user.id, [])|join(", ") or tr('None') }}</td>
+          <td>{% if membership_labels.get(user.id) %}{{ membership_labels[user.id]|join(", ") }}{% else %}<span class="muted">{{ tr('No team') }}</span>{% endif %}</td>
         </tr>
         {% else %}<tr><td colspan="6" class="empty-table">{{ tr('No users match this search.') }}</td></tr>{% endfor %}
       </tbody>

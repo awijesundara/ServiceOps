@@ -75,8 +75,9 @@
 
 <section id="task-affected-cis" class="panel table-panel">
   <header class="section-heading"><div><h2>{{ tr('Affected CIs') }}</h2><p>{{ tr('Inherited from {number}', number=(parent.number)) }}</p></div><span>{{ tr('{ci_links} linked', ci_links=(ci_links|length)) }}</span></header>
-  <table><thead><tr><th>CI</th><th>{{ tr('Class') }}</th><th>{{ tr('Relationship') }}</th></tr></thead><tbody>
-    {% for link in ci_links %}<tr><td>{{ link.ci.name }}</td><td>{{ link.ci.ci_class }}</td><td>{{ tr_value(link.relationship_role) }}</td></tr>{% else %}<tr><td colspan="3" class="empty">{{ tr('No CIs linked on the parent record.') }}</td></tr>{% endfor %}
+  <table><thead><tr><th>CI</th><th>{{ tr('Class') }}</th><th>{{ tr('Location') }}</th><th>{{ tr('Relationship') }}</th></tr></thead><tbody>
+    {% if primary_change_ci %}<tr><td><a href="{{ url_for('ci_edit', ci_id=primary_change_ci.id) }}">{{ primary_change_ci.name }}</a></td><td>{{ primary_change_ci.ci_class }}</td><td>{% if rack_labels.get(primary_change_ci.id) %}<a href="{{ url_for('rack_elevation', rack_id=primary_change_ci.rack_id, highlight=primary_change_ci.id) }}">{{ rack_labels[primary_change_ci.id] }}</a>{% else %}—{% endif %}</td><td>{{ tr_value('Primary CI') }}</td></tr>{% endif %}
+    {% for link in ci_links %}<tr><td><a href="{{ url_for('ci_edit', ci_id=link.ci_id) }}">{{ link.ci.name }}</a></td><td>{{ link.ci.ci_class }}</td><td>{% if rack_labels.get(link.ci_id) %}<a href="{{ url_for('rack_elevation', rack_id=link.ci.rack_id, highlight=link.ci_id) }}">{{ rack_labels[link.ci_id] }}</a>{% else %}—{% endif %}</td><td>{{ tr_value(link.relationship_role) }}</td></tr>{% else %}{% if not primary_change_ci %}<tr><td colspan="4" class="empty">{{ tr('No CIs linked on the parent record.') }}</td></tr>{% endif %}{% endfor %}
   </tbody></table>
 </section>
 

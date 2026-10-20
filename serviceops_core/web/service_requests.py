@@ -95,7 +95,14 @@ def approval_summary(record):
             parts.append(governance.conflict_status)
         return parts
     if isinstance(record, RequestedItem):
-        return [tr("Requested for {name}", name=record.request.requested_for.name)] if record.request else []
+        parts = [tr("Requested for {name}", name=record.request.requested_for.name)] if record.request else []
+        try:
+            details = (json.loads(record.variables_json or "{}").get("details") or "").strip()
+        except (TypeError, ValueError, AttributeError):
+            details = ""
+        if details:
+            parts.append(details if len(details) <= 160 else details[:157] + "...")
+        return parts
     return []
 
 
@@ -203,6 +210,8 @@ def register(app):
             ),
         )
         db.session.commit()
+        flash(tr("You approved {name}.", name=vote.gate.chain.name) if decision == "Approved"
+              else tr("You rejected {name}.", name=vote.gate.chain.name), "success")
         return redirect_to_referrer(url_for("approval_chains"))
 
     @app.get("/approval-chains")
@@ -675,10 +684,12 @@ def register(app):
             if all(item.state == "Closed Complete" for item in ritm.request.items):
                 ritm.request.state = "Closed Complete"
                 ritm.request.closed_at = now()
+            core.notify_ritm_person(ritm, "fulfilled")
         elif all_terminal and any(item.state == "Closed Incomplete" for item in ritm.tasks):
             ritm.state = "Closed Incomplete"
             ritm.stage = "Completed"
             ritm.request.state = "Closed Incomplete"
+            core.notify_ritm_person(ritm, "incomplete")
         log_field_changes("ritm", ritm.id, before, {
             "state": task.state, "work notes": task.work_notes,
         }, event=f"{task.number} updated")

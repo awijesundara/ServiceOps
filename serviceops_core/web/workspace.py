@@ -1097,7 +1097,12 @@ def register(app):
         resolved = mine.filter(Ticket.state.in_(("Resolved", "Closed"))).order_by(Ticket.updated_at.desc()).limit(5).all()
         requests = visible_catalog_request_query(current_user).filter(
             CatalogRequest.requested_for_id == current_user.id).order_by(CatalogRequest.opened_at.desc()).limit(10).all()
-        return render_template("requester_home.html", open_incidents=open_incidents, waiting=waiting,
+        cases = EnterpriseRecord.query.filter(
+            EnterpriseRecord.tenant_id == current_user.tenant_id, EnterpriseRecord.requester_id == current_user.id,
+            EnterpriseRecord.state.notin_(("Closed", "Completed", "Cancelled", "Resolved", "Rejected")),
+        ).order_by(EnterpriseRecord.updated_at.desc()).limit(10).all()
+        return render_template("requester_home.html", open_incidents=open_incidents, waiting=waiting, cases=cases,
+                               hr_team=core.workspace_team(current_user.tenant_id, "hr"),
                                resolved=resolved, requests=requests,
                                open_requests=[r for r in requests if r.state not in FINISHED_REQUEST_STATES])
 

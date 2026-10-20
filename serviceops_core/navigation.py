@@ -23,11 +23,11 @@ class NavigationEntry:
 
 NAVIGATION_ENTRIES = (
     NavigationEntry("Dashboard", "Service operations home overview", "dashboard"),
-    NavigationEntry("Visual task board", "Tasks and operational work board", "task_board"),
+    NavigationEntry("Visual task board", "Tasks and operational work board", "task_board", minimum_role="agent"),
     NavigationEntry("My tasks", "Work assigned to me", "my_work_tasks", minimum_role="agent"),
     NavigationEntry("Incidents", "Incident Management open active critical", "tickets", {"kind": "incident"}),
     NavigationEntry("Service requests", "Request Fulfilment requested items", "requests_list"),
-    NavigationEntry("Dashboards", "My workspace personal team group dashboard widgets charts", "dashboards_home"),
+    NavigationEntry("Dashboards", "My workspace personal team group dashboard widgets charts", "dashboards_home", minimum_role="agent"),
     NavigationEntry("Changes", "Change Management calendar approvals", "tickets", {"kind": "change"}, "agent"),
     NavigationEntry("Service catalog", "Catalog items request services", "catalog"),
     NavigationEntry("Knowledge", "Knowledge Management articles search", "knowledge"),

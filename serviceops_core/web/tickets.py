@@ -290,9 +290,11 @@ def register(app):
                 "kind": kind_label,
                 "title": task.title,
                 "state": task.state,
-                "group": task.assignment_group.name if task.assignment_group else "Unassigned",
-                "assignee": task.assignee.name if task.assignee else "Unassigned",
+                "group": task.assignment_group.name if task.assignment_group else tr("Unassigned"),
+                "assignee": task.assignee.name if task.assignee else tr("Unassigned"),
                 "due_at": getattr(task, "due_at", None) or getattr(task, "planned_end", None),
+                # Change tasks may only run inside their window, so say when it opens.
+                "starts_at": task.planned_start if getattr(task, "task_kind", None) == "change" else None,
                 "url": record_url(task),
                 # One click picks up an unassigned team task.
                 "take_url": url_for("task_take", kind="catalog" if isinstance(task, CatalogTask) else "operational",
@@ -2074,6 +2076,10 @@ def register(app):
         ci_links = TaskCI.query.filter_by(
             target_type=task.parent_type, target_id=task.parent_id
         ).order_by(TaskCI.relationship_role).all()
+        # Data center engineers work from the task: show where the devices sit.
+        governance = getattr(parent, "change_governance", None) if task.task_kind == "change" else None
+        rack_cis = rack_mounted_cis(ci_links, parent.tenant_id, current_user.effective_role,
+                                    extra_ci=governance.ci if governance else None)
         approval_votes = []
         if task.task_kind == "change":
             chain = approval_chain_for("ticket", task.parent_id)
@@ -2086,6 +2092,9 @@ def register(app):
             closing_state=closing_state, notes=notes, siblings=siblings,
             ci_links=ci_links, approval_votes=approval_votes,
             selectable_states=selectable_states, gate_block=gate_block,
+            rack_cis=rack_cis, rack_labels={ci.id: rack_label(ci) for ci in rack_cis},
+            primary_change_ci=governance.ci if governance and governance.ci
+            and governance.ci.id not in {link.ci_id for link in ci_links} else None,
         )
 
     @app.post("/operational-task/<int:task_id>/notes")
@@ -2231,8 +2240,15 @@ def register(app):
                 priority=request.form.get("priority", "P3"), risk=request.form.get("risk", "Medium"),
                 requester_id=current_user.id, due_at=due_at,
             )
+            # The workspace's team owns the record, sees it and hears about it.
+            team = core.workspace_team(current_user.tenant_id, domain)
+            record.support_group_id = team.id if team else None
             db.session.add(record)
             db.session.flush()
+            if team is not None:
+                core.notify_team(team, record, f"New {config['name']} record for {team.name}: {record.number}",
+                                 f"{record.priority} · {record.title}", "enterprise.assigned_to_team",
+                                 exclude_user_ids={current_user.id}, target_type="enterprise")
             if domain == "problem":
                 db.session.add(ProblemProfile(enterprise_record_id=record.id))
             if request.form.get("approval_required") and current_user.effective_role != "requester":
@@ -2261,8 +2277,11 @@ def register(app):
             )
             audit("create", record.number, f"{config['name']}: {record.title}")
             db.session.commit()
+            flash(tr("{number} created. {team} will handle it.", number=record.number, team=team.name) if team
+                  else tr("{number} created.", number=record.number), "success")
             return redirect(url_for("enterprise_detail", record_id=record.id))
-        return render_template("enterprise_form.html", domain=domain, config=config)
+        return render_template("enterprise_form.html", domain=domain, config=config,
+                               handling_team=core.workspace_team(current_user.tenant_id, domain))
 
     @app.route("/enterprise/<int:record_id>", methods=["GET", "POST"])
     @login_required

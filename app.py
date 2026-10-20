@@ -1560,11 +1560,18 @@ def team_member_ids(group):
     return ids
 
 
-def notify_team(group, ticket, title, body, event_type, exclude_user_ids=()):
+def notify_team(group, ticket, title, body, event_type, exclude_user_ids=(), target_type="ticket"):
     """Tell everyone on a team about work that has arrived in their queue."""
     for user_id in sorted(team_member_ids(group) - set(exclude_user_ids)):
-        create_notification(user_id, title, body, tenant_id=ticket.tenant_id, target_type="ticket",
+        create_notification(user_id, title, body, tenant_id=ticket.tenant_id, target_type=target_type,
                             target_id=ticket.id, event_type=event_type)
+
+
+def workspace_team(tenant_id, domain):
+    """The team that handles new records in an enterprise workspace, if set and active."""
+    row = WorkspaceTeam.query.filter_by(tenant_id=tenant_id, domain=domain).first()
+    group = row.group if row else None
+    return group if group is not None and group.active and group.tenant_id == tenant_id else None
 
 
 def announce_new_ticket(ticket, group, actor_id=None):
@@ -4394,6 +4401,30 @@ def catalog_approval_stages(requested_for, item):
     return approval_policies.build_stages(policy, {"requested_for": requested_for, "item": item})
 
 
+def notify_request_outcome(chain, outcome, comments=""):
+    """The person a catalog request is for hears when it is approved, rejected or fulfilled."""
+    if chain is not None and chain.target_type != "ritm":
+        return
+    ritm = db.session.get(RequestedItem, chain.target_id) if chain is not None else None
+    notify_ritm_person(ritm, outcome, comments)
+
+
+def notify_ritm_person(ritm, outcome, comments=""):
+    if ritm is None or ritm.request is None or not ritm.request.requested_for_id:
+        return
+    item = ritm.item.name if ritm.item else ritm.number
+    titles = {"approved": f"{item} was approved and is being prepared",
+              "rejected": f"{item} was not approved",
+              "fulfilled": f"{item} is ready",
+              "incomplete": f"{item} could not be completed"}
+    body = comments or {"approved": f"{ritm.number} is with the fulfilment team.",
+                        "fulfilled": f"{ritm.number} was fulfilled.",
+                        "rejected": f"{ritm.number} was not approved.",
+                        "incomplete": f"{ritm.number} was closed without being completed."}[outcome]
+    create_notification(ritm.request.requested_for_id, titles[outcome], body, tenant_id=ritm.tenant_id,
+                        target_type="ritm", target_id=ritm.id, event_type=f"ritm.{outcome}")
+
+
 def decide_vote(vote, decision, comments):
     from serviceops_core.approval_decisions import refresh_locked_approval
     refresh_locked_approval(vote)
@@ -4411,6 +4442,7 @@ def decide_vote(vote, decision, comments):
         chain.state = "Rejected"
         chain.completed_at = now()
         set_target_state(chain.target_type, chain.target_id, "Rejected")
+        notify_request_outcome(chain, "rejected", comments)
         return
     requested = [item for item in gate.votes if item.state == "Requested"]
     approved = [item for item in gate.votes if item.state == "Approved"]
@@ -4435,6 +4467,7 @@ def decide_vote(vote, decision, comments):
             ritm = db.session.get(RequestedItem, chain.target_id)
             ritm.stage = "Fulfillment"
             create_catalog_task(ritm)
+            notify_request_outcome(chain, "approved", comments)
 
 
 def attach_slas(target_type, target_id, priority, organization_id=None):

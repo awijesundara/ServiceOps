@@ -4012,17 +4012,18 @@ def test_catalog_task_requires_valid_fulfillment_lifecycle(client, app):
         task_id = CatalogTask.query.one().id
     client.post("/logout")
     login(client, "database.manager", "Manager123!")
-    bypass = client.post(f"/catalog-task/{task_id}", data={
-        "state": "Closed Complete", "work_notes": "Attempted bypass",
-    }, follow_redirects=True)
-    assert bypass.status_code == 200
-    assert b"cannot move from" in bypass.data
     assert client.post(f"/catalog-task/{task_id}", data={
         "state": "Work in Progress", "work_notes": "Started",
     }).status_code == 302
     assert client.post(f"/catalog-task/{task_id}", data={
         "state": "Closed Complete", "work_notes": "Completed",
     }).status_code == 302
+    # A closed task cannot be reopened.
+    reopen = client.post(f"/catalog-task/{task_id}", data={
+        "state": "Open", "work_notes": "Attempted reopen",
+    }, follow_redirects=True)
+    assert reopen.status_code == 200
+    assert b"cannot move from" in reopen.data
 
 
 def test_catalog_task_blocks_production_work_until_linked_change_is_approved(client, app):

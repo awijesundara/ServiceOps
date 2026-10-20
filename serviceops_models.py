@@ -3212,6 +3212,19 @@ from serviceops_core.projects.models import MODEL_NAMES as _PROJECT_MODEL_NAMES 
 __all__ += _PROJECT_MODEL_NAMES
 
 
+class WorkspaceTeam(db.Model):
+    """The team that handles new records in one enterprise workspace (HR,
+    security, customer service, ...): they are assigned to it and it hears
+    about them."""
+    __table_args__ = (db.UniqueConstraint("tenant_id", "domain", name="uq_workspace_team_tenant_domain"),)
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    domain = db.Column(db.String(40), nullable=False)
+    group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    group = db.relationship("SupportGroup")
+
+
 class IncidentTemplate(db.Model):
     """A ready-made incident for a frequent problem; new incidents can start from it."""
     id = db.Column(db.Integer, primary_key=True)
@@ -3251,4 +3264,4 @@ class AssignmentRule(db.Model):
     service_offering = db.relationship("ServiceOffering")
 
 
-__all__ += ["IncidentTemplate", "AssignmentRule"]
+__all__ += ["IncidentTemplate", "WorkspaceTeam", "AssignmentRule"]

@@ -1202,6 +1202,12 @@
    "id": "Also add these models from the same account"
   },
   {
+   "id": "Also give it the {count} record without a team"
+  },
+  {
+   "id": "Also give it the {count} records without a team"
+  },
+  {
    "id": "Also post to all {count} child incidents"
   },
   {
@@ -1495,6 +1501,9 @@
   },
   {
    "id": "Ask AI · {instance_name}"
+  },
+  {
+   "id": "Ask HR"
   },
   {
    "id": "Ask a project administrator to add you as a member."
@@ -2751,6 +2760,9 @@
   },
   {
    "id": "Choose the project the work belongs to."
+  },
+  {
+   "id": "Choose the team that handles each workspace. New records are given to that team, which is notified and can see them; without a team, only the person who raised a record sees it."
   },
   {
    "id": "Choose the version to merge into."
@@ -5625,6 +5637,9 @@
    "id": "HELP CENTER"
   },
   {
+   "id": "HR and other cases you raised"
+  },
+  {
    "id": "HTTPS URL or internal path"
   },
   {
@@ -7363,6 +7378,9 @@
    "id": "My approvals · {instance_name}"
   },
   {
+   "id": "My cases"
+  },
+  {
    "id": "My chat destinations"
   },
   {
@@ -8259,6 +8277,12 @@
   },
   {
    "id": "No task SLAs."
+  },
+  {
+   "id": "No team"
+  },
+  {
+   "id": "No team handles {name} yet, so only you would see this record. An administrator can choose the team under Administration, Workspace teams."
   },
   {
    "id": "No team name aliases configured."
@@ -9351,6 +9375,9 @@
   {
    "id": "Paused",
    "javascript": true
+  },
+  {
+   "id": "Pay, benefits, leave and other HR questions"
   },
   {
    "id": "Payload Too Large"
@@ -10513,6 +10540,9 @@
   },
   {
    "id": "Records visible to this token"
+  },
+  {
+   "id": "Records without a team"
   },
   {
    "id": "Recover account · {instance_name}"
@@ -13444,6 +13474,9 @@
    "id": "Team channels receive only activity owned by their selected support group. Personal destinations are managed by each user."
   },
   {
+   "id": "Team for {name}"
+  },
+  {
    "id": "Team manager"
   },
   {
@@ -15386,6 +15419,9 @@
    "id": "Where to change it"
   },
   {
+   "id": "Which team handles HR, security, customer and other workspaces"
+  },
+  {
    "id": "Which widgets are available for users to add to their personal My Workspace page."
   },
   {
@@ -15420,6 +15456,9 @@
   },
   {
    "id": "Window"
+  },
+  {
+   "id": "Window opens {time}"
   },
   {
    "id": "Window {start} to {end}"
@@ -15617,7 +15656,16 @@
    "id": "Works out every create and update, then discards it. Writes nothing."
   },
   {
+   "id": "Workspace"
+  },
+  {
    "id": "Workspace defaults"
+  },
+  {
+   "id": "Workspace teams"
+  },
+  {
+   "id": "Workspace teams · {instance_name}"
   },
   {
    "id": "Write",
@@ -15661,6 +15709,9 @@
   },
   {
    "id": "You already have an AI investigation in progress."
+  },
+  {
+   "id": "You approved {name}."
   },
   {
    "id": "You are not allowed to create projects."
@@ -15759,6 +15810,9 @@
   },
   {
    "id": "You rated this {csat_rating}/5. Thanks for the feedback!"
+  },
+  {
+   "id": "You rejected {name}."
   },
   {
    "id": "You, or search people by name or email…"
@@ -16924,6 +16978,9 @@
    "id": "{count} earlier versions"
   },
   {
+   "id": "{count} existing records were given to the team."
+  },
+  {
    "id": "{count} files"
   },
   {
@@ -17371,6 +17428,9 @@
    "id": "{name} has no active fulfillment route and no active Service Desk fallback."
   },
   {
+   "id": "{name} has no team now."
+  },
+  {
    "id": "{name} has not shared any other details."
   },
   {
@@ -17503,6 +17563,9 @@
   },
   {
    "id": "{number} created."
+  },
+  {
+   "id": "{number} created. {team} will handle it."
   },
   {
    "id": "{number} has already been deleted."
@@ -17721,6 +17784,12 @@
   },
   {
    "id": "{tasks} would fall outside the new window. Reschedule them first or widen the window."
+  },
+  {
+   "id": "{team} handles {name} and will be notified."
+  },
+  {
+   "id": "{team} now handles {name}."
   },
   {
    "id": "{tickets_seen} seen · {records_created} {value} ({events_created} events, {changes_created} changes) · {already_imported} already imported"

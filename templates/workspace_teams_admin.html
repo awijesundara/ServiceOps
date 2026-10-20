@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}{{ tr('Workspace teams · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
+{% block content %}
+{% set admin_page_title = tr('Workspace teams') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>{{ tr('Workspace teams') }}</h1><p>{{ tr('Choose the team that handles each workspace. New records are given to that team, which is notified and can see them; without a team, only the person who raised a record sees it.') }}</p></div></header>
+<section class="panel table-panel">
+  <div class="task-list-scroll"><table><thead><tr><th>{{ tr('Workspace') }}</th><th>{{ tr('Handled by') }}</th><th>{{ tr('Records without a team') }}</th></tr></thead><tbody>
+  {% for workspace in workspaces %}<tr>
+    <td><strong>{{ tr_value(workspace.name) }}</strong>{% if not workspace.team %} <span class="status-badge pending">{{ tr('No team') }}</span>{% endif %}</td>
+    <td><form method="post" class="inline-form workspace-team-form"><input type="hidden" name="domain" value="{{ workspace.domain }}">
+      <label class="visually-hidden" for="team-{{ workspace.domain }}">{{ tr('Team for {name}', name=tr_value(workspace.name)) }}</label>
+      <select id="team-{{ workspace.domain }}" name="group_id"><option value="">{{ tr('No team') }}</option>{% for group in groups %}<option value="{{ group.id }}"{% if workspace.team and workspace.team.id == group.id %} selected{% endif %}>{{ group.name }}</option>{% endfor %}</select>
+      {% if workspace.unassigned %}<label class="check"><input type="checkbox" name="assign_existing" value="1" checked> {{ trn(workspace.unassigned, 'Also give it the {count} record without a team', 'Also give it the {count} records without a team') }}</label>{% endif %}
+      <button class="button">{{ tr('Save') }}</button></form></td>
+    <td>{{ workspace.unassigned }}</td>
+  </tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

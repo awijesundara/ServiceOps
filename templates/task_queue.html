@@ -15,7 +15,7 @@
       <td>{{ row.title }}</td>
       <td>{{ status_badge(row.state) }}</td>
       <td>{{ row.group }}</td>
-      <td>{{ (row.due_at|usertime('%b %d, %H:%M')) if row.due_at else "—" }}</td>
+      <td>{{ (row.due_at|usertime('%b %d, %H:%M')) if row.due_at else "—" }}{% if row.starts_at %}<br><small class="muted">{{ tr('Window opens {time}', time=row.starts_at|usertime('%b %d, %H:%M')) }}</small>{% endif %}</td>
     </tr>
     {% else %}
     <tr><td colspan="6" class="empty">{% if person %}{{ tr('Nothing assigned to {name} right now.', name=person.name) }}{% else %}{{ tr('Nothing assigned to you right now.') }}{% endif %}</td></tr>
@@ -37,7 +37,7 @@
       <td>{{ status_badge(row.state) }}</td>
       <td>{{ row.group }}</td>
       <td>{% if row.take_url %}<form method="post" action="{{ row.take_url }}" class="inline-form"><button class="button">{{ tr('Take') }}</button></form>{% else %}{{ row.assignee }}{% endif %}</td>
-      <td>{{ (row.due_at|usertime('%b %d, %H:%M')) if row.due_at else "—" }}</td>
+      <td>{{ (row.due_at|usertime('%b %d, %H:%M')) if row.due_at else "—" }}{% if row.starts_at %}<br><small class="muted">{{ tr('Window opens {time}', time=row.starts_at|usertime('%b %d, %H:%M')) }}</small>{% endif %}</td>
     </tr>
     {% else %}
     <tr><td colspan="7" class="empty">{{ tr('No open tasks for your teams.') }}</td></tr>

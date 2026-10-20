@@ -144,7 +144,7 @@ input[disabled],input[readonly]{overflow:hidden;text-overflow:ellipsis}
 .comment-audience legend{float:left;margin-right:8px;padding:0;color:var(--muted);font-weight:700}
 .comment-audience label{display:inline-flex;gap:6px;align-items:center}
 /* An employee's home */
-.requester-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:0 0 18px}
+.requester-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:0 0 18px}
 .requester-action{display:grid;gap:4px;padding:18px 20px;border:1px solid var(--line);border-radius:10px;background:var(--white);color:var(--ink);text-decoration:none;box-shadow:var(--shadow)}
 .requester-action strong{font-size:16px;color:var(--green-dark)}.requester-action span{color:var(--muted);font-size:13px}
 .requester-action:hover,.requester-action:focus-visible{border-color:var(--green)}
@@ -173,3 +173,4 @@ input[disabled],input[readonly]{overflow:hidden;text-overflow:ellipsis}
 .stat-warn::before{background:#c98a12!important}
 .stat-warn .stat-alert-text{color:#8a5a00!important}
 .ticket-list-table td .truncate{max-width:min(520px,38vw)}
+.workspace-team-note{margin:0 0 12px;color:var(--muted)}

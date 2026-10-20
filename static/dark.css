@@ -282,6 +282,7 @@ html.theme-dark .list-views a.active{border-color:var(--dk-accent-strong);backgr
 html.theme-dark .stat-warn{border-color:#c98a12;background:#1d170b}
 html.theme-dark .stat-warn::before{background:#c98a12!important}
 html.theme-dark .stat-warn .stat-alert-text{color:#ce9a53!important}
+html.theme-dark .workspace-team-note{color:var(--muted)}
 /* enterprise.css */
 html.theme-dark .module-card{color:inherit}
 html.theme-dark .module-card:hover{border-color:#365750}

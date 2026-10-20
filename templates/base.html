@@ -61,7 +61,7 @@
 {% from '_admin_icons.html' import admin_icon %}
 <a class="skip-link" href="#main-content">{{ tr('Skip to main content') }}</a>
 {% if current_user.is_authenticated %}
-{% set admin_endpoints = ['admin_home','admin_section','itil_admin','approval_policies_admin','incident_handling_admin','system_settings_category','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin','data_governance_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
+{% set admin_endpoints = ['admin_home','admin_section','itil_admin','approval_policies_admin','incident_handling_admin','workspace_teams_admin','system_settings_category','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin','data_governance_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
 <script src="{{ url_for('static', filename='nav-init.js', v=asset_version) }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">{{ tr('NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active') }}</div>{% endif %}
 <aside class="sidebar">
@@ -69,7 +69,7 @@
   <nav class="application-nav" aria-label="{{ tr('Application navigation') }}" data-application-nav>
     <label class="nav-filter"><span aria-hidden="true">⌕</span><input type="search" placeholder="{{ tr('Find menu') }}" aria-label="{{ tr('Find a menu item') }}" data-nav-filter></label>
     <a class="nav-home{% if nav_active('dashboard') %} active{% endif %}" href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">⌂</span><span>{{ tr('Home') }}</span></a>
-    <a class="nav-home{% if request.endpoint in ('dashboards_home','dashboard_view') %} active{% endif %}" href="{{ url_for('dashboards_home') }}" {% if request.endpoint in ('dashboards_home','dashboard_view') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">▤</span><span>{{ tr('Dashboards') }}</span></a>
+    {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}<a class="nav-home{% if request.endpoint in ('dashboards_home','dashboard_view') %} active{% endif %}" href="{{ url_for('dashboards_home') }}" {% if request.endpoint in ('dashboards_home','dashboard_view') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">▤</span><span>{{ tr('Dashboards') }}</span></a>{% endif %}
 
     {% if client_management_access %}
     <details class="nav-group nav-group-client" {% if request.endpoint in ['client_management_home','client_tickets','client_ticket_new','client_ticket_detail','client_organizations','client_contacts'] %}open{% endif %}>
@@ -86,7 +86,7 @@
     <details class="nav-group" {% if request.endpoint in ['task_board','my_work_tasks','tickets','requests_list','approval_chains','org_chart'] %}open{% endif %}>
       <summary><span class="nav-symbol" aria-hidden="true">◫</span><span>{{ tr('My work') }}</span><span class="nav-chevron" aria-hidden="true"></span></summary>
       <div class="nav-group-items">
-        <a href="{{ url_for('task_board') }}" {% if nav_active('task_board') %}class="active" aria-current="page"{% endif %}>{{ tr('Visual task board') }}</a>
+        {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}<a href="{{ url_for('task_board') }}" {% if nav_active('task_board') %}class="active" aria-current="page"{% endif %}>{{ tr('Visual task board') }}</a>{% endif %}
         {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}<a href="{{ url_for('my_work_tasks') }}" {% if nav_active('my_work_tasks') %}class="active" aria-current="page"{% endif %}>{{ tr('My tasks') }}{% if my_open_tasks_count %}<span class="nav-badge">{{ my_open_tasks_count if my_open_tasks_count < 100 else '99+' }}</span>{% endif %}</a>{% endif %}
         <a href="{{ url_for('tickets', kind='incident') }}" {% if nav_active('tickets', kind='incident') %}class="active" aria-current="page"{% endif %}>{{ tr('Incidents') }}</a>
         <a href="{{ url_for('requests_list') }}" {% if nav_active('requests_list') %}class="active" aria-current="page"{% endif %}>{{ tr('Service requests') }}</a>
@@ -150,7 +150,7 @@
     {% set admin_active_section = request.view_args.get('section') if request.endpoint == 'admin_section' else none %}
     {% if request.endpoint in ['users','user_new','user_edit','admin_sessions','admin_access','admin_roles','cmdb_permissions'] %}{% set admin_active_section = 'people-access' %}
     {% elif request.endpoint == 'itil_admin_section' and request.view_args.get('section') in ['team-aliases','team-managers','executive-approval','governance-groups'] %}{% set admin_active_section = 'people-access' %}
-    {% elif request.endpoint in ['itil_admin','itil_admin_section','approval_policies_admin','incident_handling_admin'] %}{% set admin_active_section = 'service-configuration' %}
+    {% elif request.endpoint in ['itil_admin','itil_admin_section','approval_policies_admin','incident_handling_admin','workspace_teams_admin'] %}{% set admin_active_section = 'service-configuration' %}
     {% elif request.endpoint in ['integrations_admin','rt_import'] %}{% set admin_active_section = 'connections-channels' %}
     {% elif request.endpoint == 'system_settings_category' and request.view_args.get('category') in ['email_delivery','netbox_connection','snipeit_connection','request_tracker_connection'] %}{% set admin_active_section = 'connections-channels' %}
     {% elif request.endpoint in ['workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin'] %}{% set admin_active_section = 'automation-content' %}

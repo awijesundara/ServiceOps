@@ -6,6 +6,7 @@
   <a class="requester-action" href="{{ url_for('ticket_new', kind='incident') }}"><strong>{{ tr('Get help') }}</strong><span>{{ tr('Something is broken or not working') }}</span></a>
   <a class="requester-action" href="{{ url_for('catalog') }}"><strong>{{ tr('Request something') }}</strong><span>{{ tr('Equipment, software or access') }}</span></a>
   <a class="requester-action" href="{{ url_for('knowledge') }}"><strong>{{ tr('Find an answer') }}</strong><span>{{ tr('Search the knowledge base') }}</span></a>
+  {% if hr_team %}<a class="requester-action" href="{{ url_for('enterprise_new', domain='hr') }}"><strong>{{ tr('Ask HR') }}</strong><span>{{ tr('Pay, benefits, leave and other HR questions') }}</span></a>{% endif %}
 </nav>
 
 {% if waiting %}
@@ -26,6 +27,15 @@
     {% for req in requests %}<tr{% if void_state(req.state) %} class="status-row-inactive"{% endif %}><td><a href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></td><td>{{ req.items|map(attribute='item.name')|join(', ') }}</td><td>{{ status_badge(req.state) }}</td><td>{{ req.opened_at|usertime('%b %d, %H:%M') }}</td></tr>{% endfor %}
   </tbody></table></div>{% else %}<p class="muted">{{ tr('No requests yet. Use Request something to order equipment, software or access.') }}</p>{% endif %}
 </section>
+
+{% if cases %}
+<section class="panel table-panel">
+  <header class="section-heading"><div><h2>{{ tr('My cases') }}</h2><p>{{ tr('HR and other cases you raised') }}</p></div></header>
+  <div class="task-list-scroll"><table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Handled by') }}</th></tr></thead><tbody>
+    {% for case in cases %}<tr><td><a href="{{ url_for('enterprise_detail', record_id=case.id) }}">{{ case.number }}</a></td><td>{{ case.title }}</td><td>{{ status_badge(case.state) }}</td><td>{{ case.support_group.name if case.support_group else tr('Being assigned') }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endif %}
 
 {% if resolved %}
 <section class="panel table-panel">

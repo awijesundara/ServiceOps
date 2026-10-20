@@ -12,6 +12,50 @@ from serviceops_core.request_values import parse_int
 
 
 def register(app):
+    @app.route("/admin/workspace-teams", methods=["GET", "POST"])
+    @roles("admin")
+    @require_action("administer")
+    def workspace_teams_admin():
+        """Which team handles each enterprise workspace (HR, security, ...)."""
+        from app import DOMAIN_CONFIG, EnterpriseRecord, SupportGroup, WorkspaceTeam
+        tenant_id = current_user.tenant_id
+        groups = tenant_query(SupportGroup).filter_by(active=True).order_by(SupportGroup.name).all()
+        if request.method == "POST":
+            domain = request.form.get("domain", "")
+            if domain not in DOMAIN_CONFIG:
+                abort(400)
+            row = WorkspaceTeam.query.filter_by(tenant_id=tenant_id, domain=domain).first()
+            group_id = request.form.get("group_id") or ""
+            if not group_id:
+                if row is not None:
+                    db.session.delete(row)
+                core.audit("workspace team cleared", DOMAIN_CONFIG[domain]["name"])
+                message = tr("{name} has no team now.", name=DOMAIN_CONFIG[domain]["name"])
+            else:
+                group = core.tenant_record_or_404(SupportGroup, parse_int(group_id, "group_id"))
+                if row is None:
+                    row = WorkspaceTeam(tenant_id=tenant_id, domain=domain, group_id=group.id)
+                    db.session.add(row)
+                row.group_id = group.id
+                moved = 0
+                if request.form.get("assign_existing"):
+                    moved = EnterpriseRecord.query.filter_by(tenant_id=tenant_id, domain=domain, support_group_id=None) \
+                        .update({"support_group_id": group.id})
+                core.audit("workspace team set", DOMAIN_CONFIG[domain]["name"], f"-> {group.name}; {moved} existing")
+                message = tr("{team} now handles {name}.", team=group.name, name=DOMAIN_CONFIG[domain]["name"])
+                if moved:
+                    message += " " + tr("{count} existing records were given to the team.", count=moved)
+            db.session.commit()
+            flash(message, "success")
+            return redirect(url_for("workspace_teams_admin"))
+        rows = {row.domain: row for row in WorkspaceTeam.query.filter_by(tenant_id=tenant_id)}
+        unassigned = dict(db.session.query(EnterpriseRecord.domain, db.func.count(EnterpriseRecord.id)).filter(
+            EnterpriseRecord.tenant_id == tenant_id, EnterpriseRecord.support_group_id.is_(None))
+            .group_by(EnterpriseRecord.domain).all())
+        workspaces = [{"domain": key, "name": config["name"], "team": rows[key].group if key in rows else None,
+                       "unassigned": unassigned.get(key, 0)} for key, config in DOMAIN_CONFIG.items()]
+        return render_template("workspace_teams_admin.html", workspaces=workspaces, groups=groups)
+
     @app.route("/admin/incident-handling", methods=["GET", "POST"])
     @roles("admin")
     @require_action("administer")

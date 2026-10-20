@@ -44,7 +44,8 @@ ENTERPRISE_TRANSITIONS = {
 }
 
 CATALOG_TASK_TRANSITIONS = {
-    "Open": ("Open", "Work in Progress", "Pending", "Closed Incomplete", "Closed Skipped"),
+    # A quick fulfilment can be completed straight away, as other tasks can.
+    "Open": ("Open", "Work in Progress", "Pending", "Closed Complete", "Closed Incomplete", "Closed Skipped"),
     "Work in Progress": ("Work in Progress", "Pending", "Closed Complete", "Closed Incomplete", "Closed Skipped"),
     "Pending": ("Pending", "Work in Progress", "Closed Complete", "Closed Incomplete", "Closed Skipped"),
     "Closed Complete": ("Closed Complete",),
