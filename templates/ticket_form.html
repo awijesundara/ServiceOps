@@ -51,7 +51,7 @@
 <header class="page-head"><div><p class="eyebrow">{{ tr('NEW RECORD') }}</p><h1>{{ tr('Create {kind}', kind=(tr_value(kind))) }}</h1><p>{{ tr('Provide the details needed to route and resolve this work.') }}</p></div></header>
 {% include "_state_track.html" %}
 {% if change_freeze_windows %}
-<div class="flash warning"><strong>{{ trn(change_freeze_windows|length, 'Active or upcoming change freeze', 'Active or upcoming change freezes') }}</strong>{{ tr("Standard and Normal changes can't be scheduled inside these windows — only Emergency changes are exempt.") }}<ul>{% for window in change_freeze_windows %}<li>{{ window.title }}: {{ window.starts_at|l10n_strftime('%b %d, %Y %H:%M') }} – {{ window.ends_at|l10n_strftime('%b %d, %Y %H:%M') }}{% if window.reason %} — {{ window.reason }}{% endif %}</li>{% endfor %}</ul></div>
+<div class="flash warning"><strong>{{ trn(change_freeze_windows|length, 'Active or upcoming change freeze', 'Active or upcoming change freezes') }}</strong>{{ tr("Standard and Normal changes can't be scheduled inside these windows — only Emergency changes are exempt.") }}<ul>{% for window in change_freeze_windows %}<li>{{ window.title }}: {{ window.starts_at|usertime('%b %d, %Y %H:%M') }} – {{ window.ends_at|usertime('%b %d, %Y %H:%M %Z') }}{% if window.reason %} — {{ window.reason }}{% endif %}</li>{% endfor %}</ul></div>
 {% endif %}
 {% if prefill_source == 'incident' %}<div class="flash">{{ tr('Filled in from incident {number}, which will be linked to this change.', number=(form.get('from_incident') if form else '')) }}</div>{% endif %}
 <form method="post" class="panel form-grid" data-track-dirty>
@@ -76,8 +76,8 @@
     <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-initial-items="{{ prefill_cis|tojson|forceescape }}"><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Search and pick one or more configuration items…') }}" autocomplete="off"><div class="lookup-results" hidden></div></div>
   </label>
   <div class="wide field-pair">
-    <label class="required-field"><span>{{ tr('Planned start (UTC)') }}</span><input type="datetime-local" name="planned_start" required value="{{ f.get('planned_start','') if f else '' }}"></label>
-    <label class="required-field"><span>{{ tr('Planned end (UTC)') }}</span><input type="datetime-local" name="planned_end" required value="{{ f.get('planned_end','') if f else '' }}"></label>
+    <label class="required-field"><span>{{ tr('Planned start ({zone})', zone=user_zone_label()) }}</span><input type="datetime-local" name="planned_start" required value="{{ f.get('planned_start','') if f else '' }}"></label>
+    <label class="required-field"><span>{{ tr('Planned end ({zone})', zone=user_zone_label()) }}</span><input type="datetime-local" name="planned_end" required value="{{ f.get('planned_end','') if f else '' }}"></label>
   </div>
   <label class="wide required-field"><span>{{ tr('Implementation plan') }}<span class="info-tip" tabindex="0" data-tip="Locked once the change is submitted. Changing it later requires a new approval cycle.">i</span></span><textarea name="implementation_plan" rows="4" required>{{ f.get('implementation_plan','') if f else '' }}</textarea></label>
   <label class="wide required-field"><span>{{ tr('Test plan') }}<span class="info-tip" tabindex="0" data-tip="Locked once the change is submitted. Changing it later requires a new approval cycle.">i</span></span><textarea name="test_plan" rows="4" required>{{ f.get('test_plan','') if f else '' }}</textarea></label>

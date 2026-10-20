@@ -51,13 +51,14 @@ def test_complete_change_draft_transfers_all_fields_and_creates_only_after_revie
     assert draft['missing_fields'] == []
     assert draft['ci_ids'] == [ci_id] and draft['group_id'] == team_id
     assert len(draft['url']) < 200 and 'draft_run=' in draft['url']
-    assert draft['planned_start'] == '2030-11-01T23:00'
-    assert draft['planned_end'] == '2030-11-02T00:00'
+    # The form shows and reads times in the requester's zone (Tokyo here).
+    assert draft['planned_start'] == '2030-11-02T08:00'
+    assert draft['planned_end'] == '2030-11-02T09:00'
     page = client.get(draft['url'] + '&planned_start=1999-01-01T00:00').get_data(as_text=True)
     for key in ('title', 'description', 'implementation_plan', 'test_plan', 'backout_plan'):
         assert draft_fields()[key].strip() in page
-    assert 'name="planned_start" required value="2030-11-01T23:00"' in page
-    assert 'Planned start (UTC)' in page
+    assert 'name="planned_start" required value="2030-11-02T08:00"' in page
+    assert 'Planned start (JST)' in page
     assert f'value="{team_id}"' in page and 'SAMPLE server' in page
     with app.app_context():
         assert Ticket.query.count() == before
@@ -148,7 +149,8 @@ def test_complete_change_draft_browser(app, client, world, width):
         db.session.add(ci)
         db.session.flush()
         fields = {**draft_fields(), 'ci_sources': ['S1']}
-        draft = access.extract_extras('[[TICKET]] ' + json.dumps(fields), may_raise_change=True, tenant_id=1)['draft']
+        draft = access.extract_extras('[[TICKET]] ' + json.dumps(fields), may_raise_change=True, tenant_id=1,
+                                      timezone_name='Asia/Tokyo')['draft']  # as a real chat does for the admin
         sources = [{'id': 'S1', 'kind': 'ci', 'record_id': ci.id}]
         draft = bind_draft(draft, scope_for(world.admin).identity, sources)
         run = AIRun(user_id=world.admin, tenant_id=1, actor_role='admin', config_revision=1,
@@ -175,8 +177,8 @@ def test_complete_change_draft_browser(app, client, world, width):
             page.wait_for_load_state('networkidle')
             page.goto(base + f'/tickets/new/change?ai=1&draft_run={run_id}')
             page.wait_for_load_state('networkidle')
-            expect(page.locator('[name=planned_start]')).to_have_value('2030-11-01T23:00')
-            expect(page.locator('[name=planned_end]')).to_have_value('2030-11-02T00:00')
+            expect(page.locator('[name=planned_start]')).to_have_value('2030-11-02T08:00')
+            expect(page.locator('[name=planned_end]')).to_have_value('2030-11-02T09:00')
             expect(page.locator('[name=group_id]')).to_have_value(str(team_id))
             expect(page.locator('.lookup-chip')).to_contain_text('SAMPLE server')
             expect(page.locator('.lookup-chip [name=ci_id]')).to_have_value(str(ci_id))
@@ -203,7 +205,7 @@ def test_planned_times_without_an_offset_are_read_in_the_requesters_zone(app):
         fields.update(planned_start='2030-11-02T08:00', planned_end='2030-11-02T09:00')
         draft = access.extract_extras('[[TICKET]] ' + json.dumps(fields), may_raise_change=True, tenant_id=1,
                                       timezone_name='Asia/Tokyo')['draft']
-        assert (draft['planned_start'], draft['planned_end']) == ('2030-11-01T23:00', '2030-11-02T00:00')
+        assert (draft['planned_start'], draft['planned_end']) == ('2030-11-02T08:00', '2030-11-02T09:00')
         fields.update(planned_start='tomorrow 8am')
         unreadable = access.extract_extras('[[TICKET]] ' + json.dumps(fields), may_raise_change=True, tenant_id=1,
                                            timezone_name='Asia/Tokyo')['draft']

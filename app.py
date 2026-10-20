@@ -3940,6 +3940,53 @@ def executive_office_group(tenant_id):
     return groups[tenant_id]
 
 
+def _as_utc(value):
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def change_task_window_error(governance, start, end):
+    """Why a change task's times do not fit its change's planned window, or
+    None. The window is shown in the person's own time zone, as on the page."""
+    if not governance or not governance.planned_start or not governance.planned_end or not start or not end:
+        return None
+    window_start, window_end = _as_utc(governance.planned_start), _as_utc(governance.planned_end)
+    if _as_utc(start) < window_start or _as_utc(end) > window_end:
+        from serviceops_core.user_time import display
+        return tr("Task times must fall within the change's planned window, {start} to {end}.",
+                  start=display(window_start), end=display(window_end))
+    return None
+
+
+def change_tasks_spanning_window(ticket):
+    """Live change tasks that cover the change's whole window (like the
+    Implementation task created with the change): they move with the window."""
+    governance = ticket.change_governance
+    if not governance or not governance.planned_start or not governance.planned_end:
+        return []
+    start, end = _as_utc(governance.planned_start), _as_utc(governance.planned_end)
+    return [task for task in _live_change_tasks(ticket)
+            if task.planned_start and task.planned_end
+            and _as_utc(task.planned_start) == start and _as_utc(task.planned_end) == end]
+
+
+def change_tasks_outside_window(ticket, start, end, moving=()):
+    """Live change tasks that a planned window from start to end would leave
+    outside it, other than those in `moving` (which follow the window)."""
+    window_start, window_end = _as_utc(start), _as_utc(end)
+    moving_ids = {task.id for task in moving}
+    return [task for task in _live_change_tasks(ticket) if task.id not in moving_ids
+            and ((task.planned_start and _as_utc(task.planned_start) < window_start)
+                 or (task.planned_end and _as_utc(task.planned_end) > window_end))]
+
+
+def _live_change_tasks(ticket):
+    return OperationalTask.query.filter(
+        OperationalTask.parent_type == "ticket", OperationalTask.parent_id == ticket.id,
+        OperationalTask.task_kind == "change",
+        OperationalTask.state.notin_(("Closed Complete", "Closed Incomplete", "Closed Skipped", "Cancelled")),
+    ).order_by(OperationalTask.sequence, OperationalTask.id).all()
+
+
 def change_service_coowner_groups(ticket, scoped_cis):
     """Teams owning other CIs that back the same business services as the
     change's CIs: a shared load balancer's change matters to every team
@@ -6861,13 +6908,11 @@ def _parse_log_timestamp(value):
     """Best-effort parse of a datetime-local/ISO query-string value used by
     the System Health "from"/"to" filters; returns None (never raises) so a
     malformed filter degrades to "no bound" instead of a 500."""
-    if not value:
-        return None
+    from serviceops_core.user_time import parse_user_datetime
     try:
-        parsed = datetime.fromisoformat(value)
+        return parse_user_datetime(value)  # typed in the person's own time zone
     except ValueError:
         return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _filtered_application_log_query(current_user):
@@ -7719,6 +7764,10 @@ def create_app(test_config=None):
     app.jinja_env.globals["csp_nonce"] = csp_nonce
     from serviceops_core.task_lifecycle import VOID_STATES
     app.jinja_env.globals["void_state"] = lambda value: value in VOID_STATES
+    from serviceops_core import user_time
+    # Date-time fields are typed and shown in the person's own zone.
+    app.jinja_env.filters["userinput"] = user_time.input_value
+    app.jinja_env.globals["user_zone_label"] = user_time.zone_label
     app.jinja_env.globals["attachment_supported_types"] = attachment_supported_types
     app.jinja_env.globals["can_delete_attachment"] = lambda attachment: user_can_delete_attachment(current_user, attachment)
     app.jinja_env.filters["css_color"] = css_color

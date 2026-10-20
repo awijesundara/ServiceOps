@@ -7,7 +7,7 @@
   <label>{{ tr('Priority') }}<select name="priority"><option>P4</option><option selected>P3</option><option>P2</option><option>P1</option></select></label>
   <label class="wide">{{ tr('Summary') }}<input name="title" required autofocus></label>
   <label>{{ tr('Risk') }}<select name="risk"><option>{{ tr('Low') }}</option><option selected>{{ tr('Medium') }}</option><option>{{ tr('High') }}</option><option>{{ tr('Critical') }}</option></select></label>
-  <label>{{ tr('Due date') }}<input type="datetime-local" name="due_at"></label>
+  <label>{{ tr('Due date ({zone})', zone=user_zone_label()) }}<input type="datetime-local" name="due_at"></label>
   <label class="wide">{{ tr('Description') }}<textarea name="description" rows="9" required></textarea></label>
   {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}<label class="check wide"><input type="checkbox" name="approval_required" value="1"> {{ tr('Require approval before fulfillment') }}</label>{% endif %}
   <div class="wide actions"><a class="button" href="{{ url_for('module_records', domain=domain) }}">{{ tr('Cancel') }}</a><button class="primary">{{ tr('Create record') }}</button></div>

@@ -10,7 +10,7 @@ import secrets
 import time as time_module
 import uuid
 from collections import defaultdict
-from datetime import date, datetime, time as dt_time, timedelta, timezone
+from datetime import date, datetime, time as dt_time, timedelta
 from types import SimpleNamespace
 from urllib.parse import urlparse
 
@@ -24,6 +24,7 @@ import app as core
 from serviceops_core.approval_groups import AUTHORITIES as APPROVAL_AUTHORITIES, linked_group_ids, set_authority_groups
 from serviceops_core.identity import normalize_email
 from serviceops_core.task_lifecycle import FINISHED_TICKET_STATES
+from serviceops_core.user_time import parse_user_datetime
 from app import (
     email_taken_by_other,
     _export_response,
@@ -48,7 +49,6 @@ from app import (
     latest_update_info,
     log_history,
     merge_support_group_into,
-    parse_form_datetime,
     parse_list_filter_param,
     process_data_retention_purge,
     process_outbox,
@@ -1294,9 +1294,7 @@ def register(app):
                     )
                     interval = int(request.form.get("interval_minutes", ""))
                     start_text = request.form.get("next_run_at", "").strip()
-                    next_run = datetime.fromisoformat(start_text) if start_text else now()
-                    if next_run.tzinfo is None:
-                        next_run = next_run.replace(tzinfo=timezone.utc)
+                    next_run = parse_user_datetime(start_text) if start_text else now()
                 except (TypeError, ValueError):
                     abort(400, description=tr("Schedule target, interval, or start time is invalid."))
                 if interval < 1 or interval > 525600:
@@ -2706,8 +2704,11 @@ def register(app):
                 flash(tr("{agreement_type} definition {name} created.", agreement_type=agreement_type, name=name), "success")
             elif action == "create_change_freeze":
                 title = request.form.get("title", "").strip()
-                starts_at = parse_form_datetime(request.form.get("starts_at", ""))
-                ends_at = parse_form_datetime(request.form.get("ends_at", ""))
+                try:
+                    starts_at = parse_user_datetime(request.form.get("starts_at"))
+                    ends_at = parse_user_datetime(request.form.get("ends_at"))
+                except ValueError:
+                    starts_at = ends_at = None
                 if not title or not starts_at or not ends_at:
                     abort(400, description=tr("Freeze title, start and end are required."))
                 if ends_at <= starts_at:

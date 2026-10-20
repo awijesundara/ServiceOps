@@ -24,8 +24,8 @@
     </select>
     <input name="status_code" value="{{ status_filter }}" placeholder="{{ tr('Status code') }}" aria-label="{{ tr('Status code') }}">
     <input name="request_id" value="{{ request_id_filter }}" placeholder="{{ tr('Request ID') }}" aria-label="{{ tr('Request ID') }}">
-    <label>{{ tr('From') }} <input type="datetime-local" name="from" value="{{ from_filter }}" aria-label="{{ tr('From date/time') }}"></label>
-    <label>{{ tr('To') }} <input type="datetime-local" name="to" value="{{ to_filter }}" aria-label="{{ tr('To date/time') }}"></label>
+    <label>{{ tr('From ({zone})', zone=user_zone_label()) }} <input type="datetime-local" name="from" value="{{ from_filter }}" aria-label="{{ tr('From date/time') }}"></label>
+    <label>{{ tr('To ({zone})', zone=user_zone_label()) }} <input type="datetime-local" name="to" value="{{ to_filter }}" aria-label="{{ tr('To date/time') }}"></label>
     <select name="lines">
       {% for count in [200, 500, 1000, 2000, 5000, 20000] %}
       <option value="{{ count }}" {% if request.args.get('lines', '500')|int == count %}selected{% endif %}>{{ tr('Last {count} lines', count=(count)) }}</option>

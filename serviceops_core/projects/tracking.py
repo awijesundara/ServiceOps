@@ -6,7 +6,6 @@ A day and a week are the tenant's working day and week
 (PROJECTS_HOURS_PER_DAY, PROJECTS_DAYS_PER_WEEK).
 """
 import re
-from datetime import datetime
 
 from flask import abort
 from sqlalchemy import func
@@ -96,13 +95,11 @@ def _apply_remaining(item, mode, spent, new_value, reduce_by):
 def _started(value):
     if not value:
         return now()
+    from serviceops_core.user_time import parse_user_datetime
     try:
-        parsed = datetime.fromisoformat(str(value))
+        return parse_user_datetime(str(value))  # typed in the person's own time zone
     except ValueError:
         abort(400, description=tr("Date started must be a date and time."))
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=now().tzinfo)
-    return parsed
 
 
 def _lock_item(item, actor):

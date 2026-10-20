@@ -3942,7 +3942,7 @@
    "id": "Date format"
   },
   {
-   "id": "Date started"
+   "id": "Date started ({zone})"
   },
   {
    "id": "Date started must be a date and time."
@@ -4489,7 +4489,13 @@
    "id": "Due"
   },
   {
+   "id": "Due ({zone})"
+  },
+  {
    "id": "Due date"
+  },
+  {
+   "id": "Due date ({zone})"
   },
   {
    "id": "Duration"
@@ -4681,13 +4687,13 @@
    "id": "Enabled"
   },
   {
-   "id": "End (UTC)"
+   "id": "End ({zone})"
   },
   {
    "id": "End time"
   },
   {
-   "id": "Ends"
+   "id": "Ends ({zone})"
   },
   {
    "id": "Enforced for REST API v1 clients only; the browser ticket-creation form doesn't check this action."
@@ -4720,10 +4726,10 @@
    "id": "Enter a valid Google Sheets URL."
   },
   {
-   "id": "Enter a valid ISO date and time. Times without an offset use UTC."
+   "id": "Enter a valid absence start and end time."
   },
   {
-   "id": "Enter a valid absence start and end time."
+   "id": "Enter a valid date and time."
   },
   {
    "id": "Enter a valid due date."
@@ -4749,6 +4755,9 @@
   },
   {
    "id": "Enter a valid syslog port."
+  },
+  {
+   "id": "Enter a valid task start and end."
   },
   {
    "id": "Enter an RT ticket number.",
@@ -5220,7 +5229,7 @@
    "id": "First contact resolution %"
   },
   {
-   "id": "First run (UTC if offset omitted)"
+   "id": "First run ({zone})"
   },
   {
    "id": "Fix version"
@@ -5337,6 +5346,9 @@
   },
   {
    "id": "From"
+  },
+  {
+   "id": "From ({zone})"
   },
   {
    "id": "From DEPLOYMENT_MODE and GUNICORN_WORKERS -- the chart's scale/labels adapt to whichever deployment method is actually running, not a fixed assumption."
@@ -5875,9 +5887,6 @@
   },
   {
    "id": "Impacted services/CIs"
-  },
-  {
-   "id": "Implementation"
   },
   {
    "id": "Implementation plan",
@@ -9459,7 +9468,7 @@
    "javascript": true
   },
   {
-   "id": "Planned end (UTC)"
+   "id": "Planned end ({zone})"
   },
   {
    "id": "Planned end date"
@@ -9469,7 +9478,10 @@
    "javascript": true
   },
   {
-   "id": "Planned start (UTC)"
+   "id": "Planned start ({zone})"
+  },
+  {
+   "id": "Planned start and planned end must be valid dates."
   },
   {
    "id": "Planned start date"
@@ -11135,9 +11147,6 @@
    "id": "Reverted to the default wording."
   },
   {
-   "id": "Review"
-  },
-  {
    "id": "Review AI action · {number} · {instance_name}"
   },
   {
@@ -12439,6 +12448,9 @@
    "id": "Set tags"
   },
   {
+   "id": "Set the change window first."
+  },
+  {
    "id": "Set to"
   },
   {
@@ -12920,7 +12932,7 @@
    "id": "Start"
   },
   {
-   "id": "Start (UTC)"
+   "id": "Start ({zone})"
   },
   {
    "id": "Start a planned sprint"
@@ -12971,7 +12983,7 @@
    "id": "Starting scope without estimates: {points} items without points; {minutes} without time estimates."
   },
   {
-   "id": "Starts"
+   "id": "Starts ({zone})"
   },
   {
    "id": "State"
@@ -13324,9 +13336,6 @@
    "id": "Task board filters"
   },
   {
-   "id": "Task dates must fall within the parent change's planned window ({planned_start} → {planned_end})."
-  },
-  {
    "id": "Task end must be later than task start."
   },
   {
@@ -13334,6 +13343,9 @@
   },
   {
    "id": "Task summary"
+  },
+  {
+   "id": "Task times must fall within the change's planned window, {start} to {end}."
   },
   {
    "id": "Tasks"
@@ -13480,9 +13492,6 @@
   {
    "id": "Test plan",
    "javascript": true
-  },
-  {
-   "id": "Testing"
   },
   {
    "id": "Testing…",
@@ -14051,6 +14060,9 @@
    "id": "This change already references RT #{id}."
   },
   {
+   "id": "This change falls inside the change freeze \"{title}\" ({start} to {end}){reason}. Only Emergency changes are permitted during a freeze."
+  },
+  {
    "id": "This contact is under an active legal hold and cannot be erased."
   },
   {
@@ -14286,6 +14298,9 @@
   },
   {
    "id": "To"
+  },
+  {
+   "id": "To ({zone})"
   },
   {
    "id": "To create"
@@ -15315,6 +15330,9 @@
   },
   {
    "id": "Withdrawn by {name}: {reason}"
+  },
+  {
+   "id": "Within the change window: {start} to {end}."
   },
   {
    "id": "Work"
@@ -17529,6 +17547,12 @@
   },
   {
    "id": "{tasks} tasks"
+  },
+  {
+   "id": "{tasks} would fall outside the new window. Reschedule it first or widen the window."
+  },
+  {
+   "id": "{tasks} would fall outside the new window. Reschedule them first or widen the window."
   },
   {
    "id": "{tickets_seen} seen · {records_created} {value} ({events_created} events, {changes_created} changes) · {already_imported} already imported"

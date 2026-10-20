@@ -231,7 +231,7 @@
 <section class="panel" id="governance">
   <header class="section-heading"><div><h2>{{ tr('Change governance') }}</h2><p>{{ tr('Plans, risk, schedule, tasks, and approvals') }}</p></div></header>
   {% if change_freeze_windows %}
-  <div class="flash warning"><strong>{{ trn(change_freeze_windows|length, 'Active or upcoming change freeze', 'Active or upcoming change freezes') }}</strong>{{ tr("Standard and Normal changes can't be scheduled inside these windows — only Emergency changes are exempt.") }}<ul>{% for window in change_freeze_windows %}<li>{{ window.title }}: {{ window.starts_at|l10n_strftime('%b %d, %Y %H:%M') }} – {{ window.ends_at|l10n_strftime('%b %d, %Y %H:%M') }}{% if window.reason %} — {{ window.reason }}{% endif %}</li>{% endfor %}</ul></div>
+  <div class="flash warning"><strong>{{ trn(change_freeze_windows|length, 'Active or upcoming change freeze', 'Active or upcoming change freezes') }}</strong>{{ tr("Standard and Normal changes can't be scheduled inside these windows — only Emergency changes are exempt.") }}<ul>{% for window in change_freeze_windows %}<li>{{ window.title }}: {{ window.starts_at|usertime('%b %d, %Y %H:%M') }} – {{ window.ends_at|usertime('%b %d, %Y %H:%M %Z') }}{% if window.reason %} — {{ window.reason }}{% endif %}</li>{% endfor %}</ul></div>
   {% endif %}
   <dl class="governance-grid">
     <dt>{{ tr('Revision') }}</dt><dd>v{{ ticket.change_revision.revision if ticket.change_revision else 1 }}</dd>
@@ -252,8 +252,8 @@
       <label>{{ tr('Risk score') }}<span class="info-tip" tabindex="0" data-tip="Change type/impact/CI edits above are used to auto-recalculate if you also clear this field — leave it as-is to keep the current score, or edit it directly to override.">i</span><input type="number" min="0" max="100" name="risk_score" value="{{ ticket.change_governance.risk_score }}"></label>
       <label class="wide">{{ tr('Risk score override reason') }}<input name="risk_score_override_reason" value="{{ ticket.change_governance.risk_score_override_reason }}" placeholder="{{ tr('Why does this differ from the calculated baseline?') }}"></label>
       <label>{{ tr('Primary CI') }}<div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="{{ tr('Search by CI name or serial number…') }}" autocomplete="off" value="{{ ticket.change_governance.ci.name if ticket.change_governance.ci else '' }}"><input type="hidden" name="ci_id" value="{{ ticket.change_governance.ci_id or '' }}" data-owning-team="{{ ticket.change_governance.ci.support_group.name if ticket.change_governance.ci and ticket.change_governance.ci.support_group else '' }}"><div class="lookup-results" hidden></div></div></label>
-      <label>{{ tr('Planned start (UTC)') }}<input type="datetime-local" name="planned_start" value="{{ ticket.change_governance.planned_start.strftime('%Y-%m-%dT%H:%M') if ticket.change_governance.planned_start else '' }}" required></label>
-      <label>{{ tr('Planned end (UTC)') }}<input type="datetime-local" name="planned_end" value="{{ ticket.change_governance.planned_end.strftime('%Y-%m-%dT%H:%M') if ticket.change_governance.planned_end else '' }}" required></label>
+      <label>{{ tr('Planned start ({zone})', zone=user_zone_label()) }}<input type="datetime-local" name="planned_start" value="{{ ticket.change_governance.planned_start|userinput }}" required></label>
+      <label>{{ tr('Planned end ({zone})', zone=user_zone_label()) }}<input type="datetime-local" name="planned_end" value="{{ ticket.change_governance.planned_end|userinput }}" required></label>
       <label class="wide">{{ tr('Implementation plan') }}<textarea name="implementation_plan" rows="4" required>{{ ticket.change_governance.implementation_plan }}</textarea></label>
       <label class="wide">{{ tr('Test plan') }}<textarea name="test_plan" rows="4" required>{{ ticket.change_governance.test_plan }}</textarea></label>
       <label class="wide">{{ tr('Backout plan') }}<textarea name="backout_plan" rows="4" required>{{ ticket.change_governance.backout_plan }}</textarea></label>
@@ -362,10 +362,13 @@
     <p class="muted">{{ tr("A task for another team adds an approval from that team's manager before the change can go ahead.") }}</p>
     <form method="post" action="{{ url_for('change_task_add', ticket_id=ticket.id) }}" class="form-grid">
       <label class="wide required-field"><span>{{ tr('Task summary') }}</span><input name="title" required></label>
-      <label><span>{{ tr('Type') }}</span><select name="task_type"><option>{{ tr('Planning') }}</option><option>{{ tr('Implementation') }}</option><option>{{ tr('Testing') }}</option><option>{{ tr('Review') }}</option></select></label>
+      <label><span>{{ tr('Type') }}</span><select name="task_type">{% for value in ('Planning', 'Implementation', 'Testing', 'Review') %}<option value="{{ value }}">{{ tr(value) }}</option>{% endfor %}</select></label>
       <label><span>{{ tr('Assignment group') }}</span><select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label>
-      <label class="required-field"><span>{{ tr('Planned start (UTC)') }}</span><input type="datetime-local" name="planned_start" required></label>
-      <label class="required-field"><span>{{ tr('Planned end (UTC)') }}</span><input type="datetime-local" name="planned_end" required></label>
+      {% set window = ticket.change_governance %}
+      {#- A task runs inside its change's window: the fields start at the window and cannot leave it. -#}
+      <p class="wide muted">{{ tr('Within the change window: {start} to {end}.', start=(window.planned_start|usertime('%b %d, %H:%M')), end=(window.planned_end|usertime('%b %d, %H:%M %Z'))) if window and window.planned_start and window.planned_end else tr('Set the change window first.') }}</p>
+      <label class="required-field"><span>{{ tr('Planned start ({zone})', zone=user_zone_label()) }}</span><input type="datetime-local" name="planned_start" required{% if window and window.planned_start %} value="{{ window.planned_start|userinput }}" min="{{ window.planned_start|userinput }}" max="{{ window.planned_end|userinput }}"{% endif %}></label>
+      <label class="required-field"><span>{{ tr('Planned end ({zone})', zone=user_zone_label()) }}</span><input type="datetime-local" name="planned_end" required{% if window and window.planned_end %} value="{{ window.planned_end|userinput }}" min="{{ window.planned_start|userinput }}" max="{{ window.planned_end|userinput }}"{% endif %}></label>
       <label class="check wide"><input type="checkbox" name="required" value="1" checked> {{ tr('Required before the parent change can complete') }}</label>
       <div class="wide actions"><button class="primary">{{ tr('Add CTASK') }}</button></div>
     </form>

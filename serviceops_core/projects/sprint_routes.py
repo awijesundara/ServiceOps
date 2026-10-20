@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload
 from werkzeug.exceptions import HTTPException
 
 import app as core
+from serviceops_core.user_time import input_value
 from serviceops_core.localization import tr
 from serviceops_core.projects import service, sprints, backlog_controls, releases
 from serviceops_core.projects.models import ProjectSprint, ProjectSprintEvent, ProjectSprintItem, ProjectStatus, WorkItem
@@ -111,8 +112,8 @@ def register_web(blueprint, page):
             epics=WorkItem.query.filter_by(project_id=project.id,tenant_id=current_user.tenant_id,item_type='epic').order_by(WorkItem.number).all(),
             members=service.assignable_users(project),statuses=list(project.statuses),
             velocity=sprints.velocity(current_user,project),
-            edit_start=sprints.utc(selected.start_at).strftime('%Y-%m-%dT%H:%M') if selected and selected.start_at else '',
-            edit_end=sprints.utc(selected.end_at).strftime('%Y-%m-%dT%H:%M') if selected and selected.end_at else '')
+            edit_start=input_value(selected.start_at) if selected else '',
+            edit_end=input_value(selected.end_at) if selected else '')
 
     @blueprint.post('/projects/<key>/sprints/save')
     @guarded

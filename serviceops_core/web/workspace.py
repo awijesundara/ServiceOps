@@ -32,6 +32,7 @@ from serviceops_core.identity import normalize_email
 from serviceops_core.localization import tr, tr_value
 from serviceops_core.request_values import form_int
 from serviceops_core.task_lifecycle import FINISHED_REQUEST_STATES, FINISHED_TICKET_STATES
+from serviceops_core.user_time import parse_user_datetime
 from app import (
     email_taken_by_other,
     escape_like,
@@ -42,7 +43,6 @@ from app import (
     integration_endpoint_valid,
     is_safe_internal_path,
     notification_target_url,
-    parse_form_datetime,
     record_reference,
     record_url,
     role_at_least,
@@ -419,8 +419,11 @@ def register(app):
             abort(409, description=(
                 tr("Your active line manager must be recorded before absence approval coverage can be delegated upward.")
             ))
-        starts_at = parse_form_datetime(request.form.get("starts_at", ""))
-        ends_at = parse_form_datetime(request.form.get("ends_at", ""))
+        try:
+            starts_at = parse_user_datetime(request.form.get("starts_at"))
+            ends_at = parse_user_datetime(request.form.get("ends_at"))
+        except ValueError:
+            starts_at = ends_at = None
         reason = request.form.get("reason", "").strip()[:500]
         if not starts_at or not ends_at or ends_at <= starts_at:
             abort(400, description=tr("Enter a valid absence start and end time."))

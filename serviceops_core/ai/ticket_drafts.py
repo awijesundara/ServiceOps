@@ -41,7 +41,8 @@ def additional_fields(data, zone_name=None):
                         if zone is None:
                             raise ValueError('timezone required')
                         moment = moment.replace(tzinfo=zone)
-                    result[key] = moment.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M')
+                    # The change form reads times in the requester's own zone.
+                    result[key] = moment.astimezone(zone or timezone.utc).strftime('%Y-%m-%dT%H:%M')
                 except ValueError:
                     current_app.logger.warning('AI draft contained an invalid or ambiguous %s', key)
                     result.pop(key, None)

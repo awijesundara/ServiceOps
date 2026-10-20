@@ -110,8 +110,8 @@ helm upgrade serviceops charts/serviceops -n operations --reuse-values \
     <input name="logger" value="{{ logger_filter }}" placeholder="{{ tr('Logger contains…') }}" aria-label="{{ tr('Logger name') }}">
     <input name="path" value="{{ path_filter }}" placeholder="{{ tr('Path contains…') }}" aria-label="{{ tr('Request path') }}">
     <input name="request_id" value="{{ request_id_filter }}" placeholder="{{ tr('Request ID') }}" aria-label="{{ tr('Request ID') }}">
-    <label>{{ tr('From') }} <input type="datetime-local" name="from" value="{{ from_filter }}" aria-label="{{ tr('From date/time') }}"></label>
-    <label>{{ tr('To') }} <input type="datetime-local" name="to" value="{{ to_filter }}" aria-label="{{ tr('To date/time') }}"></label>
+    <label>{{ tr('From ({zone})', zone=user_zone_label()) }} <input type="datetime-local" name="from" value="{{ from_filter }}" aria-label="{{ tr('From date/time') }}"></label>
+    <label>{{ tr('To ({zone})', zone=user_zone_label()) }} <input type="datetime-local" name="to" value="{{ to_filter }}" aria-label="{{ tr('To date/time') }}"></label>
     <button>{{ tr('Apply filters') }}</button>
     <a class="button" href="{{ url_for('system_health') }}">{{ tr('Clear filters') }}</a>
   </form>

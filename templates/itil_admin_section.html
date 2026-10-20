@@ -334,8 +334,8 @@
     <input type="hidden" name="return_section" value="{{ section }}">
     <input type="hidden" name="action" value="create_change_freeze">
     <label class="wide">{{ tr('Title') }}<input name="title" placeholder="{{ tr('Year-end code freeze') }}" maxlength="160" required></label>
-    <label>{{ tr('Starts') }}<input type="datetime-local" name="starts_at" required></label>
-    <label>{{ tr('Ends') }}<input type="datetime-local" name="ends_at" required></label>
+    <label>{{ tr('Starts ({zone})', zone=user_zone_label()) }}<input type="datetime-local" name="starts_at" required></label>
+    <label>{{ tr('Ends ({zone})', zone=user_zone_label()) }}<input type="datetime-local" name="ends_at" required></label>
     <label class="wide">{{ tr('Reason') }}<textarea name="reason" rows="2" placeholder="{{ tr('Optional — shown to anyone blocked by this freeze') }}"></textarea></label>
     <div class="wide actions"><button class="primary">{{ tr('Create freeze window') }}</button></div>
   </form>

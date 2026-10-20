@@ -38,9 +38,10 @@ def timestamp(value):
     try:
         if value in (None, ''): return None
         if not isinstance(value, str) or len(value) > 40: raise ValueError()
-        return utc(datetime.fromisoformat(value.replace('Z', '+00:00')))
+        from serviceops_core.user_time import parse_user_datetime
+        return parse_user_datetime(value)  # without an offset, the person's own time zone
     except (ValueError, TypeError, OverflowError):
-        abort(400, description=tr('Enter a valid ISO date and time. Times without an offset use UTC.'))
+        abort(400, description=tr('Enter a valid date and time.'))
 
 
 def _lock(actor, project, manage=False):

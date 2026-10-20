@@ -30,8 +30,8 @@ def test_sprint_create_assign_rank_start_report_complete(server,width,theme):
         form=page.locator('form[action$="/sprints/save"]')
         form.get_by_label('Sprint name',exact=True).fill('Portal delivery')
         form.get_by_label('Sprint goal',exact=True).fill('Deliver sign-in improvements')
-        form.get_by_label('Start (UTC)',exact=True).fill('2026-10-17T08:00')
-        form.get_by_label('End (UTC)',exact=True).fill('2026-10-31T08:00')
+        form.get_by_label('Start (JST)',exact=True).fill('2026-10-17T08:00')
+        form.get_by_label('End (JST)',exact=True).fill('2026-10-31T08:00')
         form.get_by_role('button',name='Create sprint',exact=True).click(); page.wait_for_load_state('networkidle')
         expect(page.get_by_text('Sprint saved.',exact=True)).to_be_visible()
         with application.app_context(): sprint_id=ProjectSprint.query.filter_by(name='Portal delivery').one().id

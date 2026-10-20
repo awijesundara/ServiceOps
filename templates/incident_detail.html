@@ -205,7 +205,7 @@
     <form method="post" action="{{ url_for('incident_task_add', ticket_id=ticket.id) }}" class="form-grid">
       <label class="wide required-field"><span>{{ tr('Task summary') }}</span><input name="title" maxlength="180" required></label>
       <label class="required-field"><span>{{ tr('Assignment group') }}</span><select name="group_id" required>{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select></label>
-      <label><span>{{ tr('Due') }}</span><input type="datetime-local" name="due_at"></label>
+      <label><span>{{ tr('Due ({zone})', zone=user_zone_label()) }}</span><input type="datetime-local" name="due_at"></label>
       <label class="check wide"><input type="checkbox" name="required" value="1" checked> {{ tr('Required before the incident can be resolved') }}</label>
       <div class="wide actions"><button class="primary">{{ tr('Add task') }}</button></div>
     </form>

@@ -5,7 +5,7 @@ import csv
 import io
 import json
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from flask import abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -49,7 +49,6 @@ from app import (
     next_operational_task_number,
     normalize_ticket_category,
     normalize_ticket_subcategory,
-    parse_form_datetime,
     parse_list_filter_param,
     post_ticket_comment,
     record_number,
@@ -157,6 +156,7 @@ from serviceops_models import (
 from serviceops_core.localization import request_language, tr, tr_value, translate_plural
 from serviceops_core import incident_handling, incident_hierarchy, rt_link
 from serviceops_core.request_values import form_int, parse_int
+from serviceops_core.user_time import parse_user_datetime
 from serviceops_core.safe_redirect import redirect_internal
 
 
@@ -172,6 +172,14 @@ def enterprise_assignable_users(tenant_id):
         User.role.in_(["agent", "manager", "admin", "superadmin"]),
         User.active.is_(True),
     ).order_by(User.name)
+
+
+def _freeze_message(freeze):
+    """Why a change cannot be scheduled in a freeze, with the freeze in the person's own time."""
+    from serviceops_core.user_time import display
+    return tr("This change falls inside the change freeze \"{title}\" ({start} to {end}){reason}. Only Emergency "
+              "changes are permitted during a freeze.", title=freeze.title, start=display(freeze.starts_at),
+              end=display(freeze.ends_at), reason=f": {freeze.reason}" if freeze.reason else "")
 
 
 def register(app):
@@ -563,10 +571,13 @@ def register(app):
             if kind == "change":
                 if not request.form.get("planned_start") or not request.form.get("planned_end"):
                     return render_form("Planned start and planned end are required for a change.")
-                planned_start = parse_form_datetime(request.form["planned_start"])
-                planned_end = parse_form_datetime(request.form["planned_end"])
+                try:
+                    planned_start = parse_user_datetime(request.form["planned_start"])
+                    planned_end = parse_user_datetime(request.form["planned_end"])
+                except ValueError:
+                    planned_start = planned_end = None
                 if not planned_start or not planned_end:
-                    return render_form("Planned start and planned end must be valid dates.")
+                    return render_form(tr("Planned start and planned end must be valid dates."))
                 if planned_end <= planned_start:
                     return render_form("Planned end must be later than planned start.")
             title = request.form.get("title", "").strip()
@@ -630,11 +641,7 @@ def register(app):
             if kind == "change" and change_type_input != "Emergency":
                 freeze = active_change_freeze(current_user.tenant_id, planned_start, planned_end)
                 if freeze:
-                    return render_form(
-                        f"This change cannot be created: it falls inside the change freeze "
-                        f"\"{freeze.title}\" ({freeze.starts_at.strftime('%b %d')}–{freeze.ends_at.strftime('%b %d, %Y')}"
-                        f"{': ' + freeze.reason if freeze.reason else ''}). Only Emergency changes are permitted during a freeze."
-                    )
+                    return render_form(_freeze_message(freeze))
             if kind == "change" and seen_cis:
                 calculated_risk_score = max(
                     calculate_change_risk_score(
@@ -1315,8 +1322,8 @@ def register(app):
                 "Reopen the change to New/Awaiting Approval before revising the plan."
             )
         try:
-            planned_start = parse_form_datetime(request.form.get("planned_start"))
-            planned_end = parse_form_datetime(request.form.get("planned_end"))
+            planned_start = parse_user_datetime(request.form.get("planned_start"))
+            planned_end = parse_user_datetime(request.form.get("planned_end"))
             ci_id = int(request.form["ci_id"]) if request.form.get("ci_id") else None
         except (TypeError, ValueError):
             return plan_form_error("Change plan dates or CI are invalid.")
@@ -1345,6 +1352,18 @@ def register(app):
             return plan_form_error("Planned start and planned end are required for a change.")
         if planned_end <= planned_start:
             return plan_form_error("Planned end must be later than planned start.")
+        # The change's tasks must still fit, and a revision cannot move a change into a freeze.
+        spanning = core.change_tasks_spanning_window(ticket)
+        outside = core.change_tasks_outside_window(ticket, planned_start, planned_end, moving=spanning)
+        if outside:
+            return plan_form_error(translate_plural(
+                len(outside), "{tasks} would fall outside the new window. Reschedule it first or widen the window.",
+                "{tasks} would fall outside the new window. Reschedule them first or widen the window.",
+                request_language(), tasks=", ".join(task.number for task in outside)))
+        if request.form.get("change_type", governance.change_type) != "Emergency":
+            freeze = active_change_freeze(ticket.tenant_id, planned_start, planned_end)
+            if freeze:
+                return plan_form_error(_freeze_message(freeze))
         if ci_id:
             conflicts = _conflict_descriptions(
                 ticket.tenant_id, {ci_id}, planned_start, planned_end,
@@ -1393,6 +1412,11 @@ def register(app):
         governance.planned_start = planned_start
         governance.planned_end = planned_end
         governance.ci_id = ci_id
+        for task in spanning:  # tasks covering the whole window move with it
+            if (task.planned_start, task.planned_end) != (planned_start, planned_end):
+                task.planned_start, task.planned_end = planned_start, planned_end
+                log_history("ticket", ticket.id, "Change task rescheduled",
+                            details=f"{task.number} follows the change's new planned window.")
         after = {
             "short description": ticket.title,
             "description": ticket.description,
@@ -1829,19 +1853,17 @@ def register(app):
             abort(400)
         if not request.form.get("planned_start") or not request.form.get("planned_end"):
             abort(400, description=tr("Task planned start and planned end are required."))
-        planned_start = parse_form_datetime(request.form["planned_start"])
-        planned_end = parse_form_datetime(request.form["planned_end"])
+        try:
+            planned_start = parse_user_datetime(request.form["planned_start"])
+            planned_end = parse_user_datetime(request.form["planned_end"])
+        except ValueError:
+            abort(400, description=tr("Enter a valid task start and end."))
         governance = ticket.change_governance
         if planned_end <= planned_start:
             abort(400, description=tr("Task end must be later than task start."))
-        if governance and governance.planned_start and governance.planned_end:
-            if (
-                align_tz(planned_start, governance.planned_start) < governance.planned_start
-                or align_tz(planned_end, governance.planned_end) > governance.planned_end
-            ):
-                abort(409, description=(
-                    tr("Task dates must fall within the parent change's planned window ({planned_start} → {planned_end}).", planned_start=governance.planned_start.strftime('%Y-%m-%d %H:%M'), planned_end=governance.planned_end.strftime('%Y-%m-%d %H:%M'))
-                ))
+        window_error = core.change_task_window_error(governance, planned_start, planned_end)
+        if window_error:
+            abort(409, description=window_error)
         sequence = OperationalTask.query.filter_by(
             parent_type="ticket", parent_id=ticket.id
         ).count() + 1
@@ -1897,7 +1919,7 @@ def register(app):
         if not 0 < len(title) <= 180:
             abort(400, description=tr("A task summary has 1 to 180 characters."))
         try:
-            due = parse_form_datetime(request.form.get("due_at", "").strip())
+            due = parse_user_datetime(request.form.get("due_at", ""))
         except ValueError:
             abort(400, description=tr("Enter a valid due date."))
         sequence = OperationalTask.query.filter_by(parent_type="ticket", parent_id=ticket.id).count() + 1
@@ -2130,11 +2152,15 @@ def register(app):
         if current_user.effective_role == "requester" and domain not in ("customer", "hr"):
             abort(403)
         if request.method == "POST":
+            try:
+                due_at = parse_user_datetime(request.form.get("due_at"))
+            except ValueError:
+                abort(400, description=tr("Enter a valid due date."))
             record = EnterpriseRecord(
                 number=next_enterprise_number(domain), domain=domain, record_type=request.form["record_type"],
                 title=request.form["title"].strip(), description=request.form["description"].strip(),
                 priority=request.form.get("priority", "P3"), risk=request.form.get("risk", "Medium"),
-                requester_id=current_user.id, due_at=datetime.fromisoformat(request.form["due_at"]) if request.form.get("due_at") else None,
+                requester_id=current_user.id, due_at=due_at,
             )
             db.session.add(record)
             db.session.flush()

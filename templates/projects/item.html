@@ -31,7 +31,7 @@
         <form method="post" action="{{ url_for('projects.item_log_work', item_key=item.key) }}" class="stack wi-dialog-body wi-worklog-form">
           <label>{{ tr('Time spent') }}<input name="spent" required maxlength="40" placeholder="{{ tr('2h 30m') }}" aria-describedby="duration-help-log"></label>
           <p class="muted form-help" id="duration-help-log">{{ tr('Use w (weeks), d (days), h (hours) and m (minutes), for example 1d 4h.') }}</p>
-          <label>{{ tr('Date started') }}<input type="datetime-local" name="started" value="{{ now_local.strftime('%Y-%m-%dT%H:%M') }}"></label>
+          <label>{{ tr('Date started ({zone})', zone=user_zone_label()) }}<input type="datetime-local" name="started" value="{{ now_local|userinput }}"></label>
           <fieldset><legend>{{ tr('Remaining estimate') }}</legend>
             <label class="check"><input type="radio" name="remaining_mode" value="auto" checked> {{ tr('Adjust automatically') }}</label>
             <label class="check"><input type="radio" name="remaining_mode" value="leave"> {{ tr('Leave unchanged') }}</label>

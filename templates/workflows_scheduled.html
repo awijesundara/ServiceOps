@@ -10,7 +10,7 @@
     <label>{{ tr('Name') }}<input name="name" maxlength="160" required></label>
     <label>{{ tr('Ticket') }}<select name="ticket_id" required>{% for ticket in tickets %}<option value="{{ ticket.id }}">{{ ticket.number }} · {{ ticket.title }}</option>{% endfor %}</select></label>
     <label>{{ tr('Interval minutes') }}<input type="number" name="interval_minutes" min="1" max="525600" value="1440" required></label>
-    <label>{{ tr('First run (UTC if offset omitted)') }}<input type="datetime-local" name="next_run_at"></label>
+    <label>{{ tr('First run ({zone})', zone=user_zone_label()) }}<input type="datetime-local" name="next_run_at"></label>
     <div class="wide actions"><button class="primary">{{ tr('Create schedule') }}</button></div>
   </form></details>
   <table><thead><tr><th>{{ tr('Schedule') }}</th><th>{{ tr('Ticket') }}</th><th>{{ tr('Interval') }}</th><th>{{ tr('Next run') }}</th><th>{{ tr('Last run') }}</th><th>{{ tr('Status') }}</th></tr></thead><tbody>
