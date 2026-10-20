@@ -1129,301 +1129,301 @@ html.theme-dark .detail-list dt{color:var(--muted)}
 html.theme-dark .ai-action-draft{border-color:var(--ai-amber,#62503b)}
 html.theme-dark .ai-error{color:#f38a7c}
 /* projects.css */
-html.theme-dark .empty-state{color:var(--muted)}
-html.theme-dark .empty-state h3{color:var(--ink)}
-html.theme-dark .button.danger,html.theme-dark button.danger{color:var(--red);border-color:#543835}
-html.theme-dark .button.danger:hover,html.theme-dark button.danger:hover{background:#211817}
-html.theme-dark .project-badge{background:var(--project-color);color:#ffffff}
-html.theme-dark .project-title .eyebrow a{color:inherit}
-html.theme-dark .project-tabs{border-bottom:1px solid var(--line)}
-html.theme-dark .project-tabs a{color:var(--muted);border-bottom:3px solid transparent}
-html.theme-dark .project-tabs a:hover{color:var(--ink)}
-html.theme-dark .project-tabs a[aria-current=page]{color:var(--ink);border-bottom-color:var(--dk-accent)}
-html.theme-dark .project-table tr.is-archived td{color:var(--muted)}
-html.theme-dark .project-filters label{color:var(--muted)}
-html.theme-dark .project-column{border:1px solid var(--line);border-bottom:0;background:#171d21}
-html.theme-dark .project-column h2{color:#a4b4c0}
-html.theme-dark .project-column-count{color:var(--muted);background:#182128}
-html.theme-dark .project-column.over-limit{background:#251918}
-html.theme-dark .project-column.over-limit .project-column-count{background:#c0392b;color:#fff}
-html.theme-dark .project-swimlane-title{color:var(--ink)}
-html.theme-dark .project-column-body{border:1px solid var(--line);border-top:0;background:#141a1e}
-html.theme-dark .project-cards.drop-target{background:#182121;outline:2px dashed #4c6e6a}
-html.theme-dark .project-empty{color:var(--muted)}
-html.theme-dark .wi-card{border:1px solid var(--line);background:#182128;box-shadow:var(--shadow)}
-html.theme-dark .wi-card:hover{border-color:#434f54}
-html.theme-dark .wi-card-title{color:var(--ink)}
-html.theme-dark .wi-card-meta{color:var(--muted)}
-html.theme-dark .wi-card-flag{background:#221a02;color:#d5aa71}
-html.theme-dark .wi-key{color:#9dafbc}
-html.theme-dark .wi-label{background:#181d22;color:#a4b4c0}
-html.theme-dark .wi-epic{background:#221d2a;color:#b79ef9}
-html.theme-dark .wi-points{background:#1c2126;color:#acbecc}
-html.theme-dark .wi-due.overdue{color:var(--red)}
-html.theme-dark .wi-type::after{background:#182128}
-html.theme-dark .wi-type-epic{background:#7e57c2}
-html.theme-dark .wi-type-story{background:#2e9e5b}
-html.theme-dark .wi-type-task{background:#3b82c4}
-html.theme-dark .wi-type-bug{background:#d64541}
-html.theme-dark .wi-type-subtask{background:#5d8aa8}
-html.theme-dark .wi-type-subtask::after{background:transparent;border:2px solid #292f33}
-html.theme-dark .wi-priority-highest{background:#c0392b}
-html.theme-dark .wi-priority-high{background:#e0662a}
-html.theme-dark .wi-priority-medium{background:#e2a500}
-html.theme-dark .wi-priority-low{background:#3b82c4}
-html.theme-dark .wi-priority-lowest{background:#5d8aa8}
-html.theme-dark .wi-face{border:2px solid #292f33}
-html.theme-dark .wi-face-more{color:var(--muted)}
-html.theme-dark .wi-status-todo{background:#1b2025;color:#a4b4c0}
-html.theme-dark .wi-status-in_progress{background:#19232f;color:#6faef3}
-html.theme-dark .wi-status-done{background:#13241b;color:#63b981}
-html.theme-dark .wi-summary a{color:var(--ink)}
-html.theme-dark .wi-breadcrumb{color:var(--muted)}
-html.theme-dark .wi-breadcrumb a{color:inherit}
-html.theme-dark .wi-breadcrumb a:hover{color:var(--ink)}
-html.theme-dark .wi-progress-bar{background:#1c2126}
-html.theme-dark .wi-progress-fill{background:#2e9e5b}
-html.theme-dark .wi-child-list li,html.theme-dark .wi-link-list li,html.theme-dark .wi-attachment-list li{border-bottom:1px solid #292f33}
-html.theme-dark .wi-child-list li:last-child,html.theme-dark .wi-link-list li:last-child,html.theme-dark .wi-attachment-list li:last-child{border-bottom:0}
-html.theme-dark .wi-child-title{color:var(--ink)}
-html.theme-dark .wi-link-relation{color:var(--muted)}
-html.theme-dark .wi-remove{color:var(--muted)}
-html.theme-dark .wi-remove:hover{color:var(--red)}
-html.theme-dark .wi-tabs{border-bottom:1px solid var(--line)}
-html.theme-dark .wi-tabs button{border:0;border-bottom:3px solid transparent;background:none;color:var(--muted)}
-html.theme-dark .wi-tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--dk-accent)}
-html.theme-dark .wi-history li{border-bottom:1px solid #292f33}
-html.theme-dark .wi-old{color:var(--muted)}
-html.theme-dark .wi-details label{color:var(--muted)}
-html.theme-dark .wi-readonly dt{color:var(--muted)}
-html.theme-dark .wi-meta{border-top:1px solid var(--line)}
-html.theme-dark .project-inline-add label{color:var(--muted)}
-html.theme-dark .people-chip{background:#1a1f24;color:var(--ink)}
-html.theme-dark .people-chip button{border:0;background:none;color:var(--muted)}
-html.theme-dark .people-chip button:hover{color:var(--red);background:#182128}
-html.theme-dark .people-options{border:1px solid var(--line);background:#182128;box-shadow:0 10px 26px rgba(0,0,0,0.432)}
-html.theme-dark .people-options li{color:var(--ink)}
-html.theme-dark .people-options li[aria-selected=true],html.theme-dark .people-options li:hover{background:#161c20}
-html.theme-dark .people-options .people-none{color:var(--muted)}
-html.theme-dark .wi-child-list a,html.theme-dark .wi-link-list a,html.theme-dark .wi-attachment-list a{color:var(--dk-accent-strong)}
-html.theme-dark .overview-figure{border:1px solid var(--line)}
-html.theme-dark .overview-figure span{color:var(--muted)}
-html.theme-dark .overview-todo strong{color:#a4b4c0}
-html.theme-dark .overview-in_progress strong{color:#6faef3}
-html.theme-dark .overview-done strong{color:#63b981}
-html.theme-dark .overview-bar{background:#1c2126}
-html.theme-dark .overview-bar-fill{background:#3b82c4}
-html.theme-dark .overview-bar-done{background:#2e9e5b}
-html.theme-dark .overview-bar-muted{background:#9aa9b2}
-html.theme-dark .project-overview a,html.theme-dark .wi-history a{color:var(--ink)}
-html.theme-dark .wi-dialog[open]>summary{background:#161c20}
-html.theme-dark .wi-dialog-body{border:1px solid var(--line);background:#182128;box-shadow:0 14px 36px rgba(0,0,0,0.476)}
-html.theme-dark .wi-dialog-body fieldset{border:1px solid var(--line)}
-html.theme-dark .wi-menu details summary,html.theme-dark .wi-menu-link,html.theme-dark .wi-menu .link-button{color:var(--ink)}
-html.theme-dark .wi-menu details summary:hover,html.theme-dark .wi-menu-link:hover,html.theme-dark .wi-menu .link-button:hover{background:#151b1f}
-html.theme-dark .wi-menu-danger{color:var(--red)!important}
-html.theme-dark .wi-star{color:#da9f2c}
-html.theme-dark .wi-flag-banner{background:#251918;color:#f78e80}
-html.theme-dark .wi-flag{color:#e57e6e}
-html.theme-dark .wi-resolution{color:var(--muted)}
-html.theme-dark .wi-restricted{background:#201806;color:#ce9a53}
-html.theme-dark .md blockquote{border-left:3px solid var(--line);color:#a4b4c0}
-html.theme-dark .md code{background:#181d22}
-html.theme-dark .md pre{background:#141a1e}
-html.theme-dark .md pre code{background:none}
-html.theme-dark .md-table th,html.theme-dark .md-table td{border:1px solid var(--line)}
-html.theme-dark .md-toolbar button{border:1px solid var(--line);background:#182128;color:#acbecc}
-html.theme-dark .md-toolbar button:hover{background:#151b1f}
-html.theme-dark .md-preview{border:1px dashed var(--line);background:#12181c}
-html.theme-dark .wi-reaction{border:1px solid var(--line);background:#182128}
-html.theme-dark .wi-reaction.mine{border-color:#4c6e6a;background:#17201e}
-html.theme-dark .wi-react-picker summary{border:1px solid var(--line);color:var(--muted)}
-html.theme-dark .wi-react-picker>div{border:1px solid var(--line);background:#182128;box-shadow:0 8px 20px rgba(0,0,0,0.388)}
-html.theme-dark .wi-comment-edit summary{color:var(--muted)}
-html.theme-dark .wi-comment-delete{color:var(--muted)!important}
-html.theme-dark .wi-comment-actions label{color:var(--muted)}
-html.theme-dark .wi-thumb{border:1px solid var(--line)}
-html.theme-dark .wi-dropzone{border:2px dashed var(--line);color:var(--muted)}
-html.theme-dark .wi-dropzone.is-over{border-color:#4c6e6a;background:#151b1f}
-html.theme-dark .wi-time{border-top:1px solid var(--line)}
-html.theme-dark .wi-time-bar{background:#1c2126}
-html.theme-dark .wi-time-estimate{background:#3b82c4}
-html.theme-dark .wi-time-remaining{background:#e2a500}
-html.theme-dark .wi-time-spent{background:#2e9e5b}
-html.theme-dark .release-progress{background:#1c2126}
-html.theme-dark .release-done{background:#2e9e5b}
-html.theme-dark .release-doing{background:#3b82c4}
-html.theme-dark .release-overdue{background:#251918;color:#f08878}
-html.theme-dark .release-table tr.is-archived td{color:var(--muted)}
-html.theme-dark .bulk-bar{border:1px solid #304a47;background:#151b1f}
-html.theme-dark .wi-table tr.is-current td{background:#151b1f}
-html.theme-dark .wi-child-list li.is-current{background:#151b1f}
-html.theme-dark .your-work-project{border:1px solid var(--line);background:#182128;color:var(--ink);box-shadow:var(--shadow)}
-html.theme-dark .your-work-project:hover{border-color:#434f54}
-html.theme-dark .shortcut-help{border:1px solid var(--line)}
-html.theme-dark .shortcut-help::backdrop{background:rgba(255,255,255,0.45)}
-html.theme-dark .shortcut-help kbd{border:1px solid var(--line);background:#12181c}
-html.theme-dark .form-grid label,html.theme-dark .form-grid label.check{border:0;color:#acbecc}
-html.theme-dark .form-grid input[disabled]{background:#141a1e;color:var(--muted)}
-html.theme-dark select:not([multiple]){background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23667582' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;background-size:12px}
-html.theme-dark .project-filters .project-filter-search input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23667582' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='16.5' y1='16.5' x2='21' y2='21'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:10px center}
-html.theme-dark .project-filters-active{border-color:#304a47}
-html.theme-dark .wi-table tbody tr:hover td{background:#12181c}
-html.theme-dark .wi-inline-status{border:0;background-color:#1b2025;color:#a4b4c0;background-position:right 8px center}
-html.theme-dark .wi-inline-status[data-category=in_progress]{background-color:#19232f;color:#6faef3}
-html.theme-dark .wi-inline-status[data-category=done]{background-color:#13241b;color:#63b981}
-html.theme-dark .project-group-title{color:#a4b4c0}
-html.theme-dark .project-list .wi-table thead th{background:transparent}
-html.theme-dark .settings-sections a{border:1px solid var(--line);background:#182128;color:var(--ink)}
-html.theme-dark .settings-sections a:hover{border-color:#434f54}
-html.theme-dark .status-delete>summary.button,html.theme-dark .panel td form[data-confirm] .button.danger{color:var(--red);border-color:#543835}
-html.theme-dark .wi-details .wi-status-select{border:0;background-color:#1b2025;color:#a4b4c0}
-html.theme-dark .wi-details .wi-status-select[data-category=in_progress]{background-color:#19232f;color:#6faef3}
-html.theme-dark .wi-details .wi-status-select[data-category=done]{background-color:#13241b;color:#63b981}
-html.theme-dark .sprint-chart{color:var(--ink)}
-html.theme-dark .sprint-chart text{fill:currentColor}
-html.theme-dark .sprint-axis{fill:none;stroke:currentColor}
-html.theme-dark .sprint-chart polyline{fill:none}
-html.theme-dark .sprint-chart-value{stroke:var(--dk-accent,var(--dk-accent))}
-html.theme-dark .sprint-chart-dot{fill:var(--dk-accent,var(--dk-accent))}
-html.theme-dark .sprint-chart-scope{stroke:currentColor}
-html.theme-dark .sprint-chart-ideal{stroke:currentColor}
-html.theme-dark [data-backlog-row].sprint-drag-target{outline:2px solid var(--dk-accent)}
+html.theme-dark :where(body.project-app) .empty-state{color:var(--muted)}
+html.theme-dark :where(body.project-app) .empty-state h3{color:var(--ink)}
+html.theme-dark :where(body.project-app) .button.danger,html.theme-dark :where(body.project-app) button.danger{color:var(--red);border-color:#543835}
+html.theme-dark :where(body.project-app) .button.danger:hover,html.theme-dark :where(body.project-app) button.danger:hover{background:#211817}
+html.theme-dark :where(body.project-app) .project-badge{background:var(--project-color);color:#ffffff}
+html.theme-dark :where(body.project-app) .project-title .eyebrow a{color:inherit}
+html.theme-dark :where(body.project-app) .project-tabs{border-bottom:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .project-tabs a{color:var(--muted);border-bottom:3px solid transparent}
+html.theme-dark :where(body.project-app) .project-tabs a:hover{color:var(--ink)}
+html.theme-dark :where(body.project-app) .project-tabs a[aria-current=page]{color:var(--ink);border-bottom-color:var(--dk-accent)}
+html.theme-dark :where(body.project-app) .project-table tr.is-archived td{color:var(--muted)}
+html.theme-dark :where(body.project-app) .project-filters label{color:var(--muted)}
+html.theme-dark :where(body.project-app) .project-column{border:1px solid var(--line);border-bottom:0;background:#171d21}
+html.theme-dark :where(body.project-app) .project-column h2{color:#a4b4c0}
+html.theme-dark :where(body.project-app) .project-column-count{color:var(--muted);background:#182128}
+html.theme-dark :where(body.project-app) .project-column.over-limit{background:#251918}
+html.theme-dark :where(body.project-app) .project-column.over-limit .project-column-count{background:#c0392b;color:#fff}
+html.theme-dark :where(body.project-app) .project-swimlane-title{color:var(--ink)}
+html.theme-dark :where(body.project-app) .project-column-body{border:1px solid var(--line);border-top:0;background:#141a1e}
+html.theme-dark :where(body.project-app) .project-cards.drop-target{background:#182121;outline:2px dashed #4c6e6a}
+html.theme-dark :where(body.project-app) .project-empty{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-card{border:1px solid var(--line);background:#182128;box-shadow:var(--shadow)}
+html.theme-dark :where(body.project-app) .wi-card:hover{border-color:#434f54}
+html.theme-dark :where(body.project-app) .wi-card-title{color:var(--ink)}
+html.theme-dark :where(body.project-app) .wi-card-meta{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-card-flag{background:#221a02;color:#d5aa71}
+html.theme-dark :where(body.project-app) .wi-key{color:#9dafbc}
+html.theme-dark :where(body.project-app) .wi-label{background:#181d22;color:#a4b4c0}
+html.theme-dark :where(body.project-app) .wi-epic{background:#221d2a;color:#b79ef9}
+html.theme-dark :where(body.project-app) .wi-points{background:#1c2126;color:#acbecc}
+html.theme-dark :where(body.project-app) .wi-due.overdue{color:var(--red)}
+html.theme-dark :where(body.project-app) .wi-type::after{background:#182128}
+html.theme-dark :where(body.project-app) .wi-type-epic{background:#7e57c2}
+html.theme-dark :where(body.project-app) .wi-type-story{background:#2e9e5b}
+html.theme-dark :where(body.project-app) .wi-type-task{background:#3b82c4}
+html.theme-dark :where(body.project-app) .wi-type-bug{background:#d64541}
+html.theme-dark :where(body.project-app) .wi-type-subtask{background:#5d8aa8}
+html.theme-dark :where(body.project-app) .wi-type-subtask::after{background:transparent;border:2px solid #292f33}
+html.theme-dark :where(body.project-app) .wi-priority-highest{background:#c0392b}
+html.theme-dark :where(body.project-app) .wi-priority-high{background:#e0662a}
+html.theme-dark :where(body.project-app) .wi-priority-medium{background:#e2a500}
+html.theme-dark :where(body.project-app) .wi-priority-low{background:#3b82c4}
+html.theme-dark :where(body.project-app) .wi-priority-lowest{background:#5d8aa8}
+html.theme-dark :where(body.project-app) .wi-face{border:2px solid #292f33}
+html.theme-dark :where(body.project-app) .wi-face-more{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-status-todo{background:#1b2025;color:#a4b4c0}
+html.theme-dark :where(body.project-app) .wi-status-in_progress{background:#19232f;color:#6faef3}
+html.theme-dark :where(body.project-app) .wi-status-done{background:#13241b;color:#63b981}
+html.theme-dark :where(body.project-app) .wi-summary a{color:var(--ink)}
+html.theme-dark :where(body.project-app) .wi-breadcrumb{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-breadcrumb a{color:inherit}
+html.theme-dark :where(body.project-app) .wi-breadcrumb a:hover{color:var(--ink)}
+html.theme-dark :where(body.project-app) .wi-progress-bar{background:#1c2126}
+html.theme-dark :where(body.project-app) .wi-progress-fill{background:#2e9e5b}
+html.theme-dark :where(body.project-app) .wi-child-list li,html.theme-dark :where(body.project-app) .wi-link-list li,html.theme-dark :where(body.project-app) .wi-attachment-list li{border-bottom:1px solid #292f33}
+html.theme-dark :where(body.project-app) .wi-child-list li:last-child,html.theme-dark :where(body.project-app) .wi-link-list li:last-child,html.theme-dark :where(body.project-app) .wi-attachment-list li:last-child{border-bottom:0}
+html.theme-dark :where(body.project-app) .wi-child-title{color:var(--ink)}
+html.theme-dark :where(body.project-app) .wi-link-relation{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-remove{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-remove:hover{color:var(--red)}
+html.theme-dark :where(body.project-app) .wi-tabs{border-bottom:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .wi-tabs button{border:0;border-bottom:3px solid transparent;background:none;color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--dk-accent)}
+html.theme-dark :where(body.project-app) .wi-history li{border-bottom:1px solid #292f33}
+html.theme-dark :where(body.project-app) .wi-old{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-details label{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-readonly dt{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-meta{border-top:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .project-inline-add label{color:var(--muted)}
+html.theme-dark :where(body.project-app) .people-chip{background:#1a1f24;color:var(--ink)}
+html.theme-dark :where(body.project-app) .people-chip button{border:0;background:none;color:var(--muted)}
+html.theme-dark :where(body.project-app) .people-chip button:hover{color:var(--red);background:#182128}
+html.theme-dark :where(body.project-app) .people-options{border:1px solid var(--line);background:#182128;box-shadow:0 10px 26px rgba(0,0,0,0.432)}
+html.theme-dark :where(body.project-app) .people-options li{color:var(--ink)}
+html.theme-dark :where(body.project-app) .people-options li[aria-selected=true],html.theme-dark :where(body.project-app) .people-options li:hover{background:#161c20}
+html.theme-dark :where(body.project-app) .people-options .people-none{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-child-list a,html.theme-dark :where(body.project-app) .wi-link-list a,html.theme-dark :where(body.project-app) .wi-attachment-list a{color:var(--dk-accent-strong)}
+html.theme-dark :where(body.project-app) .overview-figure{border:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .overview-figure span{color:var(--muted)}
+html.theme-dark :where(body.project-app) .overview-todo strong{color:#a4b4c0}
+html.theme-dark :where(body.project-app) .overview-in_progress strong{color:#6faef3}
+html.theme-dark :where(body.project-app) .overview-done strong{color:#63b981}
+html.theme-dark :where(body.project-app) .overview-bar{background:#1c2126}
+html.theme-dark :where(body.project-app) .overview-bar-fill{background:#3b82c4}
+html.theme-dark :where(body.project-app) .overview-bar-done{background:#2e9e5b}
+html.theme-dark :where(body.project-app) .overview-bar-muted{background:#9aa9b2}
+html.theme-dark :where(body.project-app) .project-overview a,html.theme-dark :where(body.project-app) .wi-history a{color:var(--ink)}
+html.theme-dark :where(body.project-app) .wi-dialog[open]>summary{background:#161c20}
+html.theme-dark :where(body.project-app) .wi-dialog-body{border:1px solid var(--line);background:#182128;box-shadow:0 14px 36px rgba(0,0,0,0.476)}
+html.theme-dark :where(body.project-app) .wi-dialog-body fieldset{border:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .wi-menu details summary,html.theme-dark :where(body.project-app) .wi-menu-link,html.theme-dark :where(body.project-app) .wi-menu .link-button{color:var(--ink)}
+html.theme-dark :where(body.project-app) .wi-menu details summary:hover,html.theme-dark :where(body.project-app) .wi-menu-link:hover,html.theme-dark :where(body.project-app) .wi-menu .link-button:hover{background:#151b1f}
+html.theme-dark :where(body.project-app) .wi-menu-danger{color:var(--red)!important}
+html.theme-dark :where(body.project-app) .wi-star{color:#da9f2c}
+html.theme-dark :where(body.project-app) .wi-flag-banner{background:#251918;color:#f78e80}
+html.theme-dark :where(body.project-app) .wi-flag{color:#e57e6e}
+html.theme-dark :where(body.project-app) .wi-resolution{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-restricted{background:#201806;color:#ce9a53}
+html.theme-dark :where(body.project-app) .md blockquote{border-left:3px solid var(--line);color:#a4b4c0}
+html.theme-dark :where(body.project-app) .md code{background:#181d22}
+html.theme-dark :where(body.project-app) .md pre{background:#141a1e}
+html.theme-dark :where(body.project-app) .md pre code{background:none}
+html.theme-dark :where(body.project-app) .md-table th,html.theme-dark :where(body.project-app) .md-table td{border:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .md-toolbar button{border:1px solid var(--line);background:#182128;color:#acbecc}
+html.theme-dark :where(body.project-app) .md-toolbar button:hover{background:#151b1f}
+html.theme-dark :where(body.project-app) .md-preview{border:1px dashed var(--line);background:#12181c}
+html.theme-dark :where(body.project-app) .wi-reaction{border:1px solid var(--line);background:#182128}
+html.theme-dark :where(body.project-app) .wi-reaction.mine{border-color:#4c6e6a;background:#17201e}
+html.theme-dark :where(body.project-app) .wi-react-picker summary{border:1px solid var(--line);color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-react-picker>div{border:1px solid var(--line);background:#182128;box-shadow:0 8px 20px rgba(0,0,0,0.388)}
+html.theme-dark :where(body.project-app) .wi-comment-edit summary{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-comment-delete{color:var(--muted)!important}
+html.theme-dark :where(body.project-app) .wi-comment-actions label{color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-thumb{border:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .wi-dropzone{border:2px dashed var(--line);color:var(--muted)}
+html.theme-dark :where(body.project-app) .wi-dropzone.is-over{border-color:#4c6e6a;background:#151b1f}
+html.theme-dark :where(body.project-app) .wi-time{border-top:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .wi-time-bar{background:#1c2126}
+html.theme-dark :where(body.project-app) .wi-time-estimate{background:#3b82c4}
+html.theme-dark :where(body.project-app) .wi-time-remaining{background:#e2a500}
+html.theme-dark :where(body.project-app) .wi-time-spent{background:#2e9e5b}
+html.theme-dark :where(body.project-app) .release-progress{background:#1c2126}
+html.theme-dark :where(body.project-app) .release-done{background:#2e9e5b}
+html.theme-dark :where(body.project-app) .release-doing{background:#3b82c4}
+html.theme-dark :where(body.project-app) .release-overdue{background:#251918;color:#f08878}
+html.theme-dark :where(body.project-app) .release-table tr.is-archived td{color:var(--muted)}
+html.theme-dark :where(body.project-app) .bulk-bar{border:1px solid #304a47;background:#151b1f}
+html.theme-dark :where(body.project-app) .wi-table tr.is-current td{background:#151b1f}
+html.theme-dark :where(body.project-app) .wi-child-list li.is-current{background:#151b1f}
+html.theme-dark :where(body.project-app) .your-work-project{border:1px solid var(--line);background:#182128;color:var(--ink);box-shadow:var(--shadow)}
+html.theme-dark :where(body.project-app) .your-work-project:hover{border-color:#434f54}
+html.theme-dark :where(body.project-app) .shortcut-help{border:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .shortcut-help::backdrop{background:rgba(255,255,255,0.45)}
+html.theme-dark :where(body.project-app) .shortcut-help kbd{border:1px solid var(--line);background:#12181c}
+html.theme-dark :where(body.project-app) .form-grid label,html.theme-dark :where(body.project-app) .form-grid label.check{border:0;color:#acbecc}
+html.theme-dark :where(body.project-app) .form-grid input[disabled]{background:#141a1e;color:var(--muted)}
+html.theme-dark :where(body.project-app) select:not([multiple]){background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23667582' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;background-size:12px}
+html.theme-dark :where(body.project-app) .project-filters .project-filter-search input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23667582' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='16.5' y1='16.5' x2='21' y2='21'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:10px center}
+html.theme-dark :where(body.project-app) .project-filters-active{border-color:#304a47}
+html.theme-dark :where(body.project-app) .wi-table tbody tr:hover td{background:#12181c}
+html.theme-dark :where(body.project-app) .wi-inline-status{border:0;background-color:#1b2025;color:#a4b4c0;background-position:right 8px center}
+html.theme-dark :where(body.project-app) .wi-inline-status[data-category=in_progress]{background-color:#19232f;color:#6faef3}
+html.theme-dark :where(body.project-app) .wi-inline-status[data-category=done]{background-color:#13241b;color:#63b981}
+html.theme-dark :where(body.project-app) .project-group-title{color:#a4b4c0}
+html.theme-dark :where(body.project-app) .project-list .wi-table thead th{background:transparent}
+html.theme-dark :where(body.project-app) .settings-sections a{border:1px solid var(--line);background:#182128;color:var(--ink)}
+html.theme-dark :where(body.project-app) .settings-sections a:hover{border-color:#434f54}
+html.theme-dark :where(body.project-app) .status-delete>summary.button,html.theme-dark :where(body.project-app) .panel td form[data-confirm] .button.danger{color:var(--red);border-color:#543835}
+html.theme-dark :where(body.project-app) .wi-details .wi-status-select{border:0;background-color:#1b2025;color:#a4b4c0}
+html.theme-dark :where(body.project-app) .wi-details .wi-status-select[data-category=in_progress]{background-color:#19232f;color:#6faef3}
+html.theme-dark :where(body.project-app) .wi-details .wi-status-select[data-category=done]{background-color:#13241b;color:#63b981}
+html.theme-dark :where(body.project-app) .sprint-chart{color:var(--ink)}
+html.theme-dark :where(body.project-app) .sprint-chart text{fill:currentColor}
+html.theme-dark :where(body.project-app) .sprint-axis{fill:none;stroke:currentColor}
+html.theme-dark :where(body.project-app) .sprint-chart polyline{fill:none}
+html.theme-dark :where(body.project-app) .sprint-chart-value{stroke:var(--dk-accent,var(--dk-accent))}
+html.theme-dark :where(body.project-app) .sprint-chart-dot{fill:var(--dk-accent,var(--dk-accent))}
+html.theme-dark :where(body.project-app) .sprint-chart-scope{stroke:currentColor}
+html.theme-dark :where(body.project-app) .sprint-chart-ideal{stroke:currentColor}
+html.theme-dark :where(body.project-app) [data-backlog-row].sprint-drag-target{outline:2px solid var(--dk-accent)}
 html.theme-dark .project-app{background:var(--bg)}
 html.theme-dark .project-app main{background:var(--bg)}
-html.theme-dark .project-context{border-bottom:1px solid #30363b}
-html.theme-dark .project-filters{border:0;border-bottom:1px solid #30363b;box-shadow:none;background:transparent}
-html.theme-dark .project-column{border:0;background:#171c21}
-html.theme-dark .project-column h2{color:#9eb0cf}
-html.theme-dark .project-column-body{border:0;background:#171c21}
-html.theme-dark .wi-card{border:1px solid #30363b;box-shadow:0 1px 1px rgba(0,0,0,0.366)}
-html.theme-dark .wi-card:hover{border-color:#8590a2;box-shadow:0 2px 4px rgba(0,0,0,0.41)}
-html.theme-dark .project-quick-add input,html.theme-dark .project-quick-add select{border-color:transparent;background:transparent}
-html.theme-dark .project-quick-add input:focus,html.theme-dark .project-quick-add select:focus{background:#182128;border-color:#8590a2}
-html.theme-dark .sprint-navigation{border-inline-end:1px solid #30363b}
-html.theme-dark .sprint-navigation h3{color:#9aaabd}
-html.theme-dark .sprint-navigation-link{color:#a4b9dd}
-html.theme-dark .sprint-navigation-link:hover{background:#171c21}
-html.theme-dark .sprint-navigation-link[aria-current=page]{background:#16201f;color:#7bc2b8}
-html.theme-dark .sprint-navigation .sprint-toolbar{border:0;border-top:1px solid #30363b;background:transparent}
-html.theme-dark .sprint-focus{background:#13181c}
-html.theme-dark .sprint-focus>p{color:#9aaabd}
+html.theme-dark :where(body.project-app) .project-context{border-bottom:1px solid #30363b}
+html.theme-dark :where(body.project-app) .project-filters{border:0;border-bottom:1px solid #30363b;box-shadow:none;background:transparent}
+html.theme-dark :where(body.project-app) .project-column{border:0;background:#171c21}
+html.theme-dark :where(body.project-app) .project-column h2{color:#9eb0cf}
+html.theme-dark :where(body.project-app) .project-column-body{border:0;background:#171c21}
+html.theme-dark :where(body.project-app) .wi-card{border:1px solid #30363b;box-shadow:0 1px 1px rgba(0,0,0,0.366)}
+html.theme-dark :where(body.project-app) .wi-card:hover{border-color:#8590a2;box-shadow:0 2px 4px rgba(0,0,0,0.41)}
+html.theme-dark :where(body.project-app) .project-quick-add input,html.theme-dark :where(body.project-app) .project-quick-add select{border-color:transparent;background:transparent}
+html.theme-dark :where(body.project-app) .project-quick-add input:focus,html.theme-dark :where(body.project-app) .project-quick-add select:focus{background:#182128;border-color:#8590a2}
+html.theme-dark :where(body.project-app) .sprint-navigation{border-inline-end:1px solid #30363b}
+html.theme-dark :where(body.project-app) .sprint-navigation h3{color:#9aaabd}
+html.theme-dark :where(body.project-app) .sprint-navigation-link{color:#a4b9dd}
+html.theme-dark :where(body.project-app) .sprint-navigation-link:hover{background:#171c21}
+html.theme-dark :where(body.project-app) .sprint-navigation-link[aria-current=page]{background:#16201f;color:#7bc2b8}
+html.theme-dark :where(body.project-app) .sprint-navigation .sprint-toolbar{border:0;border-top:1px solid #30363b;background:transparent}
+html.theme-dark :where(body.project-app) .sprint-focus{background:#13181c}
+html.theme-dark :where(body.project-app) .sprint-focus>p{color:#9aaabd}
 html.theme-dark .project-app .wi-section{border:0;border-bottom:1px solid #30363b;box-shadow:none}
 html.theme-dark .project-app .wi-details{background:#182128;border-color:#30363b}
-@media(max-width:700px){html.theme-dark .sprint-navigation{border:1px solid #30363b}
-}html.theme-dark .project-context{border-bottom-color:rgba(255,255,255,0.18)}
-html.theme-dark .project-context-identity strong{color:inherit}
-html.theme-dark .project-context-identity>div>span{color:inherit}
-html.theme-dark .planning-surface{background:var(--white)}
-html.theme-dark .planning-surface:fullscreen{background:var(--bg)}
-html.theme-dark .timeline-header{background:var(--bg);border-bottom:1px solid var(--line)}
-html.theme-dark .timeline-ticks{color:var(--muted)}
-html.theme-dark .timeline-ticks>span{border-inline-start:1px solid var(--line)}
-html.theme-dark .timeline-row{border-bottom:1px solid var(--line)}
-html.theme-dark .timeline-record{background:var(--white)}
-html.theme-dark .plan-tree-toggle{border:0;background:transparent}
-html.theme-dark .plan-date-editor>summary{color:var(--muted)}
-html.theme-dark .plan-date-editor form{background:var(--white);border:1px solid var(--line);box-shadow:var(--shadow)}
-html.theme-dark .timeline-track{border-inline-start:1px solid var(--line);background:none}
-html.theme-dark .plan-bar{background:var(--brand-teal);border:1px solid var(--dk-accent-strong)}
-html.theme-dark .plan-bar.category-done{background:#238563;border-color:#74be9f}
-html.theme-dark .plan-bar.category-todo{background:#687c91;border-color:#46596c}
-html.theme-dark .timeline-connectors path{stroke:var(--muted);fill:none}
-html.theme-dark .timeline-connectors marker path{fill:var(--muted);stroke:none}
-html.theme-dark .timeline-connectors .dependency-conflict{stroke:#c0392b}
-html.theme-dark .planning-calendar{background:var(--line);border:1px solid var(--line)}
-html.theme-dark .planning-calendar>strong{background:var(--bg)}
-html.theme-dark .calendar-day{background:var(--white)}
-html.theme-dark .calendar-day>a{background:var(--bg)}
-html.theme-dark .calendar-other{background:var(--bg)}
-html.theme-dark .calendar-today{outline:2px solid var(--dk-accent)}
-html.theme-dark .planning-insights>span{border:1px solid var(--line);background:var(--bg)}
-html.theme-dark .project-view-settings>form{box-shadow:var(--shadow)}
-html.theme-dark .timeline-connectors .plan-today-line{stroke:#b96300}
-html.theme-dark .sidebar .project-context-identity strong{color:#ffffff}
-html.theme-dark .sidebar .project-context-identity>div>span{color:#c9dade}
+@media(max-width:700px){html.theme-dark :where(body.project-app) .sprint-navigation{border:1px solid #30363b}
+}html.theme-dark :where(body.project-app) .project-context{border-bottom-color:rgba(255,255,255,0.18)}
+html.theme-dark :where(body.project-app) .project-context-identity strong{color:inherit}
+html.theme-dark :where(body.project-app) .project-context-identity>div>span{color:inherit}
+html.theme-dark :where(body.project-app) .planning-surface{background:var(--white)}
+html.theme-dark :where(body.project-app) .planning-surface:fullscreen{background:var(--bg)}
+html.theme-dark :where(body.project-app) .timeline-header{background:var(--bg);border-bottom:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .timeline-ticks{color:var(--muted)}
+html.theme-dark :where(body.project-app) .timeline-ticks>span{border-inline-start:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .timeline-row{border-bottom:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .timeline-record{background:var(--white)}
+html.theme-dark :where(body.project-app) .plan-tree-toggle{border:0;background:transparent}
+html.theme-dark :where(body.project-app) .plan-date-editor>summary{color:var(--muted)}
+html.theme-dark :where(body.project-app) .plan-date-editor form{background:var(--white);border:1px solid var(--line);box-shadow:var(--shadow)}
+html.theme-dark :where(body.project-app) .timeline-track{border-inline-start:1px solid var(--line);background:none}
+html.theme-dark :where(body.project-app) .plan-bar{background:var(--brand-teal);border:1px solid var(--dk-accent-strong)}
+html.theme-dark :where(body.project-app) .plan-bar.category-done{background:#238563;border-color:#74be9f}
+html.theme-dark :where(body.project-app) .plan-bar.category-todo{background:#687c91;border-color:#46596c}
+html.theme-dark :where(body.project-app) .timeline-connectors path{stroke:var(--muted);fill:none}
+html.theme-dark :where(body.project-app) .timeline-connectors marker path{fill:var(--muted);stroke:none}
+html.theme-dark :where(body.project-app) .timeline-connectors .dependency-conflict{stroke:#c0392b}
+html.theme-dark :where(body.project-app) .planning-calendar{background:var(--line);border:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .planning-calendar>strong{background:var(--bg)}
+html.theme-dark :where(body.project-app) .calendar-day{background:var(--white)}
+html.theme-dark :where(body.project-app) .calendar-day>a{background:var(--bg)}
+html.theme-dark :where(body.project-app) .calendar-other{background:var(--bg)}
+html.theme-dark :where(body.project-app) .calendar-today{outline:2px solid var(--dk-accent)}
+html.theme-dark :where(body.project-app) .planning-insights>span{border:1px solid var(--line);background:var(--bg)}
+html.theme-dark :where(body.project-app) .project-view-settings>form{box-shadow:var(--shadow)}
+html.theme-dark :where(body.project-app) .timeline-connectors .plan-today-line{stroke:#b96300}
+html.theme-dark :where(body.project-app) .sidebar .project-context-identity strong{color:#ffffff}
+html.theme-dark :where(body.project-app) .sidebar .project-context-identity>div>span{color:#c9dade}
 html.theme-dark .project-app main{background:var(--white)}
-html.theme-dark .project-global-nav>a{color:var(--ink)}
-html.theme-dark .project-global-nav>a.primary{color:#ffffff}
-html.theme-dark .project-tabs{border-bottom:2px solid var(--line)}
-html.theme-dark .project-tabs a[aria-current=page]{color:var(--dk-accent);border-color:var(--dk-accent)}
+html.theme-dark :where(body.project-app) .project-global-nav>a{color:var(--ink)}
+html.theme-dark :where(body.project-app) .project-global-nav>a.primary{color:#ffffff}
+html.theme-dark :where(body.project-app) .project-tabs{border-bottom:2px solid var(--line)}
+html.theme-dark :where(body.project-app) .project-tabs a[aria-current=page]{color:var(--dk-accent);border-color:var(--dk-accent)}
 html.theme-dark .project-app .project-table th{background:#151a1f;color:var(--muted)}
 html.theme-dark .project-app .panel{box-shadow:none}
-html.theme-dark .timeline-dense .timeline-header{background:#151a1f}
-html.theme-dark .timeline-dense .timeline-record,html.theme-dark .timeline-dense .timeline-grid-heading{background:var(--white)}
-html.theme-dark .timeline-dense .timeline-grid-heading{background:#151a1f}
-html.theme-dark .timeline-grid-heading>strong{border-inline-end:1px solid var(--line)}
-html.theme-dark .timeline-dense .timeline-record>a{color:var(--ink)}
-html.theme-dark .timeline-key{color:var(--dk-accent)}
-html.theme-dark .timeline-dense .plan-date-editor>form{box-shadow:0 8px 24px rgba(0,0,0,0.52)}
-html.theme-dark .date-source{background:#1a1f24;color:#9eb0cf}
-html.theme-dark .timeline-dense .timeline-track{background:none}
-html.theme-dark .timeline-dense .timeline-parent>.timeline-record,html.theme-dark .timeline-dense .timeline-parent>.timeline-track{background-color:#13181c}
-html.theme-dark .timeline-dense .plan-bar{background:#44546f;color:#fff}
-html.theme-dark .timeline-dense .plan-bar.category-in_progress{background:#0c66e4}
-html.theme-dark .timeline-dense .plan-bar.category-done{background:#00875a}
-html.theme-dark .timeline-dense .plan-parent-bar{background-image:repeating-linear-gradient(120deg,transparent 0,transparent 16px,rgba(255,255,255,0.133) 16px,rgba(255,255,255,0.133) 32px)}
-html.theme-dark .plan-bar-avatar{border:1px solid rgba(41,47,51,0.6)}
-html.theme-dark .timeline-dense .timeline-connectors path{stroke:#7a869a}
-html.theme-dark .timeline-dense .timeline-connectors .dependency-conflict{stroke:#c44e00}
-html.theme-dark .structure-table button[data-structure-toggle]{border:0;background:transparent}
-html.theme-dark .structure-group{background:#151a1f}
-html.theme-dark .structure-meter progress{accent-color:#0c66e4}
-html.theme-dark .work-completed{color:var(--muted)}
-html.theme-dark .program-unscheduled{border:1px solid var(--line);background:#13181c}
-html.theme-dark .program-scroll{border:1px solid var(--line)}
-html.theme-dark .program-iteration-heads{background:var(--white)}
-html.theme-dark .program-iteration-heads>strong{color:var(--muted);background:#151a1f}
-html.theme-dark .program-team h2 small{color:var(--muted)}
-html.theme-dark .team-initial{background:#2f213d;color:#b2a3fe}
-html.theme-dark .program-cell{background:#151a1f;border-top:5px solid #30363b}
-html.theme-dark .program-capacity{color:var(--muted)}
-html.theme-dark .program-capacity strong{color:#e4865a}
-html.theme-dark .program-cell.capacity-over{border-top-color:#de350b;background:#1e1712}
-html.theme-dark .program-card{background:var(--white);border:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,0.261)}
-html.theme-dark .program-card>a{color:var(--ink)}
-html.theme-dark .program-drop-target{outline:2px solid #0c66e4}
-html.theme-dark .automation-editor{background:var(--white)}
-html.theme-dark .automation-flow{border-inline-end:1px solid var(--line)}
-html.theme-dark .automation-flow hr{border:0;border-top:1px solid var(--line)}
-html.theme-dark .rule-step{border:0;background:transparent;color:var(--ink)}
-html.theme-dark .rule-step::after{border-left:2px solid var(--line)}
-html.theme-dark .rule-step.active{background:#151a1f}
-html.theme-dark .rule-step-icon{background:#241d03;color:#afcaf5}
-html.theme-dark .rule-step-icon.trigger-icon{background:#0e281f}
-html.theme-dark .rule-step-icon.branch-icon{background:#2f213d}
-html.theme-dark .rule-step small{color:var(--muted)}
-html.theme-dark .rule-config-fields input,html.theme-dark .rule-config-fields select,html.theme-dark .rule-config-fields textarea{background:#151a1f;border:1px solid var(--line)}
-html.theme-dark .project-summary-welcome p{color:var(--muted)}
-html.theme-dark .metric-icon{background:#171c21;color:#9eb0cf}
-html.theme-dark .summary-metric p{color:var(--muted)}
-html.theme-dark .metric-done .metric-icon{background:#011f16;color:#70c29b}
-html.theme-dark .metric-updated .metric-icon{background:#182230;color:#86b3fd}
-html.theme-dark .metric-created .metric-icon{background:#221e30;color:#a5a0fc}
-html.theme-dark .project-summary-grid p{color:var(--muted)}
-html.theme-dark .project-status-donut>div{background:var(--white)}
-html.theme-dark .project-status-donut strong{color:#4ab585}
-html.theme-dark .summary-swatch{background:#23292d}
-html.theme-dark .swatch-done{background:#205940}
-html.theme-dark .swatch-in_progress{background:#0c66e4}
-html.theme-dark .summary-activity small{color:var(--muted)}
-html.theme-dark .summary-priority-track{border-bottom:1px solid var(--line)}
-html.theme-dark .summary-priority-track i{background:#5a3c0c}
-html.theme-dark .summary-type-table progress{accent-color:#9eb0cf}
-@media(max-width:600px){html.theme-dark .automation-flow{border-inline-end:0;border-bottom:1px solid var(--line)}
-}html.theme-dark .plan-bar-pending{outline:2px solid #8777d9}
-html.theme-dark .timeline-filter-toolbar{border:0;box-shadow:none}
-html.theme-dark .timeline-popover-body,html.theme-dark .timeline-popover>form{background:var(--white);border:1px solid var(--line);box-shadow:0 8px 26px rgba(0,0,0,0.373)}
-html.theme-dark .summary-activity strong{color:var(--dk-accent)}
-html.theme-dark .project-table td>small{color:var(--muted)}
-html.theme-dark .timeline-connectors .plan-grid-line{stroke:var(--line)}
-html.theme-dark [data-intake-fields] fieldset{border:1px solid var(--border)}
-html.theme-dark .project-global-nav>a:not(.primary):hover{background:var(--bg)}
-html.theme-dark .project-global-nav>a[aria-current]:not(.primary){background:var(--brand-teal-soft,#181e22);color:var(--ink)}
-html.theme-dark .project-global-nav>a[aria-current]::after{background:var(--green)}
-html.theme-dark .project-global-nav>a.primary[aria-current]::after{background:currentColor}
-html.theme-dark.theme-dark .project-global-nav>a[aria-current]:not(.primary){background:var(--surface-subtle,#25343f);color:var(--ink)}
-html.theme-dark.theme-dark .project-global-nav>a[aria-current]:not(.primary)::after{background:var(--dk-accent)}
+html.theme-dark :where(body.project-app) .timeline-dense .timeline-header{background:#151a1f}
+html.theme-dark :where(body.project-app) .timeline-dense .timeline-record,html.theme-dark :where(body.project-app) .timeline-dense .timeline-grid-heading{background:var(--white)}
+html.theme-dark :where(body.project-app) .timeline-dense .timeline-grid-heading{background:#151a1f}
+html.theme-dark :where(body.project-app) .timeline-grid-heading>strong{border-inline-end:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .timeline-dense .timeline-record>a{color:var(--ink)}
+html.theme-dark :where(body.project-app) .timeline-key{color:var(--dk-accent)}
+html.theme-dark :where(body.project-app) .timeline-dense .plan-date-editor>form{box-shadow:0 8px 24px rgba(0,0,0,0.52)}
+html.theme-dark :where(body.project-app) .date-source{background:#1a1f24;color:#9eb0cf}
+html.theme-dark :where(body.project-app) .timeline-dense .timeline-track{background:none}
+html.theme-dark :where(body.project-app) .timeline-dense .timeline-parent>.timeline-record,html.theme-dark :where(body.project-app) .timeline-dense .timeline-parent>.timeline-track{background-color:#13181c}
+html.theme-dark :where(body.project-app) .timeline-dense .plan-bar{background:#44546f;color:#fff}
+html.theme-dark :where(body.project-app) .timeline-dense .plan-bar.category-in_progress{background:#0c66e4}
+html.theme-dark :where(body.project-app) .timeline-dense .plan-bar.category-done{background:#00875a}
+html.theme-dark :where(body.project-app) .timeline-dense .plan-parent-bar{background-image:repeating-linear-gradient(120deg,transparent 0,transparent 16px,rgba(255,255,255,0.133) 16px,rgba(255,255,255,0.133) 32px)}
+html.theme-dark :where(body.project-app) .plan-bar-avatar{border:1px solid rgba(41,47,51,0.6)}
+html.theme-dark :where(body.project-app) .timeline-dense .timeline-connectors path{stroke:#7a869a}
+html.theme-dark :where(body.project-app) .timeline-dense .timeline-connectors .dependency-conflict{stroke:#c44e00}
+html.theme-dark :where(body.project-app) .structure-table button[data-structure-toggle]{border:0;background:transparent}
+html.theme-dark :where(body.project-app) .structure-group{background:#151a1f}
+html.theme-dark :where(body.project-app) .structure-meter progress{accent-color:#0c66e4}
+html.theme-dark :where(body.project-app) .work-completed{color:var(--muted)}
+html.theme-dark :where(body.project-app) .program-unscheduled{border:1px solid var(--line);background:#13181c}
+html.theme-dark :where(body.project-app) .program-scroll{border:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .program-iteration-heads{background:var(--white)}
+html.theme-dark :where(body.project-app) .program-iteration-heads>strong{color:var(--muted);background:#151a1f}
+html.theme-dark :where(body.project-app) .program-team h2 small{color:var(--muted)}
+html.theme-dark :where(body.project-app) .team-initial{background:#2f213d;color:#b2a3fe}
+html.theme-dark :where(body.project-app) .program-cell{background:#151a1f;border-top:5px solid #30363b}
+html.theme-dark :where(body.project-app) .program-capacity{color:var(--muted)}
+html.theme-dark :where(body.project-app) .program-capacity strong{color:#e4865a}
+html.theme-dark :where(body.project-app) .program-cell.capacity-over{border-top-color:#de350b;background:#1e1712}
+html.theme-dark :where(body.project-app) .program-card{background:var(--white);border:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,0.261)}
+html.theme-dark :where(body.project-app) .program-card>a{color:var(--ink)}
+html.theme-dark :where(body.project-app) .program-drop-target{outline:2px solid #0c66e4}
+html.theme-dark :where(body.project-app) .automation-editor{background:var(--white)}
+html.theme-dark :where(body.project-app) .automation-flow{border-inline-end:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .automation-flow hr{border:0;border-top:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .rule-step{border:0;background:transparent;color:var(--ink)}
+html.theme-dark :where(body.project-app) .rule-step::after{border-left:2px solid var(--line)}
+html.theme-dark :where(body.project-app) .rule-step.active{background:#151a1f}
+html.theme-dark :where(body.project-app) .rule-step-icon{background:#241d03;color:#afcaf5}
+html.theme-dark :where(body.project-app) .rule-step-icon.trigger-icon{background:#0e281f}
+html.theme-dark :where(body.project-app) .rule-step-icon.branch-icon{background:#2f213d}
+html.theme-dark :where(body.project-app) .rule-step small{color:var(--muted)}
+html.theme-dark :where(body.project-app) .rule-config-fields input,html.theme-dark :where(body.project-app) .rule-config-fields select,html.theme-dark :where(body.project-app) .rule-config-fields textarea{background:#151a1f;border:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .project-summary-welcome p{color:var(--muted)}
+html.theme-dark :where(body.project-app) .metric-icon{background:#171c21;color:#9eb0cf}
+html.theme-dark :where(body.project-app) .summary-metric p{color:var(--muted)}
+html.theme-dark :where(body.project-app) .metric-done .metric-icon{background:#011f16;color:#70c29b}
+html.theme-dark :where(body.project-app) .metric-updated .metric-icon{background:#182230;color:#86b3fd}
+html.theme-dark :where(body.project-app) .metric-created .metric-icon{background:#221e30;color:#a5a0fc}
+html.theme-dark :where(body.project-app) .project-summary-grid p{color:var(--muted)}
+html.theme-dark :where(body.project-app) .project-status-donut>div{background:var(--white)}
+html.theme-dark :where(body.project-app) .project-status-donut strong{color:#4ab585}
+html.theme-dark :where(body.project-app) .summary-swatch{background:#23292d}
+html.theme-dark :where(body.project-app) .swatch-done{background:#205940}
+html.theme-dark :where(body.project-app) .swatch-in_progress{background:#0c66e4}
+html.theme-dark :where(body.project-app) .summary-activity small{color:var(--muted)}
+html.theme-dark :where(body.project-app) .summary-priority-track{border-bottom:1px solid var(--line)}
+html.theme-dark :where(body.project-app) .summary-priority-track i{background:#5a3c0c}
+html.theme-dark :where(body.project-app) .summary-type-table progress{accent-color:#9eb0cf}
+@media(max-width:600px){html.theme-dark :where(body.project-app) .automation-flow{border-inline-end:0;border-bottom:1px solid var(--line)}
+}html.theme-dark :where(body.project-app) .plan-bar-pending{outline:2px solid #8777d9}
+html.theme-dark :where(body.project-app) .timeline-filter-toolbar{border:0;box-shadow:none}
+html.theme-dark :where(body.project-app) .timeline-popover-body,html.theme-dark :where(body.project-app) .timeline-popover>form{background:var(--white);border:1px solid var(--line);box-shadow:0 8px 26px rgba(0,0,0,0.373)}
+html.theme-dark :where(body.project-app) .summary-activity strong{color:var(--dk-accent)}
+html.theme-dark :where(body.project-app) .project-table td>small{color:var(--muted)}
+html.theme-dark :where(body.project-app) .timeline-connectors .plan-grid-line{stroke:var(--line)}
+html.theme-dark :where(body.project-app) [data-intake-fields] fieldset{border:1px solid var(--border)}
+html.theme-dark :where(body.project-app) .project-global-nav>a:not(.primary):hover{background:var(--bg)}
+html.theme-dark :where(body.project-app) .project-global-nav>a[aria-current]:not(.primary){background:var(--brand-teal-soft,#181e22);color:var(--ink)}
+html.theme-dark :where(body.project-app) .project-global-nav>a[aria-current]::after{background:var(--green)}
+html.theme-dark :where(body.project-app) .project-global-nav>a.primary[aria-current]::after{background:currentColor}
+html.theme-dark.theme-dark :where(body.project-app) .project-global-nav>a[aria-current]:not(.primary){background:var(--surface-subtle,#25343f);color:var(--ink)}
+html.theme-dark.theme-dark :where(body.project-app) .project-global-nav>a[aria-current]:not(.primary)::after{background:var(--dk-accent)}
 /* dashboards.css */
 html.theme-dark .dash-home-badge{background:var(--brand-amber-soft,#211809);color:#d5a265}
 html.theme-dark .dash-meta{color:var(--muted)}

@@ -2,12 +2,13 @@
 similar incidents can become the parent, the counts and family banner show in the
 record body, and the pages pass axe at desktop and phone widths."""
 import os
+import re
 import threading
 
 import pytest
 from werkzeug.serving import make_server
 
-from app import RecordLink, SupportGroup, Ticket, db
+from app import THEMES, RecordLink, SupportGroup, Ticket, User, UserPreference, db
 from tests.test_app import app  # noqa: F401
 
 pytestmark = pytest.mark.skipif(os.getenv("RUN_INCIDENT_BROWSER") != "1",
@@ -142,6 +143,25 @@ def test_incident_handling_in_a_browser(app, width, height):
             assert box["x"] >= 0 and box["x"] + box["width"] <= width
             _axe(page)
             _shot(page, "incident-parent", width)
+
+            # Every theme, dark ones included, keeps these pages readable.
+            if width > 1000:
+                for theme in THEMES:
+                    with app.app_context():
+                        admin = User.query.filter_by(username="admin").one()
+                        preference = UserPreference.query.filter_by(user_id=admin.id).first()
+                        if preference is None:
+                            preference = UserPreference(user_id=admin.id)
+                            db.session.add(preference)
+                        preference.theme = theme
+                        db.session.commit()
+                    for path in (f"/ticket/{first_id}", f"/ticket/{child_id}", "/tickets/new/incident",
+                                 "/admin/incident-handling"):
+                        page.goto(base + path)
+                        expect(page.locator("body")).to_have_class(re.compile(f"theme-{theme}"))
+                        _axe(page)
+                    page.goto(base + f"/ticket/{child_id}")
+                    _shot(page, f"incident-child-{theme}", width)
             assert not errors, errors
             browser.close()
     finally:

@@ -322,16 +322,31 @@ def split_selectors(prelude):
     return [part for part in parts if part]
 
 
-def scope_selector(selector):
+# Stylesheets that base.html loads only on some pages. Their dark copies are
+# limited to those pages with :where(), which adds no specificity, so a rule
+# such as the project select chevron does not reach pages that lack the
+# light rule it belongs with (a chevron without appearance:none doubles the
+# native arrow).
+PAGE_SCOPES = {"projects.css": (".project-app", ":where(body.project-app)")}
+
+
+def scope_selector(selector, page=None):
+    if page:
+        body_class, page_scope = page
+        # A selector that starts at the page's body class is already scoped.
+        page = None if re.match(re.escape(body_class) + r"(?![-\w])", selector) else page_scope
     if selector.startswith(":root"):
         return SCOPE + selector[len(":root"):]
     if re.match(r"html(?![-\w])", selector):
         # html[dir=rtl] .x  ->  html.theme-dark[dir=rtl] .x
+        head, _, rest = selector.partition(" ")
+        if page and rest:
+            return f"html.theme-dark{head[4:]} {page} {rest}"
         return "html.theme-dark" + selector[4:]
-    return f"{SCOPE} {selector}"
+    return f"{SCOPE} {page} {selector}" if page else f"{SCOPE} {selector}"
 
 
-def convert(css):
+def convert(css, page=None):
     out = []
     for prelude, body in blocks(strip_comments(css)):
         lowered = prelude.lower()
@@ -340,7 +355,7 @@ def convert(css):
         if lowered.startswith("@media") and re.search(r"\bprint\b", lowered) and "screen" not in lowered:
             continue  # printouts stay light
         if lowered.startswith(("@media", "@supports", "@layer", "@container")):
-            inner = convert(body)
+            inner = convert(body, page)
             if inner:
                 out.append(prelude + "{" + "".join(inner) + "}")
             continue
@@ -351,7 +366,7 @@ def convert(css):
         on_fill = has_fill(pairs)
         kept = [f"{prop}:{remap_value(prop, value, on_fill)}" for prop, value in pairs]
         if kept:
-            selectors = ",".join(scope_selector(selector) for selector in split_selectors(prelude))
+            selectors = ",".join(scope_selector(selector, page) for selector in split_selectors(prelude))
             out.append(selectors + "{" + ";".join(kept) + "}\n")
     return out
 
@@ -388,7 +403,7 @@ def build():
         "/* Applied when the signed-in user picks the dark theme (or the system theme in dark mode). */\n",
     ]
     for name in SOURCES:
-        rules = convert((STATIC / name).read_text(encoding="utf-8"))
+        rules = convert((STATIC / name).read_text(encoding="utf-8"), PAGE_SCOPES.get(name))
         if rules:
             pieces.append(f"/* {name} */\n")
             pieces.extend(rules)
