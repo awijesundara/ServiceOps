@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% from "_status_badge.html" import status_badge %}
 {% block title %}{{ ritm.number }} · {{ ritm.item.name }} · {{ instance_name }}{% endblock %}
 {% block content %}
 <section class="record-shell task-record-shell">
@@ -8,7 +8,7 @@
       <span class="record-type-icon" aria-hidden="true">R</span>
       <div><strong>{{ tr('Requested Item') }}</strong><small>{{ ritm.number }}</small></div>
     </div>
-    <div class="record-actions">{% if can_withdraw %}<a class="button" href="#withdraw-panel">{{ tr('Withdraw') }}</a>{% endif %}<span class="badge">{{ tr_value(ritm.state) }}</span></div>
+    <div class="record-actions">{% if can_withdraw %}<a class="button" href="#withdraw-panel">{{ tr('Withdraw') }}</a>{% endif %}{{ status_badge(ritm.state) }}</div>
   </header>
   {% include "_state_track.html" %}
   <div class="record-form">
@@ -43,7 +43,7 @@
     <div><strong><a href="{{ url_for('catalog_task_detail', task_id=task.id) }}">{{ task.number }}</a> · {{ task.title }}</strong>
       <p>{{ task.assignment_group.name if task.assignment_group else tr('Unassigned group') }} · {{ user_link(task.assignee, tr('Unassigned')) }}{% if task.flow_control %} · {{ task.flow_control.execution_mode }}{% if task.flow_control.predecessor %} {{ tr('after {number}', number=(task.flow_control.predecessor.number)) }}{% endif %}{% endif %}</p>
     </div>
-    {% if catalog_task_permissions[task.id] %}<form method="post" action="{{ url_for('catalog_task_update', task_id=task.id) }}"><select name="state">{% for state in task_state_options[task.id] %}<option {% if task.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select><input name="work_notes" value="{{ task.work_notes }}" placeholder="{{ tr('Work notes') }}"><button class="primary">{{ tr('Update') }}</button></form>{% else %}<span class="badge">{{ tr_value(task.state) }}</span>{% endif %}
+    {% if catalog_task_permissions[task.id] %}<form method="post" action="{{ url_for('catalog_task_update', task_id=task.id) }}"><select name="state">{% for state in task_state_options[task.id] %}<option {% if task.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select><input name="work_notes" value="{{ task.work_notes }}" placeholder="{{ tr('Work notes') }}"><button class="primary">{{ tr('Update') }}</button></form>{% else %}{{ status_badge(task.state) }}{% endif %}
   </article>
   {% else %}<p class="muted">{{ tr('No fulfillment tasks. Automation may fulfill this item.') }}</p>{% endfor %}
   {% if can_manage %}<form method="post" action="{{ url_for('catalog_task_add', ritm_id=ritm.id) }}" class="inline-form"><input name="title" placeholder="{{ tr('New fulfillment task') }}" required><select name="group_id">{% for team in teams %}<option value="{{ team.id }}">{{ team.name }}</option>{% endfor %}</select><select name="execution_mode"><option>{{ tr('Parallel') }}</option><option>{{ tr('Sequential') }}</option></select><button>{{ tr('Add SCTASK') }}</button></form>{% endif %}
@@ -51,9 +51,9 @@
 
 <section id="ritm-approvals" class="panel">
   <header class="section-heading"><div><h2>{{ tr('Approvals') }}</h2></div></header>
-  {% for chain in chains %}<div class="chain"><strong>{{ chain.name }}</strong> · {{ tr_value(chain.state) }}
-    {% for gate in chain.gates %}<div class="gate"><b>{{ gate.sequence }}. {{ gate.name }}</b> — {{ tr_value(gate.state) }}
-      {% for vote in gate.votes %}<div class="vote">{{ user_link(vote.approver) }}: {{ tr_value(vote.state) }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}"><input name="comments" placeholder="{{ tr('Comments') }}"><button name="decision" value="Rejected">{{ tr('Reject') }}</button><button class="primary" name="decision" value="Approved">{{ tr('Approve') }}</button></form>{% endif %}</div>{% endfor %}
+  {% for chain in chains %}<div class="chain"><strong>{{ chain.name }}</strong> {{ status_badge(chain.state) }}
+    {% for gate in chain.gates %}<div class="gate"><b>{{ gate.sequence }}. {{ gate.name }}</b> {{ status_badge(gate.state, 'gate') }}
+      {% for vote in gate.votes %}<div class="vote{% if vote.state in ('No Longer Required', 'Superseded') %} status-row-inactive{% endif %}">{{ user_link(vote.approver) }} {{ status_badge(vote.state) }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}"><input name="comments" placeholder="{{ tr('Comments') }}"><button name="decision" value="Rejected">{{ tr('Reject') }}</button><button class="primary" name="decision" value="Approved">{{ tr('Approve') }}</button></form>{% endif %}</div>{% endfor %}
     </div>{% endfor %}
   </div>{% else %}<p class="muted">{{ tr('No approval chain required.') }}</p>{% endfor %}
 </section>

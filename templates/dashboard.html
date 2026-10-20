@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% from "_status_badge.html" import status_badge %}
 {% block title %}{{ tr('Dashboard · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">{{ tr('SERVICE OPERATIONS') }}</p><h1>{{ tr('Good day, {split}', split=(current_user.name.split()[0])) }}</h1><p>{{ tr('Here’s what’s happening across your service desk.') }}</p></div>
@@ -16,7 +16,7 @@
   <div class="panel-head"><div><h2>{{ tr('Assigned to me') }}</h2><p>{{ tr('Open tickets where you are the assignee') }}</p></div></div>
   {% if my_assigned %}
   <table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Priority') }}</th></tr></thead>
-  <tbody>{% for t in my_assigned %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td><span class="badge">{{ tr_value(t.state) }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ tr_value(t.priority) }}</span></td></tr>{% endfor %}</tbody></table>
+  <tbody>{% for t in my_assigned %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td>{{ status_badge(t.state) }}</td><td><span class="priority {{ t.priority|lower }}">{{ tr_value(t.priority) }}</span></td></tr>{% endfor %}</tbody></table>
   {% else %}<p class="muted">{{ tr('Nothing is currently assigned to you.') }}</p>{% endif %}
 </section>
 {% endif %}
@@ -46,7 +46,7 @@
   <div class="panel-head"><div><h2>{{ tr('Recently updated') }}</h2><p>{{ tr('Your latest service activity') }}</p></div></div>
   {% if recent %}
   <table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Priority') }}</th><th>{{ tr('Updated') }}</th></tr></thead>
-  <tbody>{% for t in recent %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td><span class="badge">{{ tr_value(t.state) }}</span></td><td><span class="priority {{ t.priority|lower }}">{{ tr_value(t.priority) }}</span></td><td>{{ (t.updated_at|usertime('%b %d, %H:%M')) }}</td></tr>{% endfor %}</tbody></table>
+  <tbody>{% for t in recent %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td><td>{{ t.title }}</td><td>{{ status_badge(t.state) }}</td><td><span class="priority {{ t.priority|lower }}">{{ tr_value(t.priority) }}</span></td><td>{{ (t.updated_at|usertime('%b %d, %H:%M')) }}</td></tr>{% endfor %}</tbody></table>
   {% else %}<div class="empty"><h3>{{ tr('No activity yet') }}</h3><p>{{ tr('Create an incident or service request to get started.') }}</p></div>{% endif %}
 </section>
 {% endif %}

@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% from "_status_badge.html" import status_badge %}
 {% block title %}{{ task.number }} · {{ task.title }} · {{ instance_name }}{% endblock %}
 {% block content %}
 <section class="record-shell task-record-shell">
@@ -66,7 +66,7 @@
     {% for sibling in siblings %}<tr>
       <td><a class="record-number" href="{{ url_for('operational_task_detail', task_id=sibling.id) }}">{{ sibling.number }}</a></td>
       <td>{{ sibling.title }}</td>
-      <td>{{ tr_value(sibling.state) }}</td>
+      <td>{{ status_badge(sibling.state) }}</td>
       <td>{{ sibling.assignment_group.name if sibling.assignment_group else '—' }}</td>
       <td>{{ user_link(sibling.assignee, tr('Unassigned')) }}</td>
     </tr>{% else %}<tr><td colspan="5" class="empty">{{ tr('No sibling tasks on this record.') }}</td></tr>{% endfor %}
@@ -84,10 +84,10 @@
 <section id="task-approvers" class="panel table-panel">
   <header class="section-heading"><div><h2>{{ tr('Approvers') }}</h2><p>{{ tr("From the parent change's approval chain") }}</p></div><span>{{ tr('{approval_votes} votes', approval_votes=(approval_votes|length)) }}</span></header>
   <table><thead><tr><th>{{ tr('Approver') }}</th><th>{{ tr('Gate') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Decided') }}</th></tr></thead><tbody>
-    {% for vote in approval_votes %}<tr>
+    {% for vote in approval_votes %}<tr{% if vote.state in ('No Longer Required', 'Superseded') %} class="status-row-inactive"{% endif %}>
       <td>{{ user_link(vote.approver) }}</td>
       <td>{{ vote.gate.name }}</td>
-      <td>{{ tr_value(vote.state) }}</td>
+      <td>{{ status_badge(vote.state) }}</td>
       <td>{{ (vote.decided_at|usertime('%b %d, %Y %H:%M')) if vote.decided_at else '—' }}</td>
     </tr>{% endfor %}
   </tbody></table>

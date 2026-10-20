@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% from "_status_badge.html" import status_badge %}
 {% block title %}{{ tr('CMDB & service map · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">{{ tr('IT OPERATIONS') }}</p><h1>{{ tr('CMDB & service map') }}<span class="info-tip" tabindex="0" data-tip="CMDB = Configuration Management Database: the system of record for every CI (Configuration Item) — a server, application, or service — and how they depend on one another.">i</span></h1><p>{{ tr('Configuration items and the dependencies that connect business services.') }}</p></div>{% if current_user.effective_role in ['admin','superadmin'] %}<a class="button" href="{{ url_for('cmdb_discovery') }}">⌕ {{ tr('Discovery') }}</a> <a class="button" href="{{ url_for('cmdb_topology') }}">◈ {{ tr('Topology') }}</a> <a class="button" href="{{ url_for('rack_list') }}">▤ {{ tr('Racks') }}</a> <a class="button" href="{{ url_for('cmdb_import') }}">⇪ {{ tr('Import') }}</a> <a class="button" href="{{ url_for('cmdb_permissions') }}">⛊ {{ tr('Permissions') }}</a> <a class="primary button" href="{{ url_for('ci_new') }}">+ {{ tr('New CI') }}</a>{% else %}<a class="button" href="{{ url_for('cmdb_topology') }}">◈ {{ tr('Topology') }}</a> <a class="button" href="{{ url_for('rack_list') }}">▤ {{ tr('Racks') }}</a>{% endif %}</header>
@@ -79,7 +79,7 @@
       <td><a href="{{ url_for('ci_edit', ci_id=ci.id) }}"><strong class="truncate" title="{{ ci.name }}">{{ ci.name }}</strong></a>{% if ci.serial_number %}<br><small class="muted">S/N {{ ci.serial_number }}</small>{% endif %}</td>
       <td data-col="ci_class">{{ ci.ci_class }}</td>
       <td data-col="environment">{{ ci.environment }}</td>
-      <td data-col="operational_status"><span class="badge">{{ tr_value(ci.operational_status) }}</span></td>
+      <td data-col="operational_status">{{ status_badge(ci.operational_status) }}</td>
       <td data-col="lifecycle_state">{{ tr_value(ci.lifecycle_state) }}</td>
       <td data-col="business_criticality">{{ ci.business_criticality }}</td>
       <td data-col="location"><span class="truncate" title="{{ ci.location or '' }}">{{ ci.location or '—' }}</span></td>

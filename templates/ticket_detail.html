@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% from "_status_badge.html" import status_badge %}
 {% from "_rack_pin.html" import rack_pin %}
 {% block title %}{{ ticket.number }} · {{ ticket.title }} · {{ instance_name }}{% endblock %}
 {% block content %}<span hidden data-live-watch="ticket:{{ ticket.id }}"></span>
@@ -90,7 +90,8 @@
 
 {% if ticket.change_governance %}
 {% set approver_votes = [] %}
-{% for chain in chains %}{% for gate in chain.gates %}{% for vote in gate.votes %}{% set _ = approver_votes.append((chain, gate, vote)) %}{% endfor %}{% endfor %}{% endfor %}
+{#- The current approval first; superseded rounds follow, greyed out. -#}
+{% for chain in chains|sort(attribute='id', reverse=True) %}{% for gate in chain.gates %}{% for vote in gate.votes %}{% set _ = approver_votes.append((chain, gate, vote)) %}{% endfor %}{% endfor %}{% endfor %}
 {% set affected_cis = ci_links|selectattr('relationship_role','equalto','Affected CI')|list %}
 {% set impacted_services = ci_links|selectattr('relationship_role','equalto','Impacted service')|list %}
 {% set problem_links = related|selectattr('link.link_type','in',['underlying_problem','problem_change'])|list %}
@@ -329,8 +330,8 @@
   <div class="gov-tab-condition">{{ tr('Change request') }} = <b>{{ ticket.number }}</b></div>
   <header class="section-heading"><div><h2>{{ tr('Approvers') }}</h2></div><span>{{ tr('{approver_votes} votes', approver_votes=(approver_votes|length)) }}</span></header>
   <div class="task-list-scroll"><table><thead><tr><th>{{ tr('State') }}</th><th>{{ tr('Approver') }}</th><th>{{ tr('Gate') }}</th><th>{{ tr('Comments') }}</th><th>{{ tr('Created') }}</th></tr></thead><tbody>
-    {% for chain, gate, vote in approver_votes %}<tr>
-      <td><span class="badge">{{ tr_value(vote.state) }}</span></td>
+    {% for chain, gate, vote in approver_votes %}<tr{% if vote.state in ('No Longer Required', 'Superseded') %} class="status-row-inactive"{% endif %}>
+      <td>{{ status_badge(vote.state) }}</td>
       <td>{{ user_link(vote.approver) }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}" class="approval-actions"><input name="comments" placeholder="{{ tr('Decision comments') }}"><button name="decision" value="Rejected">{{ tr('Reject') }}</button><button class="primary" name="decision" value="Approved">{{ tr('Approve') }}</button></form>{% endif %}</td>
       <td>{{ gate.sequence }}. {{ gate.name }}</td>
       <td>{{ vote.comments or '—' }}</td>
@@ -347,7 +348,7 @@
       <td><a href="{{ url_for('operational_task_detail', task_id=task.id) }}">{{ task.number }}</a></td>
       <td>{{ task.task_type }}</td>
       <td>{{ task.title }}</td>
-      <td><span class="badge">{{ tr_value(task.state) }}</span></td>
+      <td>{{ status_badge(task.state) }}</td>
       <td>{{ task.assignment_group.name }}</td>
       <td>{{ user_link(task.assignee, tr('Unassigned')) }}</td>
       <td>{{ (task.planned_start|usertime('%b %d %H:%M')) if task.planned_start else '—' }} → {{ (task.planned_end|usertime('%b %d %H:%M')) if task.planned_end else '—' }}</td>

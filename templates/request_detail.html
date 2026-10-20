@@ -1,8 +1,8 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% from "_status_badge.html" import status_badge %}
 {% block title %}{{ tr('{number} · Service request · {instance_name}', number=(req.number), instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <section class="record-shell task-record-shell request-record-shell">
-  <header class="record-toolbar"><div class="record-identity"><a class="record-back" href="{{ url_for('requests_list') }}" aria-label="{{ tr('Back to requests') }}">‹</a><span class="record-type-icon" aria-hidden="true">R</span><div><strong>{{ tr('Request') }}</strong><small>{{ req.number }}</small></div></div><div class="record-actions">{% if can_withdraw %}<a class="button" href="#withdraw-panel">{{ tr('Withdraw') }}</a>{% endif %}<span class="badge">{{ tr_value(req.state) }}</span></div></header>
+  <header class="record-toolbar"><div class="record-identity"><a class="record-back" href="{{ url_for('requests_list') }}" aria-label="{{ tr('Back to requests') }}">‹</a><span class="record-type-icon" aria-hidden="true">R</span><div><strong>{{ tr('Request') }}</strong><small>{{ req.number }}</small></div></div><div class="record-actions">{% if can_withdraw %}<a class="button" href="#withdraw-panel">{{ tr('Withdraw') }}</a>{% endif %}{{ status_badge(req.state) }}</div></header>
   <div class="record-form">
     <div class="record-grid">
       <label><span>{{ tr('Number') }}</span><input value="{{ req.number }}" disabled></label>
@@ -22,7 +22,7 @@
       <td><a class="record-number" href="{{ url_for('ritm_detail', ritm_id=ritm.id) }}">{{ ritm.number }}</a></td>
       <td>{{ ritm.item.name }}</td>
       <td>{{ tr_value(ritm.stage) }}</td>
-      <td>{{ tr_value(ritm.state) }}</td>
+      <td>{{ status_badge(ritm.state) }}</td>
       <td>{{ (ritm.due_at|usertime('%b %d, %Y')) if ritm.due_at else tr('Not set') }}</td>
       <td>{{ ritm.tasks|length }}</td>
     </tr>{% else %}<tr><td colspan="6" class="empty">{{ tr('No requested items.') }}</td></tr>{% endfor %}

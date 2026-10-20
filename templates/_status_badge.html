@@ -6,6 +6,9 @@
    in the app. Use for genuine workflow states only -- not for counts, role
    labels, or other non-status badges, which should keep the plain
    .badge/.tag styling. #}
-{% macro status_badge(value) -%}
-<span class="status-badge {{ (value or '')|lower|replace(' ', '-') }}">{{ tr_value(value) }}</span>
+{% macro status_badge(value, scope=none) -%}
+{%- set slug = (value or '')|lower|replace(' ', '-') -%}
+{#- scope tells apart values whose meaning depends on the record: an approval
+    gate that is "Pending" waits for an earlier stage, which is not on hold. -#}
+<span class="status-badge {{ slug }}{% if scope %} {{ scope }}-{{ slug }}{% endif %}">{{ tr_value(value) }}</span>
 {%- endmacro %}

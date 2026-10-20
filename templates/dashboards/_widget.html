@@ -1,3 +1,4 @@
+{% from "_status_badge.html" import status_badge %}
 {# Dashboard widgets (B-464). Every value is escaped; links are records' own URLs
    or internal paths validated by serviceops_core.dashboards.parse_links. #}
 {% macro empty(text) %}<p class="dash-empty-line">{{ text }}</p>{% endmacro %}
@@ -11,7 +12,7 @@
   <tr><td class="dash-nowrap"><a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}">{{ ticket.number }}</a></td>
       <td class="dash-cell-title" title="{{ ticket.title }}">{{ ticket.title }}{% if ticket.assignee %}<small>{{ ticket.assignee.name }}</small>{% else %}<small class="dash-unassigned">{{ tr('Unassigned') }}</small>{% endif %}</td>
       <td><span class="priority {{ ticket.priority|lower }}">{{ ticket.priority }}</span></td>
-      <td class="dash-nowrap"><span class="badge">{{ tr_value(ticket.state) }}</span></td>
+      <td class="dash-nowrap">{{ status_badge(ticket.state) }}</td>
       <td class="dash-num muted" title="{{ ticket.created_at|usertime('%b %d, %H:%M') }}">{{ age(ticket.created_at) }}</td></tr>
   {% endfor %}
   </tbody>
@@ -41,13 +42,13 @@
   <ul class="dash-bars dash-workload">{% for row in data.members %}<li><a class="dash-bar-row" href="{{ row.url }}" title="{{ tr('{tickets} open tickets, {tasks} open tasks', tickets=row.tickets, tasks=row.tasks) }}"><span class="dash-bar-label">{{ row.user.name }}</span><span class="dash-bar-track dash-stack"><i class="pct-w-{{ row.ticket_pct }}"></i><b class="pct-w-{{ row.task_pct }}"></b></span><strong>{{ row.tickets + row.tasks }}</strong></a></li>{% endfor %}</ul>
   <p class="dash-legend"><span class="tickets"></span>{{ tr('Open tickets') }} <span class="tasks"></span>{{ tr('Open tasks') }}</p>{% endif %}
 {% elif item.key == 'tasks' %}
-  <table class="dash-table"><tbody>{% for row in data.tasks %}<tr><td><a href="{{ row.url }}">{{ row.task.number }}</a></td><td class="dash-cell-title">{{ row.task.title }}</td><td><span class="badge">{{ tr_value(row.task.state) }}</span></td></tr>{% else %}<tr><td colspan="5" class="dash-empty-cell">{{ tr('No open tasks.') }}</td></tr>{% endfor %}</tbody></table>
+  <table class="dash-table"><tbody>{% for row in data.tasks %}<tr><td><a href="{{ row.url }}">{{ row.task.number }}</a></td><td class="dash-cell-title">{{ row.task.title }}</td><td>{{ status_badge(row.task.state) }}</td></tr>{% else %}<tr><td colspan="5" class="dash-empty-cell">{{ tr('No open tasks.') }}</td></tr>{% endfor %}</tbody></table>
 {% elif item.key == 'approvals' %}
   <ul class="dash-list">{% for row in data.approvals %}<li><a href="{{ row.url }}">{{ row.number }}</a>{% if row.title %} · {{ row.title }}{% endif %}<small>{{ row.vote.gate.name }}</small></li>{% else %}<li class="empty">{{ tr('Nothing awaiting your approval.') }}</li>{% endfor %}</ul>
 {% elif item.key == 'upcoming_changes' %}
   <table class="dash-table"><tbody>{% for row in data.changes %}<tr><td><a href="{{ url_for('ticket_detail', ticket_id=row.ticket.id) }}">{{ row.ticket.number }}</a></td><td class="dash-cell-title">{{ row.ticket.title }}</td><td>{{ row.governance.planned_start|usertime('%b %d %H:%M') }}</td><td><span class="badge">{{ tr_value(row.governance.change_type) }}</span></td></tr>{% else %}<tr><td colspan="5" class="dash-empty-cell">{{ tr('No changes planned in this window.') }}</td></tr>{% endfor %}</tbody></table>
 {% elif item.key == 'requests' %}
-  <table class="dash-table"><tbody>{% for ritm in data['items'] %}<tr><td><a href="{{ url_for('ritm_detail', ritm_id=ritm.id) }}">{{ ritm.number }}</a></td><td class="dash-cell-title">{{ ritm.item.name if ritm.item else '' }}</td><td><span class="badge">{{ tr_value(ritm.state) }}</span></td></tr>{% else %}<tr><td colspan="5" class="dash-empty-cell">{{ tr('No requests.') }}</td></tr>{% endfor %}</tbody></table>
+  <table class="dash-table"><tbody>{% for ritm in data['items'] %}<tr><td><a href="{{ url_for('ritm_detail', ritm_id=ritm.id) }}">{{ ritm.number }}</a></td><td class="dash-cell-title">{{ ritm.item.name if ritm.item else '' }}</td><td>{{ status_badge(ritm.state) }}</td></tr>{% else %}<tr><td colspan="5" class="dash-empty-cell">{{ tr('No requests.') }}</td></tr>{% endfor %}</tbody></table>
 {% elif item.key == 'knowledge' %}
   <ul class="dash-list">{% for article in data.articles %}<li><a href="{{ url_for('knowledge_detail', article_id=article.id) }}">{{ article.title }}</a><small>{{ article.category }}</small></li>{% else %}<li class="empty">{{ tr('No articles yet.') }}</li>{% endfor %}</ul>
 {% elif item.key == 'work_items' %}

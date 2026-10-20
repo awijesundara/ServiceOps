@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% from "_status_badge.html" import status_badge %}
 {% block title %}{{ tr('My tasks · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}<span hidden data-live-watch="tickets"></span>
 <header class="page-head"><div><p class="eyebrow">{{ tr('WORK QUEUE') }}</p><h1>{{ tr('My tasks') }}</h1><p>{{ tr('Change, problem, event, and service catalog tasks assigned to you or your teams.') }}</p></div></header>
@@ -13,7 +13,7 @@
       <td><a href="{{ row.url }}">{{ row.number }}</a></td>
       <td><span class="badge">{{ tr_value(row.kind) }}</span></td>
       <td>{{ row.title }}</td>
-      <td><span class="badge">{{ tr_value(row.state) }}</span></td>
+      <td>{{ status_badge(row.state) }}</td>
       <td>{{ row.group }}</td>
       <td>{{ (row.due_at|usertime('%b %d, %H:%M')) if row.due_at else "—" }}</td>
     </tr>
@@ -34,7 +34,7 @@
       <td><a href="{{ row.url }}">{{ row.number }}</a></td>
       <td><span class="badge">{{ tr_value(row.kind) }}</span></td>
       <td>{{ row.title }}</td>
-      <td><span class="badge">{{ tr_value(row.state) }}</span></td>
+      <td>{{ status_badge(row.state) }}</td>
       <td>{{ row.group }}</td>
       <td>{{ row.assignee }}</td>
       <td>{{ (row.due_at|usertime('%b %d, %H:%M')) if row.due_at else "—" }}</td>

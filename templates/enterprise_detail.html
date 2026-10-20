@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% from "_status_badge.html" import status_badge %}
 {% block title %}{{ record.number }} · {{ config.name }} · {{ instance_name }}{% endblock %}
 {% block content %}
 {% set primary_ci_link = (ci_links|selectattr('relationship_role','equalto','Primary CI')|first) %}
@@ -110,7 +110,7 @@
   {% endif %}
 
   <hr><h3>{{ tr('Problem tasks (PTASK)') }}</h3>
-  {% for task in work_tasks %}<article class="timeline"><strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · {{ tr('Required') }}{% endif %}</strong><span class="badge">{{ tr_value(task.state) }}</span><p>{{ task.title }}</p><small>{{ task.assignment_group.name }} · {{ user_link(task.assignee, tr('Unassigned')) }}</small>
+  {% for task in work_tasks %}<article class="timeline"><strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · {{ tr('Required') }}{% endif %}</strong>{{ status_badge(task.state) }}<p>{{ task.title }}</p><small>{{ task.assignment_group.name }} · {{ user_link(task.assignee, tr('Unassigned')) }}</small>
   {% if task_permissions[task.id] %}<form method="post" action="{{ url_for('operational_task_update', task_id=task.id) }}" class="form-grid">
     <label>{{ tr('State') }}<select name="state">{% for state in work_task_states[task.state] %}<option {% if task.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select></label>
     <label>{{ tr('Assigned to') }}<select name="assignee_id"><option value="">{{ tr('Unassigned') }}</option>{% for user in task_agents[task.id] %}<option value="{{ user.id }}" {% if task.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
@@ -123,7 +123,7 @@
   </form></details>{% endif %}
 {% else %}
   <header class="section-heading"><div><h2>{{ tr('Fulfillment tasks') }}</h2></div></header>
-  {% for task in work_tasks %}<article class="timeline"><strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · {{ tr('Required') }}{% endif %}</strong><span class="badge">{{ tr_value(task.state) }}</span><p>{{ task.title }}</p><small>{{ task.assignment_group.name }} · {{ user_link(task.assignee, tr('Unassigned')) }}</small>
+  {% for task in work_tasks %}<article class="timeline"><strong>{{ task.number }} · {{ task.task_type }}{% if task.required %} · {{ tr('Required') }}{% endif %}</strong>{{ status_badge(task.state) }}<p>{{ task.title }}</p><small>{{ task.assignment_group.name }} · {{ user_link(task.assignee, tr('Unassigned')) }}</small>
   {% if task_permissions[task.id] %}<form method="post" action="{{ url_for('operational_task_update', task_id=task.id) }}" class="form-grid">
     <label>{{ tr('State') }}<select name="state">{% for state in work_task_states[task.state] %}<option {% if task.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select></label>
     <label>{{ tr('Assigned to') }}<select name="assignee_id"><option value="">{{ tr('Unassigned') }}</option>{% for user in task_agents[task.id] %}<option value="{{ user.id }}" {% if task.assignee_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
@@ -135,7 +135,7 @@
 {% if record.approvals %}
 <section class="panel" id="approvals">
   <header class="section-heading"><div><h2>{{ tr('Approval history') }}</h2></div></header>
-  {% for approval in record.approvals %}<article class="timeline"><strong>{{ tr_value(approval.state) }}</strong><span>{{ user_link(approval.approver) }}</span><p>{{ approval.comments or tr('No decision comments.') }}</p>
+  {% for approval in record.approvals %}<article class="timeline{% if approval.state in ('No Longer Required', 'Superseded') %} status-row-inactive{% endif %}">{{ status_badge(approval.state) }}<span>{{ user_link(approval.approver) }}</span><p>{{ approval.comments or tr('No decision comments.') }}</p>
   {% if approval.state=='Requested' and approval.approver_id==current_user.id %}<form method="post" class="approval-actions"><input type="hidden" name="approval_id" value="{{ approval.id }}"><input name="comments" placeholder="{{ tr('Decision comments') }}"><button name="action" value="reject">{{ tr('Reject') }}</button><button class="primary" name="action" value="approve">{{ tr('Approve') }}</button></form>{% endif %}
   </article>{% endfor %}
 </section>

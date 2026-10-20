@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}{{ tr('Requests & RITMs · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
+{% extends "base.html" %}{% from "_status_badge.html" import status_badge %}{% block title %}{{ tr('Requests & RITMs · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <section class="list-workspace">
   <header class="list-toolbar">
@@ -24,7 +24,7 @@
       <td><a class="record-number" href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></td>
       <td><span class="truncate" title="{{ req.requested_for.name }}">{{ req.requested_for.name }}</span></td>
       <td>{% for item in req.items %}<a class="tag" href="{{ url_for('ritm_detail', ritm_id=item.id) }}">{{ item.number }}</a> {{ item.item.name }}{% if not loop.last %}; {% endif %}{% endfor %}</td>
-      <td><span class="badge">{{ tr_value(req.state) }}</span></td>
+      <td>{{ status_badge(req.state) }}</td>
       <td>{{ (req.opened_at|usertime('%b %d, %H:%M')) }}</td>
     </tr>{% else %}<tr><td colspan="5" class="empty">{{ tr('No catalog requests.') }}</td></tr>{% endfor %}
   </tbody></table>

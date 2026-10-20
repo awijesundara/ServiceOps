@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% from "_status_badge.html" import status_badge %}
 {% block title %}{{ tr('Open work · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}<span hidden data-live-watch="tickets"></span>
 <header class="page-head"><div><p class="eyebrow">{{ tr('NEEDS ATTENTION') }}</p><h1>{{ tr('Open work') }}</h1><p>{% if priority %}{{ tr('Open incidents and changes at priority {priority}.', priority=(tr_value(priority))) }}{% else %}{{ tr("Every incident, change, and service request that isn't resolved or closed yet.") }}{% endif %}</p></div>{% if priority %}<a class="button" href="{{ url_for('open_work') }}">{{ tr('Clear filter') }}</a>{% endif %}</header>
@@ -15,7 +15,7 @@
     <tr>
       <td><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td>
       <td>{{ t.title }}</td>
-      <td><span class="badge">{{ tr_value(t.state) }}</span></td>
+      <td>{{ status_badge(t.state) }}</td>
       <td><span class="priority {{ t.priority|lower }}">{{ tr_value(t.priority) }}</span></td>
       <td>{{ (t.updated_at|usertime('%b %d, %H:%M')) }}</td>
     </tr>
@@ -37,7 +37,7 @@
     <tr>
       <td><a href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></td>
       <td>{{ req.requested_for.name }}</td>
-      <td><span class="badge">{{ tr_value(req.state) }}</span></td>
+      <td>{{ status_badge(req.state) }}</td>
       <td>{{ (req.opened_at|usertime('%b %d, %H:%M')) }}</td>
     </tr>
     {% else %}

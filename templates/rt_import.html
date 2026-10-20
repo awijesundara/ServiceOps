@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% from "_status_badge.html" import status_badge %}
 {% block title %}{{ tr('Import from RT · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 {% set admin_page_title = tr('RT import') %}{% set admin_parent_title = tr('Integrations and delivery') %}{% set admin_parent_url = url_for('integrations_admin') %}{% include '_admin_context.html' %}
@@ -55,7 +55,7 @@
           <td>{{ (job.created_at|usertime('%b %d, %H:%M')) }}</td>
           <td>{{ tr('Preview') if job.dry_run else tr('Apply') }}{% if job.record_limit %} · {{ tr('limit {record_limit}', record_limit=(job.record_limit)) }}{% endif %}</td>
           <td><code>{{ job.search_query }}</code></td>
-          <td><span class="badge">{{ tr_value(job.status) }}</span></td>
+          <td>{{ status_badge(job.status) }}</td>
           <td>
             {% if job.status == 'Completed' and job.result %}
             {{ tr('{tickets_seen} seen · {records_created} {value} ({events_created} events, {changes_created} changes) · {already_imported} already imported', tickets_seen=(job.result.tickets_seen), records_created=(job.result.records_created), value=(tr('would be created') if job.dry_run else 'created'), events_created=(job.result.events_created), changes_created=(job.result.changes_created), already_imported=(job.result.already_imported)) }} ·
