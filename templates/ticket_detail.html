@@ -358,6 +358,7 @@
   {% if can_manage_ticket %}
   <details class="gov-tab-new"><summary>{{ tr('New') }}</summary>
     <p class="muted">{{ tr("Dates must fall within the change's planned window. If this change has already been sent for approval, adding a task is a material change — it will return {number} to Awaiting Approval and notify approvers again.", number=(ticket.number)) }}</p>
+    <p class="muted">{{ tr("A task for another team adds an approval from that team's manager before the change can go ahead.") }}</p>
     <form method="post" action="{{ url_for('change_task_add', ticket_id=ticket.id) }}" class="form-grid">
       <label class="wide required-field"><span>{{ tr('Task summary') }}</span><input name="title" required></label>
       <label><span>{{ tr('Type') }}</span><select name="task_type"><option>{{ tr('Planning') }}</option><option>{{ tr('Implementation') }}</option><option>{{ tr('Testing') }}</option><option>{{ tr('Review') }}</option></select></label>

@@ -3906,6 +3906,20 @@ def change_service_coowner_groups(ticket, scoped_cis):
     return [group for group in (db.session.get(SupportGroup, group_id) for group_id in sorted(group_ids)) if group]
 
 
+def change_task_groups(ticket):
+    """Teams assigned a live change task on this change, in task order."""
+    tasks = OperationalTask.query.filter(
+        OperationalTask.parent_type == "ticket", OperationalTask.parent_id == ticket.id,
+        OperationalTask.task_kind == "change", OperationalTask.state != "Cancelled",
+    ).order_by(OperationalTask.sequence, OperationalTask.id).all()
+    groups = {}
+    for task in tasks:
+        group = task.assignment_group
+        if group is not None and group.tenant_id == ticket.tenant_id:
+            groups.setdefault(group.id, group)
+    return list(groups.values())
+
+
 def change_approval_stages(ticket):
     """The approval chain for a change, from the tenant's default change
     approval policy (B-460). Which teams, boards and executives approve, and
@@ -3916,6 +3930,7 @@ def change_approval_stages(ticket):
     context = {
         "ticket": ticket, "cis": scoped_cis,
         "coowner_groups": change_service_coowner_groups(ticket, scoped_cis),
+        "task_groups": change_task_groups(ticket),
         "change_type": governance.change_type if governance else "Normal",
         "needs_ccb": bool(governance) and change_requires_ccb(governance, scoped_cis),
     }

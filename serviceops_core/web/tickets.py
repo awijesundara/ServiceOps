@@ -1676,6 +1676,13 @@ def register(app):
         group = tenant_record_or_404(SupportGroup, form_int("group_id", required=True))
         if not core.is_team_group(group):
             abort(400, description=tr("Change tasks require an active team."))
+        # Another team's task brings its manager into the change approval
+        # (task_team_managers); refuse before creating anything if nobody can approve.
+        from serviceops_core import approval_policies
+        owning = ticket.change_ownership.group_id if ticket.change_ownership else None
+        route_error = approval_policies.task_team_route_error(ticket.tenant_id, group, [owning] if owning else [])
+        if route_error:
+            abort(409, description=route_error)
         task_type = request.form.get("task_type")
         if task_type not in ("Planning", "Implementation", "Testing", "Review"):
             abort(400)

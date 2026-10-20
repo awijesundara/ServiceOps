@@ -36,6 +36,7 @@ SOURCES = {
     "owning_team_manager": ("Owning team's manager (and its approval groups)", {"change"}, None),
     "ci_owner_team_managers": ("Each other team owning an affected CI: its manager", {"change"}, None),
     "service_coowner_team_managers": ("Each other team sharing an affected service: its manager", {"change"}, None),
+    "task_team_managers": ("Each other team assigned a change task: its manager", {"change"}, None),
     "group": ("Members of a chosen group", {"catalog", "change", "enterprise"}, "group"),
     "authority": ("Groups linked to an approval authority", {"catalog", "change", "enterprise"}, "authority"),
     "users": ("Chosen people", {"catalog", "change", "enterprise"}, "users"),
@@ -67,7 +68,7 @@ AUTHORITIES = {"ccb": "Change Control Board", "executive": "Executive approval",
 
 
 TEAM_SOURCES = {"request_team_manager", "owning_team_manager", "ci_owner_team_managers",
-                "service_coowner_team_managers", "line_manager"}
+                "service_coowner_team_managers", "task_team_managers", "line_manager"}
 
 
 class ApprovalRouteError(ValueError):
@@ -93,16 +94,18 @@ def _default_definitions(tenant_id):
         ("catalog", "Line manager only", False, "Only the requester's line manager approves.",
          [_stage(0, "Line manager approval", "line_manager", mode="all")]),
         ("change", "Change authorization", True,
-         "The owning team's manager, the managers of other teams owning affected CIs or sharing an affected "
-         "service, then for non-standard changes that need CCB review one CCB approver and the executive.",
+         "The owning team's manager, the managers of other teams owning affected CIs, sharing an affected "
+         "service or assigned a change task, then for non-standard changes that need CCB review one CCB "
+         "approver and the executive.",
          [_stage(0, "{team} manager assessment", "owning_team_manager", mode="any", skip_duplicates=False),
           _stage(1, "{team} manager assessment (CI owner)", "ci_owner_team_managers", mode="any", skip_duplicates=False),
           _stage(2, "{team} manager assessment (service co-owner)", "service_coowner_team_managers", mode="any", skip_duplicates=False),
-          _stage(3, "CCB authorization", "group", group_id=ccb.id if ccb else None, role_filter="CCB approver",
+          _stage(3, "{team} manager approval (change task)", "task_team_managers", mode="any", skip_duplicates=False),
+          _stage(4, "CCB authorization", "group", group_id=ccb.id if ccb else None, role_filter="CCB approver",
                  authority="ccb", mode="any", skip_duplicates=False, condition="ccb_required_normal"),
-          _stage(4, "Emergency CCB authorization (expedited)", "group", group_id=ccb.id if ccb else None,
+          _stage(5, "Emergency CCB authorization (expedited)", "group", group_id=ccb.id if ccb else None,
                  role_filter="CCB approver", authority="ccb", mode="any", skip_duplicates=False, condition="ccb_required_emergency"),
-          _stage(5, "Executive (CEO) approval", "group", group_id=executive.id if executive else None,
+          _stage(6, "Executive (CEO) approval", "group", group_id=executive.id if executive else None,
                  role_filter="executive approver", include_manager=True, authority="executive",
                  mode="group_mode", skip_duplicates=False, condition="ccb_required")]),
         ("enterprise", "Enterprise record approval", True,
@@ -236,6 +239,19 @@ def _resolve(stage, context, tenant_id, covered_group_ids):
                             "approval group.", name=group.name)))
             covered_group_ids.add(group.id)
         return rows
+    if source == "task_team_managers":
+        # A team doing work on the change approves it, unless it already approves
+        # as the owning team, a CI owner or a service co-owner.
+        rows = []
+        for group in context.get("task_groups", []):
+            if group.id in covered_group_ids:
+                continue
+            ids = _team_manager_ids(group) if group.active else set()
+            rows.append((name.replace("{team}", group.name), ids, group,
+                         tr("The {name} team (assigned a change task) requires an active manager or approval group.",
+                            name=group.name)))
+            covered_group_ids.add(group.id)
+        return rows
     if source == "group":
         ids = _group_ids(stage, tenant_id)
         if stage.authority and (not stage.group or stage.group.active):
@@ -292,6 +308,22 @@ def _applies(stage, context):
         "ccb_required_normal": change_type == "Normal" and needs_ccb,
         "ccb_required_emergency": change_type == "Emergency" and needs_ccb,
     }.get(condition, False)
+
+
+def task_team_route_error(tenant_id, group, covered_group_ids=()):
+    """Why `group` cannot be given a change task under the default change
+    policy (nobody would approve for it), or None. Checked before the task is
+    created, so a refused task never exists."""
+    policy = default_policy(tenant_id, "change")
+    if policy is None or group.id in set(covered_group_ids):
+        return None
+    for stage in policy.stages:
+        if stage.source == "task_team_managers":
+            ids = _team_manager_ids(group) if group.active else set()
+            if not ids and not _fallback_ids(stage, tenant_id, group):
+                return tr("The {name} team (assigned a change task) requires an active manager or approval group.",
+                          name=group.name)
+    return None
 
 
 def build_stages(policy, context, exclude_user_ids=()):
