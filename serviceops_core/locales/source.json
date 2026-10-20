@@ -275,6 +275,9 @@
    "id": "A resolution records why work reached a done status. The default is used when nobody chooses one."
   },
   {
+   "id": "A rule name has 1 to 80 characters."
+  },
+  {
    "id": "A schedule with that key already exists."
   },
   {
@@ -306,6 +309,15 @@
   },
   {
    "id": "A task for another team adds an approval from that team's manager before the change can go ahead."
+  },
+  {
+   "id": "A task summary has 1 to 180 characters."
+  },
+  {
+   "id": "A template name has 1 to 80 characters."
+  },
+  {
+   "id": "A template named {name} already exists."
   },
   {
    "id": "A tenant with slug \"{slug}\" already exists."
@@ -843,6 +855,9 @@
    "id": "Add resolution"
   },
   {
+   "id": "Add rule"
+  },
+  {
    "id": "Add selected",
    "javascript": true
   },
@@ -862,7 +877,13 @@
    "id": "Add subcategory"
   },
   {
+   "id": "Add task"
+  },
+  {
    "id": "Add team"
+  },
+  {
+   "id": "Add template"
   },
   {
    "id": "Add this page to favorites",
@@ -1007,6 +1028,9 @@
   },
   {
    "id": "Affected CIs"
+  },
+  {
+   "id": "Affected CIs ({count})"
   },
   {
    "id": "Affected CIs and impacted services"
@@ -1178,6 +1202,18 @@
    "id": "Also add these models from the same account"
   },
   {
+   "id": "Also post to all {count} child incidents"
+  },
+  {
+   "id": "Also post to the child incident"
+  },
+  {
+   "id": "Also posted to {count} child incident."
+  },
+  {
+   "id": "Also posted to {count} child incidents."
+  },
+  {
    "id": "Always allowed"
   },
   {
@@ -1234,6 +1270,9 @@
   },
   {
    "id": "Anthropic"
+  },
+  {
+   "id": "Any"
   },
   {
    "id": "Any compatible service"
@@ -1533,6 +1572,18 @@
    "id": "Assignment group"
   },
   {
+   "id": "Assignment rule deleted."
+  },
+  {
+   "id": "Assignment rule saved."
+  },
+  {
+   "id": "Assignment rules"
+  },
+  {
+   "id": "Assignment rules that route new incidents, and incident templates"
+  },
+  {
    "id": "Assignment team"
   },
   {
@@ -1648,6 +1699,9 @@
   },
   {
    "id": "Automatic"
+  },
+  {
+   "id": "Automatic (assignment rules)"
   },
   {
    "id": "Automatic (browser language)"
@@ -2284,6 +2338,9 @@
    "id": "Change freeze windows"
   },
   {
+   "id": "Change from this incident"
+  },
+  {
    "id": "Change governance"
   },
   {
@@ -2430,6 +2487,12 @@
    "id": "Child incidents"
   },
   {
+   "id": "Child incidents ({count})"
+  },
+  {
+   "id": "Child of"
+  },
+  {
    "id": "Choice"
   },
   {
@@ -2447,6 +2510,9 @@
   },
   {
    "id": "Choose a bulk action."
+  },
+  {
+   "id": "Choose a category from the list."
   },
   {
    "id": "Choose a component lead to assign work to them."
@@ -2500,6 +2566,9 @@
    "id": "Choose a reaction."
   },
   {
+   "id": "Choose a reason"
+  },
+  {
    "id": "Choose a resolution."
   },
   {
@@ -2507,6 +2576,9 @@
   },
   {
    "id": "Choose a stage."
+  },
+  {
+   "id": "Choose a subcategory that belongs to the category."
   },
   {
    "id": "Choose a supported provider."
@@ -2715,6 +2787,15 @@
   },
   {
    "id": "Choose who can see the comment."
+  },
+  {
+   "id": "Choose why the incident is on hold."
+  },
+  {
+   "id": "Choose why the incident is on hold: {reasons}."
+  },
+  {
+   "id": "Chosen when creating"
   },
   {
    "id": "Cis"
@@ -3410,6 +3491,9 @@
    "id": "Create a planned sprint"
   },
   {
+   "id": "Create a problem record from {number}?"
+  },
+  {
    "id": "Create a project goal"
   },
   {
@@ -3992,7 +4076,13 @@
    "id": "Delete team"
   },
   {
+   "id": "Delete the rule {name}?"
+  },
+  {
    "id": "Delete the selected work items? This cannot be undone."
+  },
+  {
+   "id": "Delete the template {name}?"
   },
   {
    "id": "Delete the view '{name}'?"
@@ -4630,6 +4720,9 @@
    "id": "Enter a valid absence start and end time."
   },
   {
+   "id": "Enter a valid due date."
+  },
+  {
    "id": "Enter a valid email address that no other account uses."
   },
   {
@@ -5044,6 +5137,12 @@
    "javascript": true
   },
   {
+   "id": "Filled in from a template. Check every field before creating the incident."
+  },
+  {
+   "id": "Filled in from incident {number}, which will be linked to this change."
+  },
+  {
    "id": "Fills the short description, description and owning team from the RT ticket. You can edit everything before submitting."
   },
   {
@@ -5246,6 +5345,9 @@
    "id": "From name"
   },
   {
+   "id": "From parent incident {number}:"
+  },
+  {
    "id": "From the parent change's approval chain"
   },
   {
@@ -5327,6 +5429,9 @@
   {
    "id": "Getting ready",
    "javascript": true
+  },
+  {
+   "id": "Give the rule at least one condition: category, subcategory, CI class or service offering."
   },
   {
    "id": "Give these to the backup job"
@@ -5515,6 +5620,9 @@
   },
   {
    "id": "Hi there"
+  },
+  {
+   "id": "Hidden"
   },
   {
    "id": "Hide archived"
@@ -5726,6 +5834,9 @@
    "id": "If nobody qualifies"
   },
   {
+   "id": "If one of these is the same issue, set it as the parent instead of logging it twice."
+  },
+  {
    "id": "If that active local account exists, recovery instructions have been sent."
   },
   {
@@ -5834,6 +5945,15 @@
    "id": "Incident"
   },
   {
+   "id": "Incident Task"
+  },
+  {
+   "id": "Incident handling"
+  },
+  {
+   "id": "Incident handling · {instance_name}"
+  },
+  {
    "id": "Incident history"
   },
   {
@@ -5841,6 +5961,18 @@
   },
   {
    "id": "Incident status updates"
+  },
+  {
+   "id": "Incident tasks"
+  },
+  {
+   "id": "Incident tasks ({count})"
+  },
+  {
+   "id": "Incident tasks require an active team."
+  },
+  {
+   "id": "Incident templates"
   },
   {
    "id": "Incident {number} opened as {priority} · {impact} impact via {contact_type}."
@@ -7156,10 +7288,16 @@
    "id": "Move {key} up"
   },
   {
+   "id": "Move {name} down"
+  },
+  {
    "id": "Move {name} left"
   },
   {
    "id": "Move {name} right"
+  },
+  {
+   "id": "Move {name} up"
   },
   {
    "id": "Mute specific notifications"
@@ -7436,10 +7574,22 @@
    "id": "New resolution"
   },
   {
+   "id": "New rule"
+  },
+  {
    "id": "New status"
   },
   {
    "id": "New subcategory name"
+  },
+  {
+   "id": "New task"
+  },
+  {
+   "id": "New task for {team}: {number}"
+  },
+  {
+   "id": "New template"
   },
   {
    "id": "New ticket"
@@ -7555,6 +7705,12 @@
   },
   {
    "id": "No articles yet."
+  },
+  {
+   "id": "No assignment rule matches this incident. Choose an assignment group."
+  },
+  {
+   "id": "No assignment rules yet. Incidents created with “Automatic” use the configuration item’s support group."
   },
   {
    "id": "No attachments."
@@ -7740,6 +7896,9 @@
   },
   {
    "id": "No incident matches {number}."
+  },
+  {
+   "id": "No incident tasks."
   },
   {
    "id": "No incidents caused by this change."
@@ -8049,6 +8208,9 @@
   },
   {
    "id": "No teams under your management."
+  },
+  {
+   "id": "No templates yet."
   },
   {
    "id": "No thanks",
@@ -8379,11 +8541,20 @@
    "id": "Ocean"
   },
   {
+   "id": "Offered at the top of the new incident form. Every field stays editable before the incident is created."
+  },
+  {
+   "id": "Offered on the new incident form"
+  },
+  {
    "id": "Ollama"
   },
   {
    "id": "On for this browser.",
    "javascript": true
+  },
+  {
+   "id": "On hold reason"
   },
   {
    "id": "On status page"
@@ -9028,7 +9199,17 @@
    "id": "Parent level"
   },
   {
+   "id": "Parent of {count} incident"
+  },
+  {
+   "id": "Parent of {count} incidents"
+  },
+  {
    "id": "Parent record"
+  },
+  {
+   "id": "Parent set",
+   "javascript": true
   },
   {
    "id": "Passkey authentication failed."
@@ -9616,6 +9797,9 @@
    "id": "Problem fix change"
   },
   {
+   "id": "Problem from this incident"
+  },
+  {
    "id": "Problem tasks (PTASK)"
   },
   {
@@ -10066,6 +10250,9 @@
    "id": "Raised from"
   },
   {
+   "id": "Raised from {number}."
+  },
+  {
    "id": "Raised manually by {name}"
   },
   {
@@ -10349,6 +10536,9 @@
   },
   {
    "id": "Related records"
+  },
+  {
+   "id": "Related records ({count})"
   },
   {
    "id": "Related work",
@@ -10693,6 +10883,9 @@
    "javascript": true
   },
   {
+   "id": "Required before the incident can be resolved"
+  },
+  {
    "id": "Required before the parent change can complete"
   },
   {
@@ -10759,7 +10952,7 @@
    "id": "Requires tickets:read and streams the file from local, object, or IPFS storage with private no-store caching."
   },
   {
-   "id": "Requires tickets:read and ticket visibility. Includes details and configuration_items using the versioned TicketDetails schema; list responses remain compact."
+   "id": "Requires tickets:read and ticket visibility. Includes details and configuration_items using the versioned TicketDetails schema; list responses remain compact. Incidents also carry caller, opened_by, hold_reason, reassignment_count, reopen_count and parent_incident."
   },
   {
    "id": "Requires tickets:read and ticket visibility. Returns schema_version, configuration_items, sections, can_manage and allowed_states. CI links include primary, affected and impacted services, with tenant and CI-class filtering. Staff sections include record fields, governance, reviews, SLAs, approval history, work tasks, related records and event history. Requesters receive public record fields, service commitments and visible related records, with no internal sections or topology. The same details and configuration_items are included by GET /tickets/{number}; list responses remain compact."
@@ -10783,7 +10976,7 @@
    "id": "Requires tickets:update and an acting user who can manage the ticket. Body: body (1-10000 characters) and optional parent_id to reply. Idempotency-Key is optional here."
   },
   {
-   "id": "Requires tickets:update and an acting user with update, assign, transition, and owning-team authority. Fields: state, priority, assigned_to_id, resolution_notes, closure_category and closure_subcategory (incidents; the categorisation at closure, kept separate from the logging category). Resolution fields are applied before the state change; when omitted on resolution the closure category defaults to the logging category."
+   "id": "Requires tickets:update and an acting user with update, assign, transition, and owning-team authority. Fields: state, priority, assigned_to_id, resolution_notes, closure_category and closure_subcategory (incidents; the categorisation at closure, kept separate from the logging category). Resolution fields are applied before the state change; when omitted on resolution the closure category defaults to the logging category. hold_reason (Awaiting caller, vendor, change or problem) says why a Pending incident waits; it defaults to Awaiting caller."
   },
   {
    "id": "Requires workflows:execute."
@@ -11079,6 +11272,15 @@
    "id": "Route"
   },
   {
+   "id": "Route new incidents to the right team automatically, and keep ready-made templates for frequent problems."
+  },
+  {
+   "id": "Route to team"
+  },
+  {
+   "id": "Routed by {reason}."
+  },
+  {
    "id": "Router"
   },
   {
@@ -11106,10 +11308,16 @@
    "id": "Rule name"
   },
   {
+   "id": "Rule order saved."
+  },
+  {
    "id": "Rule version"
   },
   {
    "id": "Rules and guided content that run consistently without manual repetition"
+  },
+  {
+   "id": "Rules can only route to an active team."
   },
   {
    "id": "Rules run as their owner with current project permissions. Each event processes rules once; automation changes do not trigger additional rules. Branches are limited to 100 work items and failures are recorded in the audit log."
@@ -11428,6 +11636,9 @@
    "id": "Save review"
   },
   {
+   "id": "Save rule"
+  },
+  {
    "id": "Save scenario"
   },
   {
@@ -11444,6 +11655,9 @@
   },
   {
    "id": "Save team"
+  },
+  {
+   "id": "Save template"
   },
   {
    "id": "Save this query"
@@ -11700,6 +11914,9 @@
    "id": "Search path, message, request ID..."
   },
   {
+   "id": "Search people by name, username or email…"
+  },
+  {
    "id": "Search requests"
   },
   {
@@ -11874,6 +12091,9 @@
   },
   {
    "id": "Select an IT team"
+  },
+  {
+   "id": "Select an active caller."
   },
   {
    "id": "Select an active manager in this organization."
@@ -12374,6 +12594,9 @@
    "id": "Signing secret"
   },
   {
+   "id": "Similar open incidents"
+  },
+  {
    "id": "Simulation input is invalid: {error}"
   },
   {
@@ -12689,6 +12912,9 @@
   },
   {
    "id": "Start date"
+  },
+  {
+   "id": "Start from a template"
   },
   {
    "id": "Start guided tour"
@@ -13179,6 +13405,18 @@
    "id": "Telegram, Google Chat, Slack, Teams, Discord, and webhooks"
   },
   {
+   "id": "Template deleted."
+  },
+  {
+   "id": "Template name"
+  },
+  {
+   "id": "Template saved."
+  },
+  {
+   "id": "Templates can only assign an active team."
+  },
+  {
    "id": "Temporarily allow your own line manager to decide approvals assigned to you. They are not notified when the request first opens; every delegated decision preserves both identities."
   },
   {
@@ -13534,6 +13772,9 @@
    "id": "The person an asset is checked out to becomes the CI owner when a ServiceOps user has the same email. Purchase and warranty dates fill the CI dates."
   },
   {
+   "id": "The person reporting the incident. You are recorded as the one who opened it."
+  },
+  {
    "id": "The plan changed. Reload it before saving."
   },
   {
@@ -13640,6 +13881,9 @@
   },
   {
    "id": "The service rejected the access key. Check it, and that it may use this model."
+  },
+  {
+   "id": "The short description has at most 180 characters."
   },
   {
    "id": "The sign-in code or verifier is missing."
@@ -14516,6 +14760,10 @@
    "id": "Use an internal path or a complete HTTPS URL."
   },
   {
+   "id": "Use as parent",
+   "javascript": true
+  },
+  {
    "id": "Use at most 80 characters for the asset tag and 160 for the name."
   },
   {
@@ -14984,6 +15232,9 @@
    "javascript": true
   },
   {
+   "id": "When someone creates an incident with “Automatic”, the first active matching rule picks the team. Empty conditions match anything. Without a match, the support group of the chosen configuration item is used."
+  },
+  {
    "id": "When sources disagree about a field, the source higher in this list wins and the disagreement is reported in the import results."
   },
   {
@@ -15125,6 +15376,9 @@
   },
   {
    "id": "Work or dependencies changed after this draft was created. Create a fresh plan."
+  },
+  {
+   "id": "Work other teams do for this incident. Required tasks must be finished before it can be resolved."
   },
   {
    "id": "Work removed"
@@ -15345,6 +15599,9 @@
    "id": "You rated this {csat_rating}/5. Thanks for the feedback!"
   },
   {
+   "id": "You, or search people by name or email…"
+  },
+  {
    "id": "Your Company Support"
   },
   {
@@ -15464,6 +15721,9 @@
    "id": "and its manager"
   },
   {
+   "id": "any category"
+  },
+  {
    "id": "app_port must be an integer."
   },
   {
@@ -15492,6 +15752,9 @@
   },
   {
    "id": "assignee_ids must be a list of user ids."
+  },
+  {
+   "id": "assignment rule “{name}”"
   },
   {
    "id": "assignment_group_id is required."
@@ -15732,6 +15995,9 @@
   },
   {
    "id": "group"
+  },
+  {
+   "id": "hold_reason applies only to a Pending incident."
   },
   {
    "id": "http://192.168.68.68:8080"
@@ -16121,6 +16387,12 @@
    "id": "ran on ServiceOps {app_version}"
   },
   {
+   "id": "reassigned {count} time"
+  },
+  {
+   "id": "reassigned {count} times"
+  },
+  {
    "id": "ref"
   },
   {
@@ -16131,6 +16403,12 @@
   },
   {
    "id": "removed"
+  },
+  {
+   "id": "reopened {count} time"
+  },
+  {
+   "id": "reopened {count} times"
   },
   {
    "id": "replaced"
@@ -16245,6 +16523,9 @@
   },
   {
    "id": "the owning team"
+  },
+  {
+   "id": "the support group of {name}"
   },
   {
    "id": "through {egress}"
@@ -16537,6 +16818,12 @@
    "id": "{count} rows read."
   },
   {
+   "id": "{count} rule"
+  },
+  {
+   "id": "{count} rules"
+  },
+  {
    "id": "{count} selected",
    "javascript": true
   },
@@ -16545,6 +16832,12 @@
   },
   {
    "id": "{count} sprints"
+  },
+  {
+   "id": "{count} template"
+  },
+  {
+   "id": "{count} templates"
   },
   {
    "id": "{count} tokens written",
@@ -16963,10 +17256,19 @@
    "id": "{numbers} withdrawn"
   },
   {
+   "id": "{number} added for {team}."
+  },
+  {
    "id": "{number} added. Adding a task after submission is a material change — {number2} returned to Awaiting Approval and approvers were notified."
   },
   {
+   "id": "{number} already has an underlying problem."
+  },
+  {
    "id": "{number} cannot be deleted once it has progressed past approval. Cancel it through the normal state transition instead."
+  },
+  {
+   "id": "{number} cannot be resolved while required task {number2} is {state}."
   },
   {
    "id": "{number} cannot close without a post-implementation review (ITIL 4 change enablement requires a documented outcome before a change is considered complete). Record the review first."
@@ -16996,10 +17298,16 @@
    "id": "{number} closed."
   },
   {
+   "id": "{number} created from {incident}."
+  },
+  {
    "id": "{number} created."
   },
   {
    "id": "{number} has already been deleted."
+  },
+  {
+   "id": "{number} is back in progress now that the caller replied."
   },
   {
    "id": "{number} is locked: related records can only be changed before a change is approved."
@@ -17021,6 +17329,9 @@
   },
   {
    "id": "{number} is {state}; change tasks cannot be added to a closed-out change."
+  },
+  {
+   "id": "{number} is {state}; tasks cannot be added."
   },
   {
    "id": "{number} moved to {state}.",

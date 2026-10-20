@@ -22,7 +22,9 @@ SOURCE_FILES = [ROOT / "app.py", *sorted((ROOT / "serviceops_core" / "web").glob
                 # Approval policies (B-460) and request withdrawal (B-461) audit in their rules modules.
                 ROOT / "serviceops_core" / "approval_policies.py", ROOT / "serviceops_core" / "request_withdrawal.py",
                 # Dashboards (B-464) audit in their rules module.
-                ROOT / "serviceops_core" / "dashboards.py"]
+                ROOT / "serviceops_core" / "dashboards.py",
+                # Incident handling and parent/child incidents audit in their rules modules.
+                ROOT / "serviceops_core" / "incident_handling.py", ROOT / "serviceops_core" / "incident_hierarchy.py"]
 
 ALLOWLIST = {
     "planning_view_settings": "updates only the caller's project display preferences; no shared work changes",

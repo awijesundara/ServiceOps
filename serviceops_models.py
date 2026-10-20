@@ -552,6 +552,12 @@ class Ticket(db.Model):
     csat_rating = db.Column(db.Integer)
     csat_comment = db.Column(db.Text)
     csat_submitted_at = db.Column(db.DateTime(timezone=True))
+    # requester_id is the caller; opened_by_id is whoever logged the record.
+    opened_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    opened_by = db.relationship("User", foreign_keys=[opened_by_id])
+    hold_reason = db.Column(db.String(40))  # why a Pending incident waits
+    reassignment_count = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    reopen_count = db.Column(db.Integer, nullable=False, default=0, server_default="0")
 
 
 class Comment(db.Model):
@@ -3202,3 +3208,45 @@ from serviceops_core.projects.models import (  # noqa: E402,F401 -- re-exported 
 from serviceops_core.projects.models import MODEL_NAMES as _PROJECT_MODEL_NAMES  # noqa: E402
 
 __all__ += _PROJECT_MODEL_NAMES
+
+
+class IncidentTemplate(db.Model):
+    """A ready-made incident for a frequent problem; new incidents can start from it."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    name = db.Column(db.String(80), nullable=False)
+    title = db.Column(db.String(180), nullable=False, default="")
+    description = db.Column(db.Text, nullable=False, default="")
+    category = db.Column(db.String(80), nullable=False, default="")
+    subcategory = db.Column(db.String(80), nullable=False, default="")
+    impact = db.Column(db.String(20), nullable=False, default="Medium")
+    urgency = db.Column(db.String(20), nullable=False, default="Medium")
+    group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"))
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    group = db.relationship("SupportGroup")
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_incident_template_tenant_name"),)
+
+
+class AssignmentRule(db.Model):
+    """Routes a new incident to a team when its category, subcategory, CI class
+    or service offering match. Rules are checked in position order; the first
+    active match wins. Empty conditions match anything."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    name = db.Column(db.String(80), nullable=False)
+    position = db.Column(db.Integer, nullable=False, default=0)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    category = db.Column(db.String(80), nullable=False, default="")
+    subcategory = db.Column(db.String(80), nullable=False, default="")
+    ci_class = db.Column(db.String(80), nullable=False, default="")
+    service_offering_id = db.Column(db.Integer, db.ForeignKey("service_offering.id"))
+    group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+    group = db.relationship("SupportGroup")
+    service_offering = db.relationship("ServiceOffering")
+
+
+__all__ += ["IncidentTemplate", "AssignmentRule"]

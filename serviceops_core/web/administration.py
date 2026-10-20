@@ -2874,7 +2874,7 @@ def register(app):
                 "DEFAULT_TICKET_PRIORITY", "P3"
             ),
             sync_child_incident_states=setting_bool(
-                "SYNC_CHILD_INCIDENT_STATES"
+                "SYNC_CHILD_INCIDENT_STATES", True
             ),
         )
 

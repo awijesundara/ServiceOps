@@ -1,0 +1,61 @@
+{% extends "base.html" %}{% block title %}{{ tr('Incident handling · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
+{% block content %}
+{% set admin_page_title = tr('Incident handling') %}{% include '_admin_context.html' %}
+<header class="page-head"><div><h1>{{ tr('Incident handling') }}</h1><p>{{ tr('Route new incidents to the right team automatically, and keep ready-made templates for frequent problems.') }}</p></div></header>
+<datalist id="incident-subcategories">{% for sub in subcategories %}<option value="{{ sub.name }}">{{ sub.category.name }}</option>{% endfor %}</datalist>
+
+{% macro rule_fields(rule=None) %}
+  <label>{{ tr('Rule name') }}<input name="name" maxlength="80" required value="{{ rule.name if rule else '' }}"></label>
+  <label>{{ tr('Route to team') }}<select name="group_id" required>{% for team in teams %}<option value="{{ team.id }}" {% if rule and rule.group_id == team.id %}selected{% endif %}>{{ team.name }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Category') }}<select name="category"><option value="">{{ tr('Any') }}</option>{% for category in categories %}<option {% if rule and rule.category == category.name %}selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Subcategory') }}<input name="subcategory" maxlength="80" list="incident-subcategories" value="{{ rule.subcategory if rule else '' }}" placeholder="{{ tr('Any') }}"></label>
+  <label>{{ tr('CI class') }}<select name="ci_class"><option value="">{{ tr('Any') }}</option>{% for ci_class in ci_classes %}<option {% if rule and rule.ci_class == ci_class %}selected{% endif %}>{{ ci_class }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Service offering') }}<select name="service_offering_id"><option value="">{{ tr('Any') }}</option>{% for offering in offerings %}<option value="{{ offering.id }}" {% if rule and rule.service_offering_id == offering.id %}selected{% endif %}>{{ offering.name }}</option>{% endfor %}</select></label>
+  <label class="check"><input type="checkbox" name="active" value="1" {% if not rule or rule.active %}checked{% endif %}> {{ tr('Active') }}</label>
+{% endmacro %}
+
+<section class="panel incident-admin" id="rules">
+  <header class="section-heading"><div><h2>{{ tr('Assignment rules') }}</h2><p>{{ tr('When someone creates an incident with “Automatic”, the first active matching rule picks the team. Empty conditions match anything. Without a match, the support group of the chosen configuration item is used.') }}</p></div><span>{{ trn(rules|length, '{count} rule', '{count} rules') }}</span></header>
+  {% for rule in rules %}
+  <details class="approval-policy" id="rule-{{ rule.id }}">
+    <summary><strong>{{ loop.index }}. {{ rule.name }}</strong>{% if not rule.active %} <span class="badge">{{ tr('Inactive') }}</span>{% endif %}
+      <small>{{ [rule.category or tr('any category'), rule.subcategory, rule.ci_class, rule.service_offering.name if rule.service_offering else '']|select|join(' · ') }} → {{ rule.group.name }}</small></summary>
+    <form method="post" class="form-grid"><input type="hidden" name="action" value="save_rule"><input type="hidden" name="rule_id" value="{{ rule.id }}">{{ rule_fields(rule) }}<div class="wide actions"><button class="primary">{{ tr('Save rule') }}</button></div></form>
+    <div class="actions">
+      {% if not loop.first %}<form method="post"><input type="hidden" name="action" value="move_rule"><input type="hidden" name="rule_id" value="{{ rule.id }}"><input type="hidden" name="direction" value="up"><button class="button" aria-label="{{ tr('Move {name} up', name=rule.name) }}">↑</button></form>{% endif %}
+      {% if not loop.last %}<form method="post"><input type="hidden" name="action" value="move_rule"><input type="hidden" name="rule_id" value="{{ rule.id }}"><input type="hidden" name="direction" value="down"><button class="button" aria-label="{{ tr('Move {name} down', name=rule.name) }}">↓</button></form>{% endif %}
+      <form method="post" data-confirm="{{ tr('Delete the rule {name}?', name=rule.name) }}"><input type="hidden" name="action" value="delete_rule"><input type="hidden" name="rule_id" value="{{ rule.id }}"><button class="button">{{ tr('Delete') }}</button></form>
+    </div>
+  </details>
+  {% else %}<p class="muted">{{ tr('No assignment rules yet. Incidents created with “Automatic” use the configuration item’s support group.') }}</p>{% endfor %}
+  <details class="gov-tab-new"><summary>{{ tr('New rule') }}</summary>
+    <form method="post" class="form-grid"><input type="hidden" name="action" value="save_rule">{{ rule_fields() }}<div class="wide actions"><button class="primary">{{ tr('Add rule') }}</button></div></form>
+  </details>
+</section>
+
+{% macro template_fields(template=None) %}
+  <label>{{ tr('Template name') }}<input name="name" maxlength="80" required value="{{ template.name if template else '' }}"></label>
+  <label>{{ tr('Assignment group') }}<select name="group_id"><option value="">{{ tr('Chosen when creating') }}</option>{% for team in teams %}<option value="{{ team.id }}" {% if template and template.group_id == team.id %}selected{% endif %}>{{ team.name }}</option>{% endfor %}</select></label>
+  <label class="wide">{{ tr('Short description') }}<input name="title" maxlength="180" value="{{ template.title if template else '' }}"></label>
+  <label>{{ tr('Category') }}<select name="category"><option value="">{{ tr('Chosen when creating') }}</option>{% for category in categories %}<option {% if template and template.category == category.name %}selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Subcategory') }}<input name="subcategory" maxlength="80" list="incident-subcategories" value="{{ template.subcategory if template else '' }}"></label>
+  <label>{{ tr('Impact') }}<select name="impact">{% for value in impacts %}<option {% if (template and template.impact == value) or (not template and value == 'Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Urgency') }}<select name="urgency">{% for value in impacts %}<option {% if (template and template.urgency == value) or (not template and value == 'Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <label class="wide">{{ tr('Description') }}<textarea name="description" rows="4">{{ template.description if template else '' }}</textarea></label>
+  <label class="check"><input type="checkbox" name="active" value="1" {% if not template or template.active %}checked{% endif %}> {{ tr('Offered on the new incident form') }}</label>
+{% endmacro %}
+
+<section class="panel incident-admin" id="templates">
+  <header class="section-heading"><div><h2>{{ tr('Incident templates') }}</h2><p>{{ tr('Offered at the top of the new incident form. Every field stays editable before the incident is created.') }}</p></div><span>{{ trn(templates|length, '{count} template', '{count} templates') }}</span></header>
+  {% for template in templates %}
+  <details class="approval-policy" id="template-{{ template.id }}">
+    <summary><strong>{{ template.name }}</strong>{% if not template.active %} <span class="badge">{{ tr('Hidden') }}</span>{% endif %}<small>{{ template.title }}</small></summary>
+    <form method="post" class="form-grid"><input type="hidden" name="action" value="save_template"><input type="hidden" name="template_id" value="{{ template.id }}">{{ template_fields(template) }}<div class="wide actions"><button class="primary">{{ tr('Save template') }}</button></div></form>
+    <form method="post" class="actions" data-confirm="{{ tr('Delete the template {name}?', name=template.name) }}"><input type="hidden" name="action" value="delete_template"><input type="hidden" name="template_id" value="{{ template.id }}"><button class="button">{{ tr('Delete') }}</button></form>
+  </details>
+  {% else %}<p class="muted">{{ tr('No templates yet.') }}</p>{% endfor %}
+  <details class="gov-tab-new"><summary>{{ tr('New template') }}</summary>
+    <form method="post" class="form-grid"><input type="hidden" name="action" value="save_template">{{ template_fields() }}<div class="wide actions"><button class="primary">{{ tr('Add template') }}</button></div></form>
+  </details>
+</section>
+{% endblock %}

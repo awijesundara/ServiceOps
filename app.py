@@ -1300,6 +1300,17 @@ def api_ticket_document(ticket, user, *, include_details=False):
         "resolved_at": ticket.resolved_at.isoformat() if ticket.resolved_at else None,
         "attachments": [api_attachment_document(row, ticket.number) for row in ticket.attachments],
     }
+    if ticket.kind == "incident":
+        from serviceops_core import incident_hierarchy
+        parent = incident_hierarchy.parent_of(ticket)
+        document.update({
+            "caller": {"id": ticket.requester.id, "name": ticket.requester.name} if ticket.requester else None,
+            "opened_by": {"id": ticket.opened_by.id, "name": ticket.opened_by.name} if ticket.opened_by else None,
+            "hold_reason": ticket.hold_reason,
+            "reassignment_count": ticket.reassignment_count or 0,
+            "reopen_count": ticket.reopen_count or 0,
+            "parent_incident": parent.number if parent and user_can_view_ticket(user, parent) else None,
+        })
     group = ticket_owning_group(ticket)
     document["internal"] = {
         "assignment_group": (
@@ -1474,6 +1485,8 @@ def create_with_retry_on_number_collision(build_row, attempts=10, error_descript
 
 
 def create_ticket_with_unique_number(kind, **fields):
+    # Whoever logs a record opens it; unless told otherwise that is the caller.
+    fields.setdefault("opened_by_id", fields.get("requester_id"))
     def build():
         ticket = Ticket(number=next_number(kind), kind=kind, **fields)
         db.session.add(ticket)
@@ -2483,7 +2496,7 @@ def sequence_number(model, prefix):
 
 
 def next_operational_task_number(task_kind):
-    prefix = {"change": "CTASK", "problem": "PTASK", "event": "EVTASK"}.get(
+    prefix = {"change": "CTASK", "problem": "PTASK", "event": "EVTASK", "incident": "ITASK"}.get(
         task_kind, "TASK"
     )
     serialize_number_allocation(f"task:{task_kind}")
@@ -3241,7 +3254,11 @@ def require_resolution_notes(ticket, new_state):
         ))
 
 
-def transition_ticket(ticket, new_state):
+def transition_ticket(ticket, new_state, hold_reason=None):
+    """Move a ticket to `new_state` under the lifecycle rules. A Pending incident
+    records why it waits (`hold_reason`; the API and automation default to
+    "Awaiting caller"); resolving or closing an incident waits for its
+    required incident tasks."""
     if new_state not in allowed_ticket_states(ticket):
         abort(409, description=(
             tr("{number} cannot move from {state} to {new_state}. Complete the required approval chain and follow the permitted lifecycle.", number=ticket.number, state=ticket.state, new_state=new_state)
@@ -3258,6 +3275,23 @@ def transition_ticket(ticket, new_state):
             abort(409, description=(
                 tr("{number} cannot complete while required task {number2} remains {state}.", number=ticket.number, number2=incomplete.number, state=incomplete.state)
             ))
+    if ticket.kind == "incident" and new_state in ("Resolved", "Closed"):
+        open_task = OperationalTask.query.filter_by(
+            parent_type="ticket", parent_id=ticket.id, task_kind="incident", required=True
+        ).filter(OperationalTask.state.notin_(["Closed Complete", "Closed Incomplete", "Closed Skipped", "Cancelled"])).first()
+        if open_task:
+            abort(409, description=tr("{number} cannot be resolved while required task {number2} is {state}.",
+                                      number=ticket.number, number2=open_task.number, state=open_task.state))
+    if ticket.kind == "incident":
+        from serviceops_core import incident_handling
+        if new_state == "Pending":
+            reason = hold_reason or (ticket.hold_reason if ticket.state == "Pending" else None) \
+                or incident_handling.DEFAULT_HOLD_REASON
+            ticket.hold_reason = incident_handling.check_hold_reason(reason)
+        else:
+            ticket.hold_reason = None
+        if ticket.state in ("Resolved", "Closed") and new_state not in ("Resolved", "Closed", "Cancelled"):
+            ticket.reopen_count = (ticket.reopen_count or 0) + 1
     if ticket.kind == "change" and new_state == "Closed" and not ticket.post_implementation_review:
         abort(409, description=(
             tr("{number} cannot close without a post-implementation review (ITIL 4 change enablement requires a documented outcome before a change is considered complete). Record the review first.", number=ticket.number)
@@ -3290,7 +3324,7 @@ def transition_ticket(ticket, new_state):
                 ))
     if (
         ticket.kind == "incident"
-        and setting_bool("SYNC_CHILD_INCIDENT_STATES", False)
+        and setting_bool("SYNC_CHILD_INCIDENT_STATES", True)
         and new_state in ("Pending", "Resolved", "Closed", "Cancelled")
     ):
         child_links = RecordLink.query.filter_by(
@@ -3305,6 +3339,12 @@ def transition_ticket(ticket, new_state):
             ):
                 old_state = child.state
                 child.state = new_state
+                # Children wait for the same reason and close out like their parent.
+                child.hold_reason = ticket.hold_reason if new_state == "Pending" else None
+                if new_state in ("Resolved", "Closed"):
+                    child.resolution_notes = child.resolution_notes or ticket.resolution_notes
+                    child.closure_category = child.closure_category or ticket.closure_category
+                    child.closure_subcategory = child.closure_subcategory or ticket.closure_subcategory
                 record_resolution_state(child, old_state, new_state)
                 sync_slas("ticket", child.id, new_state)
                 log_history(
@@ -7766,6 +7806,7 @@ def create_app(test_config=None):
         client_management,
         dashboards,
         cmdb,
+        incident_admin,
         groups,
         itam,
         knowledge,
@@ -7791,6 +7832,7 @@ def create_app(test_config=None):
     client_management.register(app)
     dashboards.register(app)
     mobile_dashboards.register(app)
+    incident_admin.register(app)
     service_requests.register(app)
     projects.register(app)
 

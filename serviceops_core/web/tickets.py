@@ -154,8 +154,8 @@ from serviceops_models import (
     TicketAssignmentGroup,
     User,
 )
-from serviceops_core.localization import tr, tr_value
-from serviceops_core import incident_hierarchy, rt_link
+from serviceops_core.localization import request_language, tr, tr_value, translate_plural
+from serviceops_core import incident_handling, incident_hierarchy, rt_link
 from serviceops_core.request_values import form_int, parse_int
 from serviceops_core.safe_redirect import redirect_internal
 
@@ -436,6 +436,25 @@ def register(app):
         # A draft prepared by the AI assistant arrives as query parameters. It only fills the form in; the person
         # reviews every field, picks the owning team and submits through the normal, fully validated path.
         ai_prefill = None
+        prefill_source = None
+        if request.method == "GET" and kind == "incident" and request.args.get("template"):
+            from werkzeug.datastructures import MultiDict
+            template = incident_handling.template_or_404(current_user.tenant_id, parse_int(request.args["template"], "template"))
+            if template.active:
+                ai_prefill, prefill_source = MultiDict(incident_handling.prefill(template)), "template"
+        if request.method == "GET" and kind == "change" and request.args.get("from_incident"):
+            from werkzeug.datastructures import MultiDict
+            source_incident = find_record_by_number(request.args["from_incident"])
+            if not isinstance(source_incident, Ticket) or source_incident.kind != "incident" \
+                    or not user_can_view_ticket(current_user, source_incident):
+                abort(404)
+            values = MultiDict({"title": source_incident.title[:180],
+                                "description": tr("Raised from {number}.", number=source_incident.number) + "\n\n"
+                                + source_incident.description[:1400],
+                                "from_incident": source_incident.number})
+            for link in TaskCI.query.filter_by(target_type="ticket", target_id=source_incident.id).all():
+                values.add("ci_id", str(link.ci_id))
+            ai_prefill, prefill_source = values, "incident"
         if request.method == "GET" and request.args.get("ai") == "1":
             from serviceops_core.ai import access
             from serviceops_core.ai.ticket_drafts import form_values
@@ -454,9 +473,11 @@ def register(app):
                 if not draft or draft.get("kind") != kind:
                     abort(404)
                 ai_prefill = form_values(draft, scope.identity, sources)
+                prefill_source = "ai"
             else:
                 limits = {"title": 180, "description": 1500, "impact": 10, "urgency": 10, "category": 80, "subcategory": 80}
                 ai_prefill = MultiDict({name: request.args.get(name, "")[:size] for name, size in limits.items() if request.args.get(name)})
+                prefill_source = "ai"
 
         def render_form(error=None):
             from serviceops_core import read_access
@@ -488,7 +509,12 @@ def register(app):
                     ).order_by(ChangeFreezeWindow.starts_at).all()
                     if kind == "change" else []
                 ),
-                form=values, prefill_cis=initial_cis, form_error=error, ai_prefill=bool(ai_prefill and not error),
+                form=values, prefill_cis=initial_cis, form_error=error,
+                ai_prefill=bool(ai_prefill and not error and prefill_source == "ai"),
+                prefill_source=None if error else prefill_source,
+                incident_templates=incident_handling.templates(current_user.tenant_id, active_only=True)
+                if kind == "incident" else [],
+                can_choose_caller=kind == "incident" and role_at_least(current_user.effective_role, "agent"),
             ), (400 if error else 200)
 
         if request.method == "POST":
@@ -509,13 +535,22 @@ def register(app):
                     return render_form("Select a valid service offering.")
                 if offering.status != "Operational":
                     return render_form("Select an operational service offering.")
-            try:
-                group_id = int(request.form.get("group_id", ""))
-            except (TypeError, ValueError):
-                return render_form("Select a valid owning IT team.")
-            owning_group = tenant_query(SupportGroup).filter_by(id=group_id).first()
-            if not core.is_team_group(owning_group):
-                return render_form("Select an active team.")
+            auto_route = kind == "incident" and request.form.get("group_id") == "auto"
+            owning_group = None
+            if not auto_route:
+                try:
+                    group_id = int(request.form.get("group_id", ""))
+                except (TypeError, ValueError):
+                    return render_form("Select a valid owning IT team.")
+                owning_group = tenant_query(SupportGroup).filter_by(id=group_id).first()
+                if not core.is_team_group(owning_group):
+                    return render_form("Select an active team.")
+            # The caller: an agent logging a call may record it for someone else.
+            caller = current_user
+            if kind == "incident" and request.form.get("caller_id") and role_at_least(current_user.effective_role, "agent"):
+                caller = tenant_query(User).filter_by(id=parse_int(request.form["caller_id"], "caller_id"), active=True).first()
+                if caller is None:
+                    return render_form(tr("Select an active caller."))
             if (
                 kind == "change"
                 and not role_at_least(current_user.effective_role, "admin")
@@ -647,6 +682,12 @@ def register(app):
             else:
                 category = normalize_ticket_category(current_user.tenant_id, request.form.get("category", UNCATEGORISED))
                 subcategory = normalize_ticket_subcategory(current_user.tenant_id, category, submitted_subcategory(request.form))
+            route_reason = None
+            if auto_route:
+                owning_group, route_reason = incident_handling.route(
+                    current_user.tenant_id, category, subcategory, selected_ci, offering.id if offering else None)
+                if owning_group is None:
+                    return render_form(tr("No assignment rule matches this incident. Choose an assignment group."))
             ticket = create_ticket_with_unique_number(
                 kind,
                 title=title, description=description,
@@ -655,7 +696,18 @@ def register(app):
                 subcategory=subcategory,
                 contact_type=contact_type, notify=notify,
                 service_offering_id=offering.id if offering else None,
-                requester_id=current_user.id)
+                requester_id=caller.id, opened_by_id=current_user.id)
+            if route_reason:
+                log_history("ticket", ticket.id, "Assignment group set", "assignment group", "", owning_group.name,
+                            details=tr("Routed by {reason}.", reason=route_reason))
+            if kind == "change" and request.form.get("from_incident"):
+                source_incident = find_record_by_number(request.form["from_incident"])
+                if isinstance(source_incident, Ticket) and source_incident.kind == "incident" \
+                        and source_incident.tenant_id == ticket.tenant_id and user_can_view_ticket(current_user, source_incident):
+                    db.session.add(RecordLink(source_type="ticket", source_id=source_incident.id, target_type="ticket",
+                                              target_id=ticket.id, link_type="resolution_change"))
+                    log_history("ticket", source_incident.id, "Related record linked",
+                                details=f"Change request linked to {ticket.number}: {ticket.title}")
             if kind == "incident" and parent_incident_number:
                 incident_hierarchy.set_parent(current_user, ticket, parent_incident_number)
             if kind == "incident" and ci_id:
@@ -775,6 +827,15 @@ def register(app):
                     comment = post_ticket_comment(ticket, current_user, body, parent_id=parent_id)
                     log_history("ticket", ticket.id, "Comment added", details=body[:500])
                     audit("comment", ticket.number)
+                    if (ticket.kind == "incident" and request.form.get("copy_to_children")
+                            and user_can_manage_ticket(current_user, ticket)):
+                        copied = incident_handling.copy_to_children(ticket, current_user, body)
+                        if copied:
+                            flash(translate_plural(copied, "Also posted to {count} child incident.",
+                                                   "Also posted to {count} child incidents.",
+                                                   request_language()), "success")
+                    if incident_handling.caller_replied(ticket, current_user):
+                        flash(tr("{number} is back in progress now that the caller replied.", number=ticket.number), "success")
                     if upload and upload.filename:
                         attachment, error = save_ticket_attachment(ticket, upload, comment_id=comment.id)
                         if error:
@@ -892,6 +953,24 @@ def register(app):
                     "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
                 }
                 target_state = "Resolved" if request.form.get("resolve") else request.form["state"]
+                hold_reason = None
+                if ticket.kind == "incident":
+                    before["hold reason"] = ticket.hold_reason or ""
+                    if target_state == "Pending":
+                        hold_reason = request.form.get("hold_reason", "") or ticket.hold_reason or ""
+                        if hold_reason not in incident_handling.HOLD_REASONS:
+                            flash(tr("Choose why the incident is on hold."), "error")
+                            return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+                    if request.form.get("caller_id") and role_at_least(current_user.effective_role, "agent"):
+                        caller = User.query.filter_by(id=parse_int(request.form["caller_id"], "caller_id"),
+                                                      tenant_id=ticket.tenant_id, active=True).first()
+                        if caller is None:
+                            flash(tr("Select an active caller."), "error")
+                            return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+                        if caller.id != ticket.requester_id:
+                            log_history("ticket", ticket.id, "Field changed", "caller", ticket.requester.name, caller.name)
+                            ticket.requester_id = caller.id
+                            follow_ticket(ticket, caller)
                 if ticket.kind == "incident" and "resolution_notes" in request.form:
                     before["resolution notes"] = ticket.resolution_notes or ""
                     before["closure category"] = ticket.closure_category or ""
@@ -911,7 +990,7 @@ def register(app):
                         ) or None
                 try:
                     require_resolution_notes(ticket, target_state)
-                    transition_ticket(ticket, target_state)
+                    transition_ticket(ticket, target_state, hold_reason=hold_reason)
                 except HTTPException as error:
                     db.session.rollback()
                     flash(error.description or tr("That change could not be made."), "error")
@@ -1035,6 +1114,7 @@ def register(app):
                         "closure category": ticket.closure_category or "",
                         "closure subcategory": ticket.closure_subcategory or "",
                     } if "resolution notes" in before else {}),
+                    **({"hold reason": ticket.hold_reason or ""} if "hold reason" in before else {}),
                 })
                 audit("update", ticket.number, f"{ticket.state}, {ticket.priority}")
             elif action == "reassign_team":
@@ -1076,6 +1156,7 @@ def register(app):
                     else:
                         db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=new_group.id))
                 ticket.assignee_id = None
+                ticket.reassignment_count = (ticket.reassignment_count or 0) + 1
                 log_history(
                     "ticket", ticket.id, "Reassigned to another team",
                     "owning team",
@@ -1153,6 +1234,11 @@ def register(app):
             can_close=can_close,
             related=related_records("ticket", ticket.id),
             parent_incident=incident_hierarchy.parent_of(ticket) if ticket.kind == "incident" else None,
+            incident_tasks=[task for task in work_tasks if task.task_kind == "incident"],
+            hold_reasons=incident_handling.HOLD_REASONS,
+            can_choose_caller=role_at_least(current_user.effective_role, "agent"),
+            underlying_problem=RecordLink.query.filter_by(source_type="ticket", source_id=ticket.id,
+                                                          link_type="underlying_problem").first(),
             child_incidents=incident_hierarchy.children_of(ticket) if ticket.kind == "incident" else [],
             relation_labels=RELATION_LABELS, work_tasks=work_tasks,
             work_task_states=OPERATIONAL_TASK_TRANSITIONS, history=history,
@@ -1794,6 +1880,61 @@ def register(app):
                 "error",
             )
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+
+    @app.post("/incident/<int:ticket_id>/tasks")
+    @roles("agent", "manager", "admin")
+    def incident_task_add(ticket_id):
+        """Split an incident into work for other teams. Required tasks must be
+        finished before the incident can be resolved."""
+        ticket = tenant_record_or_404(Ticket, ticket_id, lock=True)
+        if ticket.kind != "incident":
+            abort(404)
+        require_ticket_team_access(ticket)
+        if ticket.state in ("Resolved", "Closed", "Cancelled"):
+            abort(409, description=tr("{number} is {state}; tasks cannot be added.", number=ticket.number, state=ticket.state))
+        group = tenant_record_or_404(SupportGroup, form_int("group_id", required=True))
+        if not core.is_team_group(group):
+            abort(400, description=tr("Incident tasks require an active team."))
+        title = request.form.get("title", "").strip()
+        if not 0 < len(title) <= 180:
+            abort(400, description=tr("A task summary has 1 to 180 characters."))
+        try:
+            due = parse_form_datetime(request.form.get("due_at", "").strip())
+        except ValueError:
+            abort(400, description=tr("Enter a valid due date."))
+        sequence = OperationalTask.query.filter_by(parent_type="ticket", parent_id=ticket.id).count() + 1
+
+        def build_task():
+            task = OperationalTask(
+                number=next_operational_task_number("incident"), task_kind="incident",
+                parent_type="ticket", parent_id=ticket.id, title=title, task_type="Investigation",
+                sequence=sequence, assignment_group_id=group.id, planned_end=due,
+                required=bool(request.form.get("required")), state="Open",
+            )
+            db.session.add(task)
+            return task
+        task = create_with_retry_on_number_collision(build_task)
+        log_history("ticket", ticket.id, "Incident task created", details=f"{task.number}: {task.title} → {group.name}")
+        audit("create", task.number, f"{ticket.number}: {task.title}")
+        if group.manager_id:
+            create_notification(group.manager_id, tr("New task for {team}: {number}", team=group.name, number=task.number),
+                                task.title, tenant_id=ticket.tenant_id, target_type="ticket", target_id=ticket.id,
+                                event_type="incident.task_created")
+        db.session.commit()
+        flash(tr("{number} added for {team}.", number=task.number, team=group.name), "success")
+        return redirect(url_for("ticket_detail", ticket_id=ticket.id) + "#incident-tasks")
+
+    @app.post("/incident/<int:ticket_id>/problem")
+    @roles("agent", "manager", "admin")
+    def incident_create_problem(ticket_id):
+        ticket = tenant_record_or_404(Ticket, ticket_id, lock=True)
+        if ticket.kind != "incident":
+            abort(404)
+        require_ticket_team_access(ticket)
+        record = incident_handling.create_problem(current_user, ticket)
+        db.session.commit()
+        flash(tr("{number} created from {incident}.", number=record.number, incident=ticket.number), "success")
+        return redirect(url_for("enterprise_detail", record_id=record.id))
 
     @app.get("/operational-task/<int:task_id>")
     @login_required

@@ -5,8 +5,8 @@
   <header class="record-toolbar">
     <div class="record-identity">
       <a class="record-back" href="{{ parent_url }}" aria-label="{{ tr('Back to {number}', number=(parent.number)) }}">‹</a>
-      <span class="record-type-icon" aria-hidden="true">{{ 'C' if task.task_kind == 'change' else ('P' if task.task_kind == 'problem' else 'E') }}</span>
-      <div><strong>{{ tr('Change Task') if task.task_kind == 'change' else (tr('Problem Task') if task.task_kind == 'problem' else tr('Event Task')) }}</strong><small>{{ task.number }}</small></div>
+      <span class="record-type-icon" aria-hidden="true">{{ {'change': 'C', 'problem': 'P', 'incident': 'I'}.get(task.task_kind, 'E') }}</span>
+      <div><strong>{{ tr('Change Task') if task.task_kind == 'change' else (tr('Problem Task') if task.task_kind == 'problem' else (tr('Incident Task') if task.task_kind == 'incident' else tr('Event Task'))) }}</strong><small>{{ task.number }}</small></div>
     </div>
     <div class="record-actions">
       <span class="record-updated">{{ tr('Updated {value}', value=((task.updated_at|usertime('%b %d, %H:%M')))) }}</span>

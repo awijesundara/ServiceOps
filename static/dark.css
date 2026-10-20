@@ -249,6 +249,20 @@ html.theme-dark .approval-group-list li.muted{border:0;background:none}
 html.theme-dark .approval-group-list li .link-button:hover{background:#1b2125}
 html.theme-dark :where(a){color:var(--dk-accent-strong)}
 html.theme-dark :where(a:hover){color:var(--dk-accent)}
+html.theme-dark .incident-family{border:1px solid var(--line);border-left:4px solid var(--dk-accent);background:var(--white)}
+html.theme-dark .incident-family a{color:var(--dk-accent-strong)}
+html.theme-dark .record-more-panel{background:var(--white);border:1px solid var(--line);box-shadow:var(--shadow)}
+html.theme-dark .record-more-panel a,html.theme-dark .record-more-panel button{border:0;background:none;color:var(--ink)}
+html.theme-dark .record-more-panel a:hover,html.theme-dark .record-more-panel button:hover{background:var(--bg)}
+html.theme-dark .incident-templates>span{color:var(--muted)}
+html.theme-dark .incident-templates a{border:1px solid var(--line);background:var(--white);color:var(--ink)}
+html.theme-dark .incident-templates a:hover{border-color:var(--dk-accent);color:var(--dk-accent-strong)}
+html.theme-dark .incident-admin summary small{color:var(--muted)}
+html.theme-dark .similar-incidents{border:1px solid var(--line);border-left:4px solid var(--dk-accent);background:var(--white)}
+html.theme-dark .similar-incidents li{border-top:1px solid var(--line)}
+html.theme-dark .similar-incidents small{color:var(--muted)}
+html.theme-dark .similar-incidents .link-button{color:var(--dk-accent-strong)}
+html.theme-dark .comment-copy{color:var(--muted)}
 /* enterprise.css */
 html.theme-dark .module-card{color:inherit}
 html.theme-dark .module-card:hover{border-color:#365750}

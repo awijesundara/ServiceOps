@@ -19,10 +19,12 @@
   </header>
   {% include "_state_track.html" %}
   <form method="post" id="incident-create-form" class="record-form" data-track-dirty>
+    {% if incident_templates %}<nav class="incident-templates" aria-label="{{ tr('Start from a template') }}"><span>{{ tr('Start from a template') }}</span>{% for template in incident_templates %}<a href="{{ url_for('ticket_new', kind='incident', template=template.id) }}">{{ template.name }}</a>{% endfor %}</nav>{% endif %}
+    {% if prefill_source == 'template' %}<div class="flash">{{ tr('Filled in from a template. Check every field before creating the incident.') }}</div>{% endif %}
     <div class="record-grid">
       <label><span>{{ tr('Number') }}</span><input value="Assigned on creation" disabled></label>
       <label><span>{{ tr('Contact type') }}</span><select name="contact_type">{% for opt in ['Self-service','Phone','Email','Chat','Monitoring'] %}<option {% if (f and f.get('contact_type')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
-      <label class="required-field"><span>{{ tr('Caller') }}</span><output class="readonly-field">{{ user_link(current_user) }} · {{ current_user.email }}</output></label>
+      {% if can_choose_caller %}<label class="required-field"><span>{{ tr('Caller') }}<span class="info-tip" tabindex="0" data-tip="{{ tr('The person reporting the incident. You are recorded as the one who opened it.') }}">i</span></span><div class="lookup" data-lookup-url="{{ url_for('lookup_users') }}"><input type="text" name="caller_name" class="lookup-search" placeholder="{{ tr('You, or search people by name or email…') }}" autocomplete="off" value="{{ f.get('caller_name', '') if f else '' }}"><input type="hidden" name="caller_id" value="{{ f.get('caller_id', '') if f else '' }}"><div class="lookup-results" hidden></div></div></label>{% else %}<label class="required-field"><span>{{ tr('Caller') }}</span><output class="readonly-field">{{ user_link(current_user) }} · {{ current_user.email }}</output></label>{% endif %}
       <label><span>{{ tr('State') }}</span><input value="New" disabled></label>
       <label class="required-field"><span>{{ tr('Category') }}</span>{{ category_field(f.get('category') if f else None, required=True) }}</label>
       <label class="required-field"><span>{{ tr('Impact') }}</span><select name="impact" required>{% for value in ['Critical','High','Medium','Low'] %}<option {% if (f and f.get('impact')==value) or (not f and value=='Medium') %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
@@ -32,10 +34,11 @@
       <label><span>{{ tr('Priority') }}<span class="info-tip" tabindex="0" data-tip="Priority is calculated automatically from impact and urgency.">i</span></span><input value="Calculated from impact and urgency" disabled></label>
       <label><span>{{ tr('Configuration item') }}</span><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}"><input type="text" class="lookup-search" placeholder="{{ tr('Search by CI name or serial number…') }}" autocomplete="off"><input type="hidden" name="ci_id" data-owning-team-field><div class="lookup-results" hidden></div></div></label>
       <label><span>{{ tr('Parent incident') }}</span><div class="lookup" data-lookup-url="{{ url_for('lookup_records', kind='incident') }}"><input type="text" name="parent_incident" class="lookup-search" placeholder="{{ tr('Optional · search INC number or title…') }}" autocomplete="off" value="{{ request.form.get('parent_incident', '') }}"><div class="lookup-results" hidden></div></div></label>
-      <label class="required-field"><span>{{ tr('Assignment group') }}</span><select name="group_id" required><option value="">{{ tr('Select an IT team') }}</option>{% for team in teams %}<option value="{{ team.id }}" {% if f and f.get('group_id')==team.id|string %}selected{% endif %}>{{ team.name }}</option>{% endfor %}</select></label>
+      <label class="required-field"><span>{{ tr('Assignment group') }}</span><select name="group_id" required><option value="">{{ tr('Select an IT team') }}</option><option value="auto" {% if f and f.get('group_id')=='auto' %}selected{% endif %}>{{ tr('Automatic (assignment rules)') }}</option>{% for team in teams %}<option value="{{ team.id }}" {% if f and f.get('group_id')==team.id|string %}selected{% endif %}>{{ team.name }}</option>{% endfor %}</select></label>
       <label><span>{{ tr('Notify') }}</span><select name="notify">{% for opt in ['Email','In-app only','Do not notify'] %}<option {% if (f and f.get('notify')==opt) %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></label>
       <label><span>{{ tr('Assigned to') }}</span><input value="Unassigned until the owning team accepts it" disabled></label>
     </div>
+    <aside class="similar-incidents" data-similar-incidents="{{ url_for('lookup_similar_incidents') }}" hidden aria-live="polite"><strong>{{ tr('Similar open incidents') }}</strong><p class="muted">{{ tr('If one of these is the same issue, set it as the parent instead of logging it twice.') }}</p><ul></ul></aside>
     <div class="record-long-fields">
       <label class="required-field"><span>{{ tr('Short description') }}</span><input name="title" maxlength="180" required autofocus value="{{ f.get('title','') if f else '' }}"></label>
       <label class="required-field"><span>{{ tr('Description') }}</span><textarea name="description" rows="7" required>{{ f.get('description','') if f else '' }}</textarea></label>
@@ -50,7 +53,9 @@
 {% if change_freeze_windows %}
 <div class="flash warning"><strong>{{ trn(change_freeze_windows|length, 'Active or upcoming change freeze', 'Active or upcoming change freezes') }}</strong>{{ tr("Standard and Normal changes can't be scheduled inside these windows — only Emergency changes are exempt.") }}<ul>{% for window in change_freeze_windows %}<li>{{ window.title }}: {{ window.starts_at|l10n_strftime('%b %d, %Y %H:%M') }} – {{ window.ends_at|l10n_strftime('%b %d, %Y %H:%M') }}{% if window.reason %} — {{ window.reason }}{% endif %}</li>{% endfor %}</ul></div>
 {% endif %}
+{% if prefill_source == 'incident' %}<div class="flash">{{ tr('Filled in from incident {number}, which will be linked to this change.', number=(form.get('from_incident') if form else '')) }}</div>{% endif %}
 <form method="post" class="panel form-grid" data-track-dirty>
+  {% if form and form.get('from_incident') %}<input type="hidden" name="from_incident" value="{{ form.get('from_incident') }}">{% endif %}
   {% if rt_link_enabled %}
   <div class="wide rt-link-field" data-rt-preview-url="{{ url_for('change_rt_preview') }}">
     <label for="rt-ticket-id"><span>{{ tr('RT ticket (optional)') }}</span></label>
@@ -81,4 +86,5 @@
   <div class="wide actions"><a class="button" href="{{ url_for('tickets', kind=kind) }}">{{ tr('Cancel') }}</a><button class="primary">{{ tr('Create {kind}', kind=(tr_value(kind))) }}</button></div>
 </form>
 {% endif %}
+<script src="{{ url_for('static', filename='incident.js', v=asset_version) }}" defer></script>
 {% endblock %}

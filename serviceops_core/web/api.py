@@ -73,7 +73,7 @@ from app import (
     user_can_manage_ticket,
     visible_ticket_query,
 )
-from serviceops_core import mcp as mcp_protocol
+from serviceops_core import incident_handling, mcp as mcp_protocol
 from serviceops_core.mobile_pagination import paginate
 from serviceops_core.ci_class_policy import ci_class_action_allowed, restrict_ci_query_to_readable_classes
 from serviceops_core.mcp_tools import TOOLS as MCP_TOOLS
@@ -491,7 +491,7 @@ def register(app):
                                     "schema": {"type": "string"}}],
                     "get": {
                         "summary": "Get a visible ticket",
-                        "description": "Requires tickets:read and ticket visibility. Includes details and configuration_items using the versioned TicketDetails schema; list responses remain compact.",
+                        "description": "Requires tickets:read and ticket visibility. Includes details and configuration_items using the versioned TicketDetails schema; list responses remain compact. Incidents also carry caller, opened_by, hold_reason, reassignment_count, reopen_count and parent_incident.",
                     },
                     "patch": {
                         "summary": "Update an authorized owning-team ticket",
@@ -502,7 +502,9 @@ def register(app):
                             "closure_subcategory (incidents; the categorisation at closure, "
                             "kept separate from the logging category). Resolution fields are "
                             "applied before the state change; when omitted on resolution the "
-                            "closure category defaults to the logging category."
+                            "closure category defaults to the logging category. hold_reason "
+                            "(Awaiting caller, vendor, change or problem) says why a Pending "
+                            "incident waits; it defaults to Awaiting caller."
                         ),
                         "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}],
                     },
@@ -1428,7 +1430,8 @@ def register(app):
         body = request.get_json(silent=True)
         if not isinstance(body, dict) or not body:
             abort(400, description=tr("A non-empty JSON object is required."))
-        allowed = {"state", "priority", "assigned_to_id", "resolution_notes", "closure_category", "closure_subcategory"}
+        allowed = {"state", "priority", "assigned_to_id", "resolution_notes", "closure_category", "closure_subcategory",
+                   "hold_reason"}
         unknown = set(body) - allowed
         if unknown:
             abort(400, description=tr("Unknown fields: {unknown}.", unknown=', '.join(sorted(unknown))))
@@ -1454,8 +1457,12 @@ def register(app):
             ticket.closure_subcategory = normalize_ticket_subcategory(
                 g.api_user.tenant_id, ticket.closure_category, str(body["closure_subcategory"] or "")[:80],
             ) or None
-        if "state" in body:
-            transition_ticket(ticket, str(body["state"]))
+        if "state" in body or "hold_reason" in body:
+            # A Pending incident says why it waits; without hold_reason it is "Awaiting caller".
+            hold_reason = str(body["hold_reason"]) if body.get("hold_reason") else None
+            if hold_reason and (ticket.kind != "incident" or body.get("state", ticket.state) != "Pending"):
+                abort(400, description=tr("hold_reason applies only to a Pending incident."))
+            transition_ticket(ticket, str(body.get("state", ticket.state)), hold_reason=hold_reason)
         if "priority" in body:
             priority = str(body["priority"])
             if priority not in ("P1", "P2", "P3", "P4"):
@@ -1984,6 +1991,7 @@ def register(app):
             abort(400, description=tr("parent_id must be an integer comment identifier."))
         row = post_ticket_comment(ticket, g.api_user, body, parent_id=parent_id)
         log_history("ticket", ticket.id, "Comment added", details=f"Mobile app · {g.api_user.name}")
+        incident_handling.caller_replied(ticket, g.api_user)
         document = {"data": {"id": row.id, "body": row.body, "author": g.api_user.name,
                               "source_platform": row.source_platform, "ai_assisted": row.ai_assisted,
                               "created_at": row.created_at.isoformat()}}

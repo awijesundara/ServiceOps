@@ -778,6 +778,35 @@ def register(app):
             "classes": classes, "environments": environments,
         })
 
+    @app.get("/internal/lookup/users")
+    @login_required
+    def lookup_users():
+        """Active people in the tenant, for choosing an incident's caller (agents only)."""
+        if not role_at_least(current_user.effective_role, "agent"):
+            abort(403)
+        q = request.args.get("q", "").strip()
+        if len(q) < 2:
+            return jsonify([])
+        pattern = f"%{escape_like(q)}%"
+        rows = User.query.filter(
+            User.tenant_id == current_user.tenant_id, User.active.is_(True),
+            db.or_(User.name.ilike(pattern, escape="\\"), User.username.ilike(pattern, escape="\\"),
+                   User.email.ilike(pattern, escape="\\")),
+        ).order_by(User.name).limit(10).all()
+        return jsonify([{"value": row.id, "label": f"{row.name} ({row.username})",
+                         "description": " · ".join(filter(None, [row.email, row.department]))} for row in rows])
+
+    @app.get("/internal/lookup/similar-incidents")
+    @login_required
+    def lookup_similar_incidents():
+        """Open incidents with a similar short description, so a duplicate can be linked instead."""
+        from serviceops_core import incident_handling
+        exclude = request.args.get("exclude", type=int)
+        rows = incident_handling.similar(current_user, request.args.get("q", "")[:180], exclude_id=exclude)
+        return jsonify([{"value": row.number, "label": f"{row.number} — {row.title}",
+                         "description": f"{row.state} · {row.priority}",
+                         "url": url_for("ticket_detail", ticket_id=row.id)} for row in rows])
+
     @app.get("/internal/lookup/records")
     @login_required
     def lookup_records():
@@ -942,7 +971,7 @@ def register(app):
                 if isinstance(parent, EnterpriseRecord) and not visible_enterprise_record_query(current_user).filter(EnterpriseRecord.id == parent.id).first():
                     continue
                 results.append({
-                    "type": "Change task" if row.task_kind == "change" else "Problem task",
+                    "type": {"change": "Change task", "incident": "Incident task", "event": "Event task"}.get(row.task_kind, "Problem task"),
                     "label": f"{row.number} · {row.title}",
                     "url": record_url(parent), "meta": row.state,
                 })

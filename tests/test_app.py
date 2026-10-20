@@ -4755,8 +4755,8 @@ def test_major_incident_remains_inc_and_parent_state_sync_is_audited(client, app
         "communications": "Updates every 30 minutes.",
     }).status_code == 302
     assert client.post(f"/ticket/{parent_id}", data={
-        "action": "update", "state": "Pending", "priority": "P1",
-        "assignee_id": "",
+        "action": "update", "state": "Pending", "hold_reason": "Awaiting vendor",
+        "priority": "P1", "assignee_id": "",
     }).status_code == 302
     with app.app_context():
         parent = db.session.get(Ticket, parent_id)
@@ -4764,6 +4764,7 @@ def test_major_incident_remains_inc_and_parent_state_sync_is_audited(client, app
         assert parent.number.startswith("INC")
         assert parent.major_incident_profile.status == "Accepted"
         assert child.state == "Pending"
+        assert child.hold_reason == parent.hold_reason == "Awaiting vendor"
         assert TaskHistory.query.filter_by(
             target_type="ticket", target_id=child_id,
             event="State synchronized from parent incident",

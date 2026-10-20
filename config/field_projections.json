@@ -5,28 +5,28 @@
       "allowed_fields": [
         "id", "number", "type", "title", "description", "state", "priority",
         "category", "subcategory", "closure_category", "closure_subcategory",
-          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items"
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items", "caller", "opened_by", "hold_reason", "parent_incident", "reassignment_count", "reopen_count"
       ],
       "audiences": {
         "requester": [
           "id", "number", "type", "title", "description", "state", "priority",
           "category", "subcategory", "closure_category", "closure_subcategory",
-          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "details", "configuration_items"
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "details", "configuration_items", "caller", "opened_by", "hold_reason", "parent_incident"
         ],
         "agent": [
           "id", "number", "type", "title", "description", "state", "priority",
           "category", "subcategory", "closure_category", "closure_subcategory",
-          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items"
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items", "caller", "opened_by", "hold_reason", "parent_incident", "reassignment_count", "reopen_count"
         ],
         "manager": [
           "id", "number", "type", "title", "description", "state", "priority",
           "category", "subcategory", "closure_category", "closure_subcategory",
-          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items"
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items", "caller", "opened_by", "hold_reason", "parent_incident", "reassignment_count", "reopen_count"
         ],
         "admin": [
           "id", "number", "type", "title", "description", "state", "priority",
           "category", "subcategory", "closure_category", "closure_subcategory",
-          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items"
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items", "caller", "opened_by", "hold_reason", "parent_incident", "reassignment_count", "reopen_count"
         ]
       }
     },
