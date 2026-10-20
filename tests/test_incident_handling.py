@@ -311,10 +311,13 @@ def test_assignment_rules_admin_crud_order_and_validation(client, app):
 def test_automatic_assignment_uses_rules_then_ci_group(client, app):
     login(client)
     windows, core_apps = group_id(app, "Windows"), group_id(app)
+    # Without an active rule the form does not offer "Automatic".
+    assert 'value="auto"' not in client.get("/tickets/new/incident").get_data(as_text=True)
     client.post("/admin/incident-handling", data={"action": "save_rule", "name": "Hardware to Windows",
                                                  "group_id": windows, "category": "Hardware"})
     client.post("/admin/incident-handling", data={"action": "save_rule", "name": "Inactive", "group_id": core_apps,
                                                  "category": "Hardware", "active": "0"})
+    assert 'value="auto"' in client.get("/tickets/new/incident").get_data(as_text=True)
     _, routed_id, _ = _incident(client, app, "Broken keyboard", category="Hardware", group_id="auto")
     with app.app_context():
         assert ticket_owning_group(db.session.get(Ticket, routed_id)).id == windows

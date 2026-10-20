@@ -27,7 +27,7 @@
       <form method="post" data-confirm="{{ tr('Delete the rule {name}?', name=rule.name) }}"><input type="hidden" name="action" value="delete_rule"><input type="hidden" name="rule_id" value="{{ rule.id }}"><button class="button">{{ tr('Delete') }}</button></form>
     </div>
   </details>
-  {% else %}<p class="muted">{{ tr('No assignment rules yet. Incidents created with “Automatic” use the configuration item’s support group.') }}</p>{% endfor %}
+  {% else %}<p class="muted">{{ tr('No assignment rules yet. Add one to offer “Automatic” as the assignment group on the new incident form.') }}</p>{% endfor %}
   <details class="gov-tab-new"><summary>{{ tr('New rule') }}</summary>
     <form method="post" class="form-grid"><input type="hidden" name="action" value="save_rule">{{ rule_fields() }}<div class="wide actions"><button class="primary">{{ tr('Add rule') }}</button></div></form>
   </details>

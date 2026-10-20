@@ -515,6 +515,8 @@ def register(app):
                 incident_templates=incident_handling.templates(current_user.tenant_id, active_only=True)
                 if kind == "incident" else [],
                 can_choose_caller=kind == "incident" and role_at_least(current_user.effective_role, "agent"),
+                # "Automatic" is offered only once there is an active rule to apply.
+                auto_routing=kind == "incident" and any(rule.active for rule in incident_handling.rules(current_user.tenant_id)),
             ), (400 if error else 200)
 
         if request.method == "POST":

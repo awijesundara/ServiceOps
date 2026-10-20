@@ -7710,7 +7710,7 @@
    "id": "No assignment rule matches this incident. Choose an assignment group."
   },
   {
-   "id": "No assignment rules yet. Incidents created with “Automatic” use the configuration item’s support group."
+   "id": "No assignment rules yet. Add one to offer “Automatic” as the assignment group on the new incident form."
   },
   {
    "id": "No attachments."
