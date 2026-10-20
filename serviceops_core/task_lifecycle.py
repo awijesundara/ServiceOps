@@ -11,6 +11,10 @@ lookup helper live here.
 # reopen. Every "open" count, list and widget excludes exactly these, so the
 # numbers agree everywhere. Rejected is final for changes (it moves nowhere).
 FINISHED_TICKET_STATES = ("Resolved", "Closed", "Cancelled", "Rejected")
+# Decisions and work that no longer count: shown greyed out and in italics
+# wherever they are listed, after what still matters.
+VOID_STATES = frozenset({"No Longer Required", "Superseded", "Cancelled", "Canceled", "Closed Skipped", "Skipped",
+                         "Withdrawn", "Retired"})
 # The same for service requests (REQ).
 FINISHED_REQUEST_STATES = ("Closed Complete", "Closed Incomplete", "Cancelled")
 

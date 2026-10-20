@@ -75,7 +75,7 @@ def test_approval_statuses_in_every_theme(client, app):
                     db.session.commit()
                 page.goto(base + f"/ticket/{ticket_id}?theme={theme}#gov-approvers")  # a real load per theme
                 expect(page.locator("body")).to_have_class(re.compile(f"theme-{theme}"))
-                rows = page.locator("#gov-approvers tbody tr")
+                rows = page.locator("#gov-approvers tbody tr:has(.status-badge)")
                 states = [rows.nth(i).locator(".status-badge").inner_text() for i in range(rows.count())]
                 # Current decisions first, then the superseded round, greyed out.
                 assert states.index("No Longer Required") > max(states.index("Approved"), states.index("Requested"))
@@ -83,6 +83,15 @@ def test_approval_statuses_in_every_theme(client, app):
                 colours = {name: page.locator(f"#gov-approvers .status-badge.{name}").first.evaluate(
                     "el => getComputedStyle(el).backgroundColor") for name in ("approved", "requested", "no-longer-required")}
                 assert len(set(colours.values())) == 3, (theme, colours)
+                # Void decisions read as void without colour: italic and dashed; their row is italic too.
+                void = page.locator("#gov-approvers .status-badge.no-longer-required").first
+                assert void.evaluate("el => getComputedStyle(el).fontStyle") == "italic"
+                assert void.evaluate("el => getComputedStyle(el).outlineStyle") == "dashed"
+                assert page.locator("#gov-approvers tr.status-row-inactive td").first.evaluate(
+                    "el => getComputedStyle(el).fontStyle") == "italic"
+                expect(page.locator("#gov-approvers tr.status-round")).to_contain_text("Earlier approval round")
+                live = page.locator("#gov-approvers .status-badge.requested").first
+                assert live.evaluate("el => getComputedStyle(el).fontStyle") == "normal"
                 axe = os.getenv("AXE_CORE_PATH")
                 assert axe and os.path.isfile(axe), "AXE_CORE_PATH required for accessibility acceptance"
                 page.evaluate(open(axe, encoding="utf-8").read())

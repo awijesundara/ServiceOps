@@ -389,12 +389,13 @@ html.theme-dark .status-badge.in-progress,html.theme-dark .status-badge.open,htm
 html.theme-dark .status-badge.pending,html.theme-dark .status-badge.awaiting-approval,html.theme-dark .status-badge.degraded,html.theme-dark .status-badge.maintenance,html.theme-dark .status-badge.requested,html.theme-dark .status-badge.assessed,html.theme-dark .status-badge.waiting,html.theme-dark .status-badge.retry,html.theme-dark .status-badge.rate-limited{background:#281d02;color:#ce9a53}
 html.theme-dark .status-badge.approved,html.theme-dark .status-badge.resolved,html.theme-dark .status-badge.completed,html.theme-dark .status-badge.closed-complete,html.theme-dark .status-badge.active,html.theme-dark .status-badge.done,html.theme-dark .status-badge.accepted,html.theme-dark .status-badge.delivered,html.theme-dark .status-badge.implemented,html.theme-dark .status-badge.published,html.theme-dark .status-badge.operational,html.theme-dark .status-badge.ok,html.theme-dark .status-badge.solved{background:#14251a;color:#74bf8b}
 html.theme-dark .status-badge.rejected,html.theme-dark .status-badge.closed-incomplete,html.theme-dark .status-badge.failed,html.theme-dark .status-badge.dead,html.theme-dark .status-badge.down{background:#311e1c;color:#f38a7c}
-html.theme-dark .status-badge.superseded,html.theme-dark .status-badge.inactive,html.theme-dark .status-badge.no-longer-required,html.theme-dark .status-badge.cancelled,html.theme-dark .status-badge.canceled,html.theme-dark .status-badge.closed-skipped,html.theme-dark .status-badge.skipped,html.theme-dark .status-badge.retired,html.theme-dark .status-badge.withdrawn{background:#1a2024;color:#a6b2bb}
-html.theme-dark .status-badge.not-requested,html.theme-dark .status-badge.gate-pending{background:#181d22;color:#9cadc6;outline:1px solid #353941}
+html.theme-dark .status-badge.superseded,html.theme-dark .status-badge.inactive,html.theme-dark .status-badge.no-longer-required,html.theme-dark .status-badge.cancelled,html.theme-dark .status-badge.canceled,html.theme-dark .status-badge.closed-skipped,html.theme-dark .status-badge.skipped,html.theme-dark .status-badge.retired,html.theme-dark .status-badge.withdrawn{background:#171c21;color:#a6b2bb;outline:1px dashed #575f65}
+html.theme-dark .status-badge.not-requested,html.theme-dark .status-badge.gate-pending{background:#181d22;color:#9cadc6;outline:1px dotted #5e697a}
 html.theme-dark .status-badge.closed{background:#3f5157;color:#fff}
 html.theme-dark .status-row-inactive td{color:var(--muted)}
 html.theme-dark .status-row-inactive td a{color:inherit}
 html.theme-dark .status-row-inactive:not(tr){color:var(--muted)}
+html.theme-dark .status-round th{border-top:2px dashed var(--line);background:none;color:var(--muted)}
 html.theme-dark .approval-history-toggle{border:1px solid var(--line);background:#182128;color:var(--dk-accent-strong)}
 html.theme-dark .approval-history-toggle:hover{background:#151a1f;border-color:var(--dk-accent)}
 html.theme-dark .approval-history-toggle:focus-visible{outline:2px solid var(--dk-accent)}

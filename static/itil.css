@@ -31,14 +31,15 @@ body[data-tour-route="tickets"] .task-list :is(th,td):is(:nth-child(2),:nth-chil
 .status-badge.pending,.status-badge.awaiting-approval,.status-badge.degraded,.status-badge.maintenance,.status-badge.requested,.status-badge.assessed,.status-badge.waiting,.status-badge.retry,.status-badge.rate-limited{background:#fdecc8;color:#8a5a00}
 .status-badge.approved,.status-badge.resolved,.status-badge.completed,.status-badge.closed-complete,.status-badge.active,.status-badge.done,.status-badge.accepted,.status-badge.delivered,.status-badge.implemented,.status-badge.published,.status-badge.operational,.status-badge.ok,.status-badge.solved{background:#dcf2e3;color:#1c6b3c}
 .status-badge.rejected,.status-badge.closed-incomplete,.status-badge.failed,.status-badge.dead,.status-badge.down{background:#fbe0dd;color:#9d2a22}
-/* Decisions or work that no longer count: shown greyed out, never as an outcome. */
-.status-badge.superseded,.status-badge.inactive,.status-badge.no-longer-required,.status-badge.cancelled,.status-badge.canceled,.status-badge.closed-skipped,.status-badge.skipped,.status-badge.retired,.status-badge.withdrawn{background:#ecedee;color:#4a545c}
+/* Decisions or work that no longer count: grey, italic and dashed, never mistaken for an outcome. */
+.status-badge.superseded,.status-badge.inactive,.status-badge.no-longer-required,.status-badge.cancelled,.status-badge.canceled,.status-badge.closed-skipped,.status-badge.skipped,.status-badge.retired,.status-badge.withdrawn{background:#f1f2f3;color:#4a545c;font-style:italic;font-weight:600;outline:1px dashed #a9b2b8;outline-offset:-1px}
 /* Not reached yet: a later approval stage waiting for an earlier one. */
-.status-badge.not-requested,.status-badge.gate-pending{background:#eef1f6;color:#4b5a70;outline:1px solid #d7dde7;outline-offset:-1px}
+.status-badge.not-requested,.status-badge.gate-pending{background:#eef1f6;color:#4b5a70;outline:1px dotted #9aa6b8;outline-offset:-1px}
 .status-badge.closed{background:#3f5157;color:#fff}
-.status-row-inactive td{color:var(--muted)}
+.status-row-inactive td{color:var(--muted);font-style:italic}
 .status-row-inactive td a{color:inherit}
-.status-row-inactive:not(tr){color:var(--muted)}
+.status-row-inactive:not(tr){color:var(--muted);font-style:italic}
+.status-round th{padding:12px 12px 6px;border-top:2px dashed var(--line);background:none;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.04em;text-align:start;text-transform:none}
 .approval-history-toggle{display:inline-flex;align-items:center;gap:4px;margin-top:6px;padding:3px 10px 3px 6px;border:1px solid var(--line);border-radius:99px;background:#fff;color:var(--green-dark);font-size:12px;font-weight:600;cursor:pointer}.approval-history-toggle:hover{background:#eef7f5;border-color:var(--green)}.approval-history-toggle:focus-visible{outline:2px solid var(--green);outline-offset:2px}.approval-history-toggle .icon{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.2;transition:transform .15s ease}.approval-history-toggle[aria-expanded=true] .icon{transform:rotate(90deg)}.reduced-motion .approval-history-toggle .icon{transition:none}.approval-target{display:grid;gap:1px;text-decoration:none}.approval-target>span{font-weight:700;color:var(--green-dark)}.approval-target>small{color:var(--muted);max-width:280px}.approval-target:hover>span{text-decoration:underline}
 .approval-history-row td{padding:0 12px 14px}
 .approval-history-table{width:100%;border-collapse:collapse;background:#fafcfc;border:1px solid var(--line);border-radius:6px;overflow:hidden}

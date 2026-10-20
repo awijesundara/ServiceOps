@@ -7717,6 +7717,8 @@ def create_app(test_config=None):
     # elsewhere they use timed checks without a failing request.
     app.jinja_env.globals["live_events_enabled"] = env_bool("LIVE_EVENTS_ENABLED")
     app.jinja_env.globals["csp_nonce"] = csp_nonce
+    from serviceops_core.task_lifecycle import VOID_STATES
+    app.jinja_env.globals["void_state"] = lambda value: value in VOID_STATES
     app.jinja_env.globals["attachment_supported_types"] = attachment_supported_types
     app.jinja_env.globals["can_delete_attachment"] = lambda attachment: user_can_delete_attachment(current_user, attachment)
     app.jinja_env.filters["css_color"] = css_color

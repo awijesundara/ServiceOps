@@ -197,7 +197,7 @@
 <section class="panel table-panel" id="incident-tasks">
   <header class="section-heading"><div><h2>{{ tr('Incident tasks') }}</h2><p>{{ tr('Work other teams do for this incident. Required tasks must be finished before it can be resolved.') }}</p></div></header>
   <div class="task-list-scroll"><table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Short description') }}</th><th>{{ tr('Assignment group') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Due') }}</th><th>{{ tr('Required') }}</th></tr></thead><tbody>
-    {% for task in incident_tasks %}<tr><td><a href="{{ url_for('operational_task_detail', task_id=task.id) }}">{{ task.number }}</a></td><td>{{ task.title }}</td><td>{{ task.assignment_group.name }}</td><td>{{ status_badge(task.state) }}</td><td>{{ (task.planned_end|usertime('%b %d, %H:%M')) if task.planned_end else '—' }}</td><td>{{ tr('Yes') if task.required else tr('No') }}</td></tr>
+    {% for task in incident_tasks %}<tr{% if void_state(task.state) %} class="status-row-inactive"{% endif %}><td><a href="{{ url_for('operational_task_detail', task_id=task.id) }}">{{ task.number }}</a></td><td>{{ task.title }}</td><td>{{ task.assignment_group.name }}</td><td>{{ status_badge(task.state) }}</td><td>{{ (task.planned_end|usertime('%b %d, %H:%M')) if task.planned_end else '—' }}</td><td>{{ tr('Yes') if task.required else tr('No') }}</td></tr>
     {% else %}<tr><td colspan="6" class="empty">{{ tr('No incident tasks.') }}</td></tr>{% endfor %}
   </tbody></table></div>
   {% if can_manage_ticket %}

@@ -53,7 +53,7 @@
   <header class="section-heading"><div><h2>{{ tr('Approvals') }}</h2></div></header>
   {% for chain in chains %}<div class="chain"><strong>{{ chain.name }}</strong> {{ status_badge(chain.state) }}
     {% for gate in chain.gates %}<div class="gate"><b>{{ gate.sequence }}. {{ gate.name }}</b> {{ status_badge(gate.state, 'gate') }}
-      {% for vote in gate.votes %}<div class="vote{% if vote.state in ('No Longer Required', 'Superseded') %} status-row-inactive{% endif %}">{{ user_link(vote.approver) }} {{ status_badge(vote.state) }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}"><input name="comments" placeholder="{{ tr('Comments') }}"><button name="decision" value="Rejected">{{ tr('Reject') }}</button><button class="primary" name="decision" value="Approved">{{ tr('Approve') }}</button></form>{% endif %}</div>{% endfor %}
+      {% for vote in gate.votes %}<div class="vote{% if void_state(vote.state) %} status-row-inactive{% endif %}">{{ user_link(vote.approver) }} {{ status_badge(vote.state) }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}"><input name="comments" placeholder="{{ tr('Comments') }}"><button name="decision" value="Rejected">{{ tr('Reject') }}</button><button class="primary" name="decision" value="Approved">{{ tr('Approve') }}</button></form>{% endif %}</div>{% endfor %}
     </div>{% endfor %}
   </div>{% else %}<p class="muted">{{ tr('No approval chain required.') }}</p>{% endfor %}
 </section>

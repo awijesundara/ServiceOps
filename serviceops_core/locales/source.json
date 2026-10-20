@@ -2175,6 +2175,9 @@
    "id": "Cancel sign-in"
   },
   {
+   "id": "Canceled"
+  },
+  {
    "id": "Cancellation requested; finishing the current batch safely.",
    "javascript": true
   },
@@ -4526,6 +4529,9 @@
   },
   {
    "id": "Each team has its own capacity and members."
+  },
+  {
+   "id": "Earlier approval round, replaced after a material change: {name}"
   },
   {
    "id": "Edit",
@@ -12637,6 +12643,9 @@
    "id": "Skip to main content"
   },
   {
+   "id": "Skipped"
+  },
+  {
    "id": "Skipped when it repeats earlier approvers"
   },
   {
@@ -15300,6 +15309,9 @@
   },
   {
    "id": "Withdraw {number}"
+  },
+  {
+   "id": "Withdrawn"
   },
   {
    "id": "Withdrawn by {name}: {reason}"

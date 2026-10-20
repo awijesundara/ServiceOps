@@ -330,7 +330,7 @@
   <div class="gov-tab-condition">{{ tr('Change request') }} = <b>{{ ticket.number }}</b></div>
   <header class="section-heading"><div><h2>{{ tr('Approvers') }}</h2></div><span>{{ tr('{approver_votes} votes', approver_votes=(approver_votes|length)) }}</span></header>
   <div class="task-list-scroll"><table><thead><tr><th>{{ tr('State') }}</th><th>{{ tr('Approver') }}</th><th>{{ tr('Gate') }}</th><th>{{ tr('Comments') }}</th><th>{{ tr('Created') }}</th></tr></thead><tbody>
-    {% for chain, gate, vote in approver_votes %}<tr{% if vote.state in ('No Longer Required', 'Superseded') %} class="status-row-inactive"{% endif %}>
+    {% for chain, gate, vote in approver_votes %}{% if loop.changed(chain.id) and chain.state == 'Superseded' %}<tr class="status-round"><th colspan="5" scope="rowgroup">{{ tr('Earlier approval round, replaced after a material change: {name}', name=chain.name) }}</th></tr>{% endif %}<tr{% if void_state(vote.state) %} class="status-row-inactive"{% endif %}>
       <td>{{ status_badge(vote.state) }}</td>
       <td>{{ user_link(vote.approver) }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}" class="approval-actions"><input name="comments" placeholder="{{ tr('Decision comments') }}"><button name="decision" value="Rejected">{{ tr('Reject') }}</button><button class="primary" name="decision" value="Approved">{{ tr('Approve') }}</button></form>{% endif %}</td>
       <td>{{ gate.sequence }}. {{ gate.name }}</td>
@@ -344,7 +344,7 @@
   <div class="gov-tab-condition">{{ tr('Change request') }} = <b>{{ ticket.number }}</b></div>
   <header class="section-heading"><div><h2>{{ tr('Change tasks') }}</h2></div><span>{{ tr('{work_tasks} tasks', work_tasks=(work_tasks|length)) }}</span></header>
   <div class="task-list-scroll"><table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Type') }}</th><th>{{ tr('Title') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Assignment group') }}</th><th>{{ tr('Assigned to') }}</th><th>{{ tr('Planned window') }}</th><th>{{ tr('Required') }}</th></tr></thead><tbody>
-    {% for task in work_tasks %}<tr>
+    {% for task in work_tasks %}<tr{% if void_state(task.state) %} class="status-row-inactive"{% endif %}>
       <td><a href="{{ url_for('operational_task_detail', task_id=task.id) }}">{{ task.number }}</a></td>
       <td>{{ task.task_type }}</td>
       <td>{{ task.title }}</td>

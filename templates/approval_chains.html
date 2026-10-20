@@ -27,7 +27,7 @@
   </tr>{% if group.history %}<tr class="approval-history-row" data-approval-history="{{ chain.id }}" hidden><td colspan="5">
     <table class="approval-history-table">
       <thead><tr><th>{{ tr('Version') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Stage') }}</th><th>{{ tr('Created') }}</th></tr></thead>
-      <tbody>{% for previous in group.history %}<tr>
+      <tbody>{% for previous in group.history %}<tr{% if void_state(previous.state) %} class="status-row-inactive"{% endif %}>
         <td class="truncate" title="{{ previous.name }}">{{ previous.name }}</td>
         <td>{{ status_badge(previous.state) }}</td>
         <td>{{ previous.current_stage }} / {{ previous.gates|length }}</td>

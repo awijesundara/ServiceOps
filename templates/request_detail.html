@@ -18,7 +18,7 @@
 <section class="panel table-panel">
   <header class="section-heading"><div><h2>{{ tr('Requested Items (RITM)') }}</h2></div><span>{{ tr('{items} items', items=(req.items|length)) }}</span></header>
   <table><thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Item') }}</th><th>{{ tr('Stage') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Due') }}</th><th>{{ tr('Tasks') }}</th></tr></thead><tbody>
-    {% for ritm in req.items %}<tr>
+    {% for ritm in req.items %}<tr{% if void_state(ritm.state) %} class="status-row-inactive"{% endif %}>
       <td><a class="record-number" href="{{ url_for('ritm_detail', ritm_id=ritm.id) }}">{{ ritm.number }}</a></td>
       <td>{{ ritm.item.name }}</td>
       <td>{{ tr_value(ritm.stage) }}</td>
