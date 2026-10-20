@@ -19,7 +19,7 @@
       <button class="button" type="submit" form="incident-record-form">{{ tr('Update') }}</button>
       {% if 'Resolved' in ticket_state_options and ticket.state != 'Resolved' %}
       {#- Submits the record form so resolution notes and closure categorisation are saved with it. #}
-      <button class="primary" type="submit" form="incident-record-form" name="resolve" value="1">{{ tr('Resolve') }}</button>
+      <button class="primary" type="submit" form="incident-record-form" name="resolve" value="1" data-resolve-button>{{ tr('Resolve') }}</button>
       {% endif %}
       {% endif %}
       {% if can_manage_ticket %}<details class="record-more-actions"><summary class="button">{{ tr('Create') }} ▾</summary><div class="record-more-panel">
@@ -85,14 +85,16 @@
     </div>
     {% if can_manage_ticket or ticket.resolution_notes or ticket.closure_category %}
     {% set resolution_locked = not can_manage_ticket %}
-    <div class="record-long-fields" id="resolution-fields">
-      <h3>{{ tr('Resolution') }}</h3>
+    {#- Resolution is filled in when resolving: folded away until then. -#}
+    {% set resolution_open = ticket.state in ('Resolved', 'Closed') or ticket.resolution_notes %}
+    <details class="record-long-fields resolution-fields" id="resolution-fields" data-resolution-fields{% if resolution_open %} open{% endif %}>
+      <summary><h3>{{ tr('Resolution') }}</h3>{% if not resolution_open %} <span class="muted">{{ tr('filled in when you resolve the incident') }}</span>{% endif %}</summary>
       <p class="muted">{{ tr('Categorise by the affected service or configuration item as found at closure. The category above stays as logged, so reporting can compare the two.') }}</p>
       <label><span>{{ tr('Closure category') }}</span>{{ category_field(ticket.closure_category or ticket.category, disabled=resolution_locked, name="closure_category") }}</label>
       <label><span>{{ tr('Closure subcategory') }}</span>{{ subcategory_field(ticket.closure_subcategory if ticket.closure_category else ticket.subcategory, disabled=resolution_locked, name="closure_subcategory", category_name="closure_category") }}</label>
       <label class="required-field"><span>{{ tr('Resolution notes') }}</span><textarea name="resolution_notes" rows="4" placeholder="{{ tr('How service was restored; required to resolve') }}" {% if resolution_locked %}disabled{% endif %}>{{ ticket.resolution_notes or '' }}</textarea></label>
       {% if ticket.resolved_at %}<p class="muted">{{ tr('Resolved {resolved_at}', resolved_at=(ticket.resolved_at|usertime('%b %d, %Y %H:%M'))) }}</p>{% endif %}
-    </div>
+    </details>
     {% endif %}
     {% if can_manage_ticket %}<footer class="record-footer-actions"><button class="primary">{{ tr('Update incident') }}</button></footer>{% endif %}
   </form>
@@ -202,7 +204,7 @@
 
   <section class="panel">
     <header class="section-heading"><div><h2>{{ tr('Service commitments') }}</h2><p>{{ tr('Active SLA definitions and breach targets') }}</p></div></header>
-    {% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ tr_value(sla.stage) }}{% if sla.breached %} · {{ tr('BREACHED') }}{% endif %}</small></div><div><span>{{ tr('Breach target') }}</span><strong>{{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</strong></div></div>{% else %}<p class="muted">{{ tr('No active service commitments.') }}</p>{% endfor %}
+    {% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ (tr('Clock running') if sla.stage == 'In Progress' else tr_value(sla.stage)) }}{% if sla.breached %} · {{ tr('BREACHED') }}{% endif %}</small></div><div><span>{{ tr('Breach target') }}</span><strong>{{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</strong></div></div>{% else %}<p class="muted">{{ tr('No active service commitments.') }}</p>{% endfor %}
   </section>
 </div>
 

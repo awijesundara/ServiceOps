@@ -49,14 +49,15 @@ def test_a_task_for_another_team_asks_that_team_lead_to_approve(client, app):
     ticket_id = _change(client, app, "Cross-team cut-over")
     assert _add_task(client, ticket_id, network_id).status_code == 302
     gates = _running_chain(app, ticket_id)
-    assert ("Network manager approval (change task)", [lead_id]) in gates
+    # The lead decides in the same parallel step as the owning team's manager.
+    assert any("Network manager approval (change task)" in name and lead_id in ids for name, ids in gates)
     with app.app_context():
         assert db.session.get(Ticket, ticket_id).state == "Awaiting Approval"
         network_task = OperationalTask.query.filter_by(parent_id=ticket_id, assignment_group_id=network_id).one()
         task_id = network_task.id
         owning = [vote for gate in ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket_id,
                                                                  state="Running").one().gates
-                  for vote in gate.votes if gate.name != "Network manager approval (change task)"]
+                  for vote in gate.votes if vote.approver_id != lead_id]
         owning_ids = {(vote.id, vote.approver.username) for vote in owning}
     # The Network implementation task cannot start before its lead has approved.
     client.post("/logout")

@@ -355,8 +355,27 @@ def calendar_names(language):
 _STRFTIME_TOKEN = re.compile(r"%[-#]?[A-Za-z%]")
 
 
+# Languages that write dates as year-month-day with unit characters
+# (2026年10月21日, 2026년 10월 21일) rather than "Oct 21, 2026".
+_CJK_DATE_UNITS = {"ja": ("年", "月", "日"), "zh": ("年", "月", "日"), "ko": ("년 ", "월 ", "일")}
+
+
+def _cjk_date_format(value, fmt, language):
+    units = _CJK_DATE_UNITS.get((language or "").split("-")[0])
+    if not units:
+        return fmt
+    year, month, day = units
+    month_day = f"{value.month}{month}{value.day}{day}"
+    for english, native in (("%B %d, %Y", f"%Y{year}{month_day}"), ("%b %d, %Y", f"%Y{year}{month_day}"),
+                            ("%B %d", month_day), ("%b %d", month_day)):
+        fmt = fmt.replace(english, native)
+    return fmt.replace(f"{day}, ", f"{day.rstrip()} ").replace(f"{day.rstrip()},", day.rstrip())
+
+
 def localized_strftime(value, fmt, language=SOURCE_LANGUAGE):
-    """strftime with month and weekday names from the bundled CLDR calendar."""
+    """strftime with month and weekday names from the bundled CLDR calendar,
+    and the native date order for languages that use one."""
+    fmt = _cjk_date_format(value, fmt, language)
     names = calendar_names(language)
     if not names:
         return value.strftime(fmt)

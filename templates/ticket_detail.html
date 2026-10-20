@@ -156,7 +156,7 @@
 
   <section class="panel">
     <header class="section-heading"><div><h2>{{ tr('Service commitments') }}</h2><p>{{ tr('Active SLA definitions and breach targets') }}</p></div></header>
-    {% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ tr_value(sla.stage) }}{% if sla.breached %} · {{ tr('BREACHED') }}{% endif %}</small></div><div><span>{{ tr('Breach target') }}</span><strong>{{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</strong></div></div>{% else %}<p class="muted">{{ tr('No active service commitments.') }}</p>{% endfor %}
+    {% for sla in slas %}<div class="sla-row"><div><strong>{{ sla.definition.name }}</strong><small>{{ (tr('Clock running') if sla.stage == 'In Progress' else tr_value(sla.stage)) }}{% if sla.breached %} · {{ tr('BREACHED') }}{% endif %}</small></div><div><span>{{ tr('Breach target') }}</span><strong>{{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</strong></div></div>{% else %}<p class="muted">{{ tr('No active service commitments.') }}</p>{% endfor %}
   </section>
 
   <section class="panel">
@@ -237,7 +237,7 @@
     <dt>{{ tr('Revision') }}</dt><dd>v{{ ticket.change_revision.revision if ticket.change_revision else 1 }}</dd>
     <dt>{{ tr('Type') }}</dt><dd>{{ ticket.change_governance.change_type }}</dd>
     <dt>{{ tr('Risk score') }}</dt><dd>{{ ticket.change_governance.risk_score }}{% if ticket.change_governance.risk_score_overridden %} <span class="badge">{{ tr('Overridden') }}{% if ticket.change_governance.risk_score_override_reason %}: {{ ticket.change_governance.risk_score_override_reason }}{% endif %}</span>{% endif %}</dd>
-    <dt>{{ tr('Schedule') }}</dt><dd>{{ (ticket.change_governance.planned_start|usertime('%b %d %H:%M')) if ticket.change_governance.planned_start else tr('Not scheduled') }} → {{ (ticket.change_governance.planned_end|usertime('%b %d %H:%M')) if ticket.change_governance.planned_end else '—' }}</dd>
+    <dt>{{ tr('Schedule') }}</dt><dd>{{ (ticket.change_governance.planned_start|usertime('%b %d, %H:%M')) if ticket.change_governance.planned_start else tr('Not scheduled') }} → {{ (ticket.change_governance.planned_end|usertime('%b %d, %H:%M')) if ticket.change_governance.planned_end else '—' }}</dd>
     <dt>{{ tr('Conflicts and open incidents') }}</dt><dd>{{ ticket.change_governance.conflict_status or tr('Not checked yet') }}</dd>
   </dl>
   <p class="muted">{{ tr("Implementation, test, and backout plans are recorded on the change's first task — see") }} <a href="#gov-change-tasks">{{ tr('Change Tasks') }}</a>.</p>
@@ -336,7 +336,7 @@
       <td>{{ user_link(vote.approver) }}{% if vote.state=='Requested' and vote.approver_id==current_user.id %}<form method="post" action="{{ url_for('approval_vote_decide', vote_id=vote.id) }}" class="approval-actions"><input name="comments" placeholder="{{ tr('Decision comments') }}"><button name="decision" value="Rejected">{{ tr('Reject') }}</button><button class="primary" name="decision" value="Approved">{{ tr('Approve') }}</button></form>{% endif %}</td>
       <td>{{ gate.sequence }}. {{ gate.name }}</td>
       <td>{{ vote.comments or '—' }}</td>
-      <td>{{ (chain.created_at|usertime('%m-%d-%Y %I:%M %p')) }}</td>
+      <td>{{ (chain.created_at|usertime('%b %d, %H:%M')) }}</td>
     </tr>{% else %}<tr><td colspan="5" class="empty">{{ tr('No approval chain on this change.') }}</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
@@ -352,7 +352,7 @@
       <td>{{ status_badge(task.state) }}</td>
       <td>{{ task.assignment_group.name }}</td>
       <td>{{ user_link(task.assignee, tr('Unassigned')) }}</td>
-      <td>{{ (task.planned_start|usertime('%b %d %H:%M')) if task.planned_start else '—' }} → {{ (task.planned_end|usertime('%b %d %H:%M')) if task.planned_end else '—' }}</td>
+      <td>{{ (task.planned_start|usertime('%b %d, %H:%M')) if task.planned_start else '—' }} → {{ (task.planned_end|usertime('%b %d, %H:%M')) if task.planned_end else '—' }}</td>
       <td>{{ tr('Yes') if task.required else tr('No') }}</td>
     </tr>
     {% else %}<tr><td colspan="8" class="empty">{{ tr('No change tasks yet.') }}</td></tr>{% endfor %}
@@ -414,7 +414,7 @@
   <div class="gov-tab-condition">{{ tr('Change request') }} = <b>{{ ticket.number }}</b></div>
   <header class="section-heading"><div><h2>{{ tr('Task SLAs') }}</h2></div></header>
   <div class="task-list-scroll"><table><thead><tr><th>{{ tr('SLA definition') }}</th><th>{{ tr('Stage') }}</th><th>{{ tr('Breach target') }}</th></tr></thead><tbody>
-    {% for sla in slas %}<tr><td>{{ sla.definition.name }}</td><td>{{ tr_value(sla.stage) }}{% if sla.breached %} · {{ tr('BREACHED') }}{% endif %}</td><td>{{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</td></tr>{% else %}<tr><td colspan="3" class="empty">{{ tr('No task SLAs.') }}</td></tr>{% endfor %}
+    {% for sla in slas %}<tr><td>{{ sla.definition.name }}</td><td>{{ (tr('Clock running') if sla.stage == 'In Progress' else tr_value(sla.stage)) }}{% if sla.breached %} · {{ tr('BREACHED') }}{% endif %}</td><td>{{ (sla.breach_at|usertime('%b %d, %H:%M')) }}</td></tr>{% else %}<tr><td colspan="3" class="empty">{{ tr('No task SLAs.') }}</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 

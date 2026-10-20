@@ -6,8 +6,8 @@
   <header class="list-toolbar">
     <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Changes') if kind == 'change' else (tr('Incidents and changes') if kind == 'all' else tr('Incidents')) }}</strong><small>{{ trn(total, '{count} record', '{count} records') }}</small></div></div>
     {% if kind != 'all' %}<a class="primary button" href="{{ url_for('ticket_new', kind=kind) }}">{{ tr('New') }}</a>{% endif %}
-    <a class="button" href="{{ url_for('tickets_export', kind=kind, q=q, filter=raw_filter) }}">⬇ CSV</a>
-    <button type="button" class="button" data-print-page>🖶 {{ tr('Print') }}</button>
+    <a class="button desktop-only" href="{{ url_for('tickets_export', kind=kind, q=q, filter=raw_filter) }}">⬇ CSV</a>
+    <button type="button" class="button desktop-only" data-print-page>🖶 {{ tr('Print') }}</button>
     <form class="list-search">
       <input type="hidden" name="filter" value="{{ raw_filter }}">
       <input name="q" value="{{ q }}" placeholder="{{ tr('Number or short description') }}" aria-label="{{ tr('Search {kind} records', kind=(kind)) }}">
@@ -30,9 +30,10 @@
       <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('tickets', kind=kind, q=q, filter=raw_filter, page=page+1) }}">›</a>
     </nav>
   </header>
+  <nav class="list-views" aria-label="{{ tr('Views') }}">{% for view in quick_views %}<a href="{{ url_for('tickets', kind=kind, q=q or none, filter=view.filter) }}"{% if view.active %} class="active" aria-current="page"{% endif %}>{{ view.label }}</a>{% endfor %}</nav>
   <div class="list-breadcrumb"><span>▽</span> {{ tr('All') }}{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › {{ tr('Search contains “{q}”', q=(q)) }}{% endif %}</div>
   <div class="task-list-scroll">
-    <table class="task-list">
+    <table class="task-list ticket-list-table">
       <thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Opened') }}</th><th>{{ tr('Short description') }}</th><th>{{ tr('Caller') }}</th><th>{{ tr('Priority') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Category') }}</th><th>{{ tr('Assignment group') }}</th><th>{{ tr('Assigned to') }}</th><th>{{ tr('Updated') }}</th></tr></thead>
       <tbody>{% for t in tickets %}<tr{% if void_state(t.state) %} class="status-row-inactive"{% endif %}>
         <td><a class="record-number" href="{{ url_for('ticket_detail', ticket_id=t.id) }}">{{ t.number }}</a></td>

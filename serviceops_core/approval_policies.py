@@ -73,6 +73,10 @@ TEAM_SOURCES = {"request_team_manager", "owning_team_manager", "ci_owner_team_ma
                 "service_coowner_team_managers", "task_team_managers", "line_manager"}
 # Stages that name particular people; one person is never asked twice across them.
 PERSON_SOURCES = TEAM_SOURCES | {"ci_owners"}
+# A change's team and owner assessments run at the same time (a catalog's line
+# manager still decides before the fulfilment team).
+PARALLEL_SOURCES = {"owning_team_manager", "ci_owner_team_managers", "ci_owners", "service_coowner_team_managers",
+                    "task_team_managers"}
 
 
 class ApprovalRouteError(ValueError):
@@ -374,12 +378,32 @@ def build_stages(policy, context, exclude_user_ids=()):
                 mode = "all"  # a team's sole manager (or a CI's sole owner) simply approves
             if stage.source in PERSON_SOURCES and _fold_duplicate(built, name, mode, ids):
                 continue
-            built.append({"name": name, "mode": mode, "approver_ids": sorted(ids), "person_stage": stage.source in PERSON_SOURCES})
+            built.append({"name": name, "mode": mode, "approver_ids": sorted(ids), "person_stage": stage.source in PERSON_SOURCES,
+                          "source": stage.source})
     if not built:
         raise ApprovalRouteError(tr("The approval policy {name} has no stage that applies here.", name=policy.name))
+    built = _run_in_parallel(built)
     for stage in built:
         stage.pop("person_stage", None)
+        stage.pop("source", None)
     return built
+
+
+def _run_in_parallel(built):
+    """Consecutive stages where each named person must approve (a team's sole
+    manager, the CI owners) become one stage they all decide at the same
+    time, instead of waiting for each other. Stages where any one of
+    several people decides keep their own step."""
+    merged = []
+    for stage in built:
+        previous = merged[-1] if merged else None
+        if (previous and previous["source"] in PARALLEL_SOURCES and stage["source"] in PARALLEL_SOURCES
+                and previous["mode"] == "all" and stage["mode"] == "all"):
+            previous["name"] = _joined_name(previous["name"], stage["name"])
+            previous["approver_ids"] = sorted(set(previous["approver_ids"]) | set(stage["approver_ids"]))
+            continue
+        merged.append(dict(stage))
+    return merged
 
 
 def _fold_duplicate(built, name, mode, ids):

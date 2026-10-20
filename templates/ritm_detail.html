@@ -73,7 +73,7 @@
 
 <section id="ritm-commitments" class="panel">
   <header class="section-heading"><div><h2>{{ tr('Service commitments') }}</h2></div></header>
-  {% for sla in slas %}<div class="sla-row"><strong>{{ sla.definition.name }}</strong><span>{{ tr('{stage} · target {value}', stage=(tr_value(sla.stage)), value=((sla.breach_at|usertime('%b %d, %H:%M')))) }}</span></div>{% else %}<p class="muted">{{ tr('No active service commitments.') }}</p>{% endfor %}
+  {% for sla in slas %}<div class="sla-row"><strong>{{ sla.definition.name }}</strong><span>{{ tr('{stage} · target {value}', stage=((tr('Clock running') if sla.stage == 'In Progress' else tr_value(sla.stage))), value=((sla.breach_at|usertime('%b %d, %H:%M')))) }}</span></div>{% else %}<p class="muted">{{ tr('No active service commitments.') }}</p>{% endfor %}
 </section>
 
 <section id="ritm-history" class="panel table-panel">

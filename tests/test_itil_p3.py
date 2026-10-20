@@ -97,15 +97,16 @@ def test_change_conflict_detection_reaches_a_dependent_ci_not_just_direct_links(
         "ci_id": str(guest_id),
     }).status_code == 302
     blocked = client.post("/tickets/new/change", data={
-        "title": "Change on the underlying host", "description": "Should be blocked by the dependent CI's open incident.",
+        "title": "Change on the underlying host", "description": "Noted against the dependent CI's open incident.",
         "category": "Software", "priority": "P3", "change_type": "Standard",
         "risk_score": "20", "impact": "Low", "group_id": group_id(app),
         "implementation_plan": "Implement.", "test_plan": "Test.",
         "backout_plan": "Back out.", "ci_id": str(host_id),
         "planned_start": "2026-08-01T09:00", "planned_end": "2026-08-01T17:00",
-    })
-    assert blocked.status_code == 400
-    assert b"depends on this" in blocked.data.lower()
+    }, follow_redirects=True)
+    # The walk reaches the dependent CI; its open incident is noted, not a block.
+    assert blocked.status_code == 200
+    assert b"depends on this" in blocked.data.lower() and b"created" in blocked.data.lower()
 
 
 def test_ola_breach_is_excluded_from_customer_facing_sla_compliance(client, app):

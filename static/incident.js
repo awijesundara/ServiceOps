@@ -18,6 +18,37 @@ document.addEventListener("DOMContentLoaded", () => {
     sync();
   }
 
+  // A new incident goes to the team that owns its configuration item unless
+  // someone already chose a team.
+  const group = form.querySelector('select[name="group_id"]');
+  const ciField = form.querySelector('input[name="ci_id"]');
+  if (form.id === "incident-create-form" && group && ciField) {
+    ciField.addEventListener("lookup:change", (event) => {
+      const team = event.detail?.owning_team;
+      if (!team || group.value) return;
+      const option = [...group.options].find((candidate) => candidate.textContent.trim() === team);
+      if (option) {
+        group.value = option.value;
+        group.dispatchEvent(new Event("change", {bubbles: true}));
+      }
+    });
+  }
+
+  // Resolve asks for the resolution first: open it and put the cursor in the notes.
+  const resolution = form.querySelector("[data-resolution-fields]");
+  document.querySelectorAll("[data-resolve-button]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      const notes = resolution?.querySelector('textarea[name="resolution_notes"]');
+      if (resolution && notes && !notes.value.trim()) {
+        event.preventDefault();
+        resolution.open = true;
+        notes.required = true;
+        notes.focus();
+        notes.reportValidity();
+      }
+    });
+  });
+
   const title = form.querySelector('input[name="title"]');
   const panel = document.querySelector("[data-similar-incidents]");
   if (!title || !panel) return;

@@ -409,6 +409,13 @@ DEFAULT_PERSONAL = [("ticket_counts", 3, {"scope": "mine", "kind": "all"}),
                     ("approvals", 1, {}),
                     ("tasks", 1, {"scope": "mine"}),
                     ("upcoming_changes", 2, {"scope": "mine"})]
+# Someone who works a team's queue starts from the team's view, not only what is
+# assigned to them personally (a new manager's own counts are all zero).
+DEFAULT_PERSONAL_TEAM = [("ticket_counts", 3, {"scope": "team", "kind": "all"}),
+                         ("ticket_list", 2, {"scope": "team", "kind": "all", "show": "unassigned"}),
+                         ("approvals", 1, {}),
+                         ("tasks", 1, {"scope": "team"}),
+                         ("upcoming_changes", 2, {"scope": "team"})]
 DEFAULT_GROUP = [("ticket_counts", 3, {"scope": "team", "kind": "all"}),
                  ("ticket_list", 2, {"scope": "team", "kind": "incident", "show": "unassigned"}),
                  ("team_workload", 1, {}),
@@ -712,6 +719,8 @@ def ensure_personal(user):
                 key, opts = LEGACY[item["widget_key"]]
                 widgets.append((key, 3 if item.get("span") == 2 and key != "ticket_counts" else
                                 WIDGETS[key]["default_span"], dict(opts)))
-    dashboard = create_dashboard(user, tr("My dashboard"), widgets=widgets or DEFAULT_PERSONAL)
+    default = DEFAULT_PERSONAL_TEAM if member_groups(user) else DEFAULT_PERSONAL
+    dashboard = create_dashboard(user, tr("My dashboard"), widgets=widgets or default)
+    dashboard.updated_by_id = None  # created automatically, not changed by the person
     db.session.commit()
     return dashboard

@@ -2075,6 +2075,9 @@
    "javascript": true
   },
   {
+   "id": "CIs: {names}"
+  },
+  {
    "id": "CLIENT MANAGEMENT"
   },
   {
@@ -2399,9 +2402,6 @@
   },
   {
    "id": "Change type"
-  },
-  {
-   "id": "Change, problem, event, and service catalog tasks assigned to you or your teams."
   },
   {
    "id": "Changed {when} by {name}"
@@ -2902,6 +2902,9 @@
   },
   {
    "id": "Clients"
+  },
+  {
+   "id": "Clock running"
   },
   {
    "id": "Clone"
@@ -3677,6 +3680,9 @@
    "id": "Created"
   },
   {
+   "id": "Created automatically"
+  },
+  {
    "id": "Created by"
   },
   {
@@ -3976,6 +3982,9 @@
   },
   {
    "id": "Dead workflow job queued for controlled replay."
+  },
+  {
+   "id": "Decide"
   },
   {
    "id": "Decided"
@@ -5232,9 +5241,6 @@
    "javascript": true
   },
   {
-   "id": "First contact resolution"
-  },
-  {
    "id": "First contact resolution %"
   },
   {
@@ -6012,6 +6018,9 @@
   },
   {
    "id": "Incident {number} opened as {priority} · {impact} impact via {contact_type}."
+  },
+  {
+   "id": "Incident, change, problem, event and catalog tasks assigned to you or your teams."
   },
   {
    "id": "Incidents"
@@ -7384,6 +7393,9 @@
    "id": "My tasks · {instance_name}"
   },
   {
+   "id": "My team"
+  },
+  {
    "id": "My teams' open tasks"
   },
   {
@@ -8744,6 +8756,9 @@
   },
   {
    "id": "Only me"
+  },
+  {
+   "id": "Only members of {name} can take {number}."
   },
   {
    "id": "Only project administrators can change project settings."
@@ -10896,6 +10911,9 @@
    "id": "Requested for"
   },
   {
+   "id": "Requested for {name}"
+  },
+  {
    "id": "Requested item"
   },
   {
@@ -12971,9 +12989,6 @@
    "id": "Stage saved."
   },
   {
-   "id": "Stage {sequence} · {name} · {mode}"
-  },
-  {
    "id": "Stale"
   },
   {
@@ -13102,6 +13117,9 @@
   },
   {
    "id": "Step title and body are required."
+  },
+  {
+   "id": "Step {sequence} · {name}"
   },
   {
    "id": "Steps"
@@ -13354,6 +13372,9 @@
   },
   {
    "id": "Tags"
+  },
+  {
+   "id": "Take"
   },
   {
    "id": "Take your operations workspace with you"
@@ -15225,6 +15246,9 @@
    "javascript": true
   },
   {
+   "id": "Waiting for your approval"
+  },
+  {
    "id": "Waiting for your decision"
   },
   {
@@ -15396,6 +15420,9 @@
   },
   {
    "id": "Window"
+  },
+  {
+   "id": "Window {start} to {end}"
   },
   {
    "id": "Withdraw"
@@ -15822,6 +15849,9 @@
    "id": "a field named Rack or Rack No. links the item to that rack (created if it does not exist), Position/Rack Unit sets the U, Orientation/Rack Face sets front or rear, Height sets the U height, Environment/Service Environment sets the environment when it names exactly one (Production, Staging, Development or Test), Cost Center fills the cost center and IP Address fills the IP. A value that cannot be read stays as an attribute. Every other custom field is kept as a Snipe-IT attribute."
   },
   {
+   "id": "a majority decides"
+  },
+  {
    "id": "a rack named in Snipe-IT is created if it does not exist, and the item is drawn at its position and face. When Snipe-IT gives no height, the height of another item of the same model is used."
   },
   {
@@ -15868,7 +15898,13 @@
    "id": "and work on your incident continues straight away."
   },
   {
+   "id": "another team"
+  },
+  {
    "id": "any category"
+  },
+  {
+   "id": "any one approver decides"
   },
   {
    "id": "app_port must be an integer."
@@ -16098,6 +16134,9 @@
    "javascript": true
   },
   {
+   "id": "every approver in this step decides"
+  },
+  {
    "id": "example.com"
   },
   {
@@ -16108,6 +16147,9 @@
   },
   {
    "id": "fields"
+  },
+  {
+   "id": "filled in when you resolve the incident"
   },
   {
    "id": "filter must be a JSON list of conditions."
@@ -16864,6 +16906,12 @@
    "id": "{count} contracts still reference this supplier. Deactivate it instead."
   },
   {
+   "id": "{count} decision is yours to make"
+  },
+  {
+   "id": "{count} decisions are yours to make"
+  },
+  {
    "id": "{count} device"
   },
   {
@@ -17421,7 +17469,7 @@
    "id": "{number} cannot be deleted once it has progressed past approval. Cancel it through the normal state transition instead."
   },
   {
-   "id": "{number} cannot be resolved while required task {number2} is {state}."
+   "id": "{number} cannot be resolved while required task {number2} for {team} is {state}."
   },
   {
    "id": "{number} cannot close without a post-implementation review (ITIL 4 change enablement requires a documented outcome before a change is considered complete). Record the review first."
@@ -17460,6 +17508,9 @@
    "id": "{number} has already been deleted."
   },
   {
+   "id": "{number} is already assigned to {name}."
+  },
+  {
    "id": "{number} is locked: related records can only be changed before a change is approved."
   },
   {
@@ -17470,6 +17521,9 @@
   },
   {
    "id": "{number} is not Resolved."
+  },
+  {
+   "id": "{number} is now assigned to you."
   },
   {
    "id": "{number} is {state} and locked: only comments and notes can be added."
@@ -17495,6 +17549,12 @@
   },
   {
    "id": "{number} reopened."
+  },
+  {
+   "id": "{number} saved. Nothing had changed."
+  },
+  {
+   "id": "{number} saved: {fields}."
   },
   {
    "id": "{number} sections"
@@ -17705,6 +17765,9 @@
   },
   {
    "id": "{total} records · {types}"
+  },
+  {
+   "id": "{type} change · risk {score} · impact {impact}"
   },
   {
    "id": "{type} distribution"

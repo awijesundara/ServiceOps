@@ -68,7 +68,7 @@
   </section>
 
   <section class="panel">
-    <h2>{{ tr('First contact resolution') }} <small class="muted">· {{ tr('incidents, last 30 days') }}</small></h2>
+    <h2>{{ tr('Resolved without reopening') }} <small class="muted">· {{ tr('incidents, last 30 days') }}</small></h2>
     {% if fcr_pct is not none %}
     <div class="metric"><span>{{ tr('Resolved without reopening') }}</span><div><i class="pct-w-{{ (fcr_pct)|pct }}"></i></div><strong>{{ fcr_pct }}%</strong></div>
     <p class="muted">{{ trn(fcr_total, '{count} incident resolved in this window.', '{count} incidents resolved in this window.') }}</p>

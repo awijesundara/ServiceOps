@@ -72,9 +72,31 @@ from serviceops_models import (
     Ticket,
     User,
 )
-from serviceops_core.localization import tr
+from serviceops_core.localization import tr, tr_value
 from serviceops_core.request_values import form_int
 from serviceops_core.safe_redirect import redirect_to_referrer
+
+
+def approval_summary(record):
+    """What an approver needs to decide without opening the record."""
+    from serviceops_core.user_time import display
+    if isinstance(record, core.Ticket) and record.kind == "change" and record.change_governance:
+        governance = record.change_governance
+        cis = [ci.name for ci in core.change_target_cis(record)][:4]
+        parts = []
+        if governance.planned_start and governance.planned_end:
+            parts.append(tr("Window {start} to {end}", start=display(governance.planned_start),
+                            end=display(governance.planned_end)))
+        parts.append(tr("{type} change · risk {score} · impact {impact}", type=tr_value(governance.change_type),
+                        score=governance.risk_score, impact=tr_value(governance.impact)))
+        if cis:
+            parts.append(tr("CIs: {names}", names=", ".join(cis)))
+        if governance.conflict_status and governance.conflict_status != "No conflict":
+            parts.append(governance.conflict_status)
+        return parts
+    if isinstance(record, RequestedItem):
+        return [tr("Requested for {name}", name=record.request.requested_for.name)] if record.request else []
+    return []
 
 
 def register(app):
@@ -282,7 +304,7 @@ def register(app):
             if record is not None:
                 vote_targets[vote.id] = {"number": core.record_number(record), "title": getattr(record, "title", None)
                                          or (record.item.name if chain.target_type == "ritm" and record.item else None),
-                                         "url": core.record_url(record)}
+                                         "url": core.record_url(record), "summary": approval_summary(record)}
         return render_template(
             "approval_chains.html", groups=page_groups, pending=pending,
             delegated_pending=delegated_pending, q=q, page=page, pages=pages, total=total,

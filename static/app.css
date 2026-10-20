@@ -126,7 +126,7 @@ input[disabled],input[readonly]{overflow:hidden;text-overflow:ellipsis}
 .incident-family{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:12px 0 0;padding:10px 14px;border:1px solid var(--line);border-left:4px solid var(--green);border-radius:8px;background:var(--white);font-size:13px}.incident-family a{color:var(--green-dark)}.incident-family .badge{margin-left:4px}
 .record-more-actions{position:relative}.record-more-actions>summary{list-style:none;cursor:pointer}.record-more-actions>summary::-webkit-details-marker{display:none}.record-more-panel{position:absolute;right:0;top:calc(100% + 6px);z-index:20;display:grid;min-width:230px;padding:6px;background:var(--white);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}.record-more-panel a,.record-more-panel button{display:block;width:100%;padding:9px 12px;border:0;background:none;color:var(--ink);text-align:left;text-decoration:none;font:inherit;cursor:pointer;border-radius:6px}.record-more-panel a:hover,.record-more-panel button:hover{background:var(--bg)}@media(max-width:700px){.record-more-panel{right:auto;left:0;max-width:calc(100vw - 32px)}}
 .incident-templates{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 16px;font-size:13px}.incident-templates>span{color:var(--muted)}.incident-templates a{padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--white);color:var(--ink);text-decoration:none}.incident-templates a:hover{border-color:var(--green);color:var(--green-dark)}
-.incident-admin .section-heading>span{white-space:nowrap}.incident-admin summary small{margin-left:10px;color:var(--muted)}.similar-incidents[hidden],.record-grid label[data-hold-reason][hidden]{display:none}.similar-incidents{margin:14px 0;padding:12px 16px;border:1px solid var(--line);border-left:4px solid var(--green);border-radius:8px;background:var(--white);font-size:13px}.similar-incidents ul{list-style:none;margin:8px 0 0;padding:0}.similar-incidents li{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:6px 0;border-top:1px solid var(--line)}.similar-incidents small{color:var(--muted)}.similar-incidents .link-button{width:auto;min-width:0;height:auto;min-height:0;padding:2px 6px;border-radius:4px;font-size:13px;font-weight:650;color:var(--green-dark);margin-left:auto}
+.incident-admin .section-heading>span{white-space:nowrap}.incident-admin summary small{margin-left:10px;color:var(--muted)}.similar-incidents[hidden],.record-grid label[data-hold-reason][hidden]{display:grid;visibility:hidden}.similar-incidents{margin:14px 0;padding:12px 16px;border:1px solid var(--line);border-left:4px solid var(--green);border-radius:8px;background:var(--white);font-size:13px}.similar-incidents ul{list-style:none;margin:8px 0 0;padding:0}.similar-incidents li{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:6px 0;border-top:1px solid var(--line)}.similar-incidents small{color:var(--muted)}.similar-incidents .link-button{width:auto;min-width:0;height:auto;min-height:0;padding:2px 6px;border-radius:4px;font-size:13px;font-weight:650;color:var(--green-dark);margin-left:auto}
 .comment-copy{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
 
 /* The caller's own view of an incident */
@@ -149,3 +149,27 @@ input[disabled],input[readonly]{overflow:hidden;text-overflow:ellipsis}
 .requester-action strong{font-size:16px;color:var(--green-dark)}.requester-action span{color:var(--muted);font-size:13px}
 .requester-action:hover,.requester-action:focus-visible{border-color:var(--green)}
 @media(max-width:700px){.requester-actions{grid-template-columns:1fr}}
+.resolution-fields>summary{display:flex;align-items:baseline;gap:10px;cursor:pointer;list-style:none}
+.resolution-fields>summary::-webkit-details-marker{display:none}
+.resolution-fields>summary h3{margin:0}
+.resolution-fields>summary::before{content:"▸";color:var(--muted)}
+.resolution-fields[open]>summary::before{content:"▾"}
+.waiting-approvals{border-left:4px solid #c98a12}
+.waiting-approval-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.waiting-approval-list small{margin-left:6px}
+.approval-summary{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:12.5px}
+.list-views{display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px 0}
+.list-views a{padding:5px 12px;border:1px solid var(--line);border-radius:99px;color:var(--ink);font-size:13px;text-decoration:none;background:var(--white)}
+.list-views a.active{border-color:var(--green-dark);background:var(--green-dark);color:#fff;font-weight:650}
+/* Phones: the list shows what matters (number, summary, priority, state) without sideways scrolling */
+@media(max-width:700px){
+  .desktop-only{display:none!important}
+  .ticket-list-table th:nth-child(2),.ticket-list-table td:nth-child(2),
+  .ticket-list-table th:nth-child(4),.ticket-list-table td:nth-child(4),
+  .ticket-list-table th:nth-child(n+7),.ticket-list-table td:nth-child(n+7){display:none}
+}
+
+.stat-warn{border-color:#c98a12;background:#fff7e6}
+.stat-warn::before{background:#c98a12!important}
+.stat-warn .stat-alert-text{color:#8a5a00!important}
+.ticket-list-table td .truncate{max-width:min(520px,38vw)}

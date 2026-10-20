@@ -1464,11 +1464,24 @@ def serialize_number_allocation(key):
     db.session.execute(db.text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": key})
 
 
+def _next_in_sequence(column, prefix, fallback_id=0):
+    """The number after the highest existing PREFIX0000123 in `column`, so each
+    kind of record counts on its own (INC0000008 is followed by INC0000009
+    whatever changes were raised in between). Longest-then-highest finds the
+    largest number even if older ones were padded differently."""
+    latest = db.session.query(column).filter(column.like(f"{prefix}%")) \
+        .order_by(func.length(column).desc(), column.desc()).limit(1).scalar()
+    try:
+        current = int(latest[len(prefix):]) if latest else 0
+    except ValueError:
+        current = fallback_id
+    return f"{prefix}{current + 1:07d}"
+
+
 def next_number(kind):
     prefix = {"incident": "INC", "change": "CHG"}[kind]
     serialize_number_allocation(f"ticket:{kind}")
-    maximum = db.session.query(func.max(Ticket.id)).scalar() or 0
-    return f"{prefix}{maximum + 1:07d}"
+    return _next_in_sequence(Ticket.number, prefix, db.session.query(func.max(Ticket.id)).scalar() or 0)
 
 
 def create_with_retry_on_number_collision(build_row, attempts=10, error_description=None):
@@ -2530,15 +2543,13 @@ def process_outbox(limit=50):
 def next_enterprise_number(domain):
     prefix = DOMAIN_CONFIG[domain]["prefix"]
     serialize_number_allocation(f"enterprise:{domain}")
-    latest = EnterpriseRecord.query.filter_by(domain=domain).order_by(EnterpriseRecord.id.desc()).first()
-    sequence = (latest.id + 1) if latest else 1
-    return f"{prefix}{sequence:07d}"
+    return _next_in_sequence(EnterpriseRecord.number, prefix,
+                             db.session.query(func.max(EnterpriseRecord.id)).scalar() or 0)
 
 
 def sequence_number(model, prefix):
     serialize_number_allocation(f"model:{model.__name__}")
-    latest = model.query.order_by(model.id.desc()).first()
-    return f"{prefix}{((latest.id if latest else 0) + 1):07d}"
+    return _next_in_sequence(model.number, prefix, db.session.query(func.max(model.id)).scalar() or 0)
 
 
 def next_operational_task_number(task_kind):
@@ -2546,11 +2557,8 @@ def next_operational_task_number(task_kind):
         task_kind, "TASK"
     )
     serialize_number_allocation(f"task:{task_kind}")
-    latest = OperationalTask.query.filter_by(task_kind=task_kind).order_by(
-        OperationalTask.id.desc()
-    ).first()
-    sequence = (latest.id + 1) if latest else 1
-    return f"{prefix}{sequence:07d}"
+    return _next_in_sequence(OperationalTask.number, prefix,
+                             db.session.query(func.max(OperationalTask.id)).scalar() or 0)
 
 
 def log_history(target_type, target_id, event, field_name=None, old_value=None,
@@ -3326,8 +3334,9 @@ def transition_ticket(ticket, new_state, hold_reason=None):
             parent_type="ticket", parent_id=ticket.id, task_kind="incident", required=True
         ).filter(OperationalTask.state.notin_(["Closed Complete", "Closed Incomplete", "Closed Skipped", "Cancelled"])).first()
         if open_task:
-            abort(409, description=tr("{number} cannot be resolved while required task {number2} is {state}.",
-                                      number=ticket.number, number2=open_task.number, state=open_task.state))
+            abort(409, description=tr("{number} cannot be resolved while required task {number2} for {team} is {state}.",
+                                      number=ticket.number, number2=open_task.number, state=open_task.state,
+                                      team=open_task.assignment_group.name if open_task.assignment_group else tr("another team")))
     if ticket.kind == "incident":
         from serviceops_core import incident_handling
         if new_state == "Pending":

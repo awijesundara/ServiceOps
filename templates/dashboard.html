@@ -5,11 +5,18 @@
 <a class="primary button" href="{{ url_for('ticket_new', kind='incident') }}">+ {{ tr('Report an incident') }}</a></header>
 {% set open_filter = '[{"field":"open","op":"eq","value":"1"}]' %}
 <section class="stats" data-tour="dashboard-stats">
-  <a href="{{ url_for('tickets', kind='incident', filter=open_filter) }}" class="{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}stat-alert{% endif %}"><span>{{ tr('Open incidents') }}</span><strong>{{ counts.incident }}</strong>{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}<small class="stat-alert-text">P1: {{ incident_priority_counts.p1 }} · P2: {{ incident_priority_counts.p2 }}</small>{% else %}<small>{{ tr('View queue') }} →</small>{% endif %}</a>
+  <a href="{{ url_for('tickets', kind='incident', filter=open_filter) }}" class="{% if incident_priority_counts.p1 %}stat-alert{% elif incident_priority_counts.p2 %}stat-warn{% endif %}"><span>{{ tr('Open incidents') }}</span><strong>{{ counts.incident }}</strong>{% if incident_priority_counts.p1 or incident_priority_counts.p2 %}<small class="stat-alert-text">{{ [('P1: ' ~ incident_priority_counts.p1) if incident_priority_counts.p1 else '', ('P2: ' ~ incident_priority_counts.p2) if incident_priority_counts.p2 else '']|select|join(' · ') }}</small>{% else %}<small>{{ tr('View queue') }} →</small>{% endif %}</a>
   <a href="{{ url_for('requests_list', open=1) }}"><span>{{ tr('Open requests') }}</span><strong>{{ counts.request }}</strong><small>{{ tr('View REQ / RITM') }} →</small></a>
   <a href="{{ url_for('tickets', kind='change', filter=open_filter) }}"><span>{{ tr('Open changes') }}</span><strong>{{ counts.change }}</strong><small>{{ tr('View schedule') }} →</small></a>
   <a href="{{ url_for('open_work') }}"><span>{{ tr('Open work') }}</span><strong>{{ open_count }}</strong><small>{{ tr('Needs attention') }} →</small></a>
 </section>
+
+{% if waiting_approvals %}
+<section class="panel waiting-approvals">
+  <div class="panel-head"><div><h2>{{ tr('Waiting for your approval') }}</h2><p>{{ trn(waiting_approvals|length, '{count} decision is yours to make', '{count} decisions are yours to make') }}</p></div><a class="button" href="{{ url_for('approval_chains') }}">{{ tr('Decide') }}</a></div>
+  <ul class="waiting-approval-list">{% for item in waiting_approvals %}<li><a href="{{ item.url }}">{{ item.number }}</a> {{ item.title }} <small class="muted">{{ item.step }}</small></li>{% endfor %}</ul>
+</section>
+{% endif %}
 
 {% if show_my_assigned %}
 <section class="panel">

@@ -249,6 +249,32 @@ def register(app):
         """My Workspace (B-121) became Dashboards (B-464); the address stays."""
         return redirect(url_for("dashboards_home"))
 
+    @app.post("/work/tasks/<kind>/<int:task_id>/take")
+    @roles("agent", "manager", "admin")
+    def task_take(kind, task_id):
+        """Assign an unassigned team task to yourself, changing nothing else."""
+        model = {"operational": OperationalTask, "catalog": CatalogTask}.get(kind)
+        if model is None:
+            abort(404)
+        task = db.get_or_404(model, task_id)
+        if not task.assignment_group or task.assignment_group.tenant_id != current_user.tenant_id:
+            abort(404)
+        if not user_in_group(current_user, task.assignment_group):
+            abort(403, description=tr("Only members of {name} can take {number}.", name=task.assignment_group.name,
+                                      number=task.number))
+        if task.assignee_id is not None:
+            flash(tr("{number} is already assigned to {name}.", number=task.number, name=task.assignee.name), "error")
+            return redirect(url_for("my_work_tasks"))
+        task.assignee_id = current_user.id
+        parent_type = getattr(task, "parent_type", None) or "catalog_task"
+        parent_id = getattr(task, "parent_id", None) or task.id
+        log_history(parent_type, parent_id, "Task taken", "assigned to", "Unassigned", current_user.name,
+                    details=f"{task.number} taken by {current_user.name}")
+        audit("take task", task.number)
+        db.session.commit()
+        flash(tr("{number} is now assigned to you.", number=task.number), "success")
+        return redirect(url_for("my_work_tasks"))
+
     @app.get("/work/tasks")
     @login_required
     def my_work_tasks():
@@ -268,6 +294,9 @@ def register(app):
                 "assignee": task.assignee.name if task.assignee else "Unassigned",
                 "due_at": getattr(task, "due_at", None) or getattr(task, "planned_end", None),
                 "url": record_url(task),
+                # One click picks up an unassigned team task.
+                "take_url": url_for("task_take", kind="catalog" if isinstance(task, CatalogTask) else "operational",
+                                    task_id=task.id) if task.assignee_id is None else None,
             }
 
         # A team manager (or an administrator) can open one member's queue
@@ -282,14 +311,16 @@ def register(app):
                                                      or managed & member_groups):
                 abort(403, description=tr("Only this person's team manager can view their task queue."))
         assigned_to_me, team_tasks = [], []
-        for model, kind_label in ((OperationalTask, None), (CatalogTask, "SCTASK")):
+        kind_names = {"change": "Change task", "problem": "Problem task", "incident": "Incident task",
+                      "event": "Event task"}
+        for model, kind_label in ((OperationalTask, None), (CatalogTask, "Catalog task")):
             mine = open_tasks(model).filter(model.assignee_id == person.id).all()
             if person.id != current_user.id:
-                assigned_to_me.extend(row_for(task, kind_label or task.task_kind.upper()) for task in mine)
+                assigned_to_me.extend(row_for(task, kind_label or kind_names.get(task.task_kind, "Task")) for task in mine)
                 continue
             mine_ids = {task.id for task in mine}
             assigned_to_me.extend(
-                row_for(task, kind_label or task.task_kind.upper()) for task in mine
+                row_for(task, kind_label or kind_names.get(task.task_kind, "Task")) for task in mine
             )
             # "My teams" means the teams the user belongs to or manages, for
             # every role: administrators used to get every team's tasks here.
@@ -299,7 +330,7 @@ def register(app):
                 team_query = None
             if team_query is not None:
                 team_tasks.extend(
-                    row_for(task, kind_label or task.task_kind.upper())
+                    row_for(task, kind_label or kind_names.get(task.task_kind, "Task"))
                     for task in team_query.all() if task.id not in mine_ids
                 )
 
@@ -321,9 +352,22 @@ def register(app):
         if kind not in ("incident", "change", "all"):
             abort(404)
         q = request.args.get("q", "").strip()
-        raw_filter = request.args.get("filter", "")
+        # Opened without a filter, the list shows open work; "All" is an explicit empty filter.
+        open_rows = [{"field": "open", "op": "eq", "value": "1"}]
+        raw_filter = request.args.get("filter") if "filter" in request.args else json.dumps(open_rows)
         conditions = parse_list_filter_param(raw_filter)
         query = ticket_list_query(kind, q=q, conditions=conditions)
+        team_ids = sorted(core.user_support_group_ids(current_user))
+        my_team = db.session.get(SupportGroup, team_ids[0]) if team_ids else None
+        quick_views = [(tr("Open"), open_rows),
+                       (tr("Assigned to me"), open_rows + [{"field": "assignee", "op": "eq", "value": str(current_user.id)}])]
+        if my_team is not None:
+            quick_views.append((tr("My team"), open_rows + [{"field": "group", "op": "eq", "value": str(my_team.id)}]))
+        quick_views += [(tr("Unassigned"), open_rows + [{"field": "unassigned", "op": "eq", "value": "1"}]), (tr("All"), [])]
+        current_rows = sorted(json.dumps(row, sort_keys=True) for row in conditions)
+        quick_views = [{"label": label, "filter": json.dumps(rows, separators=(",", ":")),
+                        "active": sorted(json.dumps(row, sort_keys=True) for row in rows) == current_rows}
+                       for label, rows in quick_views]
         try:
             page = max(1, int(request.args.get("page", "1")))
         except ValueError:
@@ -389,7 +433,7 @@ def register(app):
             for key, spec in field_spec.items()
         }
         return render_template(
-            "tickets.html", tickets=rows, kind=kind, q=q,
+            "tickets.html", tickets=rows, kind=kind, q=q, quick_views=quick_views,
             raw_filter=raw_filter, breadcrumb_parts=breadcrumb_parts,
             filter_fields=client_fields,
             page=page, pages=pages, total=total,
@@ -1119,7 +1163,7 @@ def register(app):
                 # request -- resync now that they're final.
                 sync_service_outages(ticket)
                 assignee = db.session.get(User, assignee_id) if assignee_id else None
-                log_field_changes("ticket", ticket.id, before, {
+                saved_fields = log_field_changes("ticket", ticket.id, before, {
                     "short description": ticket.title,
                     "description": ticket.description,
                     "state": ticket.state,
@@ -1143,6 +1187,9 @@ def register(app):
                     **({"hold reason": ticket.hold_reason or ""} if "hold reason" in before else {}),
                 })
                 audit("update", ticket.number, f"{ticket.state}, {ticket.priority}")
+                # Say what was saved, so nobody wonders whether the update worked.
+                flash(tr("{number} saved: {fields}.", number=ticket.number, fields=", ".join(saved_fields))
+                      if saved_fields else tr("{number} saved. Nothing had changed.", number=ticket.number), "success")
             elif action == "reassign_team":
                 if not user_can_manage_ticket(current_user, ticket):
                     abort(403, description=(

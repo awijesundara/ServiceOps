@@ -293,9 +293,9 @@ def build_problems(cis, teams, agents_by_team):
 def build_changes(cis, teams, agents_by_team, admin):
     scenarios = [
         ("Upgrade PORTALDB01 to PostgreSQL 16.4", "Normal", 60, "Database", "PORTALDB01",
-         "Scheduled", ["Apply minor version upgrade", "Run post-upgrade validation queries"]),
+         "Approved", ["Apply minor version upgrade", "Run post-upgrade validation queries"]),
         ("Emergency firewall rule rollback on EDGE-FW01", "Emergency", 85, "Network", "EDGE-FW01",
-         "Implemented", ["Roll back rule set", "Confirm connectivity restored"]),
+         "Resolved", ["Roll back rule set", "Confirm connectivity restored"]),
         ("Deploy standard laptop imaging update", "Standard", 15, "Windows", "APPSRV01",
          "Closed", ["Push updated image to deployment share"]),
     ]
@@ -328,7 +328,7 @@ def build_changes(cis, teams, agents_by_team, admin):
             db.session.add(OperationalTask(
                 number=f"CTASK{ticket.id:04d}{index:02d}", task_kind="change",
                 parent_type="ticket", parent_id=ticket.id, title=task_title,
-                task_type="Implementation", state="Closed Complete" if state in ("Implemented", "Closed") else "Open",
+                task_type="Implementation", state="Closed Complete" if state in ("Resolved", "Closed") else "Open",
                 sequence=index, assignment_group_id=team.id, assignee_id=assignee.id if assignee else None,
             ))
 

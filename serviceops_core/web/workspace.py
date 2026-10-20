@@ -33,6 +33,7 @@ from serviceops_core.localization import tr, tr_value
 from serviceops_core.request_values import form_int
 from serviceops_core.task_lifecycle import FINISHED_REQUEST_STATES, FINISHED_TICKET_STATES
 from serviceops_core.user_time import parse_user_datetime
+from serviceops_models import ApprovalChain, ApprovalGate, ApprovalVote
 from app import (
     email_taken_by_other,
     escape_like,
@@ -205,8 +206,19 @@ def register(app):
                 and (row.breach_at if row.breach_at.tzinfo else row.breach_at.replace(tzinfo=timezone.utc))
                 <= breach_horizon
             ][:8]
+        # Decisions waiting on this person come first on their home page.
+        waiting_votes = ApprovalVote.query.join(ApprovalGate).join(ApprovalChain).filter(
+            ApprovalVote.approver_id == current_user.id, ApprovalVote.state == "Requested",
+            ApprovalChain.tenant_id == current_user.tenant_id).order_by(ApprovalVote.id).limit(6).all()
+        waiting_approvals = []
+        for vote in waiting_votes:
+            record = core.record_reference(vote.gate.chain.target_type, vote.gate.chain.target_id)
+            if record is not None:
+                waiting_approvals.append({"number": core.record_number(record), "url": core.record_url(record),
+                                          "title": getattr(record, "title", None) or vote.gate.chain.name,
+                                          "step": vote.gate.name})
         return render_template(
-            "dashboard.html", counts=counts, open_count=open_count, recent=recent,
+            "dashboard.html", counts=counts, open_count=open_count, recent=recent, waiting_approvals=waiting_approvals,
             show_recent=show_recent, show_my_assigned=show_my_assigned, show_sla_widgets=show_sla_widgets,
             sla_at_risk_hours=sla_at_risk_hours,
             my_assigned=my_assigned, incident_priority_counts=incident_priority_counts,

@@ -42,13 +42,15 @@ def test_different_owners_each_approve_and_one_owner_is_asked_once(app):
         db.session.add_all(cis)
         db.session.flush()
         stage = _owner_stage(change_approval_stages(_change(cis, requester)))
-        assert stage["approver_ids"] == sorted([alice.id, bob.id]) and stage["mode"] == "all"
+        # Both owners decide, each once, in the parallel team-assessment step.
+        assert {alice.id, bob.id} <= set(stage["approver_ids"]) and stage["mode"] == "all"
+        assert len(stage["approver_ids"]) == len(set(stage["approver_ids"]))
         # One owner for every CI: a single request to that person.
         same = [ConfigurationItem(name=f"same-{i}", ci_class="Server", owner_id=alice.id) for i in range(3)]
         db.session.add_all(same)
         db.session.flush()
         stage = _owner_stage(change_approval_stages(_change(same, requester)))
-        assert stage["approver_ids"] == [alice.id]
+        assert stage["approver_ids"].count(alice.id) == 1
 
 
 def test_owner_who_raised_the_change_or_already_approves_is_not_asked_again(app):
@@ -103,7 +105,7 @@ def test_adding_a_ci_later_asks_its_owner(client, app):
     with app.app_context():
         chain = ApprovalChain.query.filter_by(target_type="ticket", target_id=ticket_id, state="Running").one()
         owner_gate = next(gate for gate in chain.gates if "CI owner approval" in gate.name)
-        assert sorted(vote.approver_id for vote in owner_gate.votes) == sorted([carol_id, dave_id])
+        assert {carol_id, dave_id} <= {vote.approver_id for vote in owner_gate.votes}
 
 
 def test_the_default_change_policy_has_the_owner_stage_once_after_the_ci_teams(app):

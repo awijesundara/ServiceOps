@@ -9,7 +9,7 @@
     <p class="dash-meta">
       {% if dashboard.description %}<span>{{ dashboard.description }}</span>{% endif %}
       {% if dashboard.scope == 'group' %}<span>{{ trn(member_count, 'Shared with {count} person in {name}', 'Shared with {count} people in {name}', name=dashboard.group.name) }}</span>{% else %}<span>{{ tr('Only you can see this dashboard') }}</span>{% endif %}
-      {% if dashboard.updated_by %}<span>{{ tr('Changed {when} by {name}', when=dashboard.updated_at|usertime('%b %d, %H:%M'), name=dashboard.updated_by.name) }}</span>{% endif %}
+      {% if not dashboard.updated_by %}<span>{{ tr('Created automatically') }}</span>{% endif %}{% if dashboard.updated_by %}<span>{{ tr('Changed {when} by {name}', when=dashboard.updated_at|usertime('%b %d, %H:%M'), name=dashboard.updated_by.name) }}</span>{% endif %}
     </p>
   </div>
   <div class="dash-actions">

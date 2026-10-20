@@ -35,7 +35,7 @@ body[data-tour-route="tickets"] .task-list :is(th,td):is(:nth-child(2),:nth-chil
 .status-badge.superseded,.status-badge.inactive,.status-badge.no-longer-required,.status-badge.cancelled,.status-badge.canceled,.status-badge.closed-skipped,.status-badge.skipped,.status-badge.retired,.status-badge.withdrawn{background:#f1f2f3;color:#4a545c;font-style:italic;font-weight:600;outline:1px dashed #a9b2b8;outline-offset:-1px}
 /* Not reached yet: a later approval stage waiting for an earlier one. */
 .status-badge.not-requested,.status-badge.gate-pending{background:#eef1f6;color:#4b5a70;outline:1px dotted #9aa6b8;outline-offset:-1px}
-.status-badge.closed{background:#3f5157;color:#fff}
+.status-badge.closed{background:#e3e7ea;color:#34434a}
 .status-row-inactive td{color:var(--muted);font-style:italic}
 .status-row-inactive td a{color:inherit}
 .status-row-inactive:not(tr){color:var(--muted);font-style:italic}
