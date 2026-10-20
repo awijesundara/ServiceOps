@@ -409,8 +409,8 @@ DEFAULT_PERSONAL = [("ticket_counts", 3, {"scope": "mine", "kind": "all"}),
                     ("approvals", 1, {}),
                     ("tasks", 1, {"scope": "mine"}),
                     ("upcoming_changes", 2, {"scope": "mine"})]
-# Someone who works a team's queue starts from the team's view, not only what is
-# assigned to them personally (a new manager's own counts are all zero).
+# A manager starts from the team's view, not only what is assigned to them
+# personally (a manager's own counts are usually all zero).
 DEFAULT_PERSONAL_TEAM = [("ticket_counts", 3, {"scope": "team", "kind": "all"}),
                          ("ticket_list", 2, {"scope": "team", "kind": "all", "show": "unassigned"}),
                          ("approvals", 1, {}),
@@ -718,7 +718,8 @@ def ensure_personal(user):
                 key, opts = LEGACY[item["widget_key"]]
                 widgets.append((key, 3 if item.get("span") == 2 and key != "ticket_counts" else
                                 WIDGETS[key]["default_span"], dict(opts)))
-    default = DEFAULT_PERSONAL_TEAM if core.primary_team(user) else DEFAULT_PERSONAL
+    # A manager starts from the team's work; agents start from what is assigned to them.
+    default = DEFAULT_PERSONAL_TEAM if user.effective_role == "manager" and core.primary_team(user) else DEFAULT_PERSONAL
     dashboard = create_dashboard(user, tr("My dashboard"), widgets=widgets or default)
     dashboard.updated_by_id = None  # created automatically, not changed by the person
     db.session.commit()
