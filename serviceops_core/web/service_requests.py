@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from werkzeug.exceptions import HTTPException
 
 import app as core
+from serviceops_core.request_withdrawal import settle_request
 from serviceops_core import request_withdrawal
 from app import (
     active_approval_delegation,
@@ -681,14 +682,14 @@ def register(app):
             ritm.state = "Closed Complete"
             ritm.stage = "Completed"
             sync_slas("ritm", ritm.id, ritm.state)
-            if all(item.state == "Closed Complete" for item in ritm.request.items):
-                ritm.request.state = "Closed Complete"
-                ritm.request.closed_at = now()
+            settle_request(ritm.request)
             core.notify_ritm_person(ritm, "fulfilled")
         elif all_terminal and any(item.state == "Closed Incomplete" for item in ritm.tasks):
             ritm.state = "Closed Incomplete"
             ritm.stage = "Completed"
-            ritm.request.state = "Closed Incomplete"
+            sync_slas("ritm", ritm.id, "Closed Incomplete")
+            # The REQ closes only once none of its other items is still open.
+            settle_request(ritm.request)
             core.notify_ritm_person(ritm, "incomplete")
         log_field_changes("ritm", ritm.id, before, {
             "state": task.state, "work notes": task.work_notes,

@@ -3328,6 +3328,36 @@ def require_resolution_notes(ticket, new_state):
         ))
 
 
+OPEN_TASK_END_STATES = ("Closed Complete", "Closed Incomplete", "Closed Skipped", "Cancelled")
+
+
+def cancel_open_child_tasks(parent_type, parent, outcome):
+    """A cancelled, rejected, deleted or closed record takes its unfinished
+    tasks with it, so nobody keeps working (or seeing) tasks for work that
+    will not happen. Returns the tasks that were cancelled."""
+    tasks = OperationalTask.query.filter(
+        OperationalTask.parent_type == parent_type, OperationalTask.parent_id == parent.id,
+        OperationalTask.state.notin_(OPEN_TASK_END_STATES),
+    ).all()
+    for task in tasks:
+        previous = task.state
+        task.state = "Cancelled"
+        if task.task_kind == "change":
+            queue_change_task_state_event(task, previous)
+        if task.assignee_id:
+            create_notification(
+                task.assignee_id, tr("{number} was cancelled", number=task.number),
+                tr("{parent} was {outcome}, so its task {number} is no longer needed.",
+                   parent=parent.number, outcome=tr_value(outcome).lower(), number=task.number),
+                tenant_id=parent.tenant_id, target_type="operational_task", target_id=task.id,
+                event_type="task.cancelled",
+            )
+    if tasks:
+        log_history(parent_type, parent.id, "Tasks cancelled",
+                    details=f"{parent.number} was {outcome.lower()}: " + ", ".join(t.number for t in tasks))
+    return tasks
+
+
 def transition_ticket(ticket, new_state, hold_reason=None):
     """Move a ticket to `new_state` under the lifecycle rules. A Pending incident
     records why it waits (`hold_reason`; the API and automation default to
@@ -3375,6 +3405,8 @@ def transition_ticket(ticket, new_state, hold_reason=None):
     ticket.state = new_state
     record_resolution_state(ticket, old_state, new_state)
     sync_slas("ticket", ticket.id, new_state)
+    if new_state in ("Cancelled", "Rejected", "Closed") and new_state != old_state:
+        cancel_open_child_tasks("ticket", ticket, new_state)
     if ticket.kind == "incident":
         sync_service_outages(ticket)
     if new_state != old_state:
@@ -3422,6 +3454,8 @@ def transition_ticket(ticket, new_state, hold_reason=None):
                     child.closure_subcategory = child.closure_subcategory or ticket.closure_subcategory
                 record_resolution_state(child, old_state, new_state)
                 sync_slas("ticket", child.id, new_state)
+                if new_state in ("Cancelled", "Closed"):
+                    cancel_open_child_tasks("ticket", child, new_state)
                 log_history(
                     "ticket", child.id, "State synchronized from parent incident",
                     "state", old_state, new_state,
@@ -3456,6 +3490,8 @@ def transition_enterprise(record, new_state):
             abort(409, description=(
                 tr("{number} cannot complete while required task {number2} remains {state}.", number=record.number, number2=incomplete.number, state=incomplete.state)
             ))
+    if new_state == "Closed" and record.state != "Closed":
+        cancel_open_child_tasks("enterprise", record, "Closed")
     record.state = new_state
 
 
@@ -4441,7 +4477,26 @@ def decide_vote(vote, decision, comments):
         gate.state = "Rejected"
         chain.state = "Rejected"
         chain.completed_at = now()
+        # One rejection ends the request: nobody else is still asked to decide.
+        for other_gate in chain.gates:
+            if other_gate is not gate and other_gate.state in ("Pending", "Requested"):
+                other_gate.state = "Cancelled"
+            for other in other_gate.votes:
+                if other.state in ("Not Requested", "Requested"):
+                    other.state = "No Longer Required"
         set_target_state(chain.target_type, chain.target_id, "Rejected")
+        if chain.target_type in ("ticket", "ritm"):
+            sync_slas(chain.target_type, chain.target_id, "Rejected")
+        if chain.target_type == "ritm":
+            from serviceops_core.request_withdrawal import settle_request
+            ritm = db.session.get(RequestedItem, chain.target_id)
+            if ritm is not None and ritm.request is not None:
+                ritm.stage = "Completed"
+                settle_request(ritm.request)
+        if chain.target_type in ("ticket", "enterprise"):
+            target = target_record(chain.target_type, chain.target_id)
+            if target is not None:
+                cancel_open_child_tasks(chain.target_type, target, "Rejected")
         notify_request_outcome(chain, "rejected", comments)
         return
     requested = [item for item in gate.votes if item.state == "Requested"]
@@ -4531,7 +4586,7 @@ def sync_slas(target_type, target_id, state):
         if task_sla.stage in ("Completed", "Cancelled"):
             continue
         pause_states = {value.strip() for value in task_sla.definition.pause_states.split(",")}
-        if state == "Cancelled":
+        if state in ("Cancelled", "Rejected"):
             task_sla.stage = "Cancelled"
             task_sla.stopped_at = now()
             db.session.add(SLAEvent(
@@ -4539,7 +4594,8 @@ def sync_slas(target_type, target_id, state):
                 details="Stopped: the record was cancelled",
                 tenant_id=task_sla.definition.tenant_id,
             ))
-        elif state in ("Resolved", "Closed", "Completed", "Closed Complete", "Solved"):
+        elif state in ("Resolved", "Closed", "Completed", "Closed Complete", "Closed Incomplete", "Closed Skipped",
+                       "Solved"):
             task_sla.stage = "Completed"
             task_sla.stopped_at = now()
             db.session.add(SLAEvent(

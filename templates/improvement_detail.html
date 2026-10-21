@@ -6,7 +6,7 @@
 <form method="post" class="record-form">
   <div class="record-grid">
     <label><span>{{ tr('Number') }}</span><input value="{{ item.number }}" disabled></label>
-    <label><span>{{ tr('Status') }}</span><select name="status">{% for state in states %}<option {% if item.status==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select></label>
+    <label><span>{{ tr('Status') }}</span><select name="status">{% for state in states %}<option value="{{ state }}" {% if item.status==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select></label>
     <label><span>{{ tr('Owner') }}</span><select name="owner_id"><option value="">{{ tr('Unassigned') }}</option>{% for user in agents %}<option value="{{ user.id }}" {% if item.owner_id==user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}</select></label>
     <label><span>{{ tr('Raised by') }}</span><input value="{{ item.created_by.name }}" disabled></label>
     <label><span>{{ tr('Raised on') }}</span><input value="{{ (item.created_at|usertime('%b %d, %Y · %H:%M')) }}" disabled></label>

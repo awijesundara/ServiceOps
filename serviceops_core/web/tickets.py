@@ -1359,6 +1359,8 @@ def register(app):
             ))
         cancel_approval_chain(approval_chain_for("ticket", ticket.id))
         ticket.state = "Cancelled"
+        core.sync_slas("ticket", ticket.id, "Cancelled")
+        core.cancel_open_child_tasks("ticket", ticket, "Deleted")
         ticket.deleted_at = now()
         ticket.deleted_by_id = current_user.id
         log_history(
@@ -2343,6 +2345,8 @@ def register(app):
                     Approval.state == "Requested",
                 ).update({"state": "No Longer Required"}, synchronize_session=False)
                 record.state = "Approved" if action == "approve" else "Rejected"
+                if record.state == "Rejected":
+                    core.cancel_open_child_tasks("enterprise", record, "Rejected")
                 create_notification(
                     record.requester_id, f"{record.number} {record.state.lower()}",
                     approval.comments or f"Your record was {record.state.lower()}.",

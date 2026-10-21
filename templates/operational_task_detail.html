@@ -22,7 +22,7 @@
       <label><span>{{ tr('Number') }}</span><input value="{{ task.number }}" disabled></label>
       <label><span>{{ tr('Type') }}</span><input value="{{ task.task_type }}" disabled></label>
       <label><span>{{ tr('Change request') if task.task_kind == 'change' else tr('Parent record') }}</span><a class="record-parent-link" href="{{ parent_url }}">{{ parent.number }}</a></label>
-      <label><span>{{ tr('State') }}</span><select name="state" {% if not can_edit or selectable_states|length < 2 %}disabled{% endif %}>{% for state in selectable_states %}<option {% if task.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select>{% if gate_block %}<small class="field-gate-note">{{ gate_block }}</small>{% endif %}</label>
+      <label><span>{{ tr('State') }}</span><select name="state" {% if not can_edit or selectable_states|length < 2 %}disabled{% endif %}>{% for state in selectable_states %}<option value="{{ state }}" {% if task.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select>{% if gate_block %}<small class="field-gate-note">{{ gate_block }}</small>{% endif %}</label>
       <label><span>{{ tr('Planned start date') }}</span><input value="{{ (task.planned_start|usertime('%b %d, %Y %H:%M')) if task.planned_start else tr('Not scheduled') }}" disabled></label>
       <label><span>{{ tr('Assignment group') }}</span><input value="{{ task.assignment_group.name }}" disabled></label>
       <label><span>{{ tr('Planned end date') }}</span><input value="{{ (task.planned_end|usertime('%b %d, %Y %H:%M')) if task.planned_end else tr('Not scheduled') }}" disabled></label>

@@ -17626,6 +17626,9 @@
    "id": "{number} updated."
   },
   {
+   "id": "{number} was cancelled"
+  },
+  {
    "id": "{number} was deleted. It remains available for audit as a Cancelled change."
   },
   {
@@ -17660,6 +17663,9 @@
   },
   {
    "id": "{parent} is already a child of {child}; an incident cannot be its own ancestor."
+  },
+  {
+   "id": "{parent} was {outcome}, so its task {number} is no longer needed."
   },
   {
    "id": "{period}: {used} of {limit}",

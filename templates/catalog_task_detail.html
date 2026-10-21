@@ -25,7 +25,7 @@
       <label><span>{{ tr('Approval') }}</span><input value="{{ chain.state if chain else tr('Not Yet Requested') }}" disabled></label>
       <label><span>{{ tr('Opened by') }}</span><input value="{{ ritm.request.requested_by.name if ritm.request else tr('Unknown') }}" disabled></label>
       <label><span>{{ tr('Assignment group') }}</span><input value="{{ task.assignment_group.name if task.assignment_group else tr('Unassigned') }}" disabled></label>
-      <label><span>{{ tr('Status') }}</span><select name="state" {% if not can_edit or selectable_states|length < 2 %}disabled{% endif %}>{% for state in selectable_states %}<option {% if task.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select>{% if gate_block %}<small class="field-gate-note">{{ gate_block }}</small>{% endif %}</label>
+      <label><span>{{ tr('Status') }}</span><select name="state" {% if not can_edit or selectable_states|length < 2 %}disabled{% endif %}>{% for state in selectable_states %}<option value="{{ state }}" {% if task.state==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select>{% if gate_block %}<small class="field-gate-note">{{ gate_block }}</small>{% endif %}</label>
       <label><span>{{ tr('Assigned to') }}</span><input value="{{ task.assignee.name if task.assignee else tr('Unassigned') }}" disabled></label>
       <label><span>{{ tr('Request item') }}</span><a class="record-parent-link" href="{{ url_for('request_detail', request_id=ritm.request_id) }}">{{ ritm.number }}</a></label>
       <label><span>{{ tr('Requested for') }}</span><input value="{{ ritm.request.requested_for.name if ritm.request else '' }}" disabled></label>

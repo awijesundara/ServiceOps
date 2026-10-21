@@ -72,7 +72,7 @@ def _withdraw(actor, ritm, reason):
     return notify
 
 
-def _settle_request(catalog_request):
+def settle_request(catalog_request):
     """Close the REQ once none of its items is still open."""
     states = [item.state for item in catalog_request.items]
     if not states or any(state not in ITEM_TERMINAL_STATES for state in states):
@@ -107,7 +107,7 @@ def withdraw_item(actor, ritm, reason):
                                   "open request."))
     reason = _reason(reason)
     notify = _withdraw(actor, ritm, reason)
-    _settle_request(ritm.request)
+    settle_request(ritm.request)
     _notify(actor, ritm.request, [ritm.number], notify, reason)
 
 
@@ -121,7 +121,7 @@ def withdraw_request(actor, catalog_request, reason):
         if ritm.state not in ITEM_TERMINAL_STATES:
             notify |= _withdraw(actor, ritm, reason)
             numbers.append(ritm.number)
-    _settle_request(catalog_request)
+    settle_request(catalog_request)
     core.audit("request withdrawn", catalog_request.number, reason[:200], user_id=actor.id,
                tenant_id=catalog_request.tenant_id)
     _notify(actor, catalog_request, [catalog_request.number], notify, reason)

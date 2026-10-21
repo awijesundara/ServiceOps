@@ -387,7 +387,7 @@
     <input type="hidden" name="return_section" value="{{ section }}">
         <input type="hidden" name="action" value="link_service_ci">
         <input type="hidden" name="service_offering_id" value="{{ service.id }}">
-        <select name="relationship_role"><option>{{ tr('Primary') }}</option><option selected>{{ tr('Supporting') }}</option></select>
+        <select name="relationship_role"><option value="Primary">{{ tr('Primary') }}</option><option value="Supporting" selected>{{ tr('Supporting') }}</option></select>
         <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick CIs by name or serial number…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div>
         <button>{{ tr('Link CIs') }}</button>
       </form>
