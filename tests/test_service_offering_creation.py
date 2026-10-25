@@ -210,3 +210,42 @@ def test_approval_group_cannot_be_selected_as_owning_team(client, app):
     with app.app_context():
         group_id = SupportGroup.query.filter_by(name='Change Control Board', tenant_id=1).one().id
     assert client.post(PATH, data=form(app, support_group_id=str(group_id))).status_code == 400
+
+
+def test_ci_actions_respect_ci_class_read_policy(client, app):
+    """Link, role change, unlink and the page listing all use the same CI-class
+    read policy as the create form: an administrator whose role cannot read a
+    managed class can neither see nor change that class's service mappings."""
+    from app import CiClassPermission, ConfigurationItem, ServiceOfferingCI
+    login(client)
+    with app.app_context():
+        team = SupportGroup.query.filter_by(name="Unix", tenant_id=1).one()
+        service = ServiceOffering(name="Vault", support_group_id=team.id, tenant_id=1)
+        hidden = ConfigurationItem(name="hsm-restricted-01", ci_class="HSM", tenant_id=1)
+        visible = ConfigurationItem(name="vault-web-01", ci_class="Server", tenant_id=1)
+        # Only managers may read HSM CIs, which makes the class managed and
+        # unreadable for the admin role.
+        db.session.add_all([service, hidden, visible, CiClassPermission(
+            tenant_id=1, ci_class="HSM", role="manager", can_read=True)])
+        db.session.flush()
+        existing = ServiceOfferingCI(service_offering_id=service.id, ci_id=hidden.id,
+                                     relationship_role="Primary", tenant_id=1)
+        db.session.add(existing)
+        db.session.commit()
+        service_id, hidden_id, visible_id, link_id = service.id, hidden.id, visible.id, existing.id
+
+    base = {"return_section": "service-offerings", "service_offering_id": str(service_id)}
+    assert client.post(PATH, data={**base, "action": "link_service_ci", "ci_id": str(hidden_id)}).status_code == 404
+    assert client.post(PATH, data={**base, "action": "update_service_ci_role", "link_id": str(link_id),
+                                   "relationship_role": "Supporting"}).status_code == 404
+    assert client.post(PATH, data={**base, "action": "unlink_service_ci", "link_id": str(link_id)}).status_code == 404
+    assert client.post(PATH, data={**base, "action": "link_service_ci", "ci_id": str(visible_id)}).status_code == 303
+
+    page = client.get(PAGE)
+    assert b"vault-web-01" in page.data
+    assert b"hsm-restricted-01" not in page.data
+    with app.app_context():
+        link = db.session.get(ServiceOfferingCI, link_id)
+        assert link is not None and link.relationship_role == "Primary"
+        added = ServiceOfferingCI.query.filter_by(service_offering_id=service_id, ci_id=visible_id).one()
+        assert added.tenant_id == 1

@@ -395,7 +395,7 @@
   </details>
   <p class="muted">{{ tr('Services') }} ({{ services|length }})</p>
   {% for service in services %}
-  {% set links = [] %}{% for link in service.ci_links if link.tenant_id == current_user.tenant_id and link.ci and link.ci.tenant_id == current_user.tenant_id %}{% set _ = links.append(link) %}{% endfor %}
+  {% set links = [] %}{% for link in service.ci_links if link.tenant_id == current_user.tenant_id and link.ci and link.ci.tenant_id == current_user.tenant_id and link.ci_id in readable_service_ci_ids %}{% set _ = links.append(link) %}{% endfor %}
   <article class="service-record">
     <details class="service-editor" id="service-{{ service.id }}" {% if selected_service_id == service.id %}open{% endif %}>
       <summary><span class="service-summary"><strong>{{ service.name }}</strong><span class="muted">{{ service.support_group.name if service.support_group else tr('No owning team') }}</span><span>{{ tr('CIs: {count}', count=links|length) }} · {{ tr_value(service.criticality) }}</span></span></summary>

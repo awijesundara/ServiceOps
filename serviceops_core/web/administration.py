@@ -80,6 +80,7 @@ from serviceops_core.delivery import (
     SYSTEM_EVENT_SUBSCRIPTIONS,
     WEBHOOK_KINDS,
 )
+from serviceops_core import read_access
 from serviceops_core.notification_templates import NOTIFICATION_EVENT_TYPES
 from serviceops_core.projections import project_document
 from serviceops_core.proxy_tunnel import parse_proxy_url
@@ -2741,9 +2742,7 @@ def register(app):
                                     + f"#service-{service.id}", code=303)
                 return _admin_referrer_redirect("itil_admin")
             elif action == "update_service_ci_role":
-                link = db.get_or_404(ServiceOfferingCI, form_int("link_id", required=True))
-                if link.tenant_id != current_user.tenant_id or link.service_offering.tenant_id != current_user.tenant_id:
-                    abort(404)
+                link = _readable_service_ci_link_or_404(form_int("link_id", required=True))
                 role = request.form.get("relationship_role")
                 if role not in ("Primary", "Supporting"):
                     abort(400)
@@ -2764,6 +2763,10 @@ def register(app):
                 linked_names = []
                 for link_ci_id in dict.fromkeys(ci_ids):
                     ci = tenant_record_or_404(ConfigurationItem, link_ci_id)
+                    # Same CI-class read policy as the create form: a CI the
+                    # administrator's role cannot read cannot be linked.
+                    if not read_access.configuration_item_readable(current_user, ci):
+                        abort(404)
                     existing_link = ServiceOfferingCI.query.filter_by(
                         service_offering_id=service.id, ci_id=ci.id
                     ).first()
@@ -2772,15 +2775,14 @@ def register(app):
                     else:
                         db.session.add(ServiceOfferingCI(
                             service_offering_id=service.id, ci_id=ci.id, relationship_role=role,
+                            tenant_id=current_user.tenant_id,
                         ))
                     linked_names.append(ci.name)
                 audit("configure", f"{service.name} service mapping"[:120],
                       f"{role}: {', '.join(linked_names)}")
                 flash(tr("{linked_names} linked to {name}.", linked_names=', '.join(linked_names), name=service.name), "success")
             elif action == "unlink_service_ci":
-                link = db.get_or_404(ServiceOfferingCI, form_int("link_id", required=True))
-                if link.tenant_id != current_user.tenant_id:
-                    abort(404)
+                link = _readable_service_ci_link_or_404(form_int("link_id", required=True))
                 audit("configure", f"{link.service_offering.name} service mapping"[:120],
                       f"removed {link.ci.name}")
                 db.session.delete(link)
@@ -2867,6 +2869,12 @@ def register(app):
             service_query = service_query.filter(ServiceOffering.name.ilike(
                 "%" + service_search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%", escape="\\",
             ))
+        readable_service_ci_ids = set()
+        if section == "service-offerings":
+            readable_service_ci_ids = {identifier for identifier, in read_access.configuration_items(current_user)
+                                       .join(ServiceOfferingCI, ServiceOfferingCI.ci_id == ConfigurationItem.id)
+                                       .filter(ServiceOfferingCI.tenant_id == current_user.tenant_id)
+                                       .with_entities(ConfigurationItem.id).distinct()}
         return render_template(
             "itil_admin_section.html", section=section, title=title, description=description,
             groups=groups, teams=teams,
@@ -2883,6 +2891,7 @@ def register(app):
             support_group_aliases=tenant_query(SupportGroupAlias).order_by(
                 SupportGroupAlias.alias
             ).all(),
+            readable_service_ci_ids=readable_service_ci_ids,
             services=service_query.options(selectinload(ServiceOffering.ci_links).selectinload(ServiceOfferingCI.ci),
                                            selectinload(ServiceOffering.support_group)).order_by(ServiceOffering.name).all(),
             service_search=service_search,
@@ -2912,6 +2921,16 @@ def register(app):
                 "SYNC_CHILD_INCIDENT_STATES", True
             ),
         )
+
+
+def _readable_service_ci_link_or_404(link_id):
+    """A service-to-CI link in the current tenant whose CI the acting role may read."""
+    link = db.get_or_404(ServiceOfferingCI, link_id)
+    if (link.tenant_id != current_user.tenant_id
+            or link.service_offering.tenant_id != current_user.tenant_id
+            or not read_access.configuration_item_readable(current_user, link.ci)):
+        abort(404)
+    return link
 
 
 def _catalog_policy_context():
