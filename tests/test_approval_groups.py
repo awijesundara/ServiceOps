@@ -149,7 +149,7 @@ def test_record_approval_goes_to_the_group_and_one_decision_settles_it(app, clie
     client.post("/logout")
     client.post("/login", data={"username": "change.requester", "password": "Password123!"})
     response = client.post("/module/problem/new", data={
-        "record_type": "Problem", "title": "Repeated disk alerts", "description": "Investigate.",
+        "record_type": "Root cause analysis", "title": "Repeated disk alerts", "description": "Investigate.",
         "approval_required": "on",
     })
     assert response.status_code in (302, 303)

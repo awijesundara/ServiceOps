@@ -21,7 +21,7 @@ def test_ios_comment_and_record_events_keep_source_and_actor(app, client):
     rows = client.get(f'/api/v1/tickets/{ticket_number}/comments', headers=headers).json['data']
     assert rows[0]['source_platform'] == 'iOS'
     patch = client.patch(f'/api/v1/tickets/{ticket_number}', headers={**headers, 'Idempotency-Key': 'ios-priority-origin'},
-                         json={'priority': 'P4'})
+                         json={'impact': 'Low', 'urgency': 'Medium', 'priority': 'P4'})
     assert patch.status_code == 200, patch.json
     with app.app_context():
         assert TaskHistory.query.filter_by(target_type='ticket', target_id=ticket_id, source_platform='iOS').count() >= 2

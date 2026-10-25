@@ -235,6 +235,9 @@
    "id": "A prerequisite has no due date. Date it before automatic scheduling."
   },
   {
+   "id": "A priority override needs a reason of at least 10 characters."
+  },
+  {
    "id": "A project key has 2 to 10 letters or digits and starts with a letter."
   },
   {
@@ -309,6 +312,9 @@
   },
   {
    "id": "A summary of project status, priorities, workload and recent activity."
+  },
+  {
+   "id": "A summary of up to 180 characters and a description are required."
   },
   {
    "id": "A task for another team adds an approval from that team's manager before the change can go ahead."
@@ -5307,7 +5313,7 @@
    "id": "Filters"
   },
   {
-   "id": "Find a menu item"
+   "id": "Find a menu item or search ServiceOps"
   },
   {
    "id": "Find an administration tool"
@@ -5325,7 +5331,7 @@
    "id": "Find matching published knowledge and related resolved incidents."
   },
   {
-   "id": "Find menu"
+   "id": "Find menu or search"
   },
   {
    "id": "Finish",
@@ -6067,6 +6073,9 @@
   },
   {
    "id": "In order"
+  },
+  {
+   "id": "In other administration areas"
   },
   {
    "id": "In progress",
@@ -8829,6 +8838,9 @@
    "id": "Only a manager or administrator may override calculated priority, with a reason of at least 10 characters."
   },
   {
+   "id": "Only a manager or administrator may override the calculated priority ({calculated})."
+  },
+  {
    "id": "Only a planned sprint can be deleted."
   },
   {
@@ -9392,6 +9404,9 @@
   },
   {
    "id": "Pages"
+  },
+  {
+   "id": "Pages and settings"
   },
   {
    "id": "Pagination"
@@ -11189,7 +11204,7 @@
    "id": "Requires cmdb:write. Idempotent by name within the acting API client's tenant — safe to call on every agent/cron run; no Idempotency-Key needed."
   },
   {
-   "id": "Requires incidents:create."
+   "id": "Requires incidents:create. Fields: title, description, assignment_group_id, optional category, impact and urgency (Critical, High, Medium or Low; default Medium), priority and priority_override_reason. Priority defaults to the impact/urgency matrix result. A different priority is an override: the acting user must be a manager or administrator (otherwise 403) and priority_override_reason must have at least 10 characters (otherwise 400)."
   },
   {
    "id": "Requires projects:read and project management enabled."
@@ -11259,9 +11274,6 @@
   },
   {
    "id": "Requires tickets:update and an acting user who can manage the ticket. Body: body (1-10000 characters) and optional parent_id to reply. Idempotency-Key is optional here."
-  },
-  {
-   "id": "Requires tickets:update and an acting user with update, assign, transition, and owning-team authority. Fields: state, priority, assigned_to_id, resolution_notes, closure_category and closure_subcategory (incidents; the categorisation at closure, kept separate from the logging category). Resolution fields are applied before the state change; when omitted on resolution the closure category defaults to the logging category. hold_reason (Awaiting caller, vendor, change or problem) says why a Pending incident waits; it defaults to Awaiting caller."
   },
   {
    "id": "Requires workflows:execute."
@@ -12140,6 +12152,9 @@
    "id": "Search across projects you can access. Shared filters never change record permissions."
   },
   {
+   "id": "Search administration"
+  },
+  {
    "id": "Search and pick one or more configuration items…"
   },
   {
@@ -12190,6 +12205,9 @@
   {
    "id": "Search every major ServiceOps record type from here.",
    "javascript": true
+  },
+  {
+   "id": "Search everything for “{query}”"
   },
   {
    "id": "Search is unavailable right now. Please try again.",
@@ -12257,9 +12275,6 @@
   },
   {
    "id": "Search {kind} records"
-  },
-  {
-   "id": "Search {title}"
   },
   {
    "id": "Search · {instance_name}"
@@ -12377,6 +12392,9 @@
   },
   {
    "id": "Select a valid priority for the action."
+  },
+  {
+   "id": "Select a valid record type."
   },
   {
    "id": "Select a valid relationship type."
@@ -12810,6 +12828,9 @@
   },
   {
    "id": "Settings"
+  },
+  {
+   "id": "Settings and pages"
   },
   {
    "id": "Settings sections"
@@ -14213,6 +14234,9 @@
   },
   {
    "id": "The proposed priority is not valid."
+  },
+  {
+   "id": "The proposed priority {priority} differs from the calculated priority {calculated}. Override it on the ticket with a reason instead."
   },
   {
    "id": "The proposed ticket update is not valid."

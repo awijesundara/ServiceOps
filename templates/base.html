@@ -68,7 +68,7 @@
 <aside class="sidebar">
   <a class="brand" href="{{ url_for('dashboard') }}">{% if has_company_logo %}<img class="company-logo" src="{{ url_for('company_logo') }}" alt="{{ tr('{company_name} logo', company_name=(company_name)) }}"><span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span>{% else %}<img class="serviceops-mark" src="{{ url_for('static', filename='brand/serviceops-mark.png', v=asset_version) }}" alt=""><span class="brand-product">{{ instance_name }}<small>{{ company_name }}</small></span>{% endif %}</a>
   <nav class="application-nav" aria-label="{{ tr('Application navigation') }}" data-application-nav>
-    <label class="nav-filter"><span aria-hidden="true">⌕</span><input type="search" placeholder="{{ tr('Find menu') }}" aria-label="{{ tr('Find a menu item') }}" data-nav-filter></label>
+    <form class="nav-filter" role="search" action="{{ url_for('global_search') }}" data-nav-filter-form data-nav-search-url="{{ url_for('navigation_search') }}"><span aria-hidden="true">⌕</span><input type="search" name="q" placeholder="{{ tr('Find menu or search') }}" aria-label="{{ tr('Find a menu item or search ServiceOps') }}" autocomplete="off" data-nav-filter></form>
     <a class="nav-home{% if nav_active('dashboard') %} active{% endif %}" href="{{ url_for('dashboard') }}" {% if nav_active('dashboard') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">⌂</span><span>{{ tr('Home') }}</span></a>
     {% if current_user.effective_role in ['agent','manager','admin','superadmin'] %}<a class="nav-home{% if request.endpoint in ('dashboards_home','dashboard_view') %} active{% endif %}" href="{{ url_for('dashboards_home') }}" {% if request.endpoint in ('dashboards_home','dashboard_view') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">▤</span><span>{{ tr('Dashboards') }}</span></a>{% endif %}
 
@@ -175,6 +175,11 @@
     </details>
     {% endif %}
     <p class="nav-filter-empty" data-nav-filter-empty hidden>{{ tr('No matching menu items') }}</p>
+    <div class="nav-search-results" data-nav-search-results hidden>
+      <p class="nav-search-heading">{{ tr('Pages and settings') }}</p>
+      <div data-nav-search-pages></div>
+      <a class="nav-search-all" href="{{ url_for('global_search') }}" data-nav-search-all data-label-template="{{ tr('Search everything for “{query}”', query='__QUERY__') }}"></a>
+    </div>
   </nav>
   <script src="{{ url_for('static', filename='nav-init.js', v=asset_version) }}"></script>
   <div class="profile">

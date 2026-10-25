@@ -326,7 +326,8 @@ def _admin_action_ticket(app):
         config.actions_enabled = True
         admin = User.query.filter_by(username="admin").one()
         ticket = Ticket(number="INC0099999", kind="incident", title="AI action test", description="Review safely",
-                        requester_id=admin.id, tenant_id=1, state="New", priority="P3")
+                        requester_id=admin.id, tenant_id=1, state="New", priority="P3",
+                        impact="Critical", urgency="Critical")
         db.session.add(ticket)
         db.session.commit()
         return ticket.id

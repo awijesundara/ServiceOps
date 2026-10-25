@@ -222,8 +222,10 @@ def _team_workload(viewer, opts, team):
 def _tasks(viewer, opts, team):
     rows = []
     for model in (OperationalTask, CatalogTask):
-        query = model.query.filter(model.state.notin_(TERMINAL_TASK), model.tenant_id == viewer.tenant_id) \
-            if hasattr(model, "tenant_id") else model.query.filter(model.state.notin_(TERMINAL_TASK))
+        # Rows written before tenant_id was backfilled are still bounded by the
+        # assignee/team filters below, which are tenant-specific.
+        query = model.query.filter(model.state.notin_(TERMINAL_TASK), db.or_(
+            model.tenant_id == viewer.tenant_id, model.tenant_id.is_(None)))
         if opts.get("scope", "mine") == "team":
             if team is None:
                 continue

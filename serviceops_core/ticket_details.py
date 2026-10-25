@@ -65,7 +65,8 @@ def ticket_details(ticket, user, *, include_sections=True):
             ("major_incident", "Major incident and review", ticket.major_incident_profile, ["status", "business_impact", "communications", "coordinator", "declared_at", "public", "review_what_went_well", "review_what_went_poorly", "review_follow_up_actions", "reviewed_by", "reviewed_at"]),
         ]
         for key, title, row, attrs in specs:
-            if row and getattr(row, "tenant_id", tenant) == tenant:
+            # A profile without its own tenant_id yet belongs to this (tenant-checked) ticket.
+            if row and (getattr(row, "tenant_id", None) or tenant) == tenant:
                 fields = []
                 for attr in attrs:
                     value = getattr(row, attr)

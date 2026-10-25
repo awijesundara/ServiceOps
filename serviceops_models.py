@@ -301,6 +301,8 @@ class User(UserMixin, db.Model):
 
 class ExternalIdentity(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     provider = db.Column(db.String(20), nullable=False)
     subject = db.Column(db.String(255), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -528,7 +530,7 @@ class Ticket(db.Model):
     resolved_at = db.Column(db.DateTime(timezone=True))
     contact_type = db.Column(db.String(40), nullable=False, default="Self-service")
     notify = db.Column(db.String(40), nullable=False, default="Email")
-    service_offering_id = db.Column(db.Integer, db.ForeignKey("service_offering.id"))
+    service_offering_id = db.Column(db.Integer, db.ForeignKey("service_offering.id"), index=True)
     requester_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     assignee_id = db.Column(db.Integer, db.ForeignKey("user.id"), index=True)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
@@ -607,6 +609,8 @@ class TaskNote(db.Model):
     """Polymorphic activity note, used for CTASK/PTASK work notes and
     SCTASK internal/customer-visible (RITM) commentary."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     target_type = db.Column(db.String(30), nullable=False, index=True)
     target_id = db.Column(db.Integer, nullable=False, index=True)
     visibility = db.Column(db.String(20), nullable=False, default="internal")
@@ -905,6 +909,8 @@ class APIRateLimitWindow(db.Model):
     so an in-memory counter would undercount and let each worker allow its own
     full quota."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     api_client_id = db.Column(db.Integer, db.ForeignKey("api_client.id"), nullable=False, index=True)
     window_start = db.Column(db.DateTime(timezone=True), nullable=False)
     request_count = db.Column(db.Integer, nullable=False, default=0)
@@ -1492,7 +1498,7 @@ class ClientTicketMessage(db.Model):
 
 class Approval(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    enterprise_record_id = db.Column(db.Integer, db.ForeignKey("enterprise_record.id"), nullable=False)
+    enterprise_record_id = db.Column(db.Integer, db.ForeignKey("enterprise_record.id"), nullable=False, index=True)
     approver_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     state = db.Column(db.String(20), nullable=False, default="Requested")
     comments = db.Column(db.Text, default="")
@@ -1698,7 +1704,7 @@ CI_RELATIONSHIP_TYPES = ["Depends on", "Runs on", "Connects to", "Hosted on", "B
 class CIRelationship(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     parent_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False)
-    child_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False)
+    child_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False, index=True)
     relationship_type = db.Column(db.String(60), nullable=False, default="Depends on")
     # Port-level detail for an LLDP-derived "Connects to" edge (e.g.
     # "Ethernet51 <-> eth0"), so the topology map can show which physical
@@ -1779,7 +1785,7 @@ class ServiceOfferingCI(db.Model):
     this CI support" for impact analysis or change risk."""
     id = db.Column(db.Integer, primary_key=True)
     service_offering_id = db.Column(db.Integer, db.ForeignKey("service_offering.id"), nullable=False)
-    ci_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False)
+    ci_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False, index=True)
     relationship_role = db.Column(db.String(30), nullable=False, default="Supporting")
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
@@ -1835,6 +1841,8 @@ class NotificationPreference(db.Model):
     out of specific noisy categories (e.g. ritm.comment_added) without
     losing every notification."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
     email_enabled = db.Column(db.Boolean, nullable=False, default=True)
     muted_event_types = db.Column(db.Text, nullable=False, default="[]")
@@ -1990,6 +1998,8 @@ class UserRoleGrant(db.Model):
     (User.effective_role) lets a multi-role user deliberately act as a lower
     one for a session without losing any grant."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     role = db.Column(db.String(20), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
@@ -2007,6 +2017,8 @@ class ManagedRoleGrant(db.Model):
     "team_responsibility" (manages or belongs to a support group) currently
     never interfere with each other or with a manual grant."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     role = db.Column(db.String(20), nullable=False)
     source = db.Column(db.String(30), nullable=False)
@@ -2213,6 +2225,8 @@ class SLADefinition(db.Model):
 
 class TaskSLA(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     definition_id = db.Column(db.Integer, db.ForeignKey("sla_definition.id"), nullable=False)
     target_type = db.Column(db.String(30), nullable=False, index=True)
     target_id = db.Column(db.Integer, nullable=False, index=True)
@@ -2253,6 +2267,8 @@ class BusinessSchedule(db.Model):
 
 class ScheduleHoliday(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     schedule_id = db.Column(db.Integer, db.ForeignKey("business_schedule.id"), nullable=False)
     holiday_date = db.Column(db.Date, nullable=False)
     name = db.Column(db.String(160), nullable=False)
@@ -2411,7 +2427,7 @@ class CatalogRequest(db.Model):
 class RequestedItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     number = db.Column(db.String(24), unique=True, nullable=False)
-    request_id = db.Column(db.Integer, db.ForeignKey("catalog_request.id"), nullable=False)
+    request_id = db.Column(db.Integer, db.ForeignKey("catalog_request.id"), nullable=False, index=True)
     catalog_item_id = db.Column(db.Integer, db.ForeignKey("catalog_item.id"), nullable=False)
     state = db.Column(db.String(40), nullable=False, default="Open")
     stage = db.Column(db.String(40), nullable=False, default="Request Approved")
@@ -2425,7 +2441,7 @@ class RequestedItem(db.Model):
 class CatalogTask(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     number = db.Column(db.String(24), unique=True, nullable=False)
-    requested_item_id = db.Column(db.Integer, db.ForeignKey("requested_item.id"), nullable=False)
+    requested_item_id = db.Column(db.Integer, db.ForeignKey("requested_item.id"), nullable=False, index=True)
     title = db.Column(db.String(180), nullable=False)
     state = db.Column(db.String(40), nullable=False, default="Open")
     sequence = db.Column(db.Integer, nullable=False, default=1)
@@ -2441,6 +2457,8 @@ class CatalogTask(db.Model):
 class CatalogTaskControl(db.Model):
     """Optional sequential dependency metadata for SCTASK fulfillment flows."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     task_id = db.Column(db.Integer, db.ForeignKey("catalog_task.id"), unique=True, nullable=False)
     execution_mode = db.Column(db.String(20), nullable=False, default="Parallel")
     predecessor_task_id = db.Column(db.Integer, db.ForeignKey("catalog_task.id"))
@@ -2513,6 +2531,8 @@ class ChangePostImplementationReview(db.Model):
 
 class ChangeOwnership(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), unique=True, nullable=False)
     group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False)
     ticket = db.relationship("Ticket", backref=db.backref("change_ownership", uselist=False))
@@ -2522,6 +2542,8 @@ class ChangeOwnership(db.Model):
 class TicketAssignmentGroup(db.Model):
     """Assignment-group ownership for incidents and service-request tickets."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), unique=True, nullable=False)
     group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"), nullable=False)
     ticket = db.relationship(
@@ -2532,6 +2554,8 @@ class TicketAssignmentGroup(db.Model):
 
 class RecordLink(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     source_type = db.Column(db.String(30), nullable=False)
     source_id = db.Column(db.Integer, nullable=False)
     target_type = db.Column(db.String(30), nullable=False)
@@ -2543,6 +2567,8 @@ class RecordLink(db.Model):
 class TaskHistory(db.Model):
     """Append-only activity history rendered on the related operational record."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     target_type = db.Column(db.String(30), nullable=False, index=True)
     target_id = db.Column(db.Integer, nullable=False, index=True)
     actor_id = db.Column(db.Integer, db.ForeignKey("user.id"))
@@ -2559,6 +2585,8 @@ class TaskHistory(db.Model):
 class OperationalTask(db.Model):
     """PTASK and CTASK work packages with independent team ownership."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     number = db.Column(db.String(24), unique=True, nullable=False, index=True)
     task_kind = db.Column(db.String(20), nullable=False, index=True)
     parent_type = db.Column(db.String(30), nullable=False, index=True)
@@ -2582,9 +2610,11 @@ class OperationalTask(db.Model):
 class TaskCI(db.Model):
     """Many-to-many affected and impacted CI/service relationships."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     target_type = db.Column(db.String(30), nullable=False, index=True)
     target_id = db.Column(db.Integer, nullable=False, index=True)
-    ci_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False)
+    ci_id = db.Column(db.Integer, db.ForeignKey("configuration_item.id"), nullable=False, index=True)
     relationship_role = db.Column(db.String(30), nullable=False, default="Affected CI")
     created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
     ci = db.relationship("ConfigurationItem")
@@ -2599,6 +2629,8 @@ class TaskCI(db.Model):
 class ProblemProfile(db.Model):
     """Problem-specific root cause, known-error, workaround, and fix information."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     enterprise_record_id = db.Column(
         db.Integer, db.ForeignKey("enterprise_record.id"), unique=True, nullable=False
     )
@@ -2617,6 +2649,8 @@ class ProblemProfile(db.Model):
 class ChangeRevision(db.Model):
     """Tracks approval-relevant plan revisions without overwriting prior decisions."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), unique=True, nullable=False)
     revision = db.Column(db.Integer, nullable=False, default=1)
     last_material_change_at = db.Column(db.DateTime(timezone=True))
@@ -2632,6 +2666,8 @@ class MajorIncidentProfile(db.Model):
     continual improvement expects a structured post-incident review, not
     just whatever the live communications log happened to capture)."""
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), unique=True, nullable=False)
     status = db.Column(db.String(30), nullable=False, default="Proposed")
     business_impact = db.Column(db.Text, default="")
@@ -2710,6 +2746,8 @@ class ImprovementItem(db.Model):
 
 class Favorite(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     label = db.Column(db.String(180), nullable=False)
     url = db.Column(db.String(500), nullable=False)
@@ -2721,6 +2759,8 @@ class Favorite(db.Model):
 
 class RecentView(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     label = db.Column(db.String(180), nullable=False)
     url = db.Column(db.String(500), nullable=False)
@@ -2737,6 +2777,8 @@ DARK_THEMES = ("dark", "graphite", "midnight")
 class UserPreference(db.Model):
     language = db.Column(db.String(16), nullable=False, default="en", server_default="en")
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
     theme = db.Column(db.String(30), nullable=False, default="light")
     density = db.Column(db.String(30), nullable=False, default="comfortable")
@@ -2890,6 +2932,8 @@ class DashboardHome(db.Model):
 
 class ChecklistItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # Owning tenant, filled from the parent record (serviceops_core/dependent_tenancy.py).
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), index=True)
     ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False)
     text = db.Column(db.String(300), nullable=False)
     completed = db.Column(db.Boolean, nullable=False, default=False)

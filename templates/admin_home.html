@@ -1,6 +1,12 @@
 {% extends "base.html" %}{% block title %}{{ tr('Administration · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 {% from '_admin_icons.html' import admin_icon %}
+{% macro card_destination(endpoint, target) -%}
+{%- if endpoint == 'itil_admin_section' %}{{ url_for(endpoint, section=target) }}
+{%- elif endpoint == 'system_settings_category' %}{{ url_for(endpoint, category=target) }}
+{%- elif endpoint == 'integrations_admin' %}{{ url_for(endpoint, view=target) }}
+{%- else %}{{ url_for(endpoint) }}{% endif -%}
+{%- endmacro %}
 {% set sections = [
   ('people-access',tr('People & access'),tr('Users, teams, roles, sessions, and accountable ownership'),'people',[
     (tr('Users'),tr('Create, edit, deactivate, and erase accounts; assign roles and reporting lines'),'users',None,'U','user account manager'),
@@ -74,21 +80,29 @@
   </section>
   {% else %}
   <nav class="settings-breadcrumb" aria-label="{{ tr('Administration hierarchy') }}"><a href="{{ url_for('admin_home') }}">{{ tr('General') }}</a><span aria-hidden="true">›</span><strong>{{ active.title }}</strong></nav>
-  <label class="admin-quick-find"><span aria-hidden="true">⌕</span><input type="search" placeholder="{{ tr('Search {title}', title=(active.title|lower)) }}" aria-label="{{ tr('Find an administration tool') }}" data-admin-quick-find></label>
+  <form class="admin-quick-find" role="search" action="{{ url_for('global_search') }}" data-admin-quick-find-form data-nav-search-url="{{ url_for('navigation_search') }}"><span aria-hidden="true">⌕</span><input type="search" name="q" placeholder="{{ tr('Search administration') }}" aria-label="{{ tr('Find an administration tool') }}" autocomplete="off" data-admin-quick-find></form>
   <p class="muted admin-quick-find-empty" data-admin-quick-find-empty hidden>{{ tr('No matching administration tool.') }}</p>
   <section class="admin-home-section" data-admin-home-section>
     <div class="settings-level-grid admin-tool-grid">
       {% for title,description,endpoint,target,icon,keywords in active.cards %}
-      {% if endpoint == 'itil_admin_section' %}{% set destination=url_for(endpoint,section=target) %}
-      {% elif endpoint == 'system_settings_category' %}{% set destination=url_for(endpoint,category=target) %}
-      {% elif endpoint == 'integrations_admin' %}{% set destination=url_for(endpoint,view=target) %}
-      {% else %}{% set destination=url_for(endpoint) %}{% endif %}
-      <a class="settings-level-card" data-admin-quick-find-card data-keywords="{{ keywords }}" href="{{ destination }}"><span class="settings-card-icon">{{ admin_icon(icon) }}</span><span><strong>{{ tr_value(title) }}</strong><small>{{ tr_value(description) }}</small></span><span class="settings-row-chevron" aria-hidden="true"></span></a>
+      <a class="settings-level-card" data-admin-quick-find-card data-keywords="{{ keywords }}" href="{{ card_destination(endpoint, target) }}"><span class="settings-card-icon">{{ admin_icon(icon) }}</span><span><strong>{{ tr_value(title) }}</strong><small>{{ tr_value(description) }}</small></span><span class="settings-row-chevron" aria-hidden="true"></span></a>
       {% endfor %}
       {% if active_section == 'platform-security' and current_user.effective_role == 'superadmin' %}
       <a class="settings-level-card" data-admin-quick-find-card data-keywords="tenant platform cross-tenant" href="{{ url_for('platform_tenants') }}"><span class="settings-card-icon">{{ admin_icon('database') }}</span><span><strong>{{ tr('Tenants') }}</strong><small>{{ tr('Create, activate, and deactivate tenants across the platform.') }}</small></span><span class="settings-row-chevron" aria-hidden="true"></span></a>
       {% endif %}
     </div>
+  </section>
+  {#- Typing also finds tools in the other administration areas and matching settings pages. -#}
+  <section class="admin-quick-find-more" data-admin-quick-find-more hidden aria-live="polite">
+    <h2 data-admin-other-heading>{{ tr('In other administration areas') }}</h2>
+    <div class="settings-level-grid admin-tool-grid">
+      {% for key,title,description,icon,cards in sections if key != active_section %}{% for card_title,card_description,endpoint,target,card_icon,keywords in cards %}
+      <a class="settings-level-card" data-admin-other-card data-keywords="{{ keywords }}" href="{{ card_destination(endpoint, target) }}" hidden><span class="settings-card-icon">{{ admin_icon(card_icon) }}</span><span><strong>{{ tr_value(card_title) }}</strong><small>{{ tr_value(title) }} · {{ tr_value(card_description) }}</small></span><span class="settings-row-chevron" aria-hidden="true"></span></a>
+      {% endfor %}{% endfor %}
+    </div>
+    <h2 data-admin-remote-heading hidden>{{ tr('Settings and pages') }}</h2>
+    <div class="admin-quick-find-links" data-admin-remote-results></div>
+    <a class="button admin-quick-find-all" href="{{ url_for('global_search') }}" data-admin-search-all data-label-template="{{ tr('Search everything for “{query}”', query='__QUERY__') }}"></a>
   </section>
   {% endif %}
 </section></div>

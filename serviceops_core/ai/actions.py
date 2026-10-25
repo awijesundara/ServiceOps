@@ -230,7 +230,15 @@ def execute(action, ticket, actor):
         priority = str(payload["priority"])
         if priority not in PRIORITIES:
             abort(400, description=tr("The proposed priority is not valid."))
-        ticket.priority = priority
+        from serviceops_core.priority import calculate_priority
+        from serviceops_core.priority_governance import apply_governed_priority
+        calculated = calculate_priority(ticket.impact, ticket.urgency)
+        if priority != calculated:
+            # An override needs a person's reason, which an AI proposal cannot supply.
+            abort(409, description=tr(
+                "The proposed priority {priority} differs from the calculated priority {calculated}. "
+                "Override it on the ticket with a reason instead.", priority=priority, calculated=calculated))
+        apply_governed_priority(ticket, actor, priority=priority, source="AI-approved update")
     if "assigned_to_id" in payload:
         assignee_id = payload["assigned_to_id"]
         if assignee_id is not None:

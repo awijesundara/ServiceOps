@@ -64,6 +64,7 @@ from app import (
     visible_ticket_query,
 )
 from serviceops_core.analytics import overdue_enterprise_records, OVERDUE_RECORDS_LIMIT
+from serviceops_core import read_access
 from serviceops_core.ci_class_policy import restrict_ci_query_to_readable_classes
 from serviceops_core.config_schema import SETTING_GROUP_META
 from serviceops_core.delivery import (
@@ -889,6 +890,44 @@ def register(app):
             })
         return jsonify(results[:15])
 
+    def navigation_matches(q):
+        """Pages and settings the current user may open whose label or keywords contain every word of q."""
+        words = [search_stem(word) for word in q.casefold().split()]
+        if not words:
+            return []
+        can_access_clients = user_can_access_client_management(current_user)
+        matches = []
+        label_matches = []
+        for entry in navigation_entries(SETTING_GROUP_META):
+            if entry.client_management and not can_access_clients:
+                continue
+            if entry.setting and not setting_bool(entry.setting):
+                continue
+            if entry.minimum_role and not role_at_least(current_user.effective_role, entry.minimum_role):
+                continue
+            haystack = f"{entry.label} {entry.keywords}".casefold()
+            if all(word in haystack for word in words):
+                row = {"type": "Navigation", "label": entry.label,
+                       "url": url_for(entry.endpoint, **entry.params), "meta": entry.keywords}
+                # Pages whose own name matches come before keyword-only matches.
+                (label_matches if all(word in entry.label.casefold() for word in words) else matches).append(row)
+        return label_matches + matches
+
+    @app.get("/ui/search/navigation")
+    @login_required
+    def navigation_search():
+        """JSON for the sidebar quick search: matching pages and settings only."""
+        q = request.args.get("q", "").strip()[:100]
+        return jsonify([{"label": tr_value(row["label"]), "url": row["url"]} for row in navigation_matches(q)[:8]])
+
+    def search_stem(word):
+        """Match singular and plural alike ("teams" finds "Team managers")."""
+        if len(word) > 4 and word.endswith("ies"):
+            return word[:-3]
+        if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+            return word[:-1]
+        return word
+
     @app.get("/ui/search")
     @login_required
     def global_search():
@@ -896,18 +935,7 @@ def register(app):
         results = []
         if q:
             pattern = f"%{q}%"
-            normalized_q = q.casefold()
-            can_access_clients = user_can_access_client_management(current_user)
-            for entry in navigation_entries(SETTING_GROUP_META):
-                if entry.client_management and not can_access_clients:
-                    continue
-                if entry.setting and not setting_bool(entry.setting):
-                    continue
-                if entry.minimum_role and not role_at_least(current_user.effective_role, entry.minimum_role):
-                    continue
-                if normalized_q in f"{entry.label} {entry.keywords}".casefold():
-                    results.append({"type": "Navigation", "label": entry.label,
-                                    "url": url_for(entry.endpoint, **entry.params), "meta": entry.keywords})
+            results.extend(navigation_matches(q))
             # Keep authorization filtering inside PostgreSQL. The old code
             # loaded every visible ORM object into Python simply to collect
             # IDs, making global search memory and latency grow with the
@@ -927,7 +955,11 @@ def register(app):
                 Ticket.tenant_id == current_user.tenant_id,
                 all_terms([Ticket.number, Ticket.title, Ticket.description]),
             ).union(db.session.query(Comment.ticket_id).filter(
-                Comment.tenant_id == current_user.tenant_id, Comment.body.ilike(pattern)))
+                Comment.tenant_id == current_user.tenant_id, Comment.body.ilike(pattern),
+                # Internal work notes must not reveal a ticket to someone who may not read them.
+                *([] if core.effective_role_has_action(current_user.effective_role, "comment_internal",
+                                                  tenant_id=current_user.tenant_id)
+                  else [Comment.internal.is_(False)])))
             for row in Ticket.query.filter(Ticket.id.in_(visible_ticket_ids),
                                            Ticket.id.in_(matching_ticket_ids)).limit(20):
                 results.append({"type": row.kind.title(), "label": f"{row.number} · {row.title}",
@@ -948,9 +980,7 @@ def register(app):
                                                              EnterpriseRecord.external_id.ilike(pattern))).limit(20):
                 results.append({"type": DOMAIN_CONFIG[row.domain]["name"], "label": f"{row.number} · {row.title}",
                                 "url": url_for("enterprise_detail", record_id=row.id), "meta": row.state})
-            for row in restrict_ci_query_to_readable_classes(
-                tenant_query(ConfigurationItem), current_user.tenant_id, current_user.effective_role,
-            ).filter(all_terms([
+            for row in read_access.configuration_items(current_user).filter(all_terms([
                 ConfigurationItem.name, ConfigurationItem.serial_number, ConfigurationItem.ip_address,
                 ConfigurationItem.model, ConfigurationItem.vendor, ConfigurationItem.description,
                 ConfigurationItem.location, ConfigurationItem.ci_class, ConfigurationItem.environment,
@@ -985,22 +1015,25 @@ def register(app):
                     "url": url_for("request_detail", request_id=row.requested_item.request_id),
                     "meta": row.state,
                 })
-            for row in OperationalTask.query.filter(db.or_(
+            visible_tasks = OperationalTask.query.filter(db.or_(
                 OperationalTask.number.ilike(pattern), OperationalTask.title.ilike(pattern)
-            )).limit(20):
+            ), db.or_(
+                db.and_(OperationalTask.parent_type == "ticket", OperationalTask.parent_id.in_(visible_ticket_ids)),
+                db.and_(OperationalTask.parent_type == "enterprise",
+                        OperationalTask.parent_id.in_(visible_enterprise_ids)),
+            )).limit(20).all()
+            core.prefetch_record_references((row.parent_type, row.parent_id) for row in visible_tasks)
+            for row in visible_tasks:
                 parent = record_reference(row.parent_type, row.parent_id)
-                if isinstance(parent, Ticket) and not visible_ticket_query(current_user).filter(Ticket.id == parent.id).first():
-                    continue
-                if isinstance(parent, EnterpriseRecord) and not visible_enterprise_record_query(current_user).filter(EnterpriseRecord.id == parent.id).first():
-                    continue
                 results.append({
                     "type": {"change": "Change task", "incident": "Incident task", "event": "Event task"}.get(row.task_kind, "Problem task"),
                     "label": f"{row.number} · {row.title}",
                     "url": record_url(parent), "meta": row.state,
                 })
-            for row in tenant_query(Asset).filter(all_terms([
+            asset_rows = tenant_query(Asset).filter(all_terms([
                 Asset.asset_tag, Asset.name, Asset.asset_type, Asset.serial_number,
-            ])).limit(20):
+            ])).limit(20) if role_at_least(current_user.effective_role, "agent") else []
+            for row in asset_rows:
                 results.append({"type": "Asset", "label": f"{row.asset_tag} · {row.name}",
                                 "url": url_for("assets"), "meta": f"{row.asset_type} · {row.status}"})
             for row in tenant_query(CatalogItem).filter(all_terms([
@@ -1030,6 +1063,11 @@ def register(app):
                     results.append({"type": "Client contact", "label": f"{row.name} · {row.email}",
                                     "url": url_for("client_contacts"), "meta": row.organization.name})
             if role_at_least(current_user.effective_role, "admin"):
+                for row in tenant_query(core.ServiceOffering).filter(all_terms([core.ServiceOffering.name])).order_by(
+                    core.ServiceOffering.name).limit(20):
+                    results.append({"type": "Service offering", "label": row.name,
+                                    "url": url_for("itil_admin_section", section="service-offerings", service=row.id)
+                                    + f"#service-{row.id}", "meta": row.criticality})
                 for row in tenant_query(User).filter(db.or_(
                     User.username.ilike(pattern), User.name.ilike(pattern),
                     User.email.ilike(pattern), User.department.ilike(pattern),

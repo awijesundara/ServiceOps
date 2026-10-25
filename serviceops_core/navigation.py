@@ -101,6 +101,8 @@ def navigation_entries(setting_group_meta):
         else:
             if category == "organization":
                 description += " Company logo PNG branding image upload"
+            if category == "sign_in_and_directory":
+                description += " SSO single sign-on OIDC SAML Active Directory login"
             setting_entries.append(NavigationEntry(
                 label, f"{description} Administration", "system_settings_category",
                 {"category": category}, "admin",

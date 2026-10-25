@@ -899,7 +899,7 @@ def test_rest_api_scopes_idempotency_projection_and_pagination(client, app):
     body = {
         "title": "API-created outage",
         "description": "Created through the versioned REST contract.",
-        "priority": "P2",
+        "impact": "High", "urgency": "High", "priority": "P2",
         "assignment_group_id": coreapps_id,
     }
     assert client.get("/api/v1/tickets").status_code == 401
@@ -5998,7 +5998,7 @@ def test_administration_is_one_hub_with_clear_child_areas(client):
     assert b"Knowledge" in sidebar
     assert b"All workspaces" in sidebar
     assert b">Operations<" in sidebar
-    assert b'aria-label="Find a menu item"' in sidebar
+    assert b'aria-label="Find a menu item or search ServiceOps"' in sidebar
     assert b">Management<" in sidebar
     assert b">Administration<" in sidebar
     assert b'class="nav-group nav-group-admin" open' in sidebar

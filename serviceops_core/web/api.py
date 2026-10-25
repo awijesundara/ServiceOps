@@ -73,6 +73,7 @@ from app import (
     user_can_manage_ticket,
     visible_ticket_query,
 )
+from serviceops_core.priority_governance import apply_governed_priority, check_governed_priority
 from serviceops_core import incident_handling, mcp as mcp_protocol
 from serviceops_core.mobile_pagination import paginate
 from serviceops_core.ci_class_policy import ci_class_action_allowed, restrict_ci_query_to_readable_classes
@@ -504,7 +505,11 @@ def register(app):
                             "applied before the state change; when omitted on resolution the "
                             "closure category defaults to the logging category. hold_reason "
                             "(Awaiting caller, vendor, change or problem) says why a Pending "
-                            "incident waits; it defaults to Awaiting caller."
+                            "incident waits; it defaults to Awaiting caller. impact and urgency "
+                            "recalculate priority from the matrix unless priority is also sent; a "
+                            "priority that differs from the calculated one is an override and needs a "
+                            "manager or administrator acting user plus priority_override_reason of at "
+                            "least 10 characters, the same rule as the web form."
                         ),
                         "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}],
                     },
@@ -691,7 +696,14 @@ def register(app):
                 },
                 "/incidents": {"post": {
                     "summary": "Create an incident",
-                    "description": "Requires incidents:create.",
+                    "description": (
+                        "Requires incidents:create. Fields: title, description, assignment_group_id, "
+                        "optional category, impact and urgency (Critical, High, Medium or Low; default "
+                        "Medium), priority and priority_override_reason. Priority defaults to the "
+                        "impact/urgency matrix result. A different priority is an override: the acting "
+                        "user must be a manager or administrator (otherwise 403) and "
+                        "priority_override_reason must have at least 10 characters (otherwise 400)."
+                    ),
                     "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}],
                 }},
                 "/monitoring/{source_id}/events": {
@@ -1368,20 +1380,23 @@ def register(app):
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             abort(400, description=tr("A JSON object is required."))
-        allowed = {"title", "description", "category", "priority", "assignment_group_id"}
+        allowed = {"title", "description", "category", "priority", "assignment_group_id",
+                   "impact", "urgency", "priority_override_reason"}
         unknown = set(body) - allowed
         if unknown:
             abort(400, description=tr("Unknown fields: {unknown}.", unknown=', '.join(sorted(unknown))))
-        for field in ("title", "description", "category", "priority"):
+        for field in ("title", "description", "category", "priority", "impact", "urgency", "priority_override_reason"):
             if field in body and not isinstance(body[field], str):
                 abort(400, description=tr("{field} must be a string.", field=field))
         title = body.get("title", "").strip()
         description = str(body.get("description", "")).strip()
-        priority = str(body.get("priority", "P3"))
         if not title or len(title) > 180 or not description:
             abort(400, description=tr("title and description are required."))
-        if priority not in ("P1", "P2", "P3", "P4"):
-            abort(400, description=tr("priority must be P1, P2, P3 or P4."))
+        # Enforce the priority rule before anything is written: ticket creation commits.
+        impact, urgency = body.get("impact", "Medium"), body.get("urgency", "Medium")
+        calculated, _ = check_governed_priority(g.api_user, impact=impact, urgency=urgency,
+                                                priority=body.get("priority"),
+                                                reason=body.get("priority_override_reason"))
         if isinstance(body.get("assignment_group_id"), (bool, float)):
             abort(400, description=tr("assignment_group_id must be an integer."))
         try:
@@ -1395,9 +1410,12 @@ def register(app):
             "incident",
             title=title, description=description,
             category=normalize_ticket_category(g.api_client.tenant_id, str(body.get("category", UNCATEGORISED))[:80]),
-            priority=priority, requester_id=g.api_user.id,
+            priority=calculated, impact=impact, urgency=urgency, requester_id=g.api_user.id,
             tenant_id=g.api_client.tenant_id,
         )
+        apply_governed_priority(ticket, g.api_user, impact=impact, urgency=urgency,
+                                priority=body.get("priority"), reason=body.get("priority_override_reason"),
+                                source="REST API")
         db.session.add(TicketAssignmentGroup(ticket_id=ticket.id, group_id=group.id))
         core.announce_new_ticket(ticket, group, actor_id=g.api_user.id)
         attach_slas("ticket", ticket.id, ticket.priority)
@@ -1434,12 +1452,12 @@ def register(app):
         if not isinstance(body, dict) or not body:
             abort(400, description=tr("A non-empty JSON object is required."))
         allowed = {"state", "priority", "assigned_to_id", "resolution_notes", "closure_category", "closure_subcategory",
-                   "hold_reason"}
+                   "hold_reason", "impact", "urgency", "priority_override_reason"}
         unknown = set(body) - allowed
         if unknown:
             abort(400, description=tr("Unknown fields: {unknown}.", unknown=', '.join(sorted(unknown))))
         before = {
-            "state": ticket.state, "priority": ticket.priority,
+            "state": ticket.state, "priority": ticket.priority, "impact": ticket.impact, "urgency": ticket.urgency,
             "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
             "resolution notes": ticket.resolution_notes or "",
             "closure category": ticket.closure_category or "",
@@ -1466,11 +1484,14 @@ def register(app):
             if hold_reason and (ticket.kind != "incident" or body.get("state", ticket.state) != "Pending"):
                 abort(400, description=tr("hold_reason applies only to a Pending incident."))
             transition_ticket(ticket, str(body.get("state", ticket.state)), hold_reason=hold_reason)
-        if "priority" in body:
-            priority = str(body["priority"])
-            if priority not in ("P1", "P2", "P3", "P4"):
-                abort(400, description=tr("priority must be P1, P2, P3 or P4."))
-            ticket.priority = priority
+        if {"priority", "impact", "urgency"} & set(body):
+            for field in ("priority", "impact", "urgency", "priority_override_reason"):
+                if field in body and not isinstance(body[field], str):
+                    abort(400, description=tr("{field} must be a string.", field=field))
+            # Without an explicit priority, a new impact/urgency recalculates it.
+            apply_governed_priority(ticket, g.api_user, impact=body.get("impact"), urgency=body.get("urgency"),
+                                    priority=body.get("priority"), reason=body.get("priority_override_reason"),
+                                    source="REST API")
         if "assigned_to_id" in body:
             assignee_id = body["assigned_to_id"]
             if assignee_id is not None:
@@ -1483,7 +1504,7 @@ def register(app):
                     abort(400, description=tr("The assignee must belong to the owning team."))
             ticket.assignee_id = assignee_id
         log_field_changes("ticket", ticket.id, before, {
-            "state": ticket.state, "priority": ticket.priority,
+            "state": ticket.state, "priority": ticket.priority, "impact": ticket.impact, "urgency": ticket.urgency,
             "assigned to": ticket.assignee.name if ticket.assignee else "Unassigned",
             "resolution notes": ticket.resolution_notes or "",
             "closure category": ticket.closure_category or "",

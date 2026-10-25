@@ -908,7 +908,15 @@ html.theme-dark .service-editor[open]>summary{border-bottom:1px solid var(--line
 @media(max-width:700px){html.theme-dark .service-workspace tr{border:1px solid var(--line)}
 html.theme-dark .service-workspace td{border:0}
 html.theme-dark .service-workspace td::before{color:var(--muted)}
-}/* notification-audiences.css */
+}html.theme-dark .application-nav .nav-search-results{border-top:1px solid rgba(255,255,255,0.141)}
+html.theme-dark .application-nav .nav-search-heading{color:#9ec0c7}
+html.theme-dark .sidebar .application-nav .nav-search-results a{border-left:3px solid transparent;color:#d9e7ea}
+html.theme-dark .sidebar .application-nav .nav-search-results a:hover,html.theme-dark .sidebar .application-nav .nav-search-results a:focus-visible{background:rgba(255,255,255,0.078);border-left-color:var(--brand-accent);color:#ffffff}
+html.theme-dark .sidebar .application-nav .nav-search-results .nav-search-all{color:#ffffff}
+html.theme-dark .admin-quick-find-more h2{color:var(--muted)}
+html.theme-dark .admin-quick-find-links a{border:1px solid var(--line);background:#182128;color:var(--ink)}
+html.theme-dark .admin-quick-find-links a:hover,html.theme-dark .admin-quick-find-links a:focus-visible{border-color:var(--brand-accent)}
+/* notification-audiences.css */
 html.theme-dark .personal-channel{border-bottom:1px solid var(--line)}
 html.theme-dark .personal-channel small{color:var(--muted)}
 html.theme-dark .personal-channel-add{border:1px solid var(--line)}

@@ -85,6 +85,7 @@ from serviceops_core.security import (
     role_has_action, validate_policy, verify_and_upgrade_password, verify_password,
 )
 from serviceops_core.priority import calculate_priority, validate_priority_policy
+from serviceops_core import dependent_tenancy  # noqa: F401 - fills tenant_id on dependent records
 from serviceops_core.business_time import add_business_minutes, validate_calendar
 from serviceops_core.workflow import (
     canonical_json, load_workflow_package, materialize_workflow,

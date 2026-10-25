@@ -2238,10 +2238,23 @@ def register(app):
                 due_at = parse_user_datetime(request.form.get("due_at"))
             except ValueError:
                 abort(400, description=tr("Enter a valid due date."))
+            record_type = request.form.get("record_type", "")
+            title = request.form.get("title", "").strip()
+            description = request.form.get("description", "").strip()
+            if record_type not in config["types"]:
+                abort(400, description=tr("Select a valid record type."))
+            if not title or len(title) > 180 or not description:
+                abort(400, description=tr("A summary of up to 180 characters and a description are required."))
+            # Priority and risk are the handling team's assessment; the form
+            # hides them from requesters, so the server ignores them too.
+            staff = current_user.effective_role != "requester"
+            priority = request.form.get("priority", "P3") if staff else "P3"
+            risk = request.form.get("risk", "Medium") if staff else "Medium"
+            if priority not in ENTERPRISE_PRIORITIES or risk not in ENTERPRISE_RISKS:
+                abort(400, description=tr("Select a valid priority and risk."))
             record = EnterpriseRecord(
-                number=next_enterprise_number(domain), domain=domain, record_type=request.form["record_type"],
-                title=request.form["title"].strip(), description=request.form["description"].strip(),
-                priority=request.form.get("priority", "P3"), risk=request.form.get("risk", "Medium"),
+                number=next_enterprise_number(domain), domain=domain, record_type=record_type,
+                title=title, description=description, priority=priority, risk=risk,
                 requester_id=current_user.id, due_at=due_at,
             )
             # The workspace's team owns the record, sees it and hears about it.
